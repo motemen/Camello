@@ -16,6 +16,10 @@ clap = { version = "4.0", features = ["derive"] }
 # 効率的な文字列処理
 smol_str = "0.2"
 
+# エラー診断とレポート
+miette = { version = "7.0", features = ["fancy"] }
+thiserror = "1.0"
+
 [dev-dependencies]
 # スナップショットテスト
 insta = "1.0"

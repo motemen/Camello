@@ -225,4 +225,32 @@ mod tests {
         }
         ");
     }
+
+    #[test]
+    #[ignore = "To be fixed"]
+    fn test_sub_with_var_decl_formatting() {
+        let input = r#"
+        my $var = 1;
+        sub test {
+            my $x = 2;
+        }
+        "#;
+        let (syntax, err) = parse_perl(input);
+        assert!(
+            err.is_empty(),
+            "{:?}",
+            err.iter()
+                .map(|e| miette::Report::new(e.clone()))
+                .collect::<Vec<_>>()
+        );
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        my $var = 1;
+        sub test {
+            my $x = 2;
+        }
+        ");
+    }
 }
