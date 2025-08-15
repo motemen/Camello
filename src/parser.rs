@@ -70,7 +70,7 @@ impl<'a> Parser<'a> {
             }
             Some(_) => {
                 self.expression_stmt();
-                false
+                true
             }
             None => false,
         }
@@ -141,8 +141,15 @@ impl<'a> Parser<'a> {
     }
 
     fn expression_stmt(&mut self) {
+        self.builder.start_node(SyntaxKind::STMT.into());
         self.expression();
-        self.expect(SyntaxKind::SEMICOLON);
+        
+        // セミコロンは必須ではない（関数呼び出しなどの場合）
+        if self.at(SyntaxKind::SEMICOLON) {
+            self.bump();
+        }
+        
+        self.builder.finish_node();
     }
 
     fn expression(&mut self) {
@@ -180,6 +187,17 @@ impl<'a> Parser<'a> {
             }
             Some(SyntaxKind::IDENT) => {
                 self.bump();
+                self.skip_trivia();
+                
+                // 関数呼び出し: identifier の後に引数（変数など）が続く場合
+                while let Some(kind) = self.current_kind() {
+                    if kind.is_variable() || kind == SyntaxKind::NUMBER || kind == SyntaxKind::STRING {
+                        self.bump();
+                        self.skip_trivia();
+                    } else {
+                        break;
+                    }
+                }
             }
             _ => {
                 self.error("Expected expression");

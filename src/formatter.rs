@@ -174,8 +174,10 @@ mod tests {
 
     #[test]
     fn test_sub_def_formatting() {
-        let input = "sub test{my$x=1;foo $x; bar;}";
-        let (syntax, _) = parse_perl(input);
+        let input = "sub test{my$x=1;foo$x;bar;}";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
         let formatted = format(&syntax);
 
         insta::assert_snapshot!(formatted, @r"
