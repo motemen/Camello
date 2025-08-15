@@ -28,17 +28,16 @@ impl Language for PerlLanguage {
 
 pub type PerlNode = SyntaxNode<PerlLanguage>;
 
-pub fn parse_perl(input: &str) -> (PerlNode, Vec<String>) {
+pub fn parse_perl(input: &str) -> (PerlNode, Vec<parser::ParseError>) {
     let (green, errors) = parse(input);
     let syntax = PerlNode::new_root(green);
-    let error_messages = errors.into_iter().map(|e| e.to_string()).collect();
-    (syntax, error_messages)
+    (syntax, errors)
 }
 
-pub fn format_perl(input: &str) -> Result<String, String> {
+pub fn format_perl(input: &str) -> Result<String, Vec<parser::ParseError>> {
     let (syntax, errors) = parse_perl(input);
     if !errors.is_empty() {
-        return Err(format!("Parse errors: {}", errors.join(", ")));
+        return Err(errors);
     }
     Ok(format(&syntax))
 }

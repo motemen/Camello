@@ -1,15 +1,30 @@
 use crate::{lexer::Lexer, SyntaxKind};
+use miette::{Diagnostic, SourceSpan};
 use rowan::{GreenNode, GreenNodeBuilder, TextRange};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error, Diagnostic)]
+#[error("Parse error: {message}")]
 pub struct ParseError {
     pub message: String,
     pub range: TextRange,
+    #[source_code]
+    pub source_code: String,
+    #[label("here")]
+    pub span: SourceSpan,
 }
 
-impl std::fmt::Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} at {:?}", self.message, self.range)
+impl ParseError {
+    pub fn new(message: String, range: TextRange, source_code: &str) -> Self {
+        let span = SourceSpan::new(
+            usize::from(range.start()).into(),
+            usize::from(range.len()).into(),
+        );
+        Self {
+            message,
+            range,
+            source_code: source_code.to_string(),
+            span,
+        }
     }
 }
 
@@ -19,6 +34,7 @@ pub struct Parser<'a> {
     errors: Vec<ParseError>,
     current_token: Option<(SyntaxKind, &'a str)>,
     current_pos: usize,
+    source: &'a str,
 }
 
 impl<'a> Parser<'a> {
@@ -32,6 +48,7 @@ impl<'a> Parser<'a> {
             errors: Vec::new(),
             current_token,
             current_pos: 0,
+            source: input,
         }
     }
 
@@ -143,12 +160,12 @@ impl<'a> Parser<'a> {
     fn expression_stmt(&mut self) {
         self.builder.start_node(SyntaxKind::STMT.into());
         self.expression();
-        
+
         // セミコロンは必須ではない（関数呼び出しなどの場合）
         if self.at(SyntaxKind::SEMICOLON) {
             self.bump();
         }
-        
+
         self.builder.finish_node();
     }
 
@@ -188,10 +205,13 @@ impl<'a> Parser<'a> {
             Some(SyntaxKind::IDENT) => {
                 self.bump();
                 self.skip_trivia();
-                
+
                 // 関数呼び出し: identifier の後に引数（変数など）が続く場合
                 while let Some(kind) = self.current_kind() {
-                    if kind.is_variable() || kind == SyntaxKind::NUMBER || kind == SyntaxKind::STRING {
+                    if kind.is_variable()
+                        || kind == SyntaxKind::NUMBER
+                        || kind == SyntaxKind::STRING
+                    {
                         self.bump();
                         self.skip_trivia();
                     } else {
@@ -258,15 +278,14 @@ impl<'a> Parser<'a> {
     }
 
     fn error(&mut self, message: &str) {
+        let text_len = self.current_text().map_or(0, |t| t.len());
         let range = TextRange::new(
             (self.current_pos as u32).into(),
-            ((self.current_pos + self.current_text().map_or(0, |t| t.len())) as u32).into(),
+            ((self.current_pos + text_len) as u32).into(),
         );
 
-        self.errors.push(ParseError {
-            message: message.to_string(),
-            range,
-        });
+        self.errors
+            .push(ParseError::new(message.to_string(), range, self.source));
 
         // エラートークンを作成
         if let Some((_, text)) = self.current_token.take() {
