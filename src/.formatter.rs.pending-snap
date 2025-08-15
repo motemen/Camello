@@ -6,3 +6,31 @@
 {"run_id":"1755254167-557733000","line":166,"new":null,"old":null}
 {"run_id":"1755254167-557733000","line":175,"new":null,"old":null}
 {"run_id":"1755254167-557733000","line":188,"new":null,"old":null}
+{"run_id":"1755254488-100327000","line":178,"new":null,"old":null}
+{"run_id":"1755254488-100327000","line":169,"new":null,"old":null}
+{"run_id":"1755254488-100327000","line":191,"new":null,"old":null}
+{"run_id":"1755254488-100327000","line":206,"new":{"module_name":"camello__formatter__tests","snapshot_name":"comprehensive_formatting","metadata":{"source":"src/formatter.rs","assertion_line":206,"expression":"formatted"},"snapshot":"my $a = 1 + 2;\nmy $b = 3;\nsub example {\n    my $result = $a + $b;\n    return$result;\n}"},"old":{"module_name":"camello__formatter__tests","metadata":{},"snapshot":"my $a = 1 + 2;\nmy $b = 3;\nsub example {\n    my $result = $a + $b;\n    return $result;\n}"}}
+{"run_id":"1755254618-391797000","line":191,"new":null,"old":null}
+{"run_id":"1755254618-391797000","line":169,"new":null,"old":null}
+{"run_id":"1755254618-391797000","line":178,"new":{"module_name":"camello__formatter__tests","snapshot_name":"sub_def_formatting","metadata":{"source":"src/formatter.rs","assertion_line":178,"expression":"formatted"},"snapshot":"sub test {\n    my $x = 1;\n    foo$x;\n    bar}"},"old":{"module_name":"camello__formatter__tests","metadata":{},"snapshot":"sub test {\n    my $x = 1;\n}"}}
+{"run_id":"1755254618-391797000","line":206,"new":{"module_name":"camello__formatter__tests","snapshot_name":"comprehensive_formatting","metadata":{"source":"src/formatter.rs","assertion_line":206,"expression":"formatted"},"snapshot":"my $a = 1 + 2;\nmy $b = 3;\nsub example {\n    my $result = $a + $b;\n    return$result;\n}"},"old":{"module_name":"camello__formatter__tests","metadata":{},"snapshot":"my $a = 1 + 2;\nmy $b = 3;\nsub example {\n    my $result = $a + $b;\n    return $result;\n}"}}
+{"run_id":"1755254627-895783000","line":193,"new":null,"old":null}
+{"run_id":"1755254627-895783000","line":169,"new":null,"old":null}
+{"run_id":"1755254627-895783000","line":178,"new":{"module_name":"camello__formatter__tests","snapshot_name":"sub_def_formatting","metadata":{"source":"src/formatter.rs","assertion_line":178,"expression":"formatted"},"snapshot":"sub test {\n    my $x = 1;\n    foo$x;\n    bar;\n}"},"old":{"module_name":"camello__formatter__tests","metadata":{},"snapshot":"sub test {\n    my $x = 1;\n    foo $x;\n    bar;\n}"}}
+{"run_id":"1755254627-895783000","line":208,"new":{"module_name":"camello__formatter__tests","snapshot_name":"comprehensive_formatting","metadata":{"source":"src/formatter.rs","assertion_line":208,"expression":"formatted"},"snapshot":"my $a = 1 + 2;\nmy $b = 3;\nsub example {\n    my $result = $a + $b;\n    return$result;\n}"},"old":{"module_name":"camello__formatter__tests","metadata":{},"snapshot":"my $a = 1 + 2;\nmy $b = 3;\nsub example {\n    my $result = $a + $b;\n    return $result;\n}"}}
+{"run_id":"1755254682-556428000","line":172,"new":null,"old":null}
+{"run_id":"1755254682-556428000","line":211,"new":null,"old":null}
+{"run_id":"1755254682-556428000","line":196,"new":null,"old":null}
+{"run_id":"1755254682-556428000","line":181,"new":{"module_name":"camello__formatter__tests","snapshot_name":"sub_def_formatting","metadata":{"source":"src/formatter.rs","assertion_line":181,"expression":"formatted"},"snapshot":"sub test {\n    my $x = 1;\n    foo $x;\n    bar ;\n}"},"old":{"module_name":"camello__formatter__tests","metadata":{},"snapshot":"sub test {\n    my $x = 1;\n    foo $x;\n    bar;\n}"}}
+{"run_id":"1755254745-39013000","line":172,"new":null,"old":null}
+{"run_id":"1755254745-39013000","line":211,"new":null,"old":null}
+{"run_id":"1755254745-39013000","line":196,"new":null,"old":null}
+{"run_id":"1755254745-39013000","line":181,"new":null,"old":null}
+{"run_id":"1755254768-719147000","line":172,"new":null,"old":null}
+{"run_id":"1755254768-719147000","line":181,"new":null,"old":null}
+{"run_id":"1755254768-719147000","line":211,"new":null,"old":null}
+{"run_id":"1755254768-719147000","line":196,"new":null,"old":null}
+{"run_id":"1755254859-40570000","line":172,"new":null,"old":null}
+{"run_id":"1755254859-40570000","line":181,"new":null,"old":null}
+{"run_id":"1755254859-40570000","line":211,"new":null,"old":null}
+{"run_id":"1755254859-40570000","line":196,"new":null,"old":null}
