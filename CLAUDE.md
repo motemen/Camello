@@ -49,11 +49,16 @@ cargo test -- --update-snapshots
 cargo doc --open
 ```
 
+### Others
+
+* Follow conventional commits
+* Use English
+
 ## Architecture Overview
 
 ### Data Flow
 ```
-Perl Source ’ [Lexer] ’ Tokens ’ [Parser] ’ CST ’ [Formatter] ’ Formatted Code
+Perl Source [Lexer] Tokens [Parser] CST [Formatter] Formatted Code
 ```
 
 ### Core Components
@@ -112,6 +117,7 @@ fn parse_construct(&mut self) {
 - **Unit tests**: Individual component functionality
 - **Snapshot tests**: Complete formatting verification using `insta`
 - **Integration tests**: CLI behavior and file I/O
+- Compare the whole output when testing format instead of using `.contains()`
 
 Current test coverage includes basic Perl constructs: variable declarations, subroutine definitions, binary expressions, and proper indentation handling.
 
