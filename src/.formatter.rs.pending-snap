@@ -1,0 +1,8 @@
+{"run_id":"1755254124-189625000","line":194,"new":{"module_name":"camello__formatter__tests","snapshot_name":"comprehensive_formatting","metadata":{"source":"src/formatter.rs","assertion_line":194,"expression":"formatted"},"snapshot":"my $a = 1 + 2;\nmy $b = 3;\nsub example{\n    my $result = $a + $b;\n    return$result;\n    }"},"old":{"module_name":"camello__formatter__tests","metadata":{},"snapshot":"my $a = 1 + 2;\nmy $b = 3;\nsub example{\n    my $result = $a + $b;\n    return$result;\n}"}}
+{"run_id":"1755254124-189625000","line":179,"new":{"module_name":"camello__formatter__tests","snapshot_name":"indentation","metadata":{"source":"src/formatter.rs","assertion_line":179,"expression":"formatted"},"snapshot":"sub outer{\n    sub inner{\n        my $var = 1;\n        }\n    }"},"old":{"module_name":"camello__formatter__tests","metadata":{},"snapshot":"sub outer{\n    sub inner{\n        my $var = 1;\n    }\n}"}}
+{"run_id":"1755254124-189625000","line":166,"new":{"module_name":"camello__formatter__tests","snapshot_name":"sub_def_formatting","metadata":{"source":"src/formatter.rs","assertion_line":166,"expression":"formatted"},"snapshot":"sub test{\n    my $x = 1;\n    }"},"old":{"module_name":"camello__formatter__tests","metadata":{},"snapshot":"sub test{\n    my $x = 1;\n}"}}
+{"run_id":"1755254163-495693000","line":175,"new":null,"old":null}
+{"run_id":"1755254167-557733000","line":203,"new":null,"old":null}
+{"run_id":"1755254167-557733000","line":166,"new":null,"old":null}
+{"run_id":"1755254167-557733000","line":175,"new":null,"old":null}
+{"run_id":"1755254167-557733000","line":188,"new":null,"old":null}
