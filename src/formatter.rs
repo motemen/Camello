@@ -166,7 +166,9 @@ mod tests {
     #[test]
     fn test_var_decl_formatting() {
         let input = "my$var=1;";
-        let (syntax, _) = parse_perl(input);
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
         let formatted = format(&syntax);
 
         insta::assert_snapshot!(formatted, @"my $var = 1;");
@@ -192,7 +194,9 @@ mod tests {
     #[test]
     fn test_indentation() {
         let input = "sub outer { sub inner { my $var = 1; } }";
-        let (syntax, _) = parse_perl(input);
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
         let formatted = format(&syntax);
 
         insta::assert_snapshot!(formatted, @r"
@@ -207,7 +211,9 @@ mod tests {
     #[test]
     fn test_comprehensive_formatting() {
         let input = "my$a=1+2;my$b=3;sub example{my$result=$a+$b;return$result;}";
-        let (syntax, _) = parse_perl(input);
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
         let formatted = format(&syntax);
 
         insta::assert_snapshot!(formatted, @r"
