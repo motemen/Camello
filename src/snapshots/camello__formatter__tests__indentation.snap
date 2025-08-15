@@ -1,9 +1,0 @@
----
-source: src/formatter.rs
-expression: formatted
----
-sub outer{
-    sub inner{
-        my $var = 1;
-        }
-    }
