@@ -54,16 +54,16 @@ fn format_file(path: PathBuf, check: bool, output: Option<PathBuf>) -> Result<()
     let input = fs::read_to_string(&path).into_diagnostic()?;
 
     // フォーマット実行
-    let formatted = match format_perl(&input) {
-        Ok(formatted) => formatted,
-        Err(errors) => {
-            eprintln!("Parse error in '{}':", path.display());
-            errors
-                .iter()
-                .for_each(|e| eprintln!("{:?}", Report::new(e.clone())));
-            return Err(errors[0].clone().into());
-        }
-    };
+    let (formatted, errors) = format_perl(&input);
+    
+    // エラーがある場合は表示するが、処理は継続
+    if !errors.is_empty() {
+        eprintln!("Parse error in '{}':", path.display());
+        errors
+            .iter()
+            .for_each(|e| eprintln!("{:?}", Report::new(e.clone())));
+        eprintln!("Proceeding with best-effort formatting...\n");
+    }
 
     if check {
         // チェックモード: フォーマット済みかどうかをチェック
