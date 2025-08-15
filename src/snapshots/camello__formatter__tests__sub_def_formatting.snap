@@ -1,7 +1,0 @@
----
-source: src/formatter.rs
-expression: formatted
----
-sub test{
-    my $x = 1;
-    }

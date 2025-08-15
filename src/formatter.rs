@@ -154,7 +154,7 @@ mod tests {
         let (syntax, _) = parse_perl(input);
         let formatted = format(&syntax);
         
-        insta::assert_snapshot!(formatted);
+        insta::assert_snapshot!(formatted, @"my $var = 1;");
     }
     
     #[test]
@@ -163,7 +163,11 @@ mod tests {
         let (syntax, _) = parse_perl(input);
         let formatted = format(&syntax);
         
-        insta::assert_snapshot!(formatted);
+        insta::assert_snapshot!(formatted, @r"
+        sub test{
+            my $x = 1;
+            }
+        ");
     }
     
     #[test]
@@ -172,7 +176,13 @@ mod tests {
         let (syntax, _) = parse_perl(input);
         let formatted = format(&syntax);
         
-        insta::assert_snapshot!(formatted);
+        insta::assert_snapshot!(formatted, @r"
+        sub outer{
+            sub inner{
+                my $var = 1;
+                }
+            }
+        ");
     }
     
     #[test]
@@ -181,6 +191,13 @@ mod tests {
         let (syntax, _) = parse_perl(input);
         let formatted = format(&syntax);
         
-        insta::assert_snapshot!(formatted);
+        insta::assert_snapshot!(formatted, @r"
+        my $a = 1 + 2;
+        my $b = 3;
+        sub example{
+            my $result = $a + $b;
+            return$result;
+            }
+        ");
     }
 }
