@@ -154,7 +154,7 @@ mod tests {
         let (syntax, _) = parse_perl(input);
         let formatted = format(&syntax);
         
-        assert_eq!(formatted.trim(), "my $var = 1;");
+        insta::assert_snapshot!(formatted);
     }
     
     #[test]
@@ -163,8 +163,7 @@ mod tests {
         let (syntax, _) = parse_perl(input);
         let formatted = format(&syntax);
         
-        assert!(formatted.contains("sub test"));
-        assert!(formatted.contains("    my $x = 1;"));
+        insta::assert_snapshot!(formatted);
     }
     
     #[test]
@@ -173,8 +172,15 @@ mod tests {
         let (syntax, _) = parse_perl(input);
         let formatted = format(&syntax);
         
-        // インデントが正しく適用されることを確認
-        assert!(formatted.contains("    sub inner"));
-        assert!(formatted.contains("        my $var = 1;"));
+        insta::assert_snapshot!(formatted);
+    }
+    
+    #[test]
+    fn test_comprehensive_formatting() {
+        let input = "my$a=1+2;my$b=3;sub example{my$result=$a+$b;return$result;}";
+        let (syntax, _) = parse_perl(input);
+        let formatted = format(&syntax);
+        
+        insta::assert_snapshot!(formatted);
     }
 }

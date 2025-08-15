@@ -1,0 +1,5 @@
+---
+source: src/formatter.rs
+expression: formatted
+---
+my $var = 1;
