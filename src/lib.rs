@@ -34,10 +34,8 @@ pub fn parse_perl(input: &str) -> (PerlNode, Vec<parser::ParseError>) {
     (syntax, errors)
 }
 
-pub fn format_perl(input: &str) -> Result<String, Vec<parser::ParseError>> {
+pub fn format_perl(input: &str) -> (String, Vec<parser::ParseError>) {
     let (syntax, errors) = parse_perl(input);
-    if !errors.is_empty() {
-        return Err(errors);
-    }
-    Ok(format(&syntax))
+    let formatted = format(&syntax);
+    (formatted, errors)
 }
