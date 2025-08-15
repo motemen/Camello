@@ -1,0 +1,24 @@
+[package]
+name = "camello"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# CST操作のコアライブラリ
+rowan = "0.15"
+
+# 高性能字句解析
+logos = "0.14"
+
+# CLI構築
+clap = { version = "4.0", features = ["derive"] }
+
+# 効率的な文字列処理
+smol_str = "0.2"
+
+[dev-dependencies]
+# スナップショットテスト
+insta = "1.0"
+
+# テスト用の一時ファイル作成
+tempfile = "3.0"
