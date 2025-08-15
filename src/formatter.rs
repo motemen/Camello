@@ -64,12 +64,12 @@ impl Formatter {
                 if self.indent_level > 0 {
                     self.indent_level -= 1;
                 }
-                
+
                 if self.at_line_start {
                     self.add_indent();
                     self.at_line_start = false;
                 }
-                
+
                 self.output.push_str(text);
                 self.handle_newline();
                 self.prev_token_kind = Some(kind);
@@ -107,6 +107,12 @@ impl Formatter {
             // キーワードの後
             (Some(SyntaxKind::MY_KW), _) => true,
             (Some(SyntaxKind::SUB_KW), SyntaxKind::IDENT) => true,
+
+            // Before left brace "{""
+            (Some(_), SyntaxKind::L_BRACE) => true,
+
+            // After identifier not followed by a semicolon
+            (Some(SyntaxKind::IDENT), kind) if kind != SyntaxKind::SEMICOLON => true,
 
             // 括弧の内側はスペースなし
             (Some(SyntaxKind::L_PAREN), _) | (Some(_), SyntaxKind::R_PAREN) => false,
@@ -168,13 +174,15 @@ mod tests {
 
     #[test]
     fn test_sub_def_formatting() {
-        let input = "sub test{my$x=1;}";
+        let input = "sub test{my$x=1;foo $x; bar;}";
         let (syntax, _) = parse_perl(input);
         let formatted = format(&syntax);
 
         insta::assert_snapshot!(formatted, @r"
-        sub test{
+        sub test {
             my $x = 1;
+            foo $x;
+            bar;
         }
         ");
     }
@@ -186,8 +194,8 @@ mod tests {
         let formatted = format(&syntax);
 
         insta::assert_snapshot!(formatted, @r"
-        sub outer{
-            sub inner{
+        sub outer {
+            sub inner {
                 my $var = 1;
             }
         }
@@ -203,9 +211,9 @@ mod tests {
         insta::assert_snapshot!(formatted, @r"
         my $a = 1 + 2;
         my $b = 3;
-        sub example{
+        sub example {
             my $result = $a + $b;
-            return$result;
+            return $result;
         }
         ");
     }
