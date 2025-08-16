@@ -142,6 +142,7 @@ impl Formatter {
             (Some(_), SyntaxKind::EQ) | (Some(SyntaxKind::EQ), _) => true,
             (Some(_), SyntaxKind::PLUS) | (Some(SyntaxKind::PLUS), _) => true,
             (Some(_), SyntaxKind::MINUS) | (Some(SyntaxKind::MINUS), _) => true,
+            (Some(_), SyntaxKind::ARROW) | (Some(SyntaxKind::ARROW), _) => true,
 
             // カンマの後
             (Some(SyntaxKind::COMMA), _) => true,
@@ -328,6 +329,21 @@ mod tests {
         insta::assert_snapshot!(formatted, @r"
         sub get_empty {
             return {};
+        }
+        ");
+    }
+
+    #[test]
+    fn test_hash_ref_with_key_value_formatting() {
+        let input = "sub f{return{a=>1};}";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        sub f {
+            return {a => 1};
         }
         ");
     }
