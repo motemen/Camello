@@ -49,10 +49,10 @@ cargo test -- --update-snapshots
 cargo doc --open
 ```
 
-### Others
+### Git Commits
 
 * Follow conventional commits
-* Use English
+* Use English in commit messages
 
 ## Architecture Overview
 

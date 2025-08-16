@@ -85,6 +85,10 @@ impl<'a> Parser<'a> {
                 self.sub_def();
                 true
             }
+            Some(SyntaxKind::R_BRACE) => {
+                // ブロック終了なので何もしない
+                false
+            }
             Some(_) => {
                 self.expression_stmt();
                 true

@@ -227,7 +227,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "To be fixed"]
     fn test_sub_with_var_decl_formatting() {
         let input = r#"
         my $var = 1;

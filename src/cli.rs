@@ -1,10 +1,10 @@
 use clap::{Parser, Subcommand};
 use miette::{IntoDiagnostic, Report, Result};
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::PathBuf;
 
-use crate::format_perl;
+use crate::{format_perl, parse_perl};
 
 #[derive(Parser)]
 #[command(name = "camello")]
@@ -19,9 +19,9 @@ pub struct Cli {
 pub enum Commands {
     /// Format Perl code
     Format {
-        /// Path to Perl file to format
-        #[arg(help = "Path to the Perl file")]
-        path: PathBuf,
+        /// Path to Perl file to format (stdin if not provided)
+        #[arg(help = "Path to the Perl file (reads from stdin if not provided)")]
+        path: Option<PathBuf>,
 
         /// Check if the file is already formatted without making changes
         #[arg(long, help = "Check if file is already formatted")]
@@ -30,6 +30,12 @@ pub enum Commands {
         /// Write output to a file instead of stdout
         #[arg(short, long, help = "Output file path")]
         output: Option<PathBuf>,
+    },
+    /// Dump parsed AST structure
+    Dump {
+        /// Path to Perl file to parse and dump (stdin if not provided)
+        #[arg(help = "Path to the Perl file (reads from stdin if not provided)")]
+        path: Option<PathBuf>,
     },
 }
 
@@ -44,21 +50,38 @@ pub fn run() -> Result<()> {
         } => {
             format_file(path, check, output)?;
         }
+        Commands::Dump { path } => {
+            dump_file(path)?;
+        }
     }
 
     Ok(())
 }
 
-fn format_file(path: PathBuf, check: bool, output: Option<PathBuf>) -> Result<()> {
-    // ファイルを読み込み
-    let input = fs::read_to_string(&path).into_diagnostic()?;
+fn read_input(path: Option<PathBuf>) -> Result<(String, String)> {
+    match path {
+        Some(path) => {
+            let input = fs::read_to_string(&path).into_diagnostic()?;
+            Ok((input, path.display().to_string()))
+        }
+        None => {
+            let mut input = String::new();
+            io::stdin().read_to_string(&mut input).into_diagnostic()?;
+            Ok((input, "<stdin>".to_string()))
+        }
+    }
+}
+
+fn format_file(path: Option<PathBuf>, check: bool, output: Option<PathBuf>) -> Result<()> {
+    // ファイルまたは標準入力を読み込み
+    let (input, source_name) = read_input(path)?;
 
     // フォーマット実行
     let (formatted, errors) = format_perl(&input);
-    
+
     // エラーがある場合は表示するが、処理は継続
     if !errors.is_empty() {
-        eprintln!("Parse error in '{}':", path.display());
+        eprintln!("Parse error in '{}':", source_name);
         errors
             .iter()
             .for_each(|e| eprintln!("{:?}", Report::new(e.clone())));
@@ -68,10 +91,10 @@ fn format_file(path: PathBuf, check: bool, output: Option<PathBuf>) -> Result<()
     if check {
         // チェックモード: フォーマット済みかどうかをチェック
         if input.trim() != formatted.trim() {
-            eprintln!("File '{}' is not formatted", path.display());
+            eprintln!("Source '{}' is not formatted", source_name);
             std::process::exit(1);
         } else {
-            println!("File '{}' is already formatted", path.display());
+            println!("Source '{}' is already formatted", source_name);
         }
     } else {
         // フォーマットモード: 結果を出力
@@ -88,6 +111,24 @@ fn format_file(path: PathBuf, check: bool, output: Option<PathBuf>) -> Result<()
             }
         }
     }
+
+    Ok(())
+}
+
+fn dump_file(path: Option<PathBuf>) -> Result<()> {
+    // ファイルまたは標準入力を読み込み
+    let (input, source_name) = read_input(path)?;
+    let (syntax, errors) = parse_perl(&input);
+    
+    if !errors.is_empty() {
+        eprintln!("Parse errors in '{}':", source_name);
+        for error in errors {
+            eprintln!("{:?}", Report::new(error));
+        }
+    }
+
+    println!("Parsed AST for '{}':", source_name);
+    println!("{:#?}", syntax);
 
     Ok(())
 }
