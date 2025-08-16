@@ -165,50 +165,57 @@ impl<'a> Lexer<'a> {
     }
 
     fn disambiguate_percent(&self) -> SyntaxKind {
-        // Check previous context using prev_kind
-        let has_sigil_before = self.prev_kind.map_or(false, |k| k.is_sigil());
-        
-        // Check if we're in a context that suggests variable declaration
-        // e.g., IDENT preceded by a sigil (like "@array" where "array" follows "@")
-        let prev_ident_has_sigil = matches!(self.prev_kind, Some(SyntaxKind::IDENT)) 
-            && self.second_prev_kind.map_or(false, |k| k.is_sigil());
-        
-        // Check if previous token is a standalone value (not part of a sigil+ident pair)
-        let has_standalone_operand = match self.prev_kind {
-            Some(SyntaxKind::IDENT) => !prev_ident_has_sigil, // IDENT that's not preceded by sigil
-            Some(SyntaxKind::NUMBER | SyntaxKind::R_PAREN | SyntaxKind::R_BRACE) => true,
-            _ => false,
-        };
-        
         // Check next token efficiently using lookahead
         let next_is_ident = self.peek_next_token() == Some(Token::Ident);
         
         // Disambiguation logic:
         // 1. If previous token is a sigil, then % is also a sigil (variable list like "$scalar @array %hash")
-        if has_sigil_before {
+        if self.prev_kind.map_or(false, |k| k.is_sigil()) {
             SyntaxKind::PERCENT
         }
-        // 2. If previous IDENT was preceded by sigil, we're likely in variable list (like "@array %hash")
-        else if prev_ident_has_sigil && next_is_ident {
-            SyntaxKind::PERCENT
+        // 2. If we have an IDENT before AND an IDENT after, check the context more carefully
+        else if matches!(self.prev_kind, Some(SyntaxKind::IDENT)) && next_is_ident {
+            // Check if this IDENT was part of a variable declaration context
+            let prev_ident_has_sigil = self.second_prev_kind.map_or(false, |k| k.is_sigil());
+            
+            // In a variable list like "@array %hash", the "@" sigil would be second_prev_kind
+            // and "array" would be prev_kind, and we want % to be a sigil
+            // But in arithmetic like "$var % other_var", the "$" sigil would be second_prev_kind
+            // and "var" would be prev_kind, and we want % to be modulo
+            
+            // The key distinction: in variable lists, all variables are at the same "level"
+            // In arithmetic, one variable is the operand for an operation
+            
+            // If the previous IDENT is preceded by a sigil, we need to distinguish:
+            // - If it's a variable list context: "@array %hash" -> % is sigil  
+            // - If it's an arithmetic context: "$var % other" -> % is modulo
+            
+            // Heuristic: If the sigil was DOLLAR, it's more likely to be arithmetic
+            // If it was AT, it's more likely to be a variable list
+            if prev_ident_has_sigil {
+                match self.second_prev_kind {
+                    Some(SyntaxKind::DOLLAR) => SyntaxKind::MODULO, // $var % other -> modulo
+                    Some(SyntaxKind::AT) => SyntaxKind::PERCENT,    // @array %hash -> sigil
+                    _ => SyntaxKind::PERCENT, // Default to sigil for safety
+                }
+            } else {
+                // No sigil before the IDENT, so it's likely arithmetic: "c % d"
+                SyntaxKind::MODULO
+            }
         }
-        // 3. If we have a standalone operand before AND an identifier after, it's modulo (like "c % d")
-        else if has_standalone_operand && next_is_ident {
-            SyntaxKind::MODULO
-        }
-        // 4. If % is followed by an identifier, default to sigil (like "my %hash")
+        // 3. If % is followed by an identifier, default to sigil (like "my %hash")
         else if next_is_ident {
             SyntaxKind::PERCENT
         }
-        // 5. Default to operator
+        // 4. Default to operator
         else {
             SyntaxKind::MODULO
         }
     }
 
     fn disambiguate_x(&self) -> SyntaxKind {
-        // "x" is identifier if it follows a sigil, otherwise it's repetition operator
-        if self.prev_kind.map_or(false, |k| k.is_sigil()) {
+        // "x" is identifier if it follows a sigil or SUB_KW, otherwise it's repetition operator
+        if self.prev_kind.map_or(false, |k| k.is_sigil() || k == SyntaxKind::SUB_KW) {
             SyntaxKind::IDENT
         } else {
             SyntaxKind::X
@@ -302,6 +309,38 @@ mod tests {
         assert_eq!(lexer.next_token(), Some((SyntaxKind::AT, "@")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::PERCENT, "%")));
         assert_eq!(lexer.next_token(), None);
+    }
+
+    #[test]
+    fn test_percent_modulo_vs_sigil() {
+        // Test the critical case mentioned by Gemini: $var % other_var should be modulo
+        let mut lexer = Lexer::new("$var % other_var");
+        
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "var")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::MODULO, "%"))); // Should be MODULO, not PERCENT
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "other_var")));
+    }
+
+    #[test]
+    fn test_x_after_sub_keyword() {
+        // Test the case mentioned by Gemini: sub x { ... } where x should be IDENT
+        let mut lexer = Lexer::new("sub x {");
+        
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::SUB_KW, "sub")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "x"))); // Should be IDENT, not X
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::L_BRACE, "{")));
+    }
+
+    #[test]
+    fn test_array_hash_variable_list() {
+        // Test that "@array %hash" correctly identifies % as sigil (not modulo)
+        let mut lexer = Lexer::new("@array %hash");
+        
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::AT, "@")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "array")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::PERCENT, "%"))); // Should be PERCENT (sigil)
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "hash")));
     }
 
 }
