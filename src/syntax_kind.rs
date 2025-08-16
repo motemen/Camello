@@ -43,6 +43,7 @@ pub enum SyntaxKind {
     BLOCK_STMT,  // ブロック文
     VAR_DECL,    // 変数宣言
     BINARY_EXPR, // 二項演算式
+    HASH_REF,    // ハッシュリファレンス（匿名ハッシュ）
     STMT,        // 文
 
     // ===== その他 =====
@@ -103,6 +104,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::BLOCK_STMT => "BLOCK_STMT",
             SyntaxKind::VAR_DECL => "VAR_DECL",
             SyntaxKind::BINARY_EXPR => "BINARY_EXPR",
+            SyntaxKind::HASH_REF => "HASH_REF",
             SyntaxKind::STMT => "STMT",
             SyntaxKind::ERROR => "ERROR",
             SyntaxKind::EOF => "EOF",

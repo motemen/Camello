@@ -225,12 +225,8 @@ impl<'a> Parser<'a> {
                 }
             }
             Some(SyntaxKind::L_BRACE) => {
-                // ハッシュリテラルまたは匿名ハッシュ: {}
-                self.builder.start_node(SyntaxKind::STMT.into()); // 仮の実装
-                self.bump(); // {
-                self.skip_trivia();
-                self.expect(SyntaxKind::R_BRACE); // }
-                self.builder.finish_node();
+                // ハッシュリファレンス（匿名ハッシュ）: {}
+                self.hash_ref();
             }
             _ => {
                 self.error("Expected expression");
@@ -238,6 +234,19 @@ impl<'a> Parser<'a> {
                 // (error()関数で既に消費されているが、明示的に確認)
             }
         }
+    }
+
+    fn hash_ref(&mut self) {
+        self.builder.start_node(SyntaxKind::HASH_REF.into());
+
+        self.expect(SyntaxKind::L_BRACE);
+        self.skip_trivia();
+
+        // TODO: 将来的にはキー・バリューペアの解析も実装
+        // 現在は空のハッシュリファレンスのみ対応
+
+        self.expect(SyntaxKind::R_BRACE);
+        self.builder.finish_node();
     }
 
     // ヘルパーメソッド
@@ -360,6 +369,10 @@ mod tests {
         
         let syntax = PerlNode::new_root(green);
         assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+        
+        // ハッシュリファレンスノードが存在することを確認
+        let hash_ref_found = syntax.descendants().any(|node| node.kind() == SyntaxKind::HASH_REF);
+        assert!(hash_ref_found, "HASH_REF node should be present in AST");
     }
 
     #[test]
@@ -370,6 +383,24 @@ mod tests {
         
         let syntax = PerlNode::new_root(green);
         assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+        
+        // ハッシュリファレンスノードが存在することを確認
+        let hash_ref_found = syntax.descendants().any(|node| node.kind() == SyntaxKind::HASH_REF);
+        assert!(hash_ref_found, "HASH_REF node should be present in AST");
+    }
+
+    #[test]
+    fn test_hash_ref_in_assignment() {
+        let input = "my $hash_ref = {};";
+        let (green, errors) = parse(input);
+        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+        
+        let syntax = PerlNode::new_root(green);
+        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+        
+        // ハッシュリファレンスノードが存在することを確認
+        let hash_ref_found = syntax.descendants().any(|node| node.kind() == SyntaxKind::HASH_REF);
+        assert!(hash_ref_found, "HASH_REF node should be present in variable assignment");
     }
 
     #[test]

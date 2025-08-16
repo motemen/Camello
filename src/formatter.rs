@@ -32,10 +32,52 @@ impl Formatter {
     }
 
     fn format_node(&mut self, node: &PerlNode) {
+        // ハッシュリファレンスノードの場合は特別処理
+        if node.kind() == SyntaxKind::HASH_REF {
+            self.format_hash_ref(node);
+            return;
+        }
+
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(node) => self.format_node(&node),
                 NodeOrToken::Token(token) => self.format_token(&token),
+            }
+        }
+    }
+
+    fn format_hash_ref(&mut self, node: &PerlNode) {
+        // ハッシュリファレンスは改行なしでフォーマット
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Token(token) => {
+                    let kind = token.kind();
+                    let text = token.text();
+                    
+                    match kind {
+                        SyntaxKind::WHITESPACE => {
+                            // ハッシュリファレンス内の空白は無視
+                        }
+                        SyntaxKind::L_BRACE => {
+                            self.handle_spacing_before(kind);
+                            if self.at_line_start {
+                                self.add_indent();
+                                self.at_line_start = false;
+                            }
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::R_BRACE => {
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                        _ => {
+                            // その他のトークンは通常通り処理
+                            self.format_token(&token);
+                        }
+                    }
+                }
             }
         }
     }
@@ -249,6 +291,43 @@ mod tests {
         my $var = 1;
         sub test {
             my $x = 2;
+        }
+        ");
+    }
+
+    #[test]
+    fn test_hash_ref_formatting() {
+        let input = "my$hash_ref={};";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"my $hash_ref = {};");
+    }
+
+    #[test]
+    fn test_return_hash_ref_formatting() {
+        let input = "return{};";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"return {};");
+    }
+
+    #[test]
+    fn test_sub_with_hash_ref_formatting() {
+        let input = "sub get_empty{return{};}";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        sub get_empty {
+            return {};
         }
         ");
     }
