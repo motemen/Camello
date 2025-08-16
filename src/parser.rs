@@ -90,6 +90,7 @@ impl<'a> Parser<'a> {
                 false
             }
             Some(_) => {
+                // expression_stmt()が失敗した場合を適切に処理する必要がある
                 self.expression_stmt();
                 true
             }
@@ -223,8 +224,18 @@ impl<'a> Parser<'a> {
                     }
                 }
             }
+            Some(SyntaxKind::L_BRACE) => {
+                // ハッシュリテラルまたは匿名ハッシュ: {}
+                self.builder.start_node(SyntaxKind::STMT.into()); // 仮の実装
+                self.bump(); // {
+                self.skip_trivia();
+                self.expect(SyntaxKind::R_BRACE); // }
+                self.builder.finish_node();
+            }
             _ => {
                 self.error("Expected expression");
+                // 予期しないトークンでも確実に消費されるようにする
+                // (error()関数で既に消費されているが、明示的に確認)
             }
         }
     }
@@ -339,5 +350,41 @@ mod tests {
 
         let syntax = PerlNode::new_root(green);
         assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+    }
+
+    #[test]
+    fn test_hash_literal() {
+        let input = "return {}";
+        let (green, errors) = parse(input);
+        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+        
+        let syntax = PerlNode::new_root(green);
+        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+    }
+
+    #[test]
+    fn test_sub_with_hash_literal() {
+        let input = "sub f { return { } }";
+        let (green, errors) = parse(input);
+        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+        
+        let syntax = PerlNode::new_root(green);
+        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+    }
+
+    #[test]
+    fn test_error_recovery_no_infinite_loop() {
+        // エラーリカバリが無限ループを起こさないことを確認
+        let input = "my = @ % ^ invalid tokens here;";
+        let (green, errors) = parse(input);
+        
+        // エラーは発生するが、パースは完了すること
+        assert!(!errors.is_empty(), "Should have parse errors");
+        
+        let syntax = PerlNode::new_root(green);
+        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+        
+        // ASTに何らかの構造があることを確認（無限ループしていない証拠）
+        assert!(syntax.children().count() > 0, "Should have some parsed structure");
     }
 }

@@ -147,7 +147,7 @@ mod tests {
         fs::write(&file_path, "my$var=1;")?;
 
         // フォーマット実行（実際の実行はしないが、エラーが出ないことを確認）
-        assert!(format_file(file_path, false, None).is_ok());
+        assert!(format_file(Some(file_path), false, None).is_ok());
 
         Ok(())
     }
@@ -159,7 +159,7 @@ mod tests {
         fs::write(&file_path, "my $var = 1;\n")?;
 
         // 正しくフォーマットされたファイルのチェック
-        assert!(format_file(file_path, true, None).is_ok());
+        assert!(format_file(Some(file_path), true, None).is_ok());
 
         Ok(())
     }
