@@ -58,6 +58,17 @@ pub enum Token {
     #[token("=>")]
     Arrow,
     
+    // Multiplicative operators
+    #[token("*")]
+    Star,
+    
+    #[token("/")]
+    Slash,
+    
+    #[token("%")]
+    Percent,
+    
+    
     // 改行（重要なので個別にトークン化）
     #[regex(r"\r\n|\r|\n")]
     Newline,
@@ -86,6 +97,9 @@ impl Token {
             Token::Plus => SyntaxKind::PLUS,
             Token::Minus => SyntaxKind::MINUS,
             Token::Arrow => SyntaxKind::ARROW,
+            Token::Star => SyntaxKind::STAR,
+            Token::Slash => SyntaxKind::SLASH,
+            Token::Percent => SyntaxKind::PERCENT,
             Token::Newline => SyntaxKind::WHITESPACE,
             Token::Comment => SyntaxKind::COMMENT,
         }
@@ -131,6 +145,7 @@ impl<'a> Lexer<'a> {
                     "my" => SyntaxKind::MY_KW,
                     "if" => SyntaxKind::IF_KW,
                     "else" => SyntaxKind::ELSE_KW,
+                    "x" => SyntaxKind::X, // 文脈によって演算子として扱う
                     _ => SyntaxKind::IDENT,
                 }
             }
@@ -185,6 +200,22 @@ mod tests {
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "a")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::ARROW, "=>")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::NUMBER, "1")));
+        assert_eq!(lexer.next_token(), None);
+    }
+
+    #[test]
+    fn test_multiplicative_operators() {
+        let mut lexer = Lexer::new("a * b / c % d x 3");
+        
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "a")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::STAR, "*")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "b")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::SLASH, "/")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "c")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::PERCENT, "%")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "d")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::X, "x")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::NUMBER, "3")));
         assert_eq!(lexer.next_token(), None);
     }
 }

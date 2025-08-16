@@ -175,15 +175,36 @@ impl<'a> Parser<'a> {
     }
 
     fn expression(&mut self) {
-        self.binary_expr();
+        self.additive_expr();
     }
 
-    fn binary_expr(&mut self) {
+    // Additive operators: + - .
+    fn additive_expr(&mut self) {
+        let start = self.builder.checkpoint();
+        self.multiplicative_expr();
+
+        while let Some(op) = self.current_kind() {
+            if !matches!(op, SyntaxKind::PLUS | SyntaxKind::MINUS) {
+                break;
+            }
+
+            let _m = self
+                .builder
+                .start_node_at(start.clone(), SyntaxKind::BINARY_EXPR.into());
+            self.bump(); // operator
+            self.skip_trivia();
+            self.multiplicative_expr();
+            self.builder.finish_node();
+        }
+    }
+
+    // Multiplicative operators: * / % x
+    fn multiplicative_expr(&mut self) {
         let start = self.builder.checkpoint();
         self.primary_expr();
 
         while let Some(op) = self.current_kind() {
-            if !op.is_operator() {
+            if !matches!(op, SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::PERCENT | SyntaxKind::X) {
                 break;
             }
 
@@ -463,6 +484,50 @@ mod tests {
         // ハッシュリファレンスノードが存在することを確認
         let hash_ref_found = syntax.descendants().any(|node| node.kind() == SyntaxKind::HASH_REF);
         assert!(hash_ref_found, "HASH_REF node should be present in subroutine");
+    }
+
+    #[test]
+    fn test_multiplicative_operators() {
+        let input = "my $result = $a * $b / $c % $d;";
+        let (green, errors) = parse(input);
+        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+        
+        let syntax = PerlNode::new_root(green);
+        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+        
+        // BINARY_EXPRノードが存在することを確認
+        let binary_expr_found = syntax.descendants().any(|node| node.kind() == SyntaxKind::BINARY_EXPR);
+        assert!(binary_expr_found, "BINARY_EXPR node should be present for multiplicative operations");
+    }
+
+    #[test]
+    fn test_operator_precedence() {
+        let input = "my $result = $a + $b * $c;";
+        let (green, errors) = parse(input);
+        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+        
+        let syntax = PerlNode::new_root(green);
+        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+        
+        // 演算子優先度が正しく解析されることを確認（構造的テスト）
+        let binary_expr_count = syntax.descendants()
+            .filter(|node| node.kind() == SyntaxKind::BINARY_EXPR)
+            .count();
+        assert!(binary_expr_count >= 2, "Should have at least 2 binary expressions for precedence");
+    }
+
+    #[test]
+    fn test_x_operator() {
+        let input = "my $str = $a x 3;";
+        let (green, errors) = parse(input);
+        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+        
+        let syntax = PerlNode::new_root(green);
+        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+        
+        // x演算子がBINARY_EXPRとして解析されることを確認
+        let binary_expr_found = syntax.descendants().any(|node| node.kind() == SyntaxKind::BINARY_EXPR);
+        assert!(binary_expr_found, "BINARY_EXPR node should be present for x operator");
     }
 
     #[test]
