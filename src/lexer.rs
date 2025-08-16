@@ -1,7 +1,7 @@
 use crate::SyntaxKind;
 use logos::Logos;
 
-#[derive(Logos, Debug, PartialEq)]
+#[derive(Logos, Debug, PartialEq, Clone)]
 #[logos(skip r"[ \t\f]+")] 
 pub enum Token {
     // Sigils（変数の型を示すプレフィックス）
@@ -105,23 +105,33 @@ impl Token {
 
 pub struct Lexer<'a> {
     logos_lexer: logos::Lexer<'a, Token>,
+    prev_kind: Option<SyntaxKind>,
+    second_prev_kind: Option<SyntaxKind>,
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str) -> Self {
         let logos_lexer = Token::lexer(input);
         
-        // キーワードの判定ロジックを追加
-        // Logosはcontextual keywordsに対応していないため、手動で処理
-        
-        Self { logos_lexer }
+        Self { 
+            logos_lexer,
+            prev_kind: None,
+            second_prev_kind: None,
+        }
     }
     
     pub fn next_token(&mut self) -> Option<(SyntaxKind, &'a str)> {
         match self.logos_lexer.next() {
             Some(Ok(token)) => {
                 let text = self.logos_lexer.slice();
-                let syntax_kind = self.resolve_keyword_or_ident(token, text);
+                let syntax_kind = self.disambiguate(token, text);
+                
+                // Update prev_kind only for non-trivia tokens
+                if !syntax_kind.is_trivia() {
+                    self.second_prev_kind = self.prev_kind;
+                    self.prev_kind = Some(syntax_kind);
+                }
+                
                 Some((syntax_kind, text))
             }
             Some(Err(_)) => {
@@ -133,7 +143,7 @@ impl<'a> Lexer<'a> {
         }
     }
     
-    fn resolve_keyword_or_ident(&self, token: Token, text: &str) -> SyntaxKind {
+    fn disambiguate(&self, token: Token, text: &str) -> SyntaxKind {
         match token {
             Token::Ident => {
                 // 識別子の場合、キーワードかどうかチェック
@@ -142,134 +152,76 @@ impl<'a> Lexer<'a> {
                     "my" => SyntaxKind::MY_KW,
                     "if" => SyntaxKind::IF_KW,
                     "else" => SyntaxKind::ELSE_KW,
-                    "x" => self.resolve_x_context(), // 文脈によって演算子か識別子かを判定
+                    "x" => self.disambiguate_x(),
                     _ => SyntaxKind::IDENT,
                 }
             }
             Token::Percent => {
                 // % の場合、文脈によって sigil か modulo operator かを判定
-                self.resolve_percent_context()
+                self.disambiguate_percent()
             }
             _ => token.to_syntax_kind(),
         }
     }
 
-    fn resolve_percent_context(&self) -> SyntaxKind {
-        // より洗練されたヒューリスティック：
-        // 1. 前に sigil (@, $) がある場合は sigil (例: "$var @arr %hash")
-        // 2. 前に演算子がある場合で次に識別子がある場合は sigil
-        // 3. 前に値 (識別子、数値等) があり、次にも値がある場合は operator
+    fn disambiguate_percent(&self) -> SyntaxKind {
+        // Check previous context using prev_kind
+        let has_sigil_before = self.prev_kind.map_or(false, |k| k.is_sigil());
         
-        let current_pos = self.logos_lexer.span().start;
-        let source = self.logos_lexer.source();
+        // Check if we're in a context that suggests variable declaration
+        // e.g., IDENT preceded by a sigil (like "@array" where "array" follows "@")
+        let prev_ident_has_sigil = matches!(self.prev_kind, Some(SyntaxKind::IDENT)) 
+            && self.second_prev_kind.map_or(false, |k| k.is_sigil());
         
-        // 前のトークンをチェック（複数トークン見る）
-        let mut has_value_before = false;
-        let mut has_sigil_before = false;
-        
-        if current_pos > 0 {
-            let before = &source[..current_pos];
-            let trimmed_before = before.trim_end();
-            if !trimmed_before.is_empty() {
-                let mut temp_lexer = Token::lexer(trimmed_before);
-                let mut tokens = Vec::new();
-                while let Some(Ok(token)) = temp_lexer.next() {
-                    tokens.push(token);
-                }
-                
-                if let Some(last_token) = tokens.last() {
-                    match last_token {
-                        Token::At | Token::Dollar | Token::Percent => {
-                            has_sigil_before = true;
-                        }
-                        Token::Ident | Token::Number | Token::RParen | Token::RBrace => {
-                            has_value_before = true;
-                            
-                            // 識別子の前に sigil があるかチェック
-                            if tokens.len() >= 2 {
-                                if let Some(second_last) = tokens.get(tokens.len() - 2) {
-                                    match second_last {
-                                        Token::At | Token::Dollar | Token::Percent => {
-                                            // sigil + ident は完全な変数なので値として扱う
-                                            has_value_before = true;
-                                            has_sigil_before = false;
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-        
-        // 次のトークンをチェック
-        let after_pos = self.logos_lexer.span().end;
-        let remaining = &source[after_pos..];
-        let trimmed = remaining.trim_start();
-        
-        if trimmed.is_empty() {
-            return SyntaxKind::PERCENT; // ファイル終端は sigil
-        }
-        
-        let mut temp_lexer = Token::lexer(trimmed);
-        let (next_is_ident, next_is_sigil) = match temp_lexer.next() {
-            Some(Ok(Token::Ident)) => (true, false),
-            Some(Ok(Token::Dollar | Token::At | Token::Percent)) => (false, true),
-            _ => (false, false),
+        // Check if previous token is a standalone value (not part of a sigil+ident pair)
+        let has_standalone_operand = match self.prev_kind {
+            Some(SyntaxKind::IDENT) => !prev_ident_has_sigil, // IDENT that's not preceded by sigil
+            Some(SyntaxKind::NUMBER | SyntaxKind::R_PAREN | SyntaxKind::R_BRACE) => true,
+            _ => false,
         };
         
+        // Check next token efficiently using lookahead
+        let next_is_ident = self.peek_next_token() == Some(Token::Ident);
         
-        // 特別なケース：複数の変数宣言の場合は sigil として扱う
-        // "$scalar @array %hash" のようなパターンを検出
-        let is_variable_list = source.chars().filter(|&c| c == '@' || c == '$').count() >= 2;
-        
-        // 判定ロジック：
+        // Disambiguation logic:
+        // 1. If previous token is a sigil, then % is also a sigil (variable list like "$scalar @array %hash")
         if has_sigil_before {
-            SyntaxKind::PERCENT // sigil の後は sigil
-        } else if is_variable_list && next_is_ident {
-            SyntaxKind::PERCENT // 複数変数宣言では sigil
-        } else if has_value_before && (next_is_ident || next_is_sigil) {
-            SyntaxKind::MODULO // 値 % 値 のパターンは modulo operator
-        } else if next_is_ident {
-            SyntaxKind::PERCENT // % + identifier は sigil
-        } else {
-            SyntaxKind::MODULO // それ以外は operator
+            SyntaxKind::PERCENT
+        }
+        // 2. If previous IDENT was preceded by sigil, we're likely in variable list (like "@array %hash")
+        else if prev_ident_has_sigil && next_is_ident {
+            SyntaxKind::PERCENT
+        }
+        // 3. If we have a standalone operand before AND an identifier after, it's modulo (like "c % d")
+        else if has_standalone_operand && next_is_ident {
+            SyntaxKind::MODULO
+        }
+        // 4. If % is followed by an identifier, default to sigil (like "my %hash")
+        else if next_is_ident {
+            SyntaxKind::PERCENT
+        }
+        // 5. Default to operator
+        else {
+            SyntaxKind::MODULO
         }
     }
 
-    fn resolve_x_context(&self) -> SyntaxKind {
-        // "x" が sigil の直後にある場合は識別子、そうでなければ演算子
-        let current_pos = self.logos_lexer.span().start;
-        let source = self.logos_lexer.source();
-        
-        // 前のトークンをチェック
-        if current_pos > 0 {
-            let before = &source[..current_pos];
-            let trimmed_before = before.trim_end();
-            if !trimmed_before.is_empty() {
-                let mut temp_lexer = Token::lexer(trimmed_before);
-                let mut last_token = None;
-                while let Some(Ok(token)) = temp_lexer.next() {
-                    last_token = Some(token);
-                }
-                
-                // 直前が sigil なら identifier
-                if let Some(token) = last_token {
-                    match token {
-                        Token::At | Token::Dollar | Token::Percent => {
-                            return SyntaxKind::IDENT;
-                        }
-                        _ => {}
-                    }
-                }
-            }
+    fn disambiguate_x(&self) -> SyntaxKind {
+        // "x" is identifier if it follows a sigil, otherwise it's repetition operator
+        if self.prev_kind.map_or(false, |k| k.is_sigil()) {
+            SyntaxKind::IDENT
+        } else {
+            SyntaxKind::X
         }
-        
-        // それ以外は repetition operator
-        SyntaxKind::X
+    }
+    
+    fn peek_next_token(&self) -> Option<Token> {
+        // Efficient lookahead using a clone of the logos lexer
+        let mut lookahead = self.logos_lexer.clone();
+        match lookahead.next() {
+            Some(Ok(token)) => Some(token),
+            _ => None,
+        }
     }
     
     pub fn span(&self) -> std::ops::Range<usize> {
