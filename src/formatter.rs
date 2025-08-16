@@ -143,6 +143,12 @@ impl Formatter {
             (Some(_), SyntaxKind::PLUS) | (Some(SyntaxKind::PLUS), _) => true,
             (Some(_), SyntaxKind::MINUS) | (Some(SyntaxKind::MINUS), _) => true,
             (Some(_), SyntaxKind::ARROW) | (Some(SyntaxKind::ARROW), _) => true,
+            
+            // Multiplicative operators
+            (Some(_), SyntaxKind::STAR) | (Some(SyntaxKind::STAR), _) => true,
+            (Some(_), SyntaxKind::SLASH) | (Some(SyntaxKind::SLASH), _) => true,
+            (Some(_), SyntaxKind::PERCENT) | (Some(SyntaxKind::PERCENT), _) => true,
+            (Some(_), SyntaxKind::X) | (Some(SyntaxKind::X), _) => true,
 
             // カンマの後
             (Some(SyntaxKind::COMMA), _) => true,
@@ -346,5 +352,38 @@ mod tests {
             return {a => 1};
         }
         ");
+    }
+
+    #[test]
+    fn test_multiplicative_operators_formatting() {
+        let input = "my$result=$a*$b/$c%$d;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"my $result = $a * $b / $c % $d;");
+    }
+
+    #[test]
+    fn test_operator_precedence_formatting() {
+        let input = "my$result=$a+$b*$c;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"my $result = $a + $b * $c;");
+    }
+
+    #[test]
+    fn test_x_operator_formatting() {
+        let input = "my$str=$a x 3;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"my $str = $a x 3;");
     }
 }

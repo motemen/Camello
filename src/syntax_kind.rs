@@ -37,6 +37,12 @@ pub enum SyntaxKind {
     PLUS,  // +
     MINUS, // -
     ARROW, // =>
+    
+    // Multiplicative operators
+    STAR,    // *
+    SLASH,   // /
+    PERCENT, // %
+    X,       // x (repetition)
 
     // ===== ノードレベル（複合構造） =====
     ROOT,        // ファイルのルート
@@ -72,7 +78,11 @@ impl SyntaxKind {
     }
 
     pub fn is_operator(self) -> bool {
-        matches!(self, SyntaxKind::EQ | SyntaxKind::PLUS | SyntaxKind::MINUS | SyntaxKind::ARROW)
+        matches!(
+            self, 
+            SyntaxKind::EQ | SyntaxKind::PLUS | SyntaxKind::MINUS | SyntaxKind::ARROW |
+            SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::PERCENT | SyntaxKind::X
+        )
     }
 }
 
@@ -101,6 +111,10 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::PLUS => "PLUS",
             SyntaxKind::MINUS => "MINUS",
             SyntaxKind::ARROW => "ARROW",
+            SyntaxKind::STAR => "STAR",
+            SyntaxKind::SLASH => "SLASH",
+            SyntaxKind::PERCENT => "PERCENT",
+            SyntaxKind::X => "X",
             SyntaxKind::ROOT => "ROOT",
             SyntaxKind::SUB_DEF => "SUB_DEF",
             SyntaxKind::BLOCK_STMT => "BLOCK_STMT",
