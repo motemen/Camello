@@ -64,9 +64,18 @@ impl<'a> Parser<'a> {
             .start_node(rowan::SyntaxKind(SyntaxKind::ROOT as u16));
 
         while !self.at_end() {
+            let pos_before = self.current_pos;
             if !self.statement() {
                 // エラー回復: 次の文の開始まで読み飛ばし
                 self.recover_to_statement_boundary();
+            }
+            
+            // 進捗がない場合は無限ループを防ぐため終了
+            if self.current_pos == pos_before {
+                self.error("No progress made in parsing, stopping to prevent infinite loop");
+                if !self.at_end() {
+                    self.bump(); // 最低限の進行を確保
+                }
             }
         }
 
@@ -122,7 +131,9 @@ impl<'a> Parser<'a> {
         if self.at(SyntaxKind::EQ) {
             self.bump(); // =
             self.skip_trivia();
-            self.expression();
+            if !self.expression() {
+                self.error("Invalid expression in variable assignment");
+            }
         }
 
         self.skip_trivia();
@@ -152,8 +163,17 @@ impl<'a> Parser<'a> {
         self.skip_trivia();
 
         while !self.at(SyntaxKind::R_BRACE) && !self.at_end() {
+            let pos_before = self.current_pos;
             if !self.statement() {
                 self.recover_to_statement_boundary();
+            }
+            
+            // 進捗がない場合は無限ループを防ぐため終了
+            if self.current_pos == pos_before {
+                self.error("No progress made in block parsing, stopping to prevent infinite loop");
+                if !self.at_end() && !self.at(SyntaxKind::R_BRACE) {
+                    self.bump(); // 最低限の進行を確保
+                }
             }
         }
 
@@ -164,7 +184,11 @@ impl<'a> Parser<'a> {
 
     fn expression_stmt(&mut self) {
         self.builder.start_node(SyntaxKind::STMT.into());
-        self.expression();
+        let success = self.expression();
+
+        if !success {
+            self.error("Invalid expression statement");
+        }
 
         // セミコロンは必須ではない（関数呼び出しなどの場合）
         if self.at(SyntaxKind::SEMICOLON) {
@@ -174,8 +198,12 @@ impl<'a> Parser<'a> {
         self.builder.finish_node();
     }
 
-    fn expression(&mut self) {
+    fn expression(&mut self) -> bool {
+        let token_count_before = self.current_pos;
         self.additive_expr();
+        
+        // トークンが消費されなかった場合は進捗がないため失敗
+        token_count_before != self.current_pos
     }
 
     // Additive operators: + - .
@@ -188,6 +216,7 @@ impl<'a> Parser<'a> {
                 break;
             }
 
+            let pos_before = self.current_pos;
             let _m = self
                 .builder
                 .start_node_at(start.clone(), SyntaxKind::BINARY_EXPR.into());
@@ -195,6 +224,11 @@ impl<'a> Parser<'a> {
             self.skip_trivia();
             self.multiplicative_expr();
             self.builder.finish_node();
+            
+            // 進捗がない場合は無限ループを防ぐため終了
+            if self.current_pos == pos_before {
+                break;
+            }
         }
     }
 
@@ -208,6 +242,7 @@ impl<'a> Parser<'a> {
                 break;
             }
 
+            let pos_before = self.current_pos;
             let _m = self
                 .builder
                 .start_node_at(start.clone(), SyntaxKind::BINARY_EXPR.into());
@@ -215,6 +250,11 @@ impl<'a> Parser<'a> {
             self.skip_trivia();
             self.primary_expr();
             self.builder.finish_node();
+            
+            // 進捗がない場合は無限ループを防ぐため終了
+            if self.current_pos == pos_before {
+                break;
+            }
         }
     }
 
@@ -265,6 +305,8 @@ impl<'a> Parser<'a> {
 
         // キー・バリューペアの解析
         while !self.at(SyntaxKind::R_BRACE) && !self.at_end() {
+            let pos_before = self.current_pos;
+            
             // キー（識別子、文字列、または数値）
             if self.at_any(&[SyntaxKind::IDENT, SyntaxKind::STRING, SyntaxKind::NUMBER]) {
                 self.bump();
@@ -286,7 +328,15 @@ impl<'a> Parser<'a> {
             self.skip_trivia();
 
             // バリュー（式）
-            self.expression();
+            if !self.expression() {
+                // 式のパースに失敗した場合、予期しないトークンをスキップ
+                self.error("Invalid expression in hash value");
+                // 安全のため、現在のトークンを消費して進行を保証
+                if !self.at_end() && !self.at(SyntaxKind::R_BRACE) && !self.at(SyntaxKind::COMMA) {
+                    self.bump();
+                }
+                break;
+            }
 
             self.skip_trivia();
 
@@ -296,6 +346,12 @@ impl<'a> Parser<'a> {
                 self.skip_trivia();
             } else if !self.at(SyntaxKind::R_BRACE) {
                 self.error("Expected ',' or '}' after hash value");
+                break;
+            }
+            
+            // 進捗がない場合は無限ループを防ぐため終了
+            if self.current_pos == pos_before {
+                self.error("No progress made in hash parsing, stopping to prevent infinite loop");
                 break;
             }
         }
@@ -544,5 +600,20 @@ mod tests {
         
         // ASTに何らかの構造があることを確認（無限ループしていない証拠）
         assert!(syntax.children().count() > 0, "Should have some parsed structure");
+    }
+
+    #[test]
+    fn test_infinite_loop_with_unknown_operator() {
+        // 未実装の論理OR演算子（||）で無限ループが発生しないことを確認
+        let input = "sub f { return { a => 1||2 } }";
+        let (green, errors) = parse(input);
+        
+        // パースが完了すること（無限ループしない）
+        let syntax = PerlNode::new_root(green);
+        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+        
+        // エラーがあっても構造は存在する
+        println!("Errors: {:?}", errors);
+        println!("AST structure: {:?}", syntax);
     }
 }
