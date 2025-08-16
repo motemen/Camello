@@ -10,6 +10,13 @@ pub enum SyntaxKind {
 
     // 識別子・変数
     IDENT,
+    
+    // Sigils（変数の型を示すプレフィックス）
+    DOLLAR,    // $
+    AT,        // @
+    PERCENT,   // %
+    
+    // 複合変数ノード（後で使用）
     SCALAR_VAR,
     ARRAY_VAR,
     HASH_VAR,
@@ -41,17 +48,30 @@ pub enum SyntaxKind {
     // Multiplicative operators
     STAR,    // *
     SLASH,   // /
-    PERCENT, // %
+    MODULO,  // % (modulo operator)
     X,       // x (repetition)
 
     // ===== ノードレベル（複合構造） =====
-    ROOT,        // ファイルのルート
-    SUB_DEF,     // サブルーチン定義
-    BLOCK_STMT,  // ブロック文
-    VAR_DECL,    // 変数宣言
-    BINARY_EXPR, // 二項演算式
-    HASH_REF,    // ハッシュリファレンス（匿名ハッシュ）
-    STMT,        // 文
+    ROOT,             // ファイルのルート
+    SUB_DEF,          // サブルーチン定義
+    BLOCK_STMT,       // ブロック文
+    
+    // 宣言文
+    DECLARATION_STMT, // 変数宣言（my, our, state など）
+    
+    // 式
+    INFIX_EXPR,       // 中置式（二項演算式）
+    PREFIX_EXPR,      // 前置式（単項演算式、例: !$foo, -$x）
+    POSTFIX_EXPR,     // 後置式（例: $i++, $i--）
+    
+    // リテラル・リファレンス
+    HASH_REF,         // ハッシュリファレンス（匿名ハッシュ）
+    
+    // 修飾子
+    IF_MODIFIER,      // 後置if修飾子（例: print "hello" if $debug;）
+    
+    // その他の文
+    STMT,             // 一般的な文
 
     // ===== その他 =====
     ERROR, // パースエラー
@@ -76,12 +96,19 @@ impl SyntaxKind {
             SyntaxKind::SCALAR_VAR | SyntaxKind::ARRAY_VAR | SyntaxKind::HASH_VAR
         )
     }
+    
+    pub fn is_sigil(self) -> bool {
+        matches!(
+            self,
+            SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT
+        )
+    }
 
     pub fn is_operator(self) -> bool {
         matches!(
             self, 
             SyntaxKind::EQ | SyntaxKind::PLUS | SyntaxKind::MINUS | SyntaxKind::ARROW |
-            SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::PERCENT | SyntaxKind::X
+            SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::MODULO | SyntaxKind::X
         )
     }
 }
@@ -92,6 +119,9 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::WHITESPACE => "WHITESPACE",
             SyntaxKind::COMMENT => "COMMENT",
             SyntaxKind::IDENT => "IDENT",
+            SyntaxKind::DOLLAR => "DOLLAR",
+            SyntaxKind::AT => "AT",
+            SyntaxKind::PERCENT => "PERCENT",
             SyntaxKind::SCALAR_VAR => "SCALAR_VAR",
             SyntaxKind::ARRAY_VAR => "ARRAY_VAR",
             SyntaxKind::HASH_VAR => "HASH_VAR",
@@ -113,14 +143,17 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::ARROW => "ARROW",
             SyntaxKind::STAR => "STAR",
             SyntaxKind::SLASH => "SLASH",
-            SyntaxKind::PERCENT => "PERCENT",
+            SyntaxKind::MODULO => "MODULO",
             SyntaxKind::X => "X",
             SyntaxKind::ROOT => "ROOT",
             SyntaxKind::SUB_DEF => "SUB_DEF",
             SyntaxKind::BLOCK_STMT => "BLOCK_STMT",
-            SyntaxKind::VAR_DECL => "VAR_DECL",
-            SyntaxKind::BINARY_EXPR => "BINARY_EXPR",
+            SyntaxKind::DECLARATION_STMT => "DECLARATION_STMT",
+            SyntaxKind::INFIX_EXPR => "INFIX_EXPR",
+            SyntaxKind::PREFIX_EXPR => "PREFIX_EXPR",
+            SyntaxKind::POSTFIX_EXPR => "POSTFIX_EXPR",
             SyntaxKind::HASH_REF => "HASH_REF",
+            SyntaxKind::IF_MODIFIER => "IF_MODIFIER",
             SyntaxKind::STMT => "STMT",
             SyntaxKind::ERROR => "ERROR",
             SyntaxKind::EOF => "EOF",

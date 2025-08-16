@@ -4,15 +4,15 @@ use logos::Logos;
 #[derive(Logos, Debug, PartialEq)]
 #[logos(skip r"[ \t\f]+")] 
 pub enum Token {
-    // 変数
-    #[regex(r"\$[a-zA-Z_][a-zA-Z0-9_]*")]
-    ScalarVar,
+    // Sigils（変数の型を示すプレフィックス）
+    #[token("$")]
+    Dollar,
     
-    #[regex(r"@[a-zA-Z_][a-zA-Z0-9_]*")]
-    ArrayVar,
+    #[token("@")]
+    At,
     
-    #[regex(r"%[a-zA-Z_][a-zA-Z0-9_]*")]
-    HashVar,
+    #[token("%", priority = 1)]
+    Percent,
     
     // 識別子（サブルーチン名など）
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*")]
@@ -65,8 +65,8 @@ pub enum Token {
     #[token("/")]
     Slash,
     
-    #[token("%")]
-    Percent,
+    #[token("%", priority = 2)]
+    Modulo,
     
     
     // 改行（重要なので個別にトークン化）
@@ -81,9 +81,9 @@ pub enum Token {
 impl Token {
     pub fn to_syntax_kind(&self) -> SyntaxKind {
         match self {
-            Token::ScalarVar => SyntaxKind::SCALAR_VAR,
-            Token::ArrayVar => SyntaxKind::ARRAY_VAR,
-            Token::HashVar => SyntaxKind::HASH_VAR,
+            Token::Dollar => SyntaxKind::DOLLAR,
+            Token::At => SyntaxKind::AT,
+            Token::Percent => SyntaxKind::PERCENT,
             Token::Ident => SyntaxKind::IDENT,
             Token::Number => SyntaxKind::NUMBER,
             Token::String => SyntaxKind::STRING,
@@ -99,7 +99,7 @@ impl Token {
             Token::Arrow => SyntaxKind::ARROW,
             Token::Star => SyntaxKind::STAR,
             Token::Slash => SyntaxKind::SLASH,
-            Token::Percent => SyntaxKind::PERCENT,
+            Token::Modulo => SyntaxKind::MODULO,
             Token::Newline => SyntaxKind::WHITESPACE,
             Token::Comment => SyntaxKind::COMMENT,
         }
@@ -167,7 +167,8 @@ mod tests {
         let mut lexer = Lexer::new("my $var = 1;");
         
         assert_eq!(lexer.next_token(), Some((SyntaxKind::MY_KW, "my")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::SCALAR_VAR, "$var")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "var")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::EQ, "=")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::NUMBER, "1")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::SEMICOLON, ";")));
@@ -188,9 +189,12 @@ mod tests {
     fn test_variables() {
         let mut lexer = Lexer::new("$scalar @array %hash");
         
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::SCALAR_VAR, "$scalar")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::ARRAY_VAR, "@array")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::HASH_VAR, "%hash")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "scalar")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::AT, "@")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "array")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::PERCENT, "%")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "hash")));
     }
 
     #[test]
@@ -212,10 +216,20 @@ mod tests {
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "b")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::SLASH, "/")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "c")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::PERCENT, "%")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::MODULO, "%")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "d")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::X, "x")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::NUMBER, "3")));
+        assert_eq!(lexer.next_token(), None);
+    }
+
+    #[test]
+    fn test_sigil_tokens() {
+        let mut lexer = Lexer::new("$ @ %");
+        
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::AT, "@")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::PERCENT, "%")));
         assert_eq!(lexer.next_token(), None);
     }
 }

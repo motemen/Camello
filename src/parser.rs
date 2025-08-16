@@ -108,19 +108,15 @@ impl<'a> Parser<'a> {
     }
 
     fn var_decl(&mut self) {
-        self.builder.start_node(SyntaxKind::VAR_DECL.into());
+        self.builder.start_node(SyntaxKind::DECLARATION_STMT.into());
 
         // "my"
         self.expect(SyntaxKind::MY_KW);
         self.skip_trivia();
 
         // 変数名
-        if self.at_any(&[
-            SyntaxKind::SCALAR_VAR,
-            SyntaxKind::ARRAY_VAR,
-            SyntaxKind::HASH_VAR,
-        ]) {
-            self.bump();
+        if self.current_kind().map(|k| k.is_sigil()).unwrap_or(false) {
+            self.parse_variable();
         } else {
             self.error("Expected variable after 'my'");
         }
@@ -219,7 +215,7 @@ impl<'a> Parser<'a> {
             let pos_before = self.current_pos;
             let _m = self
                 .builder
-                .start_node_at(start.clone(), SyntaxKind::BINARY_EXPR.into());
+                .start_node_at(start.clone(), SyntaxKind::INFIX_EXPR.into());
             self.bump(); // operator
             self.skip_trivia();
             self.multiplicative_expr();
@@ -238,14 +234,14 @@ impl<'a> Parser<'a> {
         self.primary_expr();
 
         while let Some(op) = self.current_kind() {
-            if !matches!(op, SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::PERCENT | SyntaxKind::X) {
+            if !matches!(op, SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::MODULO | SyntaxKind::X) {
                 break;
             }
 
             let pos_before = self.current_pos;
             let _m = self
                 .builder
-                .start_node_at(start.clone(), SyntaxKind::BINARY_EXPR.into());
+                .start_node_at(start.clone(), SyntaxKind::INFIX_EXPR.into());
             self.bump(); // operator
             self.skip_trivia();
             self.primary_expr();
@@ -267,6 +263,9 @@ impl<'a> Parser<'a> {
             }
             Some(kind) if kind.is_variable() => {
                 self.bump();
+            }
+            Some(kind) if kind.is_sigil() => {
+                self.parse_variable();
             }
             Some(SyntaxKind::IDENT) => {
                 self.bump();
@@ -357,6 +356,31 @@ impl<'a> Parser<'a> {
         }
 
         self.expect(SyntaxKind::R_BRACE);
+        self.builder.finish_node();
+    }
+
+    fn parse_variable(&mut self) {
+        let sigil = self.current_kind().unwrap();
+        let var_kind = match sigil {
+            SyntaxKind::DOLLAR => SyntaxKind::SCALAR_VAR,
+            SyntaxKind::AT => SyntaxKind::ARRAY_VAR,
+            SyntaxKind::PERCENT => SyntaxKind::HASH_VAR,
+            _ => unreachable!(),
+        };
+
+        self.builder.start_node(var_kind.into());
+        
+        // Sigil を消費
+        self.bump();
+        self.skip_trivia();
+        
+        // 識別子を期待
+        if self.at(SyntaxKind::IDENT) {
+            self.bump();
+        } else {
+            self.error("Expected identifier after sigil");
+        }
+        
         self.builder.finish_node();
     }
 
@@ -466,7 +490,7 @@ mod tests {
     #[test]
     fn test_sub_def() {
         let (green, errors) = parse("sub test { my $x = 1; }");
-        assert!(errors.is_empty());
+        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
         let syntax = PerlNode::new_root(green);
         assert_eq!(syntax.kind(), SyntaxKind::ROOT);
@@ -552,8 +576,8 @@ mod tests {
         assert_eq!(syntax.kind(), SyntaxKind::ROOT);
         
         // BINARY_EXPRノードが存在することを確認
-        let binary_expr_found = syntax.descendants().any(|node| node.kind() == SyntaxKind::BINARY_EXPR);
-        assert!(binary_expr_found, "BINARY_EXPR node should be present for multiplicative operations");
+        let binary_expr_found = syntax.descendants().any(|node| node.kind() == SyntaxKind::INFIX_EXPR);
+        assert!(binary_expr_found, "INFIX_EXPR node should be present for multiplicative operations");
     }
 
     #[test]
@@ -567,9 +591,9 @@ mod tests {
         
         // 演算子優先度が正しく解析されることを確認（構造的テスト）
         let binary_expr_count = syntax.descendants()
-            .filter(|node| node.kind() == SyntaxKind::BINARY_EXPR)
+            .filter(|node| node.kind() == SyntaxKind::INFIX_EXPR)
             .count();
-        assert!(binary_expr_count >= 2, "Should have at least 2 binary expressions for precedence");
+        assert!(binary_expr_count >= 2, "Should have at least 2 infix expressions for precedence");
     }
 
     #[test]
@@ -582,8 +606,8 @@ mod tests {
         assert_eq!(syntax.kind(), SyntaxKind::ROOT);
         
         // x演算子がBINARY_EXPRとして解析されることを確認
-        let binary_expr_found = syntax.descendants().any(|node| node.kind() == SyntaxKind::BINARY_EXPR);
-        assert!(binary_expr_found, "BINARY_EXPR node should be present for x operator");
+        let binary_expr_found = syntax.descendants().any(|node| node.kind() == SyntaxKind::INFIX_EXPR);
+        assert!(binary_expr_found, "INFIX_EXPR node should be present for x operator");
     }
 
     #[test]
@@ -615,5 +639,37 @@ mod tests {
         // エラーがあっても構造は存在する
         println!("Errors: {:?}", errors);
         println!("AST structure: {:?}", syntax);
+    }
+
+    #[test]
+    fn test_sigil_separated_variables() {
+        // Sigilと識別子が分離されて正しく変数ノードが構築されることを確認
+        let input = "my $var = 1; my @arr = 2; my %hash = 3;";
+        let (green, errors) = parse(input);
+        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+        
+        let syntax = PerlNode::new_root(green);
+        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+        
+        // 3つの変数宣言ノードが存在することを確認
+        let var_decls: Vec<_> = syntax.descendants()
+            .filter(|node| node.kind() == SyntaxKind::DECLARATION_STMT)
+            .collect();
+        assert_eq!(var_decls.len(), 3, "Should have 3 variable declarations");
+        
+        // 各種類の変数ノードが存在することを確認
+        let scalar_vars: Vec<_> = syntax.descendants()
+            .filter(|node| node.kind() == SyntaxKind::SCALAR_VAR)
+            .collect();
+        let array_vars: Vec<_> = syntax.descendants()
+            .filter(|node| node.kind() == SyntaxKind::ARRAY_VAR)
+            .collect();
+        let hash_vars: Vec<_> = syntax.descendants()
+            .filter(|node| node.kind() == SyntaxKind::HASH_VAR)
+            .collect();
+        
+        assert_eq!(scalar_vars.len(), 1, "Should have 1 scalar variable");
+        assert_eq!(array_vars.len(), 1, "Should have 1 array variable");
+        assert_eq!(hash_vars.len(), 1, "Should have 1 hash variable");
     }
 }
