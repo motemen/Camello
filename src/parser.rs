@@ -242,8 +242,42 @@ impl<'a> Parser<'a> {
         self.expect(SyntaxKind::L_BRACE);
         self.skip_trivia();
 
-        // TODO: 将来的にはキー・バリューペアの解析も実装
-        // 現在は空のハッシュリファレンスのみ対応
+        // キー・バリューペアの解析
+        while !self.at(SyntaxKind::R_BRACE) && !self.at_end() {
+            // キー（識別子、文字列、または数値）
+            if self.at_any(&[SyntaxKind::IDENT, SyntaxKind::STRING, SyntaxKind::NUMBER]) {
+                self.bump();
+            } else {
+                self.error("Expected hash key");
+                break;
+            }
+
+            self.skip_trivia();
+
+            // =>
+            if self.at(SyntaxKind::ARROW) {
+                self.bump();
+            } else {
+                self.error("Expected '=>' after hash key");
+                break;
+            }
+
+            self.skip_trivia();
+
+            // バリュー（式）
+            self.expression();
+
+            self.skip_trivia();
+
+            // カンマまたは終了
+            if self.at(SyntaxKind::COMMA) {
+                self.bump();
+                self.skip_trivia();
+            } else if !self.at(SyntaxKind::R_BRACE) {
+                self.error("Expected ',' or '}' after hash value");
+                break;
+            }
+        }
 
         self.expect(SyntaxKind::R_BRACE);
         self.builder.finish_node();
@@ -401,6 +435,34 @@ mod tests {
         // ハッシュリファレンスノードが存在することを確認
         let hash_ref_found = syntax.descendants().any(|node| node.kind() == SyntaxKind::HASH_REF);
         assert!(hash_ref_found, "HASH_REF node should be present in variable assignment");
+    }
+
+    #[test]
+    fn test_hash_ref_with_key_value() {
+        let input = "return { a => 1 };";
+        let (green, errors) = parse(input);
+        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+        
+        let syntax = PerlNode::new_root(green);
+        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+        
+        // ハッシュリファレンスノードが存在することを確認
+        let hash_ref_found = syntax.descendants().any(|node| node.kind() == SyntaxKind::HASH_REF);
+        assert!(hash_ref_found, "HASH_REF node should be present with key-value pair");
+    }
+
+    #[test]
+    fn test_sub_with_complex_hash_ref() {
+        let input = "sub f { return { a => 1 } }";
+        let (green, errors) = parse(input);
+        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+        
+        let syntax = PerlNode::new_root(green);
+        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+        
+        // ハッシュリファレンスノードが存在することを確認
+        let hash_ref_found = syntax.descendants().any(|node| node.kind() == SyntaxKind::HASH_REF);
+        assert!(hash_ref_found, "HASH_REF node should be present in subroutine");
     }
 
     #[test]

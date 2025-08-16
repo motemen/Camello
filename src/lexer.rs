@@ -55,6 +55,9 @@ pub enum Token {
     #[token("-")]
     Minus,
     
+    #[token("=>")]
+    Arrow,
+    
     // 改行（重要なので個別にトークン化）
     #[regex(r"\r\n|\r|\n")]
     Newline,
@@ -82,6 +85,7 @@ impl Token {
             Token::Eq => SyntaxKind::EQ,
             Token::Plus => SyntaxKind::PLUS,
             Token::Minus => SyntaxKind::MINUS,
+            Token::Arrow => SyntaxKind::ARROW,
             Token::Newline => SyntaxKind::WHITESPACE,
             Token::Comment => SyntaxKind::COMMENT,
         }
@@ -172,5 +176,15 @@ mod tests {
         assert_eq!(lexer.next_token(), Some((SyntaxKind::SCALAR_VAR, "$scalar")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::ARRAY_VAR, "@array")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::HASH_VAR, "%hash")));
+    }
+
+    #[test]
+    fn test_hash_arrow() {
+        let mut lexer = Lexer::new("a => 1");
+        
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "a")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::ARROW, "=>")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::NUMBER, "1")));
+        assert_eq!(lexer.next_token(), None);
     }
 }

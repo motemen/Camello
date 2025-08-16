@@ -36,6 +36,7 @@ pub enum SyntaxKind {
     EQ,    // =
     PLUS,  // +
     MINUS, // -
+    ARROW, // =>
 
     // ===== ノードレベル（複合構造） =====
     ROOT,        // ファイルのルート
@@ -71,7 +72,7 @@ impl SyntaxKind {
     }
 
     pub fn is_operator(self) -> bool {
-        matches!(self, SyntaxKind::EQ | SyntaxKind::PLUS | SyntaxKind::MINUS)
+        matches!(self, SyntaxKind::EQ | SyntaxKind::PLUS | SyntaxKind::MINUS | SyntaxKind::ARROW)
     }
 }
 
@@ -99,6 +100,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::EQ => "EQ",
             SyntaxKind::PLUS => "PLUS",
             SyntaxKind::MINUS => "MINUS",
+            SyntaxKind::ARROW => "ARROW",
             SyntaxKind::ROOT => "ROOT",
             SyntaxKind::SUB_DEF => "SUB_DEF",
             SyntaxKind::BLOCK_STMT => "BLOCK_STMT",
