@@ -148,6 +148,7 @@ impl Formatter {
             (Some(_), SyntaxKind::STAR) | (Some(SyntaxKind::STAR), _) => true,
             (Some(_), SyntaxKind::SLASH) | (Some(SyntaxKind::SLASH), _) => true,
             (Some(_), SyntaxKind::PERCENT) | (Some(SyntaxKind::PERCENT), _) => true,
+            (Some(_), SyntaxKind::MODULO) | (Some(SyntaxKind::MODULO), _) => true,
             (Some(_), SyntaxKind::X) | (Some(SyntaxKind::X), _) => true,
 
             // カンマの後

@@ -1,7 +1,7 @@
 use crate::SyntaxKind;
 use logos::Logos;
 
-#[derive(Logos, Debug, PartialEq)]
+#[derive(Logos, Debug, PartialEq, Clone)]
 #[logos(skip r"[ \t\f]+")] 
 pub enum Token {
     // Sigils（変数の型を示すプレフィックス）
@@ -11,8 +11,6 @@ pub enum Token {
     #[token("@")]
     At,
     
-    #[token("%", priority = 1)]
-    Percent,
     
     // 識別子（サブルーチン名など）
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*")]
@@ -65,8 +63,8 @@ pub enum Token {
     #[token("/")]
     Slash,
     
-    #[token("%", priority = 2)]
-    Modulo,
+    #[token("%")]
+    Percent,
     
     
     // 改行（重要なので個別にトークン化）
@@ -99,32 +97,48 @@ impl Token {
             Token::Arrow => SyntaxKind::ARROW,
             Token::Star => SyntaxKind::STAR,
             Token::Slash => SyntaxKind::SLASH,
-            Token::Modulo => SyntaxKind::MODULO,
             Token::Newline => SyntaxKind::WHITESPACE,
             Token::Comment => SyntaxKind::COMMENT,
         }
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LexerContext {
+    /// Expecting a value, identifier, or sigil (after keywords, operators, sigils)
+    ExpectingValue,
+    /// Expecting an operator (after identifiers, numbers, variables)
+    ExpectingOperator,
+    /// In a variable list context (after a sigil, expecting more variables)
+    VariableList,
+}
+
 pub struct Lexer<'a> {
     logos_lexer: logos::Lexer<'a, Token>,
+    context: LexerContext,
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str) -> Self {
         let logos_lexer = Token::lexer(input);
         
-        // キーワードの判定ロジックを追加
-        // Logosはcontextual keywordsに対応していないため、手動で処理
-        
-        Self { logos_lexer }
+        Self { 
+            logos_lexer,
+            context: LexerContext::ExpectingValue, // Start expecting a value
+        }
     }
     
     pub fn next_token(&mut self) -> Option<(SyntaxKind, &'a str)> {
         match self.logos_lexer.next() {
             Some(Ok(token)) => {
                 let text = self.logos_lexer.slice();
-                let syntax_kind = self.resolve_keyword_or_ident(token, text);
+                let syntax_kind = self.disambiguate(token, text);
+                
+                // Update context based on the token we just processed
+                if !syntax_kind.is_trivia() {
+                    self.update_context(syntax_kind);
+                }
+                
                 Some((syntax_kind, text))
             }
             Some(Err(_)) => {
@@ -136,7 +150,7 @@ impl<'a> Lexer<'a> {
         }
     }
     
-    fn resolve_keyword_or_ident(&self, token: Token, text: &str) -> SyntaxKind {
+    fn disambiguate(&self, token: Token, text: &str) -> SyntaxKind {
         match token {
             Token::Ident => {
                 // 識別子の場合、キーワードかどうかチェック
@@ -145,12 +159,98 @@ impl<'a> Lexer<'a> {
                     "my" => SyntaxKind::MY_KW,
                     "if" => SyntaxKind::IF_KW,
                     "else" => SyntaxKind::ELSE_KW,
-                    "x" => SyntaxKind::X, // 文脈によって演算子として扱う
+                    "x" => self.disambiguate_x(),
                     _ => SyntaxKind::IDENT,
                 }
             }
+            Token::Percent => {
+                // % の場合、文脈によって sigil か modulo operator かを判定
+                self.disambiguate_percent()
+            }
             _ => token.to_syntax_kind(),
         }
+    }
+
+    fn disambiguate_percent(&self) -> SyntaxKind {
+        match self.context {
+            LexerContext::ExpectingValue | LexerContext::VariableList => {
+                // When expecting a value or in variable list, % is a sigil for a hash
+                // Examples: "my %hash", "{ key => %val }"
+                SyntaxKind::PERCENT
+            }
+            LexerContext::ExpectingOperator => {
+                // When expecting an operator, % is the modulo operator
+                // Examples: "@array % hash", "$var % other_var", "func() % 2"
+                SyntaxKind::MODULO
+            }
+        }
+    }
+
+    fn disambiguate_x(&self) -> SyntaxKind {
+        match self.context {
+            LexerContext::ExpectingValue | LexerContext::VariableList => {
+                // When expecting a value or in variable list, x is an identifier
+                // Examples: "sub x", "$x", "my $x"
+                SyntaxKind::IDENT
+            }
+            LexerContext::ExpectingOperator => {
+                // When expecting an operator, x is the repetition operator
+                // Examples: "$str x 3", "'hello' x 2"
+                SyntaxKind::X
+            }
+        }
+    }
+    
+    /// Update the lexer context based on the token we just processed
+    fn update_context(&mut self, syntax_kind: SyntaxKind) {
+        self.context = match syntax_kind {
+            // Sigils: start VariableList context
+            SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT => LexerContext::VariableList,
+            
+            // Keywords with different expectations
+            SyntaxKind::SUB_KW => LexerContext::ExpectingValue, // Expects identifier (bareword)
+            SyntaxKind::MY_KW => LexerContext::VariableList,    // Expects variables or variable lists
+            
+            // Operators expect a value next and break out of VariableList context
+            SyntaxKind::EQ | SyntaxKind::PLUS | SyntaxKind::MINUS | SyntaxKind::ARROW => LexerContext::ExpectingValue,
+            SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::MODULO | SyntaxKind::X => LexerContext::ExpectingValue,
+            SyntaxKind::L_PAREN | SyntaxKind::L_BRACE => LexerContext::ExpectingValue,
+            SyntaxKind::COMMA => LexerContext::ExpectingValue,
+            
+            // IDENT needs special handling based on current context
+            SyntaxKind::IDENT => {
+                match self.context {
+                    LexerContext::VariableList => {
+                        // Transition out of VariableList after first identifier
+                        // This makes $ followed by identifier transition to ExpectingOperator
+                        // which will correctly handle % as modulo in expressions
+                        LexerContext::ExpectingOperator
+                    }
+                    LexerContext::ExpectingValue => {
+                        // If we're expecting a value and get an identifier, 
+                        // we now expect an operator (normal expression)
+                        LexerContext::ExpectingOperator
+                    }
+                    LexerContext::ExpectingOperator => {
+                        // This shouldn't happen, but if it does, expect operator
+                        LexerContext::ExpectingOperator
+                    }
+                }
+            }
+            
+            // Literals expect an operator next
+            SyntaxKind::NUMBER | SyntaxKind::STRING => LexerContext::ExpectingOperator,
+            SyntaxKind::R_PAREN | SyntaxKind::R_BRACE => LexerContext::ExpectingOperator,
+            
+            // Statement terminators reset to expecting value
+            SyntaxKind::SEMICOLON => LexerContext::ExpectingValue,
+            
+            // Keywords that can appear in expression context should expect operators
+            SyntaxKind::IF_KW | SyntaxKind::ELSE_KW => LexerContext::ExpectingOperator,
+            
+            // Keep current context for other tokens
+            _ => self.context,
+        };
     }
     
     pub fn span(&self) -> std::ops::Range<usize> {
@@ -187,13 +287,13 @@ mod tests {
     
     #[test]
     fn test_variables() {
-        let mut lexer = Lexer::new("$scalar @array %hash");
+        let mut lexer = Lexer::new("$scalar @array % hash");
         
         assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "scalar")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::AT, "@")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "array")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::PERCENT, "%")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::MODULO, "%")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "hash")));
     }
 
@@ -232,4 +332,47 @@ mod tests {
         assert_eq!(lexer.next_token(), Some((SyntaxKind::PERCENT, "%")));
         assert_eq!(lexer.next_token(), None);
     }
+
+    #[test]
+    fn test_percent_modulo_vs_sigil() {
+        // Test the critical case mentioned by Gemini: $var % other_var should be modulo
+        let mut lexer = Lexer::new("$var % other_var");
+        
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "var")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::MODULO, "%"))); // Should be MODULO, not PERCENT
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "other_var")));
+    }
+
+    #[test]
+    fn test_x_after_sub_keyword() {
+        // Test the case mentioned by Gemini: sub x { ... } where x should be IDENT
+        let mut lexer = Lexer::new("sub x {");
+        
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::SUB_KW, "sub")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "x"))); // Should be IDENT, not X
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::L_BRACE, "{")));
+    }
+
+    #[test]
+    fn test_array_modulo_expression() {
+        // Test that "@array % hash" correctly identifies % as modulo operator
+        let mut lexer = Lexer::new("@array % hash");
+        
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::AT, "@")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "array")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::MODULO, "%"))); // Should be MODULO (operator)
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "hash")));
+    }
+
+    #[test]
+    fn test_hash_declaration() {
+        // Test that "my %hash" correctly identifies % as sigil
+        let mut lexer = Lexer::new("my %hash");
+        
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::MY_KW, "my")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::PERCENT, "%"))); // Should be PERCENT (sigil)
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "hash")));
+    }
+
 }
