@@ -10,6 +10,7 @@ pub enum SyntaxKind {
 
     // 識別子・変数
     IDENT,
+    QUALIFIED_IDENT, // 修飾付き識別子（Foo::Bar::baz）
     
     // Sigils（変数の型を示すプレフィックス）
     DOLLAR,    // $
@@ -122,6 +123,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::WHITESPACE => "WHITESPACE",
             SyntaxKind::COMMENT => "COMMENT",
             SyntaxKind::IDENT => "IDENT",
+            SyntaxKind::QUALIFIED_IDENT => "QUALIFIED_IDENT",
             SyntaxKind::DOLLAR => "DOLLAR",
             SyntaxKind::AT => "AT",
             SyntaxKind::PERCENT => "PERCENT",
