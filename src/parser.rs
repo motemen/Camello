@@ -703,50 +703,26 @@ mod tests {
     }
 
     #[test]
-    fn test_package_stmt() {
-        let input = "package Foo::Bar;";
-        let (green, errors) = parse(input);
-        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
-        
-        let syntax = PerlNode::new_root(green);
-        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-        
-        // パッケージ文ノードが存在することを確認
-        let package_stmts: Vec<_> = syntax.descendants()
-            .filter(|node| node.kind() == SyntaxKind::PACKAGE_STMT)
-            .collect();
-        assert_eq!(package_stmts.len(), 1, "Should have 1 package statement");
-    }
+    fn test_package_stmts() {
+        let inputs = [
+            "package Foo::Bar;",
+            "package Foo;",
+            "package Foo::Bar::Baz::Qux;",
+        ];
 
-    #[test]
-    fn test_simple_package_name() {
-        let input = "package Foo;";
-        let (green, errors) = parse(input);
-        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
-        
-        let syntax = PerlNode::new_root(green);
-        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-        
-        // パッケージ文ノードが存在することを確認
-        let package_stmts: Vec<_> = syntax.descendants()
-            .filter(|node| node.kind() == SyntaxKind::PACKAGE_STMT)
-            .collect();
-        assert_eq!(package_stmts.len(), 1, "Should have 1 package statement");
-    }
+        for (i, input) in inputs.iter().enumerate() {
+            let (green, errors) = parse(input);
+            assert!(errors.is_empty(), "Test case {} ('{}') failed with errors: {:?}", i, input, errors);
 
-    #[test]
-    fn test_deeply_nested_package_name() {
-        let input = "package Foo::Bar::Baz::Qux;";
-        let (green, errors) = parse(input);
-        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
-        
-        let syntax = PerlNode::new_root(green);
-        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-        
-        // パッケージ文ノードが存在することを確認
-        let package_stmts: Vec<_> = syntax.descendants()
-            .filter(|node| node.kind() == SyntaxKind::PACKAGE_STMT)
-            .collect();
-        assert_eq!(package_stmts.len(), 1, "Should have 1 package statement");
+            let syntax = PerlNode::new_root(green);
+            assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+
+            // パッケージ文ノードが存在することを確認
+            let package_stmts: Vec<_> = syntax
+                .descendants()
+                .filter(|node| node.kind() == SyntaxKind::PACKAGE_STMT)
+                .collect();
+            assert_eq!(package_stmts.len(), 1, "Should have 1 package statement for input: '{}'", input);
+        }
     }
 }

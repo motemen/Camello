@@ -393,35 +393,19 @@ mod tests {
     }
 
     #[test]
-    fn test_package_stmt_formatting() {
-        let input = "package Foo::Bar;";
-        let (syntax, err) = parse_perl(input);
-        assert!(err.is_empty(), "Parse errors: {:?}", err);
+    fn test_package_formatting() {
+        let cases = [
+            ("package Foo::Bar;", "package Foo::Bar;\n"),
+            ("package   Foo  ;", "package Foo;\n"),
+            ("package Foo::Bar::Baz::Qux;", "package Foo::Bar::Baz::Qux;\n"),
+        ];
 
-        let formatted = format(&syntax);
+        for (input, expected) in cases {
+            let (syntax, err) = parse_perl(input);
+            assert!(err.is_empty(), "Parse errors for '{}': {:?}", input, err);
 
-        insta::assert_snapshot!(formatted, @"package Foo::Bar;");
-    }
-
-    #[test]
-    fn test_simple_package_formatting() {
-        let input = "package   Foo  ;";
-        let (syntax, err) = parse_perl(input);
-        assert!(err.is_empty(), "Parse errors: {:?}", err);
-
-        let formatted = format(&syntax);
-
-        insta::assert_snapshot!(formatted, @"package Foo;");
-    }
-
-    #[test]
-    fn test_deeply_nested_package_formatting() {
-        let input = "package Foo::Bar::Baz::Qux;";
-        let (syntax, err) = parse_perl(input);
-        assert!(err.is_empty(), "Parse errors: {:?}", err);
-
-        let formatted = format(&syntax);
-
-        insta::assert_snapshot!(formatted, @"package Foo::Bar::Baz::Qux;");
+            let formatted = format(&syntax);
+            assert_eq!(formatted, expected, "Formatting failed for input: '{}'", input);
+        }
     }
 }
