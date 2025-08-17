@@ -207,8 +207,9 @@ impl<'a> Lexer<'a> {
             // Sigils: start VariableList context
             SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT => LexerContext::VariableList,
             
-            // Keywords that expect a value next
-            SyntaxKind::SUB_KW | SyntaxKind::MY_KW => LexerContext::ExpectingValue,
+            // Keywords with different expectations
+            SyntaxKind::SUB_KW => LexerContext::ExpectingValue, // Expects identifier (bareword)
+            SyntaxKind::MY_KW => LexerContext::VariableList,    // Expects variables or variable lists
             
             // Operators expect a value next and break out of VariableList context
             SyntaxKind::EQ | SyntaxKind::PLUS | SyntaxKind::MINUS | SyntaxKind::ARROW => LexerContext::ExpectingValue,
