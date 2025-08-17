@@ -94,6 +94,10 @@ impl<'a> Parser<'a> {
                 self.sub_def();
                 true
             }
+            Some(SyntaxKind::PACKAGE_KW) => {
+                self.package_stmt();
+                true
+            }
             Some(SyntaxKind::R_BRACE) => {
                 // ブロック終了なので何もしない
                 false
@@ -148,6 +152,31 @@ impl<'a> Parser<'a> {
         self.skip_trivia();
 
         self.block();
+
+        self.builder.finish_node();
+    }
+
+    fn package_stmt(&mut self) {
+        self.builder.start_node(SyntaxKind::PACKAGE_STMT.into());
+
+        // "package"
+        self.expect(SyntaxKind::PACKAGE_KW);
+        self.skip_trivia();
+
+        // パッケージ名（識別子）
+        self.expect(SyntaxKind::IDENT);
+        self.skip_trivia();
+
+        // オプションの :: とさらなる識別子（例: Foo::Bar::Baz）
+        while self.at(SyntaxKind::DOUBLE_COLON) {
+            self.bump(); // ::
+            self.skip_trivia();
+            self.expect(SyntaxKind::IDENT);
+            self.skip_trivia();
+        }
+
+        // セミコロン
+        self.expect(SyntaxKind::SEMICOLON);
 
         self.builder.finish_node();
     }
@@ -671,5 +700,53 @@ mod tests {
         assert_eq!(scalar_vars.len(), 1, "Should have 1 scalar variable");
         assert_eq!(array_vars.len(), 1, "Should have 1 array variable");
         assert_eq!(hash_vars.len(), 1, "Should have 1 hash variable");
+    }
+
+    #[test]
+    fn test_package_stmt() {
+        let input = "package Foo::Bar;";
+        let (green, errors) = parse(input);
+        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+        
+        let syntax = PerlNode::new_root(green);
+        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+        
+        // パッケージ文ノードが存在することを確認
+        let package_stmts: Vec<_> = syntax.descendants()
+            .filter(|node| node.kind() == SyntaxKind::PACKAGE_STMT)
+            .collect();
+        assert_eq!(package_stmts.len(), 1, "Should have 1 package statement");
+    }
+
+    #[test]
+    fn test_simple_package_name() {
+        let input = "package Foo;";
+        let (green, errors) = parse(input);
+        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+        
+        let syntax = PerlNode::new_root(green);
+        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+        
+        // パッケージ文ノードが存在することを確認
+        let package_stmts: Vec<_> = syntax.descendants()
+            .filter(|node| node.kind() == SyntaxKind::PACKAGE_STMT)
+            .collect();
+        assert_eq!(package_stmts.len(), 1, "Should have 1 package statement");
+    }
+
+    #[test]
+    fn test_deeply_nested_package_name() {
+        let input = "package Foo::Bar::Baz::Qux;";
+        let (green, errors) = parse(input);
+        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+        
+        let syntax = PerlNode::new_root(green);
+        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+        
+        // パッケージ文ノードが存在することを確認
+        let package_stmts: Vec<_> = syntax.descendants()
+            .filter(|node| node.kind() == SyntaxKind::PACKAGE_STMT)
+            .collect();
+        assert_eq!(package_stmts.len(), 1, "Should have 1 package statement");
     }
 }
