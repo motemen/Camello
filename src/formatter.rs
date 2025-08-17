@@ -157,16 +157,20 @@ impl Formatter {
             // キーワードの後
             (Some(SyntaxKind::MY_KW), _) => true,
             (Some(SyntaxKind::SUB_KW), SyntaxKind::IDENT) => true,
+            (Some(SyntaxKind::PACKAGE_KW), _) => true,
 
             // Before left brace "{""
             (Some(_), SyntaxKind::L_BRACE) => true,
 
-            // After identifier not followed by a semicolon
-            (Some(SyntaxKind::IDENT), kind) if kind != SyntaxKind::SEMICOLON => true,
+            // After identifier not followed by a semicolon or double colon
+            (Some(SyntaxKind::IDENT), kind) if kind != SyntaxKind::SEMICOLON && kind != SyntaxKind::DOUBLE_COLON => true,
 
             // 括弧の内側はスペースなし
             (Some(SyntaxKind::L_PAREN), _) | (Some(_), SyntaxKind::R_PAREN) => false,
             (Some(SyntaxKind::L_BRACE), _) => false,
+            
+            // :: の前後はスペースなし（パッケージ名区切り）
+            (Some(_), SyntaxKind::DOUBLE_COLON) | (Some(SyntaxKind::DOUBLE_COLON), _) => false,
 
             _ => false,
         };
@@ -386,5 +390,38 @@ mod tests {
         let formatted = format(&syntax);
 
         insta::assert_snapshot!(formatted, @"my $str = $a x 3;");
+    }
+
+    #[test]
+    fn test_package_stmt_formatting() {
+        let input = "package Foo::Bar;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"package Foo::Bar;");
+    }
+
+    #[test]
+    fn test_simple_package_formatting() {
+        let input = "package   Foo  ;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"package Foo;");
+    }
+
+    #[test]
+    fn test_deeply_nested_package_formatting() {
+        let input = "package Foo::Bar::Baz::Qux;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"package Foo::Bar::Baz::Qux;");
     }
 }

@@ -30,6 +30,7 @@ pub enum SyntaxKind {
     MY_KW,
     IF_KW,
     ELSE_KW,
+    PACKAGE_KW,
 
     // 記号・区切り文字
     L_BRACE,   // {
@@ -38,6 +39,7 @@ pub enum SyntaxKind {
     R_PAREN,   // )
     SEMICOLON, // ;
     COMMA,     // ,
+    DOUBLE_COLON, // ::
 
     // 演算子
     EQ,    // =
@@ -58,6 +60,7 @@ pub enum SyntaxKind {
     
     // 宣言文
     DECLARATION_STMT, // 変数宣言（my, our, state など）
+    PACKAGE_STMT,     // パッケージ宣言（package Foo::Bar）
     
     // 式
     INFIX_EXPR,       // 中置式（二項演算式）
@@ -86,7 +89,7 @@ impl SyntaxKind {
     pub fn is_keyword(self) -> bool {
         matches!(
             self,
-            SyntaxKind::SUB_KW | SyntaxKind::MY_KW | SyntaxKind::IF_KW | SyntaxKind::ELSE_KW
+            SyntaxKind::SUB_KW | SyntaxKind::MY_KW | SyntaxKind::IF_KW | SyntaxKind::ELSE_KW | SyntaxKind::PACKAGE_KW
         )
     }
 
@@ -131,12 +134,14 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::MY_KW => "MY_KW",
             SyntaxKind::IF_KW => "IF_KW",
             SyntaxKind::ELSE_KW => "ELSE_KW",
+            SyntaxKind::PACKAGE_KW => "PACKAGE_KW",
             SyntaxKind::L_BRACE => "L_BRACE",
             SyntaxKind::R_BRACE => "R_BRACE",
             SyntaxKind::L_PAREN => "L_PAREN",
             SyntaxKind::R_PAREN => "R_PAREN",
             SyntaxKind::SEMICOLON => "SEMICOLON",
             SyntaxKind::COMMA => "COMMA",
+            SyntaxKind::DOUBLE_COLON => "DOUBLE_COLON",
             SyntaxKind::EQ => "EQ",
             SyntaxKind::PLUS => "PLUS",
             SyntaxKind::MINUS => "MINUS",
@@ -149,6 +154,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::SUB_DEF => "SUB_DEF",
             SyntaxKind::BLOCK_STMT => "BLOCK_STMT",
             SyntaxKind::DECLARATION_STMT => "DECLARATION_STMT",
+            SyntaxKind::PACKAGE_STMT => "PACKAGE_STMT",
             SyntaxKind::INFIX_EXPR => "INFIX_EXPR",
             SyntaxKind::PREFIX_EXPR => "PREFIX_EXPR",
             SyntaxKind::POSTFIX_EXPR => "POSTFIX_EXPR",
