@@ -437,15 +437,10 @@ mod tests {
 
         for (input, expected) in cases {
             let (syntax, err) = parse_perl(input);
-            if !err.is_empty() {
-                println!("Parse errors for '{}': {:?}", input, err);
-                // For now, just check that it parses without crashing
-                continue;
-            }
+            assert!(err.is_empty(), "Parse errors for '{}': {:?}", input, err);
 
             let formatted = format(&syntax);
-            println!("Input: '{}', Formatted: '{}'", input, formatted);
-            // Don't assert exact format for now, just check it doesn't crash
+            assert_eq!(formatted, expected, "Formatting failed for input: '{}'", input);
         }
     }
 
