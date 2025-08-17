@@ -387,7 +387,7 @@ mod tests {
         
         assert_eq!(lexer.next_token(), Some((SyntaxKind::PACKAGE_KW, "package")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "Foo")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::DOUBLE_COLON, "::"))); 
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DOUBLE_COLON, "::")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "Bar")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::SEMICOLON, ";")));
     }

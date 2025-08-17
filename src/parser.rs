@@ -803,6 +803,15 @@ mod tests {
         assert_eq!(hash_vars.len(), 1, "Should have 1 hash variable");
     }
 
+    /// Helper function to parse input and return syntax tree
+    fn assert_parses_ok(input: &str) -> PerlNode {
+        let (green, errors) = parse(input);
+        assert!(errors.is_empty(), "Parse failed for '{}': {:?}", input, errors);
+        let syntax = PerlNode::new_root(green);
+        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+        syntax
+    }
+
     #[test]
     fn test_package_stmts() {
         let inputs = [
@@ -811,13 +820,9 @@ mod tests {
             "package Foo::Bar::Baz::Qux;",
         ];
 
-        for (i, input) in inputs.iter().enumerate() {
-            let (green, errors) = parse(input);
-            assert!(errors.is_empty(), "Test case {} ('{}') failed with errors: {:?}", i, input, errors);
-
-            let syntax = PerlNode::new_root(green);
-            assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-
+        for input in inputs {
+            let syntax = assert_parses_ok(input);
+            
             // パッケージ文ノードが存在することを確認
             let package_stmts: Vec<_> = syntax
                 .descendants()
@@ -836,13 +841,9 @@ mod tests {
             "$Very::Deep::Nested::Package::Name::var;",
         ];
 
-        for (i, input) in inputs.iter().enumerate() {
-            let (green, errors) = parse(input);
-            assert!(errors.is_empty(), "Test case {} ('{}') failed with errors: {:?}", i, input, errors);
-
-            let syntax = PerlNode::new_root(green);
-            assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-
+        for input in inputs {
+            let syntax = assert_parses_ok(input);
+            
             // 修飾付き識別子が存在することを確認
             let qualified_idents: Vec<_> = syntax
                 .descendants()
@@ -859,13 +860,9 @@ mod tests {
             "Very::Deep::Nested::function;",
         ];
 
-        for (i, input) in inputs.iter().enumerate() {
-            let (green, errors) = parse(input);
-            assert!(errors.is_empty(), "Test case {} ('{}') failed with errors: {:?}", i, input, errors);
-
-            let syntax = PerlNode::new_root(green);
-            assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-
+        for input in inputs {
+            let syntax = assert_parses_ok(input);
+            
             // 修飾付き識別子が存在することを確認
             let qualified_idents: Vec<_> = syntax
                 .descendants()
@@ -882,13 +879,9 @@ mod tests {
             "sub Very::Deep::Nested::func { }",
         ];
 
-        for (i, input) in inputs.iter().enumerate() {
-            let (green, errors) = parse(input);
-            assert!(errors.is_empty(), "Test case {} ('{}') failed with errors: {:?}", i, input, errors);
-
-            let syntax = PerlNode::new_root(green);
-            assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-
+        for input in inputs {
+            let syntax = assert_parses_ok(input);
+            
             // 修飾付き識別子が存在することを確認
             let qualified_idents: Vec<_> = syntax
                 .descendants()

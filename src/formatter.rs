@@ -164,7 +164,6 @@ impl Formatter {
 
             // After identifier not followed by a semicolon or double colon
             (Some(SyntaxKind::IDENT), kind) if kind != SyntaxKind::SEMICOLON && kind != SyntaxKind::DOUBLE_COLON => true,
-            (Some(SyntaxKind::QUALIFIED_IDENT), kind) if kind != SyntaxKind::SEMICOLON && kind != SyntaxKind::DOUBLE_COLON => true,
 
             // 括弧の内側はスペースなし
             (Some(SyntaxKind::L_PAREN), _) | (Some(_), SyntaxKind::R_PAREN) => false,
@@ -393,6 +392,17 @@ mod tests {
         insta::assert_snapshot!(formatted, @"my $str = $a x 3;");
     }
 
+    /// Helper function to reduce code duplication in formatting tests
+    fn check_formatting_cases(cases: &[(&str, &str)]) {
+        for (input, expected) in cases {
+            let (syntax, err) = parse_perl(input);
+            assert!(err.is_empty(), "Parse errors for '{}': {:?}", input, err);
+
+            let formatted = format(&syntax);
+            assert_eq!(formatted, *expected, "Formatting failed for input: '{}'", input);
+        }
+    }
+
     #[test]
     fn test_package_formatting() {
         let cases = [
@@ -400,14 +410,7 @@ mod tests {
             ("package   Foo  ;", "package Foo;\n"),
             ("package Foo::Bar::Baz::Qux;", "package Foo::Bar::Baz::Qux;\n"),
         ];
-
-        for (input, expected) in cases {
-            let (syntax, err) = parse_perl(input);
-            assert!(err.is_empty(), "Parse errors for '{}': {:?}", input, err);
-
-            let formatted = format(&syntax);
-            assert_eq!(formatted, expected, "Formatting failed for input: '{}'", input);
-        }
+        check_formatting_cases(&cases);
     }
 
     #[test]
@@ -418,14 +421,7 @@ mod tests {
             ("%Foo::Bar::hash;", "%Foo::Bar::hash;\n"),
             ("$Very::Deep::Nested::Package::Name::var;", "$Very::Deep::Nested::Package::Name::var;\n"),
         ];
-
-        for (input, expected) in cases {
-            let (syntax, err) = parse_perl(input);
-            assert!(err.is_empty(), "Parse errors for '{}': {:?}", input, err);
-
-            let formatted = format(&syntax);
-            assert_eq!(formatted, expected, "Formatting failed for input: '{}'", input);
-        }
+        check_formatting_cases(&cases);
     }
 
     #[test]
@@ -434,14 +430,7 @@ mod tests {
             ("Foo::Bar::func();", "Foo::Bar::func ();\n"),
             ("Very::Deep::Nested::function();", "Very::Deep::Nested::function ();\n"),
         ];
-
-        for (input, expected) in cases {
-            let (syntax, err) = parse_perl(input);
-            assert!(err.is_empty(), "Parse errors for '{}': {:?}", input, err);
-
-            let formatted = format(&syntax);
-            assert_eq!(formatted, expected, "Formatting failed for input: '{}'", input);
-        }
+        check_formatting_cases(&cases);
     }
 
     #[test]
@@ -450,14 +439,7 @@ mod tests {
             ("sub Foo::Bar::func { }", "sub Foo::Bar::func {\n}\n"),
             ("sub Very::Deep::Nested::func { }", "sub Very::Deep::Nested::func {\n}\n"),
         ];
-
-        for (input, expected) in cases {
-            let (syntax, err) = parse_perl(input);
-            assert!(err.is_empty(), "Parse errors for '{}': {:?}", input, err);
-
-            let formatted = format(&syntax);
-            assert_eq!(formatted, expected, "Formatting failed for input: '{}'", input);
-        }
+        check_formatting_cases(&cases);
     }
 
     #[test]
