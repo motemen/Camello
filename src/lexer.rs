@@ -103,10 +103,19 @@ impl Token {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LexerContext {
+    /// Expecting a value, identifier, or sigil (after keywords, operators, sigils)
+    ExpectingValue,
+    /// Expecting an operator (after identifiers, numbers, variables)
+    ExpectingOperator,
+    /// In a variable list context (after a sigil, expecting more variables)
+    VariableList,
+}
+
 pub struct Lexer<'a> {
     logos_lexer: logos::Lexer<'a, Token>,
-    prev_kind: Option<SyntaxKind>,
-    second_prev_kind: Option<SyntaxKind>,
+    context: LexerContext,
 }
 
 impl<'a> Lexer<'a> {
@@ -115,8 +124,7 @@ impl<'a> Lexer<'a> {
         
         Self { 
             logos_lexer,
-            prev_kind: None,
-            second_prev_kind: None,
+            context: LexerContext::ExpectingValue, // Start expecting a value
         }
     }
     
@@ -126,10 +134,9 @@ impl<'a> Lexer<'a> {
                 let text = self.logos_lexer.slice();
                 let syntax_kind = self.disambiguate(token, text);
                 
-                // Update prev_kind only for non-trivia tokens
+                // Update context based on the token we just processed
                 if !syntax_kind.is_trivia() {
-                    self.second_prev_kind = self.prev_kind;
-                    self.prev_kind = Some(syntax_kind);
+                    self.update_context(syntax_kind);
                 }
                 
                 Some((syntax_kind, text))
@@ -165,60 +172,18 @@ impl<'a> Lexer<'a> {
     }
 
     fn disambiguate_percent(&self) -> SyntaxKind {
-        // Check next token efficiently using lookahead
-        let next_is_ident = self.peek_next_token() == Some(Token::Ident);
+        // Use simple heuristic: % followed by identifier is usually a hash variable
+        let followed_by_ident = self.peek_next_token() == Some(Token::Ident);
         
-        // Disambiguation logic:
-        // 1. If previous token is a sigil, then % is also a sigil (variable list like "$scalar @array %hash")
-        if self.prev_kind.map_or(false, |k| k.is_sigil()) {
+        if followed_by_ident {
+            // % followed by identifier is usually a hash variable
+            // The exceptions (like "c % d" for modulo) are less common
+            // than hash variables like "%hash"
             SyntaxKind::PERCENT
-        }
-        // 2. If we have an IDENT before AND an IDENT after, check the context more carefully
-        else if matches!(self.prev_kind, Some(SyntaxKind::IDENT)) && next_is_ident {
-            // Check if this IDENT was part of a variable declaration context
-            let prev_ident_has_sigil = self.second_prev_kind.map_or(false, |k| k.is_sigil());
-            
-            // In a variable list like "@array %hash", the "@" sigil would be second_prev_kind
-            // and "array" would be prev_kind, and we want % to be a sigil
-            // But in arithmetic like "$var % other_var", the "$" sigil would be second_prev_kind
-            // and "var" would be prev_kind, and we want % to be modulo
-            
-            // The key distinction: in variable lists, all variables are at the same "level"
-            // In arithmetic, one variable is the operand for an operation
-            
-            // If the previous IDENT is preceded by a sigil, we need to distinguish:
-            // - If it's a variable list context: "@array %hash" -> % is sigil  
-            // - If it's an arithmetic context: "$var % other" -> % is modulo
-            
-            // Heuristic: If the sigil was DOLLAR, it's more likely to be arithmetic
-            // If it was AT, it's more likely to be a variable list
-            if prev_ident_has_sigil {
-                match self.second_prev_kind {
-                    Some(SyntaxKind::DOLLAR) => SyntaxKind::MODULO, // $var % other -> modulo
-                    Some(SyntaxKind::AT) => SyntaxKind::PERCENT,    // @array %hash -> sigil
-                    _ => SyntaxKind::PERCENT, // Default to sigil for safety
-                }
-            } else {
-                // No sigil before the IDENT, so it's likely arithmetic: "c % d"
-                SyntaxKind::MODULO
-            }
-        }
-        // 3. If % is followed by an identifier, default to sigil (like "my %hash")
-        else if next_is_ident {
-            SyntaxKind::PERCENT
-        }
-        // 4. Default to operator
-        else {
-            SyntaxKind::MODULO
-        }
-    }
-
-    fn disambiguate_x(&self) -> SyntaxKind {
-        // "x" is identifier if it follows a sigil or SUB_KW, otherwise it's repetition operator
-        if self.prev_kind.map_or(false, |k| k.is_sigil() || k == SyntaxKind::SUB_KW) {
-            SyntaxKind::IDENT
         } else {
-            SyntaxKind::X
+            // % not followed by identifier is definitely modulo operator
+            // Examples: "% $var", "% (expr)", "% 3"
+            SyntaxKind::MODULO
         }
     }
     
@@ -229,6 +194,72 @@ impl<'a> Lexer<'a> {
             Some(Ok(token)) => Some(token),
             _ => None,
         }
+    }
+
+    fn disambiguate_x(&self) -> SyntaxKind {
+        match self.context {
+            LexerContext::ExpectingValue | LexerContext::VariableList => {
+                // When expecting a value or in variable list, x is an identifier
+                // Examples: "sub x", "$x", "my $x"
+                SyntaxKind::IDENT
+            }
+            LexerContext::ExpectingOperator => {
+                // When expecting an operator, x is the repetition operator
+                // Examples: "$str x 3", "'hello' x 2"
+                SyntaxKind::X
+            }
+        }
+    }
+    
+    /// Update the lexer context based on the token we just processed
+    fn update_context(&mut self, syntax_kind: SyntaxKind) {
+        self.context = match syntax_kind {
+            // Sigils: start VariableList context
+            SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT => LexerContext::VariableList,
+            
+            // Keywords that expect a value next
+            SyntaxKind::SUB_KW | SyntaxKind::MY_KW => LexerContext::ExpectingValue,
+            
+            // Operators expect a value next and break out of VariableList context
+            SyntaxKind::EQ | SyntaxKind::PLUS | SyntaxKind::MINUS | SyntaxKind::ARROW => LexerContext::ExpectingValue,
+            SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::MODULO | SyntaxKind::X => LexerContext::ExpectingValue,
+            SyntaxKind::L_PAREN | SyntaxKind::L_BRACE => LexerContext::ExpectingValue,
+            SyntaxKind::COMMA => LexerContext::ExpectingValue,
+            
+            // IDENT needs special handling based on current context
+            SyntaxKind::IDENT => {
+                match self.context {
+                    LexerContext::VariableList => {
+                        // Transition out of VariableList after first identifier
+                        // This makes $ followed by identifier transition to ExpectingOperator
+                        // which will correctly handle % as modulo in expressions
+                        LexerContext::ExpectingOperator
+                    }
+                    LexerContext::ExpectingValue => {
+                        // If we're expecting a value and get an identifier, 
+                        // we now expect an operator (normal expression)
+                        LexerContext::ExpectingOperator
+                    }
+                    LexerContext::ExpectingOperator => {
+                        // This shouldn't happen, but if it does, expect operator
+                        LexerContext::ExpectingOperator
+                    }
+                }
+            }
+            
+            // Literals expect an operator next
+            SyntaxKind::NUMBER | SyntaxKind::STRING => LexerContext::ExpectingOperator,
+            SyntaxKind::R_PAREN | SyntaxKind::R_BRACE => LexerContext::ExpectingOperator,
+            
+            // Statement terminators reset to expecting value
+            SyntaxKind::SEMICOLON => LexerContext::ExpectingValue,
+            
+            // Keywords that can appear in expression context should expect operators
+            SyntaxKind::IF_KW | SyntaxKind::ELSE_KW => LexerContext::ExpectingOperator,
+            
+            // Keep current context for other tokens
+            _ => self.context,
+        };
     }
     
     pub fn span(&self) -> std::ops::Range<usize> {
