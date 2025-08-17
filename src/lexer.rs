@@ -172,27 +172,17 @@ impl<'a> Lexer<'a> {
     }
 
     fn disambiguate_percent(&self) -> SyntaxKind {
-        // Use simple heuristic: % followed by identifier is usually a hash variable
-        let followed_by_ident = self.peek_next_token() == Some(Token::Ident);
-        
-        if followed_by_ident {
-            // % followed by identifier is usually a hash variable
-            // The exceptions (like "c % d" for modulo) are less common
-            // than hash variables like "%hash"
-            SyntaxKind::PERCENT
-        } else {
-            // % not followed by identifier is definitely modulo operator
-            // Examples: "% $var", "% (expr)", "% 3"
-            SyntaxKind::MODULO
-        }
-    }
-    
-    fn peek_next_token(&self) -> Option<Token> {
-        // Efficient lookahead using a clone of the logos lexer
-        let mut lookahead = self.logos_lexer.clone();
-        match lookahead.next() {
-            Some(Ok(token)) => Some(token),
-            _ => None,
+        match self.context {
+            LexerContext::ExpectingValue | LexerContext::VariableList => {
+                // When expecting a value or in variable list, % is a sigil for a hash
+                // Examples: "my %hash", "{ key => %val }"
+                SyntaxKind::PERCENT
+            }
+            LexerContext::ExpectingOperator => {
+                // When expecting an operator, % is the modulo operator
+                // Examples: "@array % hash", "$var % other_var", "func() % 2"
+                SyntaxKind::MODULO
+            }
         }
     }
 
@@ -296,13 +286,13 @@ mod tests {
     
     #[test]
     fn test_variables() {
-        let mut lexer = Lexer::new("$scalar @array %hash");
+        let mut lexer = Lexer::new("$scalar @array % hash");
         
         assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "scalar")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::AT, "@")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "array")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::PERCENT, "%")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::MODULO, "%")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "hash")));
     }
 
@@ -364,12 +354,22 @@ mod tests {
     }
 
     #[test]
-    fn test_array_hash_variable_list() {
-        // Test that "@array %hash" correctly identifies % as sigil (not modulo)
-        let mut lexer = Lexer::new("@array %hash");
+    fn test_array_modulo_expression() {
+        // Test that "@array % hash" correctly identifies % as modulo operator
+        let mut lexer = Lexer::new("@array % hash");
         
         assert_eq!(lexer.next_token(), Some((SyntaxKind::AT, "@")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "array")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::MODULO, "%"))); // Should be MODULO (operator)
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "hash")));
+    }
+
+    #[test]
+    fn test_hash_declaration() {
+        // Test that "my %hash" correctly identifies % as sigil
+        let mut lexer = Lexer::new("my %hash");
+        
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::MY_KW, "my")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::PERCENT, "%"))); // Should be PERCENT (sigil)
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "hash")));
     }
