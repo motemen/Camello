@@ -76,6 +76,13 @@ pub enum Token {
     #[token("%")]
     Percent,
 
+    // Logical operators
+    #[token("&&")]
+    LogicalAnd,
+
+    #[token("||")]
+    LogicalOr,
+
     // 空白
     #[regex(r"[ \t\f]+")]
     Whitespace,
@@ -114,6 +121,8 @@ impl Token {
             Token::FatComma => SyntaxKind::FAT_COMMA,
             Token::Star => SyntaxKind::STAR,
             Token::Slash => SyntaxKind::SLASH,
+            Token::LogicalAnd => SyntaxKind::LOGICAL_AND,
+            Token::LogicalOr => SyntaxKind::LOGICAL_OR,
             Token::Whitespace => SyntaxKind::WHITESPACE,
             Token::Newline => SyntaxKind::WHITESPACE,
             Token::Comment => SyntaxKind::COMMENT,
@@ -246,6 +255,7 @@ impl<'a> Lexer<'a> {
             SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::MODULO | SyntaxKind::X => {
                 LexerContext::ExpectingValue
             }
+            SyntaxKind::LOGICAL_AND | SyntaxKind::LOGICAL_OR => LexerContext::ExpectingValue,
             SyntaxKind::L_PAREN | SyntaxKind::L_BRACE | SyntaxKind::L_BRACKET => {
                 LexerContext::ExpectingValue
             }
@@ -456,5 +466,24 @@ mod tests {
         assert_eq!(lexer.next_token(), Some((SyntaxKind::DOUBLE_COLON, "::")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "Bar")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::SEMICOLON, ";")));
+    }
+
+    #[test]
+    fn test_logical_operators() {
+        let mut lexer = Lexer::new("$a && $b || $c");
+
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "a")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::LOGICAL_AND, "&&")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "b")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::LOGICAL_OR, "||")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "c")));
+        assert_eq!(lexer.next_token(), None);
     }
 }

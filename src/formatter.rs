@@ -204,6 +204,10 @@ impl Formatter {
             (Some(_), SyntaxKind::MODULO) | (Some(SyntaxKind::MODULO), _) => true,
             (Some(_), SyntaxKind::X) | (Some(SyntaxKind::X), _) => true,
 
+            // Logical operators
+            (Some(_), SyntaxKind::LOGICAL_AND) | (Some(SyntaxKind::LOGICAL_AND), _) => true,
+            (Some(_), SyntaxKind::LOGICAL_OR) | (Some(SyntaxKind::LOGICAL_OR), _) => true,
+
             // foo, bar
             (Some(SyntaxKind::COMMA), _) => true,
             (Some(_), SyntaxKind::COMMA) => false,
@@ -658,6 +662,60 @@ sub test {
         let cases = [
             ("($obj+$other)->method();", "($obj + $other)->method();\n"),
             ("func()->method();", "func()->method();\n"),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_logical_and_operator_formatting() {
+        let input = "my$result=$a&&$b;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"my $result = $a && $b;");
+    }
+
+    #[test]
+    fn test_logical_or_operator_formatting() {
+        let input = "my$result=$a||$b;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"my $result = $a || $b;");
+    }
+
+    #[test]
+    fn test_logical_operators_precedence_formatting() {
+        let input = "my$result=$a||$b&&$c;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"my $result = $a || $b && $c;");
+    }
+
+    #[test]
+    fn test_mixed_logical_arithmetic_operators_formatting() {
+        let input = "my$result=$a+$b&&$c*$d||$e;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"my $result = $a + $b && $c * $d || $e;");
+    }
+
+    #[test]
+    fn test_chained_logical_operators_formatting() {
+        let cases = [
+            ("$a&&$b&&$c;", "$a && $b && $c;\n"),
+            ("$a||$b||$c;", "$a || $b || $c;\n"),
+            ("$a&&$b||$c&&$d;", "$a && $b || $c && $d;\n"),
         ];
         check_formatting_cases(&cases);
     }
