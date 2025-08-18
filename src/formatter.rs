@@ -162,9 +162,16 @@ impl Formatter {
             // Before left brace "{""
             (Some(_), SyntaxKind::L_BRACE) => true,
 
-            // After identifier not followed by a semicolon or double colon
+            // After identifier not followed by a semicolon, double colon, or left parenthesis
             (Some(SyntaxKind::IDENT), kind)
-                if kind != SyntaxKind::SEMICOLON && kind != SyntaxKind::DOUBLE_COLON =>
+                if kind != SyntaxKind::SEMICOLON && kind != SyntaxKind::DOUBLE_COLON && kind != SyntaxKind::L_PAREN =>
+            {
+                true
+            }
+
+            // After qualified identifier not followed by a semicolon or left parenthesis
+            (Some(SyntaxKind::QUALIFIED_IDENT), kind)
+                if kind != SyntaxKind::SEMICOLON && kind != SyntaxKind::L_PAREN =>
             {
                 true
             }
@@ -234,7 +241,7 @@ mod tests {
 
     #[test]
     fn test_sub_def_formatting() {
-        let input = "sub test{my$x=1;foo$x;bar;}";
+        let input = "sub test{my$x=1;foo$x;bar;baz quux;}";
         let (syntax, err) = parse_perl(input);
         assert!(err.is_empty(), "Parse errors: {:?}", err);
 
@@ -245,6 +252,7 @@ mod tests {
             my $x = 1;
             foo $x;
             bar;
+            baz quux;
         }
         ");
     }
@@ -441,10 +449,10 @@ mod tests {
     #[test]
     fn test_qualified_function_formatting() {
         let cases = [
-            ("Foo::Bar::func();", "Foo::Bar::func ();\n"),
+            ("Foo::Bar::func();", "Foo::Bar::func();\n"),
             (
                 "Very::Deep::Nested::function();",
-                "Very::Deep::Nested::function ();\n",
+                "Very::Deep::Nested::function();\n",
             ),
         ];
         check_formatting_cases(&cases);
