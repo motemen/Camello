@@ -187,6 +187,7 @@ impl<'a> Lexer<'a> {
                     "if" => SyntaxKind::IF_KW,
                     "else" => SyntaxKind::ELSE_KW,
                     "for" => SyntaxKind::FOR_KW,
+                    "foreach" => SyntaxKind::FOREACH_KW,
                     "while" => SyntaxKind::WHILE_KW,
                     "package" => SyntaxKind::PACKAGE_KW,
                     "qw" => SyntaxKind::QW_KW,
@@ -243,10 +244,11 @@ impl<'a> Lexer<'a> {
             SyntaxKind::SUB_KW => LexerContext::ExpectingValue, // Expects identifier (bareword)
             SyntaxKind::MY_KW => LexerContext::VariableList, // Expects variables or variable lists
             SyntaxKind::FOR_KW => LexerContext::ExpectingValue, // Expects for condition/iterator
-            SyntaxKind::WHILE_KW => LexerContext::ExpectingValue, // Expects while condition
+            SyntaxKind::FOREACH_KW => LexerContext::ExpectingValue, // Expects foreach condition/iterator
+            SyntaxKind::WHILE_KW => LexerContext::ExpectingValue,   // Expects while condition
             SyntaxKind::PACKAGE_KW => LexerContext::ExpectingValue, // Expects package name
-            SyntaxKind::QW_KW => LexerContext::ExpectingValue, // Expects qw(...) parentheses
-            SyntaxKind::USE_KW => LexerContext::ExpectingValue, // Expects module name
+            SyntaxKind::QW_KW => LexerContext::ExpectingValue,      // Expects qw(...) parentheses
+            SyntaxKind::USE_KW => LexerContext::ExpectingValue,     // Expects module name
 
             // Operators expect a value next and break out of VariableList context
             SyntaxKind::EQ | SyntaxKind::PLUS | SyntaxKind::MINUS | SyntaxKind::ARROW => {
@@ -326,7 +328,7 @@ mod tests {
 
     #[test]
     fn test_keywords() {
-        let mut lexer = Lexer::new("sub my if else qw use");
+        let mut lexer = Lexer::new("sub my if else for foreach qw use");
 
         assert_eq!(lexer.next_token(), Some((SyntaxKind::SUB_KW, "sub")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
@@ -335,6 +337,13 @@ mod tests {
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IF_KW, "if")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::ELSE_KW, "else")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::FOR_KW, "for")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(
+            lexer.next_token(),
+            Some((SyntaxKind::FOREACH_KW, "foreach"))
+        );
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
