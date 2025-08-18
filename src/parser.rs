@@ -307,16 +307,7 @@ impl<'a> Parser<'a> {
                             self.skip_trivia();
                             
                             // 括弧内の引数リスト（簡単な実装）
-                            while !self.at(SyntaxKind::R_PAREN) && !self.at_end() {
-                                if !self.expression() {
-                                    break;
-                                }
-                                self.skip_trivia();
-                                if self.at(SyntaxKind::COMMA) {
-                                    self.bump();
-                                    self.skip_trivia();
-                                }
-                            }
+                            self.parse_parenthesized_list();
                             
                             if self.at(SyntaxKind::R_PAREN) {
                                 self.bump(); // )
@@ -337,19 +328,11 @@ impl<'a> Parser<'a> {
                 self.skip_trivia();
                 
                 // 括弧内のリスト（配列の初期化など）
-                while !self.at(SyntaxKind::R_PAREN) && !self.at_end() {
-                    if !self.expression() {
-                        break;
-                    }
-                    self.skip_trivia();
-                    if self.at(SyntaxKind::COMMA) {
-                        self.bump();
-                        self.skip_trivia();
-                    }
-                }
+                self.parse_parenthesized_list();
                 
                 if self.at(SyntaxKind::R_PAREN) {
                     self.bump(); // )
+                    self.skip_trivia();
                 }
             }
             Some(SyntaxKind::L_BRACE) => {
@@ -594,6 +577,20 @@ impl<'a> Parser<'a> {
                 Some(SyntaxKind::R_BRACE) => break,
                 Some(SyntaxKind::SUB_KW) | Some(SyntaxKind::MY_KW) => break,
                 _ => self.bump(),
+            }
+        }
+    }
+
+    /// Helper function to parse comma-separated expressions within parentheses
+    fn parse_parenthesized_list(&mut self) {
+        while !self.at(SyntaxKind::R_PAREN) && !self.at_end() {
+            if !self.expression() {
+                break;
+            }
+            self.skip_trivia();
+            if self.at(SyntaxKind::COMMA) {
+                self.bump();
+                self.skip_trivia();
             }
         }
     }
