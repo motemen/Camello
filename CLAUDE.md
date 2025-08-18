@@ -49,11 +49,6 @@ cargo test -- --update-snapshots
 cargo doc --open
 ```
 
-### Git Commits
-
-* Follow conventional commits
-* Use English in commit messages
-
 ## Architecture Overview
 
 ### Data Flow
@@ -127,3 +122,10 @@ Current test coverage includes basic Perl constructs: variable declarations, sub
 2. **Configuration system**: `.camellorc` support for customizable formatting rules  
 3. **Performance optimization**: Large file handling, incremental parsing
 4. **Error messaging**: More descriptive parse error reporting
+
+# Notes on development
+
+* Follow conventional commits
+* Use English in commit messages
+* Use `cargo fmt` before commit
+* Use `cargo clippy --fix` before commit
