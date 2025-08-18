@@ -173,6 +173,8 @@ impl<'a> Lexer<'a> {
                     "my" => SyntaxKind::MY_KW,
                     "if" => SyntaxKind::IF_KW,
                     "else" => SyntaxKind::ELSE_KW,
+                    "for" => SyntaxKind::FOR_KW,
+                    "while" => SyntaxKind::WHILE_KW,
                     "package" => SyntaxKind::PACKAGE_KW,
                     "qw" => SyntaxKind::QW_KW,
                     "use" => SyntaxKind::USE_KW,
@@ -227,6 +229,8 @@ impl<'a> Lexer<'a> {
             // Keywords with different expectations
             SyntaxKind::SUB_KW => LexerContext::ExpectingValue, // Expects identifier (bareword)
             SyntaxKind::MY_KW => LexerContext::VariableList, // Expects variables or variable lists
+            SyntaxKind::FOR_KW => LexerContext::ExpectingValue, // Expects for condition/iterator
+            SyntaxKind::WHILE_KW => LexerContext::ExpectingValue, // Expects while condition
             SyntaxKind::PACKAGE_KW => LexerContext::ExpectingValue, // Expects package name
             SyntaxKind::QW_KW => LexerContext::ExpectingValue, // Expects qw(...) parentheses
             SyntaxKind::USE_KW => LexerContext::ExpectingValue, // Expects module name
@@ -238,7 +242,9 @@ impl<'a> Lexer<'a> {
             SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::MODULO | SyntaxKind::X => {
                 LexerContext::ExpectingValue
             }
-            SyntaxKind::L_PAREN | SyntaxKind::L_BRACE | SyntaxKind::L_BRACKET => LexerContext::ExpectingValue,
+            SyntaxKind::L_PAREN | SyntaxKind::L_BRACE | SyntaxKind::L_BRACKET => {
+                LexerContext::ExpectingValue
+            }
             SyntaxKind::COMMA => LexerContext::ExpectingValue,
 
             // IDENT needs special handling based on current context
@@ -264,7 +270,9 @@ impl<'a> Lexer<'a> {
 
             // Literals expect an operator next
             SyntaxKind::NUMBER | SyntaxKind::STRING => LexerContext::ExpectingOperator,
-            SyntaxKind::R_PAREN | SyntaxKind::R_BRACE | SyntaxKind::R_BRACKET => LexerContext::ExpectingOperator,
+            SyntaxKind::R_PAREN | SyntaxKind::R_BRACE | SyntaxKind::R_BRACKET => {
+                LexerContext::ExpectingOperator
+            }
 
             // Statement terminators reset to expecting value
             SyntaxKind::SEMICOLON => LexerContext::ExpectingValue,

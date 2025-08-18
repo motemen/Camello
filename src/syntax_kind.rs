@@ -31,6 +31,8 @@ pub enum SyntaxKind {
     MY_KW,
     IF_KW,
     ELSE_KW,
+    FOR_KW,   // for keyword
+    WHILE_KW, // while keyword
     PACKAGE_KW,
     QW_KW,  // qw keyword
     USE_KW, // use keyword (for use warnings qw(...) syntax)
@@ -45,9 +47,9 @@ pub enum SyntaxKind {
     SEMICOLON,    // ;
     COMMA,        // ,
     DOUBLE_COLON, // ::
-    
+
     // qw() 専用
-    QW_STRING,    // qw()内の任意のテキスト
+    QW_STRING, // qw()内の任意のテキスト
 
     // 演算子
     EQ,    // =
@@ -70,6 +72,8 @@ pub enum SyntaxKind {
     DECLARATION_STMT, // 変数宣言（my, our, state など）
     PACKAGE_STMT,     // パッケージ宣言（package Foo::Bar）
     USE_STMT,         // use文（use warnings qw(all);）
+    FOR_STMT,         // for文
+    WHILE_STMT,       // while文
 
     // 式
     INFIX_EXPR,   // 中置式（二項演算式）
@@ -108,6 +112,8 @@ impl SyntaxKind {
                 | SyntaxKind::MY_KW
                 | SyntaxKind::IF_KW
                 | SyntaxKind::ELSE_KW
+                | SyntaxKind::FOR_KW
+                | SyntaxKind::WHILE_KW
                 | SyntaxKind::PACKAGE_KW
                 | SyntaxKind::QW_KW
                 | SyntaxKind::USE_KW
@@ -162,6 +168,8 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::MY_KW => "MY_KW",
             SyntaxKind::IF_KW => "IF_KW",
             SyntaxKind::ELSE_KW => "ELSE_KW",
+            SyntaxKind::FOR_KW => "FOR_KW",
+            SyntaxKind::WHILE_KW => "WHILE_KW",
             SyntaxKind::PACKAGE_KW => "PACKAGE_KW",
             SyntaxKind::QW_KW => "QW_KW",
             SyntaxKind::USE_KW => "USE_KW",
@@ -189,6 +197,8 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::DECLARATION_STMT => "DECLARATION_STMT",
             SyntaxKind::PACKAGE_STMT => "PACKAGE_STMT",
             SyntaxKind::USE_STMT => "USE_STMT",
+            SyntaxKind::FOR_STMT => "FOR_STMT",
+            SyntaxKind::WHILE_STMT => "WHILE_STMT",
             SyntaxKind::INFIX_EXPR => "INFIX_EXPR",
             SyntaxKind::PREFIX_EXPR => "PREFIX_EXPR",
             SyntaxKind::POSTFIX_EXPR => "POSTFIX_EXPR",
