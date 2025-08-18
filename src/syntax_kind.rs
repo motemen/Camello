@@ -11,12 +11,12 @@ pub enum SyntaxKind {
     // 識別子・変数
     IDENT,
     QUALIFIED_IDENT, // 修飾付き識別子（Foo::Bar::baz）
-    
+
     // Sigils（変数の型を示すプレフィックス）
-    DOLLAR,    // $
-    AT,        // @
-    PERCENT,   // %
-    
+    DOLLAR,  // $
+    AT,      // @
+    PERCENT, // %
+
     // 複合変数ノード（後で使用）
     SCALAR_VAR,
     ARRAY_VAR,
@@ -34,12 +34,12 @@ pub enum SyntaxKind {
     PACKAGE_KW,
 
     // 記号・区切り文字
-    L_BRACE,   // {
-    R_BRACE,   // }
-    L_PAREN,   // (
-    R_PAREN,   // )
-    SEMICOLON, // ;
-    COMMA,     // ,
+    L_BRACE,      // {
+    R_BRACE,      // }
+    L_PAREN,      // (
+    R_PAREN,      // )
+    SEMICOLON,    // ;
+    COMMA,        // ,
     DOUBLE_COLON, // ::
 
     // 演算子
@@ -47,35 +47,35 @@ pub enum SyntaxKind {
     PLUS,  // +
     MINUS, // -
     ARROW, // =>
-    
+
     // Multiplicative operators
-    STAR,    // *
-    SLASH,   // /
-    MODULO,  // % (modulo operator)
-    X,       // x (repetition)
+    STAR,   // *
+    SLASH,  // /
+    MODULO, // % (modulo operator)
+    X,      // x (repetition)
 
     // ===== ノードレベル（複合構造） =====
-    ROOT,             // ファイルのルート
-    SUB_DEF,          // サブルーチン定義
-    BLOCK_STMT,       // ブロック文
-    
+    ROOT,       // ファイルのルート
+    SUB_DEF,    // サブルーチン定義
+    BLOCK_STMT, // ブロック文
+
     // 宣言文
     DECLARATION_STMT, // 変数宣言（my, our, state など）
     PACKAGE_STMT,     // パッケージ宣言（package Foo::Bar）
-    
+
     // 式
-    INFIX_EXPR,       // 中置式（二項演算式）
-    PREFIX_EXPR,      // 前置式（単項演算式、例: !$foo, -$x）
-    POSTFIX_EXPR,     // 後置式（例: $i++, $i--）
-    
+    INFIX_EXPR,   // 中置式（二項演算式）
+    PREFIX_EXPR,  // 前置式（単項演算式、例: !$foo, -$x）
+    POSTFIX_EXPR, // 後置式（例: $i++, $i--）
+
     // リテラル・リファレンス
-    HASH_REF,         // ハッシュリファレンス（匿名ハッシュ）
-    
+    HASH_REF, // ハッシュリファレンス（匿名ハッシュ）
+
     // 修飾子
-    IF_MODIFIER,      // 後置if修飾子（例: print "hello" if $debug;）
-    
+    IF_MODIFIER, // 後置if修飾子（例: print "hello" if $debug;）
+
     // その他の文
-    STMT,             // 一般的な文
+    STMT, // 一般的な文
 
     // ===== その他 =====
     ERROR, // パースエラー
@@ -90,7 +90,11 @@ impl SyntaxKind {
     pub fn is_keyword(self) -> bool {
         matches!(
             self,
-            SyntaxKind::SUB_KW | SyntaxKind::MY_KW | SyntaxKind::IF_KW | SyntaxKind::ELSE_KW | SyntaxKind::PACKAGE_KW
+            SyntaxKind::SUB_KW
+                | SyntaxKind::MY_KW
+                | SyntaxKind::IF_KW
+                | SyntaxKind::ELSE_KW
+                | SyntaxKind::PACKAGE_KW
         )
     }
 
@@ -100,7 +104,7 @@ impl SyntaxKind {
             SyntaxKind::SCALAR_VAR | SyntaxKind::ARRAY_VAR | SyntaxKind::HASH_VAR
         )
     }
-    
+
     pub fn is_sigil(self) -> bool {
         matches!(
             self,
@@ -110,9 +114,15 @@ impl SyntaxKind {
 
     pub fn is_operator(self) -> bool {
         matches!(
-            self, 
-            SyntaxKind::EQ | SyntaxKind::PLUS | SyntaxKind::MINUS | SyntaxKind::ARROW |
-            SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::MODULO | SyntaxKind::X
+            self,
+            SyntaxKind::EQ
+                | SyntaxKind::PLUS
+                | SyntaxKind::MINUS
+                | SyntaxKind::ARROW
+                | SyntaxKind::STAR
+                | SyntaxKind::SLASH
+                | SyntaxKind::MODULO
+                | SyntaxKind::X
         )
     }
 }

@@ -265,7 +265,10 @@ impl<'a> Parser<'a> {
         }
 
         while let Some(op) = self.current_kind() {
-            if !matches!(op, SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::MODULO | SyntaxKind::X) {
+            if !matches!(
+                op,
+                SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::MODULO | SyntaxKind::X
+            ) {
                 break;
             }
 
@@ -316,10 +319,10 @@ impl<'a> Parser<'a> {
                             // 括弧内の式を処理
                             self.bump(); // (
                             self.skip_trivia();
-                            
+
                             // 括弧内の引数リスト（簡単な実装）
                             self.parse_parenthesized_list();
-                            
+
                             if self.at(SyntaxKind::R_PAREN) {
                                 self.bump(); // )
                                 self.skip_trivia();
@@ -337,10 +340,10 @@ impl<'a> Parser<'a> {
                 // 括弧式
                 self.bump(); // (
                 self.skip_trivia();
-                
+
                 // 括弧内のリスト（配列の初期化など）
                 self.parse_parenthesized_list();
-                
+
                 if self.at(SyntaxKind::R_PAREN) {
                     self.bump(); // )
                     self.skip_trivia();
@@ -366,8 +369,6 @@ impl<'a> Parser<'a> {
 
         // キー・バリューペアの解析
         while !self.at(SyntaxKind::R_BRACE) && !self.at_end() {
-            
-            
             // キー（識別子、文字列、または数値）
             if self.at_any(&[SyntaxKind::IDENT, SyntaxKind::STRING, SyntaxKind::NUMBER]) {
                 self.bump();
@@ -404,8 +405,6 @@ impl<'a> Parser<'a> {
                 self.error("Expected ',' or '}' after hash value");
                 break;
             }
-            
-            
         }
 
         self.expect(SyntaxKind::R_BRACE);
@@ -422,14 +421,14 @@ impl<'a> Parser<'a> {
         };
 
         self.builder.start_node(var_kind.into());
-        
+
         // Sigil を消費
         self.bump();
         self.skip_trivia();
-        
+
         // 識別子を期待（修飾付き識別子も含む）
         self.parse_identifier_or_qualified();
-        
+
         self.builder.finish_node();
     }
 
@@ -444,18 +443,18 @@ impl<'a> Parser<'a> {
         };
 
         self.builder.start_node(var_kind.into());
-        
+
         // Sigil を消費
         self.bump();
         self.skip_trivia();
-        
+
         // 識別子を期待（単純な識別子のみ）
         if self.at(SyntaxKind::IDENT) {
             self.bump();
         } else {
             self.error("Expected identifier after sigil");
         }
-        
+
         self.builder.finish_node();
     }
 
@@ -475,16 +474,15 @@ impl<'a> Parser<'a> {
         // :: があるかチェック
         if self.at(SyntaxKind::DOUBLE_COLON) {
             // 修飾付き識別子として扱う
-            let _qualified = self.builder.start_node_at(
-                checkpoint, 
-                SyntaxKind::QUALIFIED_IDENT.into()
-            );
+            let _qualified = self
+                .builder
+                .start_node_at(checkpoint, SyntaxKind::QUALIFIED_IDENT.into());
 
             // :: の後の部分を処理
             while self.at(SyntaxKind::DOUBLE_COLON) {
                 self.bump(); // ::
                 self.skip_trivia();
-                
+
                 if self.at(SyntaxKind::IDENT) {
                     self.bump();
                     self.skip_trivia();
@@ -569,8 +567,6 @@ impl<'a> Parser<'a> {
         self.current_token = self.lexer.next_token();
     }
 
-    
-
     /// Helper function to parse comma-separated expressions within parentheses
     fn parse_parenthesized_list(&mut self) {
         while !self.at(SyntaxKind::R_PAREN) && !self.at_end() {
@@ -621,12 +617,14 @@ mod tests {
         let input = "return {}";
         let (green, errors) = parse(input);
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
-        
+
         let syntax = PerlNode::new_root(green);
         assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-        
+
         // ハッシュリファレンスノードが存在することを確認
-        let hash_ref_found = syntax.descendants().any(|node| node.kind() == SyntaxKind::HASH_REF);
+        let hash_ref_found = syntax
+            .descendants()
+            .any(|node| node.kind() == SyntaxKind::HASH_REF);
         assert!(hash_ref_found, "HASH_REF node should be present in AST");
     }
 
@@ -635,12 +633,14 @@ mod tests {
         let input = "sub f { return { } }";
         let (green, errors) = parse(input);
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
-        
+
         let syntax = PerlNode::new_root(green);
         assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-        
+
         // ハッシュリファレンスノードが存在することを確認
-        let hash_ref_found = syntax.descendants().any(|node| node.kind() == SyntaxKind::HASH_REF);
+        let hash_ref_found = syntax
+            .descendants()
+            .any(|node| node.kind() == SyntaxKind::HASH_REF);
         assert!(hash_ref_found, "HASH_REF node should be present in AST");
     }
 
@@ -649,13 +649,18 @@ mod tests {
         let input = "my $hash_ref = {};";
         let (green, errors) = parse(input);
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
-        
+
         let syntax = PerlNode::new_root(green);
         assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-        
+
         // ハッシュリファレンスノードが存在することを確認
-        let hash_ref_found = syntax.descendants().any(|node| node.kind() == SyntaxKind::HASH_REF);
-        assert!(hash_ref_found, "HASH_REF node should be present in variable assignment");
+        let hash_ref_found = syntax
+            .descendants()
+            .any(|node| node.kind() == SyntaxKind::HASH_REF);
+        assert!(
+            hash_ref_found,
+            "HASH_REF node should be present in variable assignment"
+        );
     }
 
     #[test]
@@ -663,13 +668,18 @@ mod tests {
         let input = "return { a => 1 };";
         let (green, errors) = parse(input);
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
-        
+
         let syntax = PerlNode::new_root(green);
         assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-        
+
         // ハッシュリファレンスノードが存在することを確認
-        let hash_ref_found = syntax.descendants().any(|node| node.kind() == SyntaxKind::HASH_REF);
-        assert!(hash_ref_found, "HASH_REF node should be present with key-value pair");
+        let hash_ref_found = syntax
+            .descendants()
+            .any(|node| node.kind() == SyntaxKind::HASH_REF);
+        assert!(
+            hash_ref_found,
+            "HASH_REF node should be present with key-value pair"
+        );
     }
 
     #[test]
@@ -677,13 +687,18 @@ mod tests {
         let input = "sub f { return { a => 1 } }";
         let (green, errors) = parse(input);
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
-        
+
         let syntax = PerlNode::new_root(green);
         assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-        
+
         // ハッシュリファレンスノードが存在することを確認
-        let hash_ref_found = syntax.descendants().any(|node| node.kind() == SyntaxKind::HASH_REF);
-        assert!(hash_ref_found, "HASH_REF node should be present in subroutine");
+        let hash_ref_found = syntax
+            .descendants()
+            .any(|node| node.kind() == SyntaxKind::HASH_REF);
+        assert!(
+            hash_ref_found,
+            "HASH_REF node should be present in subroutine"
+        );
     }
 
     #[test]
@@ -691,13 +706,18 @@ mod tests {
         let input = "my $result = $a * $b / $c % $d;";
         let (green, errors) = parse(input);
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
-        
+
         let syntax = PerlNode::new_root(green);
         assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-        
+
         // BINARY_EXPRノードが存在することを確認
-        let binary_expr_found = syntax.descendants().any(|node| node.kind() == SyntaxKind::INFIX_EXPR);
-        assert!(binary_expr_found, "INFIX_EXPR node should be present for multiplicative operations");
+        let binary_expr_found = syntax
+            .descendants()
+            .any(|node| node.kind() == SyntaxKind::INFIX_EXPR);
+        assert!(
+            binary_expr_found,
+            "INFIX_EXPR node should be present for multiplicative operations"
+        );
     }
 
     #[test]
@@ -705,15 +725,19 @@ mod tests {
         let input = "my $result = $a + $b * $c;";
         let (green, errors) = parse(input);
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
-        
+
         let syntax = PerlNode::new_root(green);
         assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-        
+
         // 演算子優先度が正しく解析されることを確認（構造的テスト）
-        let binary_expr_count = syntax.descendants()
+        let binary_expr_count = syntax
+            .descendants()
             .filter(|node| node.kind() == SyntaxKind::INFIX_EXPR)
             .count();
-        assert!(binary_expr_count >= 2, "Should have at least 2 infix expressions for precedence");
+        assert!(
+            binary_expr_count >= 2,
+            "Should have at least 2 infix expressions for precedence"
+        );
     }
 
     #[test]
@@ -721,13 +745,18 @@ mod tests {
         let input = "my $str = $a x 3;";
         let (green, errors) = parse(input);
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
-        
+
         let syntax = PerlNode::new_root(green);
         assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-        
+
         // x演算子がBINARY_EXPRとして解析されることを確認
-        let binary_expr_found = syntax.descendants().any(|node| node.kind() == SyntaxKind::INFIX_EXPR);
-        assert!(binary_expr_found, "INFIX_EXPR node should be present for x operator");
+        let binary_expr_found = syntax
+            .descendants()
+            .any(|node| node.kind() == SyntaxKind::INFIX_EXPR);
+        assert!(
+            binary_expr_found,
+            "INFIX_EXPR node should be present for x operator"
+        );
     }
 
     #[test]
@@ -735,15 +764,18 @@ mod tests {
         // エラーリカバリが無限ループを起こさないことを確認
         let input = "my = @ % ^ invalid tokens here;";
         let (green, errors) = parse(input);
-        
+
         // エラーは発生するが、パースは完了すること
         assert!(!errors.is_empty(), "Should have parse errors");
-        
+
         let syntax = PerlNode::new_root(green);
         assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-        
+
         // ASTに何らかの構造があることを確認（無限ループしていない証拠）
-        assert!(syntax.children().count() > 0, "Should have some parsed structure");
+        assert!(
+            syntax.children().count() > 0,
+            "Should have some parsed structure"
+        );
     }
 
     #[test]
@@ -751,11 +783,11 @@ mod tests {
         // 未実装の論理OR演算子（||）で無限ループが発生しないことを確認
         let input = "sub f { return { a => 1||2 } }";
         let (green, errors) = parse(input);
-        
+
         // パースが完了すること（無限ループしない）
         let syntax = PerlNode::new_root(green);
         assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-        
+
         // エラーがあっても構造は存在する
         println!("Errors: {:?}", errors);
         println!("AST structure: {:?}", syntax);
@@ -767,27 +799,31 @@ mod tests {
         let input = "my $var = 1; my @arr = 2; my %hash = 3;";
         let (green, errors) = parse(input);
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
-        
+
         let syntax = PerlNode::new_root(green);
         assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-        
+
         // 3つの変数宣言ノードが存在することを確認
-        let var_decls: Vec<_> = syntax.descendants()
+        let var_decls: Vec<_> = syntax
+            .descendants()
             .filter(|node| node.kind() == SyntaxKind::DECLARATION_STMT)
             .collect();
         assert_eq!(var_decls.len(), 3, "Should have 3 variable declarations");
-        
+
         // 各種類の変数ノードが存在することを確認
-        let scalar_vars: Vec<_> = syntax.descendants()
+        let scalar_vars: Vec<_> = syntax
+            .descendants()
             .filter(|node| node.kind() == SyntaxKind::SCALAR_VAR)
             .collect();
-        let array_vars: Vec<_> = syntax.descendants()
+        let array_vars: Vec<_> = syntax
+            .descendants()
             .filter(|node| node.kind() == SyntaxKind::ARRAY_VAR)
             .collect();
-        let hash_vars: Vec<_> = syntax.descendants()
+        let hash_vars: Vec<_> = syntax
+            .descendants()
             .filter(|node| node.kind() == SyntaxKind::HASH_VAR)
             .collect();
-        
+
         assert_eq!(scalar_vars.len(), 1, "Should have 1 scalar variable");
         assert_eq!(array_vars.len(), 1, "Should have 1 array variable");
         assert_eq!(hash_vars.len(), 1, "Should have 1 hash variable");
@@ -796,7 +832,12 @@ mod tests {
     /// Helper function to parse input and return syntax tree
     fn assert_parses_ok(input: &str) -> PerlNode {
         let (green, errors) = parse(input);
-        assert!(errors.is_empty(), "Parse failed for '{}': {:?}", input, errors);
+        assert!(
+            errors.is_empty(),
+            "Parse failed for '{}': {:?}",
+            input,
+            errors
+        );
         let syntax = PerlNode::new_root(green);
         assert_eq!(syntax.kind(), SyntaxKind::ROOT);
         syntax
@@ -812,13 +853,18 @@ mod tests {
 
         for input in inputs {
             let syntax = assert_parses_ok(input);
-            
+
             // パッケージ文ノードが存在することを確認
             let package_stmts: Vec<_> = syntax
                 .descendants()
                 .filter(|node| node.kind() == SyntaxKind::PACKAGE_STMT)
                 .collect();
-            assert_eq!(package_stmts.len(), 1, "Should have 1 package statement for input: '{}'", input);
+            assert_eq!(
+                package_stmts.len(),
+                1,
+                "Should have 1 package statement for input: '{}'",
+                input
+            );
         }
     }
 
@@ -833,13 +879,18 @@ mod tests {
 
         for input in inputs {
             let syntax = assert_parses_ok(input);
-            
+
             // 修飾付き識別子が存在することを確認
             let qualified_idents: Vec<_> = syntax
                 .descendants()
                 .filter(|node| node.kind() == SyntaxKind::QUALIFIED_IDENT)
                 .collect();
-            assert_eq!(qualified_idents.len(), 1, "Should have 1 qualified identifier for input: '{}'", input);
+            assert_eq!(
+                qualified_idents.len(),
+                1,
+                "Should have 1 qualified identifier for input: '{}'",
+                input
+            );
         }
     }
 
@@ -852,32 +903,39 @@ mod tests {
 
         for input in inputs {
             let syntax = assert_parses_ok(input);
-            
+
             // 修飾付き識別子が存在することを確認
             let qualified_idents: Vec<_> = syntax
                 .descendants()
                 .filter(|node| node.kind() == SyntaxKind::QUALIFIED_IDENT)
                 .collect();
-            assert_eq!(qualified_idents.len(), 1, "Should have 1 qualified identifier for input: '{}'", input);
+            assert_eq!(
+                qualified_idents.len(),
+                1,
+                "Should have 1 qualified identifier for input: '{}'",
+                input
+            );
         }
     }
 
     #[test]
     fn test_qualified_subroutines() {
-        let inputs = [
-            "sub Foo::Bar::func { }",
-            "sub Very::Deep::Nested::func { }",
-        ];
+        let inputs = ["sub Foo::Bar::func { }", "sub Very::Deep::Nested::func { }"];
 
         for input in inputs {
             let syntax = assert_parses_ok(input);
-            
+
             // 修飾付き識別子が存在することを確認
             let qualified_idents: Vec<_> = syntax
                 .descendants()
                 .filter(|node| node.kind() == SyntaxKind::QUALIFIED_IDENT)
                 .collect();
-            assert_eq!(qualified_idents.len(), 1, "Should have 1 qualified identifier for input: '{}'", input);
+            assert_eq!(
+                qualified_idents.len(),
+                1,
+                "Should have 1 qualified identifier for input: '{}'",
+                input
+            );
         }
     }
 
@@ -886,13 +944,19 @@ mod tests {
         // my宣言では修飾付き識別子は使用されないことを確認
         let inputs = [
             "my $var = 1;",
-            "my @array;",  // Simplified without complex initialization
-            "my %hash;",   // Simplified without complex initialization
+            "my @array;", // Simplified without complex initialization
+            "my %hash;",  // Simplified without complex initialization
         ];
 
         for (i, input) in inputs.iter().enumerate() {
             let (green, errors) = parse(input);
-            assert!(errors.is_empty(), "Test case {} ('{}') failed with errors: {:?}", i, input, errors);
+            assert!(
+                errors.is_empty(),
+                "Test case {} ('{}') failed with errors: {:?}",
+                i,
+                input,
+                errors
+            );
 
             let syntax = PerlNode::new_root(green);
             assert_eq!(syntax.kind(), SyntaxKind::ROOT);
@@ -902,7 +966,12 @@ mod tests {
                 .descendants()
                 .filter(|node| node.kind() == SyntaxKind::QUALIFIED_IDENT)
                 .collect();
-            assert_eq!(qualified_idents.len(), 0, "Should have no qualified identifiers in my declarations for input: '{}'", input);
+            assert_eq!(
+                qualified_idents.len(),
+                0,
+                "Should have no qualified identifiers in my declarations for input: '{}'",
+                input
+            );
         }
     }
 
@@ -916,6 +985,10 @@ mod tests {
             .descendants()
             .filter(|node| node.kind() == SyntaxKind::QUALIFIED_IDENT)
             .collect();
-        assert_eq!(qualified_idents.len(), 1, "Should have 1 qualified identifier (only on right side)");
+        assert_eq!(
+            qualified_idents.len(),
+            1,
+            "Should have 1 qualified identifier (only on right side)"
+        );
     }
 }
