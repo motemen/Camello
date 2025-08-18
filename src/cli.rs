@@ -23,6 +23,10 @@ pub enum Commands {
         #[arg(help = "Path to the Perl file (reads from stdin if not provided)")]
         path: Option<PathBuf>,
 
+        /// Perl code to format
+        #[arg(short, long = "eval", help = "Perl code to format", conflicts_with = "path")]
+        eval: Option<String>,
+
         /// Check if the file is already formatted without making changes
         #[arg(long, help = "Check if file is already formatted")]
         check: bool,
@@ -36,6 +40,10 @@ pub enum Commands {
         /// Path to Perl file to parse and dump (stdin if not provided)
         #[arg(help = "Path to the Perl file (reads from stdin if not provided)")]
         path: Option<PathBuf>,
+
+        /// Perl code to parse and dump
+        #[arg(short, long = "eval", help = "Perl code to parse and dump", conflicts_with = "path")]
+        eval: Option<String>,
     },
 }
 
@@ -45,20 +53,24 @@ pub fn run() -> Result<()> {
     match cli.command {
         Commands::Format {
             path,
+            eval,
             check,
             output,
         } => {
-            format_file(path, check, output)?;
+            format_file(path, eval, check, output)?;
         }
-        Commands::Dump { path } => {
-            dump_file(path)?;
+        Commands::Dump { path, eval } => {
+            dump_file(path, eval)?;
         }
     }
 
     Ok(())
 }
 
-fn read_input(path: Option<PathBuf>) -> Result<(String, String)> {
+fn read_source(path: Option<PathBuf>, eval: Option<String>) -> Result<(String, String)> {
+    if let Some(code) = eval {
+        return Ok((code, "<command-line>".to_string()));
+    }
     match path {
         Some(path) => {
             let input = fs::read_to_string(&path).into_diagnostic()?;
@@ -72,9 +84,14 @@ fn read_input(path: Option<PathBuf>) -> Result<(String, String)> {
     }
 }
 
-fn format_file(path: Option<PathBuf>, check: bool, output: Option<PathBuf>) -> Result<()> {
+fn format_file(
+    path: Option<PathBuf>,
+    eval: Option<String>,
+    check: bool,
+    output: Option<PathBuf>,
+) -> Result<()> {
     // ファイルまたは標準入力を読み込み
-    let (input, source_name) = read_input(path)?;
+    let (input, source_name) = read_source(path, eval)?;
 
     // フォーマット実行
     let (formatted, errors) = format_perl(&input);
@@ -115,9 +132,9 @@ fn format_file(path: Option<PathBuf>, check: bool, output: Option<PathBuf>) -> R
     Ok(())
 }
 
-fn dump_file(path: Option<PathBuf>) -> Result<()> {
+fn dump_file(path: Option<PathBuf>, eval: Option<String>) -> Result<()> {
     // ファイルまたは標準入力を読み込み
-    let (input, source_name) = read_input(path)?;
+    let (input, source_name) = read_source(path, eval)?;
     let (syntax, errors) = parse_perl(&input);
 
     if !errors.is_empty() {
@@ -147,7 +164,15 @@ mod tests {
         fs::write(&file_path, "my$var=1;")?;
 
         // フォーマット実行（実際の実行はしないが、エラーが出ないことを確認）
-        assert!(format_file(Some(file_path), false, None).is_ok());
+        assert!(format_file(Some(file_path), None, false, None).is_ok());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_format_string_to_stdout() -> Result<(), Box<dyn std::error::Error>> {
+        // フォーマット実行（実際の実行はしないが、エラーが出ないことを確認）
+        assert!(format_file(None, Some("my$var=1;".to_string()), false, None).is_ok());
 
         Ok(())
     }
@@ -159,7 +184,7 @@ mod tests {
         fs::write(&file_path, "my $var = 1;\n")?;
 
         // 正しくフォーマットされたファイルのチェック
-        assert!(format_file(Some(file_path), true, None).is_ok());
+        assert!(format_file(Some(file_path), None, true, None).is_ok());
 
         Ok(())
     }
