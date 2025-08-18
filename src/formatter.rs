@@ -144,10 +144,9 @@ impl Formatter {
             (Some(_), SyntaxKind::MINUS) | (Some(SyntaxKind::MINUS), _) => true,
             (Some(_), SyntaxKind::ARROW) | (Some(SyntaxKind::ARROW), _) => true,
             
-            // Multiplicative operators
+            // Multiplicative operators (but not PERCENT which is used as sigil)
             (Some(_), SyntaxKind::STAR) | (Some(SyntaxKind::STAR), _) => true,
             (Some(_), SyntaxKind::SLASH) | (Some(SyntaxKind::SLASH), _) => true,
-            (Some(_), SyntaxKind::PERCENT) | (Some(SyntaxKind::PERCENT), _) => true,
             (Some(_), SyntaxKind::MODULO) | (Some(SyntaxKind::MODULO), _) => true,
             (Some(_), SyntaxKind::X) | (Some(SyntaxKind::X), _) => true,
 
@@ -157,16 +156,21 @@ impl Formatter {
             // キーワードの後
             (Some(SyntaxKind::MY_KW), _) => true,
             (Some(SyntaxKind::SUB_KW), SyntaxKind::IDENT) => true,
+            (Some(SyntaxKind::SUB_KW), SyntaxKind::QUALIFIED_IDENT) => true,
+            (Some(SyntaxKind::PACKAGE_KW), _) => true,
 
             // Before left brace "{""
             (Some(_), SyntaxKind::L_BRACE) => true,
 
-            // After identifier not followed by a semicolon
-            (Some(SyntaxKind::IDENT), kind) if kind != SyntaxKind::SEMICOLON => true,
+            // After identifier not followed by a semicolon or double colon
+            (Some(SyntaxKind::IDENT), kind) if kind != SyntaxKind::SEMICOLON && kind != SyntaxKind::DOUBLE_COLON => true,
 
             // 括弧の内側はスペースなし
             (Some(SyntaxKind::L_PAREN), _) | (Some(_), SyntaxKind::R_PAREN) => false,
             (Some(SyntaxKind::L_BRACE), _) => false,
+            
+            // :: の前後はスペースなし（パッケージ名区切り）
+            (Some(_), SyntaxKind::DOUBLE_COLON) | (Some(SyntaxKind::DOUBLE_COLON), _) => false,
 
             _ => false,
         };
@@ -386,5 +390,61 @@ mod tests {
         let formatted = format(&syntax);
 
         insta::assert_snapshot!(formatted, @"my $str = $a x 3;");
+    }
+
+    /// Helper function to reduce code duplication in formatting tests
+    fn check_formatting_cases(cases: &[(&str, &str)]) {
+        for (input, expected) in cases {
+            let (syntax, err) = parse_perl(input);
+            assert!(err.is_empty(), "Parse errors for '{}': {:?}", input, err);
+
+            let formatted = format(&syntax);
+            assert_eq!(formatted, *expected, "Formatting failed for input: '{}'", input);
+        }
+    }
+
+    #[test]
+    fn test_package_formatting() {
+        let cases = [
+            ("package Foo::Bar;", "package Foo::Bar;\n"),
+            ("package   Foo  ;", "package Foo;\n"),
+            ("package Foo::Bar::Baz::Qux;", "package Foo::Bar::Baz::Qux;\n"),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_qualified_variable_formatting() {
+        let cases = [
+            ("$Foo::Bar::var;", "$Foo::Bar::var;\n"),
+            ("@Foo::Bar::array;", "@Foo::Bar::array;\n"),
+            ("%Foo::Bar::hash;", "%Foo::Bar::hash;\n"),
+            ("$Very::Deep::Nested::Package::Name::var;", "$Very::Deep::Nested::Package::Name::var;\n"),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_qualified_function_formatting() {
+        let cases = [
+            ("Foo::Bar::func();", "Foo::Bar::func ();\n"),
+            ("Very::Deep::Nested::function();", "Very::Deep::Nested::function ();\n"),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_qualified_subroutine_formatting() {
+        let cases = [
+            ("sub Foo::Bar::func { }", "sub Foo::Bar::func {\n}\n"),
+            ("sub Very::Deep::Nested::func { }", "sub Very::Deep::Nested::func {\n}\n"),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_mixed_qualified_and_simple_formatting() {
+        let cases = [("my$var=$Foo::Bar::other_var;", "my $var = $Foo::Bar::other_var;\n")];
+        check_formatting_cases(&cases);
     }
 }

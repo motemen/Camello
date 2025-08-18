@@ -43,6 +43,9 @@ pub enum Token {
     #[token(",")]
     Comma,
     
+    #[token("::")]
+    DoubleColon,
+    
     // 演算子
     #[token("=")]
     Eq,
@@ -91,6 +94,7 @@ impl Token {
             Token::RParen => SyntaxKind::R_PAREN,
             Token::Semicolon => SyntaxKind::SEMICOLON,
             Token::Comma => SyntaxKind::COMMA,
+            Token::DoubleColon => SyntaxKind::DOUBLE_COLON,
             Token::Eq => SyntaxKind::EQ,
             Token::Plus => SyntaxKind::PLUS,
             Token::Minus => SyntaxKind::MINUS,
@@ -159,6 +163,7 @@ impl<'a> Lexer<'a> {
                     "my" => SyntaxKind::MY_KW,
                     "if" => SyntaxKind::IF_KW,
                     "else" => SyntaxKind::ELSE_KW,
+                    "package" => SyntaxKind::PACKAGE_KW,
                     "x" => self.disambiguate_x(),
                     _ => SyntaxKind::IDENT,
                 }
@@ -210,6 +215,7 @@ impl<'a> Lexer<'a> {
             // Keywords with different expectations
             SyntaxKind::SUB_KW => LexerContext::ExpectingValue, // Expects identifier (bareword)
             SyntaxKind::MY_KW => LexerContext::VariableList,    // Expects variables or variable lists
+            SyntaxKind::PACKAGE_KW => LexerContext::ExpectingValue, // Expects package name
             
             // Operators expect a value next and break out of VariableList context
             SyntaxKind::EQ | SyntaxKind::PLUS | SyntaxKind::MINUS | SyntaxKind::ARROW => LexerContext::ExpectingValue,
@@ -373,6 +379,17 @@ mod tests {
         assert_eq!(lexer.next_token(), Some((SyntaxKind::MY_KW, "my")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::PERCENT, "%"))); // Should be PERCENT (sigil)
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "hash")));
+    }
+
+    #[test]
+    fn test_package_keyword() {
+        let mut lexer = Lexer::new("package Foo::Bar;");
+        
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::PACKAGE_KW, "package")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "Foo")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DOUBLE_COLON, "::")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "Bar")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::SEMICOLON, ";")));
     }
 
 }
