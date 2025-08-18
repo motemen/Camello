@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# Check if a file path is provided
+if [ -z "$1" ]; then
+  echo "Usage: $0 <file-path> | -e <content>"
+  exit 1
+fi
+
+if [ "$1" = "-e" ]; then
+  content="$2"
+  git diff --no-index --color=always -- <(cat <<<"$content") <(cargo run -- format "-e" "$content")
+else
+  file_path="$1"
+  git diff --no-index --color=always -- "$file_path" <(cargo run -- format "$file_path")
+fi
+
