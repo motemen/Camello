@@ -129,3 +129,4 @@ Current test coverage includes basic Perl constructs: variable declarations, sub
 * Use English in commit messages
 * Use `cargo fmt` before commit
 * Use `cargo clippy --fix` before commit
+* Use `cargo run -- format -e '...'` to test behavior

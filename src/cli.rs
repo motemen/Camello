@@ -24,7 +24,12 @@ pub enum Commands {
         path: Option<PathBuf>,
 
         /// Perl code to format
-        #[arg(short, long = "eval", help = "Perl code to format", conflicts_with = "path")]
+        #[arg(
+            short,
+            long = "eval",
+            help = "Perl code to format",
+            conflicts_with = "path"
+        )]
         eval: Option<String>,
 
         /// Check if the file is already formatted without making changes
@@ -42,7 +47,12 @@ pub enum Commands {
         path: Option<PathBuf>,
 
         /// Perl code to parse and dump
-        #[arg(short, long = "eval", help = "Perl code to parse and dump", conflicts_with = "path")]
+        #[arg(
+            short,
+            long = "eval",
+            help = "Perl code to parse and dump",
+            conflicts_with = "path"
+        )]
         eval: Option<String>,
     },
 }
