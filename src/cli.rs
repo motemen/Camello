@@ -119,7 +119,7 @@ fn dump_file(path: Option<PathBuf>) -> Result<()> {
     // ファイルまたは標準入力を読み込み
     let (input, source_name) = read_input(path)?;
     let (syntax, errors) = parse_perl(&input);
-    
+
     if !errors.is_empty() {
         eprintln!("Parse errors in '{}':", source_name);
         for error in errors {

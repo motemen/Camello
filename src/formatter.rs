@@ -54,7 +54,7 @@ impl Formatter {
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
                     let text = token.text();
-                    
+
                     match kind {
                         SyntaxKind::WHITESPACE => {
                             // ハッシュリファレンス内の空白は無視
@@ -143,7 +143,7 @@ impl Formatter {
             (Some(_), SyntaxKind::PLUS) | (Some(SyntaxKind::PLUS), _) => true,
             (Some(_), SyntaxKind::MINUS) | (Some(SyntaxKind::MINUS), _) => true,
             (Some(_), SyntaxKind::ARROW) | (Some(SyntaxKind::ARROW), _) => true,
-            
+
             // Multiplicative operators (but not PERCENT which is used as sigil)
             (Some(_), SyntaxKind::STAR) | (Some(SyntaxKind::STAR), _) => true,
             (Some(_), SyntaxKind::SLASH) | (Some(SyntaxKind::SLASH), _) => true,
@@ -163,12 +163,16 @@ impl Formatter {
             (Some(_), SyntaxKind::L_BRACE) => true,
 
             // After identifier not followed by a semicolon or double colon
-            (Some(SyntaxKind::IDENT), kind) if kind != SyntaxKind::SEMICOLON && kind != SyntaxKind::DOUBLE_COLON => true,
+            (Some(SyntaxKind::IDENT), kind)
+                if kind != SyntaxKind::SEMICOLON && kind != SyntaxKind::DOUBLE_COLON =>
+            {
+                true
+            }
 
             // 括弧の内側はスペースなし
             (Some(SyntaxKind::L_PAREN), _) | (Some(_), SyntaxKind::R_PAREN) => false,
             (Some(SyntaxKind::L_BRACE), _) => false,
-            
+
             // :: の前後はスペースなし（パッケージ名区切り）
             (Some(_), SyntaxKind::DOUBLE_COLON) | (Some(SyntaxKind::DOUBLE_COLON), _) => false,
 
@@ -399,7 +403,11 @@ mod tests {
             assert!(err.is_empty(), "Parse errors for '{}': {:?}", input, err);
 
             let formatted = format(&syntax);
-            assert_eq!(formatted, *expected, "Formatting failed for input: '{}'", input);
+            assert_eq!(
+                formatted, *expected,
+                "Formatting failed for input: '{}'",
+                input
+            );
         }
     }
 
@@ -408,7 +416,10 @@ mod tests {
         let cases = [
             ("package Foo::Bar;", "package Foo::Bar;\n"),
             ("package   Foo  ;", "package Foo;\n"),
-            ("package Foo::Bar::Baz::Qux;", "package Foo::Bar::Baz::Qux;\n"),
+            (
+                "package Foo::Bar::Baz::Qux;",
+                "package Foo::Bar::Baz::Qux;\n",
+            ),
         ];
         check_formatting_cases(&cases);
     }
@@ -419,7 +430,10 @@ mod tests {
             ("$Foo::Bar::var;", "$Foo::Bar::var;\n"),
             ("@Foo::Bar::array;", "@Foo::Bar::array;\n"),
             ("%Foo::Bar::hash;", "%Foo::Bar::hash;\n"),
-            ("$Very::Deep::Nested::Package::Name::var;", "$Very::Deep::Nested::Package::Name::var;\n"),
+            (
+                "$Very::Deep::Nested::Package::Name::var;",
+                "$Very::Deep::Nested::Package::Name::var;\n",
+            ),
         ];
         check_formatting_cases(&cases);
     }
@@ -428,7 +442,10 @@ mod tests {
     fn test_qualified_function_formatting() {
         let cases = [
             ("Foo::Bar::func();", "Foo::Bar::func ();\n"),
-            ("Very::Deep::Nested::function();", "Very::Deep::Nested::function ();\n"),
+            (
+                "Very::Deep::Nested::function();",
+                "Very::Deep::Nested::function ();\n",
+            ),
         ];
         check_formatting_cases(&cases);
     }
@@ -437,14 +454,20 @@ mod tests {
     fn test_qualified_subroutine_formatting() {
         let cases = [
             ("sub Foo::Bar::func { }", "sub Foo::Bar::func {\n}\n"),
-            ("sub Very::Deep::Nested::func { }", "sub Very::Deep::Nested::func {\n}\n"),
+            (
+                "sub Very::Deep::Nested::func { }",
+                "sub Very::Deep::Nested::func {\n}\n",
+            ),
         ];
         check_formatting_cases(&cases);
     }
 
     #[test]
     fn test_mixed_qualified_and_simple_formatting() {
-        let cases = [("my$var=$Foo::Bar::other_var;", "my $var = $Foo::Bar::other_var;\n")];
+        let cases = [(
+            "my$var=$Foo::Bar::other_var;",
+            "my $var = $Foo::Bar::other_var;\n",
+        )];
         check_formatting_cases(&cases);
     }
 }
