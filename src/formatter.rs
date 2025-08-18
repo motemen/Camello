@@ -92,7 +92,7 @@ impl Formatter {
     fn format_qw_expr(&mut self, node: &PerlNode) {
         // qw() 式の特別フォーマット
         let mut first_word = true;
-        
+
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(node) => self.format_node(&node),
@@ -132,7 +132,6 @@ impl Formatter {
             }
         }
     }
-
 
     fn format_token(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
         let kind = token.kind();
@@ -209,18 +208,13 @@ impl Formatter {
             (Some(SyntaxKind::MY_KW), _) => true,
             (Some(SyntaxKind::SUB_KW), SyntaxKind::IDENT) => true,
             (Some(SyntaxKind::SUB_KW), SyntaxKind::QUALIFIED_IDENT) => true,
+            (Some(SyntaxKind::FOR_KW), _) => true,
+            (Some(SyntaxKind::WHILE_KW), _) => true,
             (Some(SyntaxKind::PACKAGE_KW), _) => true,
             (Some(SyntaxKind::USE_KW), _) => true,
 
             // Before left brace "{""
             (Some(_), SyntaxKind::L_BRACE) => true,
-
-            // After identifier not followed by a semicolon, double colon, or left parenthesis
-            (Some(SyntaxKind::IDENT), kind)
-                if kind != SyntaxKind::SEMICOLON && kind != SyntaxKind::DOUBLE_COLON && kind != SyntaxKind::L_PAREN =>
-            {
-                true
-            }
 
             // After qualified identifier not followed by a semicolon or left parenthesis
             (Some(SyntaxKind::QUALIFIED_IDENT), kind)
@@ -232,6 +226,15 @@ impl Formatter {
             // 括弧の内側はスペースなし
             (Some(SyntaxKind::L_PAREN), _) | (Some(_), SyntaxKind::R_PAREN) => false,
             (Some(SyntaxKind::L_BRACE), _) => false,
+
+            // After identifier not followed by a semicolon, double colon, or left parenthesis
+            (Some(SyntaxKind::IDENT), kind)
+                if kind != SyntaxKind::SEMICOLON
+                    && kind != SyntaxKind::DOUBLE_COLON
+                    && kind != SyntaxKind::L_PAREN =>
+            {
+                true
+            }
 
             // :: の前後はスペースなし（パッケージ名区切り）
             (Some(_), SyntaxKind::DOUBLE_COLON) | (Some(SyntaxKind::DOUBLE_COLON), _) => false,
@@ -530,5 +533,71 @@ mod tests {
             "my $var = $Foo::Bar::other_var;\n",
         )];
         check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_for_stmt_formatting() {
+        let input = "for($i){my$x=1;print$x;}";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        for ($i) {
+            my $x = 1;
+            print $x;
+        }
+        ");
+    }
+
+    #[test]
+    fn test_while_stmt_formatting() {
+        let input = "while($condition){my$y=2;func$y;}";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        while ($condition) {
+            my $y = 2;
+            func $y;
+        }
+        ");
+    }
+
+    #[test]
+    fn test_nested_loops_formatting() {
+        let input = "for($i){while($j){my$x=1;}}";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        for ($i) {
+            while ($j) {
+                my $x = 1;
+            }
+        }
+        ");
+    }
+
+    #[test]
+    fn test_loop_with_complex_conditions() {
+        let input = "while($a+$b*$c){for(@array){print;}}";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        while ($a + $b * $c) {
+            for (@array) {
+                print;
+            }
+        }
+        ");
     }
 }

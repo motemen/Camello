@@ -84,6 +84,14 @@ impl<'a> Parser<'a> {
                 self.sub_def();
                 true
             }
+            Some(SyntaxKind::FOR_KW) => {
+                self.for_stmt();
+                true
+            }
+            Some(SyntaxKind::WHILE_KW) => {
+                self.while_stmt();
+                true
+            }
             Some(SyntaxKind::PACKAGE_KW) => {
                 self.package_stmt();
                 true
@@ -186,6 +194,68 @@ impl<'a> Parser<'a> {
 
         // セミコロン
         self.expect(SyntaxKind::SEMICOLON);
+
+        self.builder.finish_node();
+    }
+
+    fn for_stmt(&mut self) {
+        self.builder.start_node(SyntaxKind::FOR_STMT.into());
+
+        // "for"
+        self.expect(SyntaxKind::FOR_KW);
+        self.skip_trivia();
+
+        // Condition/iterator expression in parentheses: for (expr)
+        if self.at(SyntaxKind::L_PAREN) {
+            self.bump(); // (
+            self.skip_trivia();
+
+            // Parse the for condition/iterator
+            if !self.expression() {
+                self.error("Expected expression in for condition");
+            }
+
+            self.skip_trivia();
+            self.expect(SyntaxKind::R_PAREN);
+        } else {
+            self.error("Expected '(' after 'for'");
+        }
+
+        self.skip_trivia();
+
+        // Block
+        self.block();
+
+        self.builder.finish_node();
+    }
+
+    fn while_stmt(&mut self) {
+        self.builder.start_node(SyntaxKind::WHILE_STMT.into());
+
+        // "while"
+        self.expect(SyntaxKind::WHILE_KW);
+        self.skip_trivia();
+
+        // Condition expression in parentheses: while (expr)
+        if self.at(SyntaxKind::L_PAREN) {
+            self.bump(); // (
+            self.skip_trivia();
+
+            // Parse the while condition
+            if !self.expression() {
+                self.error("Expected expression in while condition");
+            }
+
+            self.skip_trivia();
+            self.expect(SyntaxKind::R_PAREN);
+        } else {
+            self.error("Expected '(' after 'while'");
+        }
+
+        self.skip_trivia();
+
+        // Block
+        self.block();
 
         self.builder.finish_node();
     }
@@ -503,12 +573,12 @@ impl<'a> Parser<'a> {
                     continue;
                 }
             }
-            
+
             // Check if we're at the closing delimiter
             if self.at(closing_delim) {
                 break;
             }
-            
+
             // Consume any non-whitespace tokens as QW_STRING
             if let Some((_, text)) = self.current_token.take() {
                 // Add as QW_STRING token
@@ -660,7 +730,6 @@ impl<'a> Parser<'a> {
             }
         }
     }
-
 
     fn error(&mut self, message: &str) {
         let text_len = self.current_text().map_or(0, |t| t.len());
@@ -1148,29 +1217,32 @@ mod tests {
             .descendants()
             .filter(|node| node.kind() == SyntaxKind::QW_EXPR)
             .collect();
-        assert_eq!(qw_exprs.len(), 1, "Should have 1 qw expression in use statement");
+        assert_eq!(
+            qw_exprs.len(),
+            1,
+            "Should have 1 qw expression in use statement"
+        );
 
         // QW_STRINGトークンが存在することを確認
         let qw_strings: Vec<_> = syntax
             .descendants_with_tokens()
-            .filter_map(|node_or_token| {
-                match node_or_token {
-                    rowan::NodeOrToken::Token(token) if token.kind() == SyntaxKind::QW_STRING => Some(token),
-                    _ => None,
+            .filter_map(|node_or_token| match node_or_token {
+                rowan::NodeOrToken::Token(token) if token.kind() == SyntaxKind::QW_STRING => {
+                    Some(token)
                 }
+                _ => None,
             })
             .collect();
-        
-        
-        assert!(qw_strings.len() >= 2, "Should have at least 2 qw strings (all, -uninitialized)");
+
+        assert!(
+            qw_strings.len() >= 2,
+            "Should have at least 2 qw strings (all, -uninitialized)"
+        );
     }
 
     #[test]
     fn test_array_ref() {
-        let inputs = [
-            "[1, 2, 3]",
-            "my $arrayref = [a, b, c];",
-        ];
+        let inputs = ["[1, 2, 3]", "my $arrayref = [a, b, c];"];
 
         for input in inputs {
             let syntax = assert_parses_ok(input);
@@ -1187,5 +1259,74 @@ mod tests {
                 input
             );
         }
+    }
+
+    #[test]
+    fn test_for_stmt() {
+        let inputs = [
+            "for ($i) { }",
+            "for (@array) { my $x = 1; }",
+            "for ($x) { print $x; }",
+        ];
+
+        for input in inputs {
+            let syntax = assert_parses_ok(input);
+
+            // FOR_STMTノードが存在することを確認
+            let for_stmts: Vec<_> = syntax
+                .descendants()
+                .filter(|node| node.kind() == SyntaxKind::FOR_STMT)
+                .collect();
+            assert_eq!(
+                for_stmts.len(),
+                1,
+                "Should have 1 for statement for input: '{}'",
+                input
+            );
+        }
+    }
+
+    #[test]
+    fn test_while_stmt() {
+        let inputs = [
+            "while ($x) { }",
+            "while (@array) { my $y = 2; }",
+            "while ($condition) { print $value; }",
+        ];
+
+        for input in inputs {
+            let syntax = assert_parses_ok(input);
+
+            // WHILE_STMTノードが存在することを確認
+            let while_stmts: Vec<_> = syntax
+                .descendants()
+                .filter(|node| node.kind() == SyntaxKind::WHILE_STMT)
+                .collect();
+            assert_eq!(
+                while_stmts.len(),
+                1,
+                "Should have 1 while statement for input: '{}'",
+                input
+            );
+        }
+    }
+
+    #[test]
+    fn test_nested_loops() {
+        let input = "for ($i) { while ($j) { my $x = 1; } }";
+        let syntax = assert_parses_ok(input);
+
+        // ネストしたループのノードが存在することを確認
+        let for_stmts: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::FOR_STMT)
+            .collect();
+        let while_stmts: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::WHILE_STMT)
+            .collect();
+
+        assert_eq!(for_stmts.len(), 1, "Should have 1 for statement");
+        assert_eq!(while_stmts.len(), 1, "Should have 1 while statement");
     }
 }
