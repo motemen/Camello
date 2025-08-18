@@ -63,20 +63,13 @@ impl<'a> Parser<'a> {
         self.builder
             .start_node(rowan::SyntaxKind(SyntaxKind::ROOT as u16));
 
+        self.skip_trivia();
         while !self.at_end() {
-            let pos_before = self.current_pos;
             if !self.statement() {
-                // エラー回復: 次の文の開始まで読み飛ばし
-                self.recover_to_statement_boundary();
+                self.error("Expected a statement, but found an unexpected token.");
+                self.bump(); // トークンを消費して回復
             }
-            
-            // 進捗がない場合は無限ループを防ぐため終了
-            if self.current_pos == pos_before {
-                self.error("No progress made in parsing, stopping to prevent infinite loop");
-                if !self.at_end() {
-                    self.bump(); // 最低限の進行を確保
-                }
-            }
+            self.skip_trivia();
         }
 
         self.builder.finish_node();
@@ -99,15 +92,14 @@ impl<'a> Parser<'a> {
                 true
             }
             Some(SyntaxKind::R_BRACE) => {
-                // ブロック終了なので何もしない
+                // ブロック終了なので呼び出し元に知らせる
                 false
             }
             Some(_) => {
-                // expression_stmt()が失敗した場合を適切に処理する必要がある
-                self.expression_stmt();
-                true
+                // 式文としてパースを試みる
+                self.expression_stmt()
             }
-            None => false,
+            None => false, // EOF
         }
     }
 
@@ -181,18 +173,11 @@ impl<'a> Parser<'a> {
         self.skip_trivia();
 
         while !self.at(SyntaxKind::R_BRACE) && !self.at_end() {
-            let pos_before = self.current_pos;
             if !self.statement() {
-                self.recover_to_statement_boundary();
+                self.error("Expected a statement in block, but found an unexpected token.");
+                self.bump(); // トークンを消費して回復
             }
-            
-            // 進捗がない場合は無限ループを防ぐため終了
-            if self.current_pos == pos_before {
-                self.error("No progress made in block parsing, stopping to prevent infinite loop");
-                if !self.at_end() && !self.at(SyntaxKind::R_BRACE) {
-                    self.bump(); // 最低限の進行を確保
-                }
-            }
+            self.skip_trivia();
         }
 
         self.expect(SyntaxKind::R_BRACE);
@@ -200,12 +185,22 @@ impl<'a> Parser<'a> {
         self.builder.finish_node();
     }
 
-    fn expression_stmt(&mut self) {
+    fn expression_stmt(&mut self) -> bool {
+        if !self.is_at_start_of_expression() {
+            return false;
+        }
+
         self.builder.start_node(SyntaxKind::STMT.into());
         let success = self.expression();
 
         if !success {
+            // is_at_start_of_expression でチェックしているので、ここに来ることは
+            // expressionの実装が不完全な場合のみのはず。
+            // 本来は builder.abandon_node() のようなものが望ましいが、
+            // GreenNodeBuilder にはないので、エラーノードとして閉じておく。
             self.error("Invalid expression statement");
+            self.builder.finish_node();
+            return true; // エラーとして消費はしたのでtrue
         }
 
         // セミコロンは必須ではない（関数呼び出しなどの場合）
@@ -214,70 +209,86 @@ impl<'a> Parser<'a> {
         }
 
         self.builder.finish_node();
+        true
+    }
+
+    fn is_at_start_of_expression(&self) -> bool {
+        if let Some(kind) = self.current_kind() {
+            matches!(
+                kind,
+                SyntaxKind::NUMBER
+                    | SyntaxKind::STRING
+                    | SyntaxKind::IDENT
+                    | SyntaxKind::L_PAREN
+                    | SyntaxKind::L_BRACE
+            ) || kind.is_variable()
+                || kind.is_sigil()
+        } else {
+            false
+        }
     }
 
     fn expression(&mut self) -> bool {
-        let token_count_before = self.current_pos;
-        self.additive_expr();
-        
-        // トークンが消費されなかった場合は進捗がないため失敗
-        token_count_before != self.current_pos
+        self.additive_expr()
     }
 
     // Additive operators: + - .
-    fn additive_expr(&mut self) {
+    fn additive_expr(&mut self) -> bool {
         let start = self.builder.checkpoint();
-        self.multiplicative_expr();
+        if !self.multiplicative_expr() {
+            return false;
+        }
 
         while let Some(op) = self.current_kind() {
             if !matches!(op, SyntaxKind::PLUS | SyntaxKind::MINUS) {
                 break;
             }
 
-            let pos_before = self.current_pos;
             let _m = self
                 .builder
                 .start_node_at(start.clone(), SyntaxKind::INFIX_EXPR.into());
             self.bump(); // operator
             self.skip_trivia();
-            self.multiplicative_expr();
-            self.builder.finish_node();
-            
-            // 進捗がない場合は無限ループを防ぐため終了
-            if self.current_pos == pos_before {
-                break;
+            if !self.multiplicative_expr() {
+                self.error("Expected expression after additive operator");
             }
+            self.builder.finish_node();
         }
+        true
     }
 
     // Multiplicative operators: * / % x
-    fn multiplicative_expr(&mut self) {
+    fn multiplicative_expr(&mut self) -> bool {
         let start = self.builder.checkpoint();
-        self.primary_expr();
+        if !self.primary_expr() {
+            return false;
+        }
 
         while let Some(op) = self.current_kind() {
             if !matches!(op, SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::MODULO | SyntaxKind::X) {
                 break;
             }
 
-            let pos_before = self.current_pos;
             let _m = self
                 .builder
                 .start_node_at(start.clone(), SyntaxKind::INFIX_EXPR.into());
             self.bump(); // operator
             self.skip_trivia();
-            self.primary_expr();
-            self.builder.finish_node();
-            
-            // 進捗がない場合は無限ループを防ぐため終了
-            if self.current_pos == pos_before {
-                break;
+            if !self.primary_expr() {
+                self.error("Expected expression after multiplicative operator");
             }
+            self.builder.finish_node();
         }
+        true
     }
 
-    fn primary_expr(&mut self) {
+    fn primary_expr(&mut self) -> bool {
         self.skip_trivia();
+
+        let at_start = self.is_at_start_of_expression();
+        if !at_start {
+            return false;
+        }
 
         match self.current_kind() {
             Some(SyntaxKind::NUMBER) | Some(SyntaxKind::STRING) => {
@@ -340,11 +351,11 @@ impl<'a> Parser<'a> {
                 self.hash_ref();
             }
             _ => {
-                self.error("Expected expression");
-                // 予期しないトークンでも確実に消費されるようにする
-                // (error()関数で既に消費されているが、明示的に確認)
+                // is_at_start_of_expression でチェックしているので、ここには来ないはず
+                return false;
             }
         }
+        true
     }
 
     fn hash_ref(&mut self) {
@@ -355,7 +366,7 @@ impl<'a> Parser<'a> {
 
         // キー・バリューペアの解析
         while !self.at(SyntaxKind::R_BRACE) && !self.at_end() {
-            let pos_before = self.current_pos;
+            
             
             // キー（識別子、文字列、または数値）
             if self.at_any(&[SyntaxKind::IDENT, SyntaxKind::STRING, SyntaxKind::NUMBER]) {
@@ -379,12 +390,7 @@ impl<'a> Parser<'a> {
 
             // バリュー（式）
             if !self.expression() {
-                // 式のパースに失敗した場合、予期しないトークンをスキップ
                 self.error("Invalid expression in hash value");
-                // 安全のため、現在のトークンを消費して進行を保証
-                if !self.at_end() && !self.at(SyntaxKind::R_BRACE) && !self.at(SyntaxKind::COMMA) {
-                    self.bump();
-                }
                 break;
             }
 
@@ -399,11 +405,7 @@ impl<'a> Parser<'a> {
                 break;
             }
             
-            // 進捗がない場合は無限ループを防ぐため終了
-            if self.current_pos == pos_before {
-                self.error("No progress made in hash parsing, stopping to prevent infinite loop");
-                break;
-            }
+            
         }
 
         self.expect(SyntaxKind::R_BRACE);
@@ -567,19 +569,7 @@ impl<'a> Parser<'a> {
         self.current_token = self.lexer.next_token();
     }
 
-    fn recover_to_statement_boundary(&mut self) {
-        while !self.at_end() {
-            match self.current_kind() {
-                Some(SyntaxKind::SEMICOLON) => {
-                    self.bump();
-                    break;
-                }
-                Some(SyntaxKind::R_BRACE) => break,
-                Some(SyntaxKind::SUB_KW) | Some(SyntaxKind::MY_KW) => break,
-                _ => self.bump(),
-            }
-        }
-    }
+    
 
     /// Helper function to parse comma-separated expressions within parentheses
     fn parse_parenthesized_list(&mut self) {
