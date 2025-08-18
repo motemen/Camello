@@ -591,6 +591,9 @@ impl<'a> Parser<'a> {
             if self.at(SyntaxKind::COMMA) {
                 self.bump();
                 self.skip_trivia();
+            } else if !self.at(SyntaxKind::R_PAREN) {
+                self.error("Expected ',' or ')' after expression in list");
+                break;
             }
         }
     }
@@ -916,11 +919,7 @@ mod tests {
     #[test]
     fn test_mixed_qualified_and_simple() {
         let input = "my $var = $Foo::Bar::other_var;";
-        let (green, errors) = parse(input);
-        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
-
-        let syntax = PerlNode::new_root(green);
-        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+        let syntax = assert_parses_ok(input);
 
         // 修飾付き識別子が1つだけ存在することを確認（右辺のみ）
         let qualified_idents: Vec<_> = syntax

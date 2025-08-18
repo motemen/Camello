@@ -444,11 +444,7 @@ mod tests {
 
     #[test]
     fn test_mixed_qualified_and_simple_formatting() {
-        let input = "my$var=$Foo::Bar::other_var;";
-        let (syntax, err) = parse_perl(input);
-        assert!(err.is_empty(), "Parse errors: {:?}", err);
-
-        let formatted = format(&syntax);
-        assert_eq!(formatted, "my $var = $Foo::Bar::other_var;\n");
+        let cases = [("my$var=$Foo::Bar::other_var;", "my $var = $Foo::Bar::other_var;\n")];
+        check_formatting_cases(&cases);
     }
 }
