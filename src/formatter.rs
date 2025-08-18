@@ -196,7 +196,7 @@ impl Formatter {
             (Some(_), SyntaxKind::EQ) | (Some(SyntaxKind::EQ), _) => true,
             (Some(_), SyntaxKind::PLUS) | (Some(SyntaxKind::PLUS), _) => true,
             (Some(_), SyntaxKind::MINUS) | (Some(SyntaxKind::MINUS), _) => true,
-            (Some(_), SyntaxKind::ARROW) | (Some(SyntaxKind::ARROW), _) => true,
+            (Some(_), SyntaxKind::FAT_COMMA) | (Some(SyntaxKind::FAT_COMMA), _) => true,
 
             // Multiplicative operators (but not PERCENT which is used as sigil)
             (Some(_), SyntaxKind::STAR) | (Some(SyntaxKind::STAR), _) => true,
@@ -204,8 +204,9 @@ impl Formatter {
             (Some(_), SyntaxKind::MODULO) | (Some(SyntaxKind::MODULO), _) => true,
             (Some(_), SyntaxKind::X) | (Some(SyntaxKind::X), _) => true,
 
-            // カンマの後
+            // foo, bar
             (Some(SyntaxKind::COMMA), _) => true,
+            (Some(_), SyntaxKind::COMMA) => false,
 
             // キーワードの後
             (Some(SyntaxKind::MY_KW), _) => true,
@@ -219,16 +220,12 @@ impl Formatter {
             // Before left brace "{"
             (Some(_), SyntaxKind::L_BRACE) => true,
 
-            // After qualified identifier not followed by a semicolon or left parenthesis
-            (Some(SyntaxKind::QUALIFIED_IDENT), kind)
-                if kind != SyntaxKind::SEMICOLON && kind != SyntaxKind::L_PAREN =>
-            {
-                true
-            }
-
             // 括弧の内側はスペースなし
             (Some(SyntaxKind::L_PAREN), _) | (Some(_), SyntaxKind::R_PAREN) => false,
             (Some(SyntaxKind::L_BRACE), _) => false,
+
+            // a->b
+            (Some(SyntaxKind::ARROW), _) | (Some(_), SyntaxKind::ARROW) => false,
 
             // After identifier not followed by a semicolon, double colon, or left parenthesis
             (Some(SyntaxKind::IDENT), kind)
@@ -531,7 +528,10 @@ mod tests {
 
     #[test]
     fn test_mixed_qualified_and_simple_formatting() {
-        let cases = [("my$var=$Foo::Bar::other_var;", "my $var = $Foo::Bar::other_var;\n")];
+        let cases = [(
+            "my$var=$Foo::Bar::other_var;",
+            "my $var = $Foo::Bar::other_var;\n",
+        )];
         check_formatting_cases(&cases);
     }
 
@@ -622,5 +622,43 @@ sub test {
             my $y = 2;
         }
         ");
+    }
+
+    #[test]
+    fn test_method_call_formatting() {
+        let cases = [
+            ("$obj->method();", "$obj->method();\n"),
+            ("$obj->method($arg);", "$obj->method($arg);\n"),
+            ("$obj->method($a,$b);", "$obj->method($a, $b);\n"),
+            (
+                "my$result=$obj->calculate();",
+                "my $result = $obj->calculate();\n",
+            ),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_chained_method_calls_formatting() {
+        let cases = [
+            (
+                "$obj->method1()->method2();",
+                "$obj->method1()->method2();\n",
+            ),
+            (
+                "$obj->get()->set($value)->save();",
+                "$obj->get()->set($value)->save();\n",
+            ),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_method_call_on_expressions_formatting() {
+        let cases = [
+            ("($obj+$other)->method();", "($obj + $other)->method();\n"),
+            ("func()->method();", "func()->method();\n"),
+        ];
+        check_formatting_cases(&cases);
     }
 }
