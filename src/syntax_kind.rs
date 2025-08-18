@@ -64,6 +64,10 @@ pub enum SyntaxKind {
     MODULO, // % (modulo operator)
     X,      // x (repetition)
 
+    // Logical operators
+    LOGICAL_AND, // &&
+    LOGICAL_OR,  // ||
+
     // ===== ノードレベル（複合構造） =====
     ROOT,       // ファイルのルート
     SUB_DEF,    // サブルーチン定義
@@ -150,6 +154,8 @@ impl SyntaxKind {
                 | SyntaxKind::SLASH
                 | SyntaxKind::MODULO
                 | SyntaxKind::X
+                | SyntaxKind::LOGICAL_AND
+                | SyntaxKind::LOGICAL_OR
         )
     }
 }
@@ -197,6 +203,8 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::SLASH => "SLASH",
             SyntaxKind::MODULO => "MODULO",
             SyntaxKind::X => "X",
+            SyntaxKind::LOGICAL_AND => "LOGICAL_AND",
+            SyntaxKind::LOGICAL_OR => "LOGICAL_OR",
             SyntaxKind::ROOT => "ROOT",
             SyntaxKind::SUB_DEF => "SUB_DEF",
             SyntaxKind::BLOCK_STMT => "BLOCK_STMT",

@@ -349,7 +349,55 @@ impl<'a> Parser<'a> {
     }
 
     fn expression(&mut self) -> bool {
-        self.additive_expr()
+        self.logical_or_expr()
+    }
+
+    // Logical OR operators: ||
+    fn logical_or_expr(&mut self) -> bool {
+        let start = self.builder.checkpoint();
+        if !self.logical_and_expr() {
+            return false;
+        }
+
+        while let Some(op) = self.current_kind() {
+            if !matches!(op, SyntaxKind::LOGICAL_OR) {
+                break;
+            }
+
+            self.builder
+                .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
+            self.bump(); // operator
+            self.skip_trivia();
+            if !self.logical_and_expr() {
+                self.error("Expected expression after logical OR operator");
+            }
+            self.builder.finish_node();
+        }
+        true
+    }
+
+    // Logical AND operators: &&
+    fn logical_and_expr(&mut self) -> bool {
+        let start = self.builder.checkpoint();
+        if !self.additive_expr() {
+            return false;
+        }
+
+        while let Some(op) = self.current_kind() {
+            if !matches!(op, SyntaxKind::LOGICAL_AND) {
+                break;
+            }
+
+            self.builder
+                .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
+            self.bump(); // operator
+            self.skip_trivia();
+            if !self.additive_expr() {
+                self.error("Expected expression after logical AND operator");
+            }
+            self.builder.finish_node();
+        }
+        true
     }
 
     fn expression_list(&mut self) -> bool {
@@ -1423,5 +1471,157 @@ mod tests {
             .filter(|node| node.kind() == SyntaxKind::SCALAR_VAR)
             .collect();
         assert_eq!(vars.len(), 2);
+    }
+
+    #[test]
+    fn test_logical_and_operator() {
+        let input = "$a && $b;";
+        let syntax = assert_parses_ok(input);
+
+        // LOGICAL_ANDトークンが存在することを確認
+        let logical_and_tokens: Vec<_> = syntax
+            .descendants_with_tokens()
+            .filter_map(|node_or_token| match node_or_token {
+                rowan::NodeOrToken::Token(token) if token.kind() == SyntaxKind::LOGICAL_AND => {
+                    Some(token)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            logical_and_tokens.len(),
+            1,
+            "Should have 1 LOGICAL_AND token"
+        );
+
+        // INFIX_EXPRノードが存在することを確認
+        let infix_exprs: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::INFIX_EXPR)
+            .collect();
+        assert_eq!(infix_exprs.len(), 1, "Should have 1 INFIX_EXPR node for &&");
+    }
+
+    #[test]
+    fn test_logical_or_operator() {
+        let input = "$a || $b;";
+        let syntax = assert_parses_ok(input);
+
+        // LOGICAL_ORトークンが存在することを確認
+        let logical_or_tokens: Vec<_> = syntax
+            .descendants_with_tokens()
+            .filter_map(|node_or_token| match node_or_token {
+                rowan::NodeOrToken::Token(token) if token.kind() == SyntaxKind::LOGICAL_OR => {
+                    Some(token)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(logical_or_tokens.len(), 1, "Should have 1 LOGICAL_OR token");
+
+        // INFIX_EXPRノードが存在することを確認
+        let infix_exprs: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::INFIX_EXPR)
+            .collect();
+        assert_eq!(infix_exprs.len(), 1, "Should have 1 INFIX_EXPR node for ||");
+    }
+
+    #[test]
+    fn test_logical_operator_precedence() {
+        // && has higher precedence than ||
+        // $a || $b && $c should parse as $a || ($b && $c)
+        let input = "$a || $b && $c;";
+        let syntax = assert_parses_ok(input);
+
+        // 両方の演算子が存在することを確認
+        let logical_and_count = syntax
+            .descendants_with_tokens()
+            .filter(|node_or_token| match node_or_token {
+                rowan::NodeOrToken::Token(token) => token.kind() == SyntaxKind::LOGICAL_AND,
+                _ => false,
+            })
+            .count();
+        let logical_or_count = syntax
+            .descendants_with_tokens()
+            .filter(|node_or_token| match node_or_token {
+                rowan::NodeOrToken::Token(token) => token.kind() == SyntaxKind::LOGICAL_OR,
+                _ => false,
+            })
+            .count();
+
+        assert_eq!(logical_and_count, 1, "Should have 1 && operator");
+        assert_eq!(logical_or_count, 1, "Should have 1 || operator");
+
+        // Should have two INFIX_EXPR nodes (one for ||, one for &&)
+        let infix_count = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::INFIX_EXPR)
+            .count();
+        assert_eq!(infix_count, 2, "Should have two INFIX_EXPR nodes");
+    }
+
+    #[test]
+    fn test_logical_vs_arithmetic_precedence() {
+        // Arithmetic operators have higher precedence than logical
+        // $a + $b && $c should parse as ($a + $b) && $c
+        let input = "$a + $b && $c;";
+        let syntax = assert_parses_ok(input);
+
+        let plus_count = syntax
+            .descendants_with_tokens()
+            .filter(|node_or_token| match node_or_token {
+                rowan::NodeOrToken::Token(token) => token.kind() == SyntaxKind::PLUS,
+                _ => false,
+            })
+            .count();
+        let logical_and_count = syntax
+            .descendants_with_tokens()
+            .filter(|node_or_token| match node_or_token {
+                rowan::NodeOrToken::Token(token) => token.kind() == SyntaxKind::LOGICAL_AND,
+                _ => false,
+            })
+            .count();
+
+        assert_eq!(plus_count, 1, "Should have 1 + operator");
+        assert_eq!(logical_and_count, 1, "Should have 1 && operator");
+
+        // Should have two INFIX_EXPR nodes
+        let infix_count = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::INFIX_EXPR)
+            .count();
+        assert_eq!(infix_count, 2, "Should have two INFIX_EXPR nodes");
+    }
+
+    #[test]
+    fn test_chained_logical_operators() {
+        let input = "$a && $b && $c || $d;";
+        let syntax = assert_parses_ok(input);
+
+        let logical_and_count = syntax
+            .descendants_with_tokens()
+            .filter(|node_or_token| match node_or_token {
+                rowan::NodeOrToken::Token(token) => token.kind() == SyntaxKind::LOGICAL_AND,
+                _ => false,
+            })
+            .count();
+        let logical_or_count = syntax
+            .descendants_with_tokens()
+            .filter(|node_or_token| match node_or_token {
+                rowan::NodeOrToken::Token(token) => token.kind() == SyntaxKind::LOGICAL_OR,
+                _ => false,
+            })
+            .count();
+
+        assert_eq!(logical_and_count, 2, "Should have 2 && operators");
+        assert_eq!(logical_or_count, 1, "Should have 1 || operator");
+
+        // Should have three INFIX_EXPR nodes: two for &&, one for ||
+        let infix_count = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::INFIX_EXPR)
+            .count();
+        assert_eq!(infix_count, 3, "Should have three INFIX_EXPR nodes");
     }
 }
