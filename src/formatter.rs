@@ -32,10 +32,17 @@ impl Formatter {
     }
 
     fn format_node(&mut self, node: &PerlNode) {
-        // ハッシュリファレンスノードの場合は特別処理
-        if node.kind() == SyntaxKind::HASH_REF {
-            self.format_hash_ref(node);
-            return;
+        // 特別な処理が必要なノードタイプ
+        match node.kind() {
+            SyntaxKind::HASH_REF => {
+                self.format_hash_ref(node);
+                return;
+            }
+            SyntaxKind::QW_EXPR => {
+                self.format_qw_expr(node);
+                return;
+            }
+            _ => {}
         }
 
         for child in node.children_with_tokens() {
@@ -81,6 +88,51 @@ impl Formatter {
             }
         }
     }
+
+    fn format_qw_expr(&mut self, node: &PerlNode) {
+        // qw() 式の特別フォーマット
+        let mut first_word = true;
+        
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Token(token) => {
+                    let kind = token.kind();
+                    let text = token.text();
+
+                    match kind {
+                        SyntaxKind::QW_KW => {
+                            self.format_token(&token);
+                        }
+                        SyntaxKind::L_PAREN | SyntaxKind::L_BRACKET | SyntaxKind::L_BRACE => {
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::QW_STRING => {
+                            // QW_STRINGの間には空白を追加
+                            if !first_word {
+                                self.output.push(' ');
+                            }
+                            self.output.push_str(text);
+                            first_word = false;
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::R_PAREN | SyntaxKind::R_BRACKET | SyntaxKind::R_BRACE => {
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::WHITESPACE => {
+                            // qw() 内の空白は制御下でスキップ
+                        }
+                        _ => {
+                            self.format_token(&token);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
 
     fn format_token(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
         let kind = token.kind();
@@ -158,6 +210,7 @@ impl Formatter {
             (Some(SyntaxKind::SUB_KW), SyntaxKind::IDENT) => true,
             (Some(SyntaxKind::SUB_KW), SyntaxKind::QUALIFIED_IDENT) => true,
             (Some(SyntaxKind::PACKAGE_KW), _) => true,
+            (Some(SyntaxKind::USE_KW), _) => true,
 
             // Before left brace "{""
             (Some(_), SyntaxKind::L_BRACE) => true,

@@ -15,10 +15,7 @@ pub struct ParseError {
 
 impl ParseError {
     pub fn new(message: String, range: TextRange, source_code: &str) -> Self {
-        let span = SourceSpan::new(
-            usize::from(range.start()).into(),
-            usize::from(range.len()),
-        );
+        let span = SourceSpan::new(usize::from(range.start()).into(), usize::from(range.len()));
         Self {
             message,
             range,
@@ -89,6 +86,10 @@ impl<'a> Parser<'a> {
             }
             Some(SyntaxKind::PACKAGE_KW) => {
                 self.package_stmt();
+                true
+            }
+            Some(SyntaxKind::USE_KW) => {
+                self.use_stmt();
                 true
             }
             Some(SyntaxKind::R_BRACE) => {
@@ -166,6 +167,29 @@ impl<'a> Parser<'a> {
         self.builder.finish_node();
     }
 
+    fn use_stmt(&mut self) {
+        self.builder.start_node(SyntaxKind::USE_STMT.into());
+
+        // "use"
+        self.expect(SyntaxKind::USE_KW);
+        self.skip_trivia();
+
+        // モジュール名（修飾付き識別子）
+        self.parse_identifier_or_qualified();
+        self.skip_trivia();
+
+        // オプション：インポートリスト（qw() など）
+        if self.is_at_start_of_expression() {
+            self.expression();
+            self.skip_trivia();
+        }
+
+        // セミコロン
+        self.expect(SyntaxKind::SEMICOLON);
+
+        self.builder.finish_node();
+    }
+
     fn block(&mut self) {
         self.builder.start_node(SyntaxKind::BLOCK_STMT.into());
 
@@ -221,6 +245,8 @@ impl<'a> Parser<'a> {
                     | SyntaxKind::IDENT
                     | SyntaxKind::L_PAREN
                     | SyntaxKind::L_BRACE
+                    | SyntaxKind::L_BRACKET
+                    | SyntaxKind::QW_KW
             ) || kind.is_variable()
                 || kind.is_sigil()
         } else {
@@ -244,8 +270,7 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            self
-                .builder
+            self.builder
                 .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
             self.bump(); // operator
             self.skip_trivia();
@@ -272,8 +297,7 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            self
-                .builder
+            self.builder
                 .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
             self.bump(); // operator
             self.skip_trivia();
@@ -353,6 +377,14 @@ impl<'a> Parser<'a> {
                 // ハッシュリファレンス（匿名ハッシュ）: {}
                 self.hash_ref();
             }
+            Some(SyntaxKind::L_BRACKET) => {
+                // 配列リファレンス（匿名配列）: []
+                self.array_ref();
+            }
+            Some(SyntaxKind::QW_KW) => {
+                // qw() 式
+                self.qw_expr();
+            }
             _ => {
                 // is_at_start_of_expression でチェックしているので、ここには来ないはず
                 return false;
@@ -408,6 +440,87 @@ impl<'a> Parser<'a> {
         }
 
         self.expect(SyntaxKind::R_BRACE);
+        self.builder.finish_node();
+    }
+
+    fn array_ref(&mut self) {
+        self.builder.start_node(SyntaxKind::ARRAY_REF.into());
+
+        self.expect(SyntaxKind::L_BRACKET);
+        self.skip_trivia();
+
+        // 要素の解析（カンマ区切りの式リスト）
+        while !self.at(SyntaxKind::R_BRACKET) && !self.at_end() {
+            if !self.expression() {
+                self.error("Invalid expression in array reference");
+                break;
+            }
+
+            self.skip_trivia();
+
+            // カンマまたは終了
+            if self.at(SyntaxKind::COMMA) {
+                self.bump();
+                self.skip_trivia();
+            } else if !self.at(SyntaxKind::R_BRACKET) {
+                self.error("Expected ',' or ']' after array element");
+                break;
+            }
+        }
+
+        self.expect(SyntaxKind::R_BRACKET);
+        self.builder.finish_node();
+    }
+
+    fn qw_expr(&mut self) {
+        self.builder.start_node(SyntaxKind::QW_EXPR.into());
+
+        // "qw"
+        self.expect(SyntaxKind::QW_KW);
+        self.skip_trivia();
+
+        // Determine delimiter and find closing delimiter
+        let (opening_delim, closing_delim) = match self.current_kind() {
+            Some(SyntaxKind::L_PAREN) => (SyntaxKind::L_PAREN, SyntaxKind::R_PAREN),
+            Some(SyntaxKind::L_BRACKET) => (SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET),
+            Some(SyntaxKind::L_BRACE) => (SyntaxKind::L_BRACE, SyntaxKind::R_BRACE),
+            _ => {
+                self.error("Expected qw() delimiter: (, [, or {");
+                return;
+            }
+        };
+
+        // Consume opening delimiter
+        self.expect(opening_delim);
+        // Don't skip trivia here - we need whitespace to separate words
+
+        // Parse words inside qw() - consume existing tokens and convert to QW_STRING
+        while !self.at(closing_delim) && !self.at_end() {
+            // Skip whitespace/trivia
+            if let Some(kind) = self.current_kind() {
+                if kind.is_trivia() {
+                    self.bump();
+                    continue;
+                }
+            }
+            
+            // Check if we're at the closing delimiter
+            if self.at(closing_delim) {
+                break;
+            }
+            
+            // Consume any non-whitespace tokens as QW_STRING
+            if let Some((_, text)) = self.current_token.take() {
+                // Add as QW_STRING token
+                self.builder.token(SyntaxKind::QW_STRING.into(), text);
+                self.current_pos += text.len();
+                self.current_token = self.lexer.next_token();
+            }
+        }
+
+        // Closing delimiter
+        self.expect(closing_delim);
+
         self.builder.finish_node();
     }
 
@@ -474,8 +587,7 @@ impl<'a> Parser<'a> {
         // :: があるかチェック
         if self.at(SyntaxKind::DOUBLE_COLON) {
             // 修飾付き識別子として扱う
-            self
-                .builder
+            self.builder
                 .start_node_at(checkpoint, SyntaxKind::QUALIFIED_IDENT.into());
 
             // :: の後の部分を処理
@@ -548,6 +660,7 @@ impl<'a> Parser<'a> {
             }
         }
     }
+
 
     fn error(&mut self, message: &str) {
         let text_len = self.current_text().map_or(0, |t| t.len());
@@ -990,5 +1103,89 @@ mod tests {
             1,
             "Should have 1 qualified identifier (only on right side)"
         );
+    }
+
+    #[test]
+    fn test_qw_expressions() {
+        let inputs = [
+            "qw(all -uninitialized)",
+            "qw[strict refs]",
+            "qw{one two three}",
+            "my @list = qw(a b c);",
+        ];
+
+        for input in inputs {
+            let syntax = assert_parses_ok(input);
+
+            // QW_EXPRノードが存在することを確認
+            let qw_exprs: Vec<_> = syntax
+                .descendants()
+                .filter(|node| node.kind() == SyntaxKind::QW_EXPR)
+                .collect();
+            assert_eq!(
+                qw_exprs.len(),
+                1,
+                "Should have 1 qw expression for input: '{}'",
+                input
+            );
+        }
+    }
+
+    #[test]
+    fn test_use_warnings_qw() {
+        let input = "use warnings qw(all -uninitialized);";
+        let syntax = assert_parses_ok(input);
+
+        // USE_STMTノードが存在することを確認
+        let use_stmts: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::USE_STMT)
+            .collect();
+        assert_eq!(use_stmts.len(), 1, "Should have 1 use statement");
+
+        // QW_EXPRノードが存在することを確認
+        let qw_exprs: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::QW_EXPR)
+            .collect();
+        assert_eq!(qw_exprs.len(), 1, "Should have 1 qw expression in use statement");
+
+        // QW_STRINGトークンが存在することを確認
+        let qw_strings: Vec<_> = syntax
+            .descendants_with_tokens()
+            .filter_map(|node_or_token| {
+                match node_or_token {
+                    rowan::NodeOrToken::Token(token) if token.kind() == SyntaxKind::QW_STRING => Some(token),
+                    _ => None,
+                }
+            })
+            .collect();
+        
+        
+        assert!(qw_strings.len() >= 2, "Should have at least 2 qw strings (all, -uninitialized)");
+    }
+
+    #[test]
+    fn test_array_ref() {
+        let inputs = [
+            "[1, 2, 3]",
+            "my $arrayref = [a, b, c];",
+        ];
+
+        for input in inputs {
+            let syntax = assert_parses_ok(input);
+
+            // ARRAY_REFノードが存在することを確認
+            let array_refs: Vec<_> = syntax
+                .descendants()
+                .filter(|node| node.kind() == SyntaxKind::ARRAY_REF)
+                .collect();
+            assert_eq!(
+                array_refs.len(),
+                1,
+                "Should have 1 array reference for input: '{}'",
+                input
+            );
+        }
     }
 }

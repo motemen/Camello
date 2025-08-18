@@ -32,15 +32,22 @@ pub enum SyntaxKind {
     IF_KW,
     ELSE_KW,
     PACKAGE_KW,
+    QW_KW,  // qw keyword
+    USE_KW, // use keyword (for use warnings qw(...) syntax)
 
     // 記号・区切り文字
     L_BRACE,      // {
     R_BRACE,      // }
     L_PAREN,      // (
     R_PAREN,      // )
+    L_BRACKET,    // [
+    R_BRACKET,    // ]
     SEMICOLON,    // ;
     COMMA,        // ,
     DOUBLE_COLON, // ::
+    
+    // qw() 専用
+    QW_STRING,    // qw()内の任意のテキスト
 
     // 演算子
     EQ,    // =
@@ -62,14 +69,17 @@ pub enum SyntaxKind {
     // 宣言文
     DECLARATION_STMT, // 変数宣言（my, our, state など）
     PACKAGE_STMT,     // パッケージ宣言（package Foo::Bar）
+    USE_STMT,         // use文（use warnings qw(all);）
 
     // 式
     INFIX_EXPR,   // 中置式（二項演算式）
     PREFIX_EXPR,  // 前置式（単項演算式、例: !$foo, -$x）
     POSTFIX_EXPR, // 後置式（例: $i++, $i--）
+    QW_EXPR,      // qw() 式（クォートワードリスト）
 
     // リテラル・リファレンス
-    HASH_REF, // ハッシュリファレンス（匿名ハッシュ）
+    HASH_REF,  // ハッシュリファレンス（匿名ハッシュ）
+    ARRAY_REF, // 配列リファレンス（匿名配列）
 
     // 修飾子
     IF_MODIFIER, // 後置if修飾子（例: print "hello" if $debug;）
@@ -87,6 +97,10 @@ impl SyntaxKind {
         matches!(self, SyntaxKind::WHITESPACE | SyntaxKind::COMMENT)
     }
 
+    pub fn is_whitespace(self) -> bool {
+        self == SyntaxKind::WHITESPACE
+    }
+
     pub fn is_keyword(self) -> bool {
         matches!(
             self,
@@ -95,6 +109,8 @@ impl SyntaxKind {
                 | SyntaxKind::IF_KW
                 | SyntaxKind::ELSE_KW
                 | SyntaxKind::PACKAGE_KW
+                | SyntaxKind::QW_KW
+                | SyntaxKind::USE_KW
         )
     }
 
@@ -147,10 +163,15 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::IF_KW => "IF_KW",
             SyntaxKind::ELSE_KW => "ELSE_KW",
             SyntaxKind::PACKAGE_KW => "PACKAGE_KW",
+            SyntaxKind::QW_KW => "QW_KW",
+            SyntaxKind::USE_KW => "USE_KW",
             SyntaxKind::L_BRACE => "L_BRACE",
             SyntaxKind::R_BRACE => "R_BRACE",
             SyntaxKind::L_PAREN => "L_PAREN",
             SyntaxKind::R_PAREN => "R_PAREN",
+            SyntaxKind::L_BRACKET => "L_BRACKET",
+            SyntaxKind::R_BRACKET => "R_BRACKET",
+            SyntaxKind::QW_STRING => "QW_STRING",
             SyntaxKind::SEMICOLON => "SEMICOLON",
             SyntaxKind::COMMA => "COMMA",
             SyntaxKind::DOUBLE_COLON => "DOUBLE_COLON",
@@ -167,10 +188,13 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::BLOCK_STMT => "BLOCK_STMT",
             SyntaxKind::DECLARATION_STMT => "DECLARATION_STMT",
             SyntaxKind::PACKAGE_STMT => "PACKAGE_STMT",
+            SyntaxKind::USE_STMT => "USE_STMT",
             SyntaxKind::INFIX_EXPR => "INFIX_EXPR",
             SyntaxKind::PREFIX_EXPR => "PREFIX_EXPR",
             SyntaxKind::POSTFIX_EXPR => "POSTFIX_EXPR",
+            SyntaxKind::QW_EXPR => "QW_EXPR",
             SyntaxKind::HASH_REF => "HASH_REF",
+            SyntaxKind::ARRAY_REF => "ARRAY_REF",
             SyntaxKind::IF_MODIFIER => "IF_MODIFIER",
             SyntaxKind::STMT => "STMT",
             SyntaxKind::ERROR => "ERROR",
