@@ -60,8 +60,11 @@ pub enum Token {
     #[token("-")]
     Minus,
 
-    #[token("=>")]
+    #[token("->")]
     Arrow,
+
+    #[token("=>")]
+    FatComma,
 
     // Multiplicative operators
     #[token("*")]
@@ -108,6 +111,7 @@ impl Token {
             Token::Plus => SyntaxKind::PLUS,
             Token::Minus => SyntaxKind::MINUS,
             Token::Arrow => SyntaxKind::ARROW,
+            Token::FatComma => SyntaxKind::FAT_COMMA,
             Token::Star => SyntaxKind::STAR,
             Token::Slash => SyntaxKind::SLASH,
             Token::Whitespace => SyntaxKind::WHITESPACE,
@@ -343,12 +347,12 @@ mod tests {
     }
 
     #[test]
-    fn test_hash_arrow() {
+    fn test_fat_comma() {
         let mut lexer = Lexer::new("a => 1");
 
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "a")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::ARROW, "=>")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::FAT_COMMA, "=>")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::NUMBER, "1")));
         assert_eq!(lexer.next_token(), None);

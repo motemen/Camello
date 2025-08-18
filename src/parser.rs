@@ -352,6 +352,26 @@ impl<'a> Parser<'a> {
         self.additive_expr()
     }
 
+    fn expression_list(&mut self) -> bool {
+        let start = self.builder.checkpoint();
+        if !self.expression() {
+            return false;
+        }
+
+        while self.at(SyntaxKind::COMMA) {
+            self.builder
+                .start_node_at(start, SyntaxKind::EXPR_LIST.into());
+            self.bump(); // ,
+            self.skip_trivia();
+
+            if !self.expression() {
+                self.error("Expected expression after comma in list");
+            }
+            self.builder.finish_node();
+        }
+        true
+    }
+
     // Additive operators: + - .
     fn additive_expr(&mut self) -> bool {
         let start = self.builder.checkpoint();
@@ -379,7 +399,7 @@ impl<'a> Parser<'a> {
     // Multiplicative operators: * / % x
     fn multiplicative_expr(&mut self) -> bool {
         let start = self.builder.checkpoint();
-        if !self.primary_expr() {
+        if !self.method_call_expr() {
             return false;
         }
 
@@ -395,9 +415,43 @@ impl<'a> Parser<'a> {
                 .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
             self.bump(); // operator
             self.skip_trivia();
-            if !self.primary_expr() {
+            if !self.method_call_expr() {
                 self.error("Expected expression after multiplicative operator");
             }
+            self.builder.finish_node();
+        }
+        true
+    }
+
+    // Method call expression: expr -> method_name()
+    fn method_call_expr(&mut self) -> bool {
+        let start = self.builder.checkpoint();
+        if !self.primary_expr() {
+            return false;
+        }
+
+        while self.at(SyntaxKind::ARROW) {
+            self.builder
+                .start_node_at(start, SyntaxKind::METHOD_CALL_EXPR.into());
+            self.bump(); // ->
+            self.skip_trivia();
+
+            self.parse_identifier_or_qualified();
+            self.skip_trivia();
+
+            if self.at(SyntaxKind::L_PAREN) {
+                self.bump();
+
+                self.expression_list();
+
+                if !self.at(SyntaxKind::R_PAREN) {
+                    self.error("Expected ')' after method arguments");
+                } else {
+                    self.bump(); // )
+                    self.skip_trivia();
+                }
+            }
+
             self.builder.finish_node();
         }
         true
@@ -506,7 +560,7 @@ impl<'a> Parser<'a> {
             self.skip_trivia();
 
             // =>
-            if self.at(SyntaxKind::ARROW) {
+            if self.at(SyntaxKind::FAT_COMMA) {
                 self.bump();
             } else {
                 self.error("Expected '=>' after hash key");

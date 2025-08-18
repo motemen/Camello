@@ -52,10 +52,11 @@ pub enum SyntaxKind {
     QW_STRING, // qw()内の任意のテキスト
 
     // 演算子
-    EQ,    // =
-    PLUS,  // +
-    MINUS, // -
-    ARROW, // =>
+    EQ,        // =
+    PLUS,      // +
+    MINUS,     // -
+    ARROW,     // ->
+    FAT_COMMA, // =>
 
     // Multiplicative operators
     STAR,   // *
@@ -76,10 +77,11 @@ pub enum SyntaxKind {
     WHILE_STMT,       // while文
 
     // 式
-    INFIX_EXPR,   // 中置式（二項演算式）
-    PREFIX_EXPR,  // 前置式（単項演算式、例: !$foo, -$x）
-    POSTFIX_EXPR, // 後置式（例: $i++, $i--）
-    QW_EXPR,      // qw() 式（クォートワードリスト）
+    INFIX_EXPR,       // 中置式（二項演算式）
+    PREFIX_EXPR,      // 前置式（単項演算式、例: !$foo, -$x）
+    POSTFIX_EXPR,     // 後置式（例: $i++, $i--）
+    METHOD_CALL_EXPR, // メソッド呼び出し式（例: $obj->method()）
+    QW_EXPR,          // qw() 式（クォートワードリスト）
 
     // リテラル・リファレンス
     HASH_REF,  // ハッシュリファレンス（匿名ハッシュ）
@@ -90,6 +92,8 @@ pub enum SyntaxKind {
 
     // その他の文
     STMT, // 一般的な文
+
+    EXPR_LIST, // 式のリスト（例: $a, $b, $c）
 
     // ===== その他 =====
     ERROR, // パースエラー
@@ -141,6 +145,7 @@ impl SyntaxKind {
                 | SyntaxKind::PLUS
                 | SyntaxKind::MINUS
                 | SyntaxKind::ARROW
+                | SyntaxKind::FAT_COMMA
                 | SyntaxKind::STAR
                 | SyntaxKind::SLASH
                 | SyntaxKind::MODULO
@@ -187,6 +192,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::PLUS => "PLUS",
             SyntaxKind::MINUS => "MINUS",
             SyntaxKind::ARROW => "ARROW",
+            SyntaxKind::FAT_COMMA => "FAT_COMMA",
             SyntaxKind::STAR => "STAR",
             SyntaxKind::SLASH => "SLASH",
             SyntaxKind::MODULO => "MODULO",
@@ -202,6 +208,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::INFIX_EXPR => "INFIX_EXPR",
             SyntaxKind::PREFIX_EXPR => "PREFIX_EXPR",
             SyntaxKind::POSTFIX_EXPR => "POSTFIX_EXPR",
+            SyntaxKind::METHOD_CALL_EXPR => "METHOD_CALL_EXPR",
             SyntaxKind::QW_EXPR => "QW_EXPR",
             SyntaxKind::HASH_REF => "HASH_REF",
             SyntaxKind::ARRAY_REF => "ARRAY_REF",
@@ -209,6 +216,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::STMT => "STMT",
             SyntaxKind::ERROR => "ERROR",
             SyntaxKind::EOF => "EOF",
+            SyntaxKind::EXPR_LIST => "EXPR_LIST",
         };
         write!(f, "{}", name)
     }
