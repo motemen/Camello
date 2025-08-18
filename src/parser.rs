@@ -17,7 +17,7 @@ impl ParseError {
     pub fn new(message: String, range: TextRange, source_code: &str) -> Self {
         let span = SourceSpan::new(
             usize::from(range.start()).into(),
-            usize::from(range.len()).into(),
+            usize::from(range.len()),
         );
         Self {
             message,
@@ -244,9 +244,9 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            let _m = self
+            self
                 .builder
-                .start_node_at(start.clone(), SyntaxKind::INFIX_EXPR.into());
+                .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
             self.bump(); // operator
             self.skip_trivia();
             if !self.multiplicative_expr() {
@@ -272,9 +272,9 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            let _m = self
+            self
                 .builder
-                .start_node_at(start.clone(), SyntaxKind::INFIX_EXPR.into());
+                .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
             self.bump(); // operator
             self.skip_trivia();
             if !self.primary_expr() {
@@ -474,7 +474,7 @@ impl<'a> Parser<'a> {
         // :: があるかチェック
         if self.at(SyntaxKind::DOUBLE_COLON) {
             // 修飾付き識別子として扱う
-            let _qualified = self
+            self
                 .builder
                 .start_node_at(checkpoint, SyntaxKind::QUALIFIED_IDENT.into());
 
