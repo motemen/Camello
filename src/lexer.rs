@@ -2,7 +2,6 @@ use crate::SyntaxKind;
 use logos::Logos;
 
 #[derive(Logos, Debug, PartialEq, Clone)]
-#[logos(skip r"[ \t\f]+")]
 pub enum Token {
     // Sigils（変数の型を示すプレフィックス）
     #[token("$")]
@@ -36,6 +35,12 @@ pub enum Token {
     #[token(")")]
     RParen,
 
+    #[token("[")]
+    LBracket,
+
+    #[token("]")]
+    RBracket,
+
     #[token(";")]
     Semicolon,
 
@@ -68,6 +73,10 @@ pub enum Token {
     #[token("%")]
     Percent,
 
+    // 空白
+    #[regex(r"[ \t\f]+")]
+    Whitespace,
+
     // 改行（重要なので個別にトークン化）
     #[regex(r"\r\n|\r|\n")]
     Newline,
@@ -90,6 +99,8 @@ impl Token {
             Token::RBrace => SyntaxKind::R_BRACE,
             Token::LParen => SyntaxKind::L_PAREN,
             Token::RParen => SyntaxKind::R_PAREN,
+            Token::LBracket => SyntaxKind::L_BRACKET,
+            Token::RBracket => SyntaxKind::R_BRACKET,
             Token::Semicolon => SyntaxKind::SEMICOLON,
             Token::Comma => SyntaxKind::COMMA,
             Token::DoubleColon => SyntaxKind::DOUBLE_COLON,
@@ -99,6 +110,7 @@ impl Token {
             Token::Arrow => SyntaxKind::ARROW,
             Token::Star => SyntaxKind::STAR,
             Token::Slash => SyntaxKind::SLASH,
+            Token::Whitespace => SyntaxKind::WHITESPACE,
             Token::Newline => SyntaxKind::WHITESPACE,
             Token::Comment => SyntaxKind::COMMENT,
         }
@@ -162,6 +174,8 @@ impl<'a> Lexer<'a> {
                     "if" => SyntaxKind::IF_KW,
                     "else" => SyntaxKind::ELSE_KW,
                     "package" => SyntaxKind::PACKAGE_KW,
+                    "qw" => SyntaxKind::QW_KW,
+                    "use" => SyntaxKind::USE_KW,
                     "x" => self.disambiguate_x(),
                     _ => SyntaxKind::IDENT,
                 }
@@ -214,6 +228,8 @@ impl<'a> Lexer<'a> {
             SyntaxKind::SUB_KW => LexerContext::ExpectingValue, // Expects identifier (bareword)
             SyntaxKind::MY_KW => LexerContext::VariableList, // Expects variables or variable lists
             SyntaxKind::PACKAGE_KW => LexerContext::ExpectingValue, // Expects package name
+            SyntaxKind::QW_KW => LexerContext::ExpectingValue, // Expects qw(...) parentheses
+            SyntaxKind::USE_KW => LexerContext::ExpectingValue, // Expects module name
 
             // Operators expect a value next and break out of VariableList context
             SyntaxKind::EQ | SyntaxKind::PLUS | SyntaxKind::MINUS | SyntaxKind::ARROW => {
@@ -222,7 +238,7 @@ impl<'a> Lexer<'a> {
             SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::MODULO | SyntaxKind::X => {
                 LexerContext::ExpectingValue
             }
-            SyntaxKind::L_PAREN | SyntaxKind::L_BRACE => LexerContext::ExpectingValue,
+            SyntaxKind::L_PAREN | SyntaxKind::L_BRACE | SyntaxKind::L_BRACKET => LexerContext::ExpectingValue,
             SyntaxKind::COMMA => LexerContext::ExpectingValue,
 
             // IDENT needs special handling based on current context
@@ -248,7 +264,7 @@ impl<'a> Lexer<'a> {
 
             // Literals expect an operator next
             SyntaxKind::NUMBER | SyntaxKind::STRING => LexerContext::ExpectingOperator,
-            SyntaxKind::R_PAREN | SyntaxKind::R_BRACE => LexerContext::ExpectingOperator,
+            SyntaxKind::R_PAREN | SyntaxKind::R_BRACE | SyntaxKind::R_BRACKET => LexerContext::ExpectingOperator,
 
             // Statement terminators reset to expecting value
             SyntaxKind::SEMICOLON => LexerContext::ExpectingValue,
@@ -275,9 +291,12 @@ mod tests {
         let mut lexer = Lexer::new("my $var = 1;");
 
         assert_eq!(lexer.next_token(), Some((SyntaxKind::MY_KW, "my")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "var")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::EQ, "=")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::NUMBER, "1")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::SEMICOLON, ";")));
         assert_eq!(lexer.next_token(), None);
@@ -285,12 +304,19 @@ mod tests {
 
     #[test]
     fn test_keywords() {
-        let mut lexer = Lexer::new("sub my if else");
+        let mut lexer = Lexer::new("sub my if else qw use");
 
         assert_eq!(lexer.next_token(), Some((SyntaxKind::SUB_KW, "sub")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::MY_KW, "my")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IF_KW, "if")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::ELSE_KW, "else")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::USE_KW, "use")));
     }
 
     #[test]
@@ -299,9 +325,12 @@ mod tests {
 
         assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "scalar")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::AT, "@")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "array")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::MODULO, "%")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "hash")));
     }
 
@@ -310,7 +339,9 @@ mod tests {
         let mut lexer = Lexer::new("a => 1");
 
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "a")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::ARROW, "=>")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::NUMBER, "1")));
         assert_eq!(lexer.next_token(), None);
     }
@@ -320,13 +351,21 @@ mod tests {
         let mut lexer = Lexer::new("a * b / c % d x 3");
 
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "a")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::STAR, "*")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "b")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::SLASH, "/")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "c")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::MODULO, "%")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "d")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::X, "x")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::NUMBER, "3")));
         assert_eq!(lexer.next_token(), None);
     }
@@ -336,7 +375,9 @@ mod tests {
         let mut lexer = Lexer::new("$ @ %");
 
         assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::AT, "@")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::PERCENT, "%")));
         assert_eq!(lexer.next_token(), None);
     }
@@ -348,7 +389,9 @@ mod tests {
 
         assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "var")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::MODULO, "%"))); // Should be MODULO, not PERCENT
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "other_var")));
     }
 
@@ -358,7 +401,9 @@ mod tests {
         let mut lexer = Lexer::new("sub x {");
 
         assert_eq!(lexer.next_token(), Some((SyntaxKind::SUB_KW, "sub")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "x"))); // Should be IDENT, not X
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::L_BRACE, "{")));
     }
 
@@ -369,7 +414,9 @@ mod tests {
 
         assert_eq!(lexer.next_token(), Some((SyntaxKind::AT, "@")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "array")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::MODULO, "%"))); // Should be MODULO (operator)
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "hash")));
     }
 
@@ -379,6 +426,7 @@ mod tests {
         let mut lexer = Lexer::new("my %hash");
 
         assert_eq!(lexer.next_token(), Some((SyntaxKind::MY_KW, "my")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::PERCENT, "%"))); // Should be PERCENT (sigil)
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "hash")));
     }
@@ -391,6 +439,7 @@ mod tests {
             lexer.next_token(),
             Some((SyntaxKind::PACKAGE_KW, "package"))
         );
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "Foo")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::DOUBLE_COLON, "::")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "Bar")));
