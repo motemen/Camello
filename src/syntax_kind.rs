@@ -31,8 +31,9 @@ pub enum SyntaxKind {
     MY_KW,
     IF_KW,
     ELSE_KW,
-    FOR_KW,   // for keyword
-    WHILE_KW, // while keyword
+    FOR_KW,     // for keyword
+    FOREACH_KW, // foreach keyword (synonym for for)
+    WHILE_KW,   // while keyword
     PACKAGE_KW,
     QW_KW,  // qw keyword
     USE_KW, // use keyword (for use warnings qw(...) syntax)
@@ -121,6 +122,7 @@ impl SyntaxKind {
                 | SyntaxKind::IF_KW
                 | SyntaxKind::ELSE_KW
                 | SyntaxKind::FOR_KW
+                | SyntaxKind::FOREACH_KW
                 | SyntaxKind::WHILE_KW
                 | SyntaxKind::PACKAGE_KW
                 | SyntaxKind::QW_KW
@@ -180,6 +182,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::IF_KW => "IF_KW",
             SyntaxKind::ELSE_KW => "ELSE_KW",
             SyntaxKind::FOR_KW => "FOR_KW",
+            SyntaxKind::FOREACH_KW => "FOREACH_KW",
             SyntaxKind::WHILE_KW => "WHILE_KW",
             SyntaxKind::PACKAGE_KW => "PACKAGE_KW",
             SyntaxKind::QW_KW => "QW_KW",

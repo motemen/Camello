@@ -42,6 +42,10 @@ impl Formatter {
                 self.format_qw_expr(node);
                 return;
             }
+            SyntaxKind::SCALAR_VAR | SyntaxKind::ARRAY_VAR | SyntaxKind::HASH_VAR => {
+                self.format_variable(node);
+                return;
+            }
             _ => {}
         }
 
@@ -133,6 +137,20 @@ impl Formatter {
         }
     }
 
+    fn format_variable(&mut self, node: &PerlNode) {
+        // 変数の特別フォーマット - 内部のトークンを処理した後、prev_token_kindを変数の種類に設定
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Token(token) => self.format_token(&token),
+            }
+        }
+
+        // 変数全体の処理完了後、prev_token_kindを変数ノードの種類に設定
+        // これにより、変数の後の括弧に適切なスペースが挿入される
+        self.prev_token_kind = Some(node.kind());
+    }
+
     fn format_token(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
         let kind = token.kind();
         let text = token.text();
@@ -217,6 +235,7 @@ impl Formatter {
             (Some(SyntaxKind::SUB_KW), SyntaxKind::IDENT) => true,
             (Some(SyntaxKind::SUB_KW), SyntaxKind::QUALIFIED_IDENT) => true,
             (Some(SyntaxKind::FOR_KW), _) => true,
+            (Some(SyntaxKind::FOREACH_KW), _) => true,
             (Some(SyntaxKind::WHILE_KW), _) => true,
             (Some(SyntaxKind::PACKAGE_KW), _) => true,
             (Some(SyntaxKind::USE_KW), _) => true,
@@ -224,9 +243,23 @@ impl Formatter {
             // Before left brace "{"
             (Some(_), SyntaxKind::L_BRACE) => true,
 
-            // 括弧の内側はスペースなし
-            (Some(SyntaxKind::L_PAREN), _) | (Some(_), SyntaxKind::R_PAREN) => false,
+            // 括弧の内側はスペースなし、但し括弧の前は適切にスペースを入れる
+            (Some(SyntaxKind::L_PAREN), _) => false,
+            (Some(_), SyntaxKind::R_PAREN) => false,
             (Some(SyntaxKind::L_BRACE), _) => false,
+
+            // Before L_PAREN, add space after variables and keywords (but not after identifiers or qualified identifiers for function calls)
+            (Some(kind), SyntaxKind::L_PAREN)
+                if kind == SyntaxKind::SCALAR_VAR
+                    || kind == SyntaxKind::ARRAY_VAR
+                    || kind == SyntaxKind::HASH_VAR
+                    || kind == SyntaxKind::MY_KW
+                    || kind == SyntaxKind::FOR_KW
+                    || kind == SyntaxKind::FOREACH_KW
+                    || kind == SyntaxKind::WHILE_KW =>
+            {
+                true
+            }
 
             // a->b
             (Some(SyntaxKind::ARROW), _) | (Some(_), SyntaxKind::ARROW) => false,
@@ -541,16 +574,46 @@ mod tests {
 
     #[test]
     fn test_for_stmt_formatting() {
-        let input = "for($i){my$x=1;print$x;}";
+        let input = "for my$var(@list){my$x=1;print$x;}";
         let (syntax, err) = parse_perl(input);
         assert!(err.is_empty(), "Parse errors: {:?}", err);
 
         let formatted = format(&syntax);
 
         insta::assert_snapshot!(formatted, @r"
-        for ($i) {
+        for my $var (@list) {
             my $x = 1;
             print $x;
+        }
+        ");
+    }
+
+    #[test]
+    fn test_foreach_stmt_formatting() {
+        let input = "foreach my$item(@items){print$item;}";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        foreach my $item (@items) {
+            print $item;
+        }
+        ");
+    }
+
+    #[test]
+    fn test_for_stmt_with_existing_var_formatting() {
+        let input = "for$var(@array){my$y=2;}";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        for $var (@array) {
+            my $y = 2;
         }
         ");
     }
