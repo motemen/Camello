@@ -119,11 +119,35 @@ impl<'a> Parser<'a> {
         self.expect(SyntaxKind::MY_KW);
         self.skip_trivia();
 
-        // 変数名 (my宣言では修飾付き識別子は使用しない)
-        if self.current_kind().map(|k| k.is_sigil()).unwrap_or(false) {
+        // my $var or my ($var, ...)
+        if self.at(SyntaxKind::L_PAREN) {
+            self.bump(); // (
+            self.skip_trivia();
+
+            while !self.at(SyntaxKind::R_PAREN) && !self.at_end() {
+                if self.current_kind().map(|k| k.is_sigil()).unwrap_or(false) {
+                    self.parse_variable_simple();
+                } else {
+                    self.error("Expected variable in parenthesized list");
+                    break; // エラーが発生したらループを抜ける
+                }
+
+                self.skip_trivia();
+
+                if self.at(SyntaxKind::COMMA) {
+                    self.bump();
+                    self.skip_trivia();
+                } else if !self.at(SyntaxKind::R_PAREN) {
+                    self.error("Expected ',' or ')' in variable list");
+                    break; // エラーが発生したらループを抜ける
+                }
+            }
+
+            self.expect(SyntaxKind::R_PAREN);
+        } else if self.current_kind().map(|k| k.is_sigil()).unwrap_or(false) {
             self.parse_variable_simple(); // myでは簡単な変数のみ
         } else {
-            self.error("Expected variable after 'my'");
+            self.error("Expected variable or parenthesized list of variables after 'my'");
         }
 
         self.skip_trivia();
@@ -1328,5 +1352,22 @@ mod tests {
 
         assert_eq!(for_stmts.len(), 1, "Should have 1 for statement");
         assert_eq!(while_stmts.len(), 1, "Should have 1 while statement");
+    }
+    #[test]
+    fn test_multiple_var_decl() {
+        let input = "my ($x, $y);";
+        let syntax = assert_parses_ok(input);
+
+        let decls: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::DECLARATION_STMT)
+            .collect();
+        assert_eq!(decls.len(), 1);
+
+        let vars: Vec<_> = decls[0]
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::SCALAR_VAR)
+            .collect();
+        assert_eq!(vars.len(), 2);
     }
 }
