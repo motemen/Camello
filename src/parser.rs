@@ -63,20 +63,13 @@ impl<'a> Parser<'a> {
         self.builder
             .start_node(rowan::SyntaxKind(SyntaxKind::ROOT as u16));
 
+        self.skip_trivia();
         while !self.at_end() {
-            let pos_before = self.current_pos;
             if !self.statement() {
-                // エラー回復: 次の文の開始まで読み飛ばし
-                self.recover_to_statement_boundary();
+                self.error("Expected a statement, but found an unexpected token.");
+                self.bump(); // トークンを消費して回復
             }
-            
-            // 進捗がない場合は無限ループを防ぐため終了
-            if self.current_pos == pos_before {
-                self.error("No progress made in parsing, stopping to prevent infinite loop");
-                if !self.at_end() {
-                    self.bump(); // 最低限の進行を確保
-                }
-            }
+            self.skip_trivia();
         }
 
         self.builder.finish_node();
@@ -94,16 +87,19 @@ impl<'a> Parser<'a> {
                 self.sub_def();
                 true
             }
+            Some(SyntaxKind::PACKAGE_KW) => {
+                self.package_stmt();
+                true
+            }
             Some(SyntaxKind::R_BRACE) => {
-                // ブロック終了なので何もしない
+                // ブロック終了なので呼び出し元に知らせる
                 false
             }
             Some(_) => {
-                // expression_stmt()が失敗した場合を適切に処理する必要がある
-                self.expression_stmt();
-                true
+                // 式文としてパースを試みる
+                self.expression_stmt()
             }
-            None => false,
+            None => false, // EOF
         }
     }
 
@@ -114,9 +110,9 @@ impl<'a> Parser<'a> {
         self.expect(SyntaxKind::MY_KW);
         self.skip_trivia();
 
-        // 変数名
+        // 変数名 (my宣言では修飾付き識別子は使用しない)
         if self.current_kind().map(|k| k.is_sigil()).unwrap_or(false) {
-            self.parse_variable();
+            self.parse_variable_simple(); // myでは簡単な変数のみ
         } else {
             self.error("Expected variable after 'my'");
         }
@@ -144,10 +140,28 @@ impl<'a> Parser<'a> {
         self.expect(SyntaxKind::SUB_KW);
         self.skip_trivia();
 
-        self.expect(SyntaxKind::IDENT);
+        // サブルーチン名（修飾付き識別子も可能）
+        self.parse_identifier_or_qualified();
         self.skip_trivia();
 
         self.block();
+
+        self.builder.finish_node();
+    }
+
+    fn package_stmt(&mut self) {
+        self.builder.start_node(SyntaxKind::PACKAGE_STMT.into());
+
+        // "package"
+        self.expect(SyntaxKind::PACKAGE_KW);
+        self.skip_trivia();
+
+        // パッケージ名（修飾付き識別子）
+        self.parse_identifier_or_qualified();
+        self.skip_trivia();
+
+        // セミコロン
+        self.expect(SyntaxKind::SEMICOLON);
 
         self.builder.finish_node();
     }
@@ -159,18 +173,11 @@ impl<'a> Parser<'a> {
         self.skip_trivia();
 
         while !self.at(SyntaxKind::R_BRACE) && !self.at_end() {
-            let pos_before = self.current_pos;
             if !self.statement() {
-                self.recover_to_statement_boundary();
+                self.error("Expected a statement in block, but found an unexpected token.");
+                self.bump(); // トークンを消費して回復
             }
-            
-            // 進捗がない場合は無限ループを防ぐため終了
-            if self.current_pos == pos_before {
-                self.error("No progress made in block parsing, stopping to prevent infinite loop");
-                if !self.at_end() && !self.at(SyntaxKind::R_BRACE) {
-                    self.bump(); // 最低限の進行を確保
-                }
-            }
+            self.skip_trivia();
         }
 
         self.expect(SyntaxKind::R_BRACE);
@@ -178,12 +185,22 @@ impl<'a> Parser<'a> {
         self.builder.finish_node();
     }
 
-    fn expression_stmt(&mut self) {
+    fn expression_stmt(&mut self) -> bool {
+        if !self.is_at_start_of_expression() {
+            return false;
+        }
+
         self.builder.start_node(SyntaxKind::STMT.into());
         let success = self.expression();
 
         if !success {
+            // is_at_start_of_expression でチェックしているので、ここに来ることは
+            // expressionの実装が不完全な場合のみのはず。
+            // 本来は builder.abandon_node() のようなものが望ましいが、
+            // GreenNodeBuilder にはないので、エラーノードとして閉じておく。
             self.error("Invalid expression statement");
+            self.builder.finish_node();
+            return true; // エラーとして消費はしたのでtrue
         }
 
         // セミコロンは必須ではない（関数呼び出しなどの場合）
@@ -192,70 +209,86 @@ impl<'a> Parser<'a> {
         }
 
         self.builder.finish_node();
+        true
+    }
+
+    fn is_at_start_of_expression(&self) -> bool {
+        if let Some(kind) = self.current_kind() {
+            matches!(
+                kind,
+                SyntaxKind::NUMBER
+                    | SyntaxKind::STRING
+                    | SyntaxKind::IDENT
+                    | SyntaxKind::L_PAREN
+                    | SyntaxKind::L_BRACE
+            ) || kind.is_variable()
+                || kind.is_sigil()
+        } else {
+            false
+        }
     }
 
     fn expression(&mut self) -> bool {
-        let token_count_before = self.current_pos;
-        self.additive_expr();
-        
-        // トークンが消費されなかった場合は進捗がないため失敗
-        token_count_before != self.current_pos
+        self.additive_expr()
     }
 
     // Additive operators: + - .
-    fn additive_expr(&mut self) {
+    fn additive_expr(&mut self) -> bool {
         let start = self.builder.checkpoint();
-        self.multiplicative_expr();
+        if !self.multiplicative_expr() {
+            return false;
+        }
 
         while let Some(op) = self.current_kind() {
             if !matches!(op, SyntaxKind::PLUS | SyntaxKind::MINUS) {
                 break;
             }
 
-            let pos_before = self.current_pos;
             let _m = self
                 .builder
                 .start_node_at(start.clone(), SyntaxKind::INFIX_EXPR.into());
             self.bump(); // operator
             self.skip_trivia();
-            self.multiplicative_expr();
-            self.builder.finish_node();
-            
-            // 進捗がない場合は無限ループを防ぐため終了
-            if self.current_pos == pos_before {
-                break;
+            if !self.multiplicative_expr() {
+                self.error("Expected expression after additive operator");
             }
+            self.builder.finish_node();
         }
+        true
     }
 
     // Multiplicative operators: * / % x
-    fn multiplicative_expr(&mut self) {
+    fn multiplicative_expr(&mut self) -> bool {
         let start = self.builder.checkpoint();
-        self.primary_expr();
+        if !self.primary_expr() {
+            return false;
+        }
 
         while let Some(op) = self.current_kind() {
             if !matches!(op, SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::MODULO | SyntaxKind::X) {
                 break;
             }
 
-            let pos_before = self.current_pos;
             let _m = self
                 .builder
                 .start_node_at(start.clone(), SyntaxKind::INFIX_EXPR.into());
             self.bump(); // operator
             self.skip_trivia();
-            self.primary_expr();
-            self.builder.finish_node();
-            
-            // 進捗がない場合は無限ループを防ぐため終了
-            if self.current_pos == pos_before {
-                break;
+            if !self.primary_expr() {
+                self.error("Expected expression after multiplicative operator");
             }
+            self.builder.finish_node();
         }
+        true
     }
 
-    fn primary_expr(&mut self) {
+    fn primary_expr(&mut self) -> bool {
         self.skip_trivia();
+
+        let at_start = self.is_at_start_of_expression();
+        if !at_start {
+            return false;
+        }
 
         match self.current_kind() {
             Some(SyntaxKind::NUMBER) | Some(SyntaxKind::STRING) => {
@@ -268,20 +301,49 @@ impl<'a> Parser<'a> {
                 self.parse_variable();
             }
             Some(SyntaxKind::IDENT) => {
-                self.bump();
+                // 修飾付き識別子かもしれないのでparse_identifier_or_qualifiedを使用
+                self.parse_identifier_or_qualified();
                 self.skip_trivia();
 
-                // 関数呼び出し: identifier の後に引数（変数など）が続く場合
+                // 関数呼び出し: identifier の後に引数（変数、括弧など）が続く場合
                 while let Some(kind) = self.current_kind() {
                     if kind.is_variable()
                         || kind == SyntaxKind::NUMBER
                         || kind == SyntaxKind::STRING
+                        || kind == SyntaxKind::L_PAREN
                     {
-                        self.bump();
-                        self.skip_trivia();
+                        if kind == SyntaxKind::L_PAREN {
+                            // 括弧内の式を処理
+                            self.bump(); // (
+                            self.skip_trivia();
+                            
+                            // 括弧内の引数リスト（簡単な実装）
+                            self.parse_parenthesized_list();
+                            
+                            if self.at(SyntaxKind::R_PAREN) {
+                                self.bump(); // )
+                                self.skip_trivia();
+                            }
+                        } else {
+                            self.bump();
+                            self.skip_trivia();
+                        }
                     } else {
                         break;
                     }
+                }
+            }
+            Some(SyntaxKind::L_PAREN) => {
+                // 括弧式
+                self.bump(); // (
+                self.skip_trivia();
+                
+                // 括弧内のリスト（配列の初期化など）
+                self.parse_parenthesized_list();
+                
+                if self.at(SyntaxKind::R_PAREN) {
+                    self.bump(); // )
+                    self.skip_trivia();
                 }
             }
             Some(SyntaxKind::L_BRACE) => {
@@ -289,11 +351,11 @@ impl<'a> Parser<'a> {
                 self.hash_ref();
             }
             _ => {
-                self.error("Expected expression");
-                // 予期しないトークンでも確実に消費されるようにする
-                // (error()関数で既に消費されているが、明示的に確認)
+                // is_at_start_of_expression でチェックしているので、ここには来ないはず
+                return false;
             }
         }
+        true
     }
 
     fn hash_ref(&mut self) {
@@ -304,7 +366,7 @@ impl<'a> Parser<'a> {
 
         // キー・バリューペアの解析
         while !self.at(SyntaxKind::R_BRACE) && !self.at_end() {
-            let pos_before = self.current_pos;
+            
             
             // キー（識別子、文字列、または数値）
             if self.at_any(&[SyntaxKind::IDENT, SyntaxKind::STRING, SyntaxKind::NUMBER]) {
@@ -328,12 +390,7 @@ impl<'a> Parser<'a> {
 
             // バリュー（式）
             if !self.expression() {
-                // 式のパースに失敗した場合、予期しないトークンをスキップ
                 self.error("Invalid expression in hash value");
-                // 安全のため、現在のトークンを消費して進行を保証
-                if !self.at_end() && !self.at(SyntaxKind::R_BRACE) && !self.at(SyntaxKind::COMMA) {
-                    self.bump();
-                }
                 break;
             }
 
@@ -348,11 +405,7 @@ impl<'a> Parser<'a> {
                 break;
             }
             
-            // 進捗がない場合は無限ループを防ぐため終了
-            if self.current_pos == pos_before {
-                self.error("No progress made in hash parsing, stopping to prevent infinite loop");
-                break;
-            }
+            
         }
 
         self.expect(SyntaxKind::R_BRACE);
@@ -374,7 +427,29 @@ impl<'a> Parser<'a> {
         self.bump();
         self.skip_trivia();
         
-        // 識別子を期待
+        // 識別子を期待（修飾付き識別子も含む）
+        self.parse_identifier_or_qualified();
+        
+        self.builder.finish_node();
+    }
+
+    /// my宣言専用の変数パース（修飾付き識別子は使用しない）
+    fn parse_variable_simple(&mut self) {
+        let sigil = self.current_kind().unwrap();
+        let var_kind = match sigil {
+            SyntaxKind::DOLLAR => SyntaxKind::SCALAR_VAR,
+            SyntaxKind::AT => SyntaxKind::ARRAY_VAR,
+            SyntaxKind::PERCENT => SyntaxKind::HASH_VAR,
+            _ => unreachable!(),
+        };
+
+        self.builder.start_node(var_kind.into());
+        
+        // Sigil を消費
+        self.bump();
+        self.skip_trivia();
+        
+        // 識別子を期待（単純な識別子のみ）
         if self.at(SyntaxKind::IDENT) {
             self.bump();
         } else {
@@ -382,6 +457,46 @@ impl<'a> Parser<'a> {
         }
         
         self.builder.finish_node();
+    }
+
+    /// 通常の識別子または修飾付き識別子をパースする
+    /// 例: "Foo", "Foo::Bar", "Foo::Bar::Baz"
+    fn parse_identifier_or_qualified(&mut self) {
+        if !self.at(SyntaxKind::IDENT) {
+            self.error("Expected identifier");
+            return;
+        }
+
+        // チェックポイントを作成してから最初の識別子を消費
+        let checkpoint = self.builder.checkpoint();
+        self.bump(); // 最初の識別子
+        self.skip_trivia();
+
+        // :: があるかチェック
+        if self.at(SyntaxKind::DOUBLE_COLON) {
+            // 修飾付き識別子として扱う
+            let _qualified = self.builder.start_node_at(
+                checkpoint, 
+                SyntaxKind::QUALIFIED_IDENT.into()
+            );
+
+            // :: の後の部分を処理
+            while self.at(SyntaxKind::DOUBLE_COLON) {
+                self.bump(); // ::
+                self.skip_trivia();
+                
+                if self.at(SyntaxKind::IDENT) {
+                    self.bump();
+                    self.skip_trivia();
+                } else {
+                    self.error("Expected identifier after '::'");
+                    break;
+                }
+            }
+
+            self.builder.finish_node(); // QUALIFIED_IDENT
+        }
+        // else: 単純な識別子なのでそのまま（既に消費済み）
     }
 
     // ヘルパーメソッド
@@ -454,16 +569,21 @@ impl<'a> Parser<'a> {
         self.current_token = self.lexer.next_token();
     }
 
-    fn recover_to_statement_boundary(&mut self) {
-        while !self.at_end() {
-            match self.current_kind() {
-                Some(SyntaxKind::SEMICOLON) => {
-                    self.bump();
-                    break;
-                }
-                Some(SyntaxKind::R_BRACE) => break,
-                Some(SyntaxKind::SUB_KW) | Some(SyntaxKind::MY_KW) => break,
-                _ => self.bump(),
+    
+
+    /// Helper function to parse comma-separated expressions within parentheses
+    fn parse_parenthesized_list(&mut self) {
+        while !self.at(SyntaxKind::R_PAREN) && !self.at_end() {
+            if !self.expression() {
+                break;
+            }
+            self.skip_trivia();
+            if self.at(SyntaxKind::COMMA) {
+                self.bump();
+                self.skip_trivia();
+            } else if !self.at(SyntaxKind::R_PAREN) {
+                self.error("Expected ',' or ')' after expression in list");
+                break;
             }
         }
     }
@@ -671,5 +791,131 @@ mod tests {
         assert_eq!(scalar_vars.len(), 1, "Should have 1 scalar variable");
         assert_eq!(array_vars.len(), 1, "Should have 1 array variable");
         assert_eq!(hash_vars.len(), 1, "Should have 1 hash variable");
+    }
+
+    /// Helper function to parse input and return syntax tree
+    fn assert_parses_ok(input: &str) -> PerlNode {
+        let (green, errors) = parse(input);
+        assert!(errors.is_empty(), "Parse failed for '{}': {:?}", input, errors);
+        let syntax = PerlNode::new_root(green);
+        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+        syntax
+    }
+
+    #[test]
+    fn test_package_stmts() {
+        let inputs = [
+            "package Foo::Bar;",
+            "package Foo;",
+            "package Foo::Bar::Baz::Qux;",
+        ];
+
+        for input in inputs {
+            let syntax = assert_parses_ok(input);
+            
+            // パッケージ文ノードが存在することを確認
+            let package_stmts: Vec<_> = syntax
+                .descendants()
+                .filter(|node| node.kind() == SyntaxKind::PACKAGE_STMT)
+                .collect();
+            assert_eq!(package_stmts.len(), 1, "Should have 1 package statement for input: '{}'", input);
+        }
+    }
+
+    #[test]
+    fn test_qualified_variables() {
+        let inputs = [
+            "$Foo::Bar::var;",
+            "@Foo::Bar::array;",
+            "%Foo::Bar::hash;",
+            "$Very::Deep::Nested::Package::Name::var;",
+        ];
+
+        for input in inputs {
+            let syntax = assert_parses_ok(input);
+            
+            // 修飾付き識別子が存在することを確認
+            let qualified_idents: Vec<_> = syntax
+                .descendants()
+                .filter(|node| node.kind() == SyntaxKind::QUALIFIED_IDENT)
+                .collect();
+            assert_eq!(qualified_idents.len(), 1, "Should have 1 qualified identifier for input: '{}'", input);
+        }
+    }
+
+    #[test]
+    fn test_qualified_function_calls() {
+        let inputs = [
+            "Foo::Bar::func;", // Without parentheses for now
+            "Very::Deep::Nested::function;",
+        ];
+
+        for input in inputs {
+            let syntax = assert_parses_ok(input);
+            
+            // 修飾付き識別子が存在することを確認
+            let qualified_idents: Vec<_> = syntax
+                .descendants()
+                .filter(|node| node.kind() == SyntaxKind::QUALIFIED_IDENT)
+                .collect();
+            assert_eq!(qualified_idents.len(), 1, "Should have 1 qualified identifier for input: '{}'", input);
+        }
+    }
+
+    #[test]
+    fn test_qualified_subroutines() {
+        let inputs = [
+            "sub Foo::Bar::func { }",
+            "sub Very::Deep::Nested::func { }",
+        ];
+
+        for input in inputs {
+            let syntax = assert_parses_ok(input);
+            
+            // 修飾付き識別子が存在することを確認
+            let qualified_idents: Vec<_> = syntax
+                .descendants()
+                .filter(|node| node.kind() == SyntaxKind::QUALIFIED_IDENT)
+                .collect();
+            assert_eq!(qualified_idents.len(), 1, "Should have 1 qualified identifier for input: '{}'", input);
+        }
+    }
+
+    #[test]
+    fn test_my_declarations_remain_simple() {
+        // my宣言では修飾付き識別子は使用されないことを確認
+        let inputs = [
+            "my $var = 1;",
+            "my @array;",  // Simplified without complex initialization
+            "my %hash;",   // Simplified without complex initialization
+        ];
+
+        for (i, input) in inputs.iter().enumerate() {
+            let (green, errors) = parse(input);
+            assert!(errors.is_empty(), "Test case {} ('{}') failed with errors: {:?}", i, input, errors);
+
+            let syntax = PerlNode::new_root(green);
+            assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+
+            // 修飾付き識別子が存在しないことを確認
+            let qualified_idents: Vec<_> = syntax
+                .descendants()
+                .filter(|node| node.kind() == SyntaxKind::QUALIFIED_IDENT)
+                .collect();
+            assert_eq!(qualified_idents.len(), 0, "Should have no qualified identifiers in my declarations for input: '{}'", input);
+        }
+    }
+
+    #[test]
+    fn test_mixed_qualified_and_simple() {
+        let input = "my $var = $Foo::Bar::other_var;";
+        let syntax = assert_parses_ok(input);
+
+        // 修飾付き識別子が1つだけ存在することを確認（右辺のみ）
+        let qualified_idents: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::QUALIFIED_IDENT)
+            .collect();
+        assert_eq!(qualified_idents.len(), 1, "Should have 1 qualified identifier (only on right side)");
     }
 }
