@@ -146,10 +146,13 @@ impl Formatter {
             }
             SyntaxKind::COMMENT => {
                 // コメントは保持するが、適切な位置に配置
-                if !self.at_line_start {
+                if self.at_line_start {
+                    self.add_indent();
+                    self.at_line_start = false;
+                } else {
                     self.output.push(' ');
                 }
-                self.output.push_str(text);
+                self.output.push_str(text.trim());
                 self.handle_newline();
             }
             SyntaxKind::R_BRACE => {
@@ -213,7 +216,7 @@ impl Formatter {
             (Some(SyntaxKind::PACKAGE_KW), _) => true,
             (Some(SyntaxKind::USE_KW), _) => true,
 
-            // Before left brace "{""
+            // Before left brace "{"
             (Some(_), SyntaxKind::L_BRACE) => true,
 
             // After qualified identifier not followed by a semicolon or left parenthesis
@@ -350,7 +353,7 @@ mod tests {
 
     #[test]
     fn test_sub_with_var_decl_formatting() {
-        let input = r#"
+        let input = r#" 
         my $var = 1;
         sub test {
             my $x = 2;
@@ -528,10 +531,7 @@ mod tests {
 
     #[test]
     fn test_mixed_qualified_and_simple_formatting() {
-        let cases = [(
-            "my$var=$Foo::Bar::other_var;",
-            "my $var = $Foo::Bar::other_var;\n",
-        )];
+        let cases = [("my$var=$Foo::Bar::other_var;", "my $var = $Foo::Bar::other_var;\n")];
         check_formatting_cases(&cases);
     }
 
@@ -597,6 +597,29 @@ mod tests {
             for (@array) {
                 print;
             }
+        }
+        ");
+    }
+
+    #[test]
+    fn test_comment_formatting() {
+        let input = r#" 
+sub test {
+    my $x = 1;
+# a comment
+    my $y = 2;
+}
+"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        sub test {
+            my $x = 1;
+            # a comment
+            my $y = 2;
         }
         ");
     }
