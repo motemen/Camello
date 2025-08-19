@@ -153,7 +153,7 @@ impl Formatter {
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
                     let text = token.text();
-                    
+
                     // デリファレンス式では空白を入れずに続ける
                     match kind {
                         SyntaxKind::WHITESPACE => {
