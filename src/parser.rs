@@ -836,10 +836,10 @@ impl<'a> Parser<'a> {
         // 現在位置から先を見て、最初の非triviaトークンがsigilかチェック
         let current_text = self.current_text().unwrap_or("");
         let remaining_source = &self.source[self.current_pos + current_text.len()..];
-        
+
         // 空白をスキップ
         let trimmed = remaining_source.trim_start();
-        
+
         // 次の文字がsigilかチェック
         trimmed.starts_with('$') || trimmed.starts_with('@') || trimmed.starts_with('%')
     }
@@ -847,11 +847,11 @@ impl<'a> Parser<'a> {
     /// デリファレンス式をパース（例: @$var, %$var, $$var）
     fn parse_dereferencing(&mut self) {
         self.builder.start_node(SyntaxKind::DEREF_EXPR.into());
-        
+
         // 最初のsigil（デリファレンス演算子）を消費
         self.bump();
         self.skip_trivia();
-        
+
         // 次のsigilとそれに続く変数をパース
         if let Some(kind) = self.current_kind() {
             if kind.is_sigil() {
@@ -862,7 +862,7 @@ impl<'a> Parser<'a> {
         } else {
             self.error("Expected variable after dereference sigil");
         }
-        
+
         self.builder.finish_node();
     }
 
@@ -1805,12 +1805,20 @@ mod tests {
             .descendants()
             .filter(|node| node.kind() == SyntaxKind::DEREF_EXPR)
             .collect();
-        assert_eq!(deref_exprs.len(), 1, "Should have 1 DEREF_EXPR node for $$var");
+        assert_eq!(
+            deref_exprs.len(),
+            1,
+            "Should have 1 DEREF_EXPR node for $$var"
+        );
         let scalar_vars: Vec<_> = deref_exprs[0]
             .descendants()
             .filter(|node| node.kind() == SyntaxKind::SCALAR_VAR)
             .collect();
-        assert_eq!(scalar_vars.len(), 1, "Should have 1 SCALAR_VAR in $$var DEREF_EXPR");
+        assert_eq!(
+            scalar_vars.len(),
+            1,
+            "Should have 1 SCALAR_VAR in $$var DEREF_EXPR"
+        );
 
         // Test array dereferencing (@$arrayref)
         let input = "@$arrayref;";
@@ -1819,12 +1827,20 @@ mod tests {
             .descendants()
             .filter(|node| node.kind() == SyntaxKind::DEREF_EXPR)
             .collect();
-        assert_eq!(deref_exprs.len(), 1, "Should have 1 DEREF_EXPR node for @$arrayref");
+        assert_eq!(
+            deref_exprs.len(),
+            1,
+            "Should have 1 DEREF_EXPR node for @$arrayref"
+        );
         let scalar_vars: Vec<_> = deref_exprs[0]
             .descendants()
             .filter(|node| node.kind() == SyntaxKind::SCALAR_VAR)
             .collect();
-        assert_eq!(scalar_vars.len(), 1, "Should have 1 SCALAR_VAR in @$arrayref DEREF_EXPR");
+        assert_eq!(
+            scalar_vars.len(),
+            1,
+            "Should have 1 SCALAR_VAR in @$arrayref DEREF_EXPR"
+        );
 
         // Test hash dereferencing (%$hashref)
         let input = "%$hashref;";
@@ -1833,12 +1849,20 @@ mod tests {
             .descendants()
             .filter(|node| node.kind() == SyntaxKind::DEREF_EXPR)
             .collect();
-        assert_eq!(deref_exprs.len(), 1, "Should have 1 DEREF_EXPR node for %$hashref");
+        assert_eq!(
+            deref_exprs.len(),
+            1,
+            "Should have 1 DEREF_EXPR node for %$hashref"
+        );
         let scalar_vars: Vec<_> = deref_exprs[0]
             .descendants()
             .filter(|node| node.kind() == SyntaxKind::SCALAR_VAR)
             .collect();
-        assert_eq!(scalar_vars.len(), 1, "Should have 1 SCALAR_VAR in %$hashref DEREF_EXPR");
+        assert_eq!(
+            scalar_vars.len(),
+            1,
+            "Should have 1 SCALAR_VAR in %$hashref DEREF_EXPR"
+        );
 
         // Test dereferencing with whitespace (@ $var)
         let input = "@ $var;";
@@ -1847,7 +1871,11 @@ mod tests {
             .descendants()
             .filter(|node| node.kind() == SyntaxKind::DEREF_EXPR)
             .collect();
-        assert_eq!(deref_exprs.len(), 1, "Should have 1 DEREF_EXPR node with whitespace");
+        assert_eq!(
+            deref_exprs.len(),
+            1,
+            "Should have 1 DEREF_EXPR node with whitespace"
+        );
 
         // Test dereferencing in assignment
         let input = "my $result = @$arrayref;";
@@ -1856,7 +1884,11 @@ mod tests {
             .descendants()
             .filter(|node| node.kind() == SyntaxKind::DEREF_EXPR)
             .collect();
-        assert_eq!(deref_exprs.len(), 1, "Should have 1 DEREF_EXPR in assignment");
+        assert_eq!(
+            deref_exprs.len(),
+            1,
+            "Should have 1 DEREF_EXPR in assignment"
+        );
         let decl_stmts: Vec<_> = syntax
             .descendants()
             .filter(|node| node.kind() == SyntaxKind::DECLARATION_STMT)
