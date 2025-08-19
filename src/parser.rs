@@ -564,9 +564,11 @@ impl<'a> Parser<'a> {
         match self.current_kind() {
             Some(SyntaxKind::NUMBER) | Some(SyntaxKind::STRING) => {
                 self.bump();
+                self.skip_trivia();
             }
             Some(kind) if kind.is_variable() => {
                 self.bump();
+                self.skip_trivia();
             }
             Some(kind) if kind.is_sigil() => {
                 // Check if this is a dereferencing pattern (sigil followed by another sigil)
@@ -577,35 +579,29 @@ impl<'a> Parser<'a> {
                 }
             }
             Some(SyntaxKind::IDENT) => {
+                let start = self.builder.checkpoint();
+
                 // 修飾付き識別子かもしれないのでparse_identifier_or_qualifiedを使用
                 self.parse_identifier_or_qualified();
                 self.skip_trivia();
 
-                // 関数呼び出し: identifier の後に引数（変数、括弧など）が続く場合
-                while let Some(kind) = self.current_kind() {
+                // Check if we have function arguments following the identifier
+                if let Some(kind) = self.current_kind() {
+                    // If the next token can start an expression, treat this as a function call
                     if kind.is_variable()
                         || kind == SyntaxKind::NUMBER
                         || kind == SyntaxKind::STRING
                         || kind == SyntaxKind::L_PAREN
+                        || kind.is_sigil()
                     {
-                        if kind == SyntaxKind::L_PAREN {
-                            // 括弧内の式を処理
-                            self.bump(); // (
-                            self.skip_trivia();
+                        // We have a function call, wrap everything in FUNCTION_CALL_EXPR
+                        self.builder
+                            .start_node_at(start, SyntaxKind::FUNCTION_CALL_EXPR.into());
 
-                            // 括弧内の引数リスト（簡単な実装）
-                            self.parse_parenthesized_list();
+                        // Parse arguments as an expression list
+                        self.expression_list();
 
-                            if self.at(SyntaxKind::R_PAREN) {
-                                self.bump(); // )
-                                self.skip_trivia();
-                            }
-                        } else {
-                            self.bump();
-                            self.skip_trivia();
-                        }
-                    } else {
-                        break;
+                        self.builder.finish_node();
                     }
                 }
             }
@@ -2156,5 +2152,102 @@ mod tests {
             SEMICOLON@22..23 ";"
         "#
         );
+    }
+
+    #[test]
+    fn test_function_calls_without_parentheses() {
+        // Test basic function call
+        let input = "push @array, $value;";
+        let syntax = assert_parses_ok(input);
+
+        let func_calls: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::FUNCTION_CALL_EXPR)
+            .collect();
+        assert_eq!(func_calls.len(), 1, "Should have 1 function call");
+
+        let expr_lists: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::EXPR_LIST)
+            .collect();
+        assert_eq!(expr_lists.len(), 1, "Should have 1 expression list");
+
+        // Test with multiple arguments
+        let input = "print $var, \"hello\", 123;";
+        let syntax = assert_parses_ok(input);
+
+        let func_calls: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::FUNCTION_CALL_EXPR)
+            .collect();
+        assert_eq!(func_calls.len(), 1, "Should have 1 function call");
+
+        // Test function call with no arguments (should not be treated as function call)
+        let input = "return;";
+        let syntax = assert_parses_ok(input);
+
+        let func_calls: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::FUNCTION_CALL_EXPR)
+            .collect();
+        assert_eq!(func_calls.len(), 0, "Should have no function calls");
+
+        // Test function call with single argument
+        let input = "shift @array;";
+        let syntax = assert_parses_ok(input);
+
+        let func_calls: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::FUNCTION_CALL_EXPR)
+            .collect();
+        assert_eq!(func_calls.len(), 1, "Should have 1 function call");
+
+        // TODO: ハッシュインデックス構文をサポートした後に有効化
+        // Test function call with hash indexing (currently not supported)
+        // let input = "delete $hash{key};";
+        // let syntax = assert_parses_ok(input);
+        // let func_calls: Vec<_> = syntax.descendants()
+        //     .filter(|node| node.kind() == SyntaxKind::FUNCTION_CALL_EXPR)
+        //     .collect();
+        // assert_eq!(func_calls.len(), 1, "Should have 1 function call");
+    }
+
+    #[test]
+    fn test_function_call_ast_structure() {
+        let input = "push @array, $value;";
+        let syntax = assert_parses_ok(input);
+
+        insta::assert_debug_snapshot!(
+            syntax,
+            @r###"
+        ROOT@0..20
+          STMT@0..20
+            FUNCTION_CALL_EXPR@0..19
+              IDENT@0..4 "push"
+              WHITESPACE@4..5 " "
+              EXPR_LIST@5..19
+                ARRAY_VAR@5..11
+                  AT@5..6 "@"
+                  IDENT@6..11 "array"
+                COMMA@11..12 ","
+                WHITESPACE@12..13 " "
+                SCALAR_VAR@13..19
+                  DOLLAR@13..14 "$"
+                  IDENT@14..19 "value"
+            SEMICOLON@19..20 ";"
+        "###
+        );
+    }
+
+    #[test]
+    fn test_multiple_function_calls() {
+        let input = "push @a, $x; pop @b;";
+        let syntax = assert_parses_ok(input);
+
+        let func_calls: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::FUNCTION_CALL_EXPR)
+            .collect();
+        assert_eq!(func_calls.len(), 2, "Should have 2 function calls");
     }
 }
