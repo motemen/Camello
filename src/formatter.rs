@@ -46,6 +46,10 @@ impl Formatter {
                 self.format_deref_expr(node);
                 return;
             }
+            SyntaxKind::FUNCTION_CALL_EXPR => {
+                self.format_function_call(node);
+                return;
+            }
             _ => {}
         }
 
@@ -164,6 +168,21 @@ impl Formatter {
                             self.prev_token_kind = Some(kind);
                         }
                     }
+                }
+            }
+        }
+    }
+
+    fn format_function_call(&mut self, node: &PerlNode) {
+        // Format function call: function_name arg1, arg2, arg3
+        // Ensure proper spacing: space after function name, space after commas
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(child_node) => {
+                    self.format_node(&child_node);
+                }
+                NodeOrToken::Token(token) => {
+                    self.format_token(&token);
                 }
             }
         }
@@ -800,5 +819,70 @@ sub test {
             ("$a&&$b||$c&&$d;", "$a && $b || $c && $d;\n"),
         ];
         check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_function_call_formatting() {
+        let cases = [
+            ("push@array,$value;", "push @array, $value;\n"),
+            ("print$var,\"hello\",123;", "print $var, \"hello\", 123;\n"),
+            ("shift@array;", "shift @array;\n"),
+            // TODO: ハッシュインデックス構文をサポートする必要がある: ("delete$hash{key};", "delete $hash{key};\n"),
+            ("my_func$a,$b,$c;", "my_func $a, $b, $c;\n"),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_function_call_with_tight_spacing() {
+        let input = "push@array,$value,$another;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"push @array, $value, $another;");
+    }
+
+    #[test]
+    fn test_function_call_with_mixed_argument_types() {
+        let input = "printf\"%s:%d\\n\",$name,$age;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"printf \"%s:%d\\n\", $name, $age;");
+    }
+
+    #[test]
+    fn test_multiple_function_calls_formatting() {
+        let input = "push@a,$x;pop@b;unshift@c,$y,$z;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        push @a, $x;
+        pop @b;
+        unshift @c, $y, $z;
+        ");
+    }
+
+    #[test]
+    fn test_function_call_in_sub() {
+        let input = "sub test{push@array,$value;return$result;}";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        sub test {
+            push @array, $value;
+            return $result;
+        }
+        ");
     }
 }
