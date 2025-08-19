@@ -497,44 +497,60 @@ impl Formatter {
     }
 
     fn add_empty_line_before_if_needed(&mut self, node: &PerlNode) {
-        // Only add empty lines for subs and use statements that have different types of preceding statements
+        // Add empty lines based on statement grouping rules:
+        // - For USE_STMT: add empty line if prev statement is NOT USE_STMT (start of use group)
+        // - For SUB_DEF: add empty line if prev statement exists and is not SUB_DEF
         if let Some(parent) = node.parent() {
-            let prev_sibling_different = parent
+            let should_add_empty_line = parent
                 .children()
                 .take_while(|child| child != node)
                 .last()
                 .map(|prev| {
-                    !matches!(
-                        (prev.kind(), node.kind()),
-                        (SyntaxKind::SUB_DEF, SyntaxKind::SUB_DEF)
-                            | (SyntaxKind::USE_STMT, SyntaxKind::USE_STMT)
-                    )
+                    match node.kind() {
+                        SyntaxKind::USE_STMT => {
+                            // Add empty line before use statement only if prev is not use statement
+                            prev.kind() != SyntaxKind::USE_STMT
+                        }
+                        SyntaxKind::SUB_DEF => {
+                            // Add empty line before sub only if prev is not sub (as per current behavior)
+                            prev.kind() != SyntaxKind::SUB_DEF
+                        }
+                        _ => false,
+                    }
                 })
                 .unwrap_or(false);
 
-            if prev_sibling_different {
+            if should_add_empty_line {
                 self.add_empty_line_before();
             }
         }
     }
 
     fn add_empty_line_after_if_needed(&mut self, node: &PerlNode) {
-        // Only add empty lines for subs and use statements that have different types of following statements
+        // Add empty lines based on statement grouping rules:
+        // - For USE_STMT: only add empty line if next statement is NOT USE_STMT (end of use group)
+        // - For SUB_DEF: add empty line if next statement exists and is not SUB_DEF
         if let Some(parent) = node.parent() {
-            let next_sibling_different = parent
+            let should_add_empty_line = parent
                 .children()
                 .skip_while(|child| child != node)
                 .nth(1) // Get the next sibling
                 .map(|next| {
-                    !matches!(
-                        (node.kind(), next.kind()),
-                        (SyntaxKind::SUB_DEF, SyntaxKind::SUB_DEF)
-                            | (SyntaxKind::USE_STMT, SyntaxKind::USE_STMT)
-                    )
+                    match node.kind() {
+                        SyntaxKind::USE_STMT => {
+                            // Add empty line after use statement only if next is not use statement
+                            next.kind() != SyntaxKind::USE_STMT
+                        }
+                        SyntaxKind::SUB_DEF => {
+                            // Add empty line after sub only if next is not sub (as per current behavior)
+                            next.kind() != SyntaxKind::SUB_DEF
+                        }
+                        _ => false,
+                    }
                 })
                 .unwrap_or(false);
 
-            if next_sibling_different {
+            if should_add_empty_line {
                 self.add_empty_line_after();
             }
         }
@@ -543,15 +559,13 @@ impl Formatter {
     fn add_empty_line_before(&mut self) {
         // Only add empty line if this is not the first node and we don't already have one
         if !self.output.is_empty() && !self.output.ends_with("\n\n") {
-            // If we're at line start but don't have a proper empty line, add one
-            if self.output.ends_with('\n') {
-                self.output.push('\n');
-                self.consecutive_newlines += 1;
-            } else {
-                // Add a newline first, then the empty line
-                self.handle_newline();
+            if !self.output.ends_with('\n') {
                 self.handle_newline();
             }
+            // Add one more newline to create an empty line
+            self.output.push('\n');
+            self.consecutive_newlines += 1;
+            self.at_line_start = true;
         }
     }
 
@@ -570,11 +584,15 @@ impl Formatter {
     fn squeeze_multiple_newlines(&mut self) {
         // Limit consecutive newlines to maximum of 2 (one empty line)
         if self.consecutive_newlines > 2 {
-            // Remove excess newlines by trimming and adding back the maximum allowed
-            let trimmed = self.output.trim_end_matches('\n').to_string();
-            self.output.clear();
-            self.output.push_str(&trimmed);
-            self.output.push_str("\n\n"); // Add back maximum 2 newlines
+            // Find the start of the trailing newlines
+            if let Some(i) = self.output.rfind(|c| c != '\n') {
+                // Found a non-newline character. Truncate after it.
+                self.output.truncate(i + 1);
+            } else {
+                // The string is all newlines.
+                self.output.clear();
+            }
+            self.output.push_str("\n\n");
             self.consecutive_newlines = 2;
         }
     }
