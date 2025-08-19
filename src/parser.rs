@@ -540,6 +540,7 @@ impl<'a> Parser<'a> {
             self.at_any(&[
                 SyntaxKind::NUMBER,
                 SyntaxKind::STRING,
+                SyntaxKind::REGEX_LITERAL,
                 SyntaxKind::IDENT,
                 SyntaxKind::L_PAREN,
                 SyntaxKind::L_BRACE,
@@ -603,6 +604,26 @@ impl<'a> Parser<'a> {
             self.skip_trivia();
             if !self.comparison_expr() {
                 self.error("Expected expression after logical AND operator");
+            }
+            self.builder.finish_node();
+        }
+        true
+    }
+
+    // Regex operators: =~ !~
+    fn regex_expr(&mut self) -> bool {
+        let start = self.builder.checkpoint();
+        if !self.method_call_expr() {
+            return false;
+        }
+
+        while self.at_any(&[SyntaxKind::REGEX_MATCH, SyntaxKind::REGEX_NOT_MATCH]) {
+            self.builder
+                .start_node_at(start, SyntaxKind::REGEX_EXPR.into());
+            self.bump(); // operator
+            self.skip_trivia();
+            if !self.method_call_expr() {
+                self.error("Expected expression after regex operator");
             }
             self.builder.finish_node();
         }
@@ -681,7 +702,7 @@ impl<'a> Parser<'a> {
     // Multiplicative operators: * / % x
     fn multiplicative_expr(&mut self) -> bool {
         let start = self.builder.checkpoint();
-        if !self.method_call_expr() {
+        if !self.regex_expr() {
             return false;
         }
 
@@ -695,7 +716,7 @@ impl<'a> Parser<'a> {
                 .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
             self.bump(); // operator
             self.skip_trivia();
-            if !self.method_call_expr() {
+            if !self.regex_expr() {
                 self.error("Expected expression after multiplicative operator");
             }
             self.builder.finish_node();
@@ -746,7 +767,9 @@ impl<'a> Parser<'a> {
         }
 
         match self.current_kind() {
-            Some(SyntaxKind::NUMBER) | Some(SyntaxKind::STRING) => {
+            Some(SyntaxKind::NUMBER)
+            | Some(SyntaxKind::STRING)
+            | Some(SyntaxKind::REGEX_LITERAL) => {
                 self.bump();
                 self.skip_trivia();
             }
@@ -2554,5 +2577,60 @@ mod tests {
             .filter(|node| node.kind() == SyntaxKind::FUNCTION_CALL_EXPR)
             .collect();
         assert_eq!(func_calls.len(), 2, "Should have 2 function calls");
+    }
+
+    #[test]
+    fn test_regex_match_basic() {
+        let input = r#"$str =~ "pattern";"#;
+        let syntax = assert_parses_ok(input);
+        println!("{:#?}", syntax);
+
+        let formatted = crate::format(&syntax);
+        assert_eq!(formatted, "$str =~ \"pattern\";\n");
+    }
+
+    #[test]
+    fn test_regex_not_match() {
+        let input = r#"$str !~ "pattern";"#;
+        let syntax = assert_parses_ok(input);
+        println!("{:#?}", syntax);
+
+        let formatted = crate::format(&syntax);
+        assert_eq!(formatted, "$str !~ \"pattern\";\n");
+    }
+
+    #[test]
+    fn test_regex_with_string() {
+        let input = r#"$str =~ "test.*pattern";"#;
+        let syntax = assert_parses_ok(input);
+        println!("{:#?}", syntax);
+
+        let formatted = crate::format(&syntax);
+        assert_eq!(formatted, "$str =~ \"test.*pattern\";\n");
+    }
+
+    #[test]
+    fn test_regex_operator_precedence() {
+        let input = r#"$a == 1 && $str =~ "test";"#;
+        let syntax = assert_parses_ok(input);
+        println!("{:#?}", syntax);
+
+        let formatted = crate::format(&syntax);
+        assert_eq!(formatted, "$a == 1 && $str =~ \"test\";\n");
+    }
+
+    #[test]
+    fn test_complex_regex_expression() {
+        let input = r#"if ($text =~ "hello") {
+    print "found";
+}"#;
+        let syntax = assert_parses_ok(input);
+        println!("{:#?}", syntax);
+
+        let formatted = crate::format(&syntax);
+        assert_eq!(
+            formatted,
+            "if ($text =~ \"hello\") {\n    print \"found\";\n}\n"
+        );
     }
 }

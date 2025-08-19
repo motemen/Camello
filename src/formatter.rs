@@ -54,6 +54,10 @@ impl Formatter {
                 self.format_block_function_call(node);
                 return;
             }
+            SyntaxKind::REGEX_EXPR => {
+                // Default handling for regex expressions - just format children
+                // The spacing around regex operators is handled in format_token
+            }
             _ => {}
         }
 
@@ -364,6 +368,10 @@ impl Formatter {
             (Some(_), SyntaxKind::LE) | (Some(SyntaxKind::LE), _) => true,
             (Some(_), SyntaxKind::EQ_EQ) | (Some(SyntaxKind::EQ_EQ), _) => true,
             (Some(_), SyntaxKind::NE) | (Some(SyntaxKind::NE), _) => true,
+
+            // Regex operators
+            (Some(_), SyntaxKind::REGEX_MATCH) | (Some(SyntaxKind::REGEX_MATCH), _) => true,
+            (Some(_), SyntaxKind::REGEX_NOT_MATCH) | (Some(SyntaxKind::REGEX_NOT_MATCH), _) => true,
 
             // Multiplicative operators (but not PERCENT which is used as sigil)
             (Some(_), SyntaxKind::STAR) | (Some(SyntaxKind::STAR), _) => true,
@@ -1132,5 +1140,74 @@ sub test {
             do_something_else();
         }
         ");
+    }
+
+    #[test]
+    fn test_regex_match_operator_formatting() {
+        let cases = [
+            ("$str=~\"pattern\";", "$str =~ \"pattern\";\n"),
+            ("$str!~\"pattern\";", "$str !~ \"pattern\";\n"),
+            ("$a==1&&$str=~\"test\";", "$a == 1 && $str =~ \"test\";\n"),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_regex_literal_basic_formatting() {
+        let input = "$str=~/pattern/;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"$str =~ /pattern/;");
+    }
+
+    #[test]
+    fn test_regex_literal_with_flags_formatting() {
+        let input = "$text=~/test.*pattern/ig;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"$text =~ /test.*pattern/ig;");
+    }
+
+    #[test]
+    fn test_regex_literal_vs_division_formatting() {
+        let input = "my$result=$a/$b;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"my $result = $a / $b;");
+    }
+
+    #[test]
+    fn test_regex_literal_in_conditional_formatting() {
+        let input = "if($text=~/hello/){print\"matched\";}";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r#"
+        if ($text =~ /hello/) {
+            print "matched";
+        }
+        "#);
+    }
+
+    #[test]
+    fn test_complex_regex_expression_formatting() {
+        let input = "my$result=$str=~/pattern/&&$other!~/test/i;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"my $result = $str =~ /pattern/ && $other !~ /test/i;");
     }
 }

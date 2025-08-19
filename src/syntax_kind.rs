@@ -25,6 +25,7 @@ pub enum SyntaxKind {
     // リテラル
     NUMBER,
     STRING,
+    REGEX_LITERAL, // /pattern/flags
 
     // キーワード
     SUB_KW,
@@ -74,6 +75,10 @@ pub enum SyntaxKind {
     EQ_EQ, // ==
     NE,    // !=
 
+    // Regex operators
+    REGEX_MATCH,     // =~
+    REGEX_NOT_MATCH, // !~
+
     // Logical operators
     LOGICAL_AND, // &&
     LOGICAL_OR,  // ||
@@ -100,6 +105,7 @@ pub enum SyntaxKind {
     BLOCK_FUNCTION_CALL_EXPR, // ブロック関数呼び出し式（例: eval { ... }, map { ... } @list）
     QW_EXPR,                  // qw() 式（クォートワードリスト）
     DEREF_EXPR,               // デリファレンス式（例: @$var, %$var, $$var）
+    REGEX_EXPR,               // 正規表現式（例: $str =~ "pattern"）
 
     // リテラル・リファレンス
     HASH_REF,  // ハッシュリファレンス（匿名ハッシュ）
@@ -191,6 +197,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::HASH_VAR => "HASH_VAR",
             SyntaxKind::NUMBER => "NUMBER",
             SyntaxKind::STRING => "STRING",
+            SyntaxKind::REGEX_LITERAL => "REGEX_LITERAL",
             SyntaxKind::SUB_KW => "SUB_KW",
             SyntaxKind::MY_KW => "MY_KW",
             SyntaxKind::IF_KW => "IF_KW",
@@ -227,6 +234,8 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::LE => "LE",
             SyntaxKind::EQ_EQ => "EQ_EQ",
             SyntaxKind::NE => "NE",
+            SyntaxKind::REGEX_MATCH => "REGEX_MATCH",
+            SyntaxKind::REGEX_NOT_MATCH => "REGEX_NOT_MATCH",
             SyntaxKind::LOGICAL_AND => "LOGICAL_AND",
             SyntaxKind::LOGICAL_OR => "LOGICAL_OR",
             SyntaxKind::ROOT => "ROOT",
@@ -244,6 +253,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::METHOD_CALL_EXPR => "METHOD_CALL_EXPR",
             SyntaxKind::QW_EXPR => "QW_EXPR",
             SyntaxKind::DEREF_EXPR => "DEREF_EXPR",
+            SyntaxKind::REGEX_EXPR => "REGEX_EXPR",
             SyntaxKind::HASH_REF => "HASH_REF",
             SyntaxKind::ARRAY_REF => "ARRAY_REF",
             SyntaxKind::IF_MODIFIER => "IF_MODIFIER",
