@@ -1141,4 +1141,81 @@ sub test {
         }
         ");
     }
+
+    #[test]
+    fn test_regex_match_operator_formatting() {
+        let cases = [
+            ("$str=~\"pattern\";", "$str =~ \"pattern\";\n"),
+            ("$str!~\"pattern\";", "$str !~ \"pattern\";\n"),
+            ("$a==1&&$str=~\"test\";", "$a == 1 && $str =~ \"test\";\n"),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_regex_literal_basic_formatting() {
+        // TODO: Implement regex literal support
+        // For now test with string patterns
+        let input = "$str=~\"pattern\";";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"$str =~ \"pattern\";");
+    }
+
+    #[test]
+    fn test_regex_literal_with_flags_formatting() {
+        // TODO: Implement regex literal support
+        // For now test with string patterns
+        let input = "$text=~\"test.*pattern\";";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"$text =~ \"test.*pattern\";");
+    }
+
+    #[test]
+    fn test_regex_literal_vs_division_formatting() {
+        let input = "my$result=$a/$b;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"my $result = $a / $b;");
+    }
+
+    #[test]
+    fn test_regex_literal_in_conditional_formatting() {
+        // TODO: Implement regex literal support
+        // For now test with string patterns
+        let input = "if($text=~\"hello\"){print\"matched\";}";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r#"
+        if ($text =~ "hello") {
+            print "matched";
+        }
+        "#);
+    }
+
+    #[test]
+    fn test_complex_regex_expression_formatting() {
+        // TODO: Implement regex literal support
+        // For now test with string patterns
+        let input = "my$result=$str=~\"pattern\"&&$other!~\"test\";";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"my $result = $str =~ \"pattern\" && $other !~ \"test\";");
+    }
 }

@@ -25,6 +25,7 @@ pub enum SyntaxKind {
     // リテラル
     NUMBER,
     STRING,
+    // REGEX_LITERAL, // /pattern/flags - TODO: implement later
 
     // キーワード
     SUB_KW,
