@@ -1007,7 +1007,23 @@ mod tests {
         assert!(errors.is_empty());
 
         let syntax = PerlNode::new_root(green);
-        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+        insta::assert_debug_snapshot!(
+            syntax,
+            @r#"
+        ROOT@0..12
+          DECLARATION_STMT@0..12
+            MY_KW@0..2 "my"
+            WHITESPACE@2..3 " "
+            SCALAR_VAR@3..7
+              DOLLAR@3..4 "$"
+              IDENT@4..7 "var"
+            WHITESPACE@7..8 " "
+            EQ@8..9 "="
+            WHITESPACE@9..10 " "
+            NUMBER@10..11 "1"
+            SEMICOLON@11..12 ";"
+        "#
+        );
     }
 
     #[test]
@@ -1016,7 +1032,33 @@ mod tests {
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
         let syntax = PerlNode::new_root(green);
-        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+        insta::assert_debug_snapshot!(
+            syntax,
+            @r#"
+        ROOT@0..23
+          SUB_DEF@0..23
+            SUB_KW@0..3 "sub"
+            WHITESPACE@3..4 " "
+            IDENT@4..8 "test"
+            WHITESPACE@8..9 " "
+            BLOCK_STMT@9..23
+              L_BRACE@9..10 "{"
+              WHITESPACE@10..11 " "
+              DECLARATION_STMT@11..21
+                MY_KW@11..13 "my"
+                WHITESPACE@13..14 " "
+                SCALAR_VAR@14..16
+                  DOLLAR@14..15 "$"
+                  IDENT@15..16 "x"
+                WHITESPACE@16..17 " "
+                EQ@17..18 "="
+                WHITESPACE@18..19 " "
+                NUMBER@19..20 "1"
+                SEMICOLON@20..21 ";"
+              WHITESPACE@21..22 " "
+              R_BRACE@22..23 "}"
+        "#
+        );
     }
 
     #[test]
@@ -1026,13 +1068,19 @@ mod tests {
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
         let syntax = PerlNode::new_root(green);
-        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-
-        // ハッシュリファレンスノードが存在することを確認
-        let hash_ref_found = syntax
-            .descendants()
-            .any(|node| node.kind() == SyntaxKind::HASH_REF);
-        assert!(hash_ref_found, "HASH_REF node should be present in AST");
+        insta::assert_debug_snapshot!(
+            syntax,
+            @r#"
+        ROOT@0..9
+          STMT@0..7
+            IDENT@0..6 "return"
+            WHITESPACE@6..7 " "
+          STMT@7..9
+            HASH_REF@7..9
+              L_BRACE@7..8 "{"
+              R_BRACE@8..9 "}"
+        "#
+        );
     }
 
     #[test]
@@ -1042,13 +1090,30 @@ mod tests {
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
         let syntax = PerlNode::new_root(green);
-        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-
-        // ハッシュリファレンスノードが存在することを確認
-        let hash_ref_found = syntax
-            .descendants()
-            .any(|node| node.kind() == SyntaxKind::HASH_REF);
-        assert!(hash_ref_found, "HASH_REF node should be present in AST");
+        insta::assert_debug_snapshot!(
+            syntax,
+            @r#"
+        ROOT@0..20
+          SUB_DEF@0..20
+            SUB_KW@0..3 "sub"
+            WHITESPACE@3..4 " "
+            IDENT@4..5 "f"
+            WHITESPACE@5..6 " "
+            BLOCK_STMT@6..20
+              L_BRACE@6..7 "{"
+              WHITESPACE@7..8 " "
+              STMT@8..15
+                IDENT@8..14 "return"
+                WHITESPACE@14..15 " "
+              STMT@15..18
+                HASH_REF@15..18
+                  L_BRACE@15..16 "{"
+                  WHITESPACE@16..17 " "
+                  R_BRACE@17..18 "}"
+              WHITESPACE@18..19 " "
+              R_BRACE@19..20 "}"
+        "#
+        );
     }
 
     #[test]
@@ -1058,15 +1123,24 @@ mod tests {
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
         let syntax = PerlNode::new_root(green);
-        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-
-        // ハッシュリファレンスノードが存在することを確認
-        let hash_ref_found = syntax
-            .descendants()
-            .any(|node| node.kind() == SyntaxKind::HASH_REF);
-        assert!(
-            hash_ref_found,
-            "HASH_REF node should be present in variable assignment"
+        insta::assert_debug_snapshot!(
+            syntax,
+            @r#"
+        ROOT@0..18
+          DECLARATION_STMT@0..18
+            MY_KW@0..2 "my"
+            WHITESPACE@2..3 " "
+            SCALAR_VAR@3..12
+              DOLLAR@3..4 "$"
+              IDENT@4..12 "hash_ref"
+            WHITESPACE@12..13 " "
+            EQ@13..14 "="
+            WHITESPACE@14..15 " "
+            HASH_REF@15..17
+              L_BRACE@15..16 "{"
+              R_BRACE@16..17 "}"
+            SEMICOLON@17..18 ";"
+        "#
         );
     }
 
@@ -1077,15 +1151,26 @@ mod tests {
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
         let syntax = PerlNode::new_root(green);
-        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-
-        // ハッシュリファレンスノードが存在することを確認
-        let hash_ref_found = syntax
-            .descendants()
-            .any(|node| node.kind() == SyntaxKind::HASH_REF);
-        assert!(
-            hash_ref_found,
-            "HASH_REF node should be present with key-value pair"
+        insta::assert_debug_snapshot!(
+            syntax,
+            @r#"
+        ROOT@0..18
+          STMT@0..7
+            IDENT@0..6 "return"
+            WHITESPACE@6..7 " "
+          STMT@7..18
+            HASH_REF@7..17
+              L_BRACE@7..8 "{"
+              WHITESPACE@8..9 " "
+              IDENT@9..10 "a"
+              WHITESPACE@10..11 " "
+              FAT_COMMA@11..13 "=>"
+              WHITESPACE@13..14 " "
+              NUMBER@14..15 "1"
+              WHITESPACE@15..16 " "
+              R_BRACE@16..17 "}"
+            SEMICOLON@17..18 ";"
+        "#
         );
     }
 
@@ -1096,15 +1181,35 @@ mod tests {
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
         let syntax = PerlNode::new_root(green);
-        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-
-        // ハッシュリファレンスノードが存在することを確認
-        let hash_ref_found = syntax
-            .descendants()
-            .any(|node| node.kind() == SyntaxKind::HASH_REF);
-        assert!(
-            hash_ref_found,
-            "HASH_REF node should be present in subroutine"
+        insta::assert_debug_snapshot!(
+            syntax,
+            @r#"
+        ROOT@0..27
+          SUB_DEF@0..27
+            SUB_KW@0..3 "sub"
+            WHITESPACE@3..4 " "
+            IDENT@4..5 "f"
+            WHITESPACE@5..6 " "
+            BLOCK_STMT@6..27
+              L_BRACE@6..7 "{"
+              WHITESPACE@7..8 " "
+              STMT@8..15
+                IDENT@8..14 "return"
+                WHITESPACE@14..15 " "
+              STMT@15..25
+                HASH_REF@15..25
+                  L_BRACE@15..16 "{"
+                  WHITESPACE@16..17 " "
+                  IDENT@17..18 "a"
+                  WHITESPACE@18..19 " "
+                  FAT_COMMA@19..21 "=>"
+                  WHITESPACE@21..22 " "
+                  NUMBER@22..23 "1"
+                  WHITESPACE@23..24 " "
+                  R_BRACE@24..25 "}"
+              WHITESPACE@25..26 " "
+              R_BRACE@26..27 "}"
+        "#
         );
     }
 
@@ -1115,15 +1220,45 @@ mod tests {
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
         let syntax = PerlNode::new_root(green);
-        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-
-        // BINARY_EXPRノードが存在することを確認
-        let binary_expr_found = syntax
-            .descendants()
-            .any(|node| node.kind() == SyntaxKind::INFIX_EXPR);
-        assert!(
-            binary_expr_found,
-            "INFIX_EXPR node should be present for multiplicative operations"
+        insta::assert_debug_snapshot!(
+            syntax,
+            @r#"
+        ROOT@0..31
+          DECLARATION_STMT@0..31
+            MY_KW@0..2 "my"
+            WHITESPACE@2..3 " "
+            SCALAR_VAR@3..10
+              DOLLAR@3..4 "$"
+              IDENT@4..10 "result"
+            WHITESPACE@10..11 " "
+            EQ@11..12 "="
+            WHITESPACE@12..13 " "
+            INFIX_EXPR@13..30
+              INFIX_EXPR@13..26
+                INFIX_EXPR@13..21
+                  SCALAR_VAR@13..16
+                    DOLLAR@13..14 "$"
+                    IDENT@14..15 "a"
+                    WHITESPACE@15..16 " "
+                  STAR@16..17 "*"
+                  WHITESPACE@17..18 " "
+                  SCALAR_VAR@18..21
+                    DOLLAR@18..19 "$"
+                    IDENT@19..20 "b"
+                    WHITESPACE@20..21 " "
+                SLASH@21..22 "/"
+                WHITESPACE@22..23 " "
+                SCALAR_VAR@23..26
+                  DOLLAR@23..24 "$"
+                  IDENT@24..25 "c"
+                  WHITESPACE@25..26 " "
+              MODULO@26..27 "%"
+              WHITESPACE@27..28 " "
+              SCALAR_VAR@28..30
+                DOLLAR@28..29 "$"
+                IDENT@29..30 "d"
+            SEMICOLON@30..31 ";"
+        "#
         );
     }
 
@@ -1134,16 +1269,38 @@ mod tests {
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
         let syntax = PerlNode::new_root(green);
-        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-
-        // 演算子優先度が正しく解析されることを確認（構造的テスト）
-        let binary_expr_count = syntax
-            .descendants()
-            .filter(|node| node.kind() == SyntaxKind::INFIX_EXPR)
-            .count();
-        assert!(
-            binary_expr_count >= 2,
-            "Should have at least 2 infix expressions for precedence"
+        insta::assert_debug_snapshot!(
+            syntax,
+            @r#"
+        ROOT@0..26
+          DECLARATION_STMT@0..26
+            MY_KW@0..2 "my"
+            WHITESPACE@2..3 " "
+            SCALAR_VAR@3..10
+              DOLLAR@3..4 "$"
+              IDENT@4..10 "result"
+            WHITESPACE@10..11 " "
+            EQ@11..12 "="
+            WHITESPACE@12..13 " "
+            INFIX_EXPR@13..25
+              SCALAR_VAR@13..16
+                DOLLAR@13..14 "$"
+                IDENT@14..15 "a"
+                WHITESPACE@15..16 " "
+              PLUS@16..17 "+"
+              WHITESPACE@17..18 " "
+              INFIX_EXPR@18..25
+                SCALAR_VAR@18..21
+                  DOLLAR@18..19 "$"
+                  IDENT@19..20 "b"
+                  WHITESPACE@20..21 " "
+                STAR@21..22 "*"
+                WHITESPACE@22..23 " "
+                SCALAR_VAR@23..25
+                  DOLLAR@23..24 "$"
+                  IDENT@24..25 "c"
+            SEMICOLON@25..26 ";"
+        "#
         );
     }
 
@@ -1154,15 +1311,72 @@ mod tests {
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
         let syntax = PerlNode::new_root(green);
-        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+        insta::assert_debug_snapshot!(
+            syntax,
+            @r#"
+        ROOT@0..17
+          DECLARATION_STMT@0..17
+            MY_KW@0..2 "my"
+            WHITESPACE@2..3 " "
+            SCALAR_VAR@3..7
+              DOLLAR@3..4 "$"
+              IDENT@4..7 "str"
+            WHITESPACE@7..8 " "
+            EQ@8..9 "="
+            WHITESPACE@9..10 " "
+            INFIX_EXPR@10..16
+              SCALAR_VAR@10..13
+                DOLLAR@10..11 "$"
+                IDENT@11..12 "a"
+                WHITESPACE@12..13 " "
+              X@13..14 "x"
+              WHITESPACE@14..15 " "
+              NUMBER@15..16 "3"
+            SEMICOLON@16..17 ";"
+        "#
+        );
+    }
 
-        // x演算子がBINARY_EXPRとして解析されることを確認
-        let binary_expr_found = syntax
-            .descendants()
-            .any(|node| node.kind() == SyntaxKind::INFIX_EXPR);
-        assert!(
-            binary_expr_found,
-            "INFIX_EXPR node should be present for x operator"
+    #[test]
+    fn test_module_and_percent_dereference() {
+        insta::assert_debug_snapshot!(
+            assert_parses_ok("($a % $b)"),
+            @r#"
+        ROOT@0..9
+          STMT@0..9
+            L_PAREN@0..1 "("
+            INFIX_EXPR@1..8
+              SCALAR_VAR@1..4
+                DOLLAR@1..2 "$"
+                IDENT@2..3 "a"
+                WHITESPACE@3..4 " "
+              MODULO@4..5 "%"
+              WHITESPACE@5..6 " "
+              SCALAR_VAR@6..8
+                DOLLAR@6..7 "$"
+                IDENT@7..8 "b"
+            R_PAREN@8..9 ")"
+        "#
+        );
+
+        insta::assert_debug_snapshot!(
+            assert_parses_ok("($a,% $b)"),
+            @r#"
+        ROOT@0..9
+          STMT@0..9
+            L_PAREN@0..1 "("
+            SCALAR_VAR@1..3
+              DOLLAR@1..2 "$"
+              IDENT@2..3 "a"
+            COMMA@3..4 ","
+            DEREF_EXPR@4..8
+              PERCENT@4..5 "%"
+              WHITESPACE@5..6 " "
+              SCALAR_VAR@6..8
+                DOLLAR@6..7 "$"
+                IDENT@7..8 "b"
+            R_PAREN@8..9 ")"
+        "#
         );
     }
 
@@ -1208,32 +1422,47 @@ mod tests {
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
         let syntax = PerlNode::new_root(green);
-        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-
-        // 3つの変数宣言ノードが存在することを確認
-        let var_decls: Vec<_> = syntax
-            .descendants()
-            .filter(|node| node.kind() == SyntaxKind::DECLARATION_STMT)
-            .collect();
-        assert_eq!(var_decls.len(), 3, "Should have 3 variable declarations");
-
-        // 各種類の変数ノードが存在することを確認
-        let scalar_vars: Vec<_> = syntax
-            .descendants()
-            .filter(|node| node.kind() == SyntaxKind::SCALAR_VAR)
-            .collect();
-        let array_vars: Vec<_> = syntax
-            .descendants()
-            .filter(|node| node.kind() == SyntaxKind::ARRAY_VAR)
-            .collect();
-        let hash_vars: Vec<_> = syntax
-            .descendants()
-            .filter(|node| node.kind() == SyntaxKind::HASH_VAR)
-            .collect();
-
-        assert_eq!(scalar_vars.len(), 1, "Should have 1 scalar variable");
-        assert_eq!(array_vars.len(), 1, "Should have 1 array variable");
-        assert_eq!(hash_vars.len(), 1, "Should have 1 hash variable");
+        insta::assert_debug_snapshot!(
+            syntax,
+            @r#"
+        ROOT@0..39
+          DECLARATION_STMT@0..12
+            MY_KW@0..2 "my"
+            WHITESPACE@2..3 " "
+            SCALAR_VAR@3..7
+              DOLLAR@3..4 "$"
+              IDENT@4..7 "var"
+            WHITESPACE@7..8 " "
+            EQ@8..9 "="
+            WHITESPACE@9..10 " "
+            NUMBER@10..11 "1"
+            SEMICOLON@11..12 ";"
+          WHITESPACE@12..13 " "
+          DECLARATION_STMT@13..25
+            MY_KW@13..15 "my"
+            WHITESPACE@15..16 " "
+            ARRAY_VAR@16..20
+              AT@16..17 "@"
+              IDENT@17..20 "arr"
+            WHITESPACE@20..21 " "
+            EQ@21..22 "="
+            WHITESPACE@22..23 " "
+            NUMBER@23..24 "2"
+            SEMICOLON@24..25 ";"
+          WHITESPACE@25..26 " "
+          DECLARATION_STMT@26..39
+            MY_KW@26..28 "my"
+            WHITESPACE@28..29 " "
+            HASH_VAR@29..34
+              PERCENT@29..30 "%"
+              IDENT@30..34 "hash"
+            WHITESPACE@34..35 " "
+            EQ@35..36 "="
+            WHITESPACE@36..37 " "
+            NUMBER@37..38 "3"
+            SEMICOLON@38..39 ";"
+        "#
+        );
     }
 
     /// Helper function to parse input and return syntax tree
@@ -1898,10 +2127,34 @@ mod tests {
         // Test multiple dereferences in one statement
         let input = "$$var; @$array; %$hash;";
         let syntax = assert_parses_ok(input);
-        let deref_exprs: Vec<_> = syntax
-            .descendants()
-            .filter(|node| node.kind() == SyntaxKind::DEREF_EXPR)
-            .collect();
-        assert_eq!(deref_exprs.len(), 3, "Should have 3 DEREF_EXPR nodes");
+        insta::assert_debug_snapshot!(
+            syntax,
+            @r#"
+        ROOT@0..23
+          STMT@0..6
+            DEREF_EXPR@0..5
+              DOLLAR@0..1 "$"
+              SCALAR_VAR@1..5
+                DOLLAR@1..2 "$"
+                IDENT@2..5 "var"
+            SEMICOLON@5..6 ";"
+          WHITESPACE@6..7 " "
+          STMT@7..15
+            DEREF_EXPR@7..14
+              AT@7..8 "@"
+              SCALAR_VAR@8..14
+                DOLLAR@8..9 "$"
+                IDENT@9..14 "array"
+            SEMICOLON@14..15 ";"
+          WHITESPACE@15..16 " "
+          STMT@16..23
+            DEREF_EXPR@16..22
+              PERCENT@16..17 "%"
+              SCALAR_VAR@17..22
+                DOLLAR@17..18 "$"
+                IDENT@18..22 "hash"
+            SEMICOLON@22..23 ";"
+        "#
+        );
     }
 }
