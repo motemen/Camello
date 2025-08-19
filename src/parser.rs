@@ -728,8 +728,9 @@ impl<'a> Parser<'a> {
             Some(SyntaxKind::L_PAREN) => (SyntaxKind::L_PAREN, SyntaxKind::R_PAREN),
             Some(SyntaxKind::L_BRACKET) => (SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET),
             Some(SyntaxKind::L_BRACE) => (SyntaxKind::L_BRACE, SyntaxKind::R_BRACE),
+            Some(SyntaxKind::SLASH) => (SyntaxKind::SLASH, SyntaxKind::SLASH),
             _ => {
-                self.error("Expected qw() delimiter: (, [, or {");
+                self.error("Expected qw() delimiter: (, [, {, or /");
                 return;
             }
         };
@@ -1354,6 +1355,7 @@ mod tests {
             "qw(all -uninitialized)",
             "qw[strict refs]",
             "qw{one two three}",
+            "qw/four five six/",
             "my @list = qw(a b c);",
         ];
 
