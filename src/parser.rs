@@ -465,17 +465,16 @@ impl<'a> Parser<'a> {
 
     fn is_at_start_of_expression(&self) -> bool {
         if let Some(kind) = self.current_kind() {
-            matches!(
-                kind,
-                SyntaxKind::NUMBER
-                    | SyntaxKind::STRING
-                    | SyntaxKind::IDENT
-                    | SyntaxKind::L_PAREN
-                    | SyntaxKind::L_BRACE
-                    | SyntaxKind::L_BRACKET
-                    | SyntaxKind::QW_KW
-                    | SyntaxKind::MY_KW // Add MY_KW as start of expression
-            ) || kind.is_variable()
+            self.at_any(&[
+                SyntaxKind::NUMBER,
+                SyntaxKind::STRING,
+                SyntaxKind::IDENT,
+                SyntaxKind::L_PAREN,
+                SyntaxKind::L_BRACE,
+                SyntaxKind::L_BRACKET,
+                SyntaxKind::QW_KW,
+                SyntaxKind::MY_KW, // Add MY_KW as start of expression
+            ]) || kind.is_variable()
                 || kind.is_sigil()
         } else {
             false
@@ -544,7 +543,7 @@ impl<'a> Parser<'a> {
             return false;
         }
 
-        while self.at(SyntaxKind::COMMA) || self.at(SyntaxKind::FAT_COMMA) {
+        while self.at_any(&[SyntaxKind::COMMA, SyntaxKind::FAT_COMMA]) {
             self.builder
                 .start_node_at(start, SyntaxKind::EXPR_LIST.into());
             self.bump(); // , or =>
@@ -567,11 +566,7 @@ impl<'a> Parser<'a> {
             return false;
         }
 
-        while let Some(op) = self.current_kind() {
-            if !matches!(op, SyntaxKind::PLUS | SyntaxKind::MINUS) {
-                break;
-            }
-
+        while self.at_any(&[SyntaxKind::PLUS, SyntaxKind::MINUS]) {
             self.builder
                 .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
             self.bump(); // operator
@@ -591,14 +586,7 @@ impl<'a> Parser<'a> {
             return false;
         }
 
-        while let Some(op) = self.current_kind() {
-            if !matches!(
-                op,
-                SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::MODULO | SyntaxKind::X
-            ) {
-                break;
-            }
-
+        while self.at_any(&[SyntaxKind::STAR, SyntaxKind::SLASH, SyntaxKind::MODULO, SyntaxKind::X]) {
             self.builder
                 .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
             self.bump(); // operator
@@ -696,9 +684,7 @@ impl<'a> Parser<'a> {
                 } else if let Some(kind) = self.current_kind() {
                     // Check if we have regular function arguments following the identifier
                     if kind.is_variable()
-                        || kind == SyntaxKind::NUMBER
-                        || kind == SyntaxKind::STRING
-                        || kind == SyntaxKind::L_PAREN
+                        || self.at_any(&[SyntaxKind::NUMBER, SyntaxKind::STRING, SyntaxKind::L_PAREN])
                         || kind.is_sigil()
                     {
                         // We have a regular function call, wrap everything in FUNCTION_CALL_EXPR
