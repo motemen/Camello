@@ -7,6 +7,7 @@ pub struct Formatter {
     indent_string: String,
     prev_token_kind: Option<SyntaxKind>,
     at_line_start: bool,
+    consecutive_newlines: usize,
 }
 
 impl Default for Formatter {
@@ -23,6 +24,7 @@ impl Formatter {
             indent_string: "    ".to_string(), // 4スペース
             prev_token_kind: None,
             at_line_start: true,
+            consecutive_newlines: 0,
         }
     }
 
@@ -32,6 +34,12 @@ impl Formatter {
     }
 
     fn format_node(&mut self, node: &PerlNode) {
+        // Add empty line before subs and use statements only in specific contexts
+        // This preserves existing behavior for simple cases
+        if matches!(node.kind(), SyntaxKind::SUB_DEF | SyntaxKind::USE_STMT) {
+            self.add_empty_line_before_if_needed(node);
+        }
+
         // 特別な処理が必要なノードタイプ
         match node.kind() {
             SyntaxKind::HASH_REF => {
@@ -67,6 +75,11 @@ impl Formatter {
                 NodeOrToken::Node(node) => self.format_node(&node),
                 NodeOrToken::Token(token) => self.format_token(&token),
             }
+        }
+
+        // Add empty line after subs and use statements, but only if there are siblings
+        if matches!(node.kind(), SyntaxKind::SUB_DEF | SyntaxKind::USE_STMT) {
+            self.add_empty_line_after_if_needed(node);
         }
 
         // Special handling after children are processed
@@ -288,6 +301,8 @@ impl Formatter {
                 // 空白は基本的に再構築する
                 if text.contains('\n') {
                     self.handle_newline();
+                    // Squeeze multiple consecutive empty lines
+                    self.squeeze_multiple_newlines();
                 }
             }
             SyntaxKind::COMMENT => {
@@ -343,6 +358,8 @@ impl Formatter {
                 }
 
                 self.output.push_str(text);
+                // Reset consecutive newlines when adding actual content
+                self.consecutive_newlines = 0;
                 self.handle_spacing_after(kind);
                 self.prev_token_kind = Some(kind);
             }
@@ -466,6 +483,9 @@ impl Formatter {
     fn handle_newline(&mut self) {
         if !self.output.ends_with('\n') {
             self.output.push('\n');
+            self.consecutive_newlines = 1;
+        } else {
+            self.consecutive_newlines += 1;
         }
         self.at_line_start = true;
     }
@@ -473,6 +493,66 @@ impl Formatter {
     fn add_indent(&mut self) {
         for _ in 0..self.indent_level {
             self.output.push_str(&self.indent_string);
+        }
+    }
+
+    fn add_empty_line_before_if_needed(&mut self, node: &PerlNode) {
+        // Add an empty line if the previous sibling is of a different type,
+        // or if this is a SUB_DEF with any preceding sibling (to separate all subs)
+        if let Some(prev) = node.prev_sibling() {
+            if prev.kind() != node.kind() || node.kind() == SyntaxKind::SUB_DEF {
+                self.add_empty_line_before();
+            }
+        }
+    }
+
+    fn add_empty_line_after_if_needed(&mut self, node: &PerlNode) {
+        // Add an empty line if the next sibling is of a different type.
+        if let Some(next) = node.next_sibling() {
+            if next.kind() != node.kind() {
+                self.add_empty_line_after();
+            }
+        }
+    }
+
+    fn add_empty_line_before(&mut self) {
+        // Only add empty line if this is not the first node and we don't already have one
+        if !self.output.is_empty() && !self.output.ends_with("\n\n") {
+            if !self.output.ends_with('\n') {
+                self.handle_newline();
+            }
+            // Add one more newline to create an empty line
+            self.output.push('\n');
+            self.consecutive_newlines += 1;
+            self.at_line_start = true;
+        }
+    }
+
+    fn add_empty_line_after(&mut self) {
+        // Force at least one empty line after the node
+        if !self.output.ends_with('\n') {
+            self.handle_newline();
+        }
+        // Add one more newline to create an empty line
+        if !self.output.ends_with("\n\n") {
+            self.output.push('\n');
+            self.consecutive_newlines += 1;
+        }
+    }
+
+    fn squeeze_multiple_newlines(&mut self) {
+        // Limit consecutive newlines to maximum of 2 (one empty line)
+        if self.consecutive_newlines > 2 {
+            // Find the start of the trailing newlines
+            if let Some(i) = self.output.rfind(|c| c != '\n') {
+                // Found a non-newline character. Truncate after it.
+                self.output.truncate(i + 1);
+            } else {
+                // The string is all newlines.
+                self.output.clear();
+            }
+            self.output.push_str("\n\n");
+            self.consecutive_newlines = 2;
         }
     }
 }
@@ -544,6 +624,7 @@ mod tests {
         insta::assert_snapshot!(formatted, @r"
         my $a = 1 + 2;
         my $b = 3;
+
         sub example {
             my $result = $a + $b;
             return $result;
@@ -572,6 +653,7 @@ mod tests {
 
         insta::assert_snapshot!(formatted, @r"
         my $var = 1;
+
         sub test {
             my $x = 2;
         }
@@ -1209,5 +1291,115 @@ sub test {
         let formatted = format(&syntax);
 
         insta::assert_snapshot!(formatted, @"my $result = $str =~ /pattern/ && $other !~ /test/i;");
+    }
+
+    #[test]
+    fn test_empty_lines_before_after_subs() {
+        let input = "my$x=1;sub foo{my$y=2;}my$z=3;sub bar{return 42;}";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        my $x = 1;
+
+        sub foo {
+            my $y = 2;
+        }
+
+        my $z = 3;
+
+        sub bar {
+            return 42;
+        }
+        ");
+    }
+
+    #[test]
+    fn test_empty_lines_before_after_use_statements() {
+        let input = "use warnings;my$x=1;use strict;my$y=2;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        use warnings;
+
+        my $x = 1;
+
+        use strict;
+
+        my $y = 2;
+        ");
+    }
+
+    #[test]
+    fn test_multiple_empty_lines_squeezing() {
+        let input = r#"my $x = 1;
+
+
+
+sub foo {
+    my $y = 2;
+}
+
+
+
+my $z = 3;"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        my $x = 1;
+
+        sub foo {
+            my $y = 2;
+        }
+
+        my $z = 3;
+        ");
+    }
+
+    #[test]
+    fn test_mixed_use_and_sub_empty_lines() {
+        let input = "use warnings;use strict;my$x=1;sub foo{return 42;}sub bar{return 24;}";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        use warnings;
+        use strict;
+        
+        my $x = 1;
+        
+        sub foo {
+            return 42;
+        }
+
+        sub bar {
+            return 24;
+        }
+        ");
+    }
+
+    #[test]
+    fn test_first_statement_no_empty_line_before() {
+        let input = "use warnings;my$x=1;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        use warnings;
+
+        my $x = 1;
+        ");
     }
 }
