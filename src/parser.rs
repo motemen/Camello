@@ -167,6 +167,59 @@ impl<'a> Parser<'a> {
         self.builder.finish_node();
     }
 
+    // Variable declaration as expression (no semicolon expected)
+    fn var_decl_expr(&mut self) {
+        self.builder.start_node(SyntaxKind::DECLARATION_STMT.into());
+
+        // "my"
+        self.expect(SyntaxKind::MY_KW);
+        self.skip_trivia();
+
+        // my $var or my ($var, ...)
+        if self.at(SyntaxKind::L_PAREN) {
+            self.bump(); // (
+            self.skip_trivia();
+
+            while !self.at(SyntaxKind::R_PAREN) && !self.at_end() {
+                if self.current_kind().map(|k| k.is_sigil()).unwrap_or(false) {
+                    self.parse_variable_simple();
+                } else {
+                    self.error("Expected variable in parenthesized list");
+                    break; // エラーが発生したらループを抜ける
+                }
+
+                self.skip_trivia();
+
+                if self.at(SyntaxKind::COMMA) {
+                    self.bump();
+                    self.skip_trivia();
+                } else if !self.at(SyntaxKind::R_PAREN) {
+                    self.error("Expected ',' or ')' in variable list");
+                    break; // エラーが発生したらループを抜ける
+                }
+            }
+
+            self.expect(SyntaxKind::R_PAREN);
+        } else if self.current_kind().map(|k| k.is_sigil()).unwrap_or(false) {
+            self.parse_variable_simple(); // myでは簡単な変数のみ
+        } else {
+            self.error("Expected variable or parenthesized list of variables after 'my'");
+        }
+
+        self.skip_trivia();
+
+        // 初期化式があれば処理
+        if self.at(SyntaxKind::EQ) {
+            self.bump(); // =
+            self.skip_trivia();
+            if !self.expression() {
+                self.error("Invalid expression in variable assignment");
+            }
+        }
+
+        self.builder.finish_node();
+    }
+
     fn sub_def(&mut self) {
         self.builder.start_node(SyntaxKind::SUB_DEF.into());
 
@@ -389,6 +442,7 @@ impl<'a> Parser<'a> {
                     | SyntaxKind::L_BRACE
                     | SyntaxKind::L_BRACKET
                     | SyntaxKind::QW_KW
+                    | SyntaxKind::MY_KW // Add MY_KW as start of expression
             ) || kind.is_variable()
                 || kind.is_sigil()
         } else {
@@ -579,6 +633,10 @@ impl<'a> Parser<'a> {
                 } else {
                     self.parse_variable();
                 }
+            }
+            Some(SyntaxKind::MY_KW) => {
+                // Variable declaration as expression (e.g., my $x = 1)
+                self.var_decl_expr();
             }
             Some(SyntaxKind::IDENT) => {
                 let start = self.builder.checkpoint();
@@ -2158,6 +2216,136 @@ mod tests {
         //     .filter(|node| node.kind() == SyntaxKind::FUNCTION_CALL_EXPR)
         //     .collect();
         // assert_eq!(func_calls.len(), 1, "Should have 1 function call");
+    }
+
+    #[test]
+    fn test_my_declaration_in_expressions() {
+        // Test my as expression in function call
+        let input = "print(my $x = 1);";
+        let syntax = assert_parses_ok(input);
+
+        let func_calls: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::FUNCTION_CALL_EXPR)
+            .collect();
+        assert_eq!(func_calls.len(), 1, "Should have 1 function call");
+
+        let decl_stmts: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::DECLARATION_STMT)
+            .collect();
+        assert_eq!(
+            decl_stmts.len(),
+            1,
+            "Should have 1 declaration in expression"
+        );
+
+        insta::assert_debug_snapshot!(
+            syntax,
+            @r#"
+        ROOT@0..17
+          STMT@0..17
+            FUNCTION_CALL_EXPR@0..16
+              IDENT@0..5 "print"
+              L_PAREN@5..6 "("
+              DECLARATION_STMT@6..15
+                MY_KW@6..8 "my"
+                WHITESPACE@8..9 " "
+                SCALAR_VAR@9..11
+                  DOLLAR@9..10 "$"
+                  IDENT@10..11 "x"
+                WHITESPACE@11..12 " "
+                EQ@12..13 "="
+                WHITESPACE@13..14 " "
+                NUMBER@14..15 "1"
+              R_PAREN@15..16 ")"
+            SEMICOLON@16..17 ";"
+        "#
+        );
+    }
+
+    #[test]
+    fn test_multiple_my_in_expression_list() {
+        // Test multiple my declarations in expression list
+        let input = "print(my $x = 1, my $y = 2);";
+        let syntax = assert_parses_ok(input);
+
+        let func_calls: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::FUNCTION_CALL_EXPR)
+            .collect();
+        assert_eq!(func_calls.len(), 1, "Should have 1 function call");
+
+        let decl_stmts: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::DECLARATION_STMT)
+            .collect();
+        assert_eq!(
+            decl_stmts.len(),
+            2,
+            "Should have 2 declarations in expression list"
+        );
+
+        let expr_lists: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::EXPR_LIST)
+            .collect();
+        assert_eq!(expr_lists.len(), 1, "Should have 1 expression list");
+    }
+
+    #[test]
+    fn test_nested_my_in_function_call() {
+        // Test my declaration in nested function call
+        let input = "my $result = func(my $x = 1, my $y = 2);";
+        let syntax = assert_parses_ok(input);
+
+        let func_calls: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::FUNCTION_CALL_EXPR)
+            .collect();
+        assert_eq!(func_calls.len(), 1, "Should have 1 function call");
+
+        // Should have 3 declaration statements: 1 for $result, 2 for $x and $y
+        let decl_stmts: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::DECLARATION_STMT)
+            .collect();
+        assert_eq!(decl_stmts.len(), 3, "Should have 3 declaration statements");
+    }
+
+    #[test]
+    fn test_my_with_array_and_hash() {
+        // Test my with different variable types in expressions
+        let inputs = [
+            "print(my @arr = ());",
+            "print(my %hash = ());",
+            "func(my $scalar, my @array, my %hash);",
+        ];
+
+        for input in inputs {
+            let syntax = assert_parses_ok(input);
+
+            let func_calls: Vec<_> = syntax
+                .descendants()
+                .filter(|node| node.kind() == SyntaxKind::FUNCTION_CALL_EXPR)
+                .collect();
+            assert_eq!(
+                func_calls.len(),
+                1,
+                "Should have 1 function call for input: '{}'",
+                input
+            );
+
+            let decl_stmts: Vec<_> = syntax
+                .descendants()
+                .filter(|node| node.kind() == SyntaxKind::DECLARATION_STMT)
+                .collect();
+            assert!(
+                !decl_stmts.is_empty(),
+                "Should have at least 1 declaration for input: '{}'",
+                input
+            );
+        }
     }
 
     #[test]
