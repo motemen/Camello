@@ -225,14 +225,8 @@ impl<'a> Parser<'a> {
     fn for_stmt(&mut self) {
         self.builder.start_node(SyntaxKind::FOR_STMT.into());
 
-        // "for" or "foreach"
-        if self.at(SyntaxKind::FOR_KW) {
-            self.expect(SyntaxKind::FOR_KW);
-        } else if self.at(SyntaxKind::FOREACH_KW) {
-            self.expect(SyntaxKind::FOREACH_KW);
-        } else {
-            self.error("Expected 'for' or 'foreach'");
-        }
+        // "for" or "foreach" - already validated by statement()
+        self.bump();
         self.skip_trivia();
 
         // Check what comes next to determine the for loop style:
@@ -282,7 +276,7 @@ impl<'a> Parser<'a> {
         self.builder.finish_node();
     }
 
-    /// Parse the variable part of a for loop (my $var, $var, @var, etc.)
+    /// Parse the variable part of a for loop (my $var, $var)
     fn parse_for_variable(&mut self) {
         if self.at(SyntaxKind::MY_KW) {
             // my $var case - parse as a variable declaration
@@ -291,19 +285,19 @@ impl<'a> Parser<'a> {
             self.expect(SyntaxKind::MY_KW);
             self.skip_trivia();
 
-            // Parse the variable
-            if self.current_kind().map(|k| k.is_sigil()).unwrap_or(false) {
+            // Parse the variable - must be a scalar
+            if self.at(SyntaxKind::DOLLAR) {
                 self.parse_variable_simple();
             } else {
-                self.error("Expected variable after 'my' in for loop");
+                self.error("Expected scalar variable after 'my' in for loop");
             }
 
             self.builder.finish_node();
-        } else if self.current_kind().map(|k| k.is_sigil()).unwrap_or(false) {
-            // $var, @var, %var case - parse as a variable reference
+        } else if self.at(SyntaxKind::DOLLAR) {
+            // $var case - parse as a variable reference
             self.parse_variable();
         } else {
-            self.error("Expected variable or 'my' declaration in for loop");
+            self.error("Expected scalar variable or 'my' declaration in for loop");
         }
     }
 
@@ -1517,11 +1511,7 @@ mod tests {
     fn test_for_stmt_with_different_variable_types() {
         let inputs = [
             "for my $scalar (@list) { }",
-            "for my @array (@list) { }",
-            "for my %hash (@list) { }",
             "for $existing_scalar (@list) { }",
-            "for @existing_array (@list) { }",
-            "for %existing_hash (@list) { }",
         ];
 
         for input in inputs {
