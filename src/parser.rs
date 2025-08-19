@@ -454,15 +454,17 @@ impl<'a> Parser<'a> {
             return false;
         }
 
-        while self.at(SyntaxKind::COMMA) {
+        while self.at(SyntaxKind::COMMA) || self.at(SyntaxKind::FAT_COMMA) {
             self.builder
                 .start_node_at(start, SyntaxKind::EXPR_LIST.into());
-            self.bump(); // ,
+            self.bump(); // , or =>
             self.skip_trivia();
 
-            if !self.expression() {
+            // Check for trailing comma - if we're at the end of a list context, don't require another expression
+            if self.is_at_start_of_expression() && !self.expression() {
                 self.error("Expected expression after comma in list");
             }
+            // If no expression follows, it's a trailing comma - that's OK
             self.builder.finish_node();
         }
         true
@@ -644,46 +646,12 @@ impl<'a> Parser<'a> {
         self.expect(SyntaxKind::L_BRACE);
         self.skip_trivia();
 
-        // キー・バリューペアの解析
-        while !self.at(SyntaxKind::R_BRACE) && !self.at_end() {
-            // キー（識別子、文字列、または数値）
-            if self.at_any(&[SyntaxKind::IDENT, SyntaxKind::STRING, SyntaxKind::NUMBER]) {
-                self.bump();
-            } else {
-                self.error("Expected hash key");
-                break;
-            }
-
-            self.skip_trivia();
-
-            // =>
-            if self.at(SyntaxKind::FAT_COMMA) {
-                self.bump();
-            } else {
-                self.error("Expected '=>' after hash key");
-                break;
-            }
-
-            self.skip_trivia();
-
-            // バリュー（式）
-            if !self.expression() {
-                self.error("Invalid expression in hash value");
-                break;
-            }
-
-            self.skip_trivia();
-
-            // カンマまたは終了
-            if self.at(SyntaxKind::COMMA) {
-                self.bump();
-                self.skip_trivia();
-            } else if !self.at(SyntaxKind::R_BRACE) {
-                self.error("Expected ',' or '}' after hash value");
-                break;
-            }
+        // Parse expressions inside braces - could be key => value pairs or a simple expression list
+        if !self.at(SyntaxKind::R_BRACE) {
+            self.expression_list();
         }
 
+        self.skip_trivia();
         self.expect(SyntaxKind::R_BRACE);
         self.builder.finish_node();
     }
@@ -694,25 +662,12 @@ impl<'a> Parser<'a> {
         self.expect(SyntaxKind::L_BRACKET);
         self.skip_trivia();
 
-        // 要素の解析（カンマ区切りの式リスト）
-        while !self.at(SyntaxKind::R_BRACKET) && !self.at_end() {
-            if !self.expression() {
-                self.error("Invalid expression in array reference");
-                break;
-            }
-
-            self.skip_trivia();
-
-            // カンマまたは終了
-            if self.at(SyntaxKind::COMMA) {
-                self.bump();
-                self.skip_trivia();
-            } else if !self.at(SyntaxKind::R_BRACKET) {
-                self.error("Expected ',' or ']' after array element");
-                break;
-            }
+        // Parse expression list inside brackets (supports trailing comma)
+        if !self.at(SyntaxKind::R_BRACKET) {
+            self.expression_list();
         }
 
+        self.skip_trivia();
         self.expect(SyntaxKind::R_BRACKET);
         self.builder.finish_node();
     }
@@ -972,18 +927,8 @@ impl<'a> Parser<'a> {
 
     /// Helper function to parse comma-separated expressions within parentheses
     fn parse_parenthesized_list(&mut self) {
-        while !self.at(SyntaxKind::R_PAREN) && !self.at_end() {
-            if !self.expression() {
-                break;
-            }
-            self.skip_trivia();
-            if self.at(SyntaxKind::COMMA) {
-                self.bump();
-                self.skip_trivia();
-            } else if !self.at(SyntaxKind::R_PAREN) {
-                self.error("Expected ',' or ')' after expression in list");
-                break;
-            }
+        if !self.at(SyntaxKind::R_PAREN) {
+            self.expression_list();
         }
     }
 }
@@ -1158,12 +1103,13 @@ mod tests {
             HASH_REF@7..17
               L_BRACE@7..8 "{"
               WHITESPACE@8..9 " "
-              IDENT@9..10 "a"
-              WHITESPACE@10..11 " "
-              FAT_COMMA@11..13 "=>"
-              WHITESPACE@13..14 " "
-              NUMBER@14..15 "1"
-              WHITESPACE@15..16 " "
+              EXPR_LIST@9..16
+                IDENT@9..10 "a"
+                WHITESPACE@10..11 " "
+                FAT_COMMA@11..13 "=>"
+                WHITESPACE@13..14 " "
+                NUMBER@14..15 "1"
+                WHITESPACE@15..16 " "
               R_BRACE@16..17 "}"
             SEMICOLON@17..18 ";"
         "#
@@ -1196,12 +1142,13 @@ mod tests {
                 HASH_REF@15..25
                   L_BRACE@15..16 "{"
                   WHITESPACE@16..17 " "
-                  IDENT@17..18 "a"
-                  WHITESPACE@18..19 " "
-                  FAT_COMMA@19..21 "=>"
-                  WHITESPACE@21..22 " "
-                  NUMBER@22..23 "1"
-                  WHITESPACE@23..24 " "
+                  EXPR_LIST@17..24
+                    IDENT@17..18 "a"
+                    WHITESPACE@18..19 " "
+                    FAT_COMMA@19..21 "=>"
+                    WHITESPACE@21..22 " "
+                    NUMBER@22..23 "1"
+                    WHITESPACE@23..24 " "
                   R_BRACE@24..25 "}"
               WHITESPACE@25..26 " "
               R_BRACE@26..27 "}"
@@ -1361,16 +1308,17 @@ mod tests {
         ROOT@0..9
           STMT@0..9
             L_PAREN@0..1 "("
-            SCALAR_VAR@1..3
-              DOLLAR@1..2 "$"
-              IDENT@2..3 "a"
-            COMMA@3..4 ","
-            DEREF_EXPR@4..8
-              PERCENT@4..5 "%"
-              WHITESPACE@5..6 " "
-              SCALAR_VAR@6..8
-                DOLLAR@6..7 "$"
-                IDENT@7..8 "b"
+            EXPR_LIST@1..8
+              SCALAR_VAR@1..3
+                DOLLAR@1..2 "$"
+                IDENT@2..3 "a"
+              COMMA@3..4 ","
+              DEREF_EXPR@4..8
+                PERCENT@4..5 "%"
+                WHITESPACE@5..6 " "
+                SCALAR_VAR@6..8
+                  DOLLAR@6..7 "$"
+                  IDENT@7..8 "b"
             R_PAREN@8..9 ")"
         "#
         );
