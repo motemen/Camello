@@ -50,33 +50,19 @@ pub enum Token {
     #[token("::")]
     DoubleColon,
 
-    // 演算子
-    #[token("=")]
-    Eq,
+    // 演算子 (order matters - longer ones first!)
+    #[token("=~")]
+    RegexMatch,
 
-    #[token("+")]
-    Plus,
-
-    #[token("-")]
-    Minus,
-
-    #[token("->")]
-    Arrow,
+    #[token("!~")]
+    RegexNotMatch,
 
     #[token("=>")]
     FatComma,
 
-    // Multiplicative operators
-    #[token("*")]
-    Star,
+    #[token("->")]
+    Arrow,
 
-    #[token("/")]
-    Slash,
-
-    #[token("%")]
-    Percent,
-
-    // Comparison operators (order matters - longer ones first!)
     #[token(">=")]
     GreaterEqual,
 
@@ -89,18 +75,36 @@ pub enum Token {
     #[token("!=")]
     NotEqual,
 
-    #[token(">")]
-    Greater,
-
-    #[token("<")]
-    Less,
-
-    // Logical operators
     #[token("&&")]
     LogicalAnd,
 
     #[token("||")]
     LogicalOr,
+
+    #[token("=")]
+    Eq,
+
+    #[token("+")]
+    Plus,
+
+    #[token("-")]
+    Minus,
+
+    // Multiplicative operators
+    #[token("*")]
+    Star,
+
+    #[token("/")]
+    Slash,
+
+    #[token("%")]
+    Percent,
+
+    #[token(">")]
+    Greater,
+
+    #[token("<")]
+    Less,
 
     // 空白
     #[regex(r"[ \t\f]+")]
@@ -146,6 +150,8 @@ impl Token {
             Token::LessEqual => SyntaxKind::LE,
             Token::EqualEqual => SyntaxKind::EQ_EQ,
             Token::NotEqual => SyntaxKind::NE,
+            Token::RegexMatch => SyntaxKind::REGEX_MATCH,
+            Token::RegexNotMatch => SyntaxKind::REGEX_NOT_MATCH,
             Token::LogicalAnd => SyntaxKind::LOGICAL_AND,
             Token::LogicalOr => SyntaxKind::LOGICAL_OR,
             Token::Whitespace => SyntaxKind::WHITESPACE,

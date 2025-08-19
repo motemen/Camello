@@ -54,6 +54,10 @@ impl Formatter {
                 self.format_block_function_call(node);
                 return;
             }
+            SyntaxKind::REGEX_EXPR => {
+                // Default handling for regex expressions - just format children
+                // The spacing around regex operators is handled in format_token
+            }
             _ => {}
         }
 
@@ -364,6 +368,10 @@ impl Formatter {
             (Some(_), SyntaxKind::LE) | (Some(SyntaxKind::LE), _) => true,
             (Some(_), SyntaxKind::EQ_EQ) | (Some(SyntaxKind::EQ_EQ), _) => true,
             (Some(_), SyntaxKind::NE) | (Some(SyntaxKind::NE), _) => true,
+
+            // Regex operators
+            (Some(_), SyntaxKind::REGEX_MATCH) | (Some(SyntaxKind::REGEX_MATCH), _) => true,
+            (Some(_), SyntaxKind::REGEX_NOT_MATCH) | (Some(SyntaxKind::REGEX_NOT_MATCH), _) => true,
 
             // Multiplicative operators (but not PERCENT which is used as sigil)
             (Some(_), SyntaxKind::STAR) | (Some(SyntaxKind::STAR), _) => true,
