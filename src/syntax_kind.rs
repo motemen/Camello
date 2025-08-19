@@ -30,6 +30,7 @@ pub enum SyntaxKind {
     SUB_KW,
     MY_KW,
     IF_KW,
+    ELSIF_KW,
     ELSE_KW,
     FOR_KW,     // for keyword
     FOREACH_KW, // foreach keyword (synonym for for)
@@ -65,6 +66,14 @@ pub enum SyntaxKind {
     MODULO, // % (modulo operator)
     X,      // x (repetition)
 
+    // Comparison operators
+    GT,    // >
+    LT,    // <
+    GE,    // >=
+    LE,    // <=
+    EQ_EQ, // ==
+    NE,    // !=
+
     // Logical operators
     LOGICAL_AND, // &&
     LOGICAL_OR,  // ||
@@ -80,6 +89,7 @@ pub enum SyntaxKind {
     USE_STMT,         // use文（use warnings qw(all);）
     FOR_STMT,         // for文
     WHILE_STMT,       // while文
+    IF_STMT,          // if文
 
     // 式
     INFIX_EXPR,               // 中置式（二項演算式）
@@ -123,6 +133,7 @@ impl SyntaxKind {
             SyntaxKind::SUB_KW
                 | SyntaxKind::MY_KW
                 | SyntaxKind::IF_KW
+                | SyntaxKind::ELSIF_KW
                 | SyntaxKind::ELSE_KW
                 | SyntaxKind::FOR_KW
                 | SyntaxKind::FOREACH_KW
@@ -183,6 +194,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::SUB_KW => "SUB_KW",
             SyntaxKind::MY_KW => "MY_KW",
             SyntaxKind::IF_KW => "IF_KW",
+            SyntaxKind::ELSIF_KW => "ELSIF_KW",
             SyntaxKind::ELSE_KW => "ELSE_KW",
             SyntaxKind::FOR_KW => "FOR_KW",
             SyntaxKind::FOREACH_KW => "FOREACH_KW",
@@ -209,6 +221,12 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::SLASH => "SLASH",
             SyntaxKind::MODULO => "MODULO",
             SyntaxKind::X => "X",
+            SyntaxKind::GT => "GT",
+            SyntaxKind::LT => "LT",
+            SyntaxKind::GE => "GE",
+            SyntaxKind::LE => "LE",
+            SyntaxKind::EQ_EQ => "EQ_EQ",
+            SyntaxKind::NE => "NE",
             SyntaxKind::LOGICAL_AND => "LOGICAL_AND",
             SyntaxKind::LOGICAL_OR => "LOGICAL_OR",
             SyntaxKind::ROOT => "ROOT",
@@ -219,6 +237,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::USE_STMT => "USE_STMT",
             SyntaxKind::FOR_STMT => "FOR_STMT",
             SyntaxKind::WHILE_STMT => "WHILE_STMT",
+            SyntaxKind::IF_STMT => "IF_STMT",
             SyntaxKind::INFIX_EXPR => "INFIX_EXPR",
             SyntaxKind::PREFIX_EXPR => "PREFIX_EXPR",
             SyntaxKind::POSTFIX_EXPR => "POSTFIX_EXPR",

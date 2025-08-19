@@ -84,6 +84,10 @@ impl<'a> Parser<'a> {
                 self.sub_def();
                 true
             }
+            Some(SyntaxKind::IF_KW) => {
+                self.if_stmt();
+                true
+            }
             Some(SyntaxKind::FOR_KW) | Some(SyntaxKind::FOREACH_KW) => {
                 self.for_stmt();
                 true
@@ -417,6 +421,74 @@ impl<'a> Parser<'a> {
         self.builder.finish_node();
     }
 
+    fn if_stmt(&mut self) {
+        self.builder.start_node(SyntaxKind::IF_STMT.into());
+
+        // "if"
+        self.expect(SyntaxKind::IF_KW);
+        self.skip_trivia();
+
+        // Condition expression in parentheses: if (expr)
+        if self.at(SyntaxKind::L_PAREN) {
+            self.bump(); // (
+            self.skip_trivia();
+
+            // Parse the if condition
+            if !self.expression() {
+                self.error("Expected expression in if condition");
+            }
+
+            self.skip_trivia();
+            self.expect(SyntaxKind::R_PAREN);
+        } else {
+            self.error("Expected '(' after 'if'");
+        }
+
+        self.skip_trivia();
+
+        // If block
+        self.block();
+
+        self.skip_trivia();
+
+        while self.at(SyntaxKind::ELSIF_KW) {
+            self.bump(); // elsif
+            self.skip_trivia();
+
+            if self.at(SyntaxKind::L_PAREN) {
+                self.bump(); // (
+                self.skip_trivia();
+
+                // Parse the if condition
+                if !self.expression() {
+                    self.error("Expected expression in elsif condition");
+                }
+
+                self.skip_trivia();
+                self.expect(SyntaxKind::R_PAREN);
+            } else {
+                self.error("Expected '(' after 'elsif'");
+            }
+
+            self.skip_trivia();
+
+            self.block();
+
+            self.skip_trivia();
+        }
+
+        // "else"
+        if self.at(SyntaxKind::ELSE_KW) {
+            self.bump(); // else
+            self.skip_trivia();
+
+            // Else block
+            self.block();
+        }
+
+        self.builder.finish_node();
+    }
+
     fn block(&mut self) {
         self.builder.start_node(SyntaxKind::BLOCK_STMT.into());
 
@@ -516,7 +588,7 @@ impl<'a> Parser<'a> {
     // Logical AND operators: &&
     fn logical_and_expr(&mut self) -> bool {
         let start = self.builder.checkpoint();
-        if !self.additive_expr() {
+        if !self.comparison_expr() {
             return false;
         }
 
@@ -529,7 +601,7 @@ impl<'a> Parser<'a> {
                 .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
             self.bump(); // operator
             self.skip_trivia();
-            if !self.additive_expr() {
+            if !self.comparison_expr() {
                 self.error("Expected expression after logical AND operator");
             }
             self.builder.finish_node();
@@ -579,6 +651,33 @@ impl<'a> Parser<'a> {
         true
     }
 
+    // Comparison operators: < > <= >= == !=
+    fn comparison_expr(&mut self) -> bool {
+        let start = self.builder.checkpoint();
+        if !self.additive_expr() {
+            return false;
+        }
+
+        while self.at_any(&[
+            SyntaxKind::LT,
+            SyntaxKind::GT,
+            SyntaxKind::LE,
+            SyntaxKind::GE,
+            SyntaxKind::EQ_EQ,
+            SyntaxKind::NE,
+        ]) {
+            self.builder
+                .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
+            self.bump(); // operator
+            self.skip_trivia();
+            if !self.additive_expr() {
+                self.error("Expected expression after comparison operator");
+            }
+            self.builder.finish_node();
+        }
+        true
+    }
+
     // Multiplicative operators: * / % x
     fn multiplicative_expr(&mut self) -> bool {
         let start = self.builder.checkpoint();
@@ -586,7 +685,12 @@ impl<'a> Parser<'a> {
             return false;
         }
 
-        while self.at_any(&[SyntaxKind::STAR, SyntaxKind::SLASH, SyntaxKind::MODULO, SyntaxKind::X]) {
+        while self.at_any(&[
+            SyntaxKind::STAR,
+            SyntaxKind::SLASH,
+            SyntaxKind::MODULO,
+            SyntaxKind::X,
+        ]) {
             self.builder
                 .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
             self.bump(); // operator
@@ -684,7 +788,11 @@ impl<'a> Parser<'a> {
                 } else if let Some(kind) = self.current_kind() {
                     // Check if we have regular function arguments following the identifier
                     if kind.is_variable()
-                        || self.at_any(&[SyntaxKind::NUMBER, SyntaxKind::STRING, SyntaxKind::L_PAREN])
+                        || self.at_any(&[
+                            SyntaxKind::NUMBER,
+                            SyntaxKind::STRING,
+                            SyntaxKind::L_PAREN,
+                        ])
                         || kind.is_sigil()
                     {
                         // We have a regular function call, wrap everything in FUNCTION_CALL_EXPR
@@ -1889,6 +1997,34 @@ mod tests {
 
         assert_eq!(for_stmts.len(), 1, "Should have 1 for statement");
         assert_eq!(while_stmts.len(), 1, "Should have 1 while statement");
+    }
+
+    #[test]
+    fn test_if_else_stmt() {
+        let inputs = [
+            "if ($condition) { }",
+            "if ($x > 0) { print $x; }",
+            "if (@array) { my $count = scalar(@array); }",
+            "if ($condition) { print \"true\"; } else { print \"false\"; }",
+            "if ($x > 0) { } else { my $y = 42; }",
+        ];
+
+        for input in inputs {
+            assert_parses_ok(input);
+        }
+    }
+
+    #[test]
+    fn test_nested_if_stmt() {
+        let input = "if ($outer) { if ($inner) { my $nested = 1; } }";
+        let syntax = assert_parses_ok(input);
+
+        // ネストしたif文のノードが存在することを確認
+        let if_stmts: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::IF_STMT)
+            .collect();
+        assert_eq!(if_stmts.len(), 2, "Should have 2 nested if statements");
     }
     #[test]
     fn test_multiple_var_decl() {

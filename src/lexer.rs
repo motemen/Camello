@@ -76,6 +76,25 @@ pub enum Token {
     #[token("%")]
     Percent,
 
+    // Comparison operators (order matters - longer ones first!)
+    #[token(">=")]
+    GreaterEqual,
+
+    #[token("<=")]
+    LessEqual,
+
+    #[token("==")]
+    EqualEqual,
+
+    #[token("!=")]
+    NotEqual,
+
+    #[token(">")]
+    Greater,
+
+    #[token("<")]
+    Less,
+
     // Logical operators
     #[token("&&")]
     LogicalAnd,
@@ -121,6 +140,12 @@ impl Token {
             Token::FatComma => SyntaxKind::FAT_COMMA,
             Token::Star => SyntaxKind::STAR,
             Token::Slash => SyntaxKind::SLASH,
+            Token::Greater => SyntaxKind::GT,
+            Token::Less => SyntaxKind::LT,
+            Token::GreaterEqual => SyntaxKind::GE,
+            Token::LessEqual => SyntaxKind::LE,
+            Token::EqualEqual => SyntaxKind::EQ_EQ,
+            Token::NotEqual => SyntaxKind::NE,
             Token::LogicalAnd => SyntaxKind::LOGICAL_AND,
             Token::LogicalOr => SyntaxKind::LOGICAL_OR,
             Token::Whitespace => SyntaxKind::WHITESPACE,
@@ -185,6 +210,7 @@ impl<'a> Lexer<'a> {
                     "sub" => SyntaxKind::SUB_KW,
                     "my" => SyntaxKind::MY_KW,
                     "if" => SyntaxKind::IF_KW,
+                    "elsif" => SyntaxKind::ELSIF_KW,
                     "else" => SyntaxKind::ELSE_KW,
                     "for" => SyntaxKind::FOR_KW,
                     "foreach" => SyntaxKind::FOREACH_KW,
@@ -257,6 +283,13 @@ impl<'a> Lexer<'a> {
             SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::MODULO | SyntaxKind::X => {
                 LexerContext::ExpectingValue
             }
+            // Comparison operators
+            SyntaxKind::GT
+            | SyntaxKind::LT
+            | SyntaxKind::GE
+            | SyntaxKind::LE
+            | SyntaxKind::EQ_EQ
+            | SyntaxKind::NE => LexerContext::ExpectingValue,
             SyntaxKind::LOGICAL_AND | SyntaxKind::LOGICAL_OR => LexerContext::ExpectingValue,
             SyntaxKind::L_PAREN | SyntaxKind::L_BRACE | SyntaxKind::L_BRACKET => {
                 LexerContext::ExpectingValue
@@ -293,9 +326,6 @@ impl<'a> Lexer<'a> {
             // Statement terminators reset to expecting value
             SyntaxKind::SEMICOLON => LexerContext::ExpectingValue,
 
-            // Keywords that can appear in expression context should expect operators
-            SyntaxKind::IF_KW | SyntaxKind::ELSE_KW => LexerContext::ExpectingOperator,
-
             // Keep current context for other tokens
             _ => self.context,
         };
@@ -328,7 +358,7 @@ mod tests {
 
     #[test]
     fn test_keywords() {
-        let mut lexer = Lexer::new("sub my if else for foreach qw use");
+        let mut lexer = Lexer::new("sub my if else for foreach qw use elsif");
 
         assert_eq!(lexer.next_token(), Some((SyntaxKind::SUB_KW, "sub")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
@@ -348,6 +378,8 @@ mod tests {
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::USE_KW, "use")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::ELSIF_KW, "elsif")));
     }
 
     #[test]

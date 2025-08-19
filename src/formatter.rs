@@ -309,7 +309,24 @@ impl Formatter {
                 }
 
                 self.output.push_str(text);
-                self.handle_newline();
+
+                // Find the next non-whitespace sibling token kind
+                let mut next_kind = None;
+                let mut next = token.next_token();
+                while let Some(t) = next {
+                    if t.kind() != SyntaxKind::WHITESPACE {
+                        next_kind = Some(t.kind());
+                        break;
+                    }
+                    next = t.next_token();
+                }
+                if !matches!(
+                    next_kind,
+                    Some(SyntaxKind::ELSIF_KW) | Some(SyntaxKind::ELSE_KW)
+                ) {
+                    self.handle_newline();
+                }
+
                 self.prev_token_kind = Some(kind);
             }
             _ => {
@@ -340,6 +357,14 @@ impl Formatter {
             (Some(_), SyntaxKind::MINUS) | (Some(SyntaxKind::MINUS), _) => true,
             (Some(_), SyntaxKind::FAT_COMMA) | (Some(SyntaxKind::FAT_COMMA), _) => true,
 
+            // Comparison operators
+            (Some(_), SyntaxKind::GT) | (Some(SyntaxKind::GT), _) => true,
+            (Some(_), SyntaxKind::LT) | (Some(SyntaxKind::LT), _) => true,
+            (Some(_), SyntaxKind::GE) | (Some(SyntaxKind::GE), _) => true,
+            (Some(_), SyntaxKind::LE) | (Some(SyntaxKind::LE), _) => true,
+            (Some(_), SyntaxKind::EQ_EQ) | (Some(SyntaxKind::EQ_EQ), _) => true,
+            (Some(_), SyntaxKind::NE) | (Some(SyntaxKind::NE), _) => true,
+
             // Multiplicative operators (but not PERCENT which is used as sigil)
             (Some(_), SyntaxKind::STAR) | (Some(SyntaxKind::STAR), _) => true,
             (Some(_), SyntaxKind::SLASH) | (Some(SyntaxKind::SLASH), _) => true,
@@ -361,6 +386,9 @@ impl Formatter {
             (Some(SyntaxKind::FOR_KW), _) => true,
             (Some(SyntaxKind::FOREACH_KW), _) => true,
             (Some(SyntaxKind::WHILE_KW), _) => true,
+            (Some(SyntaxKind::IF_KW), _) => true,
+            (Some(SyntaxKind::ELSIF_KW), _) => true,
+            (Some(SyntaxKind::ELSE_KW), _) => true,
             (Some(SyntaxKind::PACKAGE_KW), _) => true,
             (Some(SyntaxKind::USE_KW), _) => true,
 
@@ -384,6 +412,8 @@ impl Formatter {
                             | SyntaxKind::FOR_KW
                             | SyntaxKind::FOREACH_KW
                             | SyntaxKind::WHILE_KW
+                            | SyntaxKind::IF_KW
+                            | SyntaxKind::ELSIF_KW
                     ) =>
             {
                 true
@@ -1085,5 +1115,22 @@ sub test {
         let formatted = format(&syntax);
 
         insta::assert_snapshot!(formatted, @"my @result = map { $_ * 2 } @input;");
+    }
+
+    #[test]
+    fn test_if_else_stmt_formatting() {
+        let input = "if($condition){do_something();}else{do_something_else();}";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        if ($condition) {
+            do_something();
+        } else {
+            do_something_else();
+        }
+        ");
     }
 }
