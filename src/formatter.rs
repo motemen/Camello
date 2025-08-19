@@ -497,60 +497,18 @@ impl Formatter {
     }
 
     fn add_empty_line_before_if_needed(&mut self, node: &PerlNode) {
-        // Add empty lines based on statement grouping rules:
-        // - For USE_STMT: add empty line if prev statement is NOT USE_STMT (start of use group)
-        // - For SUB_DEF: add empty line if prev statement exists and is not SUB_DEF
-        if let Some(parent) = node.parent() {
-            let should_add_empty_line = parent
-                .children()
-                .take_while(|child| child != node)
-                .last()
-                .map(|prev| {
-                    match node.kind() {
-                        SyntaxKind::USE_STMT => {
-                            // Add empty line before use statement only if prev is not use statement
-                            prev.kind() != SyntaxKind::USE_STMT
-                        }
-                        SyntaxKind::SUB_DEF => {
-                            // Add empty line before sub only if prev is not sub (as per current behavior)
-                            prev.kind() != SyntaxKind::SUB_DEF
-                        }
-                        _ => false,
-                    }
-                })
-                .unwrap_or(false);
-
-            if should_add_empty_line {
+        // Add an empty line if the previous sibling is of a different type.
+        if let Some(prev) = node.prev_sibling() {
+            if prev.kind() != node.kind() {
                 self.add_empty_line_before();
             }
         }
     }
 
     fn add_empty_line_after_if_needed(&mut self, node: &PerlNode) {
-        // Add empty lines based on statement grouping rules:
-        // - For USE_STMT: only add empty line if next statement is NOT USE_STMT (end of use group)
-        // - For SUB_DEF: add empty line if next statement exists and is not SUB_DEF
-        if let Some(parent) = node.parent() {
-            let should_add_empty_line = parent
-                .children()
-                .skip_while(|child| child != node)
-                .nth(1) // Get the next sibling
-                .map(|next| {
-                    match node.kind() {
-                        SyntaxKind::USE_STMT => {
-                            // Add empty line after use statement only if next is not use statement
-                            next.kind() != SyntaxKind::USE_STMT
-                        }
-                        SyntaxKind::SUB_DEF => {
-                            // Add empty line after sub only if next is not sub (as per current behavior)
-                            next.kind() != SyntaxKind::SUB_DEF
-                        }
-                        _ => false,
-                    }
-                })
-                .unwrap_or(false);
-
-            if should_add_empty_line {
+        // Add an empty line if the next sibling is of a different type.
+        if let Some(next) = node.next_sibling() {
+            if next.kind() != node.kind() {
                 self.add_empty_line_after();
             }
         }
