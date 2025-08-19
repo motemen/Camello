@@ -82,13 +82,14 @@ pub enum SyntaxKind {
     WHILE_STMT,       // while文
 
     // 式
-    INFIX_EXPR,         // 中置式（二項演算式）
-    PREFIX_EXPR,        // 前置式（単項演算式、例: !$foo, -$x）
-    POSTFIX_EXPR,       // 後置式（例: $i++, $i--）
-    METHOD_CALL_EXPR,   // メソッド呼び出し式（例: $obj->method()）
-    FUNCTION_CALL_EXPR, // 関数呼び出し式（例: push @array, $value）
-    QW_EXPR,            // qw() 式（クォートワードリスト）
-    DEREF_EXPR,         // デリファレンス式（例: @$var, %$var, $$var）
+    INFIX_EXPR,               // 中置式（二項演算式）
+    PREFIX_EXPR,              // 前置式（単項演算式、例: !$foo, -$x）
+    POSTFIX_EXPR,             // 後置式（例: $i++, $i--）
+    METHOD_CALL_EXPR,         // メソッド呼び出し式（例: $obj->method()）
+    FUNCTION_CALL_EXPR,       // 関数呼び出し式（例: push @array, $value）
+    BLOCK_FUNCTION_CALL_EXPR, // ブロック関数呼び出し式（例: eval { ... }, map { ... } @list）
+    QW_EXPR,                  // qw() 式（クォートワードリスト）
+    DEREF_EXPR,               // デリファレンス式（例: @$var, %$var, $$var）
 
     // リテラル・リファレンス
     HASH_REF,  // ハッシュリファレンス（匿名ハッシュ）
@@ -232,6 +233,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::EOF => "EOF",
             SyntaxKind::EXPR_LIST => "EXPR_LIST",
             SyntaxKind::FUNCTION_CALL_EXPR => "FUNCTION_CALL_EXPR",
+            SyntaxKind::BLOCK_FUNCTION_CALL_EXPR => "BLOCK_FUNCTION_CALL_EXPR",
         };
         write!(f, "{}", name)
     }

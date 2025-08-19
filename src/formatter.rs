@@ -50,6 +50,10 @@ impl Formatter {
                 self.format_function_call(node);
                 return;
             }
+            SyntaxKind::BLOCK_FUNCTION_CALL_EXPR => {
+                self.format_block_function_call(node);
+                return;
+            }
             _ => {}
         }
 
@@ -188,6 +192,89 @@ impl Formatter {
         }
     }
 
+    fn format_block_function_call(&mut self, node: &PerlNode) {
+        // Format block function call: function_name { ... } additional_args
+        // Keep short blocks on same line, longer blocks with proper indentation
+
+        let children = node.children_with_tokens().peekable();
+
+        for child in children {
+            match child {
+                NodeOrToken::Node(child_node) => {
+                    match child_node.kind() {
+                        SyntaxKind::BLOCK_STMT => {
+                            // Check if this is a simple, short block
+                            if self.is_simple_block(&child_node) {
+                                self.format_simple_block(&child_node);
+                            } else {
+                                self.format_node(&child_node);
+                            }
+                        }
+                        _ => {
+                            self.format_node(&child_node);
+                        }
+                    }
+                }
+                NodeOrToken::Token(token) => {
+                    self.format_token(&token);
+                }
+            }
+        }
+    }
+
+    fn is_simple_block(&self, block_node: &PerlNode) -> bool {
+        // Consider a block simple if it has only one statement and is relatively short
+        let statements: Vec<_> = block_node
+            .children()
+            .filter(|child| {
+                child.kind() == SyntaxKind::STMT || child.kind() == SyntaxKind::DECLARATION_STMT
+            })
+            .collect();
+
+        statements.len() <= 1
+    }
+
+    fn format_simple_block(&mut self, block_node: &PerlNode) {
+        // Format simple blocks on the same line: { expr }
+        for child in block_node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Token(token) => {
+                    let kind = token.kind();
+                    let text = token.text();
+
+                    match kind {
+                        SyntaxKind::WHITESPACE => {
+                            // In simple blocks, reduce whitespace to single spaces
+                            // Only add space if not adjacent to braces and content exists
+                            if !self.output.ends_with(' ') && !self.output.ends_with('{') {
+                                self.output.push(' ');
+                            }
+                        }
+                        SyntaxKind::L_BRACE => {
+                            self.handle_spacing_before(kind);
+                            if self.at_line_start {
+                                self.add_indent();
+                                self.at_line_start = false;
+                            }
+                            self.output.push_str(text);
+                            self.output.push(' '); // Space after opening brace
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::R_BRACE => {
+                            self.output.push(' '); // Space before closing brace
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                        _ => {
+                            self.format_token(&token);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn format_token(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
         let kind = token.kind();
         let text = token.text();
@@ -279,6 +366,9 @@ impl Formatter {
 
             // Before left brace "{"
             (Some(_), SyntaxKind::L_BRACE) => true,
+
+            // After R_BRACE, add space before expressions (for block functions) but not before semicolons
+            (Some(SyntaxKind::R_BRACE), kind) if kind != SyntaxKind::SEMICOLON => true,
 
             // 括弧の内側はスペースなし、但し括弧の前は適切にスペースを入れる
             (Some(SyntaxKind::L_PAREN), _) => false,
@@ -884,5 +974,116 @@ sub test {
             return $result;
         }
         ");
+    }
+
+    #[test]
+    fn test_eval_block_function_formatting() {
+        let input = "eval{my$x=1;print$x;};";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        eval {
+            my $x = 1;
+            print $x;
+        }
+        ;
+        ");
+    }
+
+    #[test]
+    fn test_map_simple_block_function_formatting() {
+        let input = "map{$_*2}@numbers;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"map { $_ * 2 } @numbers;");
+    }
+
+    #[test]
+    fn test_map_with_parentheses_formatting() {
+        let input = "map{$_*2}(1,2,3);";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"map { $_ * 2 } (1, 2, 3);");
+    }
+
+    #[test]
+    fn test_grep_block_function_formatting() {
+        let input = "grep{$_+1}@items;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"grep { $_ + 1 } @items;");
+    }
+
+    #[test]
+    fn test_sort_block_function_formatting() {
+        let input = "sort{$a+$b}@values;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"sort { $a + $b } @values;");
+    }
+
+    #[test]
+    fn test_do_block_function_formatting() {
+        let input = "do{my$result=42;return$result;};";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        do {
+            my $result = 42;
+            return $result;
+        }
+        ;
+        ");
+    }
+
+    #[test]
+    fn test_nested_block_functions_formatting() {
+        let input = "map{grep{$_+1}@$_}@arrays;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"map { grep { $_ + 1 }@$_ } @arrays;");
+    }
+
+    #[test]
+    fn test_block_function_with_multiple_args_formatting() {
+        let input = "map{$_*$factor}@array1,@array2;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"map { $_ * $factor } @array1, @array2;");
+    }
+
+    #[test]
+    fn test_block_function_assignment_formatting() {
+        let input = "my@result=map{$_*2}@input;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"my @result = map { $_ * 2 } @input;");
     }
 }

@@ -220,6 +220,38 @@ impl<'a> Parser<'a> {
         self.builder.finish_node();
     }
 
+    // Parse block function arguments: block + optional additional arguments
+    fn parse_block_function_args(&mut self) {
+        // Parse the block (which should be at L_BRACE)
+        if self.at(SyntaxKind::L_BRACE) {
+            self.builder.start_node(SyntaxKind::BLOCK_STMT.into());
+            self.bump(); // {
+            self.skip_trivia();
+
+            // Parse statements inside the block
+            while !self.at(SyntaxKind::R_BRACE) && !self.at_end() {
+                if !self.statement() {
+                    // If we can't parse a statement, try to recover
+                    self.error("Expected statement in block");
+                    if self.current_kind().is_some() {
+                        self.bump(); // Skip the problematic token
+                    }
+                }
+                self.skip_trivia();
+            }
+
+            self.expect(SyntaxKind::R_BRACE);
+            self.builder.finish_node();
+            self.skip_trivia();
+        }
+
+        // Parse additional arguments if present (no comma before them)
+        // For example: map { ... } @list
+        if self.is_at_start_of_expression() {
+            self.expression_list();
+        }
+    }
+
     fn sub_def(&mut self) {
         self.builder.start_node(SyntaxKind::SUB_DEF.into());
 
@@ -450,6 +482,10 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn is_block_function(function_name: &str) -> bool {
+        matches!(function_name, "eval" | "map" | "grep" | "sort" | "do")
+    }
+
     fn expression(&mut self) -> bool {
         self.logical_or_expr()
     }
@@ -641,20 +677,31 @@ impl<'a> Parser<'a> {
             Some(SyntaxKind::IDENT) => {
                 let start = self.builder.checkpoint();
 
+                // Get the function name before parsing
+                let function_name = self.current_text().unwrap_or("").to_string();
+
                 // 修飾付き識別子かもしれないのでparse_identifier_or_qualifiedを使用
                 self.parse_identifier_or_qualified();
                 self.skip_trivia();
 
-                // Check if we have function arguments following the identifier
-                if let Some(kind) = self.current_kind() {
-                    // If the next token can start an expression, treat this as a function call
+                // Check for block functions first
+                if Self::is_block_function(&function_name) && self.at(SyntaxKind::L_BRACE) {
+                    // This is a block function call
+                    self.builder
+                        .start_node_at(start, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());
+
+                    self.parse_block_function_args();
+
+                    self.builder.finish_node();
+                } else if let Some(kind) = self.current_kind() {
+                    // Check if we have regular function arguments following the identifier
                     if kind.is_variable()
                         || kind == SyntaxKind::NUMBER
                         || kind == SyntaxKind::STRING
                         || kind == SyntaxKind::L_PAREN
                         || kind.is_sigil()
                     {
-                        // We have a function call, wrap everything in FUNCTION_CALL_EXPR
+                        // We have a regular function call, wrap everything in FUNCTION_CALL_EXPR
                         self.builder
                             .start_node_at(start, SyntaxKind::FUNCTION_CALL_EXPR.into());
 
