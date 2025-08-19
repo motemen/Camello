@@ -497,9 +497,10 @@ impl Formatter {
     }
 
     fn add_empty_line_before_if_needed(&mut self, node: &PerlNode) {
-        // Add an empty line if the previous sibling is of a different type.
+        // Add an empty line if the previous sibling is of a different type,
+        // or if this is a SUB_DEF with any preceding sibling (to separate all subs)
         if let Some(prev) = node.prev_sibling() {
-            if prev.kind() != node.kind() {
+            if prev.kind() != node.kind() || node.kind() == SyntaxKind::SUB_DEF {
                 self.add_empty_line_before();
             }
         }
@@ -1380,6 +1381,7 @@ my $z = 3;"#;
         sub foo {
             return 42;
         }
+
         sub bar {
             return 24;
         }
