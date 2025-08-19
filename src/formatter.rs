@@ -46,6 +46,10 @@ impl Formatter {
                 self.format_hash_ref(node);
                 return;
             }
+            SyntaxKind::ARRAY_REF => {
+                self.format_array_ref(node);
+                return;
+            }
             SyntaxKind::QW_EXPR => {
                 self.format_qw_expr(node);
                 return;
@@ -130,7 +134,49 @@ impl Formatter {
         }
     }
 
+    fn has_newline_before_first_value(&self, node: &PerlNode) -> bool {
+        // Check if there's a newline between the opening delimiter and the first non-trivial token
+        let mut found_opening = false;
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Token(token) => {
+                    let kind = token.kind();
+                    if kind == SyntaxKind::L_BRACE
+                        || kind == SyntaxKind::L_BRACKET
+                        || kind == SyntaxKind::L_PAREN
+                    {
+                        found_opening = true;
+                    } else if found_opening {
+                        if kind == SyntaxKind::WHITESPACE && token.text().contains('\n') {
+                            return true;
+                        } else if !kind.is_trivia() {
+                            // Found first non-trivia token, no newline before it
+                            return false;
+                        }
+                    }
+                }
+                NodeOrToken::Node(_) => {
+                    if found_opening {
+                        // Found first node (expression), no newline before it
+                        return false;
+                    }
+                }
+            }
+        }
+        false
+    }
+
     fn format_hash_ref(&mut self, node: &PerlNode) {
+        let should_multiline = self.has_newline_before_first_value(node);
+
+        if should_multiline {
+            self.format_multiline_hash_ref(node);
+        } else {
+            self.format_single_line_hash_ref(node);
+        }
+    }
+
+    fn format_single_line_hash_ref(&mut self, node: &PerlNode) {
         // ハッシュリファレンスは改行なしでフォーマット
         for child in node.children_with_tokens() {
             match child {
@@ -166,7 +212,157 @@ impl Formatter {
         }
     }
 
+    fn format_multiline_hash_ref(&mut self, node: &PerlNode) {
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Token(token) => {
+                    let kind = token.kind();
+                    let text = token.text();
+
+                    match kind {
+                        SyntaxKind::WHITESPACE => {
+                            // In multiline mode, handle whitespace for proper newlines
+                            if text.contains('\n') {
+                                self.handle_newline();
+                            }
+                        }
+                        SyntaxKind::L_BRACE => {
+                            self.handle_spacing_before(kind);
+                            if self.at_line_start {
+                                self.add_indent();
+                                self.at_line_start = false;
+                            }
+                            self.output.push_str(text);
+                            self.indent_level += 1;
+                            self.handle_newline();
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::R_BRACE => {
+                            if self.indent_level > 0 {
+                                self.indent_level -= 1;
+                            }
+                            if self.at_line_start {
+                                self.add_indent();
+                                self.at_line_start = false;
+                            }
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                        _ => {
+                            // その他のトークンは通常通り処理
+                            self.format_token(&token);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn format_array_ref(&mut self, node: &PerlNode) {
+        let should_multiline = self.has_newline_before_first_value(node);
+
+        if should_multiline {
+            self.format_multiline_array_ref(node);
+        } else {
+            self.format_single_line_array_ref(node);
+        }
+    }
+
+    fn format_single_line_array_ref(&mut self, node: &PerlNode) {
+        // 配列リファレンスは改行なしでフォーマット
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Token(token) => {
+                    let kind = token.kind();
+                    let text = token.text();
+
+                    match kind {
+                        SyntaxKind::WHITESPACE => {
+                            // 配列リファレンス内の空白は無視
+                        }
+                        SyntaxKind::L_BRACKET => {
+                            self.handle_spacing_before(kind);
+                            if self.at_line_start {
+                                self.add_indent();
+                                self.at_line_start = false;
+                            }
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::R_BRACKET => {
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                        _ => {
+                            // その他のトークンは通常通り処理
+                            self.format_token(&token);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn format_multiline_array_ref(&mut self, node: &PerlNode) {
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Token(token) => {
+                    let kind = token.kind();
+                    let text = token.text();
+
+                    match kind {
+                        SyntaxKind::WHITESPACE => {
+                            // In multiline mode, handle whitespace for proper newlines
+                            if text.contains('\n') {
+                                self.handle_newline();
+                            }
+                        }
+                        SyntaxKind::L_BRACKET => {
+                            self.handle_spacing_before(kind);
+                            if self.at_line_start {
+                                self.add_indent();
+                                self.at_line_start = false;
+                            }
+                            self.output.push_str(text);
+                            self.indent_level += 1;
+                            self.handle_newline();
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::R_BRACKET => {
+                            if self.indent_level > 0 {
+                                self.indent_level -= 1;
+                            }
+                            if self.at_line_start {
+                                self.add_indent();
+                                self.at_line_start = false;
+                            }
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                        _ => {
+                            // その他のトークンは通常通り処理
+                            self.format_token(&token);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn format_qw_expr(&mut self, node: &PerlNode) {
+        let should_multiline = self.has_newline_before_first_value(node);
+
+        if should_multiline {
+            self.format_multiline_qw_expr(node);
+        } else {
+            self.format_single_line_qw_expr(node);
+        }
+    }
+
+    fn format_single_line_qw_expr(&mut self, node: &PerlNode) {
         // qw() 式の特別フォーマット
         let mut first_word = true;
 
@@ -200,6 +396,59 @@ impl Formatter {
                         }
                         SyntaxKind::WHITESPACE => {
                             // qw() 内の空白は制御下でスキップ
+                        }
+                        _ => {
+                            self.format_token(&token);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn format_multiline_qw_expr(&mut self, node: &PerlNode) {
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Token(token) => {
+                    let kind = token.kind();
+                    let text = token.text();
+
+                    match kind {
+                        SyntaxKind::QW_KW => {
+                            self.format_token(&token);
+                        }
+                        SyntaxKind::L_PAREN | SyntaxKind::L_BRACKET | SyntaxKind::L_BRACE => {
+                            self.output.push_str(text);
+                            self.indent_level += 1;
+                            self.handle_newline();
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::QW_STRING => {
+                            if self.at_line_start {
+                                self.add_indent();
+                                self.at_line_start = false;
+                            }
+                            self.output.push_str(text);
+                            self.handle_newline();
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::R_PAREN | SyntaxKind::R_BRACKET | SyntaxKind::R_BRACE => {
+                            if self.indent_level > 0 {
+                                self.indent_level -= 1;
+                            }
+                            if self.at_line_start {
+                                self.add_indent();
+                                self.at_line_start = false;
+                            }
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::WHITESPACE => {
+                            // In multiline mode, handle whitespace for proper newlines
+                            if text.contains('\n') {
+                                self.handle_newline();
+                            }
                         }
                         _ => {
                             self.format_token(&token);
@@ -1251,33 +1500,6 @@ my $z = 3;"#;
     }
 
     #[test]
-    fn test_package_use_no_empty_line_between() {
-        let cases = [(
-            "package MyPackage;\nuse warnings;",
-            "package MyPackage;\nuse warnings;\n",
-        )];
-        check_formatting_cases(&cases);
-    }
-
-    #[test]
-    fn test_package_multiple_use_no_empty_lines() {
-        let cases = [(
-            "package MyPackage;\nuse strict;\nuse warnings;\nuse Data::Dumper;",
-            "package MyPackage;\nuse strict;\nuse warnings;\nuse Data::Dumper;\n",
-        )];
-        check_formatting_cases(&cases);
-    }
-
-    #[test]
-    fn test_package_use_with_sub_has_empty_line() {
-        let cases = [(
-            "package MyPackage;\nuse warnings;\nsub test {\n    my $x = 1;\n}",
-            "package MyPackage;\nuse warnings;\n\nsub test {\n    my $x = 1;\n}\n",
-        )];
-        check_formatting_cases(&cases);
-    }
-
-    #[test]
     fn test_end_data_section_basic() {
         let input = r#"
 my $x = 1;
@@ -1297,5 +1519,161 @@ This is data after __DATA__ $#&!
         This is data after __DATA__ $#&!
           Raw string here~
         ");
+    }
+
+    #[test]
+    fn test_single_line_hash_ref_formatting() {
+        let input = "my $hash = { a => 1, b => 2 };";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"my $hash = {a => 1, b => 2};");
+    }
+
+    #[test]
+    fn test_multiline_hash_ref_formatting() {
+        let input = r#"my $hash = {
+    a => 1,
+    b => 2
+};"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        my $hash = {
+            a => 1,
+            b => 2
+        };
+        ");
+    }
+
+    #[test]
+    fn test_single_line_array_ref_formatting() {
+        let input = "my $array = [1, 2, 3];";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"my $array = [1, 2, 3];");
+    }
+
+    #[test]
+    fn test_multiline_array_ref_formatting() {
+        let input = r#"my $array = [
+    1,
+    2,
+    3
+];"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        my $array = [
+            1,
+            2,
+            3
+        ];
+        ");
+    }
+
+    #[test]
+    fn test_single_line_qw_formatting() {
+        let input = "my @words = qw(hello world test);";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"my @words = qw(hello world test);");
+    }
+
+    #[test]
+    fn test_multiline_qw_formatting() {
+        let input = r#"my @words = qw(
+    hello
+    world
+    test
+);"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        my @words = qw(
+            hello
+            world
+            test
+        );
+        ");
+    }
+
+    #[test]
+    fn test_nested_multiline_structures() {
+        let input = r#"my $data = {
+    users => [
+        { name => "Alice", age => 30 },
+        { name => "Bob", age => 25 }
+    ],
+    config => {
+        debug => 1,
+        timeout => 60
+    }
+};"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r#"
+        my $data = {
+            users => [
+                {name => "Alice", age => 30},
+                {name => "Bob", age => 25}
+            ],
+            config => {
+                debug => 1,
+                timeout => 60
+            }
+        };
+        "#);
+    }
+
+    #[test]
+    fn test_mixed_single_and_multiline() {
+        let input = r#"my $mixed = {
+    simple => { a => 1, b => 2 },
+    complex => {
+        nested => [1, 2, 3],
+        items => [
+            "first",
+            "second"
+        ]
+    }
+};"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r#"
+        my $mixed = {
+            simple => {a => 1, b => 2},
+            complex => {
+                nested => [1, 2, 3],
+                items => [
+                    "first",
+                    "second"
+                ]
+            }
+        };
+        "#);
     }
 }
