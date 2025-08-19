@@ -540,6 +540,7 @@ impl<'a> Parser<'a> {
             self.at_any(&[
                 SyntaxKind::NUMBER,
                 SyntaxKind::STRING,
+                SyntaxKind::REGEX_LITERAL,
                 SyntaxKind::IDENT,
                 SyntaxKind::L_PAREN,
                 SyntaxKind::L_BRACE,
@@ -588,7 +589,7 @@ impl<'a> Parser<'a> {
     // Logical AND operators: &&
     fn logical_and_expr(&mut self) -> bool {
         let start = self.builder.checkpoint();
-        if !self.regex_expr() {
+        if !self.comparison_expr() {
             return false;
         }
 
@@ -601,7 +602,7 @@ impl<'a> Parser<'a> {
                 .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
             self.bump(); // operator
             self.skip_trivia();
-            if !self.regex_expr() {
+            if !self.comparison_expr() {
                 self.error("Expected expression after logical AND operator");
             }
             self.builder.finish_node();
@@ -612,7 +613,7 @@ impl<'a> Parser<'a> {
     // Regex operators: =~ !~
     fn regex_expr(&mut self) -> bool {
         let start = self.builder.checkpoint();
-        if !self.comparison_expr() {
+        if !self.method_call_expr() {
             return false;
         }
 
@@ -621,7 +622,7 @@ impl<'a> Parser<'a> {
                 .start_node_at(start, SyntaxKind::REGEX_EXPR.into());
             self.bump(); // operator
             self.skip_trivia();
-            if !self.comparison_expr() {
+            if !self.method_call_expr() {
                 self.error("Expected expression after regex operator");
             }
             self.builder.finish_node();
@@ -701,7 +702,7 @@ impl<'a> Parser<'a> {
     // Multiplicative operators: * / % x
     fn multiplicative_expr(&mut self) -> bool {
         let start = self.builder.checkpoint();
-        if !self.method_call_expr() {
+        if !self.regex_expr() {
             return false;
         }
 
@@ -715,7 +716,7 @@ impl<'a> Parser<'a> {
                 .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
             self.bump(); // operator
             self.skip_trivia();
-            if !self.method_call_expr() {
+            if !self.regex_expr() {
                 self.error("Expected expression after multiplicative operator");
             }
             self.builder.finish_node();
@@ -766,7 +767,9 @@ impl<'a> Parser<'a> {
         }
 
         match self.current_kind() {
-            Some(SyntaxKind::NUMBER) | Some(SyntaxKind::STRING) => {
+            Some(SyntaxKind::NUMBER)
+            | Some(SyntaxKind::STRING)
+            | Some(SyntaxKind::REGEX_LITERAL) => {
                 self.bump();
                 self.skip_trivia();
             }

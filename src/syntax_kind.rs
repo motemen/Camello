@@ -25,7 +25,7 @@ pub enum SyntaxKind {
     // リテラル
     NUMBER,
     STRING,
-    // REGEX_LITERAL, // /pattern/flags - TODO: implement later
+    REGEX_LITERAL, // /pattern/flags
 
     // キーワード
     SUB_KW,
@@ -197,6 +197,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::HASH_VAR => "HASH_VAR",
             SyntaxKind::NUMBER => "NUMBER",
             SyntaxKind::STRING => "STRING",
+            SyntaxKind::REGEX_LITERAL => "REGEX_LITERAL",
             SyntaxKind::SUB_KW => "SUB_KW",
             SyntaxKind::MY_KW => "MY_KW",
             SyntaxKind::IF_KW => "IF_KW",
