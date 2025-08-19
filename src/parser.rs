@@ -2581,7 +2581,7 @@ mod tests {
         let input = r#"$str =~ "pattern";"#;
         let syntax = assert_parses_ok(input);
         println!("{:#?}", syntax);
-        
+
         let formatted = crate::format(&syntax);
         assert_eq!(formatted, "$str =~ \"pattern\";\n");
     }
@@ -2591,7 +2591,7 @@ mod tests {
         let input = r#"$str !~ "pattern";"#;
         let syntax = assert_parses_ok(input);
         println!("{:#?}", syntax);
-        
+
         let formatted = crate::format(&syntax);
         assert_eq!(formatted, "$str !~ \"pattern\";\n");
     }
@@ -2601,7 +2601,7 @@ mod tests {
         let input = r#"$str =~ "test.*pattern";"#;
         let syntax = assert_parses_ok(input);
         println!("{:#?}", syntax);
-        
+
         let formatted = crate::format(&syntax);
         assert_eq!(formatted, "$str =~ \"test.*pattern\";\n");
     }
@@ -2611,7 +2611,7 @@ mod tests {
         let input = r#"$a == 1 && $str =~ "test";"#;
         let syntax = assert_parses_ok(input);
         println!("{:#?}", syntax);
-        
+
         let formatted = crate::format(&syntax);
         assert_eq!(formatted, "$a == 1 && $str =~ \"test\";\n");
     }
@@ -2623,9 +2623,11 @@ mod tests {
 }"#;
         let syntax = assert_parses_ok(input);
         println!("{:#?}", syntax);
-        
-        let formatted = crate::format(&syntax);
-        assert_eq!(formatted, "if ($text =~ \"hello\") {\n    print \"found\";\n}\n");
-    }
 
+        let formatted = crate::format(&syntax);
+        assert_eq!(
+            formatted,
+            "if ($text =~ \"hello\") {\n    print \"found\";\n}\n"
+        );
+    }
 }
