@@ -84,7 +84,7 @@ impl<'a> Parser<'a> {
                 self.sub_def();
                 true
             }
-            Some(SyntaxKind::FOR_KW) => {
+            Some(SyntaxKind::FOR_KW) | Some(SyntaxKind::FOREACH_KW) => {
                 self.for_stmt();
                 true
             }
@@ -225,16 +225,20 @@ impl<'a> Parser<'a> {
     fn for_stmt(&mut self) {
         self.builder.start_node(SyntaxKind::FOR_STMT.into());
 
-        // "for"
-        self.expect(SyntaxKind::FOR_KW);
+        // "for" or "foreach" - already validated by statement()
+        self.bump();
         self.skip_trivia();
 
-        // Condition/iterator expression in parentheses: for (expr)
+        // Check what comes next to determine the for loop style:
+        // 1. Perl-style: for VAR (LIST) BLOCK - VAR starts with sigil or "my"
+        // 2. C-style: for (EXPR) BLOCK - starts with "("
+
         if self.at(SyntaxKind::L_PAREN) {
+            // C-style for loop: for (EXPR) BLOCK
             self.bump(); // (
             self.skip_trivia();
 
-            // Parse the for condition/iterator
+            // Parse the condition/iterator expression
             if !self.expression() {
                 self.error("Expected expression in for condition");
             }
@@ -242,7 +246,26 @@ impl<'a> Parser<'a> {
             self.skip_trivia();
             self.expect(SyntaxKind::R_PAREN);
         } else {
-            self.error("Expected '(' after 'for'");
+            // Perl-style for loop: for VAR (LIST) BLOCK
+            // Parse the iterator variable (VAR part): my $var, $var, @var, etc.
+            self.parse_for_variable();
+            self.skip_trivia();
+
+            // List expression in parentheses: (LIST)
+            if self.at(SyntaxKind::L_PAREN) {
+                self.bump(); // (
+                self.skip_trivia();
+
+                // Parse the list expression
+                if !self.expression() {
+                    self.error("Expected expression in for list");
+                }
+
+                self.skip_trivia();
+                self.expect(SyntaxKind::R_PAREN);
+            } else {
+                self.error("Expected '(' after for variable");
+            }
         }
 
         self.skip_trivia();
@@ -251,6 +274,31 @@ impl<'a> Parser<'a> {
         self.block();
 
         self.builder.finish_node();
+    }
+
+    /// Parse the variable part of a for loop (my $var, $var)
+    fn parse_for_variable(&mut self) {
+        if self.at(SyntaxKind::MY_KW) {
+            // my $var case - parse as a variable declaration
+            self.builder.start_node(SyntaxKind::DECLARATION_STMT.into());
+
+            self.expect(SyntaxKind::MY_KW);
+            self.skip_trivia();
+
+            // Parse the variable - must be a scalar
+            if self.at(SyntaxKind::DOLLAR) {
+                self.parse_variable_simple();
+            } else {
+                self.error("Expected scalar variable after 'my' in for loop");
+            }
+
+            self.builder.finish_node();
+        } else if self.at(SyntaxKind::DOLLAR) {
+            // $var case - parse as a variable reference
+            self.parse_variable();
+        } else {
+            self.error("Expected scalar variable or 'my' declaration in for loop");
+        }
     }
 
     fn while_stmt(&mut self) {
@@ -1390,9 +1438,80 @@ mod tests {
     #[test]
     fn test_for_stmt() {
         let inputs = [
-            "for ($i) { }",
-            "for (@array) { my $x = 1; }",
-            "for ($x) { print $x; }",
+            "for my $var (@list) { }",
+            "for $var (@array) { my $x = 1; }",
+            "for my $item (@items) { print $item; }",
+            "foreach my $val (@values) { my $y = $val; }",
+            "foreach $element (@elements) { print; }",
+        ];
+
+        for input in inputs {
+            let syntax = assert_parses_ok(input);
+
+            // FOR_STMTノードが存在することを確認
+            let for_stmts: Vec<_> = syntax
+                .descendants()
+                .filter(|node| node.kind() == SyntaxKind::FOR_STMT)
+                .collect();
+            assert_eq!(
+                for_stmts.len(),
+                1,
+                "Should have 1 for statement for input: '{}'",
+                input
+            );
+        }
+    }
+
+    #[test]
+    fn test_for_stmt_with_my_declaration() {
+        let input = "for my $item (@list) { print $item; }";
+        let syntax = assert_parses_ok(input);
+
+        // FOR_STMTノードが存在することを確認
+        let for_stmts: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::FOR_STMT)
+            .collect();
+        assert_eq!(for_stmts.len(), 1, "Should have 1 for statement");
+
+        // DECLARATION_STMTノード（for loop variable）が存在することを確認
+        let decl_stmts: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::DECLARATION_STMT)
+            .collect();
+        assert_eq!(decl_stmts.len(), 1, "Should have 1 declaration statement");
+    }
+
+    #[test]
+    fn test_foreach_synonym() {
+        let input = "foreach my $item (@items) { print; }";
+        let syntax = assert_parses_ok(input);
+
+        // FOR_STMTノードが存在することを確認（foreach も同じASTノードを使用）
+        let for_stmts: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::FOR_STMT)
+            .collect();
+        assert_eq!(for_stmts.len(), 1, "Should have 1 for statement");
+
+        // FOREACHキーワードが存在することを確認
+        let foreach_tokens: Vec<_> = syntax
+            .descendants_with_tokens()
+            .filter_map(|node_or_token| match node_or_token {
+                rowan::NodeOrToken::Token(token) if token.kind() == SyntaxKind::FOREACH_KW => {
+                    Some(token)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(foreach_tokens.len(), 1, "Should have 1 FOREACH_KW token");
+    }
+
+    #[test]
+    fn test_for_stmt_with_different_variable_types() {
+        let inputs = [
+            "for my $scalar (@list) { }",
+            "for $existing_scalar (@list) { }",
         ];
 
         for input in inputs {
