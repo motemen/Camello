@@ -42,18 +42,21 @@ impl Formatter {
                 self.format_qw_expr(node);
                 return;
             }
-            SyntaxKind::SCALAR_VAR | SyntaxKind::ARRAY_VAR | SyntaxKind::HASH_VAR => {
-                self.format_variable(node);
-                return;
-            }
             _ => {}
         }
 
+        // Default child iteration
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(node) => self.format_node(&node),
                 NodeOrToken::Token(token) => self.format_token(&token),
             }
+        }
+
+        // Special handling after children are processed
+        if node.kind().is_variable() {
+            // This is the logic from format_variable
+            self.prev_token_kind = Some(node.kind());
         }
     }
 
@@ -135,20 +138,6 @@ impl Formatter {
                 }
             }
         }
-    }
-
-    fn format_variable(&mut self, node: &PerlNode) {
-        // 変数の特別フォーマット - 内部のトークンを処理した後、prev_token_kindを変数の種類に設定
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
-                NodeOrToken::Token(token) => self.format_token(&token),
-            }
-        }
-
-        // 変数全体の処理完了後、prev_token_kindを変数ノードの種類に設定
-        // これにより、変数の後の括弧に適切なスペースが挿入される
-        self.prev_token_kind = Some(node.kind());
     }
 
     fn format_token(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
@@ -250,13 +239,14 @@ impl Formatter {
 
             // Before L_PAREN, add space after variables and keywords (but not after identifiers or qualified identifiers for function calls)
             (Some(kind), SyntaxKind::L_PAREN)
-                if kind == SyntaxKind::SCALAR_VAR
-                    || kind == SyntaxKind::ARRAY_VAR
-                    || kind == SyntaxKind::HASH_VAR
-                    || kind == SyntaxKind::MY_KW
-                    || kind == SyntaxKind::FOR_KW
-                    || kind == SyntaxKind::FOREACH_KW
-                    || kind == SyntaxKind::WHILE_KW =>
+                if kind.is_variable()
+                    || matches!(
+                        kind,
+                        SyntaxKind::MY_KW
+                            | SyntaxKind::FOR_KW
+                            | SyntaxKind::FOREACH_KW
+                            | SyntaxKind::WHILE_KW
+                    ) =>
             {
                 true
             }
