@@ -42,6 +42,10 @@ impl Formatter {
                 self.format_qw_expr(node);
                 return;
             }
+            SyntaxKind::DEREF_EXPR => {
+                self.format_deref_expr(node);
+                return;
+            }
             _ => {}
         }
 
@@ -133,6 +137,31 @@ impl Formatter {
                         }
                         _ => {
                             self.format_token(&token);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn format_deref_expr(&mut self, node: &PerlNode) {
+        // デリファレンス式（例: @$var, %$var, $$var）のフォーマット
+        // 全ての子要素を空白なしで連続出力
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Token(token) => {
+                    let kind = token.kind();
+                    let text = token.text();
+                    
+                    // デリファレンス式では空白を入れずに続ける
+                    match kind {
+                        SyntaxKind::WHITESPACE => {
+                            // デリファレンス式内の空白はスキップ
+                        }
+                        _ => {
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
                         }
                     }
                 }
