@@ -87,6 +87,7 @@ pub enum SyntaxKind {
     POSTFIX_EXPR,     // 後置式（例: $i++, $i--）
     METHOD_CALL_EXPR, // メソッド呼び出し式（例: $obj->method()）
     QW_EXPR,          // qw() 式（クォートワードリスト）
+    DEREF_EXPR,       // デリファレンス式（例: @$var, %$var, $$var）
 
     // リテラル・リファレンス
     HASH_REF,  // ハッシュリファレンス（匿名ハッシュ）
@@ -221,6 +222,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::POSTFIX_EXPR => "POSTFIX_EXPR",
             SyntaxKind::METHOD_CALL_EXPR => "METHOD_CALL_EXPR",
             SyntaxKind::QW_EXPR => "QW_EXPR",
+            SyntaxKind::DEREF_EXPR => "DEREF_EXPR",
             SyntaxKind::HASH_REF => "HASH_REF",
             SyntaxKind::ARRAY_REF => "ARRAY_REF",
             SyntaxKind::IF_MODIFIER => "IF_MODIFIER",

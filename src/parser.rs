@@ -569,7 +569,12 @@ impl<'a> Parser<'a> {
                 self.bump();
             }
             Some(kind) if kind.is_sigil() => {
-                self.parse_variable();
+                // Check if this is a dereferencing pattern (sigil followed by another sigil)
+                if self.is_dereferencing_pattern() {
+                    self.parse_dereferencing();
+                } else {
+                    self.parse_variable();
+                }
             }
             Some(SyntaxKind::IDENT) => {
                 // 修飾付き識別子かもしれないのでparse_identifier_or_qualifiedを使用
@@ -813,6 +818,51 @@ impl<'a> Parser<'a> {
             self.error("Expected identifier after sigil");
         }
 
+        self.builder.finish_node();
+    }
+
+    /// デリファレンスパターンかどうかをチェック（sigil followed by sigil）
+    fn is_dereferencing_pattern(&self) -> bool {
+        // 現在のトークンがsigilでない場合、デリファレンスではない
+        if let Some(current) = self.current_kind() {
+            if !current.is_sigil() {
+                return false;
+            }
+        } else {
+            return false;
+        }
+
+        // 次のトークンの先読み（簡単な実装）
+        // 現在位置から先を見て、最初の非triviaトークンがsigilかチェック
+        let current_text = self.current_text().unwrap_or("");
+        let remaining_source = &self.source[self.current_pos + current_text.len()..];
+        
+        // 空白をスキップ
+        let trimmed = remaining_source.trim_start();
+        
+        // 次の文字がsigilかチェック
+        trimmed.starts_with('$') || trimmed.starts_with('@') || trimmed.starts_with('%')
+    }
+
+    /// デリファレンス式をパース（例: @$var, %$var, $$var）
+    fn parse_dereferencing(&mut self) {
+        self.builder.start_node(SyntaxKind::DEREF_EXPR.into());
+        
+        // 最初のsigil（デリファレンス演算子）を消費
+        self.bump();
+        self.skip_trivia();
+        
+        // 次のsigilとそれに続く変数をパース
+        if let Some(kind) = self.current_kind() {
+            if kind.is_sigil() {
+                self.parse_variable();
+            } else {
+                self.error("Expected variable after dereference sigil");
+            }
+        } else {
+            self.error("Expected variable after dereference sigil");
+        }
+        
         self.builder.finish_node();
     }
 
@@ -1744,5 +1794,82 @@ mod tests {
             .filter(|node| node.kind() == SyntaxKind::INFIX_EXPR)
             .count();
         assert_eq!(infix_count, 3, "Should have three INFIX_EXPR nodes");
+    }
+
+    #[test]
+    fn test_dereference() {
+        // Test scalar dereferencing ($$var)
+        let input = "$$var;";
+        let syntax = assert_parses_ok(input);
+        let deref_exprs: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::DEREF_EXPR)
+            .collect();
+        assert_eq!(deref_exprs.len(), 1, "Should have 1 DEREF_EXPR node for $$var");
+        let scalar_vars: Vec<_> = deref_exprs[0]
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::SCALAR_VAR)
+            .collect();
+        assert_eq!(scalar_vars.len(), 1, "Should have 1 SCALAR_VAR in $$var DEREF_EXPR");
+
+        // Test array dereferencing (@$arrayref)
+        let input = "@$arrayref;";
+        let syntax = assert_parses_ok(input);
+        let deref_exprs: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::DEREF_EXPR)
+            .collect();
+        assert_eq!(deref_exprs.len(), 1, "Should have 1 DEREF_EXPR node for @$arrayref");
+        let scalar_vars: Vec<_> = deref_exprs[0]
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::SCALAR_VAR)
+            .collect();
+        assert_eq!(scalar_vars.len(), 1, "Should have 1 SCALAR_VAR in @$arrayref DEREF_EXPR");
+
+        // Test hash dereferencing (%$hashref)
+        let input = "%$hashref;";
+        let syntax = assert_parses_ok(input);
+        let deref_exprs: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::DEREF_EXPR)
+            .collect();
+        assert_eq!(deref_exprs.len(), 1, "Should have 1 DEREF_EXPR node for %$hashref");
+        let scalar_vars: Vec<_> = deref_exprs[0]
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::SCALAR_VAR)
+            .collect();
+        assert_eq!(scalar_vars.len(), 1, "Should have 1 SCALAR_VAR in %$hashref DEREF_EXPR");
+
+        // Test dereferencing with whitespace (@ $var)
+        let input = "@ $var;";
+        let syntax = assert_parses_ok(input);
+        let deref_exprs: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::DEREF_EXPR)
+            .collect();
+        assert_eq!(deref_exprs.len(), 1, "Should have 1 DEREF_EXPR node with whitespace");
+
+        // Test dereferencing in assignment
+        let input = "my $result = @$arrayref;";
+        let syntax = assert_parses_ok(input);
+        let deref_exprs: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::DEREF_EXPR)
+            .collect();
+        assert_eq!(deref_exprs.len(), 1, "Should have 1 DEREF_EXPR in assignment");
+        let decl_stmts: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::DECLARATION_STMT)
+            .collect();
+        assert_eq!(decl_stmts.len(), 1, "Should have 1 DECLARATION_STMT");
+
+        // Test multiple dereferences in one statement
+        let input = "$$var; @$array; %$hash;";
+        let syntax = assert_parses_ok(input);
+        let deref_exprs: Vec<_> = syntax
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::DEREF_EXPR)
+            .collect();
+        assert_eq!(deref_exprs.len(), 3, "Should have 3 DEREF_EXPR nodes");
     }
 }
