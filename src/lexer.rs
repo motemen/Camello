@@ -259,7 +259,9 @@ impl<'a> Lexer<'a> {
 
     fn disambiguate_percent(&self) -> SyntaxKind {
         match self.context {
-            LexerContext::ExpectingValue | LexerContext::VariableList | LexerContext::QwDelimiter => {
+            LexerContext::ExpectingValue
+            | LexerContext::VariableList
+            | LexerContext::QwDelimiter => {
                 // When expecting a value or in variable list, % is a sigil for a hash
                 // Examples: "my %hash", "{ key => %val }"
                 SyntaxKind::PERCENT
@@ -274,7 +276,9 @@ impl<'a> Lexer<'a> {
 
     fn disambiguate_x(&self) -> SyntaxKind {
         match self.context {
-            LexerContext::ExpectingValue | LexerContext::VariableList | LexerContext::QwDelimiter => {
+            LexerContext::ExpectingValue
+            | LexerContext::VariableList
+            | LexerContext::QwDelimiter => {
                 // When expecting a value or in variable list, x is an identifier
                 // Examples: "sub x", "$x", "my $x"
                 SyntaxKind::IDENT
@@ -290,53 +294,47 @@ impl<'a> Lexer<'a> {
     fn try_consume_regex_literal(&mut self) -> Option<(SyntaxKind, &'a str)> {
         let remainder = self.logos_lexer.remainder();
 
-        // Must start with '/'
         if !remainder.starts_with('/') {
             return None;
         }
 
-        let mut pos = 1; // Skip opening '/'
-        let chars: Vec<char> = remainder.chars().collect();
+        let mut closing_slash_pos: Option<usize> = None;
+        let mut escaped = false;
 
-        // Find the closing '/' while handling escapes
-        while pos < chars.len() {
-            match chars[pos] {
+        for (i, c) in remainder.char_indices().skip(1) {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            match c {
                 '/' => {
-                    // Found closing slash, now check for flags
-                    pos += 1; // Include the closing '/'
-
-                    // Consume optional flags
-                    while pos < chars.len() && matches!(chars[pos], 'g' | 'i' | 'm' | 's' | 'x') {
-                        pos += 1;
-                    }
-
-                    // Manually advance the lexer
-                    for _ in 0..pos {
-                        self.logos_lexer.bump(1);
-                    }
-
-                    // Return the regex literal token
-                    let text = &remainder[..pos];
-                    return Some((SyntaxKind::REGEX_LITERAL, text));
+                    closing_slash_pos = Some(i);
+                    break;
                 }
                 '\\' => {
-                    // Skip escaped character
-                    pos += 1;
-                    if pos < chars.len() {
-                        pos += 1; // Skip the escaped character
-                    }
+                    escaped = true;
                 }
-                '\n' => {
-                    // Newlines not allowed in regex literals
-                    return None;
-                }
-                _ => {
-                    pos += 1;
-                }
+                '\n' => return None,
+                _ => {}
             }
         }
 
-        // No closing slash found
+        if let Some(pos) = closing_slash_pos {
+            let mut end_pos = pos + 1;
+            // Consume optional flags
+            for c in remainder[end_pos..].chars() {
+                if matches!(c, 'g' | 'i' | 'm' | 's' | 'x') {
+                    end_pos += c.len_utf8();
+                } else {
+                    break;
+                }
+            }
+
+            let text = &remainder[..end_pos];
+            self.logos_lexer.bump(end_pos);
+            return Some((SyntaxKind::REGEX_LITERAL, text));
+        }
+
         None
     }
 
@@ -374,9 +372,7 @@ impl<'a> Lexer<'a> {
             SyntaxKind::EQ | SyntaxKind::PLUS | SyntaxKind::MINUS | SyntaxKind::ARROW => {
                 LexerContext::ExpectingValue
             }
-            SyntaxKind::STAR | SyntaxKind::MODULO | SyntaxKind::X => {
-                LexerContext::ExpectingValue
-            }
+            SyntaxKind::STAR | SyntaxKind::MODULO | SyntaxKind::X => LexerContext::ExpectingValue,
             SyntaxKind::SLASH => {
                 // After slash in different contexts
                 match self.context {
@@ -804,7 +800,14 @@ mod tests {
         assert_eq!(lexer.next_token(), Some((SyntaxKind::R_PAREN, ")")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::L_BRACE, "{")));
-        // ... rest of the tokens
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "print")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::STRING, "\"match\"")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::SEMICOLON, ";")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::R_BRACE, "}")));
+        assert_eq!(lexer.next_token(), None);
     }
 
     #[test]
