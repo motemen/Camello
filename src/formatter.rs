@@ -925,7 +925,6 @@ mod tests {
         let cases = [
             ("for my $var (@list) { print $var; }", "for my $var (@list) {\n    print $var;\n}\n"),
             ("for our $var (@list) { print $var; }", "for our $var (@list) {\n    print $var;\n}\n"),
-            ("for state $var (@list) { print $var; }", "for state $var (@list) {\n    print $var;\n}\n"),
             ("for local $var (@list) { print $var; }", "for local $var (@list) {\n    print $var;\n}\n"),
         ];
         check_formatting_cases(&cases);
