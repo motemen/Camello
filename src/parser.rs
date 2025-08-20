@@ -794,7 +794,7 @@ impl<'a> Parser<'a> {
                     self.parse_variable();
                 }
             }
-            Some(SyntaxKind::MY_KW) | Some(SyntaxKind::OUR_KW) | Some(SyntaxKind::STATE_KW) | Some(SyntaxKind::LOCAL_KW) => {
+            Some(k) if matches!(k, SyntaxKind::MY_KW | SyntaxKind::OUR_KW | SyntaxKind::STATE_KW | SyntaxKind::LOCAL_KW) => {
                 // Variable declaration as expression (e.g., my $x = 1)
                 self.var_decl_expr();
             }
