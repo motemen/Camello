@@ -31,6 +31,9 @@ pub enum SyntaxKind {
     // キーワード
     SUB_KW,
     MY_KW,
+    OUR_KW,
+    STATE_KW,
+    LOCAL_KW,
     IF_KW,
     ELSIF_KW,
     ELSE_KW,
@@ -147,6 +150,9 @@ impl SyntaxKind {
             self,
             SyntaxKind::SUB_KW
                 | SyntaxKind::MY_KW
+                | SyntaxKind::OUR_KW
+                | SyntaxKind::STATE_KW
+                | SyntaxKind::LOCAL_KW
                 | SyntaxKind::IF_KW
                 | SyntaxKind::ELSIF_KW
                 | SyntaxKind::ELSE_KW
@@ -210,6 +216,9 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::REGEX_LITERAL => "REGEX_LITERAL",
             SyntaxKind::SUB_KW => "SUB_KW",
             SyntaxKind::MY_KW => "MY_KW",
+            SyntaxKind::OUR_KW => "OUR_KW",
+            SyntaxKind::STATE_KW => "STATE_KW",
+            SyntaxKind::LOCAL_KW => "LOCAL_KW",
             SyntaxKind::IF_KW => "IF_KW",
             SyntaxKind::ELSIF_KW => "ELSIF_KW",
             SyntaxKind::ELSE_KW => "ELSE_KW",

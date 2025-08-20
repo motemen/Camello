@@ -277,6 +277,9 @@ impl<'a> Lexer<'a> {
                 match text {
                     "sub" => SyntaxKind::SUB_KW,
                     "my" => SyntaxKind::MY_KW,
+                    "our" => SyntaxKind::OUR_KW,
+                    "state" => SyntaxKind::STATE_KW,
+                    "local" => SyntaxKind::LOCAL_KW,
                     "if" => SyntaxKind::IF_KW,
                     "elsif" => SyntaxKind::ELSIF_KW,
                     "else" => SyntaxKind::ELSE_KW,
@@ -411,7 +414,10 @@ impl<'a> Lexer<'a> {
 
             // Keywords with different expectations
             SyntaxKind::SUB_KW => LexerContext::ExpectingValue, // Expects identifier (bareword)
-            SyntaxKind::MY_KW => LexerContext::VariableList, // Expects variables or variable lists
+            SyntaxKind::MY_KW
+            | SyntaxKind::OUR_KW
+            | SyntaxKind::STATE_KW
+            | SyntaxKind::LOCAL_KW => LexerContext::VariableList, // Expects variables or variable lists
             SyntaxKind::FOR_KW => LexerContext::ExpectingValue, // Expects for condition/iterator
             SyntaxKind::FOREACH_KW => LexerContext::ExpectingValue, // Expects foreach condition/iterator
             SyntaxKind::WHILE_KW => LexerContext::ExpectingValue,   // Expects while condition
