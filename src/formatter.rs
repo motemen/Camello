@@ -499,8 +499,16 @@ impl Formatter {
     fn add_empty_line_before_if_needed(&mut self, node: &PerlNode) {
         // Add an empty line if the previous sibling is of a different type,
         // or if this is a SUB_DEF with any preceding sibling (to separate all subs)
+        // Exception: Don't add empty line between PACKAGE_STMT and USE_STMT
         if let Some(prev) = node.prev_sibling() {
-            if prev.kind() != node.kind() || node.kind() == SyntaxKind::SUB_DEF {
+            let should_add_empty_line = if prev.kind() != node.kind() {
+                // Don't add empty line between PACKAGE_STMT and USE_STMT
+                !(prev.kind() == SyntaxKind::PACKAGE_STMT && node.kind() == SyntaxKind::USE_STMT)
+            } else {
+                false
+            };
+            
+            if should_add_empty_line || node.kind() == SyntaxKind::SUB_DEF {
                 self.add_empty_line_before();
             }
         }
@@ -508,9 +516,13 @@ impl Formatter {
 
     fn add_empty_line_after_if_needed(&mut self, node: &PerlNode) {
         // Add an empty line if the next sibling is of a different type.
+        // Exception: Don't add empty line between PACKAGE_STMT and USE_STMT
         if let Some(next) = node.next_sibling() {
             if next.kind() != node.kind() {
-                self.add_empty_line_after();
+                // Don't add empty line between PACKAGE_STMT and USE_STMT
+                if !(node.kind() == SyntaxKind::PACKAGE_STMT && next.kind() == SyntaxKind::USE_STMT) {
+                    self.add_empty_line_after();
+                }
             }
         }
     }
@@ -1401,5 +1413,29 @@ my $z = 3;"#;
 
         my $x = 1;
         ");
+    }
+
+    #[test]
+    fn test_package_use_no_empty_line_between() {
+        let cases = [
+            ("package MyPackage;\nuse warnings;", "package MyPackage;\nuse warnings;\n"),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_package_multiple_use_no_empty_lines() {
+        let cases = [
+            ("package MyPackage;\nuse strict;\nuse warnings;\nuse Data::Dumper;", "package MyPackage;\nuse strict;\nuse warnings;\nuse Data::Dumper;\n"),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_package_use_with_sub_has_empty_line() {
+        let cases = [
+            ("package MyPackage;\nuse warnings;\nsub test {\n    my $x = 1;\n}", "package MyPackage;\nuse warnings;\n\nsub test {\n    my $x = 1;\n}\n"),
+        ];
+        check_formatting_cases(&cases);
     }
 }
