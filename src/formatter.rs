@@ -702,7 +702,15 @@ impl Formatter {
             (Some(_), SyntaxKind::COMMA) => false,
 
             // キーワードの後
-            (Some(SyntaxKind::MY_KW), _) => true,
+            (
+                Some(
+                    SyntaxKind::MY_KW
+                    | SyntaxKind::OUR_KW
+                    | SyntaxKind::STATE_KW
+                    | SyntaxKind::LOCAL_KW,
+                ),
+                _,
+            ) => true,
             (Some(SyntaxKind::SUB_KW), SyntaxKind::IDENT) => true,
             (Some(SyntaxKind::SUB_KW), SyntaxKind::QUALIFIED_IDENT) => true,
             (Some(SyntaxKind::FOR_KW), _) => true,
@@ -731,6 +739,9 @@ impl Formatter {
                     || matches!(
                         kind,
                         SyntaxKind::MY_KW
+                            | SyntaxKind::OUR_KW
+                            | SyntaxKind::STATE_KW
+                            | SyntaxKind::LOCAL_KW
                             | SyntaxKind::FOR_KW
                             | SyntaxKind::FOREACH_KW
                             | SyntaxKind::WHILE_KW
@@ -900,6 +911,39 @@ mod tests {
         insta::assert_snapshot!(formatted, @r"
         my $var = 1;
         ");
+    }
+
+    #[test]
+    fn test_all_var_decl_types_formatting() {
+        let cases = [
+            ("my $x = 1;", "my $x = 1;\n"),
+            ("our $x = 2;", "our $x = 2;\n"),
+            ("state $x = 3;", "state $x = 3;\n"),
+            ("local $x = 4;", "local $x = 4;\n"),
+            ("my@arr=(1,2,3);", "my @arr = (1, 2, 3);\n"),
+            ("our%hash=(a=>1);", "our %hash = (a => 1);\n"),
+            ("state($x,$y)=(1,2);", "state ($x, $y) = (1, 2);\n"),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_for_stmt_with_various_decls_formatting() {
+        let cases = [
+            (
+                "for my $var (@list) { print $var; }",
+                "for my $var (@list) {\n    print $var;\n}\n",
+            ),
+            (
+                "for our $var (@list) { print $var; }",
+                "for our $var (@list) {\n    print $var;\n}\n",
+            ),
+            (
+                "for local $var (@list) { print $var; }",
+                "for local $var (@list) {\n    print $var;\n}\n",
+            ),
+        ];
+        check_formatting_cases(&cases);
     }
 
     #[test]

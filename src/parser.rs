@@ -86,7 +86,11 @@ impl<'a> Parser<'a> {
         self.skip_trivia();
 
         match self.current_kind() {
-            Some(SyntaxKind::MY_KW) => {
+            Some(SyntaxKind::MY_KW
+                | SyntaxKind::OUR_KW
+                | SyntaxKind::STATE_KW
+                | SyntaxKind::LOCAL_KW) =>
+            {
                 self.var_decl();
                 true
             }
@@ -147,66 +151,30 @@ impl<'a> Parser<'a> {
     }
 
     fn var_decl(&mut self) {
-        self.builder.start_node(SyntaxKind::DECLARATION_STMT.into());
-
-        // "my"
-        self.expect(SyntaxKind::MY_KW);
-        self.skip_trivia();
-
-        // my $var or my ($var, ...)
-        if self.at(SyntaxKind::L_PAREN) {
-            self.bump(); // (
-            self.skip_trivia();
-
-            while !self.at(SyntaxKind::R_PAREN) && !self.at_end() {
-                if self.current_kind().map(|k| k.is_sigil()).unwrap_or(false) {
-                    self.parse_variable_simple();
-                } else {
-                    self.error("Expected variable in parenthesized list");
-                    break; // エラーが発生したらループを抜ける
-                }
-
-                self.skip_trivia();
-
-                if self.at(SyntaxKind::COMMA) {
-                    self.bump();
-                    self.skip_trivia();
-                } else if !self.at(SyntaxKind::R_PAREN) {
-                    self.error("Expected ',' or ')' in variable list");
-                    break; // エラーが発生したらループを抜ける
-                }
-            }
-
-            self.expect(SyntaxKind::R_PAREN);
-        } else if self.current_kind().map(|k| k.is_sigil()).unwrap_or(false) {
-            self.parse_variable_simple(); // myでは簡単な変数のみ
-        } else {
-            self.error("Expected variable or parenthesized list of variables after 'my'");
-        }
-
-        self.skip_trivia();
-
-        // 初期化式があれば処理
-        if self.at(SyntaxKind::EQ) {
-            self.bump(); // =
-            self.skip_trivia();
-            if !self.expression() {
-                self.error("Invalid expression in variable assignment");
-            }
-        }
-
-        self.skip_trivia();
-        self.expect(SyntaxKind::SEMICOLON);
-
-        self.builder.finish_node();
+        self.var_decl_common(true);
     }
 
     // Variable declaration as expression (no semicolon expected)
     fn var_decl_expr(&mut self) {
+        self.var_decl_common(false);
+    }
+
+    // Helper to parse variable based on declaration kind
+    fn parse_variable_by_decl_kind(&mut self, decl_kind: SyntaxKind) {
+        if matches!(decl_kind, SyntaxKind::OUR_KW | SyntaxKind::LOCAL_KW) {
+            self.parse_variable_qualified();
+        } else {
+            self.parse_variable_simple();
+        }
+    }
+
+    // Common logic for variable declarations
+    fn var_decl_common(&mut self, expect_semicolon: bool) {
         self.builder.start_node(SyntaxKind::DECLARATION_STMT.into());
 
-        // "my"
-        self.expect(SyntaxKind::MY_KW);
+        // Variable declaration keyword (my, our, state, local)
+        let decl_kind = self.current_kind().unwrap();
+        self.bump(); // consume the keyword
         self.skip_trivia();
 
         // my $var or my ($var, ...)
@@ -216,7 +184,7 @@ impl<'a> Parser<'a> {
 
             while !self.at(SyntaxKind::R_PAREN) && !self.at_end() {
                 if self.current_kind().map(|k| k.is_sigil()).unwrap_or(false) {
-                    self.parse_variable_simple();
+                    self.parse_variable_by_decl_kind(decl_kind);
                 } else {
                     self.error("Expected variable in parenthesized list");
                     break; // エラーが発生したらループを抜ける
@@ -235,9 +203,9 @@ impl<'a> Parser<'a> {
 
             self.expect(SyntaxKind::R_PAREN);
         } else if self.current_kind().map(|k| k.is_sigil()).unwrap_or(false) {
-            self.parse_variable_simple(); // myでは簡単な変数のみ
+            self.parse_variable_by_decl_kind(decl_kind);
         } else {
-            self.error("Expected variable or parenthesized list of variables after 'my'");
+            self.error("Expected variable or parenthesized list of variables after variable declaration keyword");
         }
 
         self.skip_trivia();
@@ -249,6 +217,11 @@ impl<'a> Parser<'a> {
             if !self.expression() {
                 self.error("Invalid expression in variable assignment");
             }
+        }
+
+        self.skip_trivia();
+        if expect_semicolon {
+            self.expect(SyntaxKind::SEMICOLON);
         }
 
         self.builder.finish_node();
@@ -397,18 +370,26 @@ impl<'a> Parser<'a> {
 
     /// Parse the variable part of a for loop (my $var, $var)
     fn parse_for_variable(&mut self) {
-        if self.at(SyntaxKind::MY_KW) {
-            // my $var case - parse as a variable declaration
+        if self.at_any(&[SyntaxKind::MY_KW, SyntaxKind::OUR_KW, SyntaxKind::LOCAL_KW]) {
+            // Variable declaration case - parse as a variable declaration
             self.builder.start_node(SyntaxKind::DECLARATION_STMT.into());
 
-            self.expect(SyntaxKind::MY_KW);
+            let decl_kind = self.current_kind().unwrap();
+            self.bump(); // consume the keyword
             self.skip_trivia();
 
             // Parse the variable - must be a scalar
             if self.at(SyntaxKind::DOLLAR) {
-                self.parse_variable_simple();
+                // Use qualified parsing for our/local, simple for my
+                if matches!(decl_kind, SyntaxKind::OUR_KW | SyntaxKind::LOCAL_KW) {
+                    self.parse_variable_qualified();
+                } else {
+                    self.parse_variable_simple();
+                }
             } else {
-                self.error("Expected scalar variable after 'my' in for loop");
+                self.error(
+                    "Expected scalar variable after variable declaration keyword in for loop",
+                );
             }
 
             self.builder.finish_node();
@@ -576,7 +557,10 @@ impl<'a> Parser<'a> {
                 SyntaxKind::L_BRACE,
                 SyntaxKind::L_BRACKET,
                 SyntaxKind::QW_KW,
-                SyntaxKind::MY_KW, // Add MY_KW as start of expression
+                SyntaxKind::MY_KW, // Add variable declaration keywords as start of expression
+                SyntaxKind::OUR_KW,
+                SyntaxKind::STATE_KW,
+                SyntaxKind::LOCAL_KW,
             ]) || kind.is_variable()
                 || kind.is_sigil()
         } else {
@@ -815,7 +799,11 @@ impl<'a> Parser<'a> {
                     self.parse_variable();
                 }
             }
-            Some(SyntaxKind::MY_KW) => {
+            Some(SyntaxKind::MY_KW
+                | SyntaxKind::OUR_KW
+                | SyntaxKind::STATE_KW
+                | SyntaxKind::LOCAL_KW) =>
+            {
                 // Variable declaration as expression (e.g., my $x = 1)
                 self.var_decl_expr();
             }
@@ -1065,7 +1053,7 @@ impl<'a> Parser<'a> {
         self.builder.finish_node();
     }
 
-    /// my宣言専用の変数パース（修飾付き識別子は使用しない）
+    /// my/state宣言専用の変数パース（修飾付き識別子は使用しない）
     fn parse_variable_simple(&mut self) {
         let sigil = self.current_kind().unwrap();
         let var_kind = match sigil {
@@ -1081,12 +1069,39 @@ impl<'a> Parser<'a> {
         self.bump();
         self.skip_trivia();
 
-        // 識別子を期待（単純な識別子のみ）
+        // 識別子を期待（単純な識別子のみ、修飾付きは不可）
         if self.at(SyntaxKind::IDENT) {
             self.bump();
+
+            // Check for :: after identifier - if found, it's a package-qualified name which is not allowed for my/state
+            if self.at(SyntaxKind::DOUBLE_COLON) {
+                self.error("Package-qualified variable names are not allowed with 'my' or 'state' declarations");
+            }
         } else {
             self.error("Expected identifier after sigil");
         }
+
+        self.builder.finish_node();
+    }
+
+    /// our/local宣言専用の変数パース（修飾付き識別子も可能）
+    fn parse_variable_qualified(&mut self) {
+        let sigil = self.current_kind().unwrap();
+        let var_kind = match sigil {
+            SyntaxKind::DOLLAR => SyntaxKind::SCALAR_VAR,
+            SyntaxKind::AT => SyntaxKind::ARRAY_VAR,
+            SyntaxKind::PERCENT => SyntaxKind::HASH_VAR,
+            _ => unreachable!(),
+        };
+
+        self.builder.start_node(var_kind.into());
+
+        // Sigil を消費
+        self.bump();
+        self.skip_trivia();
+
+        // 識別子を期待（修飾付き識別子も可能）
+        self.parse_identifier_or_qualified();
 
         self.builder.finish_node();
     }
@@ -1294,5 +1309,146 @@ mod tests {
         // エラーがあっても構造は存在する
         println!("Errors: {:?}", errors);
         println!("AST structure: {:?}", syntax);
+    }
+
+    #[test]
+    fn test_package_qualified_variable_declarations() {
+        // our and local should accept package-qualified variable names
+        let cases = [
+            // our accepts package-qualified names
+            ("our $Foo::Bar::var = 1;", true),
+            ("our @Namespace::array = (1, 2, 3);", true),
+            ("our %Pkg::hash = (a => 1);", true),
+            // local accepts package-qualified names
+            ("local $Foo::Bar::var = 1;", true),
+            ("local @Namespace::array = (1, 2, 3);", true),
+            ("local %Pkg::hash = (a => 1);", true),
+            // my should not accept package-qualified names (should parse but create error)
+            ("my $Foo::Bar::var = 1;", false),
+            ("my @Namespace::array = (1, 2, 3);", false),
+            // state should not accept package-qualified names (should parse but create error)
+            ("state $Foo::Bar::var = 1;", false),
+            ("state @Namespace::array = (1, 2, 3);", false),
+        ];
+
+        for (input, should_succeed) in cases {
+            let (green, errors) = parse(input);
+            let syntax = PerlNode::new_root(green);
+
+            // All inputs should parse structurally
+            assert_eq!(
+                syntax.kind(),
+                SyntaxKind::ROOT,
+                "Failed to parse: {}",
+                input
+            );
+
+            if should_succeed {
+                // our and local should parse without errors for package-qualified names
+                assert!(
+                    errors.is_empty(),
+                    "Should parse '{}' without errors, but got: {:?}",
+                    input,
+                    errors
+                );
+            } else {
+                // my and state should generate errors for package-qualified names
+                assert!(
+                    !errors.is_empty(),
+                    "Should generate parse error for '{}' but didn't",
+                    input
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_simple_variable_declarations() {
+        // All declaration types should accept simple variable names
+        let cases = [
+            "my $var = 1;",
+            "our $var = 1;",
+            "state $var = 1;",
+            "local $var = 1;",
+            "my @array = (1, 2, 3);",
+            "our @array = (1, 2, 3);",
+            "state @array = (1, 2, 3);",
+            "local @array = (1, 2, 3);",
+        ];
+
+        for input in cases {
+            let (green, errors) = parse(input);
+            let syntax = PerlNode::new_root(green);
+
+            assert_eq!(
+                syntax.kind(),
+                SyntaxKind::ROOT,
+                "Failed to parse: {}",
+                input
+            );
+            assert!(
+                errors.is_empty(),
+                "Should parse '{}' without errors, but got: {:?}",
+                input,
+                errors
+            );
+        }
+    }
+
+    #[test]
+    fn test_for_loop_with_package_qualified_variables() {
+        // Test for loops with package-qualified variable names
+        let cases = [
+            // our and local should accept package-qualified names in for loops
+            (
+                "for our $Package::var (@list) { print $Package::var; }",
+                true,
+            ),
+            (
+                "for local $Foo::Bar::item (@array) { print $Foo::Bar::item; }",
+                true,
+            ),
+            // my should not accept package-qualified names in for loops
+            (
+                "for my $Package::var (@list) { print $Package::var; }",
+                false,
+            ),
+            // state should not be allowed in for loops at all
+            ("for state $var (@list) { print $var; }", false),
+            (
+                "for state $Package::var (@list) { print $Package::var; }",
+                false,
+            ),
+        ];
+
+        for (input, should_succeed) in cases {
+            let (green, errors) = parse(input);
+            let syntax = PerlNode::new_root(green);
+
+            // All inputs should parse structurally
+            assert_eq!(
+                syntax.kind(),
+                SyntaxKind::ROOT,
+                "Failed to parse: {}",
+                input
+            );
+
+            if should_succeed {
+                // our and local should parse without errors for package-qualified names
+                assert!(
+                    errors.is_empty(),
+                    "Should parse '{}' without errors, but got: {:?}",
+                    input,
+                    errors
+                );
+            } else {
+                // my with package-qualified names and state should generate errors
+                assert!(
+                    !errors.is_empty(),
+                    "Should generate parse error for '{}' but didn't",
+                    input
+                );
+            }
+        }
     }
 }
