@@ -86,7 +86,7 @@ impl<'a> Parser<'a> {
         self.skip_trivia();
 
         match self.current_kind() {
-            Some(SyntaxKind::MY_KW) => {
+            Some(SyntaxKind::MY_KW) | Some(SyntaxKind::OUR_KW) | Some(SyntaxKind::STATE_KW) | Some(SyntaxKind::LOCAL_KW) => {
                 self.var_decl();
                 true
             }
@@ -149,8 +149,9 @@ impl<'a> Parser<'a> {
     fn var_decl(&mut self) {
         self.builder.start_node(SyntaxKind::DECLARATION_STMT.into());
 
-        // "my"
-        self.expect(SyntaxKind::MY_KW);
+        // Variable declaration keyword (my, our, state, local)
+        let _decl_kind = self.current_kind().unwrap();
+        self.bump(); // consume the keyword
         self.skip_trivia();
 
         // my $var or my ($var, ...)
@@ -179,9 +180,9 @@ impl<'a> Parser<'a> {
 
             self.expect(SyntaxKind::R_PAREN);
         } else if self.current_kind().map(|k| k.is_sigil()).unwrap_or(false) {
-            self.parse_variable_simple(); // myでは簡単な変数のみ
+            self.parse_variable_simple(); // simple variable only
         } else {
-            self.error("Expected variable or parenthesized list of variables after 'my'");
+            self.error("Expected variable or parenthesized list of variables after variable declaration keyword");
         }
 
         self.skip_trivia();
@@ -205,8 +206,9 @@ impl<'a> Parser<'a> {
     fn var_decl_expr(&mut self) {
         self.builder.start_node(SyntaxKind::DECLARATION_STMT.into());
 
-        // "my"
-        self.expect(SyntaxKind::MY_KW);
+        // Variable declaration keyword (my, our, state, local)
+        let _decl_kind = self.current_kind().unwrap();
+        self.bump(); // consume the keyword
         self.skip_trivia();
 
         // my $var or my ($var, ...)
@@ -235,9 +237,9 @@ impl<'a> Parser<'a> {
 
             self.expect(SyntaxKind::R_PAREN);
         } else if self.current_kind().map(|k| k.is_sigil()).unwrap_or(false) {
-            self.parse_variable_simple(); // myでは簡単な変数のみ
+            self.parse_variable_simple(); // simple variable only
         } else {
-            self.error("Expected variable or parenthesized list of variables after 'my'");
+            self.error("Expected variable or parenthesized list of variables after variable declaration keyword");
         }
 
         self.skip_trivia();
@@ -397,18 +399,19 @@ impl<'a> Parser<'a> {
 
     /// Parse the variable part of a for loop (my $var, $var)
     fn parse_for_variable(&mut self) {
-        if self.at(SyntaxKind::MY_KW) {
-            // my $var case - parse as a variable declaration
+        if self.at_any(&[SyntaxKind::MY_KW, SyntaxKind::OUR_KW, SyntaxKind::STATE_KW, SyntaxKind::LOCAL_KW]) {
+            // Variable declaration case - parse as a variable declaration
             self.builder.start_node(SyntaxKind::DECLARATION_STMT.into());
 
-            self.expect(SyntaxKind::MY_KW);
+            let _decl_kind = self.current_kind().unwrap();
+            self.bump(); // consume the keyword
             self.skip_trivia();
 
             // Parse the variable - must be a scalar
             if self.at(SyntaxKind::DOLLAR) {
                 self.parse_variable_simple();
             } else {
-                self.error("Expected scalar variable after 'my' in for loop");
+                self.error("Expected scalar variable after variable declaration keyword in for loop");
             }
 
             self.builder.finish_node();
@@ -576,7 +579,10 @@ impl<'a> Parser<'a> {
                 SyntaxKind::L_BRACE,
                 SyntaxKind::L_BRACKET,
                 SyntaxKind::QW_KW,
-                SyntaxKind::MY_KW, // Add MY_KW as start of expression
+                SyntaxKind::MY_KW, // Add variable declaration keywords as start of expression
+                SyntaxKind::OUR_KW,
+                SyntaxKind::STATE_KW,
+                SyntaxKind::LOCAL_KW,
             ]) || kind.is_variable()
                 || kind.is_sigil()
         } else {
@@ -815,7 +821,7 @@ impl<'a> Parser<'a> {
                     self.parse_variable();
                 }
             }
-            Some(SyntaxKind::MY_KW) => {
+            Some(SyntaxKind::MY_KW) | Some(SyntaxKind::OUR_KW) | Some(SyntaxKind::STATE_KW) | Some(SyntaxKind::LOCAL_KW) => {
                 // Variable declaration as expression (e.g., my $x = 1)
                 self.var_decl_expr();
             }
