@@ -1008,6 +1008,43 @@ impl<'a> Parser<'a> {
                 self.bump();
                 self.skip_trivia();
             }
+            Some(SyntaxKind::CARET) => {
+                // Handle $^ or $^X patterns
+                self.bump(); // consume ^
+                self.skip_trivia();
+
+                // Check if there's a character after ^
+                if self.at(SyntaxKind::IDENT) {
+                    // This is $^X pattern where X is an identifier (single char)
+                    self.bump();
+                    self.skip_trivia();
+                }
+            }
+            Some(SyntaxKind::L_BRACE) => {
+                // Handle ${...} syntax (e.g., ${^NAME})
+                self.bump(); // consume {
+                self.skip_trivia();
+
+                // Check for ^ inside braces
+                if self.at(SyntaxKind::CARET) {
+                    self.bump(); // consume ^
+                    self.skip_trivia();
+                }
+
+                // Parse identifier inside braces
+                if self.at(SyntaxKind::IDENT) {
+                    self.bump();
+                    self.skip_trivia();
+                }
+
+                // Expect closing brace
+                if self.at(SyntaxKind::R_BRACE) {
+                    self.bump();
+                    self.skip_trivia();
+                } else {
+                    self.error("Expected '}' to close variable name");
+                }
+            }
             _ => {
                 // Check for other punctuation characters that might be tokenized differently
                 let text = self.current_text().unwrap_or("");

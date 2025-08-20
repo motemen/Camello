@@ -116,6 +116,9 @@ pub enum Token {
     #[token("<")]
     Less,
 
+    #[token("^")]
+    Caret,
+
     // 空白
     #[regex(r"[ \t\f]+")]
     Whitespace,
@@ -162,6 +165,7 @@ impl Token {
             Token::Percent => SyntaxKind::MODULO,
             Token::Greater => SyntaxKind::GT,
             Token::Less => SyntaxKind::LT,
+            Token::Caret => SyntaxKind::CARET,
             Token::GreaterEqual => SyntaxKind::GE,
             Token::LessEqual => SyntaxKind::LE,
             Token::EqualEqual => SyntaxKind::EQ_EQ,
