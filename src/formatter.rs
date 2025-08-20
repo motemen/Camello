@@ -226,14 +226,10 @@ impl Formatter {
                 NodeOrToken::Node(node) => self.format_node(&node),
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
-                    let text = token.text();
 
                     match kind {
                         SyntaxKind::WHITESPACE => {
-                            // In multiline mode, handle whitespace for proper newlines
-                            if text.contains('\n') {
-                                self.handle_newline();
-                            }
+                            self.handle_multiline_whitespace(&token);
                         }
                         k if k == open_delimiter => {
                             self.handle_spacing_before(kind);
@@ -241,21 +237,10 @@ impl Formatter {
                                 self.add_indent();
                                 self.at_line_start = false;
                             }
-                            self.output.push_str(text);
-                            self.indent_level += 1;
-                            self.handle_newline();
-                            self.prev_token_kind = Some(kind);
+                            self.handle_multiline_opening_delimiter(&token);
                         }
                         k if k == close_delimiter => {
-                            if self.indent_level > 0 {
-                                self.indent_level -= 1;
-                            }
-                            if self.at_line_start {
-                                self.add_indent();
-                                self.at_line_start = false;
-                            }
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
+                            self.handle_multiline_closing_delimiter(&token);
                         }
                         _ => {
                             // その他のトークンは通常通り処理
@@ -388,10 +373,7 @@ impl Formatter {
                             self.format_token(&token);
                         }
                         SyntaxKind::L_PAREN | SyntaxKind::L_BRACKET | SyntaxKind::L_BRACE => {
-                            self.output.push_str(text);
-                            self.indent_level += 1;
-                            self.handle_newline();
-                            self.prev_token_kind = Some(kind);
+                            self.handle_multiline_opening_delimiter(&token);
                         }
                         SyntaxKind::QW_STRING => {
                             if self.at_line_start {
@@ -403,21 +385,10 @@ impl Formatter {
                             self.prev_token_kind = Some(kind);
                         }
                         SyntaxKind::R_PAREN | SyntaxKind::R_BRACKET | SyntaxKind::R_BRACE => {
-                            if self.indent_level > 0 {
-                                self.indent_level -= 1;
-                            }
-                            if self.at_line_start {
-                                self.add_indent();
-                                self.at_line_start = false;
-                            }
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
+                            self.handle_multiline_closing_delimiter(&token);
                         }
                         SyntaxKind::WHITESPACE => {
-                            // In multiline mode, handle whitespace for proper newlines
-                            if text.contains('\n') {
-                                self.handle_newline();
-                            }
+                            self.handle_multiline_whitespace(&token);
                         }
                         _ => {
                             self.format_token(&token);
@@ -425,6 +396,40 @@ impl Formatter {
                     }
                 }
             }
+        }
+    }
+
+    fn handle_multiline_opening_delimiter(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
+        let text = token.text();
+        let kind = token.kind();
+
+        self.output.push_str(text);
+        self.indent_level += 1;
+        self.handle_newline();
+        self.prev_token_kind = Some(kind);
+    }
+
+    fn handle_multiline_closing_delimiter(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
+        let text = token.text();
+        let kind = token.kind();
+
+        if self.indent_level > 0 {
+            self.indent_level -= 1;
+        }
+        if self.at_line_start {
+            self.add_indent();
+            self.at_line_start = false;
+        }
+        self.output.push_str(text);
+        self.prev_token_kind = Some(kind);
+    }
+
+    fn handle_multiline_whitespace(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
+        let text = token.text();
+
+        // In multiline mode, handle whitespace for proper newlines
+        if text.contains('\n') {
+            self.handle_newline();
         }
     }
 
