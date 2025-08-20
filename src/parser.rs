@@ -62,6 +62,16 @@ impl<'a> Parser<'a> {
 
         self.skip_trivia();
         while !self.at_end() {
+            // Check if we've encountered a data section keyword
+            if matches!(
+                self.current_kind(),
+                Some(SyntaxKind::END_KW) | Some(SyntaxKind::DATA_KW)
+            ) {
+                self.data_section();
+                // After data section, everything else is consumed as part of it
+                break;
+            }
+
             if !self.statement() {
                 self.error("Expected a statement, but found an unexpected token.");
                 self.bump(); // トークンを消費して回復
@@ -104,6 +114,10 @@ impl<'a> Parser<'a> {
                 self.use_stmt();
                 true
             }
+            Some(SyntaxKind::END_KW) | Some(SyntaxKind::DATA_KW) => {
+                self.data_section();
+                true
+            }
             Some(SyntaxKind::R_BRACE) => {
                 // ブロック終了なので呼び出し元に知らせる
                 false
@@ -114,6 +128,22 @@ impl<'a> Parser<'a> {
             }
             None => false, // EOF
         }
+    }
+
+    /// Parse a data section (__END__ or __DATA__)
+    fn data_section(&mut self) {
+        self.builder.start_node(SyntaxKind::DATA_SECTION.into());
+
+        // Consume the __END__ or __DATA__ keyword
+        self.bump();
+
+        if self.at(SyntaxKind::RAW_STRING) || self.at_end() {
+            self.bump()
+        } else {
+            self.error("Expected raw string after data section keyword");
+        }
+
+        self.builder.finish_node();
     }
 
     fn var_decl(&mut self) {

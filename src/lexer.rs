@@ -10,6 +10,13 @@ pub enum Token {
     #[token("@")]
     At,
 
+    // データセクションキーワード (must come before Ident to take precedence)
+    #[token("__END__")]
+    EndKw,
+
+    #[token("__DATA__")]
+    DataKw,
+
     // 識別子（サブルーチン名など）
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*")]
     Ident,
@@ -120,6 +127,9 @@ pub enum Token {
     // コメント
     #[regex(r"#[^\r\n]*")]
     Comment,
+
+    // データセクション（__END__ / __DATA__ 以降のすべてのテキスト）
+    DataSection,
 }
 
 impl Token {
@@ -127,11 +137,12 @@ impl Token {
         match self {
             Token::Dollar => SyntaxKind::DOLLAR,
             Token::At => SyntaxKind::AT,
-            Token::Percent => SyntaxKind::PERCENT,
             Token::Ident => SyntaxKind::IDENT,
             Token::Number => SyntaxKind::NUMBER,
             Token::String => SyntaxKind::STRING,
             Token::RegexLiteral => SyntaxKind::REGEX_LITERAL,
+            Token::EndKw => SyntaxKind::END_KW,
+            Token::DataKw => SyntaxKind::DATA_KW,
             Token::LBrace => SyntaxKind::L_BRACE,
             Token::RBrace => SyntaxKind::R_BRACE,
             Token::LParen => SyntaxKind::L_PAREN,
@@ -148,6 +159,7 @@ impl Token {
             Token::FatComma => SyntaxKind::FAT_COMMA,
             Token::Star => SyntaxKind::STAR,
             Token::Slash => SyntaxKind::SLASH,
+            Token::Percent => SyntaxKind::MODULO,
             Token::Greater => SyntaxKind::GT,
             Token::Less => SyntaxKind::LT,
             Token::GreaterEqual => SyntaxKind::GE,
@@ -161,6 +173,7 @@ impl Token {
             Token::Whitespace => SyntaxKind::WHITESPACE,
             Token::Newline => SyntaxKind::WHITESPACE,
             Token::Comment => SyntaxKind::COMMENT,
+            Token::DataSection => SyntaxKind::DATA_SECTION,
         }
     }
 }
@@ -175,6 +188,8 @@ pub enum LexerContext {
     VariableList,
     /// After qw keyword, expecting a delimiter
     QwDelimiter,
+    /// In a data section context (after __END__ or __DATA__)
+    RawData,
 }
 
 pub struct Lexer<'a> {
@@ -202,12 +217,25 @@ impl<'a> Lexer<'a> {
                 }
                 return Some((syntax_kind, text));
             }
+        } else if self.context == LexerContext::RawData {
+            let remainder = self.logos_lexer.remainder();
+            if remainder.is_empty() {
+                return None; // No more data to consume
+            }
+            self.logos_lexer.bump(remainder.len());
+            return Some((SyntaxKind::RAW_STRING, remainder));
         }
 
         match self.logos_lexer.next() {
             Some(Ok(token)) => {
                 let text = self.logos_lexer.slice();
                 let syntax_kind = self.disambiguate(token, text);
+
+                // Special handling for __END__ and __DATA__: consume everything remaining as data section
+                if matches!(syntax_kind, SyntaxKind::END_KW | SyntaxKind::DATA_KW) {
+                    self.update_context(syntax_kind);
+                    return Some((syntax_kind, text));
+                }
 
                 // Update context based on the token we just processed
                 if !syntax_kind.is_trivia() {
@@ -223,6 +251,19 @@ impl<'a> Lexer<'a> {
             }
             None => None,
         }
+    }
+
+    /// Consume the entire remaining input as a data section after __END__ or __DATA__
+    pub fn consume_data_section(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        let remainder = self.logos_lexer.remainder();
+        if remainder.is_empty() {
+            return None;
+        }
+
+        // Consume everything remaining as data section, preserving all content
+        let data_text = remainder;
+        self.logos_lexer.bump(remainder.len());
+        Some((SyntaxKind::DATA_SECTION, data_text))
     }
 
     fn disambiguate(&self, token: Token, text: &str) -> SyntaxKind {
@@ -271,6 +312,9 @@ impl<'a> Lexer<'a> {
                 // Examples: "@array % hash", "$var % other_var", "func() % 2"
                 SyntaxKind::MODULO
             }
+            LexerContext::RawData => {
+                unreachable!("% should not appear in raw data context");
+            }
         }
     }
 
@@ -287,6 +331,9 @@ impl<'a> Lexer<'a> {
                 // When expecting an operator, x is the repetition operator
                 // Examples: "$str x 3", "'hello' x 2"
                 SyntaxKind::X
+            }
+            LexerContext::RawData => {
+                unreachable!("x should not appear in raw data context");
             }
         }
     }
@@ -368,6 +415,9 @@ impl<'a> Lexer<'a> {
             SyntaxKind::QW_KW => LexerContext::QwDelimiter,         // Expects qw delimiter
             SyntaxKind::USE_KW => LexerContext::ExpectingValue,     // Expects module name
 
+            // Data section keywords - after these, normal parsing stops
+            SyntaxKind::END_KW | SyntaxKind::DATA_KW => LexerContext::RawData,
+
             // Operators expect a value next and break out of VariableList context
             SyntaxKind::EQ | SyntaxKind::PLUS | SyntaxKind::MINUS | SyntaxKind::ARROW => {
                 LexerContext::ExpectingValue
@@ -416,6 +466,9 @@ impl<'a> Lexer<'a> {
                         // In qw delimiter context, after identifier, stay in same context
                         // (we're inside qw/words/ construct)
                         LexerContext::QwDelimiter
+                    }
+                    LexerContext::RawData => {
+                        unreachable!("IDENT should not appear in raw data context");
                     }
                 }
             }
