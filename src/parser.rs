@@ -86,7 +86,7 @@ impl<'a> Parser<'a> {
         self.skip_trivia();
 
         match self.current_kind() {
-            Some(SyntaxKind::MY_KW) | Some(SyntaxKind::OUR_KW) | Some(SyntaxKind::STATE_KW) | Some(SyntaxKind::LOCAL_KW) => {
+            Some(k) if matches!(k, SyntaxKind::MY_KW | SyntaxKind::OUR_KW | SyntaxKind::STATE_KW | SyntaxKind::LOCAL_KW) => {
                 self.var_decl();
                 true
             }
