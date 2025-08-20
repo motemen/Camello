@@ -367,17 +367,22 @@ impl<'a> Parser<'a> {
 
     /// Parse the variable part of a for loop (my $var, $var)
     fn parse_for_variable(&mut self) {
-        if self.at_any(&[SyntaxKind::MY_KW, SyntaxKind::OUR_KW, SyntaxKind::STATE_KW, SyntaxKind::LOCAL_KW]) {
+        if self.at_any(&[SyntaxKind::MY_KW, SyntaxKind::OUR_KW, SyntaxKind::LOCAL_KW]) {
             // Variable declaration case - parse as a variable declaration
             self.builder.start_node(SyntaxKind::DECLARATION_STMT.into());
 
-            let _decl_kind = self.current_kind().unwrap();
+            let decl_kind = self.current_kind().unwrap();
             self.bump(); // consume the keyword
             self.skip_trivia();
 
             // Parse the variable - must be a scalar
             if self.at(SyntaxKind::DOLLAR) {
-                self.parse_variable_simple();
+                // Use qualified parsing for our/local, simple for my
+                if matches!(decl_kind, SyntaxKind::OUR_KW | SyntaxKind::LOCAL_KW) {
+                    self.parse_variable_qualified();
+                } else {
+                    self.parse_variable_simple();
+                }
             } else {
                 self.error("Expected scalar variable after variable declaration keyword in for loop");
             }
@@ -1369,6 +1374,47 @@ mod tests {
                 "Should parse '{}' without errors, but got: {:?}",
                 input, errors
             );
+        }
+    }
+
+    #[test]
+    fn test_for_loop_with_package_qualified_variables() {
+        // Test for loops with package-qualified variable names
+        let cases = [
+            // our and local should accept package-qualified names in for loops
+            ("for our $Package::var (@list) { print $Package::var; }", true),
+            ("for local $Foo::Bar::item (@array) { print $Foo::Bar::item; }", true),
+            
+            // my should not accept package-qualified names in for loops
+            ("for my $Package::var (@list) { print $Package::var; }", false),
+            
+            // state should not be allowed in for loops at all
+            ("for state $var (@list) { print $var; }", false),
+            ("for state $Package::var (@list) { print $Package::var; }", false),
+        ];
+
+        for (input, should_succeed) in cases {
+            let (green, errors) = parse(input);
+            let syntax = PerlNode::new_root(green);
+            
+            // All inputs should parse structurally  
+            assert_eq!(syntax.kind(), SyntaxKind::ROOT, "Failed to parse: {}", input);
+            
+            if should_succeed {
+                // our and local should parse without errors for package-qualified names
+                assert!(
+                    errors.is_empty(), 
+                    "Should parse '{}' without errors, but got: {:?}", 
+                    input, errors
+                );
+            } else {
+                // my with package-qualified names and state should generate errors
+                assert!(
+                    !errors.is_empty(),
+                    "Should generate parse error for '{}' but didn't",
+                    input
+                );
+            }
         }
     }
 }
