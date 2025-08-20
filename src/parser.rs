@@ -992,8 +992,75 @@ impl<'a> Parser<'a> {
         self.bump();
         self.skip_trivia();
 
-        // 識別子を期待（修飾付き識別子も含む）
-        self.parse_identifier_or_qualified();
+        // Check what comes after the sigil
+        match self.current_kind() {
+            Some(SyntaxKind::IDENT) => {
+                // Regular identifier or qualified identifier (including $_, $_foo, etc.)
+                self.parse_identifier_or_qualified();
+            }
+            Some(SyntaxKind::NUMBER) => {
+                // Number like $1, $2, etc. - treat as regular variable name
+                self.bump();
+                self.skip_trivia();
+            }
+            Some(SyntaxKind::AT) => {
+                // Special punctuation like $@ - treat as regular variable name
+                self.bump();
+                self.skip_trivia();
+            }
+            Some(SyntaxKind::CARET) => {
+                // Handle $^ or $^X patterns
+                self.bump(); // consume ^
+                self.skip_trivia();
+
+                // Check if there's a character after ^
+                if self.at(SyntaxKind::IDENT) {
+                    // This is $^X pattern where X is an identifier (single char)
+                    self.bump();
+                    self.skip_trivia();
+                }
+            }
+            Some(SyntaxKind::L_BRACE) => {
+                // Handle ${...} syntax (e.g., ${^NAME})
+                self.bump(); // consume {
+                self.skip_trivia();
+
+                // Check for ^ inside braces
+                if self.at(SyntaxKind::CARET) {
+                    self.bump(); // consume ^
+                    self.skip_trivia();
+                }
+
+                // Parse identifier inside braces
+                if self.at(SyntaxKind::IDENT) {
+                    self.bump();
+                    self.skip_trivia();
+                }
+
+                // Expect closing brace
+                if self.at(SyntaxKind::R_BRACE) {
+                    self.bump();
+                    self.skip_trivia();
+                } else {
+                    self.error("Expected '}' to close variable name");
+                }
+            }
+            _ => {
+                // Check for other punctuation characters that might be tokenized differently
+                let text = self.current_text().unwrap_or("");
+                if matches!(
+                    text,
+                    "!" | "?" | "|" | "&" | "`" | "'" | "\"" | "~" | ":" | "\\" | "$"
+                ) {
+                    // These are punctuation characters like $!, $?, $$, etc. - treat as regular variable names
+                    self.bump();
+                    self.skip_trivia();
+                } else {
+                    // 識別子を期待（修飾付き識別子も含む）
+                    self.parse_identifier_or_qualified();
+                }
+            }
+        }
 
         self.builder.finish_node();
     }
@@ -1043,8 +1110,9 @@ impl<'a> Parser<'a> {
         // 空白をスキップ
         let trimmed = remaining_source.trim_start();
 
-        // 次の文字がsigilかチェック
-        trimmed.starts_with('$') || trimmed.starts_with('@') || trimmed.starts_with('%')
+        // Valid dereference patterns: @$ref, %$ref, $$ref (sigil followed by $)
+        // Only $ sigil can be dereferenced, so we check if next token is $
+        trimmed.starts_with('$')
     }
 
     /// デリファレンス式をパース（例: @$var, %$var, $$var）

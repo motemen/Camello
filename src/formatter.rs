@@ -903,7 +903,7 @@ sub test {
 
     #[test]
     fn test_function_call_with_mixed_argument_types() {
-        let input = "printf\"%s:%d\\n\",$name,$age;";
+        let input = r#"printf "%s:%d\n", $name, $age;"#;
         let (syntax, err) = parse_perl(input);
         assert!(err.is_empty(), "Parse errors: {:?}", err);
 
