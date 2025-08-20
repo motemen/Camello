@@ -414,10 +414,7 @@ impl<'a> Lexer<'a> {
 
             // Keywords with different expectations
             SyntaxKind::SUB_KW => LexerContext::ExpectingValue, // Expects identifier (bareword)
-            SyntaxKind::MY_KW => LexerContext::VariableList, // Expects variables or variable lists
-            SyntaxKind::OUR_KW => LexerContext::VariableList, // Expects variables or variable lists  
-            SyntaxKind::STATE_KW => LexerContext::VariableList, // Expects variables or variable lists
-            SyntaxKind::LOCAL_KW => LexerContext::VariableList, // Expects variables or variable lists
+            SyntaxKind::MY_KW | SyntaxKind::OUR_KW | SyntaxKind::STATE_KW | SyntaxKind::LOCAL_KW => LexerContext::VariableList, // Expects variables or variable lists
             SyntaxKind::FOR_KW => LexerContext::ExpectingValue, // Expects for condition/iterator
             SyntaxKind::FOREACH_KW => LexerContext::ExpectingValue, // Expects foreach condition/iterator
             SyntaxKind::WHILE_KW => LexerContext::ExpectingValue,   // Expects while condition
