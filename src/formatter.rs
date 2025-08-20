@@ -503,37 +503,7 @@ impl Formatter {
 
     fn format_multiline_function_call(&mut self, node: &PerlNode) {
         // Format function call with multiline parentheses
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(child_node) => {
-                    self.format_node(&child_node);
-                }
-                NodeOrToken::Token(token) => {
-                    let kind = token.kind();
-
-                    match kind {
-                        SyntaxKind::WHITESPACE => {
-                            self.handle_multiline_whitespace(&token);
-                        }
-                        SyntaxKind::L_PAREN => {
-                            self.handle_spacing_before(kind);
-                            if self.at_line_start {
-                                self.add_indent();
-                                self.at_line_start = false;
-                            }
-                            self.handle_multiline_opening_delimiter(&token);
-                        }
-                        SyntaxKind::R_PAREN => {
-                            self.handle_multiline_closing_delimiter(&token);
-                        }
-                        _ => {
-                            // Other tokens use regular formatting
-                            self.format_token(&token);
-                        }
-                    }
-                }
-            }
-        }
+        self.format_multiline_delimited(node, SyntaxKind::L_PAREN, SyntaxKind::R_PAREN);
     }
 
     fn format_block_function_call(&mut self, node: &PerlNode) {
