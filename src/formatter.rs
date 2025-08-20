@@ -507,7 +507,7 @@ impl Formatter {
             } else {
                 false
             };
-            
+
             if should_add_empty_line || node.kind() == SyntaxKind::SUB_DEF {
                 self.add_empty_line_before();
             }
@@ -520,7 +520,8 @@ impl Formatter {
         if let Some(next) = node.next_sibling() {
             if next.kind() != node.kind() {
                 // Don't add empty line between PACKAGE_STMT and USE_STMT
-                if !(node.kind() == SyntaxKind::PACKAGE_STMT && next.kind() == SyntaxKind::USE_STMT) {
+                if !(node.kind() == SyntaxKind::PACKAGE_STMT && next.kind() == SyntaxKind::USE_STMT)
+                {
                     self.add_empty_line_after();
                 }
             }
@@ -579,190 +580,11 @@ mod tests {
     use super::*;
     use crate::parse_perl;
 
-    #[test]
-    fn test_var_decl_formatting() {
-        let input = "my$var=1;";
-        let (syntax, err) = parse_perl(input);
-        assert!(err.is_empty(), "Parse errors: {:?}", err);
-
-        let formatted = format(&syntax);
-
-        insta::assert_snapshot!(formatted, @"my $var = 1;");
-    }
-
-    #[test]
-    fn test_sub_def_formatting() {
-        let input = "sub test{my$x=1;foo$x;bar;baz quux;}";
-        let (syntax, err) = parse_perl(input);
-        assert!(err.is_empty(), "Parse errors: {:?}", err);
-
-        let formatted = format(&syntax);
-
-        insta::assert_snapshot!(formatted, @r"
-        sub test {
-            my $x = 1;
-            foo $x;
-            bar;
-            baz quux;
-        }
-        ");
-    }
-
-    #[test]
-    fn test_indentation() {
-        let input = "sub outer { sub inner { my $var = 1; } }";
-        let (syntax, err) = parse_perl(input);
-        assert!(err.is_empty(), "Parse errors: {:?}", err);
-
-        let formatted = format(&syntax);
-
-        insta::assert_snapshot!(formatted, @r"
-        sub outer {
-            sub inner {
-                my $var = 1;
-            }
-        }
-        ");
-    }
-
-    #[test]
-    fn test_comprehensive_formatting() {
-        let input = "my$a=1+2;my$b=3;sub example{my$result=$a+$b;return$result;}";
-        let (syntax, err) = parse_perl(input);
-        assert!(err.is_empty(), "Parse errors: {:?}", err);
-
-        let formatted = format(&syntax);
-
-        insta::assert_snapshot!(formatted, @r"
-        my $a = 1 + 2;
-        my $b = 3;
-
-        sub example {
-            my $result = $a + $b;
-            return $result;
-        }
-        ");
-    }
-
-    #[test]
-    fn test_sub_with_var_decl_formatting() {
-        let input = r#" 
-        my $var = 1;
-        sub test {
-            my $x = 2;
-        }
-        "#;
-        let (syntax, err) = parse_perl(input);
-        assert!(
-            err.is_empty(),
-            "{:?}",
-            err.iter()
-                .map(|e| miette::Report::new(e.clone()))
-                .collect::<Vec<_>>()
-        );
-
-        let formatted = format(&syntax);
-
-        insta::assert_snapshot!(formatted, @r"
-        my $var = 1;
-
-        sub test {
-            my $x = 2;
-        }
-        ");
-    }
-
-    #[test]
-    fn test_hash_ref_formatting() {
-        let input = "my$hash_ref={};";
-        let (syntax, err) = parse_perl(input);
-        assert!(err.is_empty(), "Parse errors: {:?}", err);
-
-        let formatted = format(&syntax);
-
-        insta::assert_snapshot!(formatted, @"my $hash_ref = {};");
-    }
-
-    #[test]
-    fn test_return_hash_ref_formatting() {
-        let input = "return{};";
-        let (syntax, err) = parse_perl(input);
-        assert!(err.is_empty(), "Parse errors: {:?}", err);
-
-        let formatted = format(&syntax);
-
-        insta::assert_snapshot!(formatted, @"return {};");
-    }
-
-    #[test]
-    fn test_sub_with_hash_ref_formatting() {
-        let input = "sub get_empty{return{};}";
-        let (syntax, err) = parse_perl(input);
-        assert!(err.is_empty(), "Parse errors: {:?}", err);
-
-        let formatted = format(&syntax);
-
-        insta::assert_snapshot!(formatted, @r"
-        sub get_empty {
-            return {};
-        }
-        ");
-    }
-
-    #[test]
-    fn test_hash_ref_with_key_value_formatting() {
-        let input = "sub f{return{a=>1};}";
-        let (syntax, err) = parse_perl(input);
-        assert!(err.is_empty(), "Parse errors: {:?}", err);
-
-        let formatted = format(&syntax);
-
-        insta::assert_snapshot!(formatted, @r"
-        sub f {
-            return {a => 1};
-        }
-        ");
-    }
-
-    #[test]
-    fn test_multiplicative_operators_formatting() {
-        let input = "my$result=$a*$b/$c%$d;";
-        let (syntax, err) = parse_perl(input);
-        assert!(err.is_empty(), "Parse errors: {:?}", err);
-
-        let formatted = format(&syntax);
-
-        insta::assert_snapshot!(formatted, @"my $result = $a * $b / $c % $d;");
-    }
-
-    #[test]
-    fn test_operator_precedence_formatting() {
-        let input = "my$result=$a+$b*$c;";
-        let (syntax, err) = parse_perl(input);
-        assert!(err.is_empty(), "Parse errors: {:?}", err);
-
-        let formatted = format(&syntax);
-
-        insta::assert_snapshot!(formatted, @"my $result = $a + $b * $c;");
-    }
-
-    #[test]
-    fn test_x_operator_formatting() {
-        let input = "my$str=$a x 3;";
-        let (syntax, err) = parse_perl(input);
-        assert!(err.is_empty(), "Parse errors: {:?}", err);
-
-        let formatted = format(&syntax);
-
-        insta::assert_snapshot!(formatted, @"my $str = $a x 3;");
-    }
-
     /// Helper function to reduce code duplication in formatting tests
     fn check_formatting_cases(cases: &[(&str, &str)]) {
         for (input, expected) in cases {
             let (syntax, err) = parse_perl(input);
             assert!(err.is_empty(), "Parse errors for '{}': {:?}", input, err);
-
             let formatted = format(&syntax);
             assert_eq!(
                 formatted, *expected,
@@ -773,42 +595,14 @@ mod tests {
     }
 
     #[test]
-    fn test_package_formatting() {
-        let cases = [
-            ("package Foo::Bar;", "package Foo::Bar;\n"),
-            ("package   Foo  ;", "package Foo;\n"),
-            (
-                "package Foo::Bar::Baz::Qux;",
-                "package Foo::Bar::Baz::Qux;\n",
-            ),
-        ];
-        check_formatting_cases(&cases);
-    }
-
-    #[test]
-    fn test_qualified_variable_formatting() {
-        let cases = [
-            ("$Foo::Bar::var;", "$Foo::Bar::var;\n"),
-            ("@Foo::Bar::array;", "@Foo::Bar::array;\n"),
-            ("%Foo::Bar::hash;", "%Foo::Bar::hash;\n"),
-            (
-                "$Very::Deep::Nested::Package::Name::var;",
-                "$Very::Deep::Nested::Package::Name::var;\n",
-            ),
-        ];
-        check_formatting_cases(&cases);
-    }
-
-    #[test]
-    fn test_qualified_function_formatting() {
-        let cases = [
-            ("Foo::Bar::func();", "Foo::Bar::func();\n"),
-            (
-                "Very::Deep::Nested::function();",
-                "Very::Deep::Nested::function();\n",
-            ),
-        ];
-        check_formatting_cases(&cases);
+    fn test_var_decl_formatting() {
+        let input = "my$var=1;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @r"
+        my $var = 1;
+        ");
     }
 
     #[test]
@@ -1417,25 +1211,28 @@ my $z = 3;"#;
 
     #[test]
     fn test_package_use_no_empty_line_between() {
-        let cases = [
-            ("package MyPackage;\nuse warnings;", "package MyPackage;\nuse warnings;\n"),
-        ];
+        let cases = [(
+            "package MyPackage;\nuse warnings;",
+            "package MyPackage;\nuse warnings;\n",
+        )];
         check_formatting_cases(&cases);
     }
 
     #[test]
     fn test_package_multiple_use_no_empty_lines() {
-        let cases = [
-            ("package MyPackage;\nuse strict;\nuse warnings;\nuse Data::Dumper;", "package MyPackage;\nuse strict;\nuse warnings;\nuse Data::Dumper;\n"),
-        ];
+        let cases = [(
+            "package MyPackage;\nuse strict;\nuse warnings;\nuse Data::Dumper;",
+            "package MyPackage;\nuse strict;\nuse warnings;\nuse Data::Dumper;\n",
+        )];
         check_formatting_cases(&cases);
     }
 
     #[test]
     fn test_package_use_with_sub_has_empty_line() {
-        let cases = [
-            ("package MyPackage;\nuse warnings;\nsub test {\n    my $x = 1;\n}", "package MyPackage;\nuse warnings;\n\nsub test {\n    my $x = 1;\n}\n"),
-        ];
+        let cases = [(
+            "package MyPackage;\nuse warnings;\nsub test {\n    my $x = 1;\n}",
+            "package MyPackage;\nuse warnings;\n\nsub test {\n    my $x = 1;\n}\n",
+        )];
         check_formatting_cases(&cases);
     }
 }

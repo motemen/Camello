@@ -109,12 +109,21 @@ fn parse_construct(&mut self) {
 
 ### Testing Strategy
 
-- **Unit tests**: Individual component functionality
-- **Snapshot tests**: Complete formatting verification using `insta`
-- **Integration tests**: CLI behavior and file I/O
-- Compare the whole output when testing format instead of using `.contains()`
+Our testing strategy prioritizes end-to-end formatting correctness and maintainability by focusing on snapshot tests.
 
-Current test coverage includes basic Perl constructs: variable declarations, subroutine definitions, binary expressions, and proper indentation handling.
+- **Primary: Formatter Snapshot Tests (`formatter.rs`)**
+  - These are the most important tests, acting as integration tests that cover the entire process from lexing and parsing to final output.
+  - They verify the formatter's output against stored snapshots using `insta`.
+  - The goal is to have a comprehensive suite of snapshot tests that cover a wide range of valid Perl syntax and formatting edge cases.
+
+- **Secondary: Lexer and Parser Unit Tests (`lexer.rs`, `parser.rs`)**
+  - These tests should be limited to cases that are difficult or impossible to cover through formatter tests.
+  - Their primary role is to validate specific **error handling** and **context-sensitive ambiguity resolution** (e.g., distinguishing `/` as division vs. a regex delimiter).
+  - Avoid adding unit tests for simple tokenization or parsing of basic syntax that is already implicitly covered by the formatter snapshot tests. This reduces redundancy and maintenance overhead.
+
+- **Integration Tests**: Verifies CLI behavior and file I/O.
+
+This approach ensures that our tests are both effective and efficient, focusing developer effort on creating robust, real-world formatting scenarios rather than on redundant, low-level unit tests.
 
 ### Future Development Areas
 
