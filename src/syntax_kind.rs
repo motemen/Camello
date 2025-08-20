@@ -16,6 +16,7 @@ pub enum SyntaxKind {
     DOLLAR,  // $
     AT,      // @
     PERCENT, // %
+    CARET,   // ^
 
     // 複合変数ノード（後で使用）
     SCALAR_VAR,
@@ -200,6 +201,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::DOLLAR => "DOLLAR",
             SyntaxKind::AT => "AT",
             SyntaxKind::PERCENT => "PERCENT",
+            SyntaxKind::CARET => "CARET",
             SyntaxKind::SCALAR_VAR => "SCALAR_VAR",
             SyntaxKind::ARRAY_VAR => "ARRAY_VAR",
             SyntaxKind::HASH_VAR => "HASH_VAR",
