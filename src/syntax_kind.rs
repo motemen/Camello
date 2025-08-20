@@ -40,6 +40,10 @@ pub enum SyntaxKind {
     QW_KW,  // qw keyword
     USE_KW, // use keyword (for use warnings qw(...) syntax)
 
+    // データセクション
+    END_KW,  // __END__
+    DATA_KW, // __DATA__
+
     // 記号・区切り文字
     L_BRACE,      // {
     R_BRACE,      // }
@@ -95,6 +99,10 @@ pub enum SyntaxKind {
     FOR_STMT,         // for文
     WHILE_STMT,       // while文
     IF_STMT,          // if文
+
+    // データセクション（__END__ / __DATA__ 以降の内容）
+    DATA_SECTION,
+    RAW_STRING,
 
     // 式
     INFIX_EXPR,               // 中置式（二項演算式）
@@ -263,6 +271,10 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::EXPR_LIST => "EXPR_LIST",
             SyntaxKind::FUNCTION_CALL_EXPR => "FUNCTION_CALL_EXPR",
             SyntaxKind::BLOCK_FUNCTION_CALL_EXPR => "BLOCK_FUNCTION_CALL_EXPR",
+            SyntaxKind::DATA_SECTION => "DATA_SECTION",
+            SyntaxKind::DATA_KW => "DATA_KW",
+            SyntaxKind::END_KW => "END_KW",
+            SyntaxKind::RAW_STRING => "RAW_STRING",
         };
         write!(f, "{}", name)
     }

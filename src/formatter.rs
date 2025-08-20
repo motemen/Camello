@@ -62,6 +62,10 @@ impl Formatter {
                 self.format_block_function_call(node);
                 return;
             }
+            SyntaxKind::DATA_SECTION => {
+                self.format_data_section(node);
+                return;
+            }
             SyntaxKind::REGEX_EXPR => {
                 // Default handling for regex expressions - just format children
                 // The spacing around regex operators is handled in format_token
@@ -86,6 +90,43 @@ impl Formatter {
         if node.kind().is_variable() {
             // This is the logic from format_variable
             self.prev_token_kind = Some(node.kind());
+        }
+    }
+
+    /// Format a data section (__END__ or __DATA__)
+    /// Data sections should be preserved exactly as-is without any formatting changes
+    fn format_data_section(&mut self, node: &PerlNode) {
+        // Ensure we're on a new line before the data section
+        if !self.at_line_start {
+            self.output.push('\n');
+            self.at_line_start = true;
+        }
+
+        // Process all children (keyword + data content) without any modifications
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Token(token) => {
+                    let text = token.text();
+                    match token.kind() {
+                        SyntaxKind::END_KW | SyntaxKind::DATA_KW => {
+                            // Output the keyword exactly as-is
+                            self.output.push_str(text);
+                        }
+                        SyntaxKind::DATA_SECTION => {
+                            // Output the data content exactly as-is, preserving all formatting
+                            self.output.push_str(text);
+                        }
+                        _ => {
+                            // Handle any other tokens (whitespace, etc.) as-is
+                            self.output.push_str(text);
+                        }
+                    }
+                }
+                NodeOrToken::Node(_) => {
+                    // Data sections shouldn't contain nested nodes, but handle gracefully
+                    // by preserving the original text
+                }
+            }
         }
     }
 
@@ -1234,5 +1275,27 @@ my $z = 3;"#;
             "package MyPackage;\nuse warnings;\n\nsub test {\n    my $x = 1;\n}\n",
         )];
         check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_end_data_section_basic() {
+        let input = r#"
+my $x = 1;
+__DATA__
+This is data after __DATA__ $#&!
+  Raw string here~
+        "#;
+
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        my $x = 1;
+        __DATA__
+        This is data after __DATA__ $#&!
+          Raw string here~
+        ");
     }
 }
