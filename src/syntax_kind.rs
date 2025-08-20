@@ -17,10 +17,33 @@ pub enum SyntaxKind {
     AT,      // @
     PERCENT, // %
 
+    // Special variable components
+    UNDERSCORE, // _ for $_
+    DIGITS,     // digits for $1, $2, etc.
+    CARET,      // ^ for ${^NAME}
+
+    // Special punctuation characters for variables
+    EXCLAMATION,  // !
+    QUESTION,     // ?
+    PIPE,         // |
+    AMPERSAND,    // &
+    BACKTICK,     // `
+    SINGLE_QUOTE, // '
+    DOUBLE_QUOTE, // "
+    TILDE,        // ~
+    COLON,        // :
+    BACKSLASH,    // \
+
     // 複合変数ノード（後で使用）
     SCALAR_VAR,
     ARRAY_VAR,
     HASH_VAR,
+
+    // Special variable types
+    SPECIAL_VAR,  // for punctuation-based variables like $!, $?, $$
+    CAPTURE_VAR,  // for $1, $2, etc.
+    EXTENDED_VAR, // for ${^NAME} syntax
+    DEFAULT_VAR,  // for $_
 
     // リテラル
     NUMBER,
@@ -200,9 +223,26 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::DOLLAR => "DOLLAR",
             SyntaxKind::AT => "AT",
             SyntaxKind::PERCENT => "PERCENT",
+            SyntaxKind::UNDERSCORE => "UNDERSCORE",
+            SyntaxKind::DIGITS => "DIGITS",
+            SyntaxKind::CARET => "CARET",
+            SyntaxKind::EXCLAMATION => "EXCLAMATION",
+            SyntaxKind::QUESTION => "QUESTION",
+            SyntaxKind::PIPE => "PIPE",
+            SyntaxKind::AMPERSAND => "AMPERSAND",
+            SyntaxKind::BACKTICK => "BACKTICK",
+            SyntaxKind::SINGLE_QUOTE => "SINGLE_QUOTE",
+            SyntaxKind::DOUBLE_QUOTE => "DOUBLE_QUOTE",
+            SyntaxKind::TILDE => "TILDE",
+            SyntaxKind::COLON => "COLON",
+            SyntaxKind::BACKSLASH => "BACKSLASH",
             SyntaxKind::SCALAR_VAR => "SCALAR_VAR",
             SyntaxKind::ARRAY_VAR => "ARRAY_VAR",
             SyntaxKind::HASH_VAR => "HASH_VAR",
+            SyntaxKind::SPECIAL_VAR => "SPECIAL_VAR",
+            SyntaxKind::CAPTURE_VAR => "CAPTURE_VAR",
+            SyntaxKind::EXTENDED_VAR => "EXTENDED_VAR",
+            SyntaxKind::DEFAULT_VAR => "DEFAULT_VAR",
             SyntaxKind::NUMBER => "NUMBER",
             SyntaxKind::STRING => "STRING",
             SyntaxKind::REGEX_LITERAL => "REGEX_LITERAL",
