@@ -155,6 +155,15 @@ impl<'a> Parser<'a> {
         self.var_decl_common(false);
     }
 
+    // Helper to parse variable based on declaration kind
+    fn parse_variable_by_decl_kind(&mut self, decl_kind: SyntaxKind) {
+        if matches!(decl_kind, SyntaxKind::OUR_KW | SyntaxKind::LOCAL_KW) {
+            self.parse_variable_qualified();
+        } else {
+            self.parse_variable_simple();
+        }
+    }
+
     // Common logic for variable declarations
     fn var_decl_common(&mut self, expect_semicolon: bool) {
         self.builder.start_node(SyntaxKind::DECLARATION_STMT.into());
@@ -171,12 +180,7 @@ impl<'a> Parser<'a> {
 
             while !self.at(SyntaxKind::R_PAREN) && !self.at_end() {
                 if self.current_kind().map(|k| k.is_sigil()).unwrap_or(false) {
-                    // Use qualified parsing for our/local, simple for my/state
-                    if matches!(decl_kind, SyntaxKind::OUR_KW | SyntaxKind::LOCAL_KW) {
-                        self.parse_variable_qualified();
-                    } else {
-                        self.parse_variable_simple();
-                    }
+                    self.parse_variable_by_decl_kind(decl_kind);
                 } else {
                     self.error("Expected variable in parenthesized list");
                     break; // エラーが発生したらループを抜ける
@@ -195,12 +199,7 @@ impl<'a> Parser<'a> {
 
             self.expect(SyntaxKind::R_PAREN);
         } else if self.current_kind().map(|k| k.is_sigil()).unwrap_or(false) {
-            // Use qualified parsing for our/local, simple for my/state
-            if matches!(decl_kind, SyntaxKind::OUR_KW | SyntaxKind::LOCAL_KW) {
-                self.parse_variable_qualified();
-            } else {
-                self.parse_variable_simple();
-            }
+            self.parse_variable_by_decl_kind(decl_kind);
         } else {
             self.error("Expected variable or parenthesized list of variables after variable declaration keyword");
         }
