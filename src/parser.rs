@@ -992,65 +992,32 @@ impl<'a> Parser<'a> {
         self.bump();
         self.skip_trivia();
 
-        // Check for special variable patterns
+        // Check what comes after the sigil
         match self.current_kind() {
             Some(SyntaxKind::IDENT) => {
-                let text = self.current_text().unwrap_or("");
-                if text == "_" {
-                    // This is specifically the default variable $_ (not $_foo)
-                    self.builder.start_node(SyntaxKind::DEFAULT_VAR.into());
-                    self.bump();
-                    self.builder.finish_node();
-                    self.skip_trivia();
-                } else {
-                    // Regular identifier or qualified identifier (including $_foo, $_bar, etc.)
-                    self.parse_identifier_or_qualified();
-                }
+                // Regular identifier or qualified identifier (including $_, $_foo, etc.)
+                self.parse_identifier_or_qualified();
             }
             Some(SyntaxKind::NUMBER) => {
-                // This is a capture variable like $1, $2, etc.
-                self.builder.start_node(SyntaxKind::CAPTURE_VAR.into());
+                // Number like $1, $2, etc. - treat as regular variable name
                 self.bump();
-                self.builder.finish_node();
                 self.skip_trivia();
             }
-            // Handle punctuation special variables
             Some(SyntaxKind::AT) => {
-                // $@ (eval error)
-                self.builder.start_node(SyntaxKind::SPECIAL_VAR.into());
+                // Special punctuation like $@ - treat as regular variable name
                 self.bump();
-                self.builder.finish_node();
                 self.skip_trivia();
             }
             _ => {
-                // Check for other special punctuation characters that might be tokenized differently
+                // Check for other punctuation characters that might be tokenized differently
                 let text = self.current_text().unwrap_or("");
                 if matches!(
                     text,
-                    "!" | "?" | "|" | "&" | "`" | "'" | "\"" | "~" | ":" | "\\"
+                    "!" | "?" | "|" | "&" | "`" | "'" | "\"" | "~" | ":" | "\\" | "$"
                 ) {
-                    // These are special punctuation variables like $!, $?, etc.
-                    self.builder.start_node(SyntaxKind::SPECIAL_VAR.into());
+                    // These are punctuation characters like $!, $?, $$, etc. - treat as regular variable names
                     self.bump();
-                    self.builder.finish_node();
                     self.skip_trivia();
-                } else if text == "$" {
-                    // Check if this is $$ alone (special variable) or part of dereference
-                    // Look ahead to see if there's an identifier after $$
-                    let remaining = &self.source[self.current_pos + text.len()..];
-                    let trimmed = remaining.trim_start();
-
-                    if trimmed.starts_with(|c: char| c.is_alphabetic() || c == '_') {
-                        // This is $$var pattern - should be handled as dereference, not here
-                        // This case shouldn't happen if is_dereferencing_pattern works correctly
-                        self.error("Unexpected $$ in variable context");
-                    } else {
-                        // This is $$ alone - process ID special variable
-                        self.builder.start_node(SyntaxKind::SPECIAL_VAR.into());
-                        self.bump();
-                        self.builder.finish_node();
-                        self.skip_trivia();
-                    }
                 } else {
                     // 識別子を期待（修飾付き識別子も含む）
                     self.parse_identifier_or_qualified();
@@ -1106,42 +1073,9 @@ impl<'a> Parser<'a> {
         // 空白をスキップ
         let trimmed = remaining_source.trim_start();
 
-        // Special cases handling for $ sigil
-        if current_text == "$" {
-            if trimmed.starts_with('$') {
-                // $$var is dereference, $$ alone is special variable
-                // Check if there's an identifier after $$
-                let after_dollar = &trimmed[1..].trim_start();
-                if after_dollar.starts_with(|c: char| c.is_alphabetic() || c == '_') {
-                    return true; // $$var pattern - this is dereference
-                } else {
-                    return false; // $$ alone - this is special variable (process ID)
-                }
-            }
-
-            // Other special variables: $@ (eval error), $! (OS error), $? (child error), etc.
-            if trimmed.starts_with('@')
-                || trimmed.starts_with('!')
-                || trimmed.starts_with('?')
-                || trimmed.starts_with('|')
-                || trimmed.starts_with('&')
-                || trimmed.starts_with('`')
-                || trimmed.starts_with('\'')
-                || trimmed.starts_with('"')
-                || trimmed.starts_with('~')
-                || trimmed.starts_with(':')
-                || trimmed.starts_with('\\')
-            {
-                return false;
-            }
-        }
-
-        // Valid dereference patterns: @$ref, %$ref
-        if current_text == "@" || current_text == "%" {
-            trimmed.starts_with('$')
-        } else {
-            false
-        }
+        // Valid dereference patterns: @$ref, %$ref, $$ref (sigil followed by $)
+        // Only $ sigil can be dereferenced, so we check if next token is $
+        trimmed.starts_with('$')
     }
 
     /// デリファレンス式をパース（例: @$var, %$var, $$var）
