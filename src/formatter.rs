@@ -136,33 +136,36 @@ impl Formatter {
 
     fn has_newline_before_first_value(&self, node: &PerlNode) -> bool {
         // Check if there's a newline between the opening delimiter and the first non-trivial token
-        let mut found_opening = false;
-        for child in node.children_with_tokens() {
+        let mut children = node.children_with_tokens();
+
+        // Find the opening delimiter.
+        if !children.by_ref().any(|child| {
+            matches!(
+                child.as_token().map(|t| t.kind()),
+                Some(SyntaxKind::L_BRACE | SyntaxKind::L_BRACKET | SyntaxKind::L_PAREN)
+            )
+        }) {
+            return false;
+        };
+
+        // Check subsequent children for a newline before a non-trivia element.
+        for child in children {
             match child {
                 NodeOrToken::Token(token) => {
-                    let kind = token.kind();
-                    if kind == SyntaxKind::L_BRACE
-                        || kind == SyntaxKind::L_BRACKET
-                        || kind == SyntaxKind::L_PAREN
-                    {
-                        found_opening = true;
-                    } else if found_opening {
-                        if kind == SyntaxKind::WHITESPACE && token.text().contains('\n') {
-                            return true;
-                        } else if !kind.is_trivia() {
-                            // Found first non-trivia token, no newline before it
-                            return false;
-                        }
+                    if token.kind() == SyntaxKind::WHITESPACE && token.text().contains('\n') {
+                        return true;
                     }
-                }
-                NodeOrToken::Node(_) => {
-                    if found_opening {
-                        // Found first node (expression), no newline before it
+                    if !token.kind().is_trivia() {
                         return false;
                     }
                 }
+                NodeOrToken::Node(_) => {
+                    // Any node is considered non-trivia.
+                    return false;
+                }
             }
         }
+
         false
     }
 
@@ -212,7 +215,12 @@ impl Formatter {
         }
     }
 
-    fn format_multiline_hash_ref(&mut self, node: &PerlNode) {
+    fn format_multiline_delimited(
+        &mut self,
+        node: &PerlNode,
+        open_delimiter: SyntaxKind,
+        close_delimiter: SyntaxKind,
+    ) {
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(node) => self.format_node(&node),
@@ -227,7 +235,7 @@ impl Formatter {
                                 self.handle_newline();
                             }
                         }
-                        SyntaxKind::L_BRACE => {
+                        k if k == open_delimiter => {
                             self.handle_spacing_before(kind);
                             if self.at_line_start {
                                 self.add_indent();
@@ -238,7 +246,7 @@ impl Formatter {
                             self.handle_newline();
                             self.prev_token_kind = Some(kind);
                         }
-                        SyntaxKind::R_BRACE => {
+                        k if k == close_delimiter => {
                             if self.indent_level > 0 {
                                 self.indent_level -= 1;
                             }
@@ -257,6 +265,10 @@ impl Formatter {
                 }
             }
         }
+    }
+
+    fn format_multiline_hash_ref(&mut self, node: &PerlNode) {
+        self.format_multiline_delimited(node, SyntaxKind::L_BRACE, SyntaxKind::R_BRACE);
     }
 
     fn format_array_ref(&mut self, node: &PerlNode) {
@@ -306,50 +318,7 @@ impl Formatter {
     }
 
     fn format_multiline_array_ref(&mut self, node: &PerlNode) {
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
-                NodeOrToken::Token(token) => {
-                    let kind = token.kind();
-                    let text = token.text();
-
-                    match kind {
-                        SyntaxKind::WHITESPACE => {
-                            // In multiline mode, handle whitespace for proper newlines
-                            if text.contains('\n') {
-                                self.handle_newline();
-                            }
-                        }
-                        SyntaxKind::L_BRACKET => {
-                            self.handle_spacing_before(kind);
-                            if self.at_line_start {
-                                self.add_indent();
-                                self.at_line_start = false;
-                            }
-                            self.output.push_str(text);
-                            self.indent_level += 1;
-                            self.handle_newline();
-                            self.prev_token_kind = Some(kind);
-                        }
-                        SyntaxKind::R_BRACKET => {
-                            if self.indent_level > 0 {
-                                self.indent_level -= 1;
-                            }
-                            if self.at_line_start {
-                                self.add_indent();
-                                self.at_line_start = false;
-                            }
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
-                        }
-                        _ => {
-                            // その他のトークンは通常通り処理
-                            self.format_token(&token);
-                        }
-                    }
-                }
-            }
-        }
+        self.format_multiline_delimited(node, SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET);
     }
 
     fn format_qw_expr(&mut self, node: &PerlNode) {
