@@ -74,7 +74,13 @@ impl Formatter {
                 // Default handling for regex expressions - just format children
                 // The spacing around regex operators is handled in format_token
             }
-            _ => {}
+            _ => {
+                // Check if this node contains parentheses that should be formatted multiline
+                if self.should_format_parentheses_multiline(node) {
+                    self.format_parenthesized_expr(node);
+                    return;
+                }
+            }
         }
 
         // Default child iteration
@@ -461,6 +467,28 @@ impl Formatter {
     fn format_function_call(&mut self, node: &PerlNode) {
         // Format function call: function_name arg1, arg2, arg3
         // Ensure proper spacing: space after function name, space after commas
+        // Handle multiline parentheses for function parameters
+        let should_multiline = self.has_newline_before_first_value(node);
+
+        if should_multiline {
+            self.format_multiline_function_call(node);
+        } else {
+            self.format_single_line_function_call(node);
+        }
+    }
+
+    fn should_format_parentheses_multiline(&self, node: &PerlNode) -> bool {
+        // Check if this node contains parentheses with newlines that should be multiline formatted
+        self.has_newline_before_first_value(node)
+    }
+
+    fn format_parenthesized_expr(&mut self, node: &PerlNode) {
+        // Format any parenthesized expression with proper multiline indentation
+        self.format_multiline_delimited(node, SyntaxKind::L_PAREN, SyntaxKind::R_PAREN);
+    }
+
+    fn format_single_line_function_call(&mut self, node: &PerlNode) {
+        // Format function call on a single line
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(child_node) => {
@@ -471,6 +499,11 @@ impl Formatter {
                 }
             }
         }
+    }
+
+    fn format_multiline_function_call(&mut self, node: &PerlNode) {
+        // Format function call with multiline parentheses
+        self.format_multiline_delimited(node, SyntaxKind::L_PAREN, SyntaxKind::R_PAREN);
     }
 
     fn format_block_function_call(&mut self, node: &PerlNode) {
@@ -1649,5 +1682,152 @@ This is data after __DATA__ $#&!
             }
         };
         "#);
+    }
+
+    #[test]
+    fn test_single_line_function_call_formatting() {
+        let input = "func(arg1, arg2, arg3);";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"func(arg1, arg2, arg3);");
+    }
+
+    #[test]
+    fn test_multiline_function_call_formatting() {
+        let input = r#"func(
+    arg1,
+    arg2,
+    arg3
+);"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        func(
+            arg1,
+            arg2,
+            arg3
+        );
+        ");
+    }
+
+    #[test]
+    fn test_multiline_function_call_with_complex_args_formatting() {
+        let input = r#"complex_func(
+    $var1 + $var2,
+    "string argument",
+    42,
+    $obj->method()
+);"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r#"
+        complex_func(
+            $var1 + $var2,
+            "string argument",
+            42,
+            $obj->method()
+        );
+        "#);
+    }
+
+    #[test]
+    fn test_nested_multiline_function_calls_formatting() {
+        let input = r#"outer_func(
+    inner_func(
+        nested_arg1,
+        nested_arg2
+    ),
+    other_arg
+);"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        outer_func(
+            inner_func(
+                nested_arg1,
+                nested_arg2
+            ),
+            other_arg
+        );
+        ");
+    }
+
+    #[test]
+    fn test_multiline_parenthesized_expression_formatting() {
+        let input = r#"my $result = (
+    $a + $b,
+    $c * $d
+);"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        my $result = (
+            $a + $b,
+            $c * $d
+        );
+        ");
+    }
+
+    #[test]
+    fn test_mixed_single_and_multiline_parentheses_formatting() {
+        let input = r#"func1(short, args);
+func2(
+    longer_arg1,
+    longer_arg2,
+    longer_arg3
+);"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        func1(short, args);
+        func2(
+            longer_arg1,
+            longer_arg2,
+            longer_arg3
+        );
+        ");
+    }
+
+    #[test]
+    fn test_multiline_parentheses_in_control_structures() {
+        let input = r#"if (
+    $condition1 &&
+    $condition2 ||
+    $condition3
+) {
+    do_something();
+}"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        if (
+            $condition1 &&
+            $condition2 ||
+            $condition3
+        ) {
+            do_something();
+        }
+        ");
     }
 }
