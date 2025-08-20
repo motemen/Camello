@@ -1,0 +1,11 @@
+---
+source: src/parser.rs
+expression: syntax
+---
+ROOT@0..3
+  STMT@0..3
+    SCALAR_VAR@0..2
+      DOLLAR@0..1 "$"
+      CAPTURE_VAR@1..2
+        NUMBER@1..2 "1"
+    SEMICOLON@2..3 ";"
