@@ -576,6 +576,8 @@ impl<'a> Parser<'a> {
                 SyntaxKind::Q_KW,
                 SyntaxKind::QQ_KW,
                 SyntaxKind::QX_KW,
+                SyntaxKind::M_KW,
+                SyntaxKind::QR_KW,
                 SyntaxKind::MY_KW, // Add variable declaration keywords as start of expression
                 SyntaxKind::OUR_KW,
                 SyntaxKind::STATE_KW,
@@ -927,6 +929,14 @@ impl<'a> Parser<'a> {
                 // qx() 式
                 self.qx_expr();
             }
+            Some(SyntaxKind::M_KW) => {
+                // m() 式
+                self.m_expr();
+            }
+            Some(SyntaxKind::QR_KW) => {
+                // qr() 式
+                self.qr_expr();
+            }
             _ => {
                 // is_at_start_of_expression でチェックしているので、ここには来ないはず
                 return false;
@@ -1047,6 +1057,59 @@ impl<'a> Parser<'a> {
         );
     }
 
+    fn m_expr(&mut self) {
+        self.parse_q_family_expr(
+            SyntaxKind::M_EXPR,
+            SyntaxKind::M_KW,
+            SyntaxKind::M_STRING,
+            "m",
+        );
+    }
+
+    fn qr_expr(&mut self) {
+        self.parse_q_family_expr(
+            SyntaxKind::QR_EXPR,
+            SyntaxKind::QR_KW,
+            SyntaxKind::QR_STRING,
+            "qr",
+        );
+    }
+
+    fn consume_regex_flags(&mut self) {
+        // Consume regex flags like 'g', 'i', 'm', 's', 'x' after the closing delimiter
+        // These might be treated as IDENT tokens or specific keywords, but should be part of the regex
+        while let Some(kind) = self.current_kind() {
+            let is_valid_flag = match kind {
+                SyntaxKind::IDENT => {
+                    if let Some((_, text)) = &self.current_token {
+                        // Check if it's a valid regex flag
+                        text.chars()
+                            .all(|c| matches!(c, 'g' | 'i' | 'm' | 's' | 'x'))
+                            && !text.is_empty()
+                    } else {
+                        false
+                    }
+                }
+                // Handle single character flags that might be interpreted as keywords
+                SyntaxKind::M_KW => {
+                    // 'm' flag might be interpreted as M_KW
+                    if let Some((_, text)) = &self.current_token {
+                        *text == "m"
+                    } else {
+                        false
+                    }
+                }
+                _ => false,
+            };
+
+            if is_valid_flag {
+                self.bump(); // consume the flags
+            } else {
+                break; // Not a regex flag, stop consuming
+            }
+        }
+    }
+
     fn parse_q_family_expr(
         &mut self,
         expr_kind: SyntaxKind,
@@ -1096,6 +1159,11 @@ impl<'a> Parser<'a> {
 
         // Closing delimiter
         self.expect(closing_delim);
+
+        // For regex expressions (m and qr), consume optional flags
+        if matches!(expr_kind, SyntaxKind::M_EXPR | SyntaxKind::QR_EXPR) {
+            self.consume_regex_flags();
+        }
 
         self.builder.finish_node();
     }
