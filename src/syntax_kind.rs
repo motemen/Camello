@@ -41,11 +41,11 @@ pub enum SyntaxKind {
     FOREACH_KW, // foreach keyword (synonym for for)
     WHILE_KW,   // while keyword
     PACKAGE_KW,
-    QW_KW,  // qw keyword
-    Q_KW,   // q keyword (single-quoted string literal)
-    QQ_KW,  // qq keyword (double-quoted string literal)
-    QX_KW,  // qx keyword (command execution)
-    USE_KW, // use keyword (for use warnings qw(...) syntax)
+    QW_KW,     // qw keyword
+    Q_KW,      // q keyword (single-quoted string literal)
+    QQ_KW,     // qq keyword (double-quoted string literal)
+    QX_KW,     // qx keyword (command execution)
+    USE_KW,    // use keyword (for use warnings qw(...) syntax)
     RETURN_KW, // return keyword
 
     // データセクション
