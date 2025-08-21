@@ -8,9 +8,12 @@ fi
 
 if [ "$1" = "-e" ]; then
   content="$2"
-  git diff --no-index --color=always -- <(cat <<<"$content") <(cargo run -- format "-e" "$content")
+  git diff --no-index --color=always -- <(cat <<<"$content") <(cargo -q run -- format "-e" "$content")
+elif [ "$1" = "-" ]; then
+  content="$(cat)"
+  git diff --no-index --color=always -- <(cat <<<"$content") <(cargo -q run -- format "-e" "$content")
 else
   file_path="$1"
-  git diff --no-index --color=always -- "$file_path" <(cargo run -- format "$file_path")
+  git diff --no-index --color=always -- "$file_path" <(cargo -q run -- format "$file_path")
 fi
 
