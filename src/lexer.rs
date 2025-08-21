@@ -29,6 +29,10 @@ pub enum Token {
     #[regex(r"'([^'\\]|\\.)*'")]
     String,
 
+    // Version literal (v1.23, v5.008_001, etc.)
+    #[regex(r"v[0-9]+(\.[0-9_]+)*")]
+    Version,
+
     // RegexLiteral - handled manually via context-sensitive disambiguation
     RegexLiteral,
 
@@ -143,6 +147,7 @@ impl Token {
             Token::Ident => SyntaxKind::IDENT,
             Token::Number => SyntaxKind::NUMBER,
             Token::String => SyntaxKind::STRING,
+            Token::Version => SyntaxKind::VERSION,
             Token::RegexLiteral => SyntaxKind::REGEX_LITERAL,
             Token::EndKw => SyntaxKind::END_KW,
             Token::DataKw => SyntaxKind::DATA_KW,
@@ -516,9 +521,10 @@ impl<'a> Lexer<'a> {
             }
 
             // Literals expect an operator next
-            SyntaxKind::NUMBER | SyntaxKind::STRING | SyntaxKind::REGEX_LITERAL => {
-                LexerContext::ExpectingOperator
-            }
+            SyntaxKind::NUMBER
+            | SyntaxKind::STRING
+            | SyntaxKind::VERSION
+            | SyntaxKind::REGEX_LITERAL => LexerContext::ExpectingOperator,
             SyntaxKind::R_PAREN | SyntaxKind::R_BRACE | SyntaxKind::R_BRACKET => {
                 LexerContext::ExpectingOperator
             }

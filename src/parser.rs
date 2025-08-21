@@ -299,8 +299,14 @@ impl<'a> Parser<'a> {
         self.expect(SyntaxKind::USE_KW);
         self.skip_trivia();
 
-        // モジュール名（修飾付き識別子）
-        self.parse_identifier_or_qualified();
+        // VERSION literal or module name (qualified identifier)
+        if self.at(SyntaxKind::VERSION) {
+            // Version literal (e.g., use v5.42;)
+            self.bump();
+        } else {
+            // モジュール名（修飾付き識別子）
+            self.parse_identifier_or_qualified();
+        }
         self.skip_trivia();
 
         // オプション：インポートリスト（qw() など）
