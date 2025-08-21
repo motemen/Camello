@@ -567,6 +567,9 @@ impl<'a> Parser<'a> {
                 SyntaxKind::L_BRACE,
                 SyntaxKind::L_BRACKET,
                 SyntaxKind::QW_KW,
+                SyntaxKind::Q_KW,
+                SyntaxKind::QQ_KW,
+                SyntaxKind::QX_KW,
                 SyntaxKind::MY_KW, // Add variable declaration keywords as start of expression
                 SyntaxKind::OUR_KW,
                 SyntaxKind::STATE_KW,
@@ -906,6 +909,18 @@ impl<'a> Parser<'a> {
                     self.expression();
                 }
             }
+            Some(SyntaxKind::Q_KW) => {
+                // q() 式
+                self.q_expr();
+            }
+            Some(SyntaxKind::QQ_KW) => {
+                // qq() 式
+                self.qq_expr();
+            }
+            Some(SyntaxKind::QX_KW) => {
+                // qx() 式
+                self.qx_expr();
+            }
             _ => {
                 // is_at_start_of_expression でチェックしているので、ここには来ないはず
                 return false;
@@ -988,6 +1003,86 @@ impl<'a> Parser<'a> {
             if let Some((_, text)) = self.current_token.take() {
                 // Add as QW_STRING token
                 self.builder.token(SyntaxKind::QW_STRING.into(), text);
+                self.current_pos += text.len();
+                self.current_token = self.lexer.next_token();
+            }
+        }
+
+        // Closing delimiter
+        self.expect(closing_delim);
+
+        self.builder.finish_node();
+    }
+
+    fn q_expr(&mut self) {
+        self.parse_q_family_expr(
+            SyntaxKind::Q_EXPR,
+            SyntaxKind::Q_KW,
+            SyntaxKind::Q_STRING,
+            "q",
+        );
+    }
+
+    fn qq_expr(&mut self) {
+        self.parse_q_family_expr(
+            SyntaxKind::QQ_EXPR,
+            SyntaxKind::QQ_KW,
+            SyntaxKind::QQ_STRING,
+            "qq",
+        );
+    }
+
+    fn qx_expr(&mut self) {
+        self.parse_q_family_expr(
+            SyntaxKind::QX_EXPR,
+            SyntaxKind::QX_KW,
+            SyntaxKind::QX_STRING,
+            "qx",
+        );
+    }
+
+    fn parse_q_family_expr(
+        &mut self,
+        expr_kind: SyntaxKind,
+        kw_kind: SyntaxKind,
+        string_kind: SyntaxKind,
+        operator_name: &str,
+    ) {
+        self.builder.start_node(expr_kind.into());
+
+        // "q", "qq", or "qx"
+        self.expect(kw_kind);
+        self.skip_trivia();
+
+        // Determine delimiter and find closing delimiter
+        let (opening_delim, closing_delim) = match self.current_kind() {
+            Some(SyntaxKind::L_PAREN) => (SyntaxKind::L_PAREN, SyntaxKind::R_PAREN),
+            Some(SyntaxKind::L_BRACKET) => (SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET),
+            Some(SyntaxKind::L_BRACE) => (SyntaxKind::L_BRACE, SyntaxKind::R_BRACE),
+            Some(SyntaxKind::SLASH) => (SyntaxKind::SLASH, SyntaxKind::SLASH),
+            _ => {
+                self.error(&format!(
+                    "Expected {}() delimiter: (, [, {{, or /",
+                    operator_name
+                ));
+                self.builder.finish_node(); // Finish the node to avoid panic
+                return;
+            }
+        };
+
+        // Consume opening delimiter
+        self.expect(opening_delim);
+
+        // Parse content inside - everything becomes the specific string kind
+        while !self.at(closing_delim) && !self.at_end() {
+            // Check if we're at the closing delimiter
+            if self.at(closing_delim) {
+                break;
+            }
+
+            // Consume any tokens as the string kind (preserving original text)
+            if let Some((_, text)) = self.current_token.take() {
+                self.builder.token(string_kind.into(), text);
                 self.current_pos += text.len();
                 self.current_token = self.lexer.next_token();
             }
