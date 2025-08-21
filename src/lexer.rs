@@ -289,6 +289,7 @@ impl<'a> Lexer<'a> {
                     "package" => SyntaxKind::PACKAGE_KW,
                     "qw" => SyntaxKind::QW_KW,
                     "use" => SyntaxKind::USE_KW,
+                    "return" => SyntaxKind::RETURN_KW,
                     "x" => self.disambiguate_x(),
                     _ => SyntaxKind::IDENT,
                 }
@@ -424,6 +425,7 @@ impl<'a> Lexer<'a> {
             SyntaxKind::PACKAGE_KW => LexerContext::ExpectingValue, // Expects package name
             SyntaxKind::QW_KW => LexerContext::QwDelimiter,         // Expects qw delimiter
             SyntaxKind::USE_KW => LexerContext::ExpectingValue,     // Expects module name
+            SyntaxKind::RETURN_KW => LexerContext::ExpectingValue,  // Expects return value
 
             // Data section keywords - after these, normal parsing stops
             SyntaxKind::END_KW | SyntaxKind::DATA_KW => LexerContext::RawData,

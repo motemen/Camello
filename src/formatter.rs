@@ -721,6 +721,7 @@ impl Formatter {
             (Some(SyntaxKind::ELSE_KW), _) => true,
             (Some(SyntaxKind::PACKAGE_KW), _) => true,
             (Some(SyntaxKind::USE_KW), _) => true,
+            (Some(SyntaxKind::RETURN_KW), _) => true,
 
             // Before left brace "{"
             (Some(_), SyntaxKind::L_BRACE) => true,
@@ -1873,5 +1874,56 @@ func2(
             do_something();
         }
         ");
+    }
+
+    #[test]
+    fn test_real_world_perl_code_formatting() {
+        // Test realistic Perl code patterns with currently supported syntax
+        let input = r#"use strict;use warnings;sub process_data{my($input,$output)=@_;my$data=load_file($input);my@results=();push@results,$data;return@results;}sub simple_function{my$config={host=>"localhost",port=>5432};return process_config($config);}"#;
+
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r###"
+        use strict;
+        use warnings;
+
+        sub process_data {
+            my ($input, $output) = @_;
+            my $data = load_file($input);
+            my @results = ();
+            push @results, $data;
+            return @results;
+        }
+
+        sub simple_function {
+            my $config = {host => "localhost", port => 5432};
+            return process_config($config);
+        }
+        "###);
+    }
+
+    #[test]
+    fn test_return_and_function_calls_formatting() {
+        // Test the specific patterns we fixed - using supported syntax only
+        let input = r#"sub handler{return{};return{error=>"msg"};return process($data);return fetch($id);print format(generate($req));push@arr,transform($item);}"#;
+
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r###"
+        sub handler {
+            return {};
+            return {error => "msg"};
+            return process($data);
+            return fetch($id);
+            print format(generate($req));
+            push @arr, transform($item);
+        }
+        "###);
     }
 }
