@@ -54,6 +54,18 @@ impl Formatter {
                 self.format_qw_expr(node);
                 return;
             }
+            SyntaxKind::Q_EXPR => {
+                self.format_q_expr(node);
+                return;
+            }
+            SyntaxKind::QQ_EXPR => {
+                self.format_qq_expr(node);
+                return;
+            }
+            SyntaxKind::QX_EXPR => {
+                self.format_qx_expr(node);
+                return;
+            }
             SyntaxKind::DEREF_EXPR => {
                 self.format_deref_expr(node);
                 return;
@@ -439,6 +451,132 @@ impl Formatter {
         }
     }
 
+    fn format_q_expr(&mut self, node: &PerlNode) {
+        // q() expressions always format as single line (they don't contain words to separate)
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Token(token) => {
+                    let kind = token.kind();
+                    let text = token.text();
+                    match kind {
+                        SyntaxKind::Q_KW => {
+                            self.format_token(&token);
+                        }
+                        SyntaxKind::L_PAREN
+                        | SyntaxKind::L_BRACKET
+                        | SyntaxKind::L_BRACE
+                        | SyntaxKind::SLASH => {
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::Q_STRING => {
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::R_PAREN | SyntaxKind::R_BRACKET | SyntaxKind::R_BRACE => {
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::WHITESPACE => {
+                            // Preserve whitespace in q() strings
+                            self.output.push_str(text);
+                        }
+                        _ => {
+                            // Handle any remaining tokens (including closing slash) directly
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn format_qq_expr(&mut self, node: &PerlNode) {
+        // qq() expressions always format as single line (they don't contain words to separate)
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Token(token) => {
+                    let kind = token.kind();
+                    let text = token.text();
+                    match kind {
+                        SyntaxKind::QQ_KW => {
+                            self.format_token(&token);
+                        }
+                        SyntaxKind::L_PAREN
+                        | SyntaxKind::L_BRACKET
+                        | SyntaxKind::L_BRACE
+                        | SyntaxKind::SLASH => {
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::QQ_STRING => {
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::R_PAREN | SyntaxKind::R_BRACKET | SyntaxKind::R_BRACE => {
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::WHITESPACE => {
+                            // Preserve whitespace in qq() strings
+                            self.output.push_str(text);
+                        }
+                        _ => {
+                            // Handle any remaining tokens (including closing slash) directly
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn format_qx_expr(&mut self, node: &PerlNode) {
+        // qx() expressions always format as single line (they don't contain words to separate)
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Token(token) => {
+                    let kind = token.kind();
+                    let text = token.text();
+                    match kind {
+                        SyntaxKind::QX_KW => {
+                            self.format_token(&token);
+                        }
+                        SyntaxKind::L_PAREN
+                        | SyntaxKind::L_BRACKET
+                        | SyntaxKind::L_BRACE
+                        | SyntaxKind::SLASH => {
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::QX_STRING => {
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::R_PAREN | SyntaxKind::R_BRACKET | SyntaxKind::R_BRACE => {
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::WHITESPACE => {
+                            // Preserve whitespace in qx() strings
+                            self.output.push_str(text);
+                        }
+                        _ => {
+                            // Handle any remaining tokens (including closing slash) directly
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn format_deref_expr(&mut self, node: &PerlNode) {
         // デリファレンス式（例: @$var, %$var, $$var）のフォーマット
         // 全ての子要素を空白なしで連続出力
@@ -686,6 +824,9 @@ impl Formatter {
             // Regex operators
             (Some(_), SyntaxKind::REGEX_MATCH) | (Some(SyntaxKind::REGEX_MATCH), _) => true,
             (Some(_), SyntaxKind::REGEX_NOT_MATCH) | (Some(SyntaxKind::REGEX_NOT_MATCH), _) => true,
+
+            // Exception: no space before semicolon when previous token is slash (for q-string delimiters)
+            (Some(SyntaxKind::SLASH), SyntaxKind::SEMICOLON) => false,
 
             // Multiplicative operators (but not PERCENT which is used as sigil)
             (Some(_), SyntaxKind::STAR) | (Some(SyntaxKind::STAR), _) => true,
@@ -1665,6 +1806,133 @@ This is data after __DATA__ $#&!
             test
         );
         ");
+    }
+
+    #[test]
+    fn test_q_single_quoted_string_formatting() {
+        let input = "my $str = q(hello world);";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"my $str = q(hello world);");
+    }
+
+    #[test]
+    fn test_q_with_different_delimiters_formatting() {
+        let cases = [
+            ("my $str = q(hello);", "my $str = q(hello);\n"),
+            ("my $str = q[hello];", "my $str = q[hello];\n"),
+            ("my $str = q{hello};", "my $str = q{hello};\n"),
+            ("my $str = q/hello/;", "my $str = q/hello/;\n"),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_q_with_special_chars_formatting() {
+        let input = r#"my $str = q(hello$world@test%hash);"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"my $str = q(hello$world@test%hash);");
+    }
+
+    #[test]
+    fn test_qq_double_quoted_string_formatting() {
+        let input = r#"my $str = qq(hello $name);"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"my $str = qq(hello $name);");
+    }
+
+    #[test]
+    fn test_qq_with_different_delimiters_formatting() {
+        let cases = [
+            ("my $str = qq(hello);", "my $str = qq(hello);\n"),
+            ("my $str = qq[hello];", "my $str = qq[hello];\n"),
+            ("my $str = qq{hello};", "my $str = qq{hello};\n"),
+            ("my $str = qq/hello/;", "my $str = qq/hello/;\n"),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_qq_with_interpolation_formatting() {
+        let input = r#"my $str = qq(Hello $user, welcome to $site!);"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"my $str = qq(Hello $user, welcome to $site!);");
+    }
+
+    #[test]
+    fn test_qx_command_execution_formatting() {
+        let input = "my $output = qx(ls -la);";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"my $output = qx(ls -la);");
+    }
+
+    #[test]
+    fn test_qx_with_different_delimiters_formatting() {
+        let cases = [
+            ("my $output = qx(ls);", "my $output = qx(ls);\n"),
+            ("my $output = qx[ls];", "my $output = qx[ls];\n"),
+            ("my $output = qx{ls};", "my $output = qx{ls};\n"),
+            ("my $output = qx/ls/;", "my $output = qx/ls/;\n"),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_qx_with_complex_command_formatting() {
+        let input = r#"my $result = qx(grep -r "pattern" /var/log/);"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r#"my $result = qx(grep -r "pattern" /var/log/);"#);
+    }
+
+    #[test]
+    fn test_mixed_q_string_family_formatting() {
+        let input = r#"my $single = q(no interpolation);
+my $double = qq(with $var interpolation);
+my $command = qx(echo "Hello World");"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r#"
+        my $single = q(no interpolation);
+        my $double = qq(with $var interpolation);
+        my $command = qx(echo "Hello World");
+        "#);
+    }
+
+    #[test]
+    fn test_q_string_preserving_whitespace() {
+        let input = r#"my $str = q(  hello   world  );"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"my $str = q(  hello   world  );");
     }
 
     #[test]
