@@ -664,19 +664,25 @@ impl<'a> Parser<'a> {
             return false;
         }
 
-        while self.at_any(&[SyntaxKind::COMMA, SyntaxKind::FAT_COMMA]) {
+        // If we have comma-separated expressions, wrap them in a single EXPR_LIST node
+        if self.at_any(&[SyntaxKind::COMMA, SyntaxKind::FAT_COMMA]) {
             self.builder
                 .start_node_at(start, SyntaxKind::EXPR_LIST.into());
-            self.bump(); // , or =>
-            self.skip_trivia();
 
-            // Check for trailing comma - if we're at the end of a list context, don't require another expression
-            if self.is_at_start_of_expression() && !self.expression() {
-                self.error("Expected expression after comma in list");
+            while self.at_any(&[SyntaxKind::COMMA, SyntaxKind::FAT_COMMA]) {
+                self.bump(); // , or =>
+                self.skip_trivia();
+
+                // Check for trailing comma - if we're at the end of a list context, don't require another expression
+                if self.is_at_start_of_expression() && !self.expression() {
+                    self.error("Expected expression after comma in list");
+                }
+                // If no expression follows, it's a trailing comma - that's OK
             }
-            // If no expression follows, it's a trailing comma - that's OK
+
             self.builder.finish_node();
         }
+
         true
     }
 
@@ -761,96 +767,96 @@ impl<'a> Parser<'a> {
 
         loop {
             if self.at(SyntaxKind::ARROW) {
-            self.bump(); // ->
-            self.skip_trivia();
+                self.bump(); // ->
+                self.skip_trivia();
 
-            match self.current_kind() {
-                Some(SyntaxKind::L_BRACE) => {
-                    // Hash reference access: expr->{key}
-                    self.builder
-                        .start_node_at(start, SyntaxKind::HASH_REF_ACCESS_EXPR.into());
-                    self.bump(); // {
-                    self.skip_trivia();
-
-                    if !self.expression() {
-                        self.error("Expected expression in hash reference access");
-                    }
-
-                    if !self.at(SyntaxKind::R_BRACE) {
-                        self.error("Expected '}' after hash key");
-                    } else {
-                        self.bump(); // }
+                match self.current_kind() {
+                    Some(SyntaxKind::L_BRACE) => {
+                        // Hash reference access: expr->{key}
+                        self.builder
+                            .start_node_at(start, SyntaxKind::HASH_REF_ACCESS_EXPR.into());
+                        self.bump(); // {
                         self.skip_trivia();
+
+                        if !self.expression() {
+                            self.error("Expected expression in hash reference access");
+                        }
+
+                        if !self.at(SyntaxKind::R_BRACE) {
+                            self.error("Expected '}' after hash key");
+                        } else {
+                            self.bump(); // }
+                            self.skip_trivia();
+                        }
+
+                        self.builder.finish_node();
                     }
-
-                    self.builder.finish_node();
-                }
-                Some(SyntaxKind::L_BRACKET) => {
-                    // Array reference access: expr->[index]
-                    self.builder
-                        .start_node_at(start, SyntaxKind::ARRAY_REF_ACCESS_EXPR.into());
-                    self.bump(); // [
-                    self.skip_trivia();
-
-                    if !self.expression() {
-                        self.error("Expected expression in array reference access");
-                    }
-
-                    if !self.at(SyntaxKind::R_BRACKET) {
-                        self.error("Expected ']' after array index");
-                    } else {
-                        self.bump(); // ]
+                    Some(SyntaxKind::L_BRACKET) => {
+                        // Array reference access: expr->[index]
+                        self.builder
+                            .start_node_at(start, SyntaxKind::ARRAY_REF_ACCESS_EXPR.into());
+                        self.bump(); // [
                         self.skip_trivia();
+
+                        if !self.expression() {
+                            self.error("Expected expression in array reference access");
+                        }
+
+                        if !self.at(SyntaxKind::R_BRACKET) {
+                            self.error("Expected ']' after array index");
+                        } else {
+                            self.bump(); // ]
+                            self.skip_trivia();
+                        }
+
+                        self.builder.finish_node();
                     }
-
-                    self.builder.finish_node();
-                }
-                Some(SyntaxKind::L_PAREN) => {
-                    // Code reference call: expr->(args)
-                    self.builder
-                        .start_node_at(start, SyntaxKind::CODE_REF_CALL_EXPR.into());
-                    self.bump(); // (
-                    self.skip_trivia();
-
-                    self.expression_list();
-
-                    if !self.at(SyntaxKind::R_PAREN) {
-                        self.error("Expected ')' after code reference arguments");
-                    } else {
-                        self.bump(); // )
-                        self.skip_trivia();
-                    }
-
-                    self.builder.finish_node();
-                }
-                Some(SyntaxKind::IDENT) => {
-                    // Method call: expr->method()
-                    self.builder
-                        .start_node_at(start, SyntaxKind::METHOD_CALL_EXPR.into());
-
-                    self.parse_identifier_or_qualified();
-                    self.skip_trivia();
-
-                    if self.at(SyntaxKind::L_PAREN) {
+                    Some(SyntaxKind::L_PAREN) => {
+                        // Code reference call: expr->(args)
+                        self.builder
+                            .start_node_at(start, SyntaxKind::CODE_REF_CALL_EXPR.into());
                         self.bump(); // (
+                        self.skip_trivia();
 
                         self.expression_list();
 
                         if !self.at(SyntaxKind::R_PAREN) {
-                            self.error("Expected ')' after method arguments");
+                            self.error("Expected ')' after code reference arguments");
                         } else {
                             self.bump(); // )
                             self.skip_trivia();
                         }
-                    }
 
-                    self.builder.finish_node();
+                        self.builder.finish_node();
+                    }
+                    Some(SyntaxKind::IDENT) => {
+                        // Method call: expr->method()
+                        self.builder
+                            .start_node_at(start, SyntaxKind::METHOD_CALL_EXPR.into());
+
+                        self.parse_identifier_or_qualified();
+                        self.skip_trivia();
+
+                        if self.at(SyntaxKind::L_PAREN) {
+                            self.bump(); // (
+
+                            self.expression_list();
+
+                            if !self.at(SyntaxKind::R_PAREN) {
+                                self.error("Expected ')' after method arguments");
+                            } else {
+                                self.bump(); // )
+                                self.skip_trivia();
+                            }
+                        }
+
+                        self.builder.finish_node();
+                    }
+                    _ => {
+                        self.error("Expected '{', '[', '(' or identifier after '->'");
+                        break;
+                    }
                 }
-                _ => {
-                    self.error("Expected '{', '[', '(' or identifier after '->'");
-                    break;
-                }
-            }
             } else if self.at(SyntaxKind::L_PAREN) {
                 // Function call: expr(args)
                 self.builder
