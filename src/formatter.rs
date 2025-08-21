@@ -66,6 +66,14 @@ impl Formatter {
                 self.format_qx_expr(node);
                 return;
             }
+            SyntaxKind::M_EXPR => {
+                self.format_m_expr(node);
+                return;
+            }
+            SyntaxKind::QR_EXPR => {
+                self.format_qr_expr(node);
+                return;
+            }
             SyntaxKind::DEREF_EXPR => {
                 self.format_deref_expr(node);
                 return;
@@ -461,6 +469,14 @@ impl Formatter {
 
     fn format_qx_expr(&mut self, node: &PerlNode) {
         self.format_q_family_expr(node, SyntaxKind::QX_KW, SyntaxKind::QX_STRING);
+    }
+
+    fn format_m_expr(&mut self, node: &PerlNode) {
+        self.format_q_family_expr(node, SyntaxKind::M_KW, SyntaxKind::M_STRING);
+    }
+
+    fn format_qr_expr(&mut self, node: &PerlNode) {
+        self.format_q_family_expr(node, SyntaxKind::QR_KW, SyntaxKind::QR_STRING);
     }
 
     fn format_q_family_expr(
@@ -2141,5 +2157,123 @@ func2(
             ),
         ];
         check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_m_regex_formatting() {
+        let input = r#"my $result = m/pattern/gi;"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @"my $result = m/pattern/gi;");
+    }
+
+    #[test]
+    fn test_m_with_different_delimiters_formatting() {
+        let cases = [
+            ("my $result = m/pattern/;", "my $result = m/pattern/;\n"),
+            ("my $result = m(pattern);", "my $result = m(pattern);\n"),
+            ("my $result = m[pattern];", "my $result = m[pattern];\n"),
+            ("my $result = m{pattern};", "my $result = m{pattern};\n"),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_m_with_flags_formatting() {
+        let cases = [
+            ("my $result = m/pattern/i;", "my $result = m/pattern/i;\n"),
+            ("my $result = m/pattern/g;", "my $result = m/pattern/g;\n"),
+            ("my $result = m/pattern/gi;", "my $result = m/pattern/gi;\n"),
+            (
+                "my $result = m/pattern/gims;",
+                "my $result = m/pattern/gims;\n",
+            ),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_m_with_complex_pattern_formatting() {
+        let input = r#"my $result = m/[a-zA-Z]+\d*\.?\w+/gi;"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @r#"my $result = m/[a-zA-Z]+\d*\.?\w+/gi;"#);
+    }
+
+    #[test]
+    fn test_qr_regex_formatting() {
+        let input = r#"my $regex = qr/pattern/i;"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @"my $regex = qr/pattern/i;");
+    }
+
+    #[test]
+    fn test_qr_with_different_delimiters_formatting() {
+        let cases = [
+            ("my $regex = qr/pattern/;", "my $regex = qr/pattern/;\n"),
+            ("my $regex = qr(pattern);", "my $regex = qr(pattern);\n"),
+            ("my $regex = qr[pattern];", "my $regex = qr[pattern];\n"),
+            ("my $regex = qr{pattern};", "my $regex = qr{pattern};\n"),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_qr_with_flags_formatting() {
+        let cases = [
+            ("my $regex = qr/pattern/i;", "my $regex = qr/pattern/i;\n"),
+            ("my $regex = qr/pattern/m;", "my $regex = qr/pattern/m;\n"),
+            (
+                "my $regex = qr/pattern/gixms;",
+                "my $regex = qr/pattern/gixms;\n",
+            ),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_qr_with_complex_pattern_formatting() {
+        let input = r#"my $regex = qr/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @r#"my $regex = qr/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;"#);
+    }
+
+    #[test]
+    fn test_mixed_regex_and_string_formatting() {
+        let input = r#"my $str = "text";
+my $pattern = qr/test/i;
+my $result = m/pattern/g;"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @r###"
+        my $str = "text";
+        my $pattern = qr/test/i;
+        my $result = m/pattern/g;
+        "###);
+    }
+
+    #[test]
+    fn test_regex_with_escape_sequences_formatting() {
+        let input = r#"my $result = m/hello\nworld\t/gs;"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @r#"my $result = m/hello\nworld\t/gs;"#);
+    }
+
+    #[test]
+    fn test_qr_assigned_to_variable_formatting() {
+        let input = r#"my $email_regex = qr/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @r#"my $email_regex = qr/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;"#);
     }
 }
