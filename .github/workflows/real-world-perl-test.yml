@@ -61,7 +61,7 @@ jobs:
             echo "" >> all_results.md
             
             # Run curl | diff and capture both stdout and stderr separately
-            curl -sf "$url" | ./scripts/diff - > "stdout_$name.txt" 2> "stderr_$name.txt"
+            curl -sf "$url" | ./scripts/diff - > "stdout_$name.txt" 2> "stderr_$name.txt" || :
 
             echo "#### 📝 Formatting Differences" >> all_results.md
             echo '```diff' >> all_results.md
