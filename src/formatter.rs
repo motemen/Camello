@@ -452,91 +452,24 @@ impl Formatter {
     }
 
     fn format_q_expr(&mut self, node: &PerlNode) {
-        // q() expressions always format as single line (they don't contain words to separate)
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
-                NodeOrToken::Token(token) => {
-                    let kind = token.kind();
-                    let text = token.text();
-                    match kind {
-                        SyntaxKind::Q_KW => {
-                            self.format_token(&token);
-                        }
-                        SyntaxKind::L_PAREN
-                        | SyntaxKind::L_BRACKET
-                        | SyntaxKind::L_BRACE
-                        | SyntaxKind::SLASH => {
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
-                        }
-                        SyntaxKind::Q_STRING => {
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
-                        }
-                        SyntaxKind::R_PAREN | SyntaxKind::R_BRACKET | SyntaxKind::R_BRACE => {
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
-                        }
-                        SyntaxKind::WHITESPACE => {
-                            // Preserve whitespace in q() strings
-                            self.output.push_str(text);
-                        }
-                        _ => {
-                            // Handle any remaining tokens (including closing slash) directly
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
-                        }
-                    }
-                }
-            }
-        }
+        self.format_q_family_expr(node, SyntaxKind::Q_KW, SyntaxKind::Q_STRING);
     }
 
     fn format_qq_expr(&mut self, node: &PerlNode) {
-        // qq() expressions always format as single line (they don't contain words to separate)
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
-                NodeOrToken::Token(token) => {
-                    let kind = token.kind();
-                    let text = token.text();
-                    match kind {
-                        SyntaxKind::QQ_KW => {
-                            self.format_token(&token);
-                        }
-                        SyntaxKind::L_PAREN
-                        | SyntaxKind::L_BRACKET
-                        | SyntaxKind::L_BRACE
-                        | SyntaxKind::SLASH => {
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
-                        }
-                        SyntaxKind::QQ_STRING => {
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
-                        }
-                        SyntaxKind::R_PAREN | SyntaxKind::R_BRACKET | SyntaxKind::R_BRACE => {
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
-                        }
-                        SyntaxKind::WHITESPACE => {
-                            // Preserve whitespace in qq() strings
-                            self.output.push_str(text);
-                        }
-                        _ => {
-                            // Handle any remaining tokens (including closing slash) directly
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
-                        }
-                    }
-                }
-            }
-        }
+        self.format_q_family_expr(node, SyntaxKind::QQ_KW, SyntaxKind::QQ_STRING);
     }
 
     fn format_qx_expr(&mut self, node: &PerlNode) {
-        // qx() expressions always format as single line (they don't contain words to separate)
+        self.format_q_family_expr(node, SyntaxKind::QX_KW, SyntaxKind::QX_STRING);
+    }
+
+    fn format_q_family_expr(
+        &mut self,
+        node: &PerlNode,
+        kw_kind: SyntaxKind,
+        string_kind: SyntaxKind,
+    ) {
+        // q-family expressions always format as single line
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(node) => self.format_node(&node),
@@ -544,7 +477,7 @@ impl Formatter {
                     let kind = token.kind();
                     let text = token.text();
                     match kind {
-                        SyntaxKind::QX_KW => {
+                        k if k == kw_kind => {
                             self.format_token(&token);
                         }
                         SyntaxKind::L_PAREN
@@ -554,7 +487,7 @@ impl Formatter {
                             self.output.push_str(text);
                             self.prev_token_kind = Some(kind);
                         }
-                        SyntaxKind::QX_STRING => {
+                        k if k == string_kind => {
                             self.output.push_str(text);
                             self.prev_token_kind = Some(kind);
                         }
@@ -563,7 +496,7 @@ impl Formatter {
                             self.prev_token_kind = Some(kind);
                         }
                         SyntaxKind::WHITESPACE => {
-                            // Preserve whitespace in qx() strings
+                            // Preserve whitespace in q-family strings
                             self.output.push_str(text);
                         }
                         _ => {
