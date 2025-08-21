@@ -496,31 +496,12 @@ impl Formatter {
                         SyntaxKind::S_KW => {
                             self.format_token(&token);
                         }
-                        SyntaxKind::L_PAREN
-                        | SyntaxKind::L_BRACKET
-                        | SyntaxKind::L_BRACE
-                        | SyntaxKind::SLASH => {
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
-                        }
-                        SyntaxKind::S_PATTERN => {
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
-                        }
-                        SyntaxKind::S_REPLACEMENT => {
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
-                        }
-                        SyntaxKind::R_PAREN | SyntaxKind::R_BRACKET | SyntaxKind::R_BRACE => {
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
-                        }
                         SyntaxKind::WHITESPACE => {
                             // Preserve whitespace in substitution strings
                             self.output.push_str(text);
                         }
                         _ => {
-                            // Handle any remaining tokens (including closing slash and flags) directly
+                            // Handle any remaining tokens (including delimiters, pattern, replacement, and flags) directly
                             self.output.push_str(text);
                             self.prev_token_kind = Some(kind);
                         }

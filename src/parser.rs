@@ -1202,11 +1202,6 @@ impl<'a> Parser<'a> {
 
         // Parse pattern part - everything until the middle delimiter becomes S_PATTERN
         while !self.at(closing_delim) && !self.at_end() {
-            // Check if we're at the closing delimiter
-            if self.at(closing_delim) {
-                break;
-            }
-
             // Consume any tokens as pattern (preserving original text)
             if let Some((_, text)) = self.current_token.take() {
                 self.builder.token(SyntaxKind::S_PATTERN.into(), text);
@@ -1215,16 +1210,30 @@ impl<'a> Parser<'a> {
             }
         }
 
-        // Middle delimiter (same as opening)
         self.expect(closing_delim);
 
-        // Parse replacement part - everything until the final delimiter becomes S_REPLACEMENT
-        while !self.at(closing_delim) && !self.at_end() {
-            // Check if we're at the closing delimiter
-            if self.at(closing_delim) {
-                break;
-            }
+        let closing_delim_repl = if opening_delim != closing_delim {
+            // Paired delimiters for pattern. Replacement can have its own delimiters.
+            let (opening_repl, closing_repl) = match self.current_kind() {
+                Some(SyntaxKind::L_PAREN) => (SyntaxKind::L_PAREN, SyntaxKind::R_PAREN),
+                Some(SyntaxKind::L_BRACKET) => (SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET),
+                Some(SyntaxKind::L_BRACE) => (SyntaxKind::L_BRACE, SyntaxKind::R_BRACE),
+                Some(SyntaxKind::SLASH) => (SyntaxKind::SLASH, SyntaxKind::SLASH), // s(pat)/repl/ is also valid
+                _ => {
+                    self.error("Expected opening delimiter for replacement part of s expression");
+                    self.builder.finish_node();
+                    return;
+                }
+            };
+            self.expect(opening_repl);
+            closing_repl
+        } else {
+            // Symmetric delimiter for pattern. Replacement uses the same.
+            closing_delim
+        };
 
+        // Parse replacement part - everything until the final delimiter becomes S_REPLACEMENT
+        while !self.at(closing_delim_repl) && !self.at_end() {
             // Consume any tokens as replacement (preserving original text)
             if let Some((_, text)) = self.current_token.take() {
                 self.builder.token(SyntaxKind::S_REPLACEMENT.into(), text);
@@ -1234,7 +1243,7 @@ impl<'a> Parser<'a> {
         }
 
         // Final closing delimiter
-        self.expect(closing_delim);
+        self.expect(closing_delim_repl);
 
         // Consume optional flags (like 'g', 'i', 'm', 's', 'x')
         self.consume_regex_flags();
