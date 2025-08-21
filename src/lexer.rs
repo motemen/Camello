@@ -203,6 +203,10 @@ pub enum LexerContext {
     QqDelimiter,
     /// After qx keyword, expecting a delimiter
     QxDelimiter,
+    /// After m keyword, expecting a delimiter
+    MDelimiter,
+    /// After qr keyword, expecting a delimiter
+    QrDelimiter,
     /// In a data section context (after __END__ or __DATA__)
     RawData,
 }
@@ -302,6 +306,8 @@ impl<'a> Lexer<'a> {
                     "q" => SyntaxKind::Q_KW,
                     "qq" => SyntaxKind::QQ_KW,
                     "qx" => SyntaxKind::QX_KW,
+                    "m" => SyntaxKind::M_KW,
+                    "qr" => SyntaxKind::QR_KW,
                     "use" => SyntaxKind::USE_KW,
                     "return" => SyntaxKind::RETURN_KW,
                     "x" => self.disambiguate_x(),
@@ -327,7 +333,9 @@ impl<'a> Lexer<'a> {
             | LexerContext::QwDelimiter
             | LexerContext::QDelimiter
             | LexerContext::QqDelimiter
-            | LexerContext::QxDelimiter => {
+            | LexerContext::QxDelimiter
+            | LexerContext::MDelimiter
+            | LexerContext::QrDelimiter => {
                 // When expecting a value or in variable list, % is a sigil for a hash
                 // Examples: "my %hash", "{ key => %val }"
                 SyntaxKind::PERCENT
@@ -350,7 +358,9 @@ impl<'a> Lexer<'a> {
             | LexerContext::QwDelimiter
             | LexerContext::QDelimiter
             | LexerContext::QqDelimiter
-            | LexerContext::QxDelimiter => {
+            | LexerContext::QxDelimiter
+            | LexerContext::MDelimiter
+            | LexerContext::QrDelimiter => {
                 // When expecting a value or in variable list, x is an identifier
                 // Examples: "sub x", "$x", "my $x"
                 SyntaxKind::IDENT
@@ -418,7 +428,9 @@ impl<'a> Lexer<'a> {
             LexerContext::QwDelimiter
             | LexerContext::QDelimiter
             | LexerContext::QqDelimiter
-            | LexerContext::QxDelimiter => {
+            | LexerContext::QxDelimiter
+            | LexerContext::MDelimiter
+            | LexerContext::QrDelimiter => {
                 // After q-string family keywords, slash is a delimiter, not regex literal or division
                 SyntaxKind::SLASH
             }
@@ -450,6 +462,8 @@ impl<'a> Lexer<'a> {
             SyntaxKind::Q_KW => LexerContext::QDelimiter,           // Expects q delimiter
             SyntaxKind::QQ_KW => LexerContext::QqDelimiter,         // Expects qq delimiter
             SyntaxKind::QX_KW => LexerContext::QxDelimiter,         // Expects qx delimiter
+            SyntaxKind::M_KW => LexerContext::MDelimiter,           // Expects m delimiter
+            SyntaxKind::QR_KW => LexerContext::QrDelimiter,         // Expects qr delimiter
             SyntaxKind::USE_KW => LexerContext::ExpectingValue,     // Expects module name
             SyntaxKind::RETURN_KW => LexerContext::ExpectingValue,  // Expects return value
 
@@ -467,7 +481,9 @@ impl<'a> Lexer<'a> {
                     LexerContext::QwDelimiter
                     | LexerContext::QDelimiter
                     | LexerContext::QqDelimiter
-                    | LexerContext::QxDelimiter => LexerContext::ExpectingOperator, // q-family closing delimiter
+                    | LexerContext::QxDelimiter
+                    | LexerContext::MDelimiter
+                    | LexerContext::QrDelimiter => LexerContext::ExpectingOperator, // q-family closing delimiter
                     _ => LexerContext::ExpectingValue,
                 }
             }
@@ -510,7 +526,9 @@ impl<'a> Lexer<'a> {
                     }
                     LexerContext::QDelimiter
                     | LexerContext::QqDelimiter
-                    | LexerContext::QxDelimiter => {
+                    | LexerContext::QxDelimiter
+                    | LexerContext::MDelimiter
+                    | LexerContext::QrDelimiter => {
                         // In q-family string delimiter context, after identifier, stay in the same context
                         self.context
                     }
