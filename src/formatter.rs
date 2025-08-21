@@ -74,6 +74,10 @@ impl Formatter {
                 self.format_qr_expr(node);
                 return;
             }
+            SyntaxKind::S_EXPR => {
+                self.format_s_expr(node);
+                return;
+            }
             SyntaxKind::DEREF_EXPR => {
                 self.format_deref_expr(node);
                 return;
@@ -477,6 +481,53 @@ impl Formatter {
 
     fn format_qr_expr(&mut self, node: &PerlNode) {
         self.format_q_family_expr(node, SyntaxKind::QR_KW, SyntaxKind::QR_STRING);
+    }
+
+    fn format_s_expr(&mut self, node: &PerlNode) {
+        // Substitution expressions have the form s/pattern/replacement/flags
+        // We need to handle the pattern and replacement parts separately
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Token(token) => {
+                    let kind = token.kind();
+                    let text = token.text();
+                    match kind {
+                        SyntaxKind::S_KW => {
+                            self.format_token(&token);
+                        }
+                        SyntaxKind::L_PAREN
+                        | SyntaxKind::L_BRACKET
+                        | SyntaxKind::L_BRACE
+                        | SyntaxKind::SLASH => {
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::S_PATTERN => {
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::S_REPLACEMENT => {
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::R_PAREN | SyntaxKind::R_BRACKET | SyntaxKind::R_BRACE => {
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::WHITESPACE => {
+                            // Preserve whitespace in substitution strings
+                            self.output.push_str(text);
+                        }
+                        _ => {
+                            // Handle any remaining tokens (including closing slash and flags) directly
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fn format_q_family_expr(
@@ -2275,5 +2326,67 @@ my $result = m/pattern/g;"#;
         assert!(err.is_empty(), "Parse errors: {:?}", err);
         let formatted = format(&syntax);
         insta::assert_snapshot!(formatted, @r#"my $email_regex = qr/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;"#);
+    }
+
+    #[test]
+    fn test_substitution_expression_basic() {
+        let input = "s/from/to/;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @"s/from/to/;");
+    }
+
+    #[test]
+    fn test_substitution_expression_with_flags() {
+        let input = "s/pattern/replacement/gi;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @"s/pattern/replacement/gi;");
+    }
+
+    #[test]
+    fn test_substitution_expression_variable_assignment() {
+        let input = "my$result=s/old/new/g;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @"my $result = s/old/new/g;");
+    }
+
+    #[test]
+    fn test_substitution_expression_different_delimiters() {
+        let cases = [
+            ("s(from)(to)", "s(from)(to)"),
+            ("s[pattern][replacement]", "s[pattern][replacement]"),
+            ("s{old}{new}", "s{old}{new}"),
+            ("s/find/replace/", "s/find/replace/"),
+        ];
+
+        for (input, expected) in cases {
+            let (syntax, err) = parse_perl(input);
+            assert!(err.is_empty(), "Parse errors for '{}': {:?}", input, err);
+            let formatted = format(&syntax);
+            assert_eq!(formatted.trim(), expected, "Failed for input: {}", input);
+        }
+    }
+
+    #[test]
+    fn test_substitution_expression_complex_patterns() {
+        let input = r#"s/\b\d{4}-\d{2}-\d{2}\b/YYYY-MM-DD/g;"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @r#"s/\b\d{4}-\d{2}-\d{2}\b/YYYY-MM-DD/g;"#);
+    }
+
+    #[test]
+    fn test_substitution_expression_in_assignment() {
+        let input = "$text =~ s/foo/bar/g;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @"$text =~ s/foo/bar/g;");
     }
 }

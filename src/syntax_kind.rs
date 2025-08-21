@@ -48,6 +48,7 @@ pub enum SyntaxKind {
     QX_KW,     // qx keyword (command execution)
     M_KW,      // m keyword (match operator)
     QR_KW,     // qr keyword (compiled regex)
+    S_KW,      // s keyword (substitution operator)
     USE_KW,    // use keyword (for use warnings qw(...) syntax)
     RETURN_KW, // return keyword
 
@@ -70,11 +71,13 @@ pub enum SyntaxKind {
     QW_STRING, // qw()内の任意のテキスト
 
     // Q-string family content
-    Q_STRING,  // q()内の任意のテキスト (single-quoted string content)
-    QQ_STRING, // qq()内の任意のテキスト (double-quoted string content)
-    QX_STRING, // qx()内の任意のテキスト (command execution content)
-    M_STRING,  // m()内の任意のテキスト (match regex content)
-    QR_STRING, // qr()内の任意のテキスト (compiled regex content)
+    Q_STRING,      // q()内の任意のテキスト (single-quoted string content)
+    QQ_STRING,     // qq()内の任意のテキスト (double-quoted string content)
+    QX_STRING,     // qx()内の任意のテキスト (command execution content)
+    M_STRING,      // m()内の任意のテキスト (match regex content)
+    QR_STRING,     // qr()内の任意のテキスト (compiled regex content)
+    S_PATTERN,     // s()内のパターン部分 (substitution pattern)
+    S_REPLACEMENT, // s()内の置換部分 (substitution replacement)
 
     // 演算子
     EQ,        // =
@@ -135,6 +138,7 @@ pub enum SyntaxKind {
     QX_EXPR,                  // qx() 式（コマンド実行）
     M_EXPR,                   // m() 式（マッチ正規表現リテラル）
     QR_EXPR,                  // qr() 式（コンパイル済み正規表現リテラル）
+    S_EXPR,                   // s() 式（置換式リテラル）
     DEREF_EXPR,               // デリファレンス式（例: @$var, %$var, $$var）
     REGEX_EXPR,               // 正規表現式（例: $str =~ "pattern"）
 
@@ -185,6 +189,7 @@ impl SyntaxKind {
                 | SyntaxKind::QX_KW
                 | SyntaxKind::M_KW
                 | SyntaxKind::QR_KW
+                | SyntaxKind::S_KW
                 | SyntaxKind::USE_KW
                 | SyntaxKind::RETURN_KW
         )
@@ -258,6 +263,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::QX_KW => "QX_KW",
             SyntaxKind::M_KW => "M_KW",
             SyntaxKind::QR_KW => "QR_KW",
+            SyntaxKind::S_KW => "S_KW",
             SyntaxKind::USE_KW => "USE_KW",
             SyntaxKind::RETURN_KW => "RETURN_KW",
             SyntaxKind::L_BRACE => "L_BRACE",
@@ -272,6 +278,8 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::QX_STRING => "QX_STRING",
             SyntaxKind::M_STRING => "M_STRING",
             SyntaxKind::QR_STRING => "QR_STRING",
+            SyntaxKind::S_PATTERN => "S_PATTERN",
+            SyntaxKind::S_REPLACEMENT => "S_REPLACEMENT",
             SyntaxKind::SEMICOLON => "SEMICOLON",
             SyntaxKind::COMMA => "COMMA",
             SyntaxKind::DOUBLE_COLON => "DOUBLE_COLON",
@@ -313,6 +321,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::QX_EXPR => "QX_EXPR",
             SyntaxKind::M_EXPR => "M_EXPR",
             SyntaxKind::QR_EXPR => "QR_EXPR",
+            SyntaxKind::S_EXPR => "S_EXPR",
             SyntaxKind::DEREF_EXPR => "DEREF_EXPR",
             SyntaxKind::REGEX_EXPR => "REGEX_EXPR",
             SyntaxKind::HASH_REF => "HASH_REF",
