@@ -459,10 +459,10 @@ impl<'a> Lexer<'a> {
             SyntaxKind::SLASH => {
                 // After slash in different contexts
                 match self.context {
-                    LexerContext::QwDelimiter => LexerContext::ExpectingOperator, // qw/word/ closing delimiter
-                    LexerContext::QDelimiter => LexerContext::ExpectingOperator, // q/text/ closing delimiter
-                    LexerContext::QqDelimiter => LexerContext::ExpectingOperator, // qq/text/ closing delimiter
-                    LexerContext::QxDelimiter => LexerContext::ExpectingOperator, // qx/command/ closing delimiter
+                    LexerContext::QwDelimiter
+                    | LexerContext::QDelimiter
+                    | LexerContext::QqDelimiter
+                    | LexerContext::QxDelimiter => LexerContext::ExpectingOperator, // q-family closing delimiter
                     _ => LexerContext::ExpectingValue,
                 }
             }
@@ -503,20 +503,11 @@ impl<'a> Lexer<'a> {
                         // (we're inside qw/words/ construct)
                         LexerContext::QwDelimiter
                     }
-                    LexerContext::QDelimiter => {
-                        // In q delimiter context, after identifier, stay in same context
-                        // (we're inside q/text/ construct)
-                        LexerContext::QDelimiter
-                    }
-                    LexerContext::QqDelimiter => {
-                        // In qq delimiter context, after identifier, stay in same context
-                        // (we're inside qq/text/ construct)
-                        LexerContext::QqDelimiter
-                    }
-                    LexerContext::QxDelimiter => {
-                        // In qx delimiter context, after identifier, stay in same context
-                        // (we're inside qx/command/ construct)
-                        LexerContext::QxDelimiter
+                    LexerContext::QDelimiter
+                    | LexerContext::QqDelimiter
+                    | LexerContext::QxDelimiter => {
+                        // In q-family string delimiter context, after identifier, stay in the same context
+                        self.context
                     }
                     LexerContext::RawData => {
                         unreachable!("IDENT should not appear in raw data context");

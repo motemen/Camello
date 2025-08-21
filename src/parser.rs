@@ -1015,98 +1015,43 @@ impl<'a> Parser<'a> {
     }
 
     fn q_expr(&mut self) {
-        self.builder.start_node(SyntaxKind::Q_EXPR.into());
-
-        // "q"
-        self.expect(SyntaxKind::Q_KW);
-        self.skip_trivia();
-
-        // Determine delimiter and find closing delimiter
-        let (opening_delim, closing_delim) = match self.current_kind() {
-            Some(SyntaxKind::L_PAREN) => (SyntaxKind::L_PAREN, SyntaxKind::R_PAREN),
-            Some(SyntaxKind::L_BRACKET) => (SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET),
-            Some(SyntaxKind::L_BRACE) => (SyntaxKind::L_BRACE, SyntaxKind::R_BRACE),
-            Some(SyntaxKind::SLASH) => (SyntaxKind::SLASH, SyntaxKind::SLASH),
-            _ => {
-                self.error("Expected q() delimiter: (, [, {, or /");
-                return;
-            }
-        };
-
-        // Consume opening delimiter
-        self.expect(opening_delim);
-
-        // Parse content inside q() - everything becomes Q_STRING
-        while !self.at(closing_delim) && !self.at_end() {
-            // Check if we're at the closing delimiter
-            if self.at(closing_delim) {
-                break;
-            }
-
-            // Consume any tokens as Q_STRING (preserving original text)
-            if let Some((_, text)) = self.current_token.take() {
-                // Add as Q_STRING token
-                self.builder.token(SyntaxKind::Q_STRING.into(), text);
-                self.current_pos += text.len();
-                self.current_token = self.lexer.next_token();
-            }
-        }
-
-        // Closing delimiter
-        self.expect(closing_delim);
-
-        self.builder.finish_node();
+        self.parse_q_family_expr(
+            SyntaxKind::Q_EXPR,
+            SyntaxKind::Q_KW,
+            SyntaxKind::Q_STRING,
+            "q",
+        );
     }
 
     fn qq_expr(&mut self) {
-        self.builder.start_node(SyntaxKind::QQ_EXPR.into());
-
-        // "qq"
-        self.expect(SyntaxKind::QQ_KW);
-        self.skip_trivia();
-
-        // Determine delimiter and find closing delimiter
-        let (opening_delim, closing_delim) = match self.current_kind() {
-            Some(SyntaxKind::L_PAREN) => (SyntaxKind::L_PAREN, SyntaxKind::R_PAREN),
-            Some(SyntaxKind::L_BRACKET) => (SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET),
-            Some(SyntaxKind::L_BRACE) => (SyntaxKind::L_BRACE, SyntaxKind::R_BRACE),
-            Some(SyntaxKind::SLASH) => (SyntaxKind::SLASH, SyntaxKind::SLASH),
-            _ => {
-                self.error("Expected qq() delimiter: (, [, {, or /");
-                return;
-            }
-        };
-
-        // Consume opening delimiter
-        self.expect(opening_delim);
-
-        // Parse content inside qq() - everything becomes QQ_STRING
-        while !self.at(closing_delim) && !self.at_end() {
-            // Check if we're at the closing delimiter
-            if self.at(closing_delim) {
-                break;
-            }
-
-            // Consume any tokens as QQ_STRING (preserving original text)
-            if let Some((_, text)) = self.current_token.take() {
-                // Add as QQ_STRING token
-                self.builder.token(SyntaxKind::QQ_STRING.into(), text);
-                self.current_pos += text.len();
-                self.current_token = self.lexer.next_token();
-            }
-        }
-
-        // Closing delimiter
-        self.expect(closing_delim);
-
-        self.builder.finish_node();
+        self.parse_q_family_expr(
+            SyntaxKind::QQ_EXPR,
+            SyntaxKind::QQ_KW,
+            SyntaxKind::QQ_STRING,
+            "qq",
+        );
     }
 
     fn qx_expr(&mut self) {
-        self.builder.start_node(SyntaxKind::QX_EXPR.into());
+        self.parse_q_family_expr(
+            SyntaxKind::QX_EXPR,
+            SyntaxKind::QX_KW,
+            SyntaxKind::QX_STRING,
+            "qx",
+        );
+    }
 
-        // "qx"
-        self.expect(SyntaxKind::QX_KW);
+    fn parse_q_family_expr(
+        &mut self,
+        expr_kind: SyntaxKind,
+        kw_kind: SyntaxKind,
+        string_kind: SyntaxKind,
+        operator_name: &str,
+    ) {
+        self.builder.start_node(expr_kind.into());
+
+        // "q", "qq", or "qx"
+        self.expect(kw_kind);
         self.skip_trivia();
 
         // Determine delimiter and find closing delimiter
@@ -1116,7 +1061,11 @@ impl<'a> Parser<'a> {
             Some(SyntaxKind::L_BRACE) => (SyntaxKind::L_BRACE, SyntaxKind::R_BRACE),
             Some(SyntaxKind::SLASH) => (SyntaxKind::SLASH, SyntaxKind::SLASH),
             _ => {
-                self.error("Expected qx() delimiter: (, [, {, or /");
+                self.error(&format!(
+                    "Expected {}() delimiter: (, [, {{, or /",
+                    operator_name
+                ));
+                self.builder.finish_node(); // Finish the node to avoid panic
                 return;
             }
         };
@@ -1124,17 +1073,16 @@ impl<'a> Parser<'a> {
         // Consume opening delimiter
         self.expect(opening_delim);
 
-        // Parse content inside qx() - everything becomes QX_STRING
+        // Parse content inside - everything becomes the specific string kind
         while !self.at(closing_delim) && !self.at_end() {
             // Check if we're at the closing delimiter
             if self.at(closing_delim) {
                 break;
             }
 
-            // Consume any tokens as QX_STRING (preserving original text)
+            // Consume any tokens as the string kind (preserving original text)
             if let Some((_, text)) = self.current_token.take() {
-                // Add as QX_STRING token
-                self.builder.token(SyntaxKind::QX_STRING.into(), text);
+                self.builder.token(string_kind.into(), text);
                 self.current_pos += text.len();
                 self.current_token = self.lexer.next_token();
             }
