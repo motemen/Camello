@@ -287,7 +287,9 @@ impl Formatter {
     ) {
         for child in node.children_with_tokens() {
             match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Node(node) => {
+                    self.format_node(&node);
+                }
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
 
@@ -1034,6 +1036,17 @@ impl Formatter {
     }
 
     fn format_method_call(&mut self, node: &PerlNode) {
+        // Check if this method call should be formatted multiline
+        let should_multiline = self.has_newline_before_first_value(node);
+
+        if should_multiline {
+            self.format_multiline_method_call(node);
+        } else {
+            self.format_single_line_method_call(node);
+        }
+    }
+
+    fn format_single_line_method_call(&mut self, node: &PerlNode) {
         let mut children = node.children_with_tokens();
         self.format_until_arrow_iter(children.by_ref());
         for child in children.by_ref() {
@@ -1050,6 +1063,26 @@ impl Formatter {
             break;
         }
         self.format_subscription_iter(children, SyntaxKind::L_PAREN, SyntaxKind::R_PAREN);
+    }
+
+    fn format_multiline_method_call(&mut self, node: &PerlNode) {
+        let mut children = node.children_with_tokens();
+        self.format_until_arrow_iter(children.by_ref());
+        for child in children.by_ref() {
+            match child {
+                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Token(token) => {
+                    if token.kind() == SyntaxKind::WHITESPACE {
+                        // Skip whitespace in method calls
+                        continue;
+                    }
+                    self.format_token(&token);
+                }
+            }
+            break;
+        }
+        // Use multiline formatting for the parenthesized arguments
+        self.format_multiline_delimited_iter(children, SyntaxKind::L_PAREN, SyntaxKind::R_PAREN);
     }
 
     fn format_until_arrow_iter(&mut self, iter: &mut SyntaxElementChildren<PerlLanguage>) {
