@@ -43,6 +43,7 @@ pub enum SyntaxKind {
     PACKAGE_KW,
     QW_KW,  // qw keyword
     USE_KW, // use keyword (for use warnings qw(...) syntax)
+    RETURN_KW, // return keyword
 
     // データセクション
     END_KW,  // __END__
@@ -162,6 +163,7 @@ impl SyntaxKind {
                 | SyntaxKind::PACKAGE_KW
                 | SyntaxKind::QW_KW
                 | SyntaxKind::USE_KW
+                | SyntaxKind::RETURN_KW
         )
     }
 
@@ -228,6 +230,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::PACKAGE_KW => "PACKAGE_KW",
             SyntaxKind::QW_KW => "QW_KW",
             SyntaxKind::USE_KW => "USE_KW",
+            SyntaxKind::RETURN_KW => "RETURN_KW",
             SyntaxKind::L_BRACE => "L_BRACE",
             SyntaxKind::R_BRACE => "R_BRACE",
             SyntaxKind::L_PAREN => "L_PAREN",
