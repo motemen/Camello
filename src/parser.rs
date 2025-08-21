@@ -752,14 +752,15 @@ impl<'a> Parser<'a> {
         true
     }
 
-    // Postfix expressions: expr -> method(), expr->{key}, expr->[index], expr->(args)
+    // Postfix expressions: expr -> method(), expr->{key}, expr->[index], expr->(args), expr()
     fn postfix_expr(&mut self) -> bool {
         let start = self.builder.checkpoint();
         if !self.primary_expr() {
             return false;
         }
 
-        while self.at(SyntaxKind::ARROW) {
+        loop {
+            if self.at(SyntaxKind::ARROW) {
             self.bump(); // ->
             self.skip_trivia();
 
@@ -850,6 +851,27 @@ impl<'a> Parser<'a> {
                     break;
                 }
             }
+            } else if self.at(SyntaxKind::L_PAREN) {
+                // Function call: expr(args)
+                self.builder
+                    .start_node_at(start, SyntaxKind::FUNCTION_CALL_EXPR.into());
+                self.bump(); // (
+                self.skip_trivia();
+
+                self.expression_list();
+
+                if !self.at(SyntaxKind::R_PAREN) {
+                    self.error("Expected ')' after function arguments");
+                } else {
+                    self.bump(); // )
+                    self.skip_trivia();
+                }
+
+                self.builder.finish_node();
+            } else {
+                // No more postfix operations
+                break;
+            }
         }
         true
     }
@@ -916,7 +938,6 @@ impl<'a> Parser<'a> {
                         || self.at_any(&[
                             SyntaxKind::NUMBER,
                             SyntaxKind::STRING,
-                            SyntaxKind::L_PAREN,
                             SyntaxKind::L_BRACE,   // Hash reference: {}
                             SyntaxKind::L_BRACKET, // Array reference: []
                         ])

@@ -1362,7 +1362,6 @@ sub test {
     }
 
     #[test]
-    #[ignore = "TODO: after fixing `f()->{1}` parsed as `f ()->{1}` instead of `f()->{1}`"]
     fn test_method_call_on_expressions_formatting() {
         let cases = [
             ("($obj+$other)->method();", "($obj + $other)->method();\n"),
