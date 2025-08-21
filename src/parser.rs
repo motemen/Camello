@@ -571,6 +571,7 @@ impl<'a> Parser<'a> {
                 SyntaxKind::OUR_KW,
                 SyntaxKind::STATE_KW,
                 SyntaxKind::LOCAL_KW,
+                SyntaxKind::RETURN_KW, // return statements can start expressions
             ]) || kind.is_variable()
                 || kind.is_sigil()
         } else {
@@ -839,15 +840,27 @@ impl<'a> Parser<'a> {
                     self.builder.finish_node();
                 } else if let Some(kind) = self.current_kind() {
                     // Check if we have regular function arguments following the identifier
+                    // Value-like objects
                     if kind.is_variable()
                         || self.at_any(&[
                             SyntaxKind::NUMBER,
                             SyntaxKind::STRING,
                             SyntaxKind::L_PAREN,
+                            SyntaxKind::L_BRACE,   // Hash reference: {}
+                            SyntaxKind::L_BRACKET, // Array reference: []
                         ])
                         || kind.is_sigil()
                     {
                         // We have a regular function call, wrap everything in FUNCTION_CALL_EXPR
+                        self.builder
+                            .start_node_at(start, SyntaxKind::FUNCTION_CALL_EXPR.into());
+
+                        // Parse arguments as an expression list
+                        self.expression_list();
+
+                        self.builder.finish_node();
+                    } else if kind == SyntaxKind::IDENT {
+                        // Might be a nested function call eg. `foo bar(1)`
                         self.builder
                             .start_node_at(start, SyntaxKind::FUNCTION_CALL_EXPR.into());
 
@@ -882,6 +895,16 @@ impl<'a> Parser<'a> {
             Some(SyntaxKind::QW_KW) => {
                 // qw() 式
                 self.qw_expr();
+            }
+            Some(SyntaxKind::RETURN_KW) => {
+                // return 文 (キーワードとして処理)
+                self.bump(); // consume return
+                self.skip_trivia();
+
+                // return の後に式がある場合は処理する
+                if self.is_at_start_of_expression() {
+                    self.expression();
+                }
             }
             _ => {
                 // is_at_start_of_expression でチェックしているので、ここには来ないはず
