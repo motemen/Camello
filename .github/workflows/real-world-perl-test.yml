@@ -61,24 +61,16 @@ jobs:
             echo "" >> all_results.md
             
             # Run curl | diff and capture both stdout and stderr separately
-            if curl -sf "$url" | ./scripts/diff - > "stdout_$name.txt" 2> "stderr_$name.txt"; then
-              # Success case
-              echo "#### 📝 Formatting Differences" >> all_results.md
-              echo '```diff' >> all_results.md
-              cat "stdout_$name.txt" >> all_results.md
-              echo '```' >> all_results.md
-              
-              # Show stderr if any (warnings, parse errors, etc.)
-              if [ -s "stderr_$name.txt" ]; then
-                echo "#### ⚠️ Warnings/Parse Errors" >> all_results.md
-                echo '```' >> all_results.md
-                cat "stderr_$name.txt" >> all_results.md
-                echo '```' >> all_results.md
-              fi
-            else
-              # Failure case
-              echo "#### ❌ Error" >> all_results.md
-              echo "Failed to process this file." >> all_results.md
+            curl -sf "$url" | ./scripts/diff - > "stdout_$name.txt" 2> "stderr_$name.txt"
+
+            echo "#### 📝 Formatting Differences" >> all_results.md
+            echo '```diff' >> all_results.md
+            cat "stdout_$name.txt" >> all_results.md
+            echo '```' >> all_results.md
+            
+            # Show stderr if any (warnings, parse errors, etc.)
+            if [ -s "stderr_$name.txt" ]; then
+              echo "#### ⚠️ Warnings/Parse Errors" >> all_results.md
               echo '```' >> all_results.md
               cat "stderr_$name.txt" >> all_results.md
               echo '```' >> all_results.md
