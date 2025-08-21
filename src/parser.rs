@@ -86,11 +86,12 @@ impl<'a> Parser<'a> {
         self.skip_trivia();
 
         match self.current_kind() {
-            Some(SyntaxKind::MY_KW
+            Some(
+                SyntaxKind::MY_KW
                 | SyntaxKind::OUR_KW
                 | SyntaxKind::STATE_KW
-                | SyntaxKind::LOCAL_KW) =>
-            {
+                | SyntaxKind::LOCAL_KW,
+            ) => {
                 self.var_decl();
                 true
             }
@@ -537,9 +538,18 @@ impl<'a> Parser<'a> {
             return true; // エラーとして消費はしたのでtrue
         }
 
-        // セミコロンは必須ではない（関数呼び出しなどの場合）
+        // Check if semicolon is required
+        // Semicolons are required except for the last statement in a block, end of file, or before data sections
         if self.at(SyntaxKind::SEMICOLON) {
             self.bump();
+        } else if self.at_end()
+            || self.at_any(&[SyntaxKind::R_BRACE, SyntaxKind::END_KW, SyntaxKind::DATA_KW])
+        {
+            // Last statement in a block, end of file, or before data section - semicolon is optional
+            // Don't consume tokens here, let the appropriate handler consume them
+        } else {
+            // Semicolon is required but missing
+            self.error("Expected ';' after expression statement");
         }
 
         self.builder.finish_node();
@@ -799,11 +809,12 @@ impl<'a> Parser<'a> {
                     self.parse_variable();
                 }
             }
-            Some(SyntaxKind::MY_KW
+            Some(
+                SyntaxKind::MY_KW
                 | SyntaxKind::OUR_KW
                 | SyntaxKind::STATE_KW
-                | SyntaxKind::LOCAL_KW) =>
-            {
+                | SyntaxKind::LOCAL_KW,
+            ) => {
                 // Variable declaration as expression (e.g., my $x = 1)
                 self.var_decl_expr();
             }
@@ -1447,6 +1458,75 @@ mod tests {
                     !errors.is_empty(),
                     "Should generate parse error for '{}' but didn't",
                     input
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_semicolon_requirements() {
+        // Test cases to verify semicolon requirements
+        let test_cases = [
+            // Valid cases: semicolons present where required
+            ("foo(); bar();", true),
+            ("print(1); print(2);", true),
+            // Valid cases: single statement at EOF without semicolon
+            ("foo()", true),
+            // Valid cases: subroutines with multiple statements (last one without semicolon)
+            ("sub test { foo(); bar() }", true),
+            ("sub test { foo(); bar(); baz() }", true),
+            // Invalid cases: statements within blocks missing required semicolons
+            ("sub test { foo() bar() }", false), // Missing semicolon between foo() and bar()
+            // Invalid cases: missing semicolon between statements
+            ("foo() bar()", false),
+            ("print(1) print(2)", false),
+            ("$x = 1 $y = 2", false),
+            // Valid cases: semicolon before data sections
+            (
+                "foo()
+__DATA__",
+                true,
+            ),
+            (
+                "foo()
+__END__",
+                true,
+            ),
+        ];
+
+        for (input, should_succeed) in test_cases {
+            let (green, errors) = parse(input);
+            let syntax = PerlNode::new_root(green);
+
+            // All inputs should parse structurally (create a CST)
+            assert_eq!(
+                syntax.kind(),
+                SyntaxKind::ROOT,
+                "Failed to parse: '{}'",
+                input
+            );
+
+            if should_succeed {
+                // Should parse without errors
+                assert!(
+                    errors.is_empty(),
+                    "Should parse '{}' without errors, but got: {:?}",
+                    input,
+                    errors
+                );
+            } else {
+                // Should generate parse errors for missing semicolons
+                assert!(
+                    !errors.is_empty(),
+                    "Should generate parse error for '{}' but didn't",
+                    input
+                );
+                // Check that the error mentions semicolon
+                assert!(
+                    errors.iter().any(|e| e.message.contains(";")),
+                    "Error message should mention semicolon for '{}', but got: {:?}",
+                    input,
+                    errors
                 );
             }
         }
