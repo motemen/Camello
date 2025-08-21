@@ -192,6 +192,12 @@ pub enum LexerContext {
     VariableList,
     /// After qw keyword, expecting a delimiter
     QwDelimiter,
+    /// After q keyword, expecting a delimiter
+    QDelimiter,
+    /// After qq keyword, expecting a delimiter
+    QqDelimiter,
+    /// After qx keyword, expecting a delimiter
+    QxDelimiter,
     /// In a data section context (after __END__ or __DATA__)
     RawData,
 }
@@ -288,6 +294,9 @@ impl<'a> Lexer<'a> {
                     "while" => SyntaxKind::WHILE_KW,
                     "package" => SyntaxKind::PACKAGE_KW,
                     "qw" => SyntaxKind::QW_KW,
+                    "q" => SyntaxKind::Q_KW,
+                    "qq" => SyntaxKind::QQ_KW,
+                    "qx" => SyntaxKind::QX_KW,
                     "use" => SyntaxKind::USE_KW,
                     "return" => SyntaxKind::RETURN_KW,
                     "x" => self.disambiguate_x(),
@@ -310,7 +319,10 @@ impl<'a> Lexer<'a> {
         match self.context {
             LexerContext::ExpectingValue
             | LexerContext::VariableList
-            | LexerContext::QwDelimiter => {
+            | LexerContext::QwDelimiter
+            | LexerContext::QDelimiter
+            | LexerContext::QqDelimiter
+            | LexerContext::QxDelimiter => {
                 // When expecting a value or in variable list, % is a sigil for a hash
                 // Examples: "my %hash", "{ key => %val }"
                 SyntaxKind::PERCENT
@@ -330,7 +342,10 @@ impl<'a> Lexer<'a> {
         match self.context {
             LexerContext::ExpectingValue
             | LexerContext::VariableList
-            | LexerContext::QwDelimiter => {
+            | LexerContext::QwDelimiter
+            | LexerContext::QDelimiter
+            | LexerContext::QqDelimiter
+            | LexerContext::QxDelimiter => {
                 // When expecting a value or in variable list, x is an identifier
                 // Examples: "sub x", "$x", "my $x"
                 SyntaxKind::IDENT
@@ -395,8 +410,11 @@ impl<'a> Lexer<'a> {
 
     fn disambiguate_slash(&self) -> SyntaxKind {
         match self.context {
-            LexerContext::QwDelimiter => {
-                // After qw keyword, slash is a delimiter, not regex literal or division
+            LexerContext::QwDelimiter
+            | LexerContext::QDelimiter
+            | LexerContext::QqDelimiter
+            | LexerContext::QxDelimiter => {
+                // After q-string family keywords, slash is a delimiter, not regex literal or division
                 SyntaxKind::SLASH
             }
             _ => {
@@ -424,6 +442,9 @@ impl<'a> Lexer<'a> {
             SyntaxKind::WHILE_KW => LexerContext::ExpectingValue,   // Expects while condition
             SyntaxKind::PACKAGE_KW => LexerContext::ExpectingValue, // Expects package name
             SyntaxKind::QW_KW => LexerContext::QwDelimiter,         // Expects qw delimiter
+            SyntaxKind::Q_KW => LexerContext::QDelimiter,           // Expects q delimiter
+            SyntaxKind::QQ_KW => LexerContext::QqDelimiter,         // Expects qq delimiter
+            SyntaxKind::QX_KW => LexerContext::QxDelimiter,         // Expects qx delimiter
             SyntaxKind::USE_KW => LexerContext::ExpectingValue,     // Expects module name
             SyntaxKind::RETURN_KW => LexerContext::ExpectingValue,  // Expects return value
 
@@ -439,6 +460,9 @@ impl<'a> Lexer<'a> {
                 // After slash in different contexts
                 match self.context {
                     LexerContext::QwDelimiter => LexerContext::ExpectingOperator, // qw/word/ closing delimiter
+                    LexerContext::QDelimiter => LexerContext::ExpectingOperator, // q/text/ closing delimiter
+                    LexerContext::QqDelimiter => LexerContext::ExpectingOperator, // qq/text/ closing delimiter
+                    LexerContext::QxDelimiter => LexerContext::ExpectingOperator, // qx/command/ closing delimiter
                     _ => LexerContext::ExpectingValue,
                 }
             }
@@ -478,6 +502,21 @@ impl<'a> Lexer<'a> {
                         // In qw delimiter context, after identifier, stay in same context
                         // (we're inside qw/words/ construct)
                         LexerContext::QwDelimiter
+                    }
+                    LexerContext::QDelimiter => {
+                        // In q delimiter context, after identifier, stay in same context
+                        // (we're inside q/text/ construct)
+                        LexerContext::QDelimiter
+                    }
+                    LexerContext::QqDelimiter => {
+                        // In qq delimiter context, after identifier, stay in same context
+                        // (we're inside qq/text/ construct)
+                        LexerContext::QqDelimiter
+                    }
+                    LexerContext::QxDelimiter => {
+                        // In qx delimiter context, after identifier, stay in same context
+                        // (we're inside qx/command/ construct)
+                        LexerContext::QxDelimiter
                     }
                     LexerContext::RawData => {
                         unreachable!("IDENT should not appear in raw data context");
