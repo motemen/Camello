@@ -207,6 +207,8 @@ pub enum LexerContext {
     MDelimiter,
     /// After qr keyword, expecting a delimiter
     QrDelimiter,
+    /// After s keyword, expecting a delimiter
+    SDelimiter,
     /// In a data section context (after __END__ or __DATA__)
     RawData,
 }
@@ -308,6 +310,7 @@ impl<'a> Lexer<'a> {
                     "qx" => SyntaxKind::QX_KW,
                     "m" => SyntaxKind::M_KW,
                     "qr" => SyntaxKind::QR_KW,
+                    "s" => SyntaxKind::S_KW,
                     "use" => SyntaxKind::USE_KW,
                     "return" => SyntaxKind::RETURN_KW,
                     "x" => self.disambiguate_x(),
@@ -335,7 +338,8 @@ impl<'a> Lexer<'a> {
             | LexerContext::QqDelimiter
             | LexerContext::QxDelimiter
             | LexerContext::MDelimiter
-            | LexerContext::QrDelimiter => {
+            | LexerContext::QrDelimiter
+            | LexerContext::SDelimiter => {
                 // When expecting a value or in variable list, % is a sigil for a hash
                 // Examples: "my %hash", "{ key => %val }"
                 SyntaxKind::PERCENT
@@ -360,7 +364,8 @@ impl<'a> Lexer<'a> {
             | LexerContext::QqDelimiter
             | LexerContext::QxDelimiter
             | LexerContext::MDelimiter
-            | LexerContext::QrDelimiter => {
+            | LexerContext::QrDelimiter
+            | LexerContext::SDelimiter => {
                 // When expecting a value or in variable list, x is an identifier
                 // Examples: "sub x", "$x", "my $x"
                 SyntaxKind::IDENT
@@ -430,7 +435,8 @@ impl<'a> Lexer<'a> {
             | LexerContext::QqDelimiter
             | LexerContext::QxDelimiter
             | LexerContext::MDelimiter
-            | LexerContext::QrDelimiter => {
+            | LexerContext::QrDelimiter
+            | LexerContext::SDelimiter => {
                 // After q-string family keywords, slash is a delimiter, not regex literal or division
                 SyntaxKind::SLASH
             }
@@ -464,6 +470,7 @@ impl<'a> Lexer<'a> {
             SyntaxKind::QX_KW => LexerContext::QxDelimiter,         // Expects qx delimiter
             SyntaxKind::M_KW => LexerContext::MDelimiter,           // Expects m delimiter
             SyntaxKind::QR_KW => LexerContext::QrDelimiter,         // Expects qr delimiter
+            SyntaxKind::S_KW => LexerContext::SDelimiter,           // Expects s delimiter
             SyntaxKind::USE_KW => LexerContext::ExpectingValue,     // Expects module name
             SyntaxKind::RETURN_KW => LexerContext::ExpectingValue,  // Expects return value
 
@@ -483,7 +490,8 @@ impl<'a> Lexer<'a> {
                     | LexerContext::QqDelimiter
                     | LexerContext::QxDelimiter
                     | LexerContext::MDelimiter
-                    | LexerContext::QrDelimiter => LexerContext::ExpectingOperator, // q-family closing delimiter
+                    | LexerContext::QrDelimiter
+                    | LexerContext::SDelimiter => LexerContext::ExpectingOperator, // q-family closing delimiter
                     _ => LexerContext::ExpectingValue,
                 }
             }
@@ -528,7 +536,8 @@ impl<'a> Lexer<'a> {
                     | LexerContext::QqDelimiter
                     | LexerContext::QxDelimiter
                     | LexerContext::MDelimiter
-                    | LexerContext::QrDelimiter => {
+                    | LexerContext::QrDelimiter
+                    | LexerContext::SDelimiter => {
                         // In q-family string delimiter context, after identifier, stay in the same context
                         self.context
                     }
