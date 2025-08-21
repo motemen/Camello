@@ -542,10 +542,8 @@ impl<'a> Parser<'a> {
         // Semicolons are required except for the last statement in a block, end of file, or before data sections
         if self.at(SyntaxKind::SEMICOLON) {
             self.bump();
-        } else if self.at(SyntaxKind::R_BRACE)
-            || self.at_end()
-            || self.at(SyntaxKind::END_KW)
-            || self.at(SyntaxKind::DATA_KW)
+        } else if self.at_end()
+            || self.at_any(&[SyntaxKind::R_BRACE, SyntaxKind::END_KW, SyntaxKind::DATA_KW])
         {
             // Last statement in a block, end of file, or before data section - semicolon is optional
             // Don't consume tokens here, let the appropriate handler consume them
