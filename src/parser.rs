@@ -839,6 +839,7 @@ impl<'a> Parser<'a> {
 
                         if self.at(SyntaxKind::L_PAREN) {
                             self.bump(); // (
+                            self.skip_trivia();
 
                             self.expression_list();
 
