@@ -122,6 +122,9 @@ pub enum SyntaxKind {
     PREFIX_EXPR,              // 前置式（単項演算式、例: !$foo, -$x）
     POSTFIX_EXPR,             // 後置式（例: $i++, $i--）
     METHOD_CALL_EXPR,         // メソッド呼び出し式（例: $obj->method()）
+    HASH_REF_ACCESS_EXPR,     // ハッシュリファレンスアクセス式（例: $hash->{key}）
+    ARRAY_REF_ACCESS_EXPR,    // 配列リファレンスアクセス式（例: $arr->[0]）
+    CODE_REF_CALL_EXPR,       // コードリファレンス呼び出し式（例: $coderef->(args)）
     FUNCTION_CALL_EXPR,       // 関数呼び出し式（例: push @array, $value）
     BLOCK_FUNCTION_CALL_EXPR, // ブロック関数呼び出し式（例: eval { ... }, map { ... } @list）
     QW_EXPR,                  // qw() 式（クォートワードリスト）
@@ -293,6 +296,9 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::PREFIX_EXPR => "PREFIX_EXPR",
             SyntaxKind::POSTFIX_EXPR => "POSTFIX_EXPR",
             SyntaxKind::METHOD_CALL_EXPR => "METHOD_CALL_EXPR",
+            SyntaxKind::HASH_REF_ACCESS_EXPR => "HASH_REF_ACCESS_EXPR",
+            SyntaxKind::ARRAY_REF_ACCESS_EXPR => "ARRAY_REF_ACCESS_EXPR",
+            SyntaxKind::CODE_REF_CALL_EXPR => "CODE_REF_CALL_EXPR",
             SyntaxKind::QW_EXPR => "QW_EXPR",
             SyntaxKind::Q_EXPR => "Q_EXPR",
             SyntaxKind::QQ_EXPR => "QQ_EXPR",
