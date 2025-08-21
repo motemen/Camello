@@ -2,6 +2,7 @@ pub mod cli;
 pub mod formatter;
 pub mod lexer;
 pub mod parser;
+pub mod spacing;
 pub mod syntax_kind;
 
 pub use formatter::format;

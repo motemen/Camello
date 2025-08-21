@@ -1,13 +1,38 @@
 use crate::{PerlLanguage, PerlNode, SyntaxKind};
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
 
-pub struct Formatter {
+use crate::spacing;
+
+pub struct FormatContext {
     output: String,
     indent_level: usize,
     indent_string: String,
     prev_token_kind: Option<SyntaxKind>,
     at_line_start: bool,
     consecutive_newlines: usize,
+}
+
+impl Default for FormatContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FormatContext {
+    pub fn new() -> Self {
+        Self {
+            output: String::new(),
+            indent_level: 0,
+            indent_string: "    ".to_string(), // 4スペース
+            prev_token_kind: None,
+            at_line_start: true,
+            consecutive_newlines: 0,
+        }
+    }
+}
+
+pub struct Formatter {
+    context: FormatContext,
 }
 
 impl Default for Formatter {
@@ -19,18 +44,13 @@ impl Default for Formatter {
 impl Formatter {
     pub fn new() -> Self {
         Self {
-            output: String::new(),
-            indent_level: 0,
-            indent_string: "    ".to_string(), // 4スペース
-            prev_token_kind: None,
-            at_line_start: true,
-            consecutive_newlines: 0,
+            context: FormatContext::new(),
         }
     }
 
     pub fn format(&mut self, node: &PerlNode) -> String {
         self.format_node(node);
-        std::mem::take(&mut self.output)
+        std::mem::take(&mut self.context.output)
     }
 
     fn format_node(&mut self, node: &PerlNode) {
@@ -40,94 +60,13 @@ impl Formatter {
             self.add_empty_line_before_if_needed(node);
         }
 
-        // 特別な処理が必要なノードタイプ
-        match node.kind() {
-            SyntaxKind::HASH_REF => {
-                self.format_hash_ref(node);
-                return;
-            }
-            SyntaxKind::ARRAY_REF => {
-                self.format_array_ref(node);
-                return;
-            }
-            SyntaxKind::QW_EXPR => {
-                self.format_qw_expr(node);
-                return;
-            }
-            SyntaxKind::Q_EXPR => {
-                self.format_q_expr(node);
-                return;
-            }
-            SyntaxKind::QQ_EXPR => {
-                self.format_qq_expr(node);
-                return;
-            }
-            SyntaxKind::QX_EXPR => {
-                self.format_qx_expr(node);
-                return;
-            }
-            SyntaxKind::M_EXPR => {
-                self.format_m_expr(node);
-                return;
-            }
-            SyntaxKind::QR_EXPR => {
-                self.format_qr_expr(node);
-                return;
-            }
-            SyntaxKind::S_EXPR => {
-                self.format_s_expr(node);
-                return;
-            }
-            SyntaxKind::DEREF_EXPR => {
-                self.format_deref_expr(node);
-                return;
-            }
-            SyntaxKind::FUNCTION_CALL_EXPR => {
-                self.format_function_call(node);
-                return;
-            }
-            SyntaxKind::BLOCK_FUNCTION_CALL_EXPR => {
-                self.format_block_function_call(node);
-                return;
-            }
-            SyntaxKind::METHOD_CALL_EXPR => {
-                self.format_method_call(node);
-                return;
-            }
-            SyntaxKind::HASH_REF_ACCESS_EXPR => {
-                self.format_hash_ref_access(node);
-                return;
-            }
-            SyntaxKind::ARRAY_REF_ACCESS_EXPR => {
-                self.format_array_ref_access(node);
-                return;
-            }
-            SyntaxKind::CODE_REF_CALL_EXPR => {
-                self.format_code_ref_call(node);
-                return;
-            }
-            SyntaxKind::DATA_SECTION => {
-                self.format_data_section(node);
-                return;
-            }
-            SyntaxKind::REGEX_EXPR => {
-                // Default handling for regex expressions - just format children
-                // The spacing around regex operators is handled in format_token
-            }
-            _ => {
-                // Check if this node contains parentheses that should be formatted multiline
-                if self.should_format_parentheses_multiline(node) {
-                    self.format_parenthesized_expr(node);
-                    return;
+        if !self.dispatch_format_node(node) {
+            // Default child iteration
+            for child in node.children_with_tokens() {
+                match child {
+                    NodeOrToken::Node(node) => self.format_node(&node),
+                    NodeOrToken::Token(token) => self.format_token(&token),
                 }
-            }
-        }
-
-        // Default child iteration
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
-                NodeOrToken::Token(token) => self.format_token(&token),
             }
         }
 
@@ -139,17 +78,55 @@ impl Formatter {
         // Special handling after children are processed
         if node.kind().is_variable() {
             // This is the logic from format_variable
-            self.prev_token_kind = Some(node.kind());
+            self.context.prev_token_kind = Some(node.kind());
         }
+    }
+
+    /// Dispatches to a specialized formatting function if the node kind requires it.
+    /// Returns `true` if the node was handled, `false` otherwise.
+    fn dispatch_format_node(&mut self, node: &PerlNode) -> bool {
+        match node.kind() {
+            SyntaxKind::HASH_REF => self.format_hash_ref(node),
+            SyntaxKind::ARRAY_REF => self.format_array_ref(node),
+            SyntaxKind::QW_EXPR => self.format_qw_expr(node),
+            SyntaxKind::Q_EXPR => self.format_q_expr(node),
+            SyntaxKind::QQ_EXPR => self.format_qq_expr(node),
+            SyntaxKind::QX_EXPR => self.format_qx_expr(node),
+            SyntaxKind::M_EXPR => self.format_m_expr(node),
+            SyntaxKind::QR_EXPR => self.format_qr_expr(node),
+            SyntaxKind::S_EXPR => self.format_s_expr(node),
+            SyntaxKind::DEREF_EXPR => self.format_deref_expr(node),
+            SyntaxKind::FUNCTION_CALL_EXPR => self.format_function_call(node),
+            SyntaxKind::BLOCK_FUNCTION_CALL_EXPR => self.format_block_function_call(node),
+            SyntaxKind::METHOD_CALL_EXPR => self.format_method_call(node),
+            SyntaxKind::HASH_REF_ACCESS_EXPR => self.format_hash_ref_access(node),
+            SyntaxKind::ARRAY_REF_ACCESS_EXPR => self.format_array_ref_access(node),
+            SyntaxKind::CODE_REF_CALL_EXPR => self.format_code_ref_call(node),
+            SyntaxKind::DATA_SECTION => self.format_data_section(node),
+            SyntaxKind::REGEX_EXPR => {
+                // Default handling for regex expressions - just format children
+                // The spacing around regex operators is handled in format_token
+                return false;
+            }
+            _ => {
+                // Check if this node contains parentheses that should be formatted multiline
+                if self.should_format_parentheses_multiline(node) {
+                    self.format_parenthesized_expr(node);
+                } else {
+                    return false;
+                }
+            }
+        }
+        true
     }
 
     /// Format a data section (__END__ or __DATA__)
     /// Data sections should be preserved exactly as-is without any formatting changes
     fn format_data_section(&mut self, node: &PerlNode) {
         // Ensure we're on a new line before the data section
-        if !self.at_line_start {
-            self.output.push('\n');
-            self.at_line_start = true;
+        if !self.context.at_line_start {
+            self.context.output.push('\n');
+            self.context.at_line_start = true;
         }
 
         // Process all children (keyword + data content) without any modifications
@@ -160,15 +137,15 @@ impl Formatter {
                     match token.kind() {
                         SyntaxKind::END_KW | SyntaxKind::DATA_KW => {
                             // Output the keyword exactly as-is
-                            self.output.push_str(text);
+                            self.context.output.push_str(text);
                         }
                         SyntaxKind::DATA_SECTION => {
                             // Output the data content exactly as-is, preserving all formatting
-                            self.output.push_str(text);
+                            self.context.output.push_str(text);
                         }
                         _ => {
                             // Handle any other tokens (whitespace, etc.) as-is
-                            self.output.push_str(text);
+                            self.context.output.push_str(text);
                         }
                     }
                 }
@@ -256,39 +233,7 @@ impl Formatter {
     }
 
     fn format_single_line_hash_ref(&mut self, node: &PerlNode) {
-        // ハッシュリファレンスは改行なしでフォーマット
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
-                NodeOrToken::Token(token) => {
-                    let kind = token.kind();
-                    let text = token.text();
-
-                    match kind {
-                        SyntaxKind::WHITESPACE => {
-                            // ハッシュリファレンス内の空白は無視
-                        }
-                        SyntaxKind::L_BRACE => {
-                            self.handle_spacing_before(kind);
-                            if self.at_line_start {
-                                self.add_indent();
-                                self.at_line_start = false;
-                            }
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
-                        }
-                        SyntaxKind::R_BRACE => {
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
-                        }
-                        _ => {
-                            // その他のトークンは通常通り処理
-                            self.format_token(&token);
-                        }
-                    }
-                }
-            }
-        }
+        self.format_single_line_delimited(node, SyntaxKind::L_BRACE, SyntaxKind::R_BRACE);
     }
 
     fn format_multiline_delimited(
@@ -311,9 +256,9 @@ impl Formatter {
                         }
                         k if k == open_delimiter => {
                             self.handle_spacing_before(kind);
-                            if self.at_line_start {
+                            if self.context.at_line_start {
                                 self.add_indent();
-                                self.at_line_start = false;
+                                self.context.at_line_start = false;
                             }
                             self.handle_multiline_opening_delimiter(&token);
                         }
@@ -347,9 +292,9 @@ impl Formatter {
                             self.handle_multiline_whitespace(&token);
                         }
                         k if k == open_delimiter => {
-                            if self.at_line_start {
+                            if self.context.at_line_start {
                                 self.add_indent();
-                                self.at_line_start = false;
+                                self.context.at_line_start = false;
                             }
                             self.handle_multiline_opening_delimiter(&token);
                         }
@@ -380,8 +325,12 @@ impl Formatter {
         }
     }
 
-    fn format_single_line_array_ref(&mut self, node: &PerlNode) {
-        // 配列リファレンスは改行なしでフォーマット
+    fn format_single_line_delimited(
+        &mut self,
+        node: &PerlNode,
+        open_delimiter: SyntaxKind,
+        close_delimiter: SyntaxKind,
+    ) {
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(node) => self.format_node(&node),
@@ -391,29 +340,32 @@ impl Formatter {
 
                     match kind {
                         SyntaxKind::WHITESPACE => {
-                            // 配列リファレンス内の空白は無視
+                            // ignore
                         }
-                        SyntaxKind::L_BRACKET => {
+                        k if k == open_delimiter => {
                             self.handle_spacing_before(kind);
-                            if self.at_line_start {
+                            if self.context.at_line_start {
                                 self.add_indent();
-                                self.at_line_start = false;
+                                self.context.at_line_start = false;
                             }
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
+                            self.context.output.push_str(text);
+                            self.context.prev_token_kind = Some(kind);
                         }
-                        SyntaxKind::R_BRACKET => {
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
+                        k if k == close_delimiter => {
+                            self.context.output.push_str(text);
+                            self.context.prev_token_kind = Some(kind);
                         }
                         _ => {
-                            // その他のトークンは通常通り処理
                             self.format_token(&token);
                         }
                     }
                 }
             }
         }
+    }
+
+    fn format_single_line_array_ref(&mut self, node: &PerlNode) {
+        self.format_single_line_delimited(node, SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET);
     }
 
     fn format_multiline_array_ref(&mut self, node: &PerlNode) {
@@ -446,21 +398,21 @@ impl Formatter {
                             self.format_token(&token);
                         }
                         SyntaxKind::L_PAREN | SyntaxKind::L_BRACKET | SyntaxKind::L_BRACE => {
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
+                            self.context.output.push_str(text);
+                            self.context.prev_token_kind = Some(kind);
                         }
                         SyntaxKind::QW_STRING => {
                             // QW_STRINGの間には空白を追加
                             if !first_word {
-                                self.output.push(' ');
+                                self.context.output.push(' ');
                             }
-                            self.output.push_str(text);
+                            self.context.output.push_str(text);
                             first_word = false;
-                            self.prev_token_kind = Some(kind);
+                            self.context.prev_token_kind = Some(kind);
                         }
                         SyntaxKind::R_PAREN | SyntaxKind::R_BRACKET | SyntaxKind::R_BRACE => {
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
+                            self.context.output.push_str(text);
+                            self.context.prev_token_kind = Some(kind);
                         }
                         SyntaxKind::WHITESPACE => {
                             // qw() 内の空白は制御下でスキップ
@@ -490,13 +442,13 @@ impl Formatter {
                             self.handle_multiline_opening_delimiter(&token);
                         }
                         SyntaxKind::QW_STRING => {
-                            if self.at_line_start {
+                            if self.context.at_line_start {
                                 self.add_indent();
-                                self.at_line_start = false;
+                                self.context.at_line_start = false;
                             }
-                            self.output.push_str(text);
+                            self.context.output.push_str(text);
                             self.handle_newline();
-                            self.prev_token_kind = Some(kind);
+                            self.context.prev_token_kind = Some(kind);
                         }
                         SyntaxKind::R_PAREN | SyntaxKind::R_BRACKET | SyntaxKind::R_BRACE => {
                             self.handle_multiline_closing_delimiter(&token);
@@ -517,24 +469,24 @@ impl Formatter {
         let text = token.text();
         let kind = token.kind();
 
-        self.output.push_str(text);
-        self.indent_level += 1;
+        self.context.output.push_str(text);
+        self.context.indent_level += 1;
         self.handle_newline();
-        self.prev_token_kind = Some(kind);
+        self.context.prev_token_kind = Some(kind);
     }
 
     fn handle_multiline_closing_delimiter(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
         let text = token.text();
         let kind = token.kind();
 
-        if self.indent_level > 0 {
-            self.indent_level -= 1;
+        if self.context.indent_level > 0 {
+            self.context.indent_level -= 1;
         }
         self.handle_newline();
         self.add_indent();
-        self.output.push_str(text);
-        self.at_line_start = false;
-        self.prev_token_kind = Some(kind);
+        self.context.output.push_str(text);
+        self.context.at_line_start = false;
+        self.context.prev_token_kind = Some(kind);
     }
 
     fn handle_multiline_whitespace(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
@@ -581,12 +533,12 @@ impl Formatter {
                         }
                         SyntaxKind::WHITESPACE => {
                             // Preserve whitespace in substitution strings
-                            self.output.push_str(text);
+                            self.context.output.push_str(text);
                         }
                         _ => {
                             // Handle any remaining tokens (including delimiters, pattern, replacement, and flags) directly
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
+                            self.context.output.push_str(text);
+                            self.context.prev_token_kind = Some(kind);
                         }
                     }
                 }
@@ -615,25 +567,25 @@ impl Formatter {
                         | SyntaxKind::L_BRACKET
                         | SyntaxKind::L_BRACE
                         | SyntaxKind::SLASH => {
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
+                            self.context.output.push_str(text);
+                            self.context.prev_token_kind = Some(kind);
                         }
                         k if k == string_kind => {
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
+                            self.context.output.push_str(text);
+                            self.context.prev_token_kind = Some(kind);
                         }
                         SyntaxKind::R_PAREN | SyntaxKind::R_BRACKET | SyntaxKind::R_BRACE => {
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
+                            self.context.output.push_str(text);
+                            self.context.prev_token_kind = Some(kind);
                         }
                         SyntaxKind::WHITESPACE => {
                             // Preserve whitespace in q-family strings
-                            self.output.push_str(text);
+                            self.context.output.push_str(text);
                         }
                         _ => {
                             // Handle any remaining tokens (including closing slash) directly
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
+                            self.context.output.push_str(text);
+                            self.context.prev_token_kind = Some(kind);
                         }
                     }
                 }
@@ -657,8 +609,8 @@ impl Formatter {
                             // デリファレンス式内の空白はスキップ
                         }
                         _ => {
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
+                            self.context.output.push_str(text);
+                            self.context.prev_token_kind = Some(kind);
                         }
                     }
                 }
@@ -763,24 +715,24 @@ impl Formatter {
                         SyntaxKind::WHITESPACE => {
                             // In simple blocks, reduce whitespace to single spaces
                             // Only add space if not adjacent to braces and content exists
-                            if !self.output.ends_with(' ') && !self.output.ends_with('{') {
-                                self.output.push(' ');
+                            if !self.context.output.ends_with(' ') && !self.context.output.ends_with('{') {
+                                self.context.output.push(' ');
                             }
                         }
                         SyntaxKind::L_BRACE => {
                             self.handle_spacing_before(kind);
-                            if self.at_line_start {
+                            if self.context.at_line_start {
                                 self.add_indent();
-                                self.at_line_start = false;
+                                self.context.at_line_start = false;
                             }
-                            self.output.push_str(text);
-                            self.output.push(' '); // Space after opening brace
-                            self.prev_token_kind = Some(kind);
+                            self.context.output.push_str(text);
+                            self.context.output.push(' '); // Space after opening brace
+                            self.context.prev_token_kind = Some(kind);
                         }
                         SyntaxKind::R_BRACE => {
-                            self.output.push(' '); // Space before closing brace
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
+                            self.context.output.push(' '); // Space before closing brace
+                            self.context.output.push_str(text);
+                            self.context.prev_token_kind = Some(kind);
                         }
                         _ => {
                             self.format_token(&token);
@@ -806,27 +758,27 @@ impl Formatter {
             }
             SyntaxKind::COMMENT => {
                 // コメントは保持するが、適切な位置に配置
-                if self.at_line_start {
+                if self.context.at_line_start {
                     self.add_indent();
-                    self.at_line_start = false;
+                    self.context.at_line_start = false;
                 } else {
-                    self.output.push(' ');
+                    self.context.output.push(' ');
                 }
-                self.output.push_str(text.trim());
+                self.context.output.push_str(text.trim());
                 self.handle_newline();
             }
             SyntaxKind::R_BRACE => {
                 // 閉じブレースは特別処理：先にインデントを下げる
-                if self.indent_level > 0 {
-                    self.indent_level -= 1;
+                if self.context.indent_level > 0 {
+                    self.context.indent_level -= 1;
                 }
 
-                if self.at_line_start {
+                if self.context.at_line_start {
                     self.add_indent();
-                    self.at_line_start = false;
+                    self.context.at_line_start = false;
                 }
 
-                self.output.push_str(text);
+                self.context.output.push_str(text);
 
                 // Find the next non-whitespace sibling token kind
                 let mut next_kind = None;
@@ -845,139 +797,34 @@ impl Formatter {
                     self.handle_newline();
                 }
 
-                self.prev_token_kind = Some(kind);
+                self.context.prev_token_kind = Some(kind);
             }
             _ => {
                 // 通常のトークンの処理
                 self.handle_spacing_before(kind);
 
-                if self.at_line_start && !kind.is_trivia() {
+                if self.context.at_line_start && !kind.is_trivia() {
                     self.add_indent();
-                    self.at_line_start = false;
+                    self.context.at_line_start = false;
                 }
 
-                self.output.push_str(text);
+                self.context.output.push_str(text);
                 // Reset consecutive newlines when adding actual content
-                self.consecutive_newlines = 0;
+                self.context.consecutive_newlines = 0;
                 self.handle_spacing_after(kind);
-                self.prev_token_kind = Some(kind);
+                self.context.prev_token_kind = Some(kind);
             }
         }
     }
 
     fn handle_spacing_before(&mut self, current: SyntaxKind) {
-        if self.at_line_start {
+        if self.context.at_line_start {
             return;
         }
 
-        let needs_space = match (self.prev_token_kind, current) {
-            // 演算子の前後
-            (Some(_), SyntaxKind::EQ) | (Some(SyntaxKind::EQ), _) => true,
-            (Some(_), SyntaxKind::PLUS) | (Some(SyntaxKind::PLUS), _) => true,
-            (Some(_), SyntaxKind::MINUS) | (Some(SyntaxKind::MINUS), _) => true,
-            (Some(_), SyntaxKind::FAT_COMMA) | (Some(SyntaxKind::FAT_COMMA), _) => true,
-
-            // Comparison operators
-            (Some(_), SyntaxKind::GT) | (Some(SyntaxKind::GT), _) => true,
-            (Some(_), SyntaxKind::LT) | (Some(SyntaxKind::LT), _) => true,
-            (Some(_), SyntaxKind::GE) | (Some(SyntaxKind::GE), _) => true,
-            (Some(_), SyntaxKind::LE) | (Some(SyntaxKind::LE), _) => true,
-            (Some(_), SyntaxKind::EQ_EQ) | (Some(SyntaxKind::EQ_EQ), _) => true,
-            (Some(_), SyntaxKind::NE) | (Some(SyntaxKind::NE), _) => true,
-
-            // Regex operators
-            (Some(_), SyntaxKind::REGEX_MATCH) | (Some(SyntaxKind::REGEX_MATCH), _) => true,
-            (Some(_), SyntaxKind::REGEX_NOT_MATCH) | (Some(SyntaxKind::REGEX_NOT_MATCH), _) => true,
-
-            // Exception: no space before semicolon when previous token is slash (for q-string delimiters)
-            (Some(SyntaxKind::SLASH), SyntaxKind::SEMICOLON) => false,
-
-            // Multiplicative operators (but not PERCENT which is used as sigil)
-            (Some(_), SyntaxKind::STAR) | (Some(SyntaxKind::STAR), _) => true,
-            (Some(_), SyntaxKind::SLASH) | (Some(SyntaxKind::SLASH), _) => true,
-            (Some(_), SyntaxKind::MODULO) | (Some(SyntaxKind::MODULO), _) => true,
-            (Some(_), SyntaxKind::X) | (Some(SyntaxKind::X), _) => true,
-
-            // Logical operators
-            (Some(_), SyntaxKind::LOGICAL_AND) | (Some(SyntaxKind::LOGICAL_AND), _) => true,
-            (Some(_), SyntaxKind::LOGICAL_OR) | (Some(SyntaxKind::LOGICAL_OR), _) => true,
-
-            // foo, bar
-            (Some(SyntaxKind::COMMA), _) => true,
-            (Some(_), SyntaxKind::COMMA) => false,
-
-            // キーワードの後
-            (
-                Some(
-                    SyntaxKind::MY_KW
-                    | SyntaxKind::OUR_KW
-                    | SyntaxKind::STATE_KW
-                    | SyntaxKind::LOCAL_KW,
-                ),
-                _,
-            ) => true,
-            (Some(SyntaxKind::SUB_KW), SyntaxKind::IDENT) => true,
-            (Some(SyntaxKind::SUB_KW), SyntaxKind::QUALIFIED_IDENT) => true,
-            (Some(SyntaxKind::FOR_KW), _) => true,
-            (Some(SyntaxKind::FOREACH_KW), _) => true,
-            (Some(SyntaxKind::WHILE_KW), _) => true,
-            (Some(SyntaxKind::IF_KW), _) => true,
-            (Some(SyntaxKind::ELSIF_KW), _) => true,
-            (Some(SyntaxKind::ELSE_KW), _) => true,
-            (Some(SyntaxKind::PACKAGE_KW), _) => true,
-            (Some(SyntaxKind::USE_KW), _) => true,
-            (Some(SyntaxKind::RETURN_KW), _) => true,
-
-            // Before left brace "{"
-            (Some(_), SyntaxKind::L_BRACE) => true,
-
-            // After R_BRACE, add space before expressions (for block functions) but not before semicolons
-            (Some(SyntaxKind::R_BRACE), kind) if kind != SyntaxKind::SEMICOLON => true,
-
-            // 括弧の内側はスペースなし、但し括弧の前は適切にスペースを入れる
-            (Some(SyntaxKind::L_PAREN), _) => false,
-            (Some(_), SyntaxKind::R_PAREN) => false,
-            (Some(SyntaxKind::L_BRACE), _) => false,
-
-            // Before L_PAREN, add space after variables and keywords (but not after identifiers or qualified identifiers for function calls)
-            (Some(kind), SyntaxKind::L_PAREN)
-                if kind.is_variable()
-                    || matches!(
-                        kind,
-                        SyntaxKind::MY_KW
-                            | SyntaxKind::OUR_KW
-                            | SyntaxKind::STATE_KW
-                            | SyntaxKind::LOCAL_KW
-                            | SyntaxKind::FOR_KW
-                            | SyntaxKind::FOREACH_KW
-                            | SyntaxKind::WHILE_KW
-                            | SyntaxKind::IF_KW
-                            | SyntaxKind::ELSIF_KW
-                    ) =>
-            {
-                true
-            }
-
-            // a->b
-            (Some(SyntaxKind::ARROW), _) | (Some(_), SyntaxKind::ARROW) => false,
-
-            // After identifier not followed by a semicolon, double colon, or left parenthesis
-            (Some(SyntaxKind::IDENT), kind)
-                if kind != SyntaxKind::SEMICOLON
-                    && kind != SyntaxKind::DOUBLE_COLON
-                    && kind != SyntaxKind::L_PAREN =>
-            {
-                true
-            }
-
-            // :: の前後はスペースなし（パッケージ名区切り）
-            (Some(_), SyntaxKind::DOUBLE_COLON) | (Some(SyntaxKind::DOUBLE_COLON), _) => false,
-
-            _ => false,
-        };
-
-        if needs_space {
-            self.output.push(' ');
+        let space = spacing::get_spacing(self.context.prev_token_kind, current);
+        if !space.is_empty() {
+            self.context.output.push_str(space);
         }
     }
 
@@ -987,7 +834,7 @@ impl Formatter {
                 self.handle_newline();
             }
             SyntaxKind::L_BRACE => {
-                self.indent_level += 1;
+                self.context.indent_level += 1;
                 self.handle_newline();
             }
             _ => {}
@@ -995,18 +842,18 @@ impl Formatter {
     }
 
     fn handle_newline(&mut self) {
-        if !self.output.ends_with('\n') {
-            self.output.push('\n');
-            self.consecutive_newlines = 1;
+        if !self.context.output.ends_with('\n') {
+            self.context.output.push('\n');
+            self.context.consecutive_newlines = 1;
         } else {
-            self.consecutive_newlines += 1;
+            self.context.consecutive_newlines += 1;
         }
-        self.at_line_start = true;
+        self.context.at_line_start = true;
     }
 
     fn add_indent(&mut self) {
-        for _ in 0..self.indent_level {
-            self.output.push_str(&self.indent_string);
+        for _ in 0..self.context.indent_level {
+            self.context.output.push_str(&self.context.indent_string);
         }
     }
 
@@ -1044,42 +891,42 @@ impl Formatter {
 
     fn add_empty_line_before(&mut self) {
         // Only add empty line if this is not the first node and we don't already have one
-        if !self.output.is_empty() && !self.output.ends_with("\n\n") {
-            if !self.output.ends_with('\n') {
+        if !self.context.output.is_empty() && !self.context.output.ends_with("\n\n") {
+            if !self.context.output.ends_with('\n') {
                 self.handle_newline();
             }
             // Add one more newline to create an empty line
-            self.output.push('\n');
-            self.consecutive_newlines += 1;
-            self.at_line_start = true;
+            self.context.output.push('\n');
+            self.context.consecutive_newlines += 1;
+            self.context.at_line_start = true;
         }
     }
 
     fn add_empty_line_after(&mut self) {
         // Force at least one empty line after the node
-        if !self.output.ends_with('\n') {
+        if !self.context.output.ends_with('\n') {
             self.handle_newline();
         }
         // Add one more newline to create an empty line
-        if !self.output.ends_with("\n\n") {
-            self.output.push('\n');
-            self.consecutive_newlines += 1;
+        if !self.context.output.ends_with("\n\n") {
+            self.context.output.push('\n');
+            self.context.consecutive_newlines += 1;
         }
     }
 
     fn squeeze_multiple_newlines(&mut self) {
         // Limit consecutive newlines to maximum of 2 (one empty line)
-        if self.consecutive_newlines > 2 {
+        if self.context.consecutive_newlines > 2 {
             // Find the start of the trailing newlines
-            if let Some(i) = self.output.rfind(|c| c != '\n') {
+            if let Some(i) = self.context.output.rfind(|c| c != '\n') {
                 // Found a non-newline character. Truncate after it.
-                self.output.truncate(i + 1);
+                self.context.output.truncate(i + 1);
             } else {
                 // The string is all newlines.
-                self.output.clear();
+                self.context.output.clear();
             }
-            self.output.push_str("\n\n");
-            self.consecutive_newlines = 2;
+            self.context.output.push_str("\n\n");
+            self.context.consecutive_newlines = 2;
         }
     }
 
@@ -1141,7 +988,7 @@ impl Formatter {
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
                     let text = token.text();
-                    self.output.push_str(text);
+                    self.context.output.push_str(text);
 
                     if kind == SyntaxKind::ARROW {
                         break;
@@ -1170,8 +1017,8 @@ impl Formatter {
 
                         match kind {
                             _ if kind == opening || kind == closing => {
-                                self.output.push_str(text);
-                                self.prev_token_kind = Some(kind);
+                                self.context.output.push_str(text);
+                                self.context.prev_token_kind = Some(kind);
                             }
                             SyntaxKind::WHITESPACE => {
                                 // pass
