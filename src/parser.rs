@@ -641,7 +641,7 @@ impl<'a> Parser<'a> {
     // Regex operators: =~ !~
     fn regex_expr(&mut self) -> bool {
         let start = self.builder.checkpoint();
-        if !self.method_call_expr() {
+        if !self.postfix_expr() {
             return false;
         }
 
@@ -650,7 +650,7 @@ impl<'a> Parser<'a> {
                 .start_node_at(start, SyntaxKind::REGEX_EXPR.into());
             self.bump(); // operator
             self.skip_trivia();
-            if !self.method_call_expr() {
+            if !self.postfix_expr() {
                 self.error("Expected expression after regex operator");
             }
             self.builder.finish_node();
@@ -752,36 +752,104 @@ impl<'a> Parser<'a> {
         true
     }
 
-    // Method call expression: expr -> method_name()
-    fn method_call_expr(&mut self) -> bool {
+    // Postfix expressions: expr -> method(), expr->{key}, expr->[index], expr->(args)
+    fn postfix_expr(&mut self) -> bool {
         let start = self.builder.checkpoint();
         if !self.primary_expr() {
             return false;
         }
 
         while self.at(SyntaxKind::ARROW) {
-            self.builder
-                .start_node_at(start, SyntaxKind::METHOD_CALL_EXPR.into());
             self.bump(); // ->
             self.skip_trivia();
 
-            self.parse_identifier_or_qualified();
-            self.skip_trivia();
-
-            if self.at(SyntaxKind::L_PAREN) {
-                self.bump();
-
-                self.expression_list();
-
-                if !self.at(SyntaxKind::R_PAREN) {
-                    self.error("Expected ')' after method arguments");
-                } else {
-                    self.bump(); // )
+            match self.current_kind() {
+                Some(SyntaxKind::L_BRACE) => {
+                    // Hash reference access: expr->{key}
+                    self.builder
+                        .start_node_at(start, SyntaxKind::HASH_REF_ACCESS_EXPR.into());
+                    self.bump(); // {
                     self.skip_trivia();
+
+                    if !self.expression() {
+                        self.error("Expected expression in hash reference access");
+                    }
+
+                    if !self.at(SyntaxKind::R_BRACE) {
+                        self.error("Expected '}' after hash key");
+                    } else {
+                        self.bump(); // }
+                        self.skip_trivia();
+                    }
+
+                    self.builder.finish_node();
+                }
+                Some(SyntaxKind::L_BRACKET) => {
+                    // Array reference access: expr->[index]
+                    self.builder
+                        .start_node_at(start, SyntaxKind::ARRAY_REF_ACCESS_EXPR.into());
+                    self.bump(); // [
+                    self.skip_trivia();
+
+                    if !self.expression() {
+                        self.error("Expected expression in array reference access");
+                    }
+
+                    if !self.at(SyntaxKind::R_BRACKET) {
+                        self.error("Expected ']' after array index");
+                    } else {
+                        self.bump(); // ]
+                        self.skip_trivia();
+                    }
+
+                    self.builder.finish_node();
+                }
+                Some(SyntaxKind::L_PAREN) => {
+                    // Code reference call: expr->(args)
+                    self.builder
+                        .start_node_at(start, SyntaxKind::CODE_REF_CALL_EXPR.into());
+                    self.bump(); // (
+                    self.skip_trivia();
+
+                    self.expression_list();
+
+                    if !self.at(SyntaxKind::R_PAREN) {
+                        self.error("Expected ')' after code reference arguments");
+                    } else {
+                        self.bump(); // )
+                        self.skip_trivia();
+                    }
+
+                    self.builder.finish_node();
+                }
+                Some(SyntaxKind::IDENT) => {
+                    // Method call: expr->method()
+                    self.builder
+                        .start_node_at(start, SyntaxKind::METHOD_CALL_EXPR.into());
+
+                    self.parse_identifier_or_qualified();
+                    self.skip_trivia();
+
+                    if self.at(SyntaxKind::L_PAREN) {
+                        self.bump(); // (
+
+                        self.expression_list();
+
+                        if !self.at(SyntaxKind::R_PAREN) {
+                            self.error("Expected ')' after method arguments");
+                        } else {
+                            self.bump(); // )
+                            self.skip_trivia();
+                        }
+                    }
+
+                    self.builder.finish_node();
+                }
+                _ => {
+                    self.error("Expected '{', '[', '(' or identifier after '->'");
+                    break;
                 }
             }
-
-            self.builder.finish_node();
         }
         true
     }
@@ -1118,46 +1186,38 @@ impl<'a> Parser<'a> {
             Some(SyntaxKind::NUMBER) => {
                 // Number like $1, $2, etc. - treat as regular variable name
                 self.bump();
-                self.skip_trivia();
             }
             Some(SyntaxKind::AT) => {
                 // Special punctuation like $@ - treat as regular variable name
                 self.bump();
-                self.skip_trivia();
             }
             Some(SyntaxKind::CARET) => {
                 // Handle $^ or $^X patterns
                 self.bump(); // consume ^
-                self.skip_trivia();
 
                 // Check if there's a character after ^
                 if self.at(SyntaxKind::IDENT) {
                     // This is $^X pattern where X is an identifier (single char)
                     self.bump();
-                    self.skip_trivia();
                 }
             }
             Some(SyntaxKind::L_BRACE) => {
                 // Handle ${...} syntax (e.g., ${^NAME})
                 self.bump(); // consume {
-                self.skip_trivia();
 
                 // Check for ^ inside braces
                 if self.at(SyntaxKind::CARET) {
                     self.bump(); // consume ^
-                    self.skip_trivia();
                 }
 
                 // Parse identifier inside braces
                 if self.at(SyntaxKind::IDENT) {
                     self.bump();
-                    self.skip_trivia();
                 }
 
                 // Expect closing brace
                 if self.at(SyntaxKind::R_BRACE) {
                     self.bump();
-                    self.skip_trivia();
                 } else {
                     self.error("Expected '}' to close variable name");
                 }
@@ -1171,7 +1231,6 @@ impl<'a> Parser<'a> {
                 ) {
                     // These are punctuation characters like $!, $?, $$, etc. - treat as regular variable names
                     self.bump();
-                    self.skip_trivia();
                 } else {
                     // 識別子を期待（修飾付き識別子も含む）
                     self.parse_identifier_or_qualified();
@@ -1180,6 +1239,8 @@ impl<'a> Parser<'a> {
         }
 
         self.builder.finish_node();
+
+        self.skip_trivia();
     }
 
     /// my/state宣言専用の変数パース（修飾付き識別子は使用しない）
@@ -1292,7 +1353,6 @@ impl<'a> Parser<'a> {
         // チェックポイントを作成してから最初の識別子を消費
         let checkpoint = self.builder.checkpoint();
         self.bump(); // 最初の識別子
-        self.skip_trivia();
 
         // :: があるかチェック
         if self.at(SyntaxKind::DOUBLE_COLON) {
@@ -1303,11 +1363,9 @@ impl<'a> Parser<'a> {
             // :: の後の部分を処理
             while self.at(SyntaxKind::DOUBLE_COLON) {
                 self.bump(); // ::
-                self.skip_trivia();
 
                 if self.at(SyntaxKind::IDENT) {
                     self.bump();
-                    self.skip_trivia();
                 } else {
                     self.error("Expected identifier after '::'");
                     break;
