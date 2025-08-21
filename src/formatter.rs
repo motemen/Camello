@@ -1885,7 +1885,7 @@ func2(
         assert!(err.is_empty(), "Parse errors: {:?}", err);
 
         let formatted = format(&syntax);
-        
+
         insta::assert_snapshot!(formatted, @r###"
         use strict;
         use warnings;
@@ -1914,7 +1914,7 @@ func2(
         assert!(err.is_empty(), "Parse errors: {:?}", err);
 
         let formatted = format(&syntax);
-        
+
         insta::assert_snapshot!(formatted, @r###"
         sub handler {
             return {};
