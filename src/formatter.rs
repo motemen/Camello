@@ -2127,4 +2127,19 @@ func2(
         }
         "###);
     }
+
+    #[test]
+    fn test_use_version_formatting() {
+        let cases = [
+            ("use v5.42;", "use v5.42;\n"),
+            ("use v5.008_001;", "use v5.008_001;\n"),
+            ("use v1.23.45;", "use v1.23.45;\n"),
+            ("use v5.42;my $x = 1;", "use v5.42;\n\nmy $x = 1;\n"),
+            (
+                "use v5.008_001;use warnings;",
+                "use v5.008_001;\nuse warnings;\n",
+            ),
+        ];
+        check_formatting_cases(&cases);
+    }
 }
