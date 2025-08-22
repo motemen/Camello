@@ -94,12 +94,19 @@ pub enum SyntaxKind {
     X,      // x (repetition)
 
     // Comparison operators
-    GT,    // >
-    LT,    // <
-    GE,    // >=
-    LE,    // <=
-    EQ_EQ, // ==
-    NE,    // !=
+    GT,      // >
+    LT,      // <
+    GE,      // >=
+    LE,      // <=
+    EQ_EQ,   // ==
+    NE,      // !=
+    STR_EQ,  // eq
+    STR_NE,  // ne
+    STR_GT,  // gt
+    STR_LT,  // lt
+    STR_GE,  // ge
+    STR_LE,  // le
+    STR_CMP, // cmp
 
     // Regex operators
     REGEX_MATCH,     // =~
@@ -306,6 +313,13 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::LE => "LE",
             SyntaxKind::EQ_EQ => "EQ_EQ",
             SyntaxKind::NE => "NE",
+            SyntaxKind::STR_EQ => "STR_EQ",
+            SyntaxKind::STR_NE => "STR_NE",
+            SyntaxKind::STR_GT => "STR_GT",
+            SyntaxKind::STR_LT => "STR_LT",
+            SyntaxKind::STR_GE => "STR_GE",
+            SyntaxKind::STR_LE => "STR_LE",
+            SyntaxKind::STR_CMP => "STR_CMP",
             SyntaxKind::REGEX_MATCH => "REGEX_MATCH",
             SyntaxKind::REGEX_NOT_MATCH => "REGEX_NOT_MATCH",
             SyntaxKind::LOGICAL_AND => "LOGICAL_AND",
