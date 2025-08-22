@@ -104,6 +104,9 @@ pub enum Token {
     #[token("-")]
     Minus,
 
+    #[token(".")]
+    Dot,
+
     // Multiplicative operators
     #[token("*")]
     Star,
@@ -163,6 +166,7 @@ impl Token {
             Token::Eq => SyntaxKind::EQ,
             Token::Plus => SyntaxKind::PLUS,
             Token::Minus => SyntaxKind::MINUS,
+            Token::Dot => SyntaxKind::DOT,
             Token::Arrow => SyntaxKind::ARROW,
             Token::FatComma => SyntaxKind::FAT_COMMA,
             Token::Star => SyntaxKind::STAR,
@@ -449,9 +453,11 @@ impl<'a> Lexer<'a> {
             SyntaxKind::END_KW | SyntaxKind::DATA_KW => LexerContext::RawData,
 
             // Operators expect a value next and break out of VariableList context
-            SyntaxKind::EQ | SyntaxKind::PLUS | SyntaxKind::MINUS | SyntaxKind::ARROW => {
-                LexerContext::ExpectingValue
-            }
+            SyntaxKind::EQ
+            | SyntaxKind::PLUS
+            | SyntaxKind::MINUS
+            | SyntaxKind::DOT
+            | SyntaxKind::ARROW => LexerContext::ExpectingValue,
             SyntaxKind::STAR | SyntaxKind::MODULO | SyntaxKind::X => LexerContext::ExpectingValue,
             SyntaxKind::SLASH => {
                 // After slash in different contexts
