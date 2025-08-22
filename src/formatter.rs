@@ -873,6 +873,25 @@ impl Formatter {
         }
     }
 
+    fn is_comparison_operator(kind: SyntaxKind) -> bool {
+        matches!(
+            kind,
+            SyntaxKind::GT
+                | SyntaxKind::LT
+                | SyntaxKind::GE
+                | SyntaxKind::LE
+                | SyntaxKind::EQ_EQ
+                | SyntaxKind::NE
+                | SyntaxKind::STR_EQ
+                | SyntaxKind::STR_NE
+                | SyntaxKind::STR_GT
+                | SyntaxKind::STR_LT
+                | SyntaxKind::STR_GE
+                | SyntaxKind::STR_LE
+                | SyntaxKind::STR_CMP
+        )
+    }
+
     fn handle_spacing_before(&mut self, current: SyntaxKind) {
         if self.at_line_start {
             return;
@@ -887,19 +906,8 @@ impl Formatter {
             (Some(_), SyntaxKind::FAT_COMMA) | (Some(SyntaxKind::FAT_COMMA), _) => true,
 
             // Comparison operators
-            (Some(_), SyntaxKind::GT) | (Some(SyntaxKind::GT), _) => true,
-            (Some(_), SyntaxKind::LT) | (Some(SyntaxKind::LT), _) => true,
-            (Some(_), SyntaxKind::GE) | (Some(SyntaxKind::GE), _) => true,
-            (Some(_), SyntaxKind::LE) | (Some(SyntaxKind::LE), _) => true,
-            (Some(_), SyntaxKind::EQ_EQ) | (Some(SyntaxKind::EQ_EQ), _) => true,
-            (Some(_), SyntaxKind::NE) | (Some(SyntaxKind::NE), _) => true,
-            (Some(_), SyntaxKind::STR_EQ) | (Some(SyntaxKind::STR_EQ), _) => true,
-            (Some(_), SyntaxKind::STR_NE) | (Some(SyntaxKind::STR_NE), _) => true,
-            (Some(_), SyntaxKind::STR_GT) | (Some(SyntaxKind::STR_GT), _) => true,
-            (Some(_), SyntaxKind::STR_LT) | (Some(SyntaxKind::STR_LT), _) => true,
-            (Some(_), SyntaxKind::STR_GE) | (Some(SyntaxKind::STR_GE), _) => true,
-            (Some(_), SyntaxKind::STR_LE) | (Some(SyntaxKind::STR_LE), _) => true,
-            (Some(_), SyntaxKind::STR_CMP) | (Some(SyntaxKind::STR_CMP), _) => true,
+            (Some(_), kind) if Self::is_comparison_operator(kind) => true,
+            (Some(kind), _) if Self::is_comparison_operator(kind) => true,
 
             // Regex operators
             (Some(_), SyntaxKind::REGEX_MATCH) | (Some(SyntaxKind::REGEX_MATCH), _) => true,
