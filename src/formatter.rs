@@ -797,10 +797,14 @@ impl Formatter {
 
         match kind {
             SyntaxKind::WHITESPACE => {
-                // 空白は基本的に再構築する
-                if text.contains('\n') {
-                    self.handle_newline();
-                    // Squeeze multiple consecutive empty lines
+                // 空白に含まれる改行の数を数え、その数だけ handle_newline を呼び出す。
+                // これにより、単一の空行が1つの改行に圧縮されてしまうのを防ぐ。
+                // 最終的に squeeze_multiple_newlines が呼ばれることで、複数の空行は1行にまとめられる。
+                let newline_count = text.matches('\n').count();
+                if newline_count > 0 {
+                    for _ in 0..newline_count {
+                        self.handle_newline();
+                    }
                     self.squeeze_multiple_newlines();
                 }
             }
@@ -2573,5 +2577,29 @@ my $result = m/pattern/g;"#;
         assert!(err.is_empty(), "Parse errors: {:?}", err);
         let formatted = format(&syntax);
         insta::assert_snapshot!(formatted, @"$text =~ s/foo/bar/g;");
+    }
+
+    #[test]
+    fn test_blank_line_preservation_and_squeezing() {
+        let input = r#"
+my $x = 1;
+
+my $y = 2;
+
+
+my $z = 3;
+"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r#"
+my $x = 1;
+
+my $y = 2;
+
+my $z = 3;
+"#);
     }
 }
