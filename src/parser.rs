@@ -639,7 +639,7 @@ impl<'a> Parser<'a> {
                 .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
             self.bump(); // =
             self.skip_trivia();
-            if !self.logical_or_expr() {
+            if !self.assignment_expr() {
                 self.error("Expected expression after assignment operator");
             }
             self.builder.finish_node();
