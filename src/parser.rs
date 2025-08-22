@@ -724,6 +724,13 @@ impl<'a> Parser<'a> {
             SyntaxKind::GE,
             SyntaxKind::EQ_EQ,
             SyntaxKind::NE,
+            SyntaxKind::STR_EQ,
+            SyntaxKind::STR_NE,
+            SyntaxKind::STR_GT,
+            SyntaxKind::STR_LT,
+            SyntaxKind::STR_GE,
+            SyntaxKind::STR_LE,
+            SyntaxKind::STR_CMP,
         ];
         self.parse_binary_expr(
             Self::additive_expr,
