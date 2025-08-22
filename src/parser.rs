@@ -599,6 +599,34 @@ impl<'a> Parser<'a> {
         self.assignment_expr()
     }
 
+    // Helper function for parsing binary expressions with reduced code duplication
+    fn parse_binary_expr<F>(
+        &mut self,
+        mut next_precedence_fn: F,
+        operators: &[SyntaxKind],
+        node_kind: SyntaxKind,
+        error_message: &str,
+    ) -> bool
+    where
+        F: FnMut(&mut Self) -> bool,
+    {
+        let start = self.builder.checkpoint();
+        if !next_precedence_fn(self) {
+            return false;
+        }
+
+        while self.at_any(operators) {
+            self.builder.start_node_at(start, node_kind.into());
+            self.bump(); // operator
+            self.skip_trivia();
+            if !next_precedence_fn(self) {
+                self.error(error_message);
+            }
+            self.builder.finish_node();
+        }
+        true
+    }
+
     // Assignment expression: expr = expr
     fn assignment_expr(&mut self) -> bool {
         let start = self.builder.checkpoint();
@@ -737,54 +765,36 @@ impl<'a> Parser<'a> {
 
     // Comparison operators: < > <= >= == !=
     fn comparison_expr(&mut self) -> bool {
-        let start = self.builder.checkpoint();
-        if !self.additive_expr() {
-            return false;
-        }
-
-        while self.at_any(&[
+        const OPERATORS: &[SyntaxKind] = &[
             SyntaxKind::LT,
             SyntaxKind::GT,
             SyntaxKind::LE,
             SyntaxKind::GE,
             SyntaxKind::EQ_EQ,
             SyntaxKind::NE,
-        ]) {
-            self.builder
-                .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
-            self.bump(); // operator
-            self.skip_trivia();
-            if !self.additive_expr() {
-                self.error("Expected expression after comparison operator");
-            }
-            self.builder.finish_node();
-        }
-        true
+        ];
+        self.parse_binary_expr(
+            Self::additive_expr,
+            OPERATORS,
+            SyntaxKind::INFIX_EXPR,
+            "Expected expression after comparison operator",
+        )
     }
 
     // Multiplicative operators: * / % x
     fn multiplicative_expr(&mut self) -> bool {
-        let start = self.builder.checkpoint();
-        if !self.regex_expr() {
-            return false;
-        }
-
-        while self.at_any(&[
+        const OPERATORS: &[SyntaxKind] = &[
             SyntaxKind::STAR,
             SyntaxKind::SLASH,
             SyntaxKind::MODULO,
             SyntaxKind::X,
-        ]) {
-            self.builder
-                .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
-            self.bump(); // operator
-            self.skip_trivia();
-            if !self.regex_expr() {
-                self.error("Expected expression after multiplicative operator");
-            }
-            self.builder.finish_node();
-        }
-        true
+        ];
+        self.parse_binary_expr(
+            Self::regex_expr,
+            OPERATORS,
+            SyntaxKind::INFIX_EXPR,
+            "Expected expression after multiplicative operator",
+        )
     }
 
     // Postfix expressions: expr -> method(), expr->{key}, expr->[index], expr->(args), expr()
