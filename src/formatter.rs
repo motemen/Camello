@@ -106,6 +106,14 @@ impl Formatter {
                 self.format_code_ref_call(node);
                 return;
             }
+            SyntaxKind::HASH_SUBSCRIPTION_EXPR => {
+                self.format_hash_subscription(node);
+                return;
+            }
+            SyntaxKind::ARRAY_SUBSCRIPTION_EXPR => {
+                self.format_array_subscription(node);
+                return;
+            }
             SyntaxKind::DATA_SECTION => {
                 self.format_data_section(node);
                 return;
@@ -875,6 +883,7 @@ impl Formatter {
             (Some(_), SyntaxKind::EQ) | (Some(SyntaxKind::EQ), _) => true,
             (Some(_), SyntaxKind::PLUS) | (Some(SyntaxKind::PLUS), _) => true,
             (Some(_), SyntaxKind::MINUS) | (Some(SyntaxKind::MINUS), _) => true,
+            (Some(_), SyntaxKind::DOT) | (Some(SyntaxKind::DOT), _) => true,
             (Some(_), SyntaxKind::FAT_COMMA) | (Some(SyntaxKind::FAT_COMMA), _) => true,
 
             // Comparison operators
@@ -1202,6 +1211,16 @@ impl Formatter {
         let mut children = node.children_with_tokens();
         self.format_until_arrow_iter(children.by_ref());
         self.format_subscription_iter(children, SyntaxKind::L_PAREN, SyntaxKind::R_PAREN);
+    }
+
+    fn format_hash_subscription(&mut self, node: &PerlNode) {
+        let children = node.children_with_tokens();
+        self.format_subscription_iter(children, SyntaxKind::L_BRACE, SyntaxKind::R_BRACE);
+    }
+
+    fn format_array_subscription(&mut self, node: &PerlNode) {
+        let children = node.children_with_tokens();
+        self.format_subscription_iter(children, SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET);
     }
 }
 
@@ -2573,5 +2592,101 @@ my $result = m/pattern/g;"#;
         assert!(err.is_empty(), "Parse errors: {:?}", err);
         let formatted = format(&syntax);
         insta::assert_snapshot!(formatted, @"$text =~ s/foo/bar/g;");
+    }
+
+    #[test]
+    fn test_array_subscription_basic() {
+        let input = "my $val = $array[$i];";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @"my $val = $array[$i];");
+    }
+
+    #[test]
+    fn test_hash_subscription_basic() {
+        let input = "my $val = $hash{$key};";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @"my $val = $hash{$key};");
+    }
+
+    #[test]
+    fn test_array_subscription_with_spaces() {
+        let input = "my$val=$array[ $i ];";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @"my $val = $array[$i];");
+    }
+
+    #[test]
+    fn test_hash_subscription_with_spaces() {
+        let input = "my$val=$hash{ $key };";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @"my $val = $hash{$key};");
+    }
+
+    #[test]
+    fn test_chained_subscriptions() {
+        let input = "my $val = $hash{foo}[$index]{bar};";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @"my $val = $hash{foo}[$index]{bar};");
+    }
+
+    #[test]
+    fn test_subscription_in_expressions() {
+        let input = "my $val = $hash{$key} + $array[$i];";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @"my $val = $hash{$key} + $array[$i];");
+    }
+
+    #[test]
+    fn test_subscription_vs_ref_access() {
+        // Test that both direct subscription and ref access work correctly
+        let input = "my $a = $hash{key}; my $b = $hashref->{key}; my $c = $array[0]; my $d = $arrayref->[0];";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @r"
+        my $a = $hash{key};
+        my $b = $hashref->{key};
+        my $c = $array[0];
+        my $d = $arrayref->[0];
+        ");
+    }
+
+    #[test]
+    fn test_complex_subscription_expressions() {
+        let input = "my $val = $hash{$prefix . $suffix}[$array[$index]];";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @"my $val = $hash{$prefix . $suffix}[$array[$index]];");
+    }
+
+    #[test]
+    fn test_subscription_assignment() {
+        let input = "$hash{$key} = $value;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @"$hash{$key} = $value;");
+    }
+
+    #[test]
+    fn test_array_subscription_assignment() {
+        let input = "$array[$index] = $value;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @"$array[$index] = $value;");
     }
 }

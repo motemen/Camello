@@ -596,7 +596,27 @@ impl<'a> Parser<'a> {
     }
 
     fn expression(&mut self) -> bool {
-        self.logical_or_expr()
+        self.assignment_expr()
+    }
+
+    // Assignment expression: expr = expr
+    fn assignment_expr(&mut self) -> bool {
+        let start = self.builder.checkpoint();
+        if !self.logical_or_expr() {
+            return false;
+        }
+
+        if self.at(SyntaxKind::EQ) {
+            self.builder
+                .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
+            self.bump(); // =
+            self.skip_trivia();
+            if !self.logical_or_expr() {
+                self.error("Expected expression after assignment operator");
+            }
+            self.builder.finish_node();
+        }
+        true
     }
 
     // Logical OR operators: ||
@@ -702,7 +722,7 @@ impl<'a> Parser<'a> {
             return false;
         }
 
-        while self.at_any(&[SyntaxKind::PLUS, SyntaxKind::MINUS]) {
+        while self.at_any(&[SyntaxKind::PLUS, SyntaxKind::MINUS, SyntaxKind::DOT]) {
             self.builder
                 .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
             self.bump(); // operator
@@ -880,6 +900,44 @@ impl<'a> Parser<'a> {
                     self.error("Expected ')' after function arguments");
                 } else {
                     self.bump(); // )
+                    self.skip_trivia();
+                }
+
+                self.builder.finish_node();
+            } else if self.at(SyntaxKind::L_BRACKET) {
+                // Direct array subscription: expr[index]
+                self.builder
+                    .start_node_at(start, SyntaxKind::ARRAY_SUBSCRIPTION_EXPR.into());
+                self.bump(); // [
+                self.skip_trivia();
+
+                if !self.expression() {
+                    self.error("Expected expression in array subscription");
+                }
+
+                if !self.at(SyntaxKind::R_BRACKET) {
+                    self.error("Expected ']' after array index");
+                } else {
+                    self.bump(); // ]
+                    self.skip_trivia();
+                }
+
+                self.builder.finish_node();
+            } else if self.at(SyntaxKind::L_BRACE) {
+                // Direct hash subscription: expr{key}
+                self.builder
+                    .start_node_at(start, SyntaxKind::HASH_SUBSCRIPTION_EXPR.into());
+                self.bump(); // {
+                self.skip_trivia();
+
+                if !self.expression() {
+                    self.error("Expected expression in hash subscription");
+                }
+
+                if !self.at(SyntaxKind::R_BRACE) {
+                    self.error("Expected '}' after hash key");
+                } else {
+                    self.bump(); // }
                     self.skip_trivia();
                 }
 
