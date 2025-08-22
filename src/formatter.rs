@@ -895,6 +895,11 @@ impl Formatter {
             (Some(_), SyntaxKind::NE) | (Some(SyntaxKind::NE), _) => true,
             (Some(_), SyntaxKind::STR_EQ) | (Some(SyntaxKind::STR_EQ), _) => true,
             (Some(_), SyntaxKind::STR_NE) | (Some(SyntaxKind::STR_NE), _) => true,
+            (Some(_), SyntaxKind::STR_GT) | (Some(SyntaxKind::STR_GT), _) => true,
+            (Some(_), SyntaxKind::STR_LT) | (Some(SyntaxKind::STR_LT), _) => true,
+            (Some(_), SyntaxKind::STR_GE) | (Some(SyntaxKind::STR_GE), _) => true,
+            (Some(_), SyntaxKind::STR_LE) | (Some(SyntaxKind::STR_LE), _) => true,
+            (Some(_), SyntaxKind::STR_CMP) | (Some(SyntaxKind::STR_CMP), _) => true,
 
             // Regex operators
             (Some(_), SyntaxKind::REGEX_MATCH) | (Some(SyntaxKind::REGEX_MATCH), _) => true,
@@ -2695,14 +2700,13 @@ my $result = m/pattern/g;"#;
     #[test]
     fn test_string_comparison_formatting() {
         let cases = [
-            (
-                "if($a eq $b){print;}",
-                "if ($a eq $b) {\n    print;\n}\n",
-            ),
-            (
-                "my $result = $foo ne $bar;",
-                "my $result = $foo ne $bar;\n",
-            ),
+            ("if($a eq $b){print;}", "if ($a eq $b) {\n    print;\n}\n"),
+            ("my $result = $foo ne $bar;", "my $result = $foo ne $bar;\n"),
+            ("$a gt $b", "$a gt $b\n"),
+            ("$a lt $b", "$a lt $b\n"),
+            ("$a ge $b", "$a ge $b\n"),
+            ("$a le $b", "$a le $b\n"),
+            ("$a cmp $b", "$a cmp $b\n"),
         ];
         check_formatting_cases(&cases);
     }

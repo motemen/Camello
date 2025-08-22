@@ -308,6 +308,11 @@ impl<'a> Lexer<'a> {
                     "x" => self.disambiguate_x(),
                     "eq" => self.disambiguate_str_op("eq"),
                     "ne" => self.disambiguate_str_op("ne"),
+                    "gt" => self.disambiguate_str_op("gt"),
+                    "lt" => self.disambiguate_str_op("lt"),
+                    "ge" => self.disambiguate_str_op("ge"),
+                    "le" => self.disambiguate_str_op("le"),
+                    "cmp" => self.disambiguate_str_op("cmp"),
                     _ => SyntaxKind::IDENT,
                 }
             }
@@ -350,7 +355,12 @@ impl<'a> Lexer<'a> {
                 match op {
                     "eq" => SyntaxKind::STR_EQ,
                     "ne" => SyntaxKind::STR_NE,
-                    _ => unreachable!(), // Should only be called for eq/ne
+                    "gt" => SyntaxKind::STR_GT,
+                    "lt" => SyntaxKind::STR_LT,
+                    "ge" => SyntaxKind::STR_GE,
+                    "le" => SyntaxKind::STR_LE,
+                    "cmp" => SyntaxKind::STR_CMP,
+                    _ => unreachable!(), // Should only be called for string comparison ops
                 }
             }
             _ => {
@@ -494,7 +504,12 @@ impl<'a> Lexer<'a> {
             | SyntaxKind::EQ_EQ
             | SyntaxKind::NE
             | SyntaxKind::STR_EQ
-            | SyntaxKind::STR_NE => LexerContext::ExpectingValue,
+            | SyntaxKind::STR_NE
+            | SyntaxKind::STR_GT
+            | SyntaxKind::STR_LT
+            | SyntaxKind::STR_GE
+            | SyntaxKind::STR_LE
+            | SyntaxKind::STR_CMP => LexerContext::ExpectingValue,
             SyntaxKind::LOGICAL_AND | SyntaxKind::LOGICAL_OR => LexerContext::ExpectingValue,
             SyntaxKind::REGEX_MATCH | SyntaxKind::REGEX_NOT_MATCH => LexerContext::ExpectingValue,
             SyntaxKind::L_PAREN | SyntaxKind::L_BRACE | SyntaxKind::L_BRACKET => {
@@ -626,6 +641,41 @@ mod tests {
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::STRING, r#""b""#)));
 
+        // Test that 'gt' is an operator
+        let mut lexer = Lexer::new(r#"$a gt "b""#);
+        lexer.next_token(); // $
+        lexer.next_token(); // a
+        lexer.next_token(); // whitespace
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::STR_GT, "gt")));
+
+        // Test that 'lt' is an operator
+        let mut lexer = Lexer::new(r#"$a lt "b""#);
+        lexer.next_token();
+        lexer.next_token();
+        lexer.next_token();
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::STR_LT, "lt")));
+
+        // Test that 'ge' is an operator
+        let mut lexer = Lexer::new(r#"$a ge "b""#);
+        lexer.next_token();
+        lexer.next_token();
+        lexer.next_token();
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::STR_GE, "ge")));
+
+        // Test that 'le' is an operator
+        let mut lexer = Lexer::new(r#"$a le "b""#);
+        lexer.next_token();
+        lexer.next_token();
+        lexer.next_token();
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::STR_LE, "le")));
+
+        // Test that 'cmp' is an operator
+        let mut lexer = Lexer::new(r#"$a cmp "b""#);
+        lexer.next_token();
+        lexer.next_token();
+        lexer.next_token();
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::STR_CMP, "cmp")));
+
         // Test that 'eq' is an identifier when expecting a value
         let mut lexer = Lexer::new("sub eq { }");
         assert_eq!(lexer.next_token(), Some((SyntaxKind::SUB_KW, "sub")));
@@ -641,5 +691,11 @@ mod tests {
         assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "ne")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::SEMICOLON, ";")));
+
+        // Test that 'gt' is an identifier
+        let mut lexer = Lexer::new("sub gt {}");
+        lexer.next_token(); // sub
+        lexer.next_token(); // whitespace
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "gt")));
     }
 }
