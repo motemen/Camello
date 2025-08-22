@@ -2702,11 +2702,14 @@ my $result = m/pattern/g;"#;
         let cases = [
             ("if($a eq $b){print;}", "if ($a eq $b) {\n    print;\n}\n"),
             ("my $result = $foo ne $bar;", "my $result = $foo ne $bar;\n"),
-            ("$a gt $b", "$a gt $b\n"),
-            ("$a lt $b", "$a lt $b\n"),
-            ("$a ge $b", "$a ge $b\n"),
-            ("$a le $b", "$a le $b\n"),
-            ("$a cmp $b", "$a cmp $b\n"),
+            ("if($a gt $b){print;}", "if ($a gt $b) {\n    print;\n}\n"),
+            ("my $result = $foo lt $bar;", "my $result = $foo lt $bar;\n"),
+            ("if($a ge $b){print;}", "if ($a ge $b) {\n    print;\n}\n"),
+            ("my $result = $foo le $bar;", "my $result = $foo le $bar;\n"),
+            (
+                "my $result = $foo cmp $bar;",
+                "my $result = $foo cmp $bar;\n",
+            ),
         ];
         check_formatting_cases(&cases);
     }
