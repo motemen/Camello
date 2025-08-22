@@ -83,6 +83,7 @@ pub enum SyntaxKind {
     EQ,        // =
     PLUS,      // +
     MINUS,     // -
+    DOT,       // . (string concatenation)
     ARROW,     // ->
     FAT_COMMA, // =>
 
@@ -133,6 +134,8 @@ pub enum SyntaxKind {
     HASH_REF_ACCESS_EXPR,     // ハッシュリファレンスアクセス式（例: $hash->{key}）
     ARRAY_REF_ACCESS_EXPR,    // 配列リファレンスアクセス式（例: $arr->[0]）
     CODE_REF_CALL_EXPR,       // コードリファレンス呼び出し式（例: $coderef->(args)）
+    HASH_SUBSCRIPTION_EXPR,   // ハッシュ直接アクセス式（例: $hash{key}）
+    ARRAY_SUBSCRIPTION_EXPR,  // 配列直接アクセス式（例: $array[0]）
     FUNCTION_CALL_EXPR,       // 関数呼び出し式（例: push @array, $value）
     BLOCK_FUNCTION_CALL_EXPR, // ブロック関数呼び出し式（例: eval { ... }, map { ... } @list）
     QW_EXPR,                  // qw() 式（クォートワードリスト）
@@ -218,6 +221,7 @@ impl SyntaxKind {
             SyntaxKind::EQ
                 | SyntaxKind::PLUS
                 | SyntaxKind::MINUS
+                | SyntaxKind::DOT
                 | SyntaxKind::ARROW
                 | SyntaxKind::FAT_COMMA
                 | SyntaxKind::STAR
@@ -289,6 +293,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::EQ => "EQ",
             SyntaxKind::PLUS => "PLUS",
             SyntaxKind::MINUS => "MINUS",
+            SyntaxKind::DOT => "DOT",
             SyntaxKind::ARROW => "ARROW",
             SyntaxKind::FAT_COMMA => "FAT_COMMA",
             SyntaxKind::STAR => "STAR",
@@ -321,6 +326,8 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::HASH_REF_ACCESS_EXPR => "HASH_REF_ACCESS_EXPR",
             SyntaxKind::ARRAY_REF_ACCESS_EXPR => "ARRAY_REF_ACCESS_EXPR",
             SyntaxKind::CODE_REF_CALL_EXPR => "CODE_REF_CALL_EXPR",
+            SyntaxKind::HASH_SUBSCRIPTION_EXPR => "HASH_SUBSCRIPTION_EXPR",
+            SyntaxKind::ARRAY_SUBSCRIPTION_EXPR => "ARRAY_SUBSCRIPTION_EXPR",
             SyntaxKind::QW_EXPR => "QW_EXPR",
             SyntaxKind::Q_EXPR => "Q_EXPR",
             SyntaxKind::QQ_EXPR => "QQ_EXPR",
