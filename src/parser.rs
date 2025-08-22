@@ -649,70 +649,32 @@ impl<'a> Parser<'a> {
 
     // Logical OR operators: ||
     fn logical_or_expr(&mut self) -> bool {
-        let start = self.builder.checkpoint();
-        if !self.logical_and_expr() {
-            return false;
-        }
-
-        while let Some(op) = self.current_kind() {
-            if !matches!(op, SyntaxKind::LOGICAL_OR) {
-                break;
-            }
-
-            self.builder
-                .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
-            self.bump(); // operator
-            self.skip_trivia();
-            if !self.logical_and_expr() {
-                self.error("Expected expression after logical OR operator");
-            }
-            self.builder.finish_node();
-        }
-        true
+        self.parse_binary_expr(
+            Self::logical_and_expr,
+            &[SyntaxKind::LOGICAL_OR],
+            SyntaxKind::INFIX_EXPR,
+            "Expected expression after logical OR operator",
+        )
     }
 
     // Logical AND operators: &&
     fn logical_and_expr(&mut self) -> bool {
-        let start = self.builder.checkpoint();
-        if !self.comparison_expr() {
-            return false;
-        }
-
-        while let Some(op) = self.current_kind() {
-            if !matches!(op, SyntaxKind::LOGICAL_AND) {
-                break;
-            }
-
-            self.builder
-                .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
-            self.bump(); // operator
-            self.skip_trivia();
-            if !self.comparison_expr() {
-                self.error("Expected expression after logical AND operator");
-            }
-            self.builder.finish_node();
-        }
-        true
+        self.parse_binary_expr(
+            Self::comparison_expr,
+            &[SyntaxKind::LOGICAL_AND],
+            SyntaxKind::INFIX_EXPR,
+            "Expected expression after logical AND operator",
+        )
     }
 
     // Regex operators: =~ !~
     fn regex_expr(&mut self) -> bool {
-        let start = self.builder.checkpoint();
-        if !self.postfix_expr() {
-            return false;
-        }
-
-        while self.at_any(&[SyntaxKind::REGEX_MATCH, SyntaxKind::REGEX_NOT_MATCH]) {
-            self.builder
-                .start_node_at(start, SyntaxKind::REGEX_EXPR.into());
-            self.bump(); // operator
-            self.skip_trivia();
-            if !self.postfix_expr() {
-                self.error("Expected expression after regex operator");
-            }
-            self.builder.finish_node();
-        }
-        true
+        self.parse_binary_expr(
+            Self::postfix_expr,
+            &[SyntaxKind::REGEX_MATCH, SyntaxKind::REGEX_NOT_MATCH],
+            SyntaxKind::REGEX_EXPR,
+            "Expected expression after regex operator",
+        )
     }
 
     fn expression_list(&mut self) -> bool {
@@ -745,22 +707,12 @@ impl<'a> Parser<'a> {
 
     // Additive operators: + - .
     fn additive_expr(&mut self) -> bool {
-        let start = self.builder.checkpoint();
-        if !self.multiplicative_expr() {
-            return false;
-        }
-
-        while self.at_any(&[SyntaxKind::PLUS, SyntaxKind::MINUS, SyntaxKind::DOT]) {
-            self.builder
-                .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
-            self.bump(); // operator
-            self.skip_trivia();
-            if !self.multiplicative_expr() {
-                self.error("Expected expression after additive operator");
-            }
-            self.builder.finish_node();
-        }
-        true
+        self.parse_binary_expr(
+            Self::multiplicative_expr,
+            &[SyntaxKind::PLUS, SyntaxKind::MINUS, SyntaxKind::DOT],
+            SyntaxKind::INFIX_EXPR,
+            "Expected expression after additive operator",
+        )
     }
 
     // Comparison operators: < > <= >= == !=
