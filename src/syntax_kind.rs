@@ -100,6 +100,8 @@ pub enum SyntaxKind {
     LE,    // <=
     EQ_EQ, // ==
     NE,    // !=
+    STR_EQ, // eq
+    STR_NE, // ne
 
     // Regex operators
     REGEX_MATCH,     // =~
@@ -306,6 +308,8 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::LE => "LE",
             SyntaxKind::EQ_EQ => "EQ_EQ",
             SyntaxKind::NE => "NE",
+            SyntaxKind::STR_EQ => "STR_EQ",
+            SyntaxKind::STR_NE => "STR_NE",
             SyntaxKind::REGEX_MATCH => "REGEX_MATCH",
             SyntaxKind::REGEX_NOT_MATCH => "REGEX_NOT_MATCH",
             SyntaxKind::LOGICAL_AND => "LOGICAL_AND",

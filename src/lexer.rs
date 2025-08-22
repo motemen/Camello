@@ -306,6 +306,8 @@ impl<'a> Lexer<'a> {
                     "use" => SyntaxKind::USE_KW,
                     "return" => SyntaxKind::RETURN_KW,
                     "x" => self.disambiguate_x(),
+                    "eq" => self.disambiguate_str_op("eq"),
+                    "ne" => self.disambiguate_str_op("ne"),
                     _ => SyntaxKind::IDENT,
                 }
             }
@@ -337,6 +339,24 @@ impl<'a> Lexer<'a> {
             }
             LexerContext::RawData => {
                 unreachable!("% should not appear in raw data context");
+            }
+        }
+    }
+
+    fn disambiguate_str_op(&self, op: &str) -> SyntaxKind {
+        match self.context {
+            LexerContext::ExpectingOperator => {
+                // When expecting an operator, eq/ne are string comparison operators
+                match op {
+                    "eq" => SyntaxKind::STR_EQ,
+                    "ne" => SyntaxKind::STR_NE,
+                    _ => unreachable!(), // Should only be called for eq/ne
+                }
+            }
+            _ => {
+                // In other contexts, they are identifiers
+                // Examples: "sub eq", "my $ne"
+                SyntaxKind::IDENT
             }
         }
     }
@@ -472,7 +492,9 @@ impl<'a> Lexer<'a> {
             | SyntaxKind::GE
             | SyntaxKind::LE
             | SyntaxKind::EQ_EQ
-            | SyntaxKind::NE => LexerContext::ExpectingValue,
+            | SyntaxKind::NE
+            | SyntaxKind::STR_EQ
+            | SyntaxKind::STR_NE => LexerContext::ExpectingValue,
             SyntaxKind::LOGICAL_AND | SyntaxKind::LOGICAL_OR => LexerContext::ExpectingValue,
             SyntaxKind::REGEX_MATCH | SyntaxKind::REGEX_NOT_MATCH => LexerContext::ExpectingValue,
             SyntaxKind::L_PAREN | SyntaxKind::L_BRACE | SyntaxKind::L_BRACKET => {
@@ -582,5 +604,42 @@ mod tests {
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::PERCENT, "%"))); // Should be PERCENT (sigil)
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "hash")));
+    }
+
+    #[test]
+    fn test_string_comparison_operators() {
+        // Test that 'eq' is an operator when expecting an operator
+        let mut lexer = Lexer::new(r#"$a eq "b""#);
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "a")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::STR_EQ, "eq")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::STRING, r#""b""#)));
+
+        // Test that 'ne' is an operator when expecting an operator
+        let mut lexer = Lexer::new(r#"$a ne "b""#);
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "a")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::STR_NE, "ne")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::STRING, r#""b""#)));
+
+        // Test that 'eq' is an identifier when expecting a value
+        let mut lexer = Lexer::new("sub eq { }");
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::SUB_KW, "sub")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "eq")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::L_BRACE, "{")));
+
+        // Test that 'ne' is an identifier when expecting a value
+        let mut lexer = Lexer::new("my $ne;");
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::MY_KW, "my")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "ne")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::SEMICOLON, ";")));
     }
 }
