@@ -893,6 +893,8 @@ impl Formatter {
             (Some(_), SyntaxKind::LE) | (Some(SyntaxKind::LE), _) => true,
             (Some(_), SyntaxKind::EQ_EQ) | (Some(SyntaxKind::EQ_EQ), _) => true,
             (Some(_), SyntaxKind::NE) | (Some(SyntaxKind::NE), _) => true,
+            (Some(_), SyntaxKind::STR_EQ) | (Some(SyntaxKind::STR_EQ), _) => true,
+            (Some(_), SyntaxKind::STR_NE) | (Some(SyntaxKind::STR_NE), _) => true,
 
             // Regex operators
             (Some(_), SyntaxKind::REGEX_MATCH) | (Some(SyntaxKind::REGEX_MATCH), _) => true,
@@ -2688,5 +2690,20 @@ my $result = m/pattern/g;"#;
         assert!(err.is_empty(), "Parse errors: {:?}", err);
         let formatted = format(&syntax);
         insta::assert_snapshot!(formatted, @"$array[$index] = $value;");
+    }
+
+    #[test]
+    fn test_string_comparison_formatting() {
+        let cases = [
+            (
+                "if($a eq $b){print;}",
+                "if ($a eq $b) {\n    print;\n}\n",
+            ),
+            (
+                "my $result = $foo ne $bar;",
+                "my $result = $foo ne $bar;\n",
+            ),
+        ];
+        check_formatting_cases(&cases);
     }
 }
