@@ -599,72 +599,60 @@ impl<'a> Parser<'a> {
         self.logical_or_expr()
     }
 
-    // Logical OR operators: ||
-    fn logical_or_expr(&mut self) -> bool {
+    /// 汎用的な二項演算子のパーサー
+    /// Pratt Parsing のような、より洗練された方法もあるが、今回は単純なヘルパー関数で対応
+    fn parse_binary_expr(
+        &mut self,
+        next_precedence_fn: fn(&mut Self) -> bool,
+        operators: &[SyntaxKind],
+        node_kind: SyntaxKind,
+        error_message: &str,
+    ) -> bool {
         let start = self.builder.checkpoint();
-        if !self.logical_and_expr() {
+        if !next_precedence_fn(self) {
             return false;
         }
 
-        while let Some(op) = self.current_kind() {
-            if !matches!(op, SyntaxKind::LOGICAL_OR) {
-                break;
-            }
-
-            self.builder
-                .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
+        while self.at_any(operators) {
+            self.builder.start_node_at(start, node_kind.into());
             self.bump(); // operator
             self.skip_trivia();
-            if !self.logical_and_expr() {
-                self.error("Expected expression after logical OR operator");
+            if !next_precedence_fn(self) {
+                self.error(error_message);
             }
             self.builder.finish_node();
         }
         true
+    }
+
+    // Logical OR operators: ||
+    fn logical_or_expr(&mut self) -> bool {
+        self.parse_binary_expr(
+            Self::logical_and_expr,
+            &[SyntaxKind::LOGICAL_OR],
+            SyntaxKind::INFIX_EXPR,
+            "Expected expression after logical OR operator",
+        )
     }
 
     // Logical AND operators: &&
     fn logical_and_expr(&mut self) -> bool {
-        let start = self.builder.checkpoint();
-        if !self.comparison_expr() {
-            return false;
-        }
-
-        while let Some(op) = self.current_kind() {
-            if !matches!(op, SyntaxKind::LOGICAL_AND) {
-                break;
-            }
-
-            self.builder
-                .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
-            self.bump(); // operator
-            self.skip_trivia();
-            if !self.comparison_expr() {
-                self.error("Expected expression after logical AND operator");
-            }
-            self.builder.finish_node();
-        }
-        true
+        self.parse_binary_expr(
+            Self::comparison_expr,
+            &[SyntaxKind::LOGICAL_AND],
+            SyntaxKind::INFIX_EXPR,
+            "Expected expression after logical AND operator",
+        )
     }
 
     // Regex operators: =~ !~
     fn regex_expr(&mut self) -> bool {
-        let start = self.builder.checkpoint();
-        if !self.postfix_expr() {
-            return false;
-        }
-
-        while self.at_any(&[SyntaxKind::REGEX_MATCH, SyntaxKind::REGEX_NOT_MATCH]) {
-            self.builder
-                .start_node_at(start, SyntaxKind::REGEX_EXPR.into());
-            self.bump(); // operator
-            self.skip_trivia();
-            if !self.postfix_expr() {
-                self.error("Expected expression after regex operator");
-            }
-            self.builder.finish_node();
-        }
-        true
+        self.parse_binary_expr(
+            Self::postfix_expr,
+            &[SyntaxKind::REGEX_MATCH, SyntaxKind::REGEX_NOT_MATCH],
+            SyntaxKind::REGEX_EXPR,
+            "Expected expression after regex operator",
+        )
     }
 
     fn expression_list(&mut self) -> bool {
@@ -697,74 +685,44 @@ impl<'a> Parser<'a> {
 
     // Additive operators: + - .
     fn additive_expr(&mut self) -> bool {
-        let start = self.builder.checkpoint();
-        if !self.multiplicative_expr() {
-            return false;
-        }
-
-        while self.at_any(&[SyntaxKind::PLUS, SyntaxKind::MINUS]) {
-            self.builder
-                .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
-            self.bump(); // operator
-            self.skip_trivia();
-            if !self.multiplicative_expr() {
-                self.error("Expected expression after additive operator");
-            }
-            self.builder.finish_node();
-        }
-        true
+        self.parse_binary_expr(
+            Self::multiplicative_expr,
+            &[SyntaxKind::PLUS, SyntaxKind::MINUS],
+            SyntaxKind::INFIX_EXPR,
+            "Expected expression after additive operator",
+        )
     }
 
     // Comparison operators: < > <= >= == !=
     fn comparison_expr(&mut self) -> bool {
-        let start = self.builder.checkpoint();
-        if !self.additive_expr() {
-            return false;
-        }
-
-        while self.at_any(&[
-            SyntaxKind::LT,
-            SyntaxKind::GT,
-            SyntaxKind::LE,
-            SyntaxKind::GE,
-            SyntaxKind::EQ_EQ,
-            SyntaxKind::NE,
-        ]) {
-            self.builder
-                .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
-            self.bump(); // operator
-            self.skip_trivia();
-            if !self.additive_expr() {
-                self.error("Expected expression after comparison operator");
-            }
-            self.builder.finish_node();
-        }
-        true
+        self.parse_binary_expr(
+            Self::additive_expr,
+            &[
+                SyntaxKind::LT,
+                SyntaxKind::GT,
+                SyntaxKind::LE,
+                SyntaxKind::GE,
+                SyntaxKind::EQ_EQ,
+                SyntaxKind::NE,
+            ],
+            SyntaxKind::INFIX_EXPR,
+            "Expected expression after comparison operator",
+        )
     }
 
     // Multiplicative operators: * / % x
     fn multiplicative_expr(&mut self) -> bool {
-        let start = self.builder.checkpoint();
-        if !self.regex_expr() {
-            return false;
-        }
-
-        while self.at_any(&[
-            SyntaxKind::STAR,
-            SyntaxKind::SLASH,
-            SyntaxKind::MODULO,
-            SyntaxKind::X,
-        ]) {
-            self.builder
-                .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
-            self.bump(); // operator
-            self.skip_trivia();
-            if !self.regex_expr() {
-                self.error("Expected expression after multiplicative operator");
-            }
-            self.builder.finish_node();
-        }
-        true
+        self.parse_binary_expr(
+            Self::regex_expr,
+            &[
+                SyntaxKind::STAR,
+                SyntaxKind::SLASH,
+                SyntaxKind::MODULO,
+                SyntaxKind::X,
+            ],
+            SyntaxKind::INFIX_EXPR,
+            "Expected expression after multiplicative operator",
+        )
     }
 
     // Postfix expressions: expr -> method(), expr->{key}, expr->[index], expr->(args), expr()
