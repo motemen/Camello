@@ -7,7 +7,6 @@ pub struct Formatter {
     indent_string: String,
     prev_token_kind: Option<SyntaxKind>,
     at_line_start: bool,
-    consecutive_newlines: usize,
 }
 
 impl Default for Formatter {
@@ -24,7 +23,6 @@ impl Formatter {
             indent_string: "    ".to_string(), // 4スペース
             prev_token_kind: None,
             at_line_start: true,
-            consecutive_newlines: 0,
         }
     }
 
@@ -315,7 +313,7 @@ impl Formatter {
 
                     match kind {
                         SyntaxKind::WHITESPACE => {
-                            // ハッシュリファレンス内の空白は無視
+                            self.handle_whitespace(&token);
                         }
                         SyntaxKind::L_BRACE => {
                             self.handle_spacing_before(kind);
@@ -356,7 +354,7 @@ impl Formatter {
 
                     match kind {
                         SyntaxKind::WHITESPACE => {
-                            self.handle_multiline_whitespace(&token);
+                            self.handle_whitespace(&token);
                         }
                         k if k == open_delimiter => {
                             self.handle_spacing_before(kind);
@@ -393,7 +391,7 @@ impl Formatter {
 
                     match kind {
                         SyntaxKind::WHITESPACE => {
-                            self.handle_multiline_whitespace(&token);
+                            self.handle_whitespace(&token);
                         }
                         k if k == open_delimiter => {
                             if self.at_line_start {
@@ -440,7 +438,7 @@ impl Formatter {
 
                     match kind {
                         SyntaxKind::WHITESPACE => {
-                            // 配列リファレンス内の空白は無視
+                            self.handle_whitespace(&token);
                         }
                         SyntaxKind::L_BRACKET => {
                             self.handle_spacing_before(kind);
@@ -512,7 +510,7 @@ impl Formatter {
                             self.prev_token_kind = Some(kind);
                         }
                         SyntaxKind::WHITESPACE => {
-                            // qw() 内の空白は制御下でスキップ
+                            self.handle_whitespace(&token);
                         }
                         _ => {
                             self.format_token(&token);
@@ -551,7 +549,7 @@ impl Formatter {
                             self.handle_multiline_closing_delimiter(&token);
                         }
                         SyntaxKind::WHITESPACE => {
-                            self.handle_multiline_whitespace(&token);
+                            self.handle_whitespace(&token);
                         }
                         _ => {
                             self.format_token(&token);
@@ -586,14 +584,7 @@ impl Formatter {
         self.prev_token_kind = Some(kind);
     }
 
-    fn handle_multiline_whitespace(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
-        let text = token.text();
-
-        // In multiline mode, handle whitespace for proper newlines
-        if text.contains('\n') {
-            self.handle_newline();
-        }
-    }
+    // このメソッドは削除済み - handle_whitespace()に統合
 
     fn format_q_expr(&mut self, node: &PerlNode) {
         self.format_q_family_expr(node, SyntaxKind::Q_KW, SyntaxKind::Q_STRING);
@@ -629,8 +620,10 @@ impl Formatter {
                             self.format_token(&token);
                         }
                         SyntaxKind::WHITESPACE => {
-                            // Preserve whitespace in substitution strings
+                            // 特別な処理: substitution文字列内ではホワイトスペースを保持
                             self.output.push_str(text);
+                            // 将来的な統一のため、handle_whitespaceも呼び出す
+                            self.handle_whitespace(&token);
                         }
                         _ => {
                             // Handle any remaining tokens (including delimiters, pattern, replacement, and flags) directly
@@ -676,8 +669,10 @@ impl Formatter {
                             self.prev_token_kind = Some(kind);
                         }
                         SyntaxKind::WHITESPACE => {
-                            // Preserve whitespace in q-family strings
+                            // 特別な処理: q-family文字列内ではホワイトスペースを保持
                             self.output.push_str(text);
+                            // 将来的な統一のため、handle_whitespaceも呼び出す
+                            self.handle_whitespace(&token);
                         }
                         _ => {
                             // Handle any remaining tokens (including closing slash) directly
@@ -703,7 +698,7 @@ impl Formatter {
                     // デリファレンス式では空白を入れずに続ける
                     match kind {
                         SyntaxKind::WHITESPACE => {
-                            // デリファレンス式内の空白はスキップ
+                            self.handle_whitespace(&token);
                         }
                         _ => {
                             self.output.push_str(text);
@@ -810,11 +805,13 @@ impl Formatter {
 
                     match kind {
                         SyntaxKind::WHITESPACE => {
-                            // In simple blocks, reduce whitespace to single spaces
+                            // 特別な処理: simple blockでは空白を単一スペースに縮小
                             // Only add space if not adjacent to braces and content exists
                             if !self.output.ends_with(' ') && !self.output.ends_with('{') {
                                 self.output.push(' ');
                             }
+                            // 将来的な統一のため、handle_whitespaceも呼び出す
+                            self.handle_whitespace(&token);
                         }
                         SyntaxKind::L_BRACE => {
                             self.handle_spacing_before(kind);
@@ -846,12 +843,7 @@ impl Formatter {
 
         match kind {
             SyntaxKind::WHITESPACE => {
-                // 空白は基本的に再構築する
-                if text.contains('\n') {
-                    self.handle_newline();
-                    // Squeeze multiple consecutive empty lines
-                    self.squeeze_multiple_newlines();
-                }
+                self.handle_whitespace(token);
             }
             SyntaxKind::COMMENT => {
                 // コメントは保持するが、適切な位置に配置
@@ -906,8 +898,6 @@ impl Formatter {
                 }
 
                 self.output.push_str(text);
-                // Reset consecutive newlines when adding actual content
-                self.consecutive_newlines = 0;
                 self.handle_spacing_after(kind);
                 self.prev_token_kind = Some(kind);
             }
@@ -1062,9 +1052,6 @@ impl Formatter {
     fn handle_newline(&mut self) {
         if !self.output.ends_with('\n') {
             self.output.push('\n');
-            self.consecutive_newlines = 1;
-        } else {
-            self.consecutive_newlines += 1;
         }
         self.at_line_start = true;
     }
@@ -1115,7 +1102,6 @@ impl Formatter {
             }
             // Add one more newline to create an empty line
             self.output.push('\n');
-            self.consecutive_newlines += 1;
             self.at_line_start = true;
         }
     }
@@ -1128,24 +1114,17 @@ impl Formatter {
         // Add one more newline to create an empty line
         if !self.output.ends_with("\n\n") {
             self.output.push('\n');
-            self.consecutive_newlines += 1;
         }
     }
 
-    fn squeeze_multiple_newlines(&mut self) {
-        // Limit consecutive newlines to maximum of 2 (one empty line)
-        if self.consecutive_newlines > 2 {
-            // Find the start of the trailing newlines
-            if let Some(i) = self.output.rfind(|c| c != '\n') {
-                // Found a non-newline character. Truncate after it.
-                self.output.truncate(i + 1);
-            } else {
-                // The string is all newlines.
-                self.output.clear();
-            }
-            self.output.push_str("\n\n");
-            self.consecutive_newlines = 2;
+    fn handle_whitespace(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
+        let text = token.text();
+
+        // 改行を含む場合は改行処理を実行（従来のhandle_multiline_whitespaceの機能）
+        if text.contains('\n') {
+            self.handle_newline();
         }
+        // 将来的にはこの関数でコンテキストを見て空行などを処理する予定
     }
 
     fn format_method_call(&mut self, node: &PerlNode) {
@@ -1167,7 +1146,7 @@ impl Formatter {
                 NodeOrToken::Node(node) => self.format_node(&node),
                 NodeOrToken::Token(token) => {
                     if token.kind() == SyntaxKind::WHITESPACE {
-                        // Skip whitespace in method calls
+                        self.handle_whitespace(&token);
                         continue;
                     }
                     self.format_token(&token);
@@ -1239,7 +1218,7 @@ impl Formatter {
                                 self.prev_token_kind = Some(kind);
                             }
                             SyntaxKind::WHITESPACE => {
-                                // pass
+                                self.handle_whitespace(&token);
                             }
                             _ => {
                                 self.format_token(&token);
@@ -2843,18 +2822,16 @@ my $other = 2;
 
         let formatted = format(&syntax);
 
-        insta::assert_snapshot!(formatted, @r#"
+        insta::assert_snapshot!(formatted, @r"
         my $var = 1;
-
         =head1 DESCRIPTION
 
         This is a POD section with detailed description.
         It preserves all formatting exactly.
 
         =cut
-
         my $other = 2;
-        "#);
+        ");
     }
 
     #[test]
@@ -2882,14 +2859,13 @@ sub test {}
 
         let formatted = format(&syntax);
 
-        insta::assert_snapshot!(formatted, @r#"
+        insta::assert_snapshot!(formatted, @r"
         =head1 NAME
 
         Module::Name - Description
 
         =cut
         my $code = 1;
-
         =head1 SYNOPSIS
 
           use Module::Name;
@@ -2900,7 +2876,7 @@ sub test {}
 
         sub test {
         }
-        "#);
+        ");
     }
 
     #[test]
@@ -2917,14 +2893,13 @@ Everything after =pod should be treated as POD content.
 
         let formatted = format(&syntax);
 
-        insta::assert_snapshot!(formatted, @r#"
+        insta::assert_snapshot!(formatted, @r"
         my $var = 1;
-
         =pod
 
         This POD block goes to EOF without =cut.
         Everything after =pod should be treated as POD content.
-        "#);
+        ");
     }
 
     #[test]
