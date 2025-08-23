@@ -55,10 +55,10 @@ pub enum SyntaxKind {
     // データセクション
     END_KW,  // __END__
     DATA_KW, // __DATA__
-    
+
     // POD関連
-    POD_COMMAND,  // =pod, =head1, =cut, etc.
-    CUT_KW,       // =cut keyword
+    POD_COMMAND, // =pod, =head1, =cut, etc.
+    CUT_KW,      // =cut keyword
 
     // 記号・区切り文字
     L_BRACE,      // {
@@ -136,7 +136,7 @@ pub enum SyntaxKind {
     // データセクション（__END__ / __DATA__ 以降の内容）
     DATA_SECTION,
     RAW_STRING,
-    
+
     // POD関連
     POD_BLOCK,   // POD block containing commands and content
     POD_CONTENT, // Content within POD block (verbatim text)
