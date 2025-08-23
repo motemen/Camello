@@ -118,6 +118,10 @@ impl Formatter {
                 self.format_data_section(node);
                 return;
             }
+            SyntaxKind::POD_BLOCK => {
+                self.format_pod_block(node);
+                return;
+            }
             SyntaxKind::REGEX_EXPR => {
                 // Default handling for regex expressions - just format children
                 // The spacing around regex operators is handled in format_token
@@ -182,6 +186,43 @@ impl Formatter {
                 }
                 NodeOrToken::Node(_) => {
                     // Data sections shouldn't contain nested nodes, but handle gracefully
+                    // by preserving the original text
+                }
+            }
+        }
+    }
+
+    /// Format a POD block
+    /// POD blocks should be preserved exactly as-is without any formatting changes
+    fn format_pod_block(&mut self, node: &PerlNode) {
+        // Ensure we're on a new line before the POD block
+        if !self.at_line_start {
+            self.output.push('\n');
+            self.at_line_start = true;
+        }
+
+        // Process all children (POD command + content + =cut) without any modifications
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Token(token) => {
+                    let text = token.text();
+                    match token.kind() {
+                        SyntaxKind::POD_COMMAND | SyntaxKind::CUT_KW => {
+                            // Output POD commands exactly as-is
+                            self.output.push_str(text);
+                        }
+                        SyntaxKind::POD_CONTENT => {
+                            // Output POD content exactly as-is, preserving all formatting
+                            self.output.push_str(text);
+                        }
+                        _ => {
+                            // Handle any other tokens (whitespace, etc.) as-is
+                            self.output.push_str(text);
+                        }
+                    }
+                }
+                NodeOrToken::Node(_) => {
+                    // POD blocks shouldn't contain nested nodes, but handle gracefully
                     // by preserving the original text
                 }
             }
@@ -2758,5 +2799,187 @@ my $result = m/pattern/g;"#;
             ),
         ];
         check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_pod_basic_formatting() {
+        let input = r#"=pod
+
+This is a POD block.
+It should be preserved exactly as-is.
+
+=cut
+"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r#"
+        =pod
+
+        This is a POD block.
+        It should be preserved exactly as-is.
+
+        =cut
+        "#);
+    }
+
+    #[test]
+    fn test_pod_with_code_before_and_after() {
+        let input = r#"my $var = 1;
+
+=head1 DESCRIPTION
+
+This is a POD section with detailed description.
+It preserves all formatting exactly.
+
+=cut
+
+my $other = 2;
+"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r#"
+        my $var = 1;
+
+        =head1 DESCRIPTION
+
+        This is a POD section with detailed description.
+        It preserves all formatting exactly.
+
+        =cut
+
+        my $other = 2;
+        "#);
+    }
+
+    #[test]
+    fn test_pod_multiple_blocks() {
+        let input = r#"=head1 NAME
+
+Module::Name - Description
+
+=cut
+
+my $code = 1;
+
+=head1 SYNOPSIS
+
+  use Module::Name;
+  
+  my $obj = Module::Name->new();
+
+=cut
+
+sub test {}
+"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r#"
+        =head1 NAME
+
+        Module::Name - Description
+
+        =cut
+        my $code = 1;
+
+        =head1 SYNOPSIS
+
+          use Module::Name;
+          
+          my $obj = Module::Name->new();
+
+        =cut
+
+        sub test {
+        }
+        "#);
+    }
+
+    #[test]
+    fn test_pod_at_eof_without_cut() {
+        let input = r#"my $var = 1;
+
+=pod
+
+This POD block goes to EOF without =cut.
+Everything after =pod should be treated as POD content.
+"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r#"
+        my $var = 1;
+
+        =pod
+
+        This POD block goes to EOF without =cut.
+        Everything after =pod should be treated as POD content.
+        "#);
+    }
+
+    #[test]
+    fn test_pod_various_commands() {
+        let input = r#"=encoding utf8
+
+=head1 TITLE
+
+=head2 Subtitle
+
+=head3 Sub-subtitle  
+
+=item * First item
+
+=item * Second item
+
+=begin html
+
+<p>HTML content</p>
+
+=end html
+
+=for comment
+This is a comment.
+
+=cut
+"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r#"
+        =encoding utf8
+
+        =head1 TITLE
+
+        =head2 Subtitle
+
+        =head3 Sub-subtitle  
+
+        =item * First item
+
+        =item * Second item
+
+        =begin html
+
+        <p>HTML content</p>
+
+        =end html
+
+        =for comment
+        This is a comment.
+
+        =cut
+        "#);
     }
 }

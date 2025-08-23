@@ -56,6 +56,10 @@ pub enum SyntaxKind {
     END_KW,  // __END__
     DATA_KW, // __DATA__
 
+    // POD関連
+    POD_COMMAND, // =pod, =head1, =cut, etc.
+    CUT_KW,      // =cut keyword
+
     // 記号・区切り文字
     L_BRACE,      // {
     R_BRACE,      // }
@@ -132,6 +136,10 @@ pub enum SyntaxKind {
     // データセクション（__END__ / __DATA__ 以降の内容）
     DATA_SECTION,
     RAW_STRING,
+
+    // POD関連
+    POD_BLOCK,   // POD block containing commands and content
+    POD_CONTENT, // Content within POD block (verbatim text)
 
     // 式
     INFIX_EXPR,               // 中置式（二項演算式）
@@ -364,6 +372,10 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::DATA_KW => "DATA_KW",
             SyntaxKind::END_KW => "END_KW",
             SyntaxKind::RAW_STRING => "RAW_STRING",
+            SyntaxKind::POD_COMMAND => "POD_COMMAND",
+            SyntaxKind::CUT_KW => "CUT_KW",
+            SyntaxKind::POD_BLOCK => "POD_BLOCK",
+            SyntaxKind::POD_CONTENT => "POD_CONTENT",
         };
         write!(f, "{}", name)
     }
