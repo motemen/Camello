@@ -17,6 +17,10 @@ pub enum Token {
     #[token("__DATA__")]
     DataKw,
 
+    // POD commands (must be at line start)
+    // Note: POD detection is handled manually in lexer due to line-start requirement
+    PodCommand,
+
     // 識別子（サブルーチン名など）
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*")]
     Ident,
@@ -154,6 +158,7 @@ impl Token {
             Token::RegexLiteral => SyntaxKind::REGEX_LITERAL,
             Token::EndKw => SyntaxKind::END_KW,
             Token::DataKw => SyntaxKind::DATA_KW,
+            Token::PodCommand => SyntaxKind::POD_COMMAND,
             Token::LBrace => SyntaxKind::L_BRACE,
             Token::RBrace => SyntaxKind::R_BRACE,
             Token::LParen => SyntaxKind::L_PAREN,
@@ -203,11 +208,14 @@ pub enum LexerContext {
     QlikeDelimiter,
     /// In a data section context (after __END__ or __DATA__)
     RawData,
+    /// In a POD block, consuming all content until =cut
+    PodContent,
 }
 
 pub struct Lexer<'a> {
     logos_lexer: logos::Lexer<'a, Token>,
     context: LexerContext,
+    at_line_start: bool, // Track if we're at the start of a line for POD detection
 }
 
 impl<'a> Lexer<'a> {
@@ -217,10 +225,28 @@ impl<'a> Lexer<'a> {
         Self {
             logos_lexer,
             context: LexerContext::ExpectingValue, // Start expecting a value
+            at_line_start: true,                   // Start at beginning of input (line start)
         }
     }
 
     pub fn next_token(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        // Handle POD content mode - consume everything until =cut or EOF
+        if self.context == LexerContext::PodContent {
+            if let Some(pod_result) = self.try_consume_pod_content() {
+                return Some(pod_result);
+            }
+        }
+
+        // Check for POD command at line start regardless of context
+        if self.at_line_start {
+            if let Some(pod_result) = self.try_consume_pod_command() {
+                let (syntax_kind, text) = pod_result;
+                self.update_context(syntax_kind);
+                self.at_line_start = false; // No longer at line start
+                return Some((syntax_kind, text));
+            }
+        }
+
         // Special handling for regex literals in ExpectingValue context (but not after qw)
         if self.context == LexerContext::ExpectingValue {
             if let Some(regex_result) = self.try_consume_regex_literal() {
@@ -228,6 +254,7 @@ impl<'a> Lexer<'a> {
                 if !syntax_kind.is_trivia() {
                     self.update_context(syntax_kind);
                 }
+                self.update_line_position(text);
                 return Some((syntax_kind, text));
             }
         } else if self.context == LexerContext::RawData {
@@ -254,6 +281,9 @@ impl<'a> Lexer<'a> {
                 if !syntax_kind.is_trivia() {
                     self.update_context(syntax_kind);
                 }
+
+                // Track line position for POD detection
+                self.update_line_position(text);
 
                 Some((syntax_kind, text))
             }
@@ -345,6 +375,9 @@ impl<'a> Lexer<'a> {
             LexerContext::RawData => {
                 unreachable!("% should not appear in raw data context");
             }
+            LexerContext::PodContent => {
+                unreachable!("% should not appear in POD content context");
+            }
         }
     }
 
@@ -387,6 +420,9 @@ impl<'a> Lexer<'a> {
             }
             LexerContext::RawData => {
                 unreachable!("x should not appear in raw data context");
+            }
+            LexerContext::PodContent => {
+                unreachable!("x should not appear in POD content context");
             }
         }
     }
@@ -543,6 +579,9 @@ impl<'a> Lexer<'a> {
                     LexerContext::RawData => {
                         unreachable!("IDENT should not appear in raw data context");
                     }
+                    LexerContext::PodContent => {
+                        unreachable!("IDENT should not appear in POD content context");
+                    }
                 }
             }
 
@@ -558,9 +597,130 @@ impl<'a> Lexer<'a> {
             // Statement terminators reset to expecting value
             SyntaxKind::SEMICOLON => LexerContext::ExpectingValue,
 
+            // POD-related transitions
+            SyntaxKind::POD_COMMAND => LexerContext::PodContent, // POD command starts POD block
+            SyntaxKind::CUT_KW => LexerContext::ExpectingValue,  // =cut ends POD block
+            SyntaxKind::POD_CONTENT => LexerContext::PodContent, // Stay in POD mode
+
             // Keep current context for other tokens
             _ => self.context,
         };
+    }
+
+    /// Track line position for POD detection
+    fn update_line_position(&mut self, text: &str) {
+        // Check if this token contains a newline
+        if text.contains('\n') {
+            self.at_line_start = true;
+        } else if text.chars().any(|c| !c.is_whitespace()) {
+            // Non-whitespace content means we're no longer at line start
+            self.at_line_start = false;
+        }
+    }
+
+    /// Try to consume a POD command at line start (=pod, =head1, =cut, etc.)
+    fn try_consume_pod_command(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        let remainder = self.logos_lexer.remainder();
+
+        // Check if we start with = followed by alphanumeric
+        if let Some(line_end) = remainder.find('\n') {
+            let line = &remainder[..line_end];
+            if let Some(first_char) = line.chars().next() {
+                if first_char == '=' && line.len() > 1 {
+                    // Check if the character after = is alphanumeric
+                    if let Some(second_char) = line.chars().nth(1) {
+                        if second_char.is_alphanumeric() {
+                            // Check for =cut specifically (end of POD)
+                            if line.starts_with("=cut") {
+                                // Consume the =cut line including newline
+                                let cut_text = &remainder[..line_end + 1];
+                                self.logos_lexer.bump(cut_text.len());
+                                self.context = LexerContext::ExpectingValue; // Exit POD mode
+                                return Some((SyntaxKind::CUT_KW, cut_text));
+                            } else {
+                                // It's a POD command, consume the line including newline
+                                let pod_text = &remainder[..line_end + 1];
+                                self.logos_lexer.bump(pod_text.len());
+                                self.context = LexerContext::PodContent; // Enter POD mode
+                                return Some((SyntaxKind::POD_COMMAND, pod_text));
+                            }
+                        }
+                    }
+                }
+            }
+        } else if !remainder.is_empty() {
+            // Handle case where we're at EOF without a final newline
+            if let Some(first_char) = remainder.chars().next() {
+                if first_char == '=' && remainder.len() > 1 {
+                    if let Some(second_char) = remainder.chars().nth(1) {
+                        if second_char.is_alphanumeric() {
+                            if remainder.starts_with("=cut") {
+                                // =cut at EOF
+                                self.logos_lexer.bump(remainder.len());
+                                self.context = LexerContext::ExpectingValue;
+                                return Some((SyntaxKind::CUT_KW, remainder));
+                            } else {
+                                // POD command at EOF
+                                self.logos_lexer.bump(remainder.len());
+                                self.context = LexerContext::PodContent;
+                                return Some((SyntaxKind::POD_COMMAND, remainder));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Try to consume POD content until =cut or EOF
+    fn try_consume_pod_content(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        let remainder = self.logos_lexer.remainder();
+        if remainder.is_empty() {
+            return None;
+        }
+
+        // Look for =cut at the beginning of a line
+        let mut current_pos = 0;
+        let bytes = remainder.as_bytes();
+
+        while current_pos < bytes.len() {
+            // Check if we're at the start of a line
+            let at_line_start = current_pos == 0 || bytes[current_pos - 1] == b'\n';
+
+            if at_line_start && remainder[current_pos..].starts_with("=cut") {
+                // Check that =cut is followed by non-alphanumeric or end of line/string
+                let after_cut_pos = current_pos + 4;
+                let is_complete_cut = if after_cut_pos >= bytes.len() {
+                    true // =cut at end of input
+                } else {
+                    let next_char = bytes[after_cut_pos] as char;
+                    !next_char.is_alphanumeric()
+                };
+
+                if is_complete_cut {
+                    // Found =cut, return content up to this point
+                    if current_pos > 0 {
+                        let pod_content = &remainder[..current_pos];
+                        self.logos_lexer.bump(current_pos);
+                        self.at_line_start = true; // =cut line starts at line beginning
+                        return Some((SyntaxKind::POD_CONTENT, pod_content));
+                    } else {
+                        // No content before =cut, switch to normal mode and let =cut be handled
+                        self.context = LexerContext::ExpectingValue;
+                        self.at_line_start = true;
+                        return None;
+                    }
+                }
+            }
+
+            current_pos += 1;
+        }
+
+        // No =cut found, consume all remaining content as POD
+        self.logos_lexer.bump(remainder.len());
+        Some((SyntaxKind::POD_CONTENT, remainder))
     }
 
     pub fn span(&self) -> std::ops::Range<usize> {
@@ -697,5 +857,91 @@ mod tests {
         lexer.next_token(); // sub
         lexer.next_token(); // whitespace
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "gt")));
+    }
+
+    #[test]
+    fn test_pod_command_detection() {
+        let mut lexer = Lexer::new("=pod\nSome content\n=cut\n");
+
+        assert_eq!(
+            lexer.next_token(),
+            Some((SyntaxKind::POD_COMMAND, "=pod\n"))
+        );
+        assert_eq!(
+            lexer.next_token(),
+            Some((SyntaxKind::POD_CONTENT, "Some content\n"))
+        );
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::CUT_KW, "=cut\n")));
+        assert_eq!(lexer.next_token(), None);
+    }
+
+    #[test]
+    fn test_pod_various_commands() {
+        let mut lexer = Lexer::new("=head1\n=item\n=begin\n=for\n=encoding\nContent\n=cut\n");
+
+        assert_eq!(
+            lexer.next_token(),
+            Some((SyntaxKind::POD_COMMAND, "=head1\n"))
+        );
+        assert_eq!(
+            lexer.next_token(),
+            Some((
+                SyntaxKind::POD_CONTENT,
+                "=item\n=begin\n=for\n=encoding\nContent\n"
+            ))
+        );
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::CUT_KW, "=cut\n")));
+    }
+
+    #[test]
+    fn test_pod_at_eof_without_cut() {
+        let mut lexer = Lexer::new("=pod\nContent without cut");
+
+        assert_eq!(
+            lexer.next_token(),
+            Some((SyntaxKind::POD_COMMAND, "=pod\n"))
+        );
+        assert_eq!(
+            lexer.next_token(),
+            Some((SyntaxKind::POD_CONTENT, "Content without cut"))
+        );
+        assert_eq!(lexer.next_token(), None);
+    }
+
+    #[test]
+    fn test_not_pod_command() {
+        // Test that =something without alphanumeric after = is not treated as POD
+        let mut lexer = Lexer::new("= not_pod\nmy $var;\n");
+
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::EQ, "=")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "not_pod")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, "\n")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::MY_KW, "my")));
+    }
+
+    #[test]
+    fn test_pod_with_code_before_and_after() {
+        let mut lexer = Lexer::new("my $var;\n=pod\nPOD content\n=cut\nmy $other;\n");
+
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::MY_KW, "my")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "var")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::SEMICOLON, ";")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, "\n")));
+        assert_eq!(
+            lexer.next_token(),
+            Some((SyntaxKind::POD_COMMAND, "=pod\n"))
+        );
+        assert_eq!(
+            lexer.next_token(),
+            Some((SyntaxKind::POD_CONTENT, "POD content\n"))
+        );
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::CUT_KW, "=cut\n")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::MY_KW, "my")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "other")));
     }
 }

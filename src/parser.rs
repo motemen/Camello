@@ -72,7 +72,19 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            if !self.statement() {
+            // Check for POD commands at the top level
+            if matches!(
+                self.current_kind(),
+                Some(SyntaxKind::POD_COMMAND) | Some(SyntaxKind::CUT_KW)
+            ) {
+                if self.current_kind() == Some(SyntaxKind::POD_COMMAND) {
+                    self.pod_block();
+                } else {
+                    // =cut without preceding POD
+                    self.error("Found =cut without a preceding POD command");
+                    self.bump();
+                }
+            } else if !self.statement() {
                 self.error("Expected a statement, but found an unexpected token.");
                 self.bump(); // トークンを消費して回復
             }
@@ -123,6 +135,16 @@ impl<'a> Parser<'a> {
                 self.data_section();
                 true
             }
+            Some(SyntaxKind::POD_COMMAND) => {
+                self.pod_block();
+                true
+            }
+            Some(SyntaxKind::CUT_KW) => {
+                // =cut without a preceding POD block is an error
+                self.error("Found =cut without a preceding POD command");
+                self.bump(); // Consume the =cut token
+                true
+            }
             Some(SyntaxKind::R_BRACE) => {
                 // ブロック終了なので呼び出し元に知らせる
                 false
@@ -146,6 +168,30 @@ impl<'a> Parser<'a> {
             self.bump()
         } else {
             self.error("Expected raw string after data section keyword");
+        }
+
+        self.builder.finish_node();
+    }
+
+    fn pod_block(&mut self) {
+        self.builder.start_node(SyntaxKind::POD_BLOCK.into());
+
+        // Consume the POD command (=pod, =head1, etc.)
+        self.bump();
+
+        // Consume any POD content until =cut
+        while !self.at_end() && !self.at(SyntaxKind::CUT_KW) {
+            if self.at(SyntaxKind::POD_CONTENT) {
+                self.bump();
+            } else {
+                // This shouldn't happen in POD mode, but handle gracefully
+                break;
+            }
+        }
+
+        // Consume the =cut if present (or handle EOF gracefully)
+        if self.at(SyntaxKind::CUT_KW) {
+            self.bump();
         }
 
         self.builder.finish_node();
@@ -1918,5 +1964,67 @@ __END__",
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_pod_parsing() {
+        let test_cases = [
+            ("=pod\nContent\n=cut\n", true),
+            ("=head1 TITLE\nContent\n=cut\n", true),
+            ("my $var;\n=pod\nContent\n=cut\nmy $other;\n", true),
+            (
+                "=pod\nContent without cut",
+                true, // POD at EOF is valid
+            ),
+        ];
+
+        for (input, should_succeed) in test_cases {
+            let (green, errors) = parse(input);
+            let syntax = PerlNode::new_root(green);
+
+            // All inputs should parse structurally
+            assert_eq!(
+                syntax.kind(),
+                SyntaxKind::ROOT,
+                "Failed to parse: '{}'",
+                input
+            );
+
+            if should_succeed {
+                assert!(
+                    errors.is_empty(),
+                    "Should parse '{}' without errors, but got: {:?}",
+                    input,
+                    errors
+                );
+            } else {
+                assert!(
+                    !errors.is_empty(),
+                    "Should generate parse error for '{}' but didn't",
+                    input
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_cut_without_pod_error() {
+        let input = "=cut\n";
+        let (green, errors) = parse(input);
+        let syntax = PerlNode::new_root(green);
+
+        // Should parse structurally but with errors
+        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+        assert!(
+            !errors.is_empty(),
+            "Should generate error for =cut without POD"
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.message.contains("=cut") && e.message.contains("POD")),
+            "Error should mention =cut and POD, got: {:?}",
+            errors
+        );
     }
 }
