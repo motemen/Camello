@@ -1,9 +1,9 @@
 // formatter/expression.rs
 // 式（expression）に関するフォーマットロジック
 
-use rowan::NodeOrToken;
+use rowan::{NodeOrToken, SyntaxElementChildren};
 
-use crate::{PerlNode, SyntaxKind};
+use crate::{PerlLanguage, PerlNode, SyntaxKind};
 
 use super::Formatter;
 
@@ -73,5 +73,136 @@ impl Formatter {
                 }
             }
         }
+    }
+
+    pub fn format_method_call(&mut self, node: &PerlNode) {
+        // Check if this method call should be formatted multiline
+        let should_multiline = self.has_newline_before_first_value(node);
+
+        if should_multiline {
+            self.format_multiline_method_call(node);
+        } else {
+            self.format_single_line_method_call(node);
+        }
+    }
+
+    fn format_single_line_method_call(&mut self, node: &PerlNode) {
+        let mut children = node.children_with_tokens();
+        self.format_until_arrow_iter(children.by_ref());
+        for child in children.by_ref() {
+            match child {
+                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Token(token) => {
+                    if token.kind() == SyntaxKind::WHITESPACE {
+                        self.handle_whitespace(&token);
+                        continue;
+                    }
+                    self.format_token(&token);
+                }
+            }
+            break;
+        }
+        self.format_subscription_iter(children, SyntaxKind::L_PAREN, SyntaxKind::R_PAREN);
+    }
+
+    fn format_multiline_method_call(&mut self, node: &PerlNode) {
+        let mut children = node.children_with_tokens();
+        self.format_until_arrow_iter(children.by_ref());
+        for child in children.by_ref() {
+            match child {
+                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Token(token) => {
+                    if token.kind() == SyntaxKind::WHITESPACE {
+                        // Skip whitespace in method calls
+                        continue;
+                    }
+                    self.format_token(&token);
+                }
+            }
+            break;
+        }
+        // Use multiline formatting for the parenthesized arguments
+        self.format_multiline_delimited_iter(children, SyntaxKind::L_PAREN, SyntaxKind::R_PAREN);
+    }
+
+    fn format_until_arrow_iter(&mut self, iter: &mut SyntaxElementChildren<PerlLanguage>) {
+        for child in iter {
+            match child {
+                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Token(token) if token.kind() == SyntaxKind::WHITESPACE => {}
+                NodeOrToken::Token(token) => {
+                    let kind = token.kind();
+                    let text = token.text();
+                    self.output.push_str(text);
+
+                    if kind == SyntaxKind::ARROW {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    /// formats @array, %hash or its ref's [ ... ] or { ... } part
+    fn format_subscription_iter(
+        &mut self,
+        iter: SyntaxElementChildren<PerlLanguage>,
+        opening: SyntaxKind,
+        closing: SyntaxKind,
+    ) {
+        if self.has_newline_before_first_value_iter(iter.clone()) {
+            self.format_multiline_delimited_iter(iter, opening, closing);
+        } else {
+            for child in iter {
+                match child {
+                    NodeOrToken::Node(node) => self.format_node(&node),
+                    NodeOrToken::Token(token) => {
+                        let kind = token.kind();
+                        let text = token.text();
+
+                        match kind {
+                            _ if kind == opening || kind == closing => {
+                                self.output.push_str(text);
+                                self.prev_token_kind = Some(kind);
+                            }
+                            SyntaxKind::WHITESPACE => {
+                                self.handle_whitespace(&token);
+                            }
+                            _ => {
+                                self.format_token(&token);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn format_hash_ref_access(&mut self, node: &PerlNode) {
+        let mut children = node.children_with_tokens();
+        self.format_until_arrow_iter(children.by_ref());
+        self.format_subscription_iter(children, SyntaxKind::L_BRACE, SyntaxKind::R_BRACE);
+    }
+
+    pub fn format_array_ref_access(&mut self, node: &PerlNode) {
+        let mut children = node.children_with_tokens();
+        self.format_until_arrow_iter(children.by_ref());
+        self.format_subscription_iter(children, SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET);
+    }
+
+    pub fn format_code_ref_call(&mut self, node: &PerlNode) {
+        let mut children = node.children_with_tokens();
+        self.format_until_arrow_iter(children.by_ref());
+        self.format_subscription_iter(children, SyntaxKind::L_PAREN, SyntaxKind::R_PAREN);
+    }
+
+    pub fn format_hash_subscription(&mut self, node: &PerlNode) {
+        let children = node.children_with_tokens();
+        self.format_subscription_iter(children, SyntaxKind::L_BRACE, SyntaxKind::R_BRACE);
+    }
+
+    pub fn format_array_subscription(&mut self, node: &PerlNode) {
+        let children = node.children_with_tokens();
+        self.format_subscription_iter(children, SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET);
     }
 }
