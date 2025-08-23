@@ -343,7 +343,8 @@ impl<'a> Lexer<'a> {
                 SyntaxKind::MODULO
             }
             LexerContext::RawData => {
-                unreachable!("% should not appear in raw data context");
+                // Handle gracefully instead of panicking
+                SyntaxKind::MODULO
             }
         }
     }
@@ -360,7 +361,7 @@ impl<'a> Lexer<'a> {
                     "ge" => SyntaxKind::STR_GE,
                     "le" => SyntaxKind::STR_LE,
                     "cmp" => SyntaxKind::STR_CMP,
-                    _ => unreachable!(), // Should only be called for string comparison ops
+                    _ => SyntaxKind::IDENT, // Handle unknown ops gracefully
                 }
             }
             _ => {
@@ -386,7 +387,8 @@ impl<'a> Lexer<'a> {
                 SyntaxKind::X
             }
             LexerContext::RawData => {
-                unreachable!("x should not appear in raw data context");
+                // Handle gracefully instead of panicking
+                SyntaxKind::IDENT
             }
         }
     }
@@ -398,15 +400,42 @@ impl<'a> Lexer<'a> {
                 // Examples: "$s", "my $s", "@s"
                 SyntaxKind::IDENT
             }
-            LexerContext::ExpectingValue
-            | LexerContext::ExpectingOperator
-            | LexerContext::QlikeDelimiter => {
-                // In other contexts, s is the substitution operator
-                // Examples: "s/old/new/", "$str s/old/new/"
+            LexerContext::ExpectingValue => {
+                // Look ahead to determine if this is s/// substitution or a bareword function call
+                // Gemini's suggestion: check for alphanumeric after optional whitespace
+                let remainder = self.logos_lexer.remainder();
+
+                // Check what follows 's' after optional whitespace
+                let mut chars = remainder.chars();
+                for c in chars {
+                    if c.is_whitespace() {
+                        continue;
+                    }
+
+                    // If first non-whitespace char is alphanumeric or sigil, it's likely a function call
+                    if c.is_alphanumeric() || c == '$' || c == '@' || c == '%' {
+                        return SyntaxKind::IDENT;
+                    } else {
+                        // Otherwise, it's likely substitution
+                        return SyntaxKind::S_KW;
+                    }
+                }
+
+                // If we reach end of input after 's', assume function call
+                SyntaxKind::IDENT
+            }
+            LexerContext::ExpectingOperator => {
+                // When expecting an operator, s is the substitution operator
+                // Examples: "$str s/old/new/"
+                SyntaxKind::S_KW
+            }
+            LexerContext::QlikeDelimiter => {
+                // In q-like delimiter context, s is the substitution operator
                 SyntaxKind::S_KW
             }
             LexerContext::RawData => {
-                unreachable!("s should not appear in raw data context");
+                // Handle gracefully instead of panicking
+                SyntaxKind::IDENT
             }
         }
     }
@@ -561,7 +590,8 @@ impl<'a> Lexer<'a> {
                         self.context
                     }
                     LexerContext::RawData => {
-                        unreachable!("IDENT should not appear in raw data context");
+                        // Handle gracefully instead of panicking
+                        self.context
                     }
                 }
             }
