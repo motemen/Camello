@@ -299,4 +299,132 @@ impl Formatter {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use crate::format;
+    use crate::parse_perl;
+
+    #[test]
+    fn test_single_line_hash_ref_formatting() {
+        let input = "my $hash = { a => 1, b => 2 };";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"my $hash = {a => 1, b => 2};");
+    }
+
+    #[test]
+    fn test_multiline_hash_ref_formatting() {
+        let input = r#"my $hash = {
+    a => 1,
+    b => 2
+};"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        my $hash = {
+            a => 1,
+            b => 2
+        };
+        ");
+    }
+
+    #[test]
+    fn test_single_line_array_ref_formatting() {
+        let input = "my $array = [1, 2, 3];";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"my $array = [1, 2, 3];");
+    }
+
+    #[test]
+    fn test_multiline_array_ref_formatting() {
+        let input = r#"my $array = [
+    1,
+    2,
+    3
+];"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        my $array = [
+            1,
+            2,
+            3
+        ];
+        ");
+    }
+
+    #[test]
+    fn test_single_line_qw_formatting() {
+        let input = "my @words = qw(hello world test);";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"my @words = qw(hello world test);");
+    }
+
+    #[test]
+    fn test_multiline_qw_formatting() {
+        let input = r#"my @words = qw(
+    hello
+    world
+    test
+);"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        my @words = qw(
+            hello
+            world
+            test
+        );
+        ");
+    }
+
+    #[test]
+    fn test_mixed_single_and_multiline() {
+        let input = r#"my $mixed = {
+    simple => { a => 1, b => 2 },
+    complex => {
+        nested => [1, 2, 3],
+        items => [
+            "first",
+            "second"
+        ]
+    }
+};"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r#"
+        my $mixed = {
+            simple => {a => 1, b => 2},
+            complex => {
+                nested => [1, 2, 3],
+                items => [
+                    "first",
+                    "second"
+                ]
+            }
+        };
+        "#);
+    }
+}

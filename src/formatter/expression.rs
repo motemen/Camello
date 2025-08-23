@@ -206,7 +206,8 @@ impl Formatter {
 
 #[cfg(test)]
 mod tests {
-    use crate::formatter::tests::check_formatting_cases;
+    use crate::format;
+    use crate::{formatter::tests::check_formatting_cases, parse_perl};
 
     #[test]
     fn test_method_call_formatting() {
@@ -223,5 +224,95 @@ mod tests {
             ("func()->method();", "func()->method();\n"),
         ];
         check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_multiline_function_call_with_complex_args_formatting() {
+        let input = r#"complex_func(
+    $var1 + $var2,
+    "string argument",
+    42,
+    $obj->method()
+);"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r#"
+        complex_func(
+            $var1 + $var2,
+            "string argument",
+            42,
+            $obj->method()
+        );
+        "#);
+    }
+
+    #[test]
+    fn test_nested_multiline_function_calls_formatting() {
+        let input = r#"outer_func(
+    inner_func(
+        nested_arg1,
+        nested_arg2
+    ),
+    other_arg
+);"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        outer_func(
+            inner_func(
+                nested_arg1,
+                nested_arg2
+            ),
+            other_arg
+        );
+        ");
+    }
+
+    #[test]
+    fn test_subscription_vs_ref_access() {
+        // Test that both direct subscription and ref access work correctly
+        let input = "my $a = $hash{key}; my $b = $hashref->{key}; my $c = $array[0]; my $d = $arrayref->[0];";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @r"
+        my $a = $hash{key};
+        my $b = $hashref->{key};
+        my $c = $array[0];
+        my $d = $arrayref->[0];
+        ");
+    }
+
+    #[test]
+    fn test_complex_subscription_expressions() {
+        let input = "my $val = $hash{$prefix . $suffix}[$array[$index]];";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @"my $val = $hash{$prefix . $suffix}[$array[$index]];");
+    }
+
+    #[test]
+    fn test_subscription_assignment() {
+        let input = "$hash{$key} = $value;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @"$hash{$key} = $value;");
+    }
+
+    #[test]
+    fn test_array_subscription_assignment() {
+        let input = "$array[$index] = $value;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+        let formatted = format(&syntax);
+        insta::assert_snapshot!(formatted, @"$array[$index] = $value;");
     }
 }
