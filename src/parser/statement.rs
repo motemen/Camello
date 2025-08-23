@@ -428,6 +428,25 @@ impl<'a> Parser<'a> {
         self.builder.finish_node();
         true
     }
+
+    fn block(&mut self) {
+        self.builder.start_node(SyntaxKind::BLOCK_STMT.into());
+
+        self.expect(SyntaxKind::L_BRACE);
+        self.skip_trivia();
+
+        while !self.at(SyntaxKind::R_BRACE) && !self.at_end() {
+            if !self.statement() {
+                self.error("Expected a statement in block, but found an unexpected token.");
+                self.bump(); // トークンを消費して回復
+            }
+            self.skip_trivia();
+        }
+
+        self.expect(SyntaxKind::R_BRACE);
+
+        self.builder.finish_node();
+    }
 }
 
 #[cfg(test)]

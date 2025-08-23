@@ -133,6 +133,7 @@ impl<'a> Parser<'a> {
 
         self.builder.finish_node();
     }
+
     // Parse block function arguments: block + optional additional arguments
     fn parse_block_function_args(&mut self) {
         // Parse the block (which should be at L_BRACE)
@@ -163,25 +164,6 @@ impl<'a> Parser<'a> {
         if self.is_at_start_of_expression() {
             self.expression_list();
         }
-    }
-
-    fn block(&mut self) {
-        self.builder.start_node(SyntaxKind::BLOCK_STMT.into());
-
-        self.expect(SyntaxKind::L_BRACE);
-        self.skip_trivia();
-
-        while !self.at(SyntaxKind::R_BRACE) && !self.at_end() {
-            if !self.statement() {
-                self.error("Expected a statement in block, but found an unexpected token.");
-                self.bump(); // トークンを消費して回復
-            }
-            self.skip_trivia();
-        }
-
-        self.expect(SyntaxKind::R_BRACE);
-
-        self.builder.finish_node();
     }
 
     fn is_at_start_of_expression(&self) -> bool {
@@ -1399,4 +1381,5 @@ mod tests {
     }
 }
 
+mod expression;
 mod statement;
