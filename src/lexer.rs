@@ -423,6 +423,9 @@ impl<'a> Lexer<'a> {
                 // Handle gracefully instead of panicking
                 SyntaxKind::IDENT
             }
+            LexerContext::PodContent => {
+                unreachable!("x should not appear in POD content context");
+            }
         }
     }
 
