@@ -391,31 +391,6 @@ impl Formatter {
         self.prev_token_kind = Some(kind);
     }
 
-    fn format_deref_expr(&mut self, node: &PerlNode) {
-        // デリファレンス式（例: @$var, %$var, $$var）のフォーマット
-        // 全ての子要素を空白なしで連続出力
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
-                NodeOrToken::Token(token) => {
-                    let kind = token.kind();
-                    let text = token.text();
-
-                    // デリファレンス式では空白を入れずに続ける
-                    match kind {
-                        SyntaxKind::WHITESPACE => {
-                            self.handle_whitespace(&token);
-                        }
-                        _ => {
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     fn should_format_parentheses_multiline(&self, node: &PerlNode) -> bool {
         // Check if this node contains parentheses with newlines that should be multiline formatted
         self.has_newline_before_first_value(node)
