@@ -302,7 +302,7 @@ impl<'a> Lexer<'a> {
                     "qx" => SyntaxKind::QX_KW,
                     "m" => SyntaxKind::M_KW,
                     "qr" => SyntaxKind::QR_KW,
-                    "s" => SyntaxKind::S_KW,
+                    "s" => self.disambiguate_s(),
                     "use" => SyntaxKind::USE_KW,
                     "return" => SyntaxKind::RETURN_KW,
                     "x" => self.disambiguate_x(),
@@ -387,6 +387,26 @@ impl<'a> Lexer<'a> {
             }
             LexerContext::RawData => {
                 unreachable!("x should not appear in raw data context");
+            }
+        }
+    }
+
+    fn disambiguate_s(&self) -> SyntaxKind {
+        match self.context {
+            LexerContext::VariableList => {
+                // When in variable list context (after a sigil), s is an identifier
+                // Examples: "$s", "my $s", "@s"
+                SyntaxKind::IDENT
+            }
+            LexerContext::ExpectingValue
+            | LexerContext::ExpectingOperator
+            | LexerContext::QlikeDelimiter => {
+                // In other contexts, s is the substitution operator
+                // Examples: "s/old/new/", "$str s/old/new/"
+                SyntaxKind::S_KW
+            }
+            LexerContext::RawData => {
+                unreachable!("s should not appear in raw data context");
             }
         }
     }
