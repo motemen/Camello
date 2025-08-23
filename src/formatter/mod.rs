@@ -895,13 +895,11 @@ sub test {
 
         let formatted = format(&syntax);
 
-        // FIXME: should end with `};`
         insta::assert_snapshot!(formatted, @r"
         eval {
             my $x = 1;
             print $x;
-        }
-        ;
+        };
         ");
     }
 
