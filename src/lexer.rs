@@ -332,7 +332,7 @@ impl<'a> Lexer<'a> {
                     "qx" => SyntaxKind::QX_KW,
                     "m" => SyntaxKind::M_KW,
                     "qr" => SyntaxKind::QR_KW,
-                    "s" => SyntaxKind::S_KW,
+                    "s" => self.disambiguate_s(),
                     "use" => SyntaxKind::USE_KW,
                     "return" => SyntaxKind::RETURN_KW,
                     "x" => self.disambiguate_x(),
@@ -373,7 +373,8 @@ impl<'a> Lexer<'a> {
                 SyntaxKind::MODULO
             }
             LexerContext::RawData => {
-                unreachable!("% should not appear in raw data context");
+                // Handle gracefully instead of panicking
+                SyntaxKind::MODULO
             }
             LexerContext::PodContent => {
                 unreachable!("% should not appear in POD content context");
@@ -393,7 +394,7 @@ impl<'a> Lexer<'a> {
                     "ge" => SyntaxKind::STR_GE,
                     "le" => SyntaxKind::STR_LE,
                     "cmp" => SyntaxKind::STR_CMP,
-                    _ => unreachable!(), // Should only be called for string comparison ops
+                    _ => SyntaxKind::IDENT, // Handle unknown ops gracefully
                 }
             }
             _ => {
@@ -419,7 +420,58 @@ impl<'a> Lexer<'a> {
                 SyntaxKind::X
             }
             LexerContext::RawData => {
-                unreachable!("x should not appear in raw data context");
+                // Handle gracefully instead of panicking
+                SyntaxKind::IDENT
+            }
+            LexerContext::PodContent => {
+                unreachable!("x should not appear in POD content context");
+            }
+        }
+    }
+
+    fn disambiguate_s(&self) -> SyntaxKind {
+        match self.context {
+            LexerContext::VariableList => {
+                // When in variable list context (after a sigil), s is an identifier
+                // Examples: "$s", "my $s", "@s"
+                SyntaxKind::IDENT
+            }
+            LexerContext::ExpectingValue => {
+                // Look ahead to determine if this is s/// substitution or a bareword function call
+                // Gemini's suggestion: check for alphanumeric after optional whitespace
+                let remainder = self.logos_lexer.remainder();
+
+                // Check what follows 's' after optional whitespace
+                let chars = remainder.chars();
+                for c in chars {
+                    if c.is_whitespace() {
+                        continue;
+                    }
+
+                    // If first non-whitespace char is alphanumeric or sigil, it's likely a function call
+                    if c.is_alphanumeric() || c == '$' || c == '@' || c == '%' {
+                        return SyntaxKind::IDENT;
+                    } else {
+                        // Otherwise, it's likely substitution
+                        return SyntaxKind::S_KW;
+                    }
+                }
+
+                // If we reach end of input after 's', assume function call
+                SyntaxKind::IDENT
+            }
+            LexerContext::ExpectingOperator => {
+                // When expecting an operator, s is the substitution operator
+                // Examples: "$str s/old/new/"
+                SyntaxKind::S_KW
+            }
+            LexerContext::QlikeDelimiter => {
+                // In q-like delimiter context, s is the substitution operator
+                SyntaxKind::S_KW
+            }
+            LexerContext::RawData => {
+                // Handle gracefully instead of panicking
+                SyntaxKind::IDENT
             }
             LexerContext::PodContent => {
                 unreachable!("x should not appear in POD content context");
@@ -577,7 +629,8 @@ impl<'a> Lexer<'a> {
                         self.context
                     }
                     LexerContext::RawData => {
-                        unreachable!("IDENT should not appear in raw data context");
+                        // Handle gracefully instead of panicking
+                        self.context
                     }
                     LexerContext::PodContent => {
                         unreachable!("IDENT should not appear in POD content context");
