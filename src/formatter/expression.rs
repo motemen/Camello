@@ -1,6 +1,3 @@
-// formatter/expression.rs
-// 式（expression）に関するフォーマットロジック
-
 use rowan::{NodeOrToken, SyntaxElementChildren};
 
 use crate::{PerlLanguage, PerlNode, SyntaxKind};
