@@ -225,7 +225,7 @@ impl<'a> Lexer<'a> {
         Self {
             logos_lexer,
             context: LexerContext::ExpectingValue, // Start expecting a value
-            at_line_start: true, // Start at beginning of input (line start)
+            at_line_start: true,                   // Start at beginning of input (line start)
         }
     }
 
@@ -236,7 +236,7 @@ impl<'a> Lexer<'a> {
                 return Some(pod_result);
             }
         }
-        
+
         // Check for POD command at line start regardless of context
         if self.at_line_start {
             if let Some(pod_result) = self.try_consume_pod_command() {
@@ -246,7 +246,7 @@ impl<'a> Lexer<'a> {
                 return Some((syntax_kind, text));
             }
         }
-        
+
         // Special handling for regex literals in ExpectingValue context (but not after qw)
         if self.context == LexerContext::ExpectingValue {
             if let Some(regex_result) = self.try_consume_regex_literal() {
@@ -621,7 +621,7 @@ impl<'a> Lexer<'a> {
     /// Try to consume a POD command at line start (=pod, =head1, =cut, etc.)
     fn try_consume_pod_command(&mut self) -> Option<(SyntaxKind, &'a str)> {
         let remainder = self.logos_lexer.remainder();
-        
+
         // Check if we start with = followed by alphanumeric
         if let Some(line_end) = remainder.find('\n') {
             let line = &remainder[..line_end];
@@ -648,7 +648,7 @@ impl<'a> Lexer<'a> {
                     }
                 }
             }
-        } else if remainder.len() > 0 {
+        } else if !remainder.is_empty() {
             // Handle case where we're at EOF without a final newline
             if let Some(first_char) = remainder.chars().next() {
                 if first_char == '=' && remainder.len() > 1 {
@@ -670,7 +670,7 @@ impl<'a> Lexer<'a> {
                 }
             }
         }
-        
+
         None
     }
 
@@ -684,11 +684,11 @@ impl<'a> Lexer<'a> {
         // Look for =cut at the beginning of a line
         let mut current_pos = 0;
         let bytes = remainder.as_bytes();
-        
+
         while current_pos < bytes.len() {
             // Check if we're at the start of a line
             let at_line_start = current_pos == 0 || bytes[current_pos - 1] == b'\n';
-            
+
             if at_line_start && remainder[current_pos..].starts_with("=cut") {
                 // Check that =cut is followed by non-alphanumeric or end of line/string
                 let after_cut_pos = current_pos + 4;
@@ -698,7 +698,7 @@ impl<'a> Lexer<'a> {
                     let next_char = bytes[after_cut_pos] as char;
                     !next_char.is_alphanumeric()
                 };
-                
+
                 if is_complete_cut {
                     // Found =cut, return content up to this point
                     if current_pos > 0 {
@@ -714,10 +714,10 @@ impl<'a> Lexer<'a> {
                     }
                 }
             }
-            
+
             current_pos += 1;
         }
-        
+
         // No =cut found, consume all remaining content as POD
         self.logos_lexer.bump(remainder.len());
         Some((SyntaxKind::POD_CONTENT, remainder))
@@ -863,8 +863,14 @@ mod tests {
     fn test_pod_command_detection() {
         let mut lexer = Lexer::new("=pod\nSome content\n=cut\n");
 
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::POD_COMMAND, "=pod\n")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::POD_CONTENT, "Some content\n")));
+        assert_eq!(
+            lexer.next_token(),
+            Some((SyntaxKind::POD_COMMAND, "=pod\n"))
+        );
+        assert_eq!(
+            lexer.next_token(),
+            Some((SyntaxKind::POD_CONTENT, "Some content\n"))
+        );
         assert_eq!(lexer.next_token(), Some((SyntaxKind::CUT_KW, "=cut\n")));
         assert_eq!(lexer.next_token(), None);
     }
@@ -873,8 +879,17 @@ mod tests {
     fn test_pod_various_commands() {
         let mut lexer = Lexer::new("=head1\n=item\n=begin\n=for\n=encoding\nContent\n=cut\n");
 
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::POD_COMMAND, "=head1\n")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::POD_CONTENT, "=item\n=begin\n=for\n=encoding\nContent\n")));
+        assert_eq!(
+            lexer.next_token(),
+            Some((SyntaxKind::POD_COMMAND, "=head1\n"))
+        );
+        assert_eq!(
+            lexer.next_token(),
+            Some((
+                SyntaxKind::POD_CONTENT,
+                "=item\n=begin\n=for\n=encoding\nContent\n"
+            ))
+        );
         assert_eq!(lexer.next_token(), Some((SyntaxKind::CUT_KW, "=cut\n")));
     }
 
@@ -882,8 +897,14 @@ mod tests {
     fn test_pod_at_eof_without_cut() {
         let mut lexer = Lexer::new("=pod\nContent without cut");
 
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::POD_COMMAND, "=pod\n")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::POD_CONTENT, "Content without cut")));
+        assert_eq!(
+            lexer.next_token(),
+            Some((SyntaxKind::POD_COMMAND, "=pod\n"))
+        );
+        assert_eq!(
+            lexer.next_token(),
+            Some((SyntaxKind::POD_CONTENT, "Content without cut"))
+        );
         assert_eq!(lexer.next_token(), None);
     }
 
@@ -909,8 +930,14 @@ mod tests {
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "var")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::SEMICOLON, ";")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, "\n")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::POD_COMMAND, "=pod\n")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::POD_CONTENT, "POD content\n")));
+        assert_eq!(
+            lexer.next_token(),
+            Some((SyntaxKind::POD_COMMAND, "=pod\n"))
+        );
+        assert_eq!(
+            lexer.next_token(),
+            Some((SyntaxKind::POD_CONTENT, "POD content\n"))
+        );
         assert_eq!(lexer.next_token(), Some((SyntaxKind::CUT_KW, "=cut\n")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::MY_KW, "my")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));

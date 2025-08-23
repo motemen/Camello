@@ -178,7 +178,7 @@ impl<'a> Parser<'a> {
 
         // Consume the POD command (=pod, =head1, etc.)
         self.bump();
-        
+
         // Consume any POD content until =cut
         while !self.at_end() && !self.at(SyntaxKind::CUT_KW) {
             if self.at(SyntaxKind::POD_CONTENT) {
@@ -188,7 +188,7 @@ impl<'a> Parser<'a> {
                 break;
             }
         }
-        
+
         // Consume the =cut if present (or handle EOF gracefully)
         if self.at(SyntaxKind::CUT_KW) {
             self.bump();
@@ -1969,18 +1969,9 @@ __END__",
     #[test]
     fn test_pod_parsing() {
         let test_cases = [
-            (
-                "=pod\nContent\n=cut\n",
-                true,
-            ),
-            (
-                "=head1 TITLE\nContent\n=cut\n",
-                true,
-            ),
-            (
-                "my $var;\n=pod\nContent\n=cut\nmy $other;\n",
-                true,
-            ),
+            ("=pod\nContent\n=cut\n", true),
+            ("=head1 TITLE\nContent\n=cut\n", true),
+            ("my $var;\n=pod\nContent\n=cut\nmy $other;\n", true),
             (
                 "=pod\nContent without cut",
                 true, // POD at EOF is valid
@@ -2029,7 +2020,9 @@ __END__",
             "Should generate error for =cut without POD"
         );
         assert!(
-            errors.iter().any(|e| e.message.contains("=cut") && e.message.contains("POD")),
+            errors
+                .iter()
+                .any(|e| e.message.contains("=cut") && e.message.contains("POD")),
             "Error should mention =cut and POD, got: {:?}",
             errors
         );
