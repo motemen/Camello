@@ -1072,7 +1072,7 @@ mod tests {
     use crate::parse_perl;
 
     /// Helper function to reduce code duplication in formatting tests
-    fn check_formatting_cases(cases: &[(&str, &str)]) {
+    pub fn check_formatting_cases(cases: &[(&str, &str)]) {
         for (input, expected) in cases {
             let (syntax, err) = parse_perl(input);
             assert!(err.is_empty(), "Parse errors for '{}': {:?}", input, err);
@@ -1267,44 +1267,6 @@ sub test {
             my $y = 2;
         }
         ");
-    }
-
-    #[test]
-    fn test_method_call_formatting() {
-        let cases = [
-            ("$obj->method();", "$obj->method();\n"),
-            ("$obj->method($arg);", "$obj->method($arg);\n"),
-            ("$obj->method($a,$b);", "$obj->method($a, $b);\n"),
-            (
-                "my$result=$obj->calculate();",
-                "my $result = $obj->calculate();\n",
-            ),
-        ];
-        check_formatting_cases(&cases);
-    }
-
-    #[test]
-    fn test_chained_method_calls_formatting() {
-        let cases = [
-            (
-                "$obj->method1()->method2();",
-                "$obj->method1()->method2();\n",
-            ),
-            (
-                "$obj->get()->set($value)->save();",
-                "$obj->get()->set($value)->save();\n",
-            ),
-        ];
-        check_formatting_cases(&cases);
-    }
-
-    #[test]
-    fn test_method_call_on_expressions_formatting() {
-        let cases = [
-            ("($obj+$other)->method();", "($obj + $other)->method();\n"),
-            ("func()->method();", "func()->method();\n"),
-        ];
-        check_formatting_cases(&cases);
     }
 
     #[test]

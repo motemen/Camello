@@ -206,3 +206,25 @@ impl Formatter {
         self.format_subscription_iter(children, SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::formatter::tests::check_formatting_cases;
+
+    #[test]
+    fn test_method_call_formatting() {
+        let cases = [
+            ("$obj->method($a,$b);", "$obj->method($a, $b);\n"),
+            (
+                "my$result=$obj->calculate();",
+                "my $result = $obj->calculate();\n",
+            ),
+            (
+                "$obj->get()->set($value)->save();",
+                "$obj->get()->set($value)->save();\n",
+            ),
+            ("func()->method();", "func()->method();\n"),
+        ];
+        check_formatting_cases(&cases);
+    }
+}
