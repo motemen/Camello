@@ -495,7 +495,7 @@ impl Formatter {
                 }
                 if !matches!(
                     next_kind,
-                    Some(SyntaxKind::ELSIF_KW) | Some(SyntaxKind::ELSE_KW)
+                    Some(SyntaxKind::ELSIF_KW) | Some(SyntaxKind::ELSE_KW) | Some(SyntaxKind::SEMICOLON)
                 ) {
                     self.handle_newline();
                 }
