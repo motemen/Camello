@@ -406,7 +406,7 @@ impl<'a> Lexer<'a> {
                 let remainder = self.logos_lexer.remainder();
 
                 // Check what follows 's' after optional whitespace
-                let mut chars = remainder.chars();
+                let chars = remainder.chars();
                 for c in chars {
                     if c.is_whitespace() {
                         continue;
