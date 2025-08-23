@@ -1646,6 +1646,44 @@ sub test {
     }
 
     #[test]
+    fn test_function_call_with_variable_declaration_formatting() {
+        let cases = [
+            // Basic variable declaration as function argument
+            ("foo my $x;", "foo my $x;\n"),
+            ("foo my $x, my $y;", "foo my $x, my $y;\n"),
+            ("bar our $a;", "bar our $a;\n"),
+            ("baz state $s;", "baz state $s;\n"),
+            ("qux local $l;", "qux local $l;\n"),
+            // Mixed arguments
+            (
+                "args my $x, my $y => 'Type';",
+                "args my $x, my $y => 'Type';\n",
+            ),
+            ("func my $a, $b, my $c;", "func my $a, $b, my $c;\n"),
+            (
+                "test my $x, 123, \"string\";",
+                "test my $x, 123, \"string\";\n",
+            ),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_function_call_with_var_decl_snapshot() {
+        // Test the specific examples from the issue
+        let input = "foo my $x; args my $x, my $y => 'Type';";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        foo my $x;
+        args my $x, my $y => 'Type';
+        ");
+    }
+
+    #[test]
     fn test_eval_block_function_formatting() {
         let input = "eval{my$x=1;print$x;};";
         let (syntax, err) = parse_perl(input);

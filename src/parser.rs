@@ -1029,6 +1029,10 @@ impl<'a> Parser<'a> {
                             SyntaxKind::STRING,
                             SyntaxKind::L_BRACE,   // Hash reference: {}
                             SyntaxKind::L_BRACKET, // Array reference: []
+                            SyntaxKind::MY_KW,     // Variable declarations as arguments
+                            SyntaxKind::OUR_KW,
+                            SyntaxKind::STATE_KW,
+                            SyntaxKind::LOCAL_KW,
                         ])
                         || kind.is_sigil()
                     {
