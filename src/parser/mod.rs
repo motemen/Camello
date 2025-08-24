@@ -86,7 +86,6 @@ impl<'a> Parser<'a> {
                 }
             } else if !self.statement() {
                 self.error("Expected a statement, but found an unexpected token.");
-                self.bump(); // Consume the token to recover and advance
             }
             self.skip_trivia();
         }

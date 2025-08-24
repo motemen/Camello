@@ -438,7 +438,6 @@ impl<'a> Parser<'a> {
         while !self.at(SyntaxKind::R_BRACE) && !self.at_end() {
             if !self.statement() {
                 self.error("Expected a statement in block, but found an unexpected token.");
-                self.bump(); // トークンを消費して回復
             }
             self.skip_trivia();
         }
