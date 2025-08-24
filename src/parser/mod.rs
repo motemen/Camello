@@ -92,7 +92,7 @@ impl<'a> Parser<'a> {
         self.builder.finish_node();
     }
 
-    /// Parse a data section (__END__ or __DATA__)
+    /// __END__ または __DATA__ のデータセクションをパースする
     fn data_section(&mut self) {
         self.builder.start_node(SyntaxKind::DATA_SECTION.into());
 
@@ -194,7 +194,7 @@ impl<'a> Parser<'a> {
         self.errors
             .push(ParseError::new(message.to_string(), range, self.source));
 
-        // エラートークンを作成
+        // Create error token
         if let Some((_, text)) = self.current_token.take() {
             self.builder.token(SyntaxKind::ERROR.into(), text);
             self.current_pos += text.len();
@@ -202,7 +202,7 @@ impl<'a> Parser<'a> {
         self.current_token = self.lexer.next_token();
     }
 
-    /// Helper function to parse comma-separated expressions within parentheses
+    /// 括弧内のカンマ区切り式をパースするヘルパー関数
     fn parse_parenthesized_list(&mut self) {
         if !self.at(SyntaxKind::R_PAREN) {
             self.expression_list();
@@ -250,17 +250,17 @@ mod tests {
 
     #[test]
     fn test_error_recovery_no_infinite_loop() {
-        // エラーリカバリが無限ループを起こさないことを確認
+        // Confirm that error recovery does not cause an infinite loop
         let input = "my = @ % ^ invalid tokens here;";
         let (green, errors) = parse(input);
 
-        // エラーは発生するが、パースは完了すること
+        // Errors occur, but parsing completes
         assert!(!errors.is_empty(), "Should have parse errors");
 
         let syntax = PerlNode::new_root(green);
         assert_eq!(syntax.kind(), SyntaxKind::ROOT);
 
-        // ASTに何らかの構造があることを確認（無限ループしていない証拠）
+        // Confirm that the AST has some structure (evidence that there is no infinite loop)
         assert!(
             syntax.children().count() > 0,
             "Should have some parsed structure"

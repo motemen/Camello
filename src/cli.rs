@@ -17,13 +17,13 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Format Perl code
+    /// Perlコードを整形する
     Format {
-        /// Path to Perl file to format (stdin if not provided)
+        /// 整形するPerlファイルのパス（指定しない場合は標準入力）
         #[arg(help = "Path to the Perl file (reads from stdin if not provided)")]
         path: Option<PathBuf>,
 
-        /// Perl code to format
+        /// 整形するPerlコード
         #[arg(
             short,
             long = "eval",
@@ -32,21 +32,21 @@ pub enum Commands {
         )]
         eval: Option<String>,
 
-        /// Check if the file is already formatted without making changes
+        /// ファイルがすでに整形済みかどうかを確認し、変更は行わない
         #[arg(long, help = "Check if file is already formatted")]
         check: bool,
 
-        /// Write output to a file instead of stdout
+        /// 標準出力の代わりにファイルへ出力する
         #[arg(short, long, help = "Output file path")]
         output: Option<PathBuf>,
     },
-    /// Dump parsed AST structure
+    /// パースしたAST構造をダンプする
     Dump {
-        /// Path to Perl file to parse and dump (stdin if not provided)
+        /// パース・ダンプするPerlファイルのパス（指定しない場合は標準入力）
         #[arg(help = "Path to the Perl file (reads from stdin if not provided)")]
         path: Option<PathBuf>,
 
-        /// Perl code to parse and dump
+        /// パース・ダンプするPerlコード
         #[arg(
             short,
             long = "eval",
@@ -100,13 +100,13 @@ fn format_file(
     check: bool,
     output: Option<PathBuf>,
 ) -> Result<()> {
-    // ファイルまたは標準入力を読み込み
+    // Read from file or standard input
     let (input, source_name) = read_source(path, eval)?;
 
-    // フォーマット実行
+    // Execute formatting
     let (formatted, errors) = format_perl(&input);
 
-    // エラーがある場合は表示するが、処理は継続
+    // If there are errors, display them, but continue processing
     if !errors.is_empty() {
         eprintln!("Parse error in '{}':", source_name);
         errors
@@ -116,7 +116,7 @@ fn format_file(
     }
 
     if check {
-        // チェックモード: フォーマット済みかどうかをチェック
+        // Check mode: check if already formatted
         if input.trim() != formatted.trim() {
             eprintln!("Source '{}' is not formatted", source_name);
             std::process::exit(1);
@@ -124,15 +124,15 @@ fn format_file(
             println!("Source '{}' is already formatted", source_name);
         }
     } else {
-        // フォーマットモード: 結果を出力
+        // Format mode: output the result
         match output {
             Some(output_path) => {
-                // ファイルに書き出し
+                // Write to file
                 fs::write(&output_path, formatted).into_diagnostic()?;
                 println!("Formatted code written to '{}'", output_path.display());
             }
             None => {
-                // 標準出力に書き出し
+                // Write to standard output
                 print!("{}", formatted);
                 io::stdout().flush().into_diagnostic()?;
             }
@@ -143,7 +143,7 @@ fn format_file(
 }
 
 fn dump_file(path: Option<PathBuf>, eval: Option<String>) -> Result<()> {
-    // ファイルまたは標準入力を読み込み
+    // ファイルまたは標準入力から読み込む
     let (input, source_name) = read_source(path, eval)?;
     let (syntax, errors) = parse_perl(&input);
 
@@ -168,12 +168,12 @@ mod tests {
 
     #[test]
     fn test_format_file_to_stdout() -> Result<(), Box<dyn std::error::Error>> {
-        // 一時ファイルを作成
+        // Create a temporary file
         let dir = tempdir()?;
         let file_path = dir.path().join("test.pl");
         fs::write(&file_path, "my$var=1;")?;
 
-        // フォーマット実行（実際の実行はしないが、エラーが出ないことを確認）
+        // Execute formatting (not actually executed, but confirm no errors)
         assert!(format_file(Some(file_path), None, false, None).is_ok());
 
         Ok(())
@@ -181,7 +181,7 @@ mod tests {
 
     #[test]
     fn test_format_string_to_stdout() -> Result<(), Box<dyn std::error::Error>> {
-        // フォーマット実行（実際の実行はしないが、エラーが出ないことを確認）
+        // Execute formatting (not actually executed, but confirm no errors)
         assert!(format_file(None, Some("my$var=1;".to_string()), false, None).is_ok());
 
         Ok(())
@@ -193,7 +193,7 @@ mod tests {
         let file_path = dir.path().join("formatted.pl");
         fs::write(&file_path, "my $var = 1;\n")?;
 
-        // 正しくフォーマットされたファイルのチェック
+        // Check that the file is correctly formatted
         assert!(format_file(Some(file_path), None, true, None).is_ok());
 
         Ok(())

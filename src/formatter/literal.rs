@@ -42,7 +42,7 @@ impl Formatter {
                             self.prev_token_kind = Some(kind);
                         }
                         _ => {
-                            // その他のトークンは通常通り処理
+                            // Other tokens are processed as usual
                             self.format_token(&token);
                         }
                     }
@@ -66,7 +66,7 @@ impl Formatter {
     }
 
     fn format_single_line_array_ref(&mut self, node: &PerlNode) {
-        // 配列リファレンスは改行なしでフォーマット
+        // Array references are formatted without newlines
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(node) => self.format_node(&node),
@@ -92,7 +92,7 @@ impl Formatter {
                             self.prev_token_kind = Some(kind);
                         }
                         _ => {
-                            // その他のトークンは通常通り処理
+                            // Other tokens are processed as usual
                             self.format_token(&token);
                         }
                     }
@@ -116,7 +116,7 @@ impl Formatter {
     }
 
     fn format_single_line_qw_expr(&mut self, node: &PerlNode) {
-        // qw() 式の特別フォーマット
+        // Special formatting for qw() expressions
         let mut first_word = true;
 
         for child in node.children_with_tokens() {
@@ -135,7 +135,7 @@ impl Formatter {
                             self.prev_token_kind = Some(kind);
                         }
                         SyntaxKind::QW_STRING => {
-                            // QW_STRINGの間には空白を追加
+                            // Add spaces between QW_STRING tokens
                             if !first_word {
                                 self.output.push(' ');
                             }
@@ -232,9 +232,9 @@ impl Formatter {
                             self.format_token(&token);
                         }
                         SyntaxKind::WHITESPACE => {
-                            // 特別な処理: substitution文字列内ではホワイトスペースを保持
+                            // Special handling: preserve whitespace inside substitution strings
                             self.output.push_str(text);
-                            // 将来的な統一のため、handle_whitespaceも呼び出す
+                            // Also call handle_whitespace for future consistency
                             self.handle_whitespace(&token);
                         }
                         _ => {
@@ -267,9 +267,10 @@ impl Formatter {
                         }
                         SyntaxKind::L_PAREN
                         | SyntaxKind::L_BRACKET
-                        | SyntaxKind::L_BRACE
+                            // Special handling: preserve whitespace inside q-family strings
                         | SyntaxKind::SLASH => {
                             self.output.push_str(text);
+                            self.handle_whitespace(&token);
                             self.prev_token_kind = Some(kind);
                         }
                         k if k == string_kind => {
@@ -281,9 +282,9 @@ impl Formatter {
                             self.prev_token_kind = Some(kind);
                         }
                         SyntaxKind::WHITESPACE => {
-                            // 特別な処理: q-family文字列内ではホワイトスペースを保持
+                            // Special handling: preserve whitespace inside q-family strings
                             self.output.push_str(text);
-                            // 将来的な統一のため、handle_whitespaceも呼び出す
+                            // Also call handle_whitespace for future consistency
                             self.handle_whitespace(&token);
                         }
                         _ => {

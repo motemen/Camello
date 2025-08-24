@@ -126,7 +126,7 @@ impl<'a> Parser<'a> {
 
         self.skip_trivia();
 
-        // 初期化式があれば処理
+        // Process initializer if present
         if self.at(SyntaxKind::EQ) {
             self.bump(); // =
             self.skip_trivia();
@@ -149,7 +149,7 @@ impl<'a> Parser<'a> {
         self.expect(SyntaxKind::SUB_KW);
         self.skip_trivia();
 
-        // サブルーチン名（修飾付き識別子も可能）
+        // Subroutine name (qualified identifier also allowed)
         self.parse_identifier_or_qualified();
         self.skip_trivia();
 
@@ -165,11 +165,11 @@ impl<'a> Parser<'a> {
         self.expect(SyntaxKind::PACKAGE_KW);
         self.skip_trivia();
 
-        // パッケージ名（修飾付き識別子）
+        // Package name (qualified identifier)
         self.parse_identifier_or_qualified();
         self.skip_trivia();
 
-        // セミコロン
+        // Semicolon
         self.expect(SyntaxKind::SEMICOLON);
 
         self.builder.finish_node();
@@ -187,18 +187,18 @@ impl<'a> Parser<'a> {
             // Version literal (e.g., use v5.42;)
             self.bump();
         } else {
-            // モジュール名（修飾付き識別子）
+            // Module name (qualified identifier)
             self.parse_identifier_or_qualified();
         }
         self.skip_trivia();
 
-        // オプション：インポートリスト（qw() など）
+        // Option: import list (e.g., qw())
         if self.is_at_start_of_expression() {
             self.expression();
             self.skip_trivia();
         }
 
-        // セミコロン
+        // Semicolon
         self.expect(SyntaxKind::SEMICOLON);
 
         self.builder.finish_node();

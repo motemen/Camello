@@ -610,7 +610,7 @@ impl Formatter {
             // After R_BRACE, add space before expressions (for block functions) but not before semicolons
             (Some(SyntaxKind::R_BRACE), kind) if kind != SyntaxKind::SEMICOLON => true,
 
-            // 括弧の内側はスペースなし、但し括弧の前は適切にスペースを入れる
+            // No space inside parentheses, but add space before parentheses as appropriate
             (Some(SyntaxKind::L_PAREN), _) => false,
             (Some(_), SyntaxKind::R_PAREN) => false,
             (Some(SyntaxKind::L_BRACE), _) => false,
