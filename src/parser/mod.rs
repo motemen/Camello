@@ -82,7 +82,7 @@ impl<'a> Parser<'a> {
                 } else {
                     // =cut without preceding POD
                     self.error("Found =cut without a preceding POD command");
-                self.error("Found =cut without a preceding POD command");
+                }
             } else if !self.statement() {
                 self.error("Expected a statement, but found an unexpected token.");
             }
