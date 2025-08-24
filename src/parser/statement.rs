@@ -102,8 +102,7 @@ impl<'a> Parser<'a> {
                 if self.current_kind().map(|k| k.is_sigil()).unwrap_or(false) {
                     self.parse_variable_by_decl_kind(decl_kind);
                 } else {
-                    self.error("Expected variable in parenthesized list");
-                    break; // エラーが発生したらループを抜ける
+                    break; // Break loop when error occurs
                 }
 
                 self.skip_trivia();
