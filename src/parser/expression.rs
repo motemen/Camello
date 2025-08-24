@@ -405,7 +405,7 @@ impl<'a> Parser<'a> {
                 // Get the function name before parsing
                 let function_name = self.current_text().unwrap_or("").to_string();
 
-                // 修飾付き識別子かもしれないのでparse_identifier_or_qualifiedを使用
+                // Might be a qualified identifier, so use parse_identifier_or_qualified
                 self.parse_identifier_or_qualified();
                 self.skip_trivia();
 
@@ -455,11 +455,11 @@ impl<'a> Parser<'a> {
                 }
             }
             Some(SyntaxKind::L_PAREN) => {
-                // 括弧式
+                // Parenthesized expression
                 self.bump(); // (
                 self.skip_trivia();
 
-                // 括弧内のリスト（配列の初期化など）
+                // List inside parentheses (e.g., array initialization)
                 self.parse_parenthesized_list();
 
                 if self.at(SyntaxKind::R_PAREN) {
@@ -468,53 +468,53 @@ impl<'a> Parser<'a> {
                 }
             }
             Some(SyntaxKind::L_BRACE) => {
-                // ハッシュリファレンス（匿名ハッシュ）: {}
+                // Hash reference (anonymous hash): {}
                 self.hash_ref();
             }
             Some(SyntaxKind::L_BRACKET) => {
-                // 配列リファレンス（匿名配列）: []
+                // Array reference (anonymous array): []
                 self.array_ref();
             }
             Some(SyntaxKind::QW_KW) => {
-                // qw() 式
+                // qw() expression
                 self.qw_expr();
             }
             Some(SyntaxKind::RETURN_KW) => {
-                // return 文 (キーワードとして処理)
+                // return statement (handled as a keyword)
                 self.bump(); // consume return
                 self.skip_trivia();
 
-                // return の後に式がある場合は処理する
+                // If there is an expression after return, process it
                 if self.is_at_start_of_expression() {
                     self.expression();
                 }
             }
             Some(SyntaxKind::Q_KW) => {
-                // q() 式
+                // q() expression
                 self.q_expr();
             }
             Some(SyntaxKind::QQ_KW) => {
-                // qq() 式
+                // qq() expression
                 self.qq_expr();
             }
             Some(SyntaxKind::QX_KW) => {
-                // qx() 式
+                // qx() expression
                 self.qx_expr();
             }
             Some(SyntaxKind::M_KW) => {
-                // m() 式
+                // m() expression
                 self.m_expr();
             }
             Some(SyntaxKind::QR_KW) => {
-                // qr() 式
+                // qr() expression
                 self.qr_expr();
             }
             Some(SyntaxKind::S_KW) => {
-                // s() 式
+                // s() expression
                 self.s_expr();
             }
             _ => {
-                // is_at_start_of_expression でチェックしているので、ここには来ないはず
+                // Should not reach here because is_at_start_of_expression checks this
                 return false;
             }
         }
@@ -833,7 +833,7 @@ impl<'a> Parser<'a> {
 
         self.builder.start_node(var_kind.into());
 
-        // Sigil を消費
+        // Consume the sigil
         self.bump();
         self.skip_trivia();
 
@@ -892,7 +892,7 @@ impl<'a> Parser<'a> {
                     // These are punctuation characters like $!, $?, $$, etc. - treat as regular variable names
                     self.bump();
                 } else {
-                    // 識別子を期待（修飾付き識別子も含む）
+                    // Expect an identifier (including qualified identifiers)
                     self.parse_identifier_or_qualified();
                 }
             }
@@ -903,7 +903,7 @@ impl<'a> Parser<'a> {
         self.skip_trivia();
     }
 
-    /// Parses a variable for 'my'/'state' declarations (does not use qualified identifiers).  
+    /// 'my'/'state' 宣言用の変数をパースする（修飾識別子は使わない）。  
     pub fn parse_variable_simple(&mut self) {
         let sigil = self.current_kind().unwrap();
         let var_kind = match sigil {
@@ -915,11 +915,11 @@ impl<'a> Parser<'a> {
 
         self.builder.start_node(var_kind.into());
 
-        // Sigil を消費
+        // Consume the sigil
         self.bump();
         self.skip_trivia();
 
-        // 識別子を期待（単純な識別子のみ、修飾付きは不可）
+        // Expect an identifier (only simple identifiers, no qualified allowed)
         if self.at(SyntaxKind::IDENT) {
             self.bump();
 
@@ -934,7 +934,7 @@ impl<'a> Parser<'a> {
         self.builder.finish_node();
     }
 
-    /// our/local宣言専用の変数パース（修飾付き識別子も可能）
+    /// our/local 宣言用の変数をパースする（修飾識別子は許可される）
     pub fn parse_variable_qualified(&mut self) {
         let sigil = self.current_kind().unwrap();
         let var_kind = match sigil {
@@ -946,19 +946,19 @@ impl<'a> Parser<'a> {
 
         self.builder.start_node(var_kind.into());
 
-        // Sigil を消費
+        // Consume the sigil
         self.bump();
         self.skip_trivia();
 
-        // 識別子を期待（修飾付き識別子も可能）
+        // Expect an identifier (qualified identifiers allowed)
         self.parse_identifier_or_qualified();
 
         self.builder.finish_node();
     }
 
-    /// デリファレンスパターンかどうかをチェック（sigil followed by sigil）
+    /// これはデリファレンスパターンかどうかをチェックする（シジルの後にシジルが続く場合）
     fn is_dereferencing_pattern(&self) -> bool {
-        // 現在のトークンがsigilでない場合、デリファレンスではない
+        // If the current token is not a sigil, it's not a dereference
         if let Some(current) = self.current_kind() {
             if !current.is_sigil() {
                 return false;
@@ -967,12 +967,12 @@ impl<'a> Parser<'a> {
             return false;
         }
 
-        // 次のトークンの先読み（簡単な実装）
-        // 現在位置から先を見て、最初の非triviaトークンがsigilかチェック
+        // Look ahead to the next token (simple implementation)
+        // From the current position, check if the first non-trivia token is a sigil
         let current_text = self.current_text().unwrap_or("");
         let remaining_source = &self.source[self.current_pos + current_text.len()..];
 
-        // 空白をスキップ
+        // Skip whitespace
         let trimmed = remaining_source.trim_start();
 
         // Valid dereference patterns: @$ref, %$ref, $$ref (sigil followed by $)
@@ -980,15 +980,15 @@ impl<'a> Parser<'a> {
         trimmed.starts_with('$')
     }
 
-    /// デリファレンス式をパース（例: @$var, %$var, $$var）
+    /// デリファレンス式をパースする（例: @$var, %$var, $$var）
     fn parse_dereferencing(&mut self) {
         self.builder.start_node(SyntaxKind::DEREF_EXPR.into());
 
-        // 最初のsigil（デリファレンス演算子）を消費
+        // Consume the first sigil (dereference operator)
         self.bump();
         self.skip_trivia();
 
-        // 次のsigilとそれに続く変数をパース
+        // Parse the next sigil and the following variable
         if let Some(kind) = self.current_kind() {
             if kind.is_sigil() {
                 self.parse_variable();
@@ -1002,7 +1002,7 @@ impl<'a> Parser<'a> {
         self.builder.finish_node();
     }
 
-    /// 通常の識別子または修飾付き識別子をパースする
+    /// 通常の識別子または修飾識別子をパースする
     /// 例: "Foo", "Foo::Bar", "Foo::Bar::Baz"
     pub fn parse_identifier_or_qualified(&mut self) {
         if !self.at(SyntaxKind::IDENT) {
@@ -1010,17 +1010,17 @@ impl<'a> Parser<'a> {
             return;
         }
 
-        // チェックポイントを作成してから最初の識別子を消費
+        // Create a checkpoint and then consume the first identifier
         let checkpoint = self.builder.checkpoint();
-        self.bump(); // 最初の識別子
+        self.bump();
 
-        // :: があるかチェック
+        // Check if there is a ::
         if self.at(SyntaxKind::DOUBLE_COLON) {
-            // 修飾付き識別子として扱う
+            // Treat as a qualified identifier
             self.builder
                 .start_node_at(checkpoint, SyntaxKind::QUALIFIED_IDENT.into());
 
-            // :: の後の部分を処理
+            // Process the part after ::
             while self.at(SyntaxKind::DOUBLE_COLON) {
                 self.bump(); // ::
 
@@ -1034,6 +1034,6 @@ impl<'a> Parser<'a> {
 
             self.builder.finish_node(); // QUALIFIED_IDENT
         }
-        // else: 単純な識別子なのでそのまま（既に消費済み）
+        // else: It's a simple identifier, so just leave as is (already consumed)
     }
 }
