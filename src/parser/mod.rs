@@ -132,7 +132,7 @@ impl<'a> Parser<'a> {
         self.builder.finish_node();
     }
 
-    // ヘルパーメソッド
+    // Helper methods
     fn current_kind(&self) -> Option<SyntaxKind> {
         self.current_token.map(|(kind, _)| kind)
     }

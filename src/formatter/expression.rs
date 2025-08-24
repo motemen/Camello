@@ -213,7 +213,7 @@ impl Formatter {
                     let kind = token.kind();
                     let text = token.text();
 
-                    // デリファレンス式では空白を入れずに続ける
+                    // Do not add spaces in dereference expressions
                     match kind {
                         SyntaxKind::WHITESPACE => {
                             self.handle_whitespace(&token);
