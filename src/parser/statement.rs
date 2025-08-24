@@ -111,8 +111,7 @@ impl<'a> Parser<'a> {
                     self.bump();
                     self.skip_trivia();
                 } else if !self.at(SyntaxKind::R_PAREN) {
-                    self.error("Expected ',' or ')' in variable list");
-                    break; // エラーが発生したらループを抜ける
+                    break; // Break loop when error occurs
                 }
             }
 
