@@ -204,8 +204,8 @@ impl Formatter {
     }
 
     pub fn format_deref_expr(&mut self, node: &PerlNode) {
-        // デリファレンス式（例: @$var, %$var, $$var）のフォーマット
-        // 全ての子要素を空白なしで連続出力
+        // Format dereference expressions (e.g., @$var, %$var, $$var)
+        // Output all child elements consecutively without spaces
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(node) => self.format_node(&node),
