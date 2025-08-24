@@ -20,7 +20,7 @@ impl Formatter {
         Self {
             output: String::new(),
             indent_level: 0,
-            indent_string: "    ".to_string(), // 4スペース
+            indent_string: "    ".to_string(), // 4 spaces
             prev_token_kind: None,
             at_line_start: true,
         }
