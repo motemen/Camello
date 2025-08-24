@@ -419,12 +419,12 @@ impl Formatter {
 
                     match kind {
                         SyntaxKind::WHITESPACE => {
-                            // 特別な処理: simple blockでは空白を単一スペースに縮小
+                            // Special handling: reduce whitespace to a single space in simple blocks
                             // Only add space if not adjacent to braces and content exists
                             if !self.output.ends_with(' ') && !self.output.ends_with('{') {
                                 self.output.push(' ');
                             }
-                            // 将来的な統一のため、handle_whitespaceも呼び出す
+                            // Call handle_whitespace for future unification
                             self.handle_whitespace(&token);
                         }
                         SyntaxKind::L_BRACE => {
