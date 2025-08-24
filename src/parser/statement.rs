@@ -402,13 +402,13 @@ impl<'a> Parser<'a> {
         let success = self.expression();
 
         if !success {
-            // is_at_start_of_expression でチェックしているので、ここに来ることは
-            // expressionの実装が不完全な場合のみのはず。
-            // 本来は builder.abandon_node() のようなものが望ましいが、
-            // GreenNodeBuilder にはないので、エラーノードとして閉じておく。
+            // Since this is checked by `is_at_start_of_expression`, this branch should
+            // only be reached if the implementation of `expression()` is incomplete.
+            // Ideally, something like `builder.abandon_node()` would be desirable,
+            // but since `GreenNodeBuilder` doesn't have it, we close it as an error node.
             self.error("Invalid expression statement");
             self.builder.finish_node();
-            return true; // エラーとして消費はしたのでtrue
+            return true; // Consumed as an error, so return true.
         }
 
         // Check if semicolon is required

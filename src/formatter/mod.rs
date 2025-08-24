@@ -451,6 +451,20 @@ impl Formatter {
         }
     }
 
+    fn next_significant_token(
+        token: &SyntaxToken<PerlLanguage>,
+    ) -> Option<SyntaxToken<PerlLanguage>> {
+        let mut current = token.next_token();
+        while let Some(t) = current {
+            if !t.kind().is_trivia() {
+                // or just WHITESPACE if that's all you want to skip
+                return Some(t);
+            }
+            current = t.next_token();
+        }
+        None
+    }
+
     fn format_token(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
         let kind = token.kind();
         let text = token.text();
@@ -483,16 +497,7 @@ impl Formatter {
 
                 self.output.push_str(text);
 
-                // Find the next non-whitespace sibling token kind
-                let mut next_kind = None;
-                let mut next = token.next_token();
-                while let Some(t) = next {
-                    if t.kind() != SyntaxKind::WHITESPACE {
-                        next_kind = Some(t.kind());
-                        break;
-                    }
-                    next = t.next_token();
-                }
+                let next_kind = Self::next_significant_token(token).map(|t| t.kind());
                 if !matches!(
                     next_kind,
                     Some(SyntaxKind::ELSIF_KW)
