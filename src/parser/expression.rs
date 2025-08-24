@@ -903,7 +903,7 @@ impl<'a> Parser<'a> {
         self.skip_trivia();
     }
 
-    /// my/state宣言専用の変数パース（修飾付き識別子は使用しない）
+    /// Parses a variable for 'my'/'state' declarations (does not use qualified identifiers).  
     pub fn parse_variable_simple(&mut self) {
         let sigil = self.current_kind().unwrap();
         let var_kind = match sigil {

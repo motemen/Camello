@@ -16,7 +16,7 @@ impl Formatter {
     }
 
     fn format_single_line_hash_ref(&mut self, node: &PerlNode) {
-        // ハッシュリファレンスは改行なしでフォーマット
+        // Format hash reference without newlines
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(node) => self.format_node(&node),

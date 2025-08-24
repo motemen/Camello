@@ -55,11 +55,11 @@ impl<'a> Parser<'a> {
                 true
             }
             Some(SyntaxKind::R_BRACE) => {
-                // ブロック終了なので呼び出し元に知らせる
+                // End of block, notify the caller.
                 false
             }
             Some(_) => {
-                // 式文としてパースを試みる
+                // Try to parse as an expression statement
                 self.expression_stmt()
             }
             None => false, // EOF
@@ -102,6 +102,7 @@ impl<'a> Parser<'a> {
                 if self.current_kind().map(|k| k.is_sigil()).unwrap_or(false) {
                     self.parse_variable_by_decl_kind(decl_kind);
                 } else {
+                    self.error("Expected variable in parenthesized list");
                     break; // Break loop when error occurs
                 }
 
@@ -111,6 +112,7 @@ impl<'a> Parser<'a> {
                     self.bump();
                     self.skip_trivia();
                 } else if !self.at(SyntaxKind::R_PAREN) {
+                    self.error("Expected ',' or ')' in variable list");
                     break; // Break loop when error occurs
                 }
             }

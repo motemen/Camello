@@ -38,7 +38,7 @@ impl Formatter {
             self.add_empty_line_before_if_needed(node);
         }
 
-        // 特別な処理が必要なノードタイプ
+        // Node types that require special handling
         match node.kind() {
             SyntaxKind::HASH_REF => {
                 self.format_hash_ref(node);
