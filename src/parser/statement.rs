@@ -1,6 +1,3 @@
-// parser/statement.rs
-// 文（statement）に関する構文解析ロジック
-
 use crate::SyntaxKind;
 
 use super::Parser;
