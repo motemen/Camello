@@ -74,7 +74,7 @@ impl<'a> Parser<'a> {
     // Assignment expression: expr = expr
     fn assignment_expr(&mut self) -> bool {
         let start = self.builder.checkpoint();
-        if !self.logical_or_expr() {
+        if !self.low_precedence_logical_expr() {
             return false;
         }
 
@@ -89,6 +89,36 @@ impl<'a> Parser<'a> {
             self.builder.finish_node();
         }
         true
+    }
+
+    // Low-precedence logical operators: or, xor (lowest precedence)
+    fn low_precedence_logical_expr(&mut self) -> bool {
+        self.parse_binary_expr(
+            Self::low_precedence_and_expr,
+            &[SyntaxKind::OR_KW, SyntaxKind::XOR_KW],
+            SyntaxKind::INFIX_EXPR,
+            "Expected expression after low-precedence logical operator",
+        )
+    }
+
+    // Low-precedence logical AND: and
+    fn low_precedence_and_expr(&mut self) -> bool {
+        self.parse_binary_expr(
+            Self::defined_or_expr,
+            &[SyntaxKind::AND_KW],
+            SyntaxKind::INFIX_EXPR,
+            "Expected expression after 'and' operator",
+        )
+    }
+
+    // Defined-or operator: // (higher precedence than low-precedence logical)
+    fn defined_or_expr(&mut self) -> bool {
+        self.parse_binary_expr(
+            Self::logical_or_expr,
+            &[SyntaxKind::DEFINED_OR],
+            SyntaxKind::INFIX_EXPR,
+            "Expected expression after defined-or operator",
+        )
     }
 
     // Logical OR operators: ||
@@ -159,7 +189,7 @@ impl<'a> Parser<'a> {
         )
     }
 
-    // Comparison operators: < > <= >= == !=
+    // Comparison operators: < > <= >= == != <=>
     fn comparison_expr(&mut self) -> bool {
         const OPERATORS: &[SyntaxKind] = &[
             SyntaxKind::LT,
@@ -175,6 +205,7 @@ impl<'a> Parser<'a> {
             SyntaxKind::STR_GE,
             SyntaxKind::STR_LE,
             SyntaxKind::STR_CMP,
+            SyntaxKind::SPACESHIP,
         ];
         self.parse_binary_expr(
             Self::additive_expr,
@@ -193,11 +224,30 @@ impl<'a> Parser<'a> {
             SyntaxKind::X,
         ];
         self.parse_binary_expr(
-            Self::regex_expr,
+            Self::prefix_expr,
             OPERATORS,
             SyntaxKind::INFIX_EXPR,
             "Expected expression after multiplicative operator",
         )
+    }
+
+    // Prefix expressions: !, not
+    fn prefix_expr(&mut self) -> bool {
+        // Check for prefix operators
+        if self.at_any(&[SyntaxKind::LOGICAL_NOT, SyntaxKind::NOT_KW]) {
+            self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
+            self.bump(); // Consume the prefix operator
+            self.skip_trivia();
+
+            if !self.prefix_expr() {
+                self.error("Expected expression after prefix operator");
+            }
+
+            self.builder.finish_node();
+            true
+        } else {
+            self.regex_expr()
+        }
     }
 
     // Postfix expressions: expr -> method(), expr->{key}, expr->[index], expr->(args), expr()
@@ -431,6 +481,8 @@ impl<'a> Parser<'a> {
                             SyntaxKind::OUR_KW,
                             SyntaxKind::STATE_KW,
                             SyntaxKind::LOCAL_KW,
+                            SyntaxKind::LOGICAL_NOT, // Prefix logical NOT operator
+                            SyntaxKind::NOT_KW,      // Prefix 'not' operator
                         ])
                         || kind.is_sigil()
                     {

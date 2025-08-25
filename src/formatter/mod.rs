@@ -565,6 +565,7 @@ impl Formatter {
                 | SyntaxKind::STR_GE
                 | SyntaxKind::STR_LE
                 | SyntaxKind::STR_CMP
+                | SyntaxKind::SPACESHIP
         )
     }
 
@@ -601,6 +602,19 @@ impl Formatter {
             // Logical operators
             (Some(_), SyntaxKind::LOGICAL_AND) | (Some(SyntaxKind::LOGICAL_AND), _) => true,
             (Some(_), SyntaxKind::LOGICAL_OR) | (Some(SyntaxKind::LOGICAL_OR), _) => true,
+
+            // Low-precedence logical operators
+            (Some(_), SyntaxKind::NOT_KW) | (Some(SyntaxKind::NOT_KW), _) => true,
+            (Some(_), SyntaxKind::AND_KW) | (Some(SyntaxKind::AND_KW), _) => true,
+            (Some(_), SyntaxKind::OR_KW) | (Some(SyntaxKind::OR_KW), _) => true,
+            (Some(_), SyntaxKind::XOR_KW) | (Some(SyntaxKind::XOR_KW), _) => true,
+
+            // Defined-or operator
+            (Some(_), SyntaxKind::DEFINED_OR) | (Some(SyntaxKind::DEFINED_OR), _) => true,
+
+            // Note: LOGICAL_NOT (!) is a prefix operator, so it gets different handling
+            (Some(SyntaxKind::LOGICAL_NOT), _) => false, // No space after !
+            (Some(_), SyntaxKind::LOGICAL_NOT) => true,  // Space before !
 
             // foo, bar
             (Some(SyntaxKind::COMMA), _) => true,
@@ -1168,6 +1182,82 @@ Everything after =pod should be treated as POD content.
             return 1;
         }
         ");
+    }
+
+    #[test]
+    fn test_logical_operators_formatting() {
+        let cases = [
+            // Logical NOT (!)
+            ("!$x;", "!$x;\n"),
+            ("!($a&&$b);", "!($a && $b);\n"),
+            ("print!$debug;", "print !$debug;\n"),
+            // Low-precedence logical operators
+            ("$a and $b;", "$a and $b;\n"),
+            ("$a or $b;", "$a or $b;\n"),
+            ("$a xor $b;", "$a xor $b;\n"),
+            ("not $condition;", "not $condition;\n"),
+            // Defined-or operator
+            ("$a//$b;", "$a // $b;\n"),
+            ("$value//'default';", "$value // 'default';\n"),
+            // Three-way comparison (spaceship)
+            ("$a<=>$b;", "$a <=> $b;\n"),
+            ("sort{$a<=>$b}@array;", "sort { $a <=> $b } @array;\n"),
+            // Mixed precedence examples
+            ("$a&&$b||$c;", "$a && $b || $c;\n"),
+            ("$a and $b or $c;", "$a and $b or $c;\n"),
+            ("!$a&&$b;", "!$a && $b;\n"),
+            ("not $a and $b;", "not $a and $b;\n"),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_logical_operators_precedence() {
+        let input = "if($a&&$b||$c and $d or $e xor $f){print'mixed precedence';}";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        if ($a && $b || $c and $d or $e xor $f) {
+            print 'mixed precedence';
+        }
+        ");
+    }
+
+    #[test]
+    fn test_defined_or_with_complex_expressions() {
+        let cases = [
+            (
+                "$config//$default//'fallback';",
+                "$config // $default // 'fallback';\n",
+            ),
+            ("func()//'error';", "func() // 'error';\n"),
+            ("$hash{key}//'not found';", "$hash{key} // 'not found';\n"),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_spaceship_operator_usage() {
+        let cases = [
+            ("$result=$a<=>$b;", "$result = $a <=> $b;\n"),
+            ("sort{$a<=>$b}@numbers;", "sort { $a <=> $b } @numbers;\n"),
+            ("($a<=>$b)<=>($c<=>$d);", "($a <=> $b) <=> ($c <=> $d);\n"),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_prefix_not_combinations() {
+        let cases = [
+            ("not not $x;", "not not $x;\n"),
+            ("!!$value;", "!!$value;\n"),
+            ("not!$condition;", "not !$condition;\n"),
+            ("!not $test;", "!not $test;\n"),
+        ];
+        check_formatting_cases(&cases);
     }
 }
 
