@@ -292,6 +292,82 @@ impl Formatter {
         false
     }
 
+    fn is_simple_block(&self, node: &PerlNode) -> bool {
+        // Check if a block contains only a single expression without semicolon
+        // Look for semicolons anywhere in the tree, not just direct children
+
+        fn has_semicolon_in_tree(node: &PerlNode) -> bool {
+            for child in node.children_with_tokens() {
+                match child {
+                    NodeOrToken::Token(token) => {
+                        if token.kind() == SyntaxKind::SEMICOLON {
+                            return true;
+                        }
+                    }
+                    NodeOrToken::Node(child_node) => {
+                        if has_semicolon_in_tree(&child_node) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            false
+        }
+
+        let mut statement_count = 0;
+
+        // Count actual statements/declarations
+        for child in node.children_with_tokens() {
+            if let NodeOrToken::Node(child_node) = child {
+                match child_node.kind() {
+                    SyntaxKind::STMT | SyntaxKind::DECLARATION_STMT => {
+                        statement_count += 1;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Simple if: 1 or fewer statements AND no semicolons anywhere
+        statement_count <= 1 && !has_semicolon_in_tree(node)
+    }
+
+    fn format_simple_block(&mut self, node: &PerlNode) {
+        // Format a simple block on a single line: { expression }
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(child_node) => {
+                    self.format_node(&child_node);
+                }
+                NodeOrToken::Token(token) => {
+                    match token.kind() {
+                        SyntaxKind::L_BRACE => {
+                            self.handle_spacing_before(token.kind());
+                            if self.at_line_start {
+                                self.add_indent();
+                                self.at_line_start = false;
+                            }
+                            self.output.push_str(token.text());
+                            self.output.push(' '); // Add space after opening brace
+                            self.prev_token_kind = Some(token.kind());
+                        }
+                        SyntaxKind::R_BRACE => {
+                            self.output.push(' '); // Add space before closing brace
+                            self.output.push_str(token.text());
+                            self.prev_token_kind = Some(token.kind());
+                        }
+                        SyntaxKind::WHITESPACE => {
+                            // Skip whitespace in simple blocks
+                        }
+                        _ => {
+                            self.format_token(&token);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn format_multiline_delimited(
         &mut self,
         node: &PerlNode,
@@ -462,6 +538,7 @@ impl Formatter {
                     Some(SyntaxKind::ELSIF_KW)
                         | Some(SyntaxKind::ELSE_KW)
                         | Some(SyntaxKind::SEMICOLON)
+                        | Some(SyntaxKind::L_PAREN)
                 ) {
                     self.handle_newline();
                 }
@@ -895,12 +972,8 @@ sub test {
         let formatted = format(&syntax);
 
         insta::assert_snapshot!(formatted, @r"
-        map {
-            $_ * 2}
-        (1, 2, 3);
-        sort {
-            $a + $b}
-        @values;
+        map { $_ * 2 } (1, 2, 3);
+        sort { $a + $b } @values;
         ");
     }
 
