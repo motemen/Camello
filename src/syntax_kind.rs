@@ -36,6 +36,7 @@ pub enum SyntaxKind {
     STATE_KW,
     LOCAL_KW,
     IF_KW,
+    UNLESS_KW,
     ELSIF_KW,
     ELSE_KW,
     FOR_KW,     // for keyword
@@ -132,6 +133,7 @@ pub enum SyntaxKind {
     FOR_STMT,         // for statement
     WHILE_STMT,       // while statement
     IF_STMT,          // if statement
+    UNLESS_STMT,      // unless statement
 
     // Data section (content after __END__ / __DATA__)
     DATA_SECTION,
@@ -168,7 +170,8 @@ pub enum SyntaxKind {
     ARRAY_REF, // Array reference (anonymous array)
 
     // Modifiers
-    IF_MODIFIER, // Postfix if modifier (e.g., print "hello" if $debug;)
+    IF_MODIFIER,     // Postfix if modifier (e.g., print "hello" if $debug;)
+    UNLESS_MODIFIER, // Postfix unless modifier (e.g., return $x unless $x > $y;)
 
     // Other statements
     STMT, // General statement
@@ -198,6 +201,7 @@ impl SyntaxKind {
                 | SyntaxKind::STATE_KW
                 | SyntaxKind::LOCAL_KW
                 | SyntaxKind::IF_KW
+                | SyntaxKind::UNLESS_KW
                 | SyntaxKind::ELSIF_KW
                 | SyntaxKind::ELSE_KW
                 | SyntaxKind::FOR_KW
@@ -273,6 +277,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::STATE_KW => "STATE_KW",
             SyntaxKind::LOCAL_KW => "LOCAL_KW",
             SyntaxKind::IF_KW => "IF_KW",
+            SyntaxKind::UNLESS_KW => "UNLESS_KW",
             SyntaxKind::ELSIF_KW => "ELSIF_KW",
             SyntaxKind::ELSE_KW => "ELSE_KW",
             SyntaxKind::FOR_KW => "FOR_KW",
@@ -341,6 +346,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::FOR_STMT => "FOR_STMT",
             SyntaxKind::WHILE_STMT => "WHILE_STMT",
             SyntaxKind::IF_STMT => "IF_STMT",
+            SyntaxKind::UNLESS_STMT => "UNLESS_STMT",
             SyntaxKind::INFIX_EXPR => "INFIX_EXPR",
             SyntaxKind::PREFIX_EXPR => "PREFIX_EXPR",
             SyntaxKind::POSTFIX_EXPR => "POSTFIX_EXPR",
@@ -362,6 +368,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::HASH_REF => "HASH_REF",
             SyntaxKind::ARRAY_REF => "ARRAY_REF",
             SyntaxKind::IF_MODIFIER => "IF_MODIFIER",
+            SyntaxKind::UNLESS_MODIFIER => "UNLESS_MODIFIER",
             SyntaxKind::STMT => "STMT",
             SyntaxKind::ERROR => "ERROR",
             SyntaxKind::EOF => "EOF",
