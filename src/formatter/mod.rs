@@ -1072,21 +1072,16 @@ Everything after =pod should be treated as POD content.
     }
 
     #[test]
-    fn test_postfix_if_formatting() {
+    fn test_postfix_conditional_formatting() {
         let cases = [
+            // Postfix if tests
             ("return $x if $x > $y;", "return $x if $x > $y;\n"),
             ("print \"hello\" if $debug;", "print \"hello\" if $debug;\n"),
             (
                 "my $result = calculate() if $do_calc;",
                 "my $result = calculate() if $do_calc;\n",
             ),
-        ];
-        check_formatting_cases(&cases);
-    }
-
-    #[test]
-    fn test_postfix_unless_formatting() {
-        let cases = [
+            // Postfix unless tests
             ("return $x unless $x > $y;", "return $x unless $x > $y;\n"),
             (
                 "print \"hello\" unless $quiet;",
