@@ -297,36 +297,22 @@ impl Formatter {
         // Look for semicolons anywhere in the tree, not just direct children
 
         fn has_semicolon_in_tree(node: &PerlNode) -> bool {
-            for child in node.children_with_tokens() {
-                match child {
-                    NodeOrToken::Token(token) => {
-                        if token.kind() == SyntaxKind::SEMICOLON {
-                            return true;
-                        }
-                    }
-                    NodeOrToken::Node(child_node) => {
-                        if has_semicolon_in_tree(&child_node) {
-                            return true;
-                        }
-                    }
-                }
-            }
-            false
+            node.descendants_with_tokens().any(|element| {
+                element
+                    .as_token()
+                    .is_some_and(|token| token.kind() == SyntaxKind::SEMICOLON)
+            })
         }
 
-        let mut statement_count = 0;
-
-        // Count actual statements/declarations
-        for child in node.children_with_tokens() {
-            if let NodeOrToken::Node(child_node) = child {
-                match child_node.kind() {
-                    SyntaxKind::STMT | SyntaxKind::DECLARATION_STMT => {
-                        statement_count += 1;
-                    }
-                    _ => {}
-                }
-            }
-        }
+        let statement_count = node
+            .children()
+            .filter(|child| {
+                matches!(
+                    child.kind(),
+                    SyntaxKind::STMT | SyntaxKind::DECLARATION_STMT
+                )
+            })
+            .count();
 
         // Simple if: 1 or fewer statements AND no semicolons anywhere
         statement_count <= 1 && !has_semicolon_in_tree(node)
