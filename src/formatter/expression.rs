@@ -47,48 +47,37 @@ impl Formatter {
         // Use single-line for simple blocks (single statement, no semicolon)
         // Use multi-line for complex blocks
 
-        // Check if any child block is simple
-        let has_simple_block = node
+        // Pre-calculate which blocks are simple to avoid repeated checks
+        let simple_block_ranges: std::collections::HashSet<_> = node
             .children()
-            .any(|child| child.kind() == SyntaxKind::BLOCK_STMT && self.is_simple_block(&child));
+            .filter(|child| child.kind() == SyntaxKind::BLOCK_STMT && self.is_simple_block(child))
+            .map(|child| child.text_range())
+            .collect();
 
-        if has_simple_block {
-            // Format with single-line blocks
-            for child in node.children_with_tokens() {
-                match child {
-                    NodeOrToken::Node(child_node) => {
-                        if child_node.kind() == SyntaxKind::BLOCK_STMT
-                            && self.is_simple_block(&child_node)
+        let has_simple_block = !simple_block_ranges.is_empty();
+
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(child_node) => {
+                    if child_node.kind() == SyntaxKind::BLOCK_STMT {
+                        if has_simple_block
+                            && simple_block_ranges.contains(&child_node.text_range())
                         {
                             self.format_simple_block(&child_node);
                         } else {
-                            self.format_node(&child_node);
-                        }
-                    }
-                    NodeOrToken::Token(token) => {
-                        self.format_token(&token);
-                    }
-                }
-            }
-        } else {
-            // Default multi-line formatting
-            for child in node.children_with_tokens() {
-                match child {
-                    NodeOrToken::Node(child_node) => {
-                        if child_node.kind() == SyntaxKind::BLOCK_STMT {
-                            // Use multiline formatting for complex blocks
+                            // Consistently use multiline formatting for complex blocks
                             self.format_multiline_delimited(
                                 &child_node,
                                 SyntaxKind::L_BRACE,
                                 SyntaxKind::R_BRACE,
                             );
-                        } else {
-                            self.format_node(&child_node);
                         }
+                    } else {
+                        self.format_node(&child_node);
                     }
-                    NodeOrToken::Token(token) => {
-                        self.format_token(&token);
-                    }
+                }
+                NodeOrToken::Token(token) => {
+                    self.format_token(&token);
                 }
             }
         }
