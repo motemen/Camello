@@ -320,6 +320,7 @@ impl<'a> Lexer<'a> {
                     "state" => SyntaxKind::STATE_KW,
                     "local" => SyntaxKind::LOCAL_KW,
                     "if" => SyntaxKind::IF_KW,
+                    "unless" => SyntaxKind::UNLESS_KW,
                     "elsif" => SyntaxKind::ELSIF_KW,
                     "else" => SyntaxKind::ELSE_KW,
                     "for" => SyntaxKind::FOR_KW,
@@ -554,6 +555,8 @@ impl<'a> Lexer<'a> {
             | SyntaxKind::LOCAL_KW => LexerContext::VariableList, // Expects variables or variable lists
             SyntaxKind::FOR_KW => LexerContext::ExpectingValue, // Expects for condition/iterator
             SyntaxKind::FOREACH_KW => LexerContext::ExpectingValue, // Expects foreach condition/iterator
+            SyntaxKind::IF_KW => LexerContext::ExpectingValue,      // Expects if condition
+            SyntaxKind::UNLESS_KW => LexerContext::ExpectingValue,  // Expects unless condition
             SyntaxKind::WHILE_KW => LexerContext::ExpectingValue,   // Expects while condition
             SyntaxKind::PACKAGE_KW => LexerContext::ExpectingValue, // Expects package name
             // Quote-like operators all transition to the same context

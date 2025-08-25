@@ -24,6 +24,10 @@ impl<'a> Parser<'a> {
                 self.if_stmt();
                 true
             }
+            Some(SyntaxKind::UNLESS_KW) => {
+                self.unless_stmt();
+                true
+            }
             Some(SyntaxKind::FOR_KW) | Some(SyntaxKind::FOREACH_KW) => {
                 self.for_stmt();
                 true
@@ -136,6 +140,12 @@ impl<'a> Parser<'a> {
         }
 
         self.skip_trivia();
+
+        // Check for postfix conditionals (if/unless modifiers)
+        if self.at(SyntaxKind::IF_KW) || self.at(SyntaxKind::UNLESS_KW) {
+            self.parse_postfix_conditional();
+        }
+
         if expect_semicolon {
             self.expect(SyntaxKind::SEMICOLON);
         }
@@ -390,6 +400,37 @@ impl<'a> Parser<'a> {
         self.builder.finish_node();
     }
 
+    fn unless_stmt(&mut self) {
+        self.builder.start_node(SyntaxKind::UNLESS_STMT.into());
+
+        // "unless"
+        self.expect(SyntaxKind::UNLESS_KW);
+        self.skip_trivia();
+
+        // Condition expression in parentheses: unless (expr)
+        if self.at(SyntaxKind::L_PAREN) {
+            self.bump(); // (
+            self.skip_trivia();
+
+            // Parse the unless condition
+            if !self.expression() {
+                self.error("Expected expression in unless condition");
+            }
+
+            self.skip_trivia();
+            self.expect(SyntaxKind::R_PAREN);
+        } else {
+            self.error("Expected '(' after 'unless'");
+        }
+
+        self.skip_trivia();
+
+        // Unless block
+        self.block();
+
+        self.builder.finish_node();
+    }
+
     fn expression_stmt(&mut self) -> bool {
         if !self.is_at_start_of_expression() {
             return false;
@@ -406,6 +447,13 @@ impl<'a> Parser<'a> {
             self.error("Invalid expression statement");
             self.builder.finish_node();
             return true; // Consumed as an error, so return true.
+        }
+
+        self.skip_trivia();
+
+        // Check for postfix conditionals (if/unless modifiers)
+        if self.at(SyntaxKind::IF_KW) || self.at(SyntaxKind::UNLESS_KW) {
+            self.parse_postfix_conditional();
         }
 
         // Check if semicolon is required
@@ -440,6 +488,27 @@ impl<'a> Parser<'a> {
         }
 
         self.expect(SyntaxKind::R_BRACE);
+
+        self.builder.finish_node();
+    }
+
+    fn parse_postfix_conditional(&mut self) {
+        let modifier_kind = if self.at(SyntaxKind::IF_KW) {
+            SyntaxKind::IF_MODIFIER
+        } else {
+            SyntaxKind::UNLESS_MODIFIER
+        };
+
+        self.builder.start_node(modifier_kind.into());
+
+        // Consume the if/unless keyword
+        self.bump();
+        self.skip_trivia();
+
+        // Parse the condition expression
+        if !self.expression() {
+            self.error("Expected condition after postfix if/unless");
+        }
 
         self.builder.finish_node();
     }

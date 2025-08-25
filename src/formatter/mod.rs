@@ -598,11 +598,16 @@ impl Formatter {
             (Some(SyntaxKind::FOREACH_KW), _) => true,
             (Some(SyntaxKind::WHILE_KW), _) => true,
             (Some(SyntaxKind::IF_KW), _) => true,
+            (Some(SyntaxKind::UNLESS_KW), _) => true,
             (Some(SyntaxKind::ELSIF_KW), _) => true,
             (Some(SyntaxKind::ELSE_KW), _) => true,
             (Some(SyntaxKind::PACKAGE_KW), _) => true,
             (Some(SyntaxKind::USE_KW), _) => true,
             (Some(SyntaxKind::RETURN_KW), _) => true,
+
+            // Postfix conditionals: add space before if/unless in postfix position
+            (Some(_), SyntaxKind::IF_KW) => true,
+            (Some(_), SyntaxKind::UNLESS_KW) => true,
 
             // Before left brace "{"
             (Some(_), SyntaxKind::L_BRACE) => true,
@@ -628,6 +633,7 @@ impl Formatter {
                             | SyntaxKind::FOREACH_KW
                             | SyntaxKind::WHILE_KW
                             | SyntaxKind::IF_KW
+                            | SyntaxKind::UNLESS_KW
                             | SyntaxKind::ELSIF_KW
                     ) =>
             {
@@ -1048,6 +1054,50 @@ Everything after =pod should be treated as POD content.
         This POD block goes to EOF without =cut.
         Everything after =pod should be treated as POD content.
         ");
+    }
+
+    #[test]
+    fn test_unless_stmt_formatting() {
+        let input = "unless($condition){do_something();}";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        unless ($condition) {
+            do_something();
+        }
+        ");
+    }
+
+    #[test]
+    fn test_postfix_if_formatting() {
+        let cases = [
+            ("return $x if $x > $y;", "return $x if $x > $y;\n"),
+            ("print \"hello\" if $debug;", "print \"hello\" if $debug;\n"),
+            (
+                "my $result = calculate() if $do_calc;",
+                "my $result = calculate() if $do_calc;\n",
+            ),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_postfix_unless_formatting() {
+        let cases = [
+            ("return $x unless $x > $y;", "return $x unless $x > $y;\n"),
+            (
+                "print \"hello\" unless $quiet;",
+                "print \"hello\" unless $quiet;\n",
+            ),
+            (
+                "die \"Error\" unless defined $result;",
+                "die \"Error\" unless defined $result;\n",
+            ),
+        ];
+        check_formatting_cases(&cases);
     }
 }
 
