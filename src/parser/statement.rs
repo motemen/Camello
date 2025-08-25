@@ -306,21 +306,8 @@ impl<'a> Parser<'a> {
         self.expect(SyntaxKind::WHILE_KW);
         self.skip_trivia();
 
-        // Condition expression in parentheses: while (expr)
-        if self.at(SyntaxKind::L_PAREN) {
-            self.bump(); // (
-            self.skip_trivia();
-
-            // Parse the while condition
-            if !self.expression() {
-                self.error("Expected expression in while condition");
-            }
-
-            self.skip_trivia();
-            self.expect(SyntaxKind::R_PAREN);
-        } else {
-            self.error("Expected '(' after 'while'");
-        }
+        // Parse parenthesized condition
+        self.parse_parenthesized_condition("while");
 
         self.skip_trivia();
 
@@ -337,21 +324,8 @@ impl<'a> Parser<'a> {
         self.expect(SyntaxKind::IF_KW);
         self.skip_trivia();
 
-        // Condition expression in parentheses: if (expr)
-        if self.at(SyntaxKind::L_PAREN) {
-            self.bump(); // (
-            self.skip_trivia();
-
-            // Parse the if condition
-            if !self.expression() {
-                self.error("Expected expression in if condition");
-            }
-
-            self.skip_trivia();
-            self.expect(SyntaxKind::R_PAREN);
-        } else {
-            self.error("Expected '(' after 'if'");
-        }
+        // Parse parenthesized condition
+        self.parse_parenthesized_condition("if");
 
         self.skip_trivia();
 
@@ -364,20 +338,8 @@ impl<'a> Parser<'a> {
             self.bump(); // elsif
             self.skip_trivia();
 
-            if self.at(SyntaxKind::L_PAREN) {
-                self.bump(); // (
-                self.skip_trivia();
-
-                // Parse the if condition
-                if !self.expression() {
-                    self.error("Expected expression in elsif condition");
-                }
-
-                self.skip_trivia();
-                self.expect(SyntaxKind::R_PAREN);
-            } else {
-                self.error("Expected '(' after 'elsif'");
-            }
+            // Parse parenthesized condition
+            self.parse_parenthesized_condition("elsif");
 
             self.skip_trivia();
 
@@ -405,21 +367,8 @@ impl<'a> Parser<'a> {
         self.expect(SyntaxKind::UNLESS_KW);
         self.skip_trivia();
 
-        // Condition expression in parentheses: unless (expr)
-        if self.at(SyntaxKind::L_PAREN) {
-            self.bump(); // (
-            self.skip_trivia();
-
-            // Parse the unless condition
-            if !self.expression() {
-                self.error("Expected expression in unless condition");
-            }
-
-            self.skip_trivia();
-            self.expect(SyntaxKind::R_PAREN);
-        } else {
-            self.error("Expected '(' after 'unless'");
-        }
+        // Parse parenthesized condition
+        self.parse_parenthesized_condition("unless");
 
         self.skip_trivia();
 
@@ -495,7 +444,10 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_postfix_conditional(&mut self) {
-        let modifier_kind = if self.at(SyntaxKind::IF_KW) {
+        let keyword_kind = self
+            .current_kind()
+            .expect("Current token should be if/unless keyword");
+        let modifier_kind = if keyword_kind == SyntaxKind::IF_KW {
             SyntaxKind::IF_MODIFIER
         } else {
             SyntaxKind::UNLESS_MODIFIER
@@ -513,6 +465,27 @@ impl<'a> Parser<'a> {
         }
 
         self.builder.finish_node();
+    }
+
+    /// Helper function to parse parenthesized conditions for if/unless/while/elsif statements
+    fn parse_parenthesized_condition(&mut self, construct_name: &str) {
+        if self.at(SyntaxKind::L_PAREN) {
+            self.bump(); // (
+            self.skip_trivia();
+
+            // Parse the condition
+            if !self.expression() {
+                self.error(&format!(
+                    "Expected expression in {} condition",
+                    construct_name
+                ));
+            }
+
+            self.skip_trivia();
+            self.expect(SyntaxKind::R_PAREN);
+        } else {
+            self.error(&format!("Expected '(' after '{}'", construct_name));
+        }
     }
 }
 
