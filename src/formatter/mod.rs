@@ -1,6 +1,15 @@
 use crate::{PerlLanguage, PerlNode, SyntaxKind};
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
 
+// Helper function for checking disallowed tokens
+fn has_disallowed_tokens(node: &PerlNode) -> bool {
+    node.descendants_with_tokens().any(|element| {
+        element.as_token().is_some_and(|token| {
+            matches!(token.kind(), SyntaxKind::SEMICOLON | SyntaxKind::COMMENT)
+        })
+    })
+}
+
 pub struct Formatter {
     output: String,
     indent_level: usize,
@@ -293,16 +302,7 @@ impl Formatter {
     }
 
     fn is_simple_block(&self, node: &PerlNode) -> bool {
-        // Check if a block contains only a single expression without semicolon
-        // Look for semicolons anywhere in the tree, not just direct children
-
-        fn has_semicolon_in_tree(node: &PerlNode) -> bool {
-            node.descendants_with_tokens().any(|element| {
-                element
-                    .as_token()
-                    .is_some_and(|token| token.kind() == SyntaxKind::SEMICOLON)
-            })
-        }
+        // Check if a block contains only a single expression without semicolon or comments
 
         let statement_count = node
             .children()
@@ -314,8 +314,8 @@ impl Formatter {
             })
             .count();
 
-        // Simple if: 1 or fewer statements AND no semicolons anywhere
-        statement_count <= 1 && !has_semicolon_in_tree(node)
+        // Simple if: 1 or fewer statements AND no semicolons or comments anywhere
+        statement_count <= 1 && !has_disallowed_tokens(node)
     }
 
     fn format_simple_block(&mut self, node: &PerlNode) {
@@ -338,7 +338,9 @@ impl Formatter {
                             self.prev_token_kind = Some(token.kind());
                         }
                         SyntaxKind::R_BRACE => {
-                            self.output.push(' '); // Add space before closing brace
+                            if self.prev_token_kind != Some(SyntaxKind::L_BRACE) {
+                                self.output.push(' '); // Add space before closing brace
+                            }
                             self.output.push_str(token.text());
                             self.prev_token_kind = Some(token.kind());
                         }

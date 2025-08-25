@@ -54,15 +54,11 @@ impl Formatter {
             .map(|child| child.text_range())
             .collect();
 
-        let has_simple_block = !simple_block_ranges.is_empty();
-
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(child_node) => {
                     if child_node.kind() == SyntaxKind::BLOCK_STMT {
-                        if has_simple_block
-                            && simple_block_ranges.contains(&child_node.text_range())
-                        {
+                        if simple_block_ranges.contains(&child_node.text_range()) {
                             self.format_simple_block(&child_node);
                         } else {
                             // Consistently use multiline formatting for complex blocks
