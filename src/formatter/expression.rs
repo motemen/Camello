@@ -44,7 +44,7 @@ impl Formatter {
 
     pub fn format_block_function_call(&mut self, node: &PerlNode) {
         // Format block function call: function_name { ... } additional_args
-        // Keep short blocks on same line, longer blocks with proper indentation
+        // Always format block functions in multi-line style for better readability
 
         let children = node.children_with_tokens().peekable();
 
@@ -53,12 +53,9 @@ impl Formatter {
                 NodeOrToken::Node(child_node) => {
                     match child_node.kind() {
                         SyntaxKind::BLOCK_STMT => {
-                            // Check if this is a simple, short block
-                            if self.is_simple_block(&child_node) {
-                                self.format_simple_block(&child_node);
-                            } else {
-                                self.format_node(&child_node);
-                            }
+                            // Always format block statements in block functions as multi-line
+                            // Block functions like eval, map, grep, sort should use multi-line formatting
+                            self.format_node(&child_node);
                         }
                         _ => {
                             self.format_node(&child_node);

@@ -396,61 +396,6 @@ impl Formatter {
         self.has_newline_before_first_value(node)
     }
 
-    fn is_simple_block(&self, block_node: &PerlNode) -> bool {
-        // Consider a block simple if it has only one statement and is relatively short
-        let statements: Vec<_> = block_node
-            .children()
-            .filter(|child| {
-                child.kind() == SyntaxKind::STMT || child.kind() == SyntaxKind::DECLARATION_STMT
-            })
-            .collect();
-
-        statements.len() <= 1
-    }
-
-    fn format_simple_block(&mut self, block_node: &PerlNode) {
-        // Format simple blocks on the same line: { expr }
-        for child in block_node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
-                NodeOrToken::Token(token) => {
-                    let kind = token.kind();
-                    let text = token.text();
-
-                    match kind {
-                        SyntaxKind::WHITESPACE => {
-                            // Special handling: reduce whitespace to a single space in simple blocks
-                            // Only add space if not adjacent to braces and content exists
-                            if !self.output.ends_with(' ') && !self.output.ends_with('{') {
-                                self.output.push(' ');
-                            }
-                            // Call handle_whitespace for future unification
-                            self.handle_whitespace(&token);
-                        }
-                        SyntaxKind::L_BRACE => {
-                            self.handle_spacing_before(kind);
-                            if self.at_line_start {
-                                self.add_indent();
-                                self.at_line_start = false;
-                            }
-                            self.output.push_str(text);
-                            self.output.push(' '); // Space after opening brace
-                            self.prev_token_kind = Some(kind);
-                        }
-                        SyntaxKind::R_BRACE => {
-                            self.output.push(' '); // Space before closing brace
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
-                        }
-                        _ => {
-                            self.format_token(&token);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     fn next_significant_token(
         token: &SyntaxToken<PerlLanguage>,
     ) -> Option<SyntaxToken<PerlLanguage>> {
@@ -942,6 +887,43 @@ sub test {
     }
 
     #[test]
+    fn test_eval_block_with_method_call_formatting() {
+        let input = "eval { $obj->meth; };";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        eval {
+            $obj->meth;
+        };
+        ");
+    }
+
+    #[test]
+    fn test_block_function_formatting_variants() {
+        let cases = [
+            // Different block functions should all use multi-line formatting
+            ("eval{1;};", "eval {\n    1;\n};\n"),
+            ("map{$_*2;}@list;", "map {\n    $_ * 2;\n}\n@list;\n"),
+            (
+                "grep{defined$_;}@array;",
+                "grep {\n    defined $_;\n}\n@array;\n",
+            ),
+            (
+                "sort{$a+$b;}@numbers;",
+                "sort {\n    $a + $b;\n}\n@numbers;\n",
+            ),
+            (
+                "do{my$x=1;return$x;};",
+                "do {\n    my $x = 1;\n    return $x;\n};\n",
+            ),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
     fn test_map_with_parentheses_formatting() {
         let input = "map{$_*2}(1,2,3); sort{$a+$b}@values;";
         let (syntax, err) = parse_perl(input);
@@ -950,8 +932,12 @@ sub test {
         let formatted = format(&syntax);
 
         insta::assert_snapshot!(formatted, @r"
-        map { $_ * 2 } (1, 2, 3);
-        sort { $a + $b } @values;
+map {
+    $_ * 2}
+(1, 2, 3);
+sort {
+    $a + $b}
+@values;
         ");
     }
 
