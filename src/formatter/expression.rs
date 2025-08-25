@@ -44,26 +44,12 @@ impl Formatter {
 
     pub fn format_block_function_call(&mut self, node: &PerlNode) {
         // Format block function call: function_name { ... } additional_args
-        // Keep short blocks on same line, longer blocks with proper indentation
+        // Always use multi-line formatting for blocks for consistency
 
-        let children = node.children_with_tokens().peekable();
-
-        for child in children {
+        for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(child_node) => {
-                    match child_node.kind() {
-                        SyntaxKind::BLOCK_STMT => {
-                            // Check if this is a simple, short block
-                            if self.is_simple_block(&child_node) {
-                                self.format_simple_block(&child_node);
-                            } else {
-                                self.format_node(&child_node);
-                            }
-                        }
-                        _ => {
-                            self.format_node(&child_node);
-                        }
-                    }
+                    self.format_node(&child_node);
                 }
                 NodeOrToken::Token(token) => {
                     self.format_token(&token);
