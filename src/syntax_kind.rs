@@ -2,34 +2,34 @@
 #[allow(non_camel_case_types)]
 #[repr(u16)]
 pub enum SyntaxKind {
-    // ===== トークンレベル =====
+    // ===== Token Level =====
 
-    // トリビア（空白・コメント）
+    // Trivia (whitespace, comments)
     WHITESPACE,
     COMMENT,
 
-    // 識別子・変数
+    // Identifiers / Variables
     IDENT,
-    QUALIFIED_IDENT, // 修飾付き識別子（Foo::Bar::baz）
+    QUALIFIED_IDENT, // Qualified identifier (e.g., Foo::Bar::baz)
 
-    // Sigils（変数の型を示すプレフィックス）
+    // Sigils (prefixes indicating variable type)
     DOLLAR,  // $
     AT,      // @
     PERCENT, // %
     CARET,   // ^
 
-    // 複合変数ノード（後で使用）
+    // Composite variable nodes (used later)
     SCALAR_VAR,
     ARRAY_VAR,
     HASH_VAR,
 
-    // リテラル
+    // Literals
     NUMBER,
     STRING,
     VERSION,       // v1.23, v5.008_001
     REGEX_LITERAL, // /pattern/flags
 
-    // キーワード
+    // Keywords
     SUB_KW,
     MY_KW,
     OUR_KW,
@@ -52,15 +52,15 @@ pub enum SyntaxKind {
     USE_KW,    // use keyword (for use warnings qw(...) syntax)
     RETURN_KW, // return keyword
 
-    // データセクション
+    // Data section
     END_KW,  // __END__
     DATA_KW, // __DATA__
 
-    // POD関連
+    // POD related
     POD_COMMAND, // =pod, =head1, =cut, etc.
     CUT_KW,      // =cut keyword
 
-    // 記号・区切り文字
+    // Symbols / Delimiters
     L_BRACE,      // {
     R_BRACE,      // }
     L_PAREN,      // (
@@ -71,19 +71,19 @@ pub enum SyntaxKind {
     COMMA,        // ,
     DOUBLE_COLON, // ::
 
-    // qw() 専用
-    QW_STRING, // qw()内の任意のテキスト
+    // For qw() only
+    QW_STRING, // Any text inside qw()
 
     // Q-string family content
-    Q_STRING,      // q()内の任意のテキスト (single-quoted string content)
-    QQ_STRING,     // qq()内の任意のテキスト (double-quoted string content)
-    QX_STRING,     // qx()内の任意のテキスト (command execution content)
-    M_STRING,      // m()内の任意のテキスト (match regex content)
-    QR_STRING,     // qr()内の任意のテキスト (compiled regex content)
-    S_PATTERN,     // s()内のパターン部分 (substitution pattern)
-    S_REPLACEMENT, // s()内の置換部分 (substitution replacement)
+    Q_STRING,      // Any text inside q() (single-quoted string content)
+    QQ_STRING,     // Any text inside qq() (double-quoted string content)
+    QX_STRING,     // Any text inside qx() (command execution content)
+    M_STRING,      // Any text inside m() (match regex content)
+    QR_STRING,     // Any text inside qr() (compiled regex content)
+    S_PATTERN,     // Pattern part inside s() (substitution pattern)
+    S_REPLACEMENT, // Replacement part inside s() (substitution replacement)
 
-    // 演算子
+    // Operators
     EQ,        // =
     PLUS,      // +
     MINUS,     // -
@@ -120,64 +120,64 @@ pub enum SyntaxKind {
     LOGICAL_AND, // &&
     LOGICAL_OR,  // ||
 
-    // ===== ノードレベル（複合構造） =====
-    ROOT,       // ファイルのルート
-    SUB_DEF,    // サブルーチン定義
-    BLOCK_STMT, // ブロック文
+    // ===== Node Level (composite structures) =====
+    ROOT,       // File root
+    SUB_DEF,    // Subroutine definition
+    BLOCK_STMT, // Block statement
 
-    // 宣言文
-    DECLARATION_STMT, // 変数宣言（my, our, state など）
-    PACKAGE_STMT,     // パッケージ宣言（package Foo::Bar）
-    USE_STMT,         // use文（use warnings qw(all);）
-    FOR_STMT,         // for文
-    WHILE_STMT,       // while文
-    IF_STMT,          // if文
+    // Declarations
+    DECLARATION_STMT, // Variable declaration (my, our, state, etc.)
+    PACKAGE_STMT,     // Package declaration (package Foo::Bar)
+    USE_STMT,         // use statement (use warnings qw(all);)
+    FOR_STMT,         // for statement
+    WHILE_STMT,       // while statement
+    IF_STMT,          // if statement
 
-    // データセクション（__END__ / __DATA__ 以降の内容）
+    // Data section (content after __END__ / __DATA__)
     DATA_SECTION,
     RAW_STRING,
 
-    // POD関連
+    // POD related
     POD_BLOCK,   // POD block containing commands and content
     POD_CONTENT, // Content within POD block (verbatim text)
 
-    // 式
-    INFIX_EXPR,               // 中置式（二項演算式）
-    PREFIX_EXPR,              // 前置式（単項演算式、例: !$foo, -$x）
-    POSTFIX_EXPR,             // 後置式（例: $i++, $i--）
-    METHOD_CALL_EXPR,         // メソッド呼び出し式（例: $obj->method()）
-    HASH_REF_ACCESS_EXPR,     // ハッシュリファレンスアクセス式（例: $hash->{key}）
-    ARRAY_REF_ACCESS_EXPR,    // 配列リファレンスアクセス式（例: $arr->[0]）
-    CODE_REF_CALL_EXPR,       // コードリファレンス呼び出し式（例: $coderef->(args)）
-    HASH_SUBSCRIPTION_EXPR,   // ハッシュ直接アクセス式（例: $hash{key}）
-    ARRAY_SUBSCRIPTION_EXPR,  // 配列直接アクセス式（例: $array[0]）
-    FUNCTION_CALL_EXPR,       // 関数呼び出し式（例: push @array, $value）
-    BLOCK_FUNCTION_CALL_EXPR, // ブロック関数呼び出し式（例: eval { ... }, map { ... } @list）
-    QW_EXPR,                  // qw() 式（クォートワードリスト）
-    Q_EXPR,                   // q() 式（単引用符付き文字列リテラル）
-    QQ_EXPR,                  // qq() 式（二重引用符付き文字列リテラル）
-    QX_EXPR,                  // qx() 式（コマンド実行）
-    M_EXPR,                   // m() 式（マッチ正規表現リテラル）
-    QR_EXPR,                  // qr() 式（コンパイル済み正規表現リテラル）
-    S_EXPR,                   // s() 式（置換式リテラル）
-    DEREF_EXPR,               // デリファレンス式（例: @$var, %$var, $$var）
-    REGEX_EXPR,               // 正規表現式（例: $str =~ "pattern"）
+    // Expressions
+    INFIX_EXPR,               // Infix expression (binary operation)
+    PREFIX_EXPR,              // Prefix expression (unary operation, e.g., !$foo, -$x)
+    POSTFIX_EXPR,             // Postfix expression (e.g., $i++, $i--)
+    METHOD_CALL_EXPR,         // Method call expression (e.g., $obj->method())
+    HASH_REF_ACCESS_EXPR,     // Hash reference access expression (e.g., $hash->{key})
+    ARRAY_REF_ACCESS_EXPR,    // Array reference access expression (e.g., $arr->[0])
+    CODE_REF_CALL_EXPR,       // Code reference call expression (e.g., $coderef->(args))
+    HASH_SUBSCRIPTION_EXPR,   // Direct hash access expression (e.g., $hash{key})
+    ARRAY_SUBSCRIPTION_EXPR,  // Direct array access expression (e.g., $array[0])
+    FUNCTION_CALL_EXPR,       // Function call expression (e.g., push @array, $value)
+    BLOCK_FUNCTION_CALL_EXPR, // Block function call expression (e.g., eval { ... }, map { ... } @list)
+    QW_EXPR,                  // qw() expression (quote word list)
+    Q_EXPR,                   // q() expression (single-quoted string literal)
+    QQ_EXPR,                  // qq() expression (double-quoted string literal)
+    QX_EXPR,                  // qx() expression (command execution)
+    M_EXPR,                   // m() expression (match regex literal)
+    QR_EXPR,                  // qr() expression (compiled regex literal)
+    S_EXPR,                   // s() expression (substitution literal)
+    DEREF_EXPR,               // Dereference expression (e.g., @$var, %$var, $$var)
+    REGEX_EXPR,               // Regex expression (e.g., $str =~ "pattern")
 
-    // リテラル・リファレンス
-    HASH_REF,  // ハッシュリファレンス（匿名ハッシュ）
-    ARRAY_REF, // 配列リファレンス（匿名配列）
+    // Literal references
+    HASH_REF,  // Hash reference (anonymous hash)
+    ARRAY_REF, // Array reference (anonymous array)
 
-    // 修飾子
-    IF_MODIFIER, // 後置if修飾子（例: print "hello" if $debug;）
+    // Modifiers
+    IF_MODIFIER, // Postfix if modifier (e.g., print "hello" if $debug;)
 
-    // その他の文
-    STMT, // 一般的な文
+    // Other statements
+    STMT, // General statement
 
-    EXPR_LIST, // 式のリスト（例: $a, $b, $c）
+    EXPR_LIST, // Expression list (e.g., $a, $b, $c)
 
-    // ===== その他 =====
-    ERROR, // パースエラー
-    EOF,   // ファイル終端
+    // ===== Other =====
+    ERROR, // Parse error
+    EOF,   // End of file
 }
 
 impl SyntaxKind {
