@@ -231,16 +231,29 @@ impl<'a> Parser<'a> {
         )
     }
 
-    // Prefix expressions: !, not
+    // Prefix expressions: ! (high precedence) and not (low precedence)
     fn prefix_expr(&mut self) -> bool {
-        // Check for prefix operators
-        if self.at_any(&[SyntaxKind::LOGICAL_NOT, SyntaxKind::NOT_KW]) {
+        // Handle high-precedence prefix ! first
+        if self.at(SyntaxKind::LOGICAL_NOT) {
             self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
             self.bump(); // Consume the prefix operator
             self.skip_trivia();
 
             if !self.prefix_expr() {
                 self.error("Expected expression after prefix operator");
+            }
+
+            self.builder.finish_node();
+            true
+        }
+        // Handle low-precedence prefix not
+        else if self.at(SyntaxKind::NOT_KW) {
+            self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
+            self.bump(); // Consume the not operator
+            self.skip_trivia();
+
+            if !self.prefix_expr() {
+                self.error("Expected expression after 'not' operator");
             }
 
             self.builder.finish_node();
@@ -482,7 +495,6 @@ impl<'a> Parser<'a> {
                             SyntaxKind::STATE_KW,
                             SyntaxKind::LOCAL_KW,
                             SyntaxKind::LOGICAL_NOT, // Prefix logical NOT operator
-                            SyntaxKind::NOT_KW,      // Prefix 'not' operator
                         ])
                         || kind.is_sigil()
                     {

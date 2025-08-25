@@ -102,7 +102,7 @@ pub enum Token {
     #[token("!")]
     LogicalNot,
 
-    // Defined-or operator (must come before "!" due to priority)
+    // Defined-or operator
     #[token("//")]
     DefinedOr,
 
@@ -433,7 +433,15 @@ impl<'a> Lexer<'a> {
                     "and" => SyntaxKind::AND_KW,
                     "or" => SyntaxKind::OR_KW,
                     "xor" => SyntaxKind::XOR_KW,
-                    _ => SyntaxKind::IDENT, // Handle unknown ops gracefully
+                    _ => unreachable!(), // This branch should not be reached
+                }
+            }
+            LexerContext::ExpectingValue => {
+                // When expecting a value, "not" can be a prefix operator
+                // but "and", "or", "xor" are identifiers in value context
+                match op {
+                    "not" => SyntaxKind::NOT_KW,
+                    _ => SyntaxKind::IDENT,
                 }
             }
             _ => {
@@ -641,9 +649,7 @@ impl<'a> Lexer<'a> {
             | SyntaxKind::STR_CMP => LexerContext::ExpectingValue,
             SyntaxKind::LOGICAL_AND | SyntaxKind::LOGICAL_OR => LexerContext::ExpectingValue,
             SyntaxKind::LOGICAL_NOT => LexerContext::ExpectingValue, // Prefix operator
-            SyntaxKind::NOT_KW | SyntaxKind::AND_KW | SyntaxKind::OR_KW | SyntaxKind::XOR_KW => {
-                LexerContext::ExpectingValue
-            }
+            SyntaxKind::NOT_KW | SyntaxKind::AND_KW | SyntaxKind::OR_KW | SyntaxKind::XOR_KW => LexerContext::ExpectingValue,
             SyntaxKind::DEFINED_OR => LexerContext::ExpectingValue,
             SyntaxKind::SPACESHIP => LexerContext::ExpectingValue,
             SyntaxKind::REGEX_MATCH | SyntaxKind::REGEX_NOT_MATCH => LexerContext::ExpectingValue,

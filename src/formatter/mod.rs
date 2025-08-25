@@ -603,6 +603,13 @@ impl Formatter {
             (Some(_), SyntaxKind::LOGICAL_AND) | (Some(SyntaxKind::LOGICAL_AND), _) => true,
             (Some(_), SyntaxKind::LOGICAL_OR) | (Some(SyntaxKind::LOGICAL_OR), _) => true,
 
+            // Special case: no space between ! and not
+            (Some(SyntaxKind::LOGICAL_NOT), SyntaxKind::NOT_KW) => false,
+
+            // Note: LOGICAL_NOT (!) is a prefix operator, so it gets different handling
+            (Some(SyntaxKind::LOGICAL_NOT), _) => false, // No space after !
+            (Some(_), SyntaxKind::LOGICAL_NOT) => true,  // Space before !
+
             // Low-precedence logical operators
             (Some(_), SyntaxKind::NOT_KW) | (Some(SyntaxKind::NOT_KW), _) => true,
             (Some(_), SyntaxKind::AND_KW) | (Some(SyntaxKind::AND_KW), _) => true,
@@ -611,10 +618,6 @@ impl Formatter {
 
             // Defined-or operator
             (Some(_), SyntaxKind::DEFINED_OR) | (Some(SyntaxKind::DEFINED_OR), _) => true,
-
-            // Note: LOGICAL_NOT (!) is a prefix operator, so it gets different handling
-            (Some(SyntaxKind::LOGICAL_NOT), _) => false, // No space after !
-            (Some(_), SyntaxKind::LOGICAL_NOT) => true,  // Space before !
 
             // foo, bar
             (Some(SyntaxKind::COMMA), _) => true,
