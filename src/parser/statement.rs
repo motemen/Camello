@@ -142,9 +142,7 @@ impl<'a> Parser<'a> {
         self.skip_trivia();
 
         // Check for postfix conditionals (if/unless modifiers)
-        if self.at(SyntaxKind::IF_KW) || self.at(SyntaxKind::UNLESS_KW) {
-            self.parse_postfix_conditional();
-        }
+        self.parse_optional_postfix_conditional();
 
         if expect_semicolon {
             self.expect(SyntaxKind::SEMICOLON);
@@ -452,9 +450,7 @@ impl<'a> Parser<'a> {
         self.skip_trivia();
 
         // Check for postfix conditionals (if/unless modifiers)
-        if self.at(SyntaxKind::IF_KW) || self.at(SyntaxKind::UNLESS_KW) {
-            self.parse_postfix_conditional();
-        }
+        self.parse_optional_postfix_conditional();
 
         // Check if semicolon is required
         // Semicolons are required except for the last statement in a block, end of file, or before data sections
@@ -490,6 +486,12 @@ impl<'a> Parser<'a> {
         self.expect(SyntaxKind::R_BRACE);
 
         self.builder.finish_node();
+    }
+
+    fn parse_optional_postfix_conditional(&mut self) {
+        if self.at(SyntaxKind::IF_KW) || self.at(SyntaxKind::UNLESS_KW) {
+            self.parse_postfix_conditional();
+        }
     }
 
     fn parse_postfix_conditional(&mut self) {
