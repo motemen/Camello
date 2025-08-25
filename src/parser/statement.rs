@@ -24,6 +24,10 @@ impl<'a> Parser<'a> {
                 self.if_stmt();
                 true
             }
+            Some(SyntaxKind::UNLESS_KW) => {
+                self.unless_stmt();
+                true
+            }
             Some(SyntaxKind::FOR_KW) | Some(SyntaxKind::FOREACH_KW) => {
                 self.for_stmt();
                 true
@@ -136,6 +140,10 @@ impl<'a> Parser<'a> {
         }
 
         self.skip_trivia();
+
+        // Check for postfix conditionals (if/unless modifiers)
+        self.parse_optional_postfix_conditional();
+
         if expect_semicolon {
             self.expect(SyntaxKind::SEMICOLON);
         }
@@ -298,21 +306,8 @@ impl<'a> Parser<'a> {
         self.expect(SyntaxKind::WHILE_KW);
         self.skip_trivia();
 
-        // Condition expression in parentheses: while (expr)
-        if self.at(SyntaxKind::L_PAREN) {
-            self.bump(); // (
-            self.skip_trivia();
-
-            // Parse the while condition
-            if !self.expression() {
-                self.error("Expected expression in while condition");
-            }
-
-            self.skip_trivia();
-            self.expect(SyntaxKind::R_PAREN);
-        } else {
-            self.error("Expected '(' after 'while'");
-        }
+        // Parse parenthesized condition
+        self.parse_parenthesized_condition("while");
 
         self.skip_trivia();
 
@@ -329,21 +324,8 @@ impl<'a> Parser<'a> {
         self.expect(SyntaxKind::IF_KW);
         self.skip_trivia();
 
-        // Condition expression in parentheses: if (expr)
-        if self.at(SyntaxKind::L_PAREN) {
-            self.bump(); // (
-            self.skip_trivia();
-
-            // Parse the if condition
-            if !self.expression() {
-                self.error("Expected expression in if condition");
-            }
-
-            self.skip_trivia();
-            self.expect(SyntaxKind::R_PAREN);
-        } else {
-            self.error("Expected '(' after 'if'");
-        }
+        // Parse parenthesized condition
+        self.parse_parenthesized_condition("if");
 
         self.skip_trivia();
 
@@ -356,20 +338,8 @@ impl<'a> Parser<'a> {
             self.bump(); // elsif
             self.skip_trivia();
 
-            if self.at(SyntaxKind::L_PAREN) {
-                self.bump(); // (
-                self.skip_trivia();
-
-                // Parse the if condition
-                if !self.expression() {
-                    self.error("Expected expression in elsif condition");
-                }
-
-                self.skip_trivia();
-                self.expect(SyntaxKind::R_PAREN);
-            } else {
-                self.error("Expected '(' after 'elsif'");
-            }
+            // Parse parenthesized condition
+            self.parse_parenthesized_condition("elsif");
 
             self.skip_trivia();
 
@@ -386,6 +356,24 @@ impl<'a> Parser<'a> {
             // Else block
             self.block();
         }
+
+        self.builder.finish_node();
+    }
+
+    fn unless_stmt(&mut self) {
+        self.builder.start_node(SyntaxKind::UNLESS_STMT.into());
+
+        // "unless"
+        self.expect(SyntaxKind::UNLESS_KW);
+        self.skip_trivia();
+
+        // Parse parenthesized condition
+        self.parse_parenthesized_condition("unless");
+
+        self.skip_trivia();
+
+        // Unless block
+        self.block();
 
         self.builder.finish_node();
     }
@@ -407,6 +395,11 @@ impl<'a> Parser<'a> {
             self.builder.finish_node();
             return true; // Consumed as an error, so return true.
         }
+
+        self.skip_trivia();
+
+        // Check for postfix conditionals (if/unless modifiers)
+        self.parse_optional_postfix_conditional();
 
         // Check if semicolon is required
         // Semicolons are required except for the last statement in a block, end of file, or before data sections
@@ -442,6 +435,57 @@ impl<'a> Parser<'a> {
         self.expect(SyntaxKind::R_BRACE);
 
         self.builder.finish_node();
+    }
+
+    fn parse_optional_postfix_conditional(&mut self) {
+        if self.at(SyntaxKind::IF_KW) || self.at(SyntaxKind::UNLESS_KW) {
+            self.parse_postfix_conditional();
+        }
+    }
+
+    fn parse_postfix_conditional(&mut self) {
+        let keyword_kind = self
+            .current_kind()
+            .expect("Current token should be if/unless keyword");
+        let modifier_kind = if keyword_kind == SyntaxKind::IF_KW {
+            SyntaxKind::IF_MODIFIER
+        } else {
+            SyntaxKind::UNLESS_MODIFIER
+        };
+
+        self.builder.start_node(modifier_kind.into());
+
+        // Consume the if/unless keyword
+        self.bump();
+        self.skip_trivia();
+
+        // Parse the condition expression
+        if !self.expression() {
+            self.error("Expected condition after postfix if/unless");
+        }
+
+        self.builder.finish_node();
+    }
+
+    /// Helper function to parse parenthesized conditions for if/unless/while/elsif statements
+    fn parse_parenthesized_condition(&mut self, construct_name: &str) {
+        if self.at(SyntaxKind::L_PAREN) {
+            self.bump(); // (
+            self.skip_trivia();
+
+            // Parse the condition
+            if !self.expression() {
+                self.error(&format!(
+                    "Expected expression in {} condition",
+                    construct_name
+                ));
+            }
+
+            self.skip_trivia();
+            self.expect(SyntaxKind::R_PAREN);
+        } else {
+            self.error(&format!("Expected '(' after '{}'", construct_name));
+        }
     }
 }
 
