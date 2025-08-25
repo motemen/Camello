@@ -44,25 +44,32 @@ impl Formatter {
 
     pub fn format_block_function_call(&mut self, node: &PerlNode) {
         // Format block function call: function_name { ... } additional_args
-        // Keep short blocks on same line, longer blocks with proper indentation
+        // Use single-line for simple blocks (single statement, no semicolon)
+        // Use multi-line for complex blocks
 
-        let children = node.children_with_tokens().peekable();
+        // Pre-calculate which blocks are simple to avoid repeated checks
+        let simple_block_ranges: std::collections::HashSet<_> = node
+            .children()
+            .filter(|child| child.kind() == SyntaxKind::BLOCK_STMT && self.is_simple_block(child))
+            .map(|child| child.text_range())
+            .collect();
 
-        for child in children {
+        for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(child_node) => {
-                    match child_node.kind() {
-                        SyntaxKind::BLOCK_STMT => {
-                            // Check if this is a simple, short block
-                            if self.is_simple_block(&child_node) {
-                                self.format_simple_block(&child_node);
-                            } else {
-                                self.format_node(&child_node);
-                            }
+                    if child_node.kind() == SyntaxKind::BLOCK_STMT {
+                        if simple_block_ranges.contains(&child_node.text_range()) {
+                            self.format_simple_block(&child_node);
+                        } else {
+                            // Consistently use multiline formatting for complex blocks
+                            self.format_multiline_delimited(
+                                &child_node,
+                                SyntaxKind::L_BRACE,
+                                SyntaxKind::R_BRACE,
+                            );
                         }
-                        _ => {
-                            self.format_node(&child_node);
-                        }
+                    } else {
+                        self.format_node(&child_node);
                     }
                 }
                 NodeOrToken::Token(token) => {
