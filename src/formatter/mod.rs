@@ -1,6 +1,15 @@
 use crate::{PerlLanguage, PerlNode, SyntaxKind};
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
 
+// Helper function for checking disallowed tokens
+fn has_disallowed_tokens(node: &PerlNode) -> bool {
+    node.descendants_with_tokens().any(|element| {
+        element.as_token().is_some_and(|token| {
+            matches!(token.kind(), SyntaxKind::SEMICOLON | SyntaxKind::COMMENT)
+        })
+    })
+}
+
 pub struct Formatter {
     output: String,
     indent_level: usize,
@@ -292,6 +301,61 @@ impl Formatter {
         false
     }
 
+    fn is_simple_block(&self, node: &PerlNode) -> bool {
+        // Check if a block contains only a single expression without semicolon or comments
+
+        let statement_count = node
+            .children()
+            .filter(|child| {
+                matches!(
+                    child.kind(),
+                    SyntaxKind::STMT | SyntaxKind::DECLARATION_STMT
+                )
+            })
+            .count();
+
+        // Simple if: 1 or fewer statements AND no semicolons or comments anywhere
+        statement_count <= 1 && !has_disallowed_tokens(node)
+    }
+
+    fn format_simple_block(&mut self, node: &PerlNode) {
+        // Format a simple block on a single line: { expression }
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(child_node) => {
+                    self.format_node(&child_node);
+                }
+                NodeOrToken::Token(token) => {
+                    match token.kind() {
+                        SyntaxKind::L_BRACE => {
+                            self.handle_spacing_before(token.kind());
+                            if self.at_line_start {
+                                self.add_indent();
+                                self.at_line_start = false;
+                            }
+                            self.output.push_str(token.text());
+                            self.output.push(' '); // Add space after opening brace
+                            self.prev_token_kind = Some(token.kind());
+                        }
+                        SyntaxKind::R_BRACE => {
+                            if self.prev_token_kind != Some(SyntaxKind::L_BRACE) {
+                                self.output.push(' '); // Add space before closing brace
+                            }
+                            self.output.push_str(token.text());
+                            self.prev_token_kind = Some(token.kind());
+                        }
+                        SyntaxKind::WHITESPACE => {
+                            // Skip whitespace in simple blocks
+                        }
+                        _ => {
+                            self.format_token(&token);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn format_multiline_delimited(
         &mut self,
         node: &PerlNode,
@@ -396,61 +460,6 @@ impl Formatter {
         self.has_newline_before_first_value(node)
     }
 
-    fn is_simple_block(&self, block_node: &PerlNode) -> bool {
-        // Consider a block simple if it has only one statement and is relatively short
-        let statements: Vec<_> = block_node
-            .children()
-            .filter(|child| {
-                child.kind() == SyntaxKind::STMT || child.kind() == SyntaxKind::DECLARATION_STMT
-            })
-            .collect();
-
-        statements.len() <= 1
-    }
-
-    fn format_simple_block(&mut self, block_node: &PerlNode) {
-        // Format simple blocks on the same line: { expr }
-        for child in block_node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
-                NodeOrToken::Token(token) => {
-                    let kind = token.kind();
-                    let text = token.text();
-
-                    match kind {
-                        SyntaxKind::WHITESPACE => {
-                            // Special handling: reduce whitespace to a single space in simple blocks
-                            // Only add space if not adjacent to braces and content exists
-                            if !self.output.ends_with(' ') && !self.output.ends_with('{') {
-                                self.output.push(' ');
-                            }
-                            // Call handle_whitespace for future unification
-                            self.handle_whitespace(&token);
-                        }
-                        SyntaxKind::L_BRACE => {
-                            self.handle_spacing_before(kind);
-                            if self.at_line_start {
-                                self.add_indent();
-                                self.at_line_start = false;
-                            }
-                            self.output.push_str(text);
-                            self.output.push(' '); // Space after opening brace
-                            self.prev_token_kind = Some(kind);
-                        }
-                        SyntaxKind::R_BRACE => {
-                            self.output.push(' '); // Space before closing brace
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
-                        }
-                        _ => {
-                            self.format_token(&token);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     fn next_significant_token(
         token: &SyntaxToken<PerlLanguage>,
     ) -> Option<SyntaxToken<PerlLanguage>> {
@@ -517,6 +526,7 @@ impl Formatter {
                     Some(SyntaxKind::ELSIF_KW)
                         | Some(SyntaxKind::ELSE_KW)
                         | Some(SyntaxKind::SEMICOLON)
+                        | Some(SyntaxKind::L_PAREN)
                 ) {
                     self.handle_newline();
                 }
@@ -1140,6 +1150,24 @@ Everything after =pod should be treated as POD content.
             ),
         ];
         check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_nested_eval_in_sub() {
+        let input = "sub f{eval{print$x;};return 1;}";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        sub f {
+            eval {
+                print $x;
+            };
+            return 1;
+        }
+        ");
     }
 }
 
