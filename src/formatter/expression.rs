@@ -44,15 +44,51 @@ impl Formatter {
 
     pub fn format_block_function_call(&mut self, node: &PerlNode) {
         // Format block function call: function_name { ... } additional_args
-        // Always use multi-line formatting for blocks for consistency
+        // Use single-line for simple blocks (single statement, no semicolon)
+        // Use multi-line for complex blocks
 
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(child_node) => {
-                    self.format_node(&child_node);
+        // Check if any child block is simple
+        let has_simple_block = node
+            .children()
+            .any(|child| child.kind() == SyntaxKind::BLOCK_STMT && self.is_simple_block(&child));
+
+        if has_simple_block {
+            // Format with single-line blocks
+            for child in node.children_with_tokens() {
+                match child {
+                    NodeOrToken::Node(child_node) => {
+                        if child_node.kind() == SyntaxKind::BLOCK_STMT
+                            && self.is_simple_block(&child_node)
+                        {
+                            self.format_simple_block(&child_node);
+                        } else {
+                            self.format_node(&child_node);
+                        }
+                    }
+                    NodeOrToken::Token(token) => {
+                        self.format_token(&token);
+                    }
                 }
-                NodeOrToken::Token(token) => {
-                    self.format_token(&token);
+            }
+        } else {
+            // Default multi-line formatting
+            for child in node.children_with_tokens() {
+                match child {
+                    NodeOrToken::Node(child_node) => {
+                        if child_node.kind() == SyntaxKind::BLOCK_STMT {
+                            // Use multiline formatting for complex blocks
+                            self.format_multiline_delimited(
+                                &child_node,
+                                SyntaxKind::L_BRACE,
+                                SyntaxKind::R_BRACE,
+                            );
+                        } else {
+                            self.format_node(&child_node);
+                        }
+                    }
+                    NodeOrToken::Token(token) => {
+                        self.format_token(&token);
+                    }
                 }
             }
         }
