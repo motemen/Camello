@@ -465,6 +465,19 @@ impl Formatter {
         None
     }
 
+    fn next_token_after_whitespace(
+        token: &SyntaxToken<PerlLanguage>,
+    ) -> Option<SyntaxToken<PerlLanguage>> {
+        let mut current = token.next_token();
+        while let Some(t) = current {
+            if t.kind() != SyntaxKind::WHITESPACE {
+                return Some(t);
+            }
+            current = t.next_token();
+        }
+        None
+    }
+
     fn format_token(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
         let kind = token.kind();
         let text = token.text();
@@ -479,6 +492,7 @@ impl Formatter {
                     self.add_indent();
                     self.at_line_start = false;
                 } else {
+                    // This is an inline comment - add a space before it
                     self.output.push(' ');
                 }
                 self.output.push_str(text.trim());
@@ -519,7 +533,7 @@ impl Formatter {
                 }
 
                 self.output.push_str(text);
-                self.handle_spacing_after(kind);
+                self.handle_spacing_after_with_token(kind, token);
                 self.prev_token_kind = Some(kind);
             }
         }
@@ -663,9 +677,20 @@ impl Formatter {
         }
     }
 
-    fn handle_spacing_after(&mut self, current: SyntaxKind) {
+    fn handle_spacing_after_with_token(
+        &mut self,
+        current: SyntaxKind,
+        token: &SyntaxToken<crate::PerlLanguage>,
+    ) {
         match current {
             SyntaxKind::SEMICOLON => {
+                // Check if the next token (after whitespace) is a comment
+                if let Some(next) = Self::next_token_after_whitespace(token) {
+                    if next.kind() == SyntaxKind::COMMENT {
+                        // Don't add newline here - the comment will handle it
+                        return;
+                    }
+                }
                 self.handle_newline();
             }
             SyntaxKind::L_BRACE => {
@@ -1090,6 +1115,28 @@ Everything after =pod should be treated as POD content.
             (
                 "die \"Error\" unless defined $result;",
                 "die \"Error\" unless defined $result;\n",
+            ),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_inline_comment_preservation() {
+        let cases = [
+            // Inline comments should stay on the same line
+            (
+                "my $x = 1; # inline comment",
+                "my $x = 1; # inline comment\n",
+            ),
+            ("print $var; # debug output", "print $var; # debug output\n"),
+            (
+                "return 42; # return the answer",
+                "return 42; # return the answer\n",
+            ),
+            // Block comments should remain on their own line
+            (
+                "my $x = 1;\n# block comment",
+                "my $x = 1;\n# block comment\n",
             ),
         ];
         check_formatting_cases(&cases);
