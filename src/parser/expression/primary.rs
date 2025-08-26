@@ -116,7 +116,7 @@ impl<'a> Parser<'a> {
         self.skip_trivia();
     }
 
-    /// 'my'/'state' 宣言用の変数をパースする（修飾識別子は使わない）。  
+    /// Parses a variable for 'my'/'state' declarations (qualified identifiers are not allowed).  
     pub fn parse_variable_simple(&mut self) {
         let sigil = self.current_kind().unwrap();
         let var_kind = match sigil {
@@ -147,7 +147,7 @@ impl<'a> Parser<'a> {
         self.builder.finish_node();
     }
 
-    /// our/local 宣言用の変数をパースする（修飾識別子は許可される）
+    /// Parses a variable for 'our'/'local' declarations (qualified identifiers are allowed).
     pub fn parse_variable_qualified(&mut self) {
         let sigil = self.current_kind().unwrap();
         let var_kind = match sigil {
@@ -169,7 +169,7 @@ impl<'a> Parser<'a> {
         self.builder.finish_node();
     }
 
-    /// これはデリファレンスパターンかどうかをチェックする（シジルの後にシジルが続く場合）
+    /// Checks if this is a dereferencing pattern (sigil followed by another sigil).
     pub fn is_dereferencing_pattern(&self) -> bool {
         // If the current token is not a sigil, it's not a dereference
         if let Some(current) = self.current_kind() {
@@ -193,7 +193,7 @@ impl<'a> Parser<'a> {
         trimmed.starts_with('$')
     }
 
-    /// デリファレンス式をパースする（例: @$var, %$var, $$var）
+    /// Parses a dereferencing expression (e.g., @$var, %$var, $$var).
     pub fn parse_dereferencing(&mut self) {
         self.builder.start_node(SyntaxKind::DEREF_EXPR.into());
 
@@ -215,8 +215,8 @@ impl<'a> Parser<'a> {
         self.builder.finish_node();
     }
 
-    /// 通常の識別子または修飾識別子をパースする
-    /// 例: "Foo", "Foo::Bar", "Foo::Bar::Baz"
+    /// Parses a regular identifier or qualified identifier
+    /// Examples: "Foo", "Foo::Bar", "Foo::Bar::Baz"
     pub fn parse_identifier_or_qualified(&mut self) {
         // Expect an identifier
         if !self.at(SyntaxKind::IDENT) {
@@ -224,21 +224,28 @@ impl<'a> Parser<'a> {
             return;
         }
 
+        let checkpoint = self.builder.checkpoint();
         self.bump(); // First identifier
         self.skip_trivia();
 
         // Check for package qualifiers (::)
-        while self.at(SyntaxKind::DOUBLE_COLON) {
-            self.bump(); // ::
-            self.skip_trivia();
+        if self.at(SyntaxKind::DOUBLE_COLON) {
+            self.builder
+                .start_node_at(checkpoint, SyntaxKind::QUALIFIED_IDENT.into());
 
-            if self.at(SyntaxKind::IDENT) {
-                self.bump(); // Next identifier
+            while self.at(SyntaxKind::DOUBLE_COLON) {
+                self.bump(); // ::
                 self.skip_trivia();
-            } else {
-                self.error("Expected identifier after '::'");
-                break;
+
+                if self.at(SyntaxKind::IDENT) {
+                    self.bump(); // Next identifier
+                    self.skip_trivia();
+                } else {
+                    self.error("Expected identifier after '::'");
+                    break;
+                }
             }
+            self.builder.finish_node();
         }
     }
 }

@@ -10,9 +10,9 @@ impl Precedence {
     pub const LOGICAL_OR: Precedence = Precedence(20); // ||
     pub const LOGICAL_AND: Precedence = Precedence(30); // &&
     pub const COMPARISON: Precedence = Precedence(40); // ==, !=, <, >, <=, >=, eq, ne, lt, gt, le, ge, cmp
-    pub const REGEX_MATCH: Precedence = Precedence(50); // =~, !~
-    pub const ADDITIVE: Precedence = Precedence(60); // +, -, .
-    pub const MULTIPLICATIVE: Precedence = Precedence(70); // *, /, %, x
+    pub const ADDITIVE: Precedence = Precedence(50); // +, -, .
+    pub const MULTIPLICATIVE: Precedence = Precedence(60); // *, /, %, x
+    pub const REGEX_MATCH: Precedence = Precedence(70); // =~, !~
     pub const POSTFIX: Precedence = Precedence(80); // ->, [], {}, ()
 }
 
