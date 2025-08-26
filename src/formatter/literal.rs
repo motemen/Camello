@@ -162,6 +162,7 @@ impl Formatter {
                         SyntaxKind::QW_KW => {
                             self.format_token(&token);
                         }
+                        // FIXME: Handle other delimiters like /, |, etc. make generic
                         SyntaxKind::L_PAREN | SyntaxKind::L_BRACKET | SyntaxKind::L_BRACE => {
                             self.handle_multiline_opening_delimiter(&token);
                         }
@@ -176,6 +177,9 @@ impl Formatter {
                         }
                         SyntaxKind::R_PAREN | SyntaxKind::R_BRACKET | SyntaxKind::R_BRACE => {
                             self.handle_multiline_closing_delimiter(&token);
+                        }
+                        SyntaxKind::WHITESPACE => {
+                            // Newline is handled for QW_STRING tokens, so skip whitespace here
                         }
                         _ => {
                             self.format_token(&token);

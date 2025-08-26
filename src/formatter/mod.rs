@@ -846,12 +846,8 @@ impl Formatter {
 
     fn handle_whitespace(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
         let text = token.text();
-
-        // Count newlines to detect empty lines
-        let newline_count = text.matches('\n').count();
-
-        if newline_count > 0 {
-            self.pending_empty_lines = 1;
+        if text.contains('\n') {
+            self.handle_newline();
         }
     }
 
