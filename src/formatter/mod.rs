@@ -875,7 +875,7 @@ impl Formatter {
                 NodeOrToken::Node(child_node) => {
                     // Output pending empty lines before processing child nodes
                     self.output_pending_empty_lines();
-                    self.format_node(&child_node);
+                    self.format_node(child_node);
                     i += 1;
                 }
                 NodeOrToken::Token(token) => {
@@ -915,7 +915,7 @@ impl Formatter {
                         i = j;
                     } else {
                         self.output_pending_empty_lines();
-                        self.format_token(&token);
+                        self.format_token(token);
                         i += 1;
                     }
                 }
