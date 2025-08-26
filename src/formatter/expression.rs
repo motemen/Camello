@@ -97,6 +97,10 @@ impl Formatter {
             match child {
                 NodeOrToken::Node(node) => self.format_node(&node),
                 NodeOrToken::Token(token) => {
+                    if token.kind() == SyntaxKind::WHITESPACE {
+                        // Skip whitespace in method calls
+                        continue;
+                    }
                     self.format_token(&token);
                 }
             }
@@ -215,6 +219,7 @@ impl Formatter {
 
                     // Do not add spaces in dereference expressions
                     match kind {
+                        SyntaxKind::WHITESPACE => {}
                         _ => {
                             self.output.push_str(text);
                             self.prev_token_kind = Some(kind);
