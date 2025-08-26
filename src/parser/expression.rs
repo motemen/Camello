@@ -2,6 +2,101 @@ use crate::SyntaxKind;
 
 use super::Parser;
 
+/// Operator precedence levels for Pratt parsing
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Precedence(pub u8);
+
+impl Precedence {
+    pub const LOWEST: Precedence = Precedence(0);
+    pub const ASSIGNMENT: Precedence = Precedence(10);    // =
+    pub const LOGICAL_OR: Precedence = Precedence(20);    // ||
+    pub const LOGICAL_AND: Precedence = Precedence(30);   // &&
+    pub const COMPARISON: Precedence = Precedence(40);    // ==, !=, <, >, <=, >=, eq, ne, lt, gt, le, ge, cmp
+    pub const REGEX_MATCH: Precedence = Precedence(50);   // =~, !~
+    pub const ADDITIVE: Precedence = Precedence(60);      // +, -, .
+    pub const MULTIPLICATIVE: Precedence = Precedence(70); // *, /, %, x
+    pub const POSTFIX: Precedence = Precedence(80);       // ->, [], {}, ()
+}
+
+/// Operator information for Pratt parsing
+#[derive(Debug, Clone, Copy)]
+pub struct OperatorInfo {
+    pub precedence: Precedence,
+    pub right_associative: bool,
+    pub node_kind: SyntaxKind,
+}
+
+impl OperatorInfo {
+    pub const fn new(precedence: Precedence, right_associative: bool, node_kind: SyntaxKind) -> Self {
+        Self {
+            precedence,
+            right_associative,
+            node_kind,
+        }
+    }
+}
+
+/// Get operator information for binary operators
+pub fn get_operator_info(kind: SyntaxKind) -> Option<OperatorInfo> {
+    match kind {
+        // Assignment (right associative)
+        SyntaxKind::EQ => Some(OperatorInfo::new(
+            Precedence::ASSIGNMENT,
+            true,
+            SyntaxKind::INFIX_EXPR,
+        )),
+        
+        // Logical OR
+        SyntaxKind::LOGICAL_OR => Some(OperatorInfo::new(
+            Precedence::LOGICAL_OR,
+            false,
+            SyntaxKind::INFIX_EXPR,
+        )),
+        
+        // Logical AND
+        SyntaxKind::LOGICAL_AND => Some(OperatorInfo::new(
+            Precedence::LOGICAL_AND,
+            false,
+            SyntaxKind::INFIX_EXPR,
+        )),
+        
+        // Comparison operators
+        SyntaxKind::LT | SyntaxKind::GT | SyntaxKind::LE | SyntaxKind::GE
+        | SyntaxKind::EQ_EQ | SyntaxKind::NE | SyntaxKind::STR_EQ | SyntaxKind::STR_NE
+        | SyntaxKind::STR_GT | SyntaxKind::STR_LT | SyntaxKind::STR_GE | SyntaxKind::STR_LE
+        | SyntaxKind::STR_CMP => Some(OperatorInfo::new(
+            Precedence::COMPARISON,
+            false,
+            SyntaxKind::INFIX_EXPR,
+        )),
+        
+        // Regex operators
+        SyntaxKind::REGEX_MATCH | SyntaxKind::REGEX_NOT_MATCH => Some(OperatorInfo::new(
+            Precedence::REGEX_MATCH,
+            false,
+            SyntaxKind::REGEX_EXPR,
+        )),
+        
+        // Additive operators
+        SyntaxKind::PLUS | SyntaxKind::MINUS | SyntaxKind::DOT => Some(OperatorInfo::new(
+            Precedence::ADDITIVE,
+            false,
+            SyntaxKind::INFIX_EXPR,
+        )),
+        
+        // Multiplicative operators
+        SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::MODULO | SyntaxKind::X => {
+            Some(OperatorInfo::new(
+                Precedence::MULTIPLICATIVE,
+                false,
+                SyntaxKind::INFIX_EXPR,
+            ))
+        }
+        
+        _ => None,
+    }
+}
+
 impl<'a> Parser<'a> {
     // Parse block function arguments: block + optional additional arguments
     fn parse_block_function_args(&mut self) {
@@ -40,86 +135,235 @@ impl<'a> Parser<'a> {
     }
 
     pub fn expression(&mut self) -> bool {
-        self.assignment_expr()
+        self.parse_expression_with_precedence(Precedence::LOWEST)
     }
 
-    // Helper function for parsing binary expressions with reduced code duplication
-    fn parse_binary_expr<F>(
-        &mut self,
-        mut next_precedence_fn: F,
-        operators: &[SyntaxKind],
-        node_kind: SyntaxKind,
-        error_message: &str,
-    ) -> bool
-    where
-        F: FnMut(&mut Self) -> bool,
-    {
-        let start = self.builder.checkpoint();
-        if !next_precedence_fn(self) {
+    /// Core Pratt parser: parse expression with given minimum precedence
+    pub fn parse_expression_with_precedence(&mut self, min_precedence: Precedence) -> bool {
+        // Parse left-hand side (primary expression with postfix operations)
+        if !self.parse_primary_with_postfix() {
             return false;
         }
 
-        while self.at_any(operators) {
-            self.builder.start_node_at(start, node_kind.into());
-            self.bump(); // operator
-            self.skip_trivia();
-            if !next_precedence_fn(self) {
-                self.error(error_message);
+        // Parse binary operators with precedence climbing
+        loop {
+            // Check if we have a binary operator
+            let Some(current_kind) = self.current_kind() else {
+                break;
+            };
+
+            let Some(op_info) = get_operator_info(current_kind) else {
+                break;
+            };
+
+            // If precedence is too low, stop here
+            if op_info.precedence < min_precedence {
+                break;
             }
+
+            // Start building binary expression node
+            let checkpoint = self.builder.checkpoint();
+            self.builder.start_node_at(checkpoint, op_info.node_kind.into());
+
+            // Consume the operator
+            self.bump();
+            self.skip_trivia();
+
+            // Calculate next precedence level
+            let next_min_precedence = if op_info.right_associative {
+                op_info.precedence
+            } else {
+                Precedence(op_info.precedence.0 + 1)
+            };
+
+            // Parse right-hand side
+            if !self.parse_expression_with_precedence(next_min_precedence) {
+                self.error("Expected expression after binary operator");
+            }
+
             self.builder.finish_node();
+        }
+
+        true
+    }
+
+    /// Parse primary expression with postfix operations
+    fn parse_primary_with_postfix(&mut self) -> bool {
+        if !self.primary_expr() {
+            return false;
+        }
+
+        // Handle postfix operations
+        self.parse_postfix_operations()
+    }
+
+    /// Parse all postfix operations (method calls, subscripts, etc.)
+    fn parse_postfix_operations(&mut self) -> bool {
+        loop {
+            let checkpoint = self.builder.checkpoint();
+            
+            match self.current_kind() {
+                Some(SyntaxKind::ARROW) => {
+                    self.bump(); // ->
+                    self.skip_trivia();
+
+                    match self.current_kind() {
+                        Some(SyntaxKind::L_BRACE) => {
+                            // Hash reference access: expr->{key}
+                            self.builder
+                                .start_node_at(checkpoint, SyntaxKind::HASH_REF_ACCESS_EXPR.into());
+                            self.bump(); // {
+                            self.skip_trivia();
+
+                            if !self.expression() {
+                                self.error("Expected expression in hash reference access");
+                            }
+
+                            if !self.at(SyntaxKind::R_BRACE) {
+                                self.error("Expected '}' after hash key");
+                            } else {
+                                self.bump(); // }
+                                self.skip_trivia();
+                            }
+
+                            self.builder.finish_node();
+                        }
+                        Some(SyntaxKind::L_BRACKET) => {
+                            // Array reference access: expr->[index]
+                            self.builder
+                                .start_node_at(checkpoint, SyntaxKind::ARRAY_REF_ACCESS_EXPR.into());
+                            self.bump(); // [
+                            self.skip_trivia();
+
+                            if !self.expression() {
+                                self.error("Expected expression in array reference access");
+                            }
+
+                            if !self.at(SyntaxKind::R_BRACKET) {
+                                self.error("Expected ']' after array index");
+                            } else {
+                                self.bump(); // ]
+                                self.skip_trivia();
+                            }
+
+                            self.builder.finish_node();
+                        }
+                        Some(SyntaxKind::L_PAREN) => {
+                            // Code reference call: expr->(args)
+                            self.builder
+                                .start_node_at(checkpoint, SyntaxKind::CODE_REF_CALL_EXPR.into());
+                            self.bump(); // (
+                            self.skip_trivia();
+
+                            self.expression_list();
+
+                            if !self.at(SyntaxKind::R_PAREN) {
+                                self.error("Expected ')' after code reference arguments");
+                            } else {
+                                self.bump(); // )
+                                self.skip_trivia();
+                            }
+
+                            self.builder.finish_node();
+                        }
+                        Some(SyntaxKind::IDENT) => {
+                            // Method call: expr->method()
+                            self.builder
+                                .start_node_at(checkpoint, SyntaxKind::METHOD_CALL_EXPR.into());
+
+                            self.parse_identifier_or_qualified();
+                            self.skip_trivia();
+
+                            if self.at(SyntaxKind::L_PAREN) {
+                                self.bump(); // (
+                                self.skip_trivia();
+
+                                self.expression_list();
+
+                                if !self.at(SyntaxKind::R_PAREN) {
+                                    self.error("Expected ')' after method arguments");
+                                } else {
+                                    self.bump(); // )
+                                    self.skip_trivia();
+                                }
+                            }
+
+                            self.builder.finish_node();
+                        }
+                        _ => {
+                            self.error("Expected '{', '[', '(' or identifier after '->'");
+                            break;
+                        }
+                    }
+                }
+                Some(SyntaxKind::L_PAREN) => {
+                    // Function call: expr(args)
+                    self.builder
+                        .start_node_at(checkpoint, SyntaxKind::FUNCTION_CALL_EXPR.into());
+                    self.bump(); // (
+                    self.skip_trivia();
+
+                    self.expression_list();
+
+                    if !self.at(SyntaxKind::R_PAREN) {
+                        self.error("Expected ')' after function arguments");
+                    } else {
+                        self.bump(); // )
+                        self.skip_trivia();
+                    }
+
+                    self.builder.finish_node();
+                }
+                Some(SyntaxKind::L_BRACKET) => {
+                    // Direct array subscription: expr[index]
+                    self.builder
+                        .start_node_at(checkpoint, SyntaxKind::ARRAY_SUBSCRIPTION_EXPR.into());
+                    self.bump(); // [
+                    self.skip_trivia();
+
+                    if !self.expression() {
+                        self.error("Expected expression in array subscription");
+                    }
+
+                    if !self.at(SyntaxKind::R_BRACKET) {
+                        self.error("Expected ']' after array index");
+                    } else {
+                        self.bump(); // ]
+                        self.skip_trivia();
+                    }
+
+                    self.builder.finish_node();
+                }
+                Some(SyntaxKind::L_BRACE) => {
+                    // Direct hash subscription: expr{key}
+                    self.builder
+                        .start_node_at(checkpoint, SyntaxKind::HASH_SUBSCRIPTION_EXPR.into());
+                    self.bump(); // {
+                    self.skip_trivia();
+
+                    if !self.expression() {
+                        self.error("Expected expression in hash subscription");
+                    }
+
+                    if !self.at(SyntaxKind::R_BRACE) {
+                        self.error("Expected '}' after hash key");
+                    } else {
+                        self.bump(); // }
+                        self.skip_trivia();
+                    }
+
+                    self.builder.finish_node();
+                }
+                _ => {
+                    // No more postfix operations
+                    break;
+                }
+            }
         }
         true
     }
 
-    // Assignment expression: expr = expr
-    fn assignment_expr(&mut self) -> bool {
-        let start = self.builder.checkpoint();
-        if !self.logical_or_expr() {
-            return false;
-        }
 
-        if self.at(SyntaxKind::EQ) {
-            self.builder
-                .start_node_at(start, SyntaxKind::INFIX_EXPR.into());
-            self.bump(); // =
-            self.skip_trivia();
-            if !self.assignment_expr() {
-                self.error("Expected expression after assignment operator");
-            }
-            self.builder.finish_node();
-        }
-        true
-    }
-
-    // Logical OR operators: ||
-    fn logical_or_expr(&mut self) -> bool {
-        self.parse_binary_expr(
-            Self::logical_and_expr,
-            &[SyntaxKind::LOGICAL_OR],
-            SyntaxKind::INFIX_EXPR,
-            "Expected expression after logical OR operator",
-        )
-    }
-
-    // Logical AND operators: &&
-    fn logical_and_expr(&mut self) -> bool {
-        self.parse_binary_expr(
-            Self::comparison_expr,
-            &[SyntaxKind::LOGICAL_AND],
-            SyntaxKind::INFIX_EXPR,
-            "Expected expression after logical AND operator",
-        )
-    }
-
-    // Regex operators: =~ !~
-    fn regex_expr(&mut self) -> bool {
-        self.parse_binary_expr(
-            Self::postfix_expr,
-            &[SyntaxKind::REGEX_MATCH, SyntaxKind::REGEX_NOT_MATCH],
-            SyntaxKind::REGEX_EXPR,
-            "Expected expression after regex operator",
-        )
-    }
 
     pub fn expression_list(&mut self) -> bool {
         let start = self.builder.checkpoint();
@@ -149,219 +393,7 @@ impl<'a> Parser<'a> {
         true
     }
 
-    // Additive operators: + - .
-    fn additive_expr(&mut self) -> bool {
-        self.parse_binary_expr(
-            Self::multiplicative_expr,
-            &[SyntaxKind::PLUS, SyntaxKind::MINUS, SyntaxKind::DOT],
-            SyntaxKind::INFIX_EXPR,
-            "Expected expression after additive operator",
-        )
-    }
 
-    // Comparison operators: < > <= >= == !=
-    fn comparison_expr(&mut self) -> bool {
-        const OPERATORS: &[SyntaxKind] = &[
-            SyntaxKind::LT,
-            SyntaxKind::GT,
-            SyntaxKind::LE,
-            SyntaxKind::GE,
-            SyntaxKind::EQ_EQ,
-            SyntaxKind::NE,
-            SyntaxKind::STR_EQ,
-            SyntaxKind::STR_NE,
-            SyntaxKind::STR_GT,
-            SyntaxKind::STR_LT,
-            SyntaxKind::STR_GE,
-            SyntaxKind::STR_LE,
-            SyntaxKind::STR_CMP,
-        ];
-        self.parse_binary_expr(
-            Self::additive_expr,
-            OPERATORS,
-            SyntaxKind::INFIX_EXPR,
-            "Expected expression after comparison operator",
-        )
-    }
-
-    // Multiplicative operators: * / % x
-    fn multiplicative_expr(&mut self) -> bool {
-        const OPERATORS: &[SyntaxKind] = &[
-            SyntaxKind::STAR,
-            SyntaxKind::SLASH,
-            SyntaxKind::MODULO,
-            SyntaxKind::X,
-        ];
-        self.parse_binary_expr(
-            Self::regex_expr,
-            OPERATORS,
-            SyntaxKind::INFIX_EXPR,
-            "Expected expression after multiplicative operator",
-        )
-    }
-
-    // Postfix expressions: expr -> method(), expr->{key}, expr->[index], expr->(args), expr()
-    fn postfix_expr(&mut self) -> bool {
-        let start = self.builder.checkpoint();
-        if !self.primary_expr() {
-            return false;
-        }
-
-        loop {
-            if self.at(SyntaxKind::ARROW) {
-                self.bump(); // ->
-                self.skip_trivia();
-
-                match self.current_kind() {
-                    Some(SyntaxKind::L_BRACE) => {
-                        // Hash reference access: expr->{key}
-                        self.builder
-                            .start_node_at(start, SyntaxKind::HASH_REF_ACCESS_EXPR.into());
-                        self.bump(); // {
-                        self.skip_trivia();
-
-                        if !self.expression() {
-                            self.error("Expected expression in hash reference access");
-                        }
-
-                        if !self.at(SyntaxKind::R_BRACE) {
-                            self.error("Expected '}' after hash key");
-                        } else {
-                            self.bump(); // }
-                            self.skip_trivia();
-                        }
-
-                        self.builder.finish_node();
-                    }
-                    Some(SyntaxKind::L_BRACKET) => {
-                        // Array reference access: expr->[index]
-                        self.builder
-                            .start_node_at(start, SyntaxKind::ARRAY_REF_ACCESS_EXPR.into());
-                        self.bump(); // [
-                        self.skip_trivia();
-
-                        if !self.expression() {
-                            self.error("Expected expression in array reference access");
-                        }
-
-                        if !self.at(SyntaxKind::R_BRACKET) {
-                            self.error("Expected ']' after array index");
-                        } else {
-                            self.bump(); // ]
-                            self.skip_trivia();
-                        }
-
-                        self.builder.finish_node();
-                    }
-                    Some(SyntaxKind::L_PAREN) => {
-                        // Code reference call: expr->(args)
-                        self.builder
-                            .start_node_at(start, SyntaxKind::CODE_REF_CALL_EXPR.into());
-                        self.bump(); // (
-                        self.skip_trivia();
-
-                        self.expression_list();
-
-                        if !self.at(SyntaxKind::R_PAREN) {
-                            self.error("Expected ')' after code reference arguments");
-                        } else {
-                            self.bump(); // )
-                            self.skip_trivia();
-                        }
-
-                        self.builder.finish_node();
-                    }
-                    Some(SyntaxKind::IDENT) => {
-                        // Method call: expr->method()
-                        self.builder
-                            .start_node_at(start, SyntaxKind::METHOD_CALL_EXPR.into());
-
-                        self.parse_identifier_or_qualified();
-                        self.skip_trivia();
-
-                        if self.at(SyntaxKind::L_PAREN) {
-                            self.bump(); // (
-                            self.skip_trivia();
-
-                            self.expression_list();
-
-                            if !self.at(SyntaxKind::R_PAREN) {
-                                self.error("Expected ')' after method arguments");
-                            } else {
-                                self.bump(); // )
-                                self.skip_trivia();
-                            }
-                        }
-
-                        self.builder.finish_node();
-                    }
-                    _ => {
-                        self.error("Expected '{', '[', '(' or identifier after '->'");
-                        break;
-                    }
-                }
-            } else if self.at(SyntaxKind::L_PAREN) {
-                // Function call: expr(args)
-                self.builder
-                    .start_node_at(start, SyntaxKind::FUNCTION_CALL_EXPR.into());
-                self.bump(); // (
-                self.skip_trivia();
-
-                self.expression_list();
-
-                if !self.at(SyntaxKind::R_PAREN) {
-                    self.error("Expected ')' after function arguments");
-                } else {
-                    self.bump(); // )
-                    self.skip_trivia();
-                }
-
-                self.builder.finish_node();
-            } else if self.at(SyntaxKind::L_BRACKET) {
-                // Direct array subscription: expr[index]
-                self.builder
-                    .start_node_at(start, SyntaxKind::ARRAY_SUBSCRIPTION_EXPR.into());
-                self.bump(); // [
-                self.skip_trivia();
-
-                if !self.expression() {
-                    self.error("Expected expression in array subscription");
-                }
-
-                if !self.at(SyntaxKind::R_BRACKET) {
-                    self.error("Expected ']' after array index");
-                } else {
-                    self.bump(); // ]
-                    self.skip_trivia();
-                }
-
-                self.builder.finish_node();
-            } else if self.at(SyntaxKind::L_BRACE) {
-                // Direct hash subscription: expr{key}
-                self.builder
-                    .start_node_at(start, SyntaxKind::HASH_SUBSCRIPTION_EXPR.into());
-                self.bump(); // {
-                self.skip_trivia();
-
-                if !self.expression() {
-                    self.error("Expected expression in hash subscription");
-                }
-
-                if !self.at(SyntaxKind::R_BRACE) {
-                    self.error("Expected '}' after hash key");
-                } else {
-                    self.bump(); // }
-                    self.skip_trivia();
-                }
-
-                self.builder.finish_node();
-            } else {
-                // No more postfix operations
-                break;
-            }
-        }
-        true
-    }
 
     fn primary_expr(&mut self) -> bool {
         self.skip_trivia();
