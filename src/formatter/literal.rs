@@ -329,8 +329,7 @@ mod tests {
     fn test_multiline_array_ref_formatting() {
         let input = r#"my $array = [
     1,
-    2,
-    3
+    2, 3
 ];"#;
         let (syntax, err) = parse_perl(input);
         assert!(err.is_empty(), "Parse errors: {:?}", err);
