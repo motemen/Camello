@@ -338,7 +338,10 @@ impl<'a> Parser<'a> {
         // If block
         self.block();
 
-        // Note: Removed self.skip_trivia() here to prevent absorption of inter-statement separators
+        // Skip trivia only if we detect elsif/else ahead, to avoid consuming inter-statement whitespace
+        if self.lookahead_for_elsif_or_else() {
+            self.skip_trivia();
+        }
 
         while self.at(SyntaxKind::ELSIF_KW) {
             self.bump(); // elsif
@@ -351,7 +354,10 @@ impl<'a> Parser<'a> {
 
             self.block();
 
-            // Note: Removed self.skip_trivia() here as well
+            // Skip trivia only if more elsif/else ahead
+            if self.lookahead_for_elsif_or_else() {
+                self.skip_trivia();
+            }
         }
 
         // "else"
@@ -364,6 +370,17 @@ impl<'a> Parser<'a> {
         }
 
         self.builder.finish_node();
+    }
+
+    /// Look ahead to see if there's an elsif or else keyword after whitespace
+    fn lookahead_for_elsif_or_else(&self) -> bool {
+        let pos = self.current_pos;
+        let remaining = &self.source[pos..];
+
+        // Skip whitespace characters
+        let trimmed = remaining.trim_start();
+
+        trimmed.starts_with("elsif") || trimmed.starts_with("else")
     }
 
     fn unless_stmt(&mut self) {
