@@ -338,7 +338,14 @@ impl<'a> Parser<'a> {
         // If block
         self.block();
 
-        self.skip_trivia();
+        // Skip trivia only if we detect elsif/else ahead, to avoid consuming inter-statement whitespace
+        // FIXME: This implementation is buggy. It fails if there's a comment between the if block and elsif/else.
+        // A more robust solution would be:
+        // 1. Implement a proper multi-lookahead mechanism in the lexer.
+        // 2. Implement a lexer with pushback capability.
+        if self.lookahead_for_elsif_or_else() {
+            self.skip_trivia();
+        }
 
         while self.at(SyntaxKind::ELSIF_KW) {
             self.bump(); // elsif
@@ -351,7 +358,10 @@ impl<'a> Parser<'a> {
 
             self.block();
 
-            self.skip_trivia();
+            // Skip trivia only if more elsif/else ahead
+            if self.lookahead_for_elsif_or_else() {
+                self.skip_trivia();
+            }
         }
 
         // "else"
@@ -364,6 +374,17 @@ impl<'a> Parser<'a> {
         }
 
         self.builder.finish_node();
+    }
+
+    /// Look ahead to see if there's an elsif or else keyword after whitespace
+    fn lookahead_for_elsif_or_else(&self) -> bool {
+        let pos = self.current_pos;
+        let remaining = &self.source[pos..];
+
+        // Skip whitespace characters
+        let trimmed = remaining.trim_start();
+
+        trimmed.starts_with("elsif") || trimmed.starts_with("else")
     }
 
     fn unless_stmt(&mut self) {

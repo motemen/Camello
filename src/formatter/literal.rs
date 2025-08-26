@@ -25,9 +25,6 @@ impl Formatter {
                     let text = token.text();
 
                     match kind {
-                        SyntaxKind::WHITESPACE => {
-                            self.handle_whitespace(&token);
-                        }
                         SyntaxKind::L_BRACE => {
                             self.handle_spacing_before(kind);
                             if self.at_line_start {
@@ -75,9 +72,6 @@ impl Formatter {
                     let text = token.text();
 
                     match kind {
-                        SyntaxKind::WHITESPACE => {
-                            self.handle_whitespace(&token);
-                        }
                         SyntaxKind::L_BRACKET => {
                             self.handle_spacing_before(kind);
                             if self.at_line_start {
@@ -147,9 +141,6 @@ impl Formatter {
                             self.output.push_str(text);
                             self.prev_token_kind = Some(kind);
                         }
-                        SyntaxKind::WHITESPACE => {
-                            self.handle_whitespace(&token);
-                        }
                         _ => {
                             self.format_token(&token);
                         }
@@ -171,6 +162,7 @@ impl Formatter {
                         SyntaxKind::QW_KW => {
                             self.format_token(&token);
                         }
+                        // FIXME: Handle other delimiters like /, |, etc. make generic
                         SyntaxKind::L_PAREN | SyntaxKind::L_BRACKET | SyntaxKind::L_BRACE => {
                             self.handle_multiline_opening_delimiter(&token);
                         }
@@ -187,7 +179,7 @@ impl Formatter {
                             self.handle_multiline_closing_delimiter(&token);
                         }
                         SyntaxKind::WHITESPACE => {
-                            self.handle_whitespace(&token);
+                            // Newline is handled for QW_STRING tokens, so skip whitespace here
                         }
                         _ => {
                             self.format_token(&token);
@@ -234,8 +226,6 @@ impl Formatter {
                         SyntaxKind::WHITESPACE => {
                             // Special handling: preserve whitespace inside substitution strings
                             self.output.push_str(text);
-                            // Also call handle_whitespace for future consistency
-                            self.handle_whitespace(&token);
                         }
                         _ => {
                             // Handle any remaining tokens (including delimiters, pattern, replacement, and flags) directly
@@ -265,12 +255,8 @@ impl Formatter {
                         k if k == kw_kind => {
                             self.format_token(&token);
                         }
-                        SyntaxKind::L_PAREN
-                        | SyntaxKind::L_BRACKET
-                            // Special handling: preserve whitespace inside q-family strings
-                        | SyntaxKind::SLASH => {
+                        SyntaxKind::L_PAREN | SyntaxKind::L_BRACKET | SyntaxKind::SLASH => {
                             self.output.push_str(text);
-                            self.handle_whitespace(&token);
                             self.prev_token_kind = Some(kind);
                         }
                         k if k == string_kind => {
@@ -284,8 +270,6 @@ impl Formatter {
                         SyntaxKind::WHITESPACE => {
                             // Special handling: preserve whitespace inside q-family strings
                             self.output.push_str(text);
-                            // Also call handle_whitespace for future consistency
-                            self.handle_whitespace(&token);
                         }
                         _ => {
                             // Handle any remaining tokens (including closing slash) directly
@@ -349,8 +333,7 @@ mod tests {
     fn test_multiline_array_ref_formatting() {
         let input = r#"my $array = [
     1,
-    2,
-    3
+    2, 3
 ];"#;
         let (syntax, err) = parse_perl(input);
         assert!(err.is_empty(), "Parse errors: {:?}", err);
