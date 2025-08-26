@@ -161,7 +161,7 @@ impl<'a> Parser<'a> {
             Some(SyntaxKind::SLASH) => (SyntaxKind::SLASH, SyntaxKind::SLASH),
             _ => {
                 self.error(&format!(
-                    "Expected {}() delimiter: (, [, {{}}, or /",
+                    "Expected {}() delimiter: (, [, {{, or /",
                     operator_name
                 ));
                 self.builder.finish_node(); // Finish the node to avoid panic
