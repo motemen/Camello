@@ -16,6 +16,7 @@ pub struct Formatter {
     indent_string: String,
     prev_token_kind: Option<SyntaxKind>,
     at_line_start: bool,
+    pending_empty_lines: usize,  // Number of empty lines waiting to be output
 }
 
 impl Default for Formatter {
@@ -32,6 +33,7 @@ impl Formatter {
             indent_string: "    ".to_string(), // 4 spaces
             prev_token_kind: None,
             at_line_start: true,
+            pending_empty_lines: 0,
         }
     }
 
@@ -534,6 +536,11 @@ impl Formatter {
                 self.prev_token_kind = Some(kind);
             }
             _ => {
+                // Output pending empty lines before processing non-trivia tokens
+                if !kind.is_trivia() && self.pending_empty_lines > 0 {
+                    self.output_pending_empty_lines();
+                }
+
                 // 通常のトークンの処理
                 self.handle_spacing_before(kind);
 
@@ -725,6 +732,11 @@ impl Formatter {
     }
 
     fn add_empty_line_before_if_needed(&mut self, node: &PerlNode) {
+        // Skip automatic empty line insertion if we already have pending empty lines from source
+        if self.pending_empty_lines > 0 {
+            return;
+        }
+
         // Add an empty line if the previous sibling is of a different type,
         // or if this is a SUB_DEF with any preceding sibling (to separate all subs)
         // Exception: Don't add empty line between PACKAGE_STMT and USE_STMT
@@ -743,6 +755,29 @@ impl Formatter {
     }
 
     fn add_empty_line_after_if_needed(&mut self, node: &PerlNode) {
+        // Check if the next node already has empty lines from source whitespace
+        // If so, skip automatic insertion
+        if let Some(_next) = node.next_sibling() {
+            // Look for whitespace tokens between this node and the next
+            if let Some(last_token) = node.last_token() {
+                let mut current = last_token.next_token();
+                while let Some(token) = current {
+                    if token.kind() == SyntaxKind::WHITESPACE {
+                        let text = token.text();
+                        if text.matches('\n').count() > 1 {
+                            // There are already empty lines in the source, don't add more
+                            return;
+                        }
+                    }
+                    // Stop if we reach a non-whitespace token
+                    if !token.kind().is_trivia() {
+                        break;
+                    }
+                    current = token.next_token();
+                }
+            }
+        }
+
         // Add an empty line if the next sibling is of a different type.
         // Exception: Don't add empty line between PACKAGE_STMT and USE_STMT
         if let Some(next) = node.next_sibling() {
@@ -782,11 +817,33 @@ impl Formatter {
     fn handle_whitespace(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
         let text = token.text();
 
-        // 改行を含む場合は改行処理を実行（従来のhandle_multiline_whitespaceの機能）
-        if text.contains('\n') {
+        // Count newlines to detect empty lines
+        let newline_count = text.matches('\n').count();
+        
+        if newline_count > 0 {
+            // If there are multiple newlines, it means there were empty lines in the source
+            if newline_count > 1 {
+                // Convert multiple consecutive newlines to a single empty line
+                self.pending_empty_lines = 1;
+            }
             self.handle_newline();
         }
-        // 将来的にはこの関数でコンテキストを見て空行などを処理する予定
+    }
+
+    /// Output pending empty lines when appropriate
+    fn output_pending_empty_lines(&mut self) {
+        if self.pending_empty_lines > 0 {
+            // Ensure we're on a new line first
+            if !self.output.ends_with('\n') {
+                self.output.push('\n');
+            }
+            // Add empty lines
+            for _ in 0..self.pending_empty_lines {
+                self.output.push('\n');
+            }
+            self.pending_empty_lines = 0;
+            self.at_line_start = true;
+        }
     }
 }
 
@@ -1193,6 +1250,46 @@ Everything after =pod should be treated as POD content.
             ("use\tv5.24.1\t;", "use v5.24.1;\n"),
             ("use\t5.24.1\t;", "use 5.24.1;\n"),
         ]);
+    }
+
+    #[test]
+    fn test_empty_lines_preservation() {
+        let input = "use strict;\n\n\nuse warnings;\n\nmy $x = 1;\n\n\nsub foo {\n    return $x;\n}";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        use strict;
+        use warnings;
+
+        my $x = 1;
+
+        sub foo {
+            return $x;
+        }
+        ");
+    }
+
+    #[test]
+    fn test_no_empty_lines_automatic_insertion() {
+        let input = "use strict;use warnings;my $x = 1;sub foo {return $x;}";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        use strict;
+        use warnings;
+
+        my $x = 1;
+
+        sub foo {
+            return $x;
+        }
+        ");
     }
 }
 
