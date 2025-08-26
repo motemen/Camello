@@ -27,6 +27,7 @@ pub enum SyntaxKind {
     NUMBER,
     STRING,
     VERSION,       // v1.23, v5.008_001
+    BARE_VERSION,  // 5.24.1, 5.024_001 (contextually determined)
     REGEX_LITERAL, // /pattern/flags
 
     // Keywords
@@ -270,6 +271,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::NUMBER => "NUMBER",
             SyntaxKind::STRING => "STRING",
             SyntaxKind::VERSION => "VERSION",
+            SyntaxKind::BARE_VERSION => "BARE_VERSION",
             SyntaxKind::REGEX_LITERAL => "REGEX_LITERAL",
             SyntaxKind::SUB_KW => "SUB_KW",
             SyntaxKind::MY_KW => "MY_KW",

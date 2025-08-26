@@ -194,6 +194,12 @@ impl<'a> Parser<'a> {
         if self.at(SyntaxKind::VERSION) {
             // Version literal (e.g., use v5.42;)
             self.bump();
+        } else if self.at(SyntaxKind::BARE_VERSION) {
+            // Bare version literal (e.g., use 5.24.1;)
+            self.bump();
+        } else if self.at(SyntaxKind::NUMBER) {
+            // Simple version number (e.g., use 5;)
+            self.bump();
         } else {
             // Module name (qualified identifier)
             self.parse_identifier_or_qualified();
