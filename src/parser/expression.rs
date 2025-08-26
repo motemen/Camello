@@ -104,11 +104,29 @@ impl<'a> Parser<'a> {
     // Low-precedence logical AND: and
     fn low_precedence_and_expr(&mut self) -> bool {
         self.parse_binary_expr(
-            Self::defined_or_expr,
+            Self::low_precedence_not_expr,
             &[SyntaxKind::AND_KW],
             SyntaxKind::INFIX_EXPR,
             "Expected expression after 'and' operator",
         )
+    }
+
+    // Low-precedence NOT operator: not
+    fn low_precedence_not_expr(&mut self) -> bool {
+        if self.at(SyntaxKind::NOT_KW) {
+            self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
+            self.bump(); // Consume the not operator
+            self.skip_trivia();
+
+            if !self.low_precedence_not_expr() {
+                self.error("Expected expression after 'not' operator");
+            }
+
+            self.builder.finish_node();
+            true
+        } else {
+            self.defined_or_expr()
+        }
     }
 
     // Defined-or operator: // (higher precedence than low-precedence logical)
@@ -231,7 +249,7 @@ impl<'a> Parser<'a> {
         )
     }
 
-    // Prefix expressions: ! (high precedence) and not (low precedence)
+    // Prefix expressions: ! (high precedence) and not (when encountered here)
     fn prefix_expr(&mut self) -> bool {
         // Handle high-precedence prefix ! first
         if self.at(SyntaxKind::LOGICAL_NOT) {
@@ -246,7 +264,7 @@ impl<'a> Parser<'a> {
             self.builder.finish_node();
             true
         }
-        // Handle low-precedence prefix not
+        // Handle not when encountered in prefix context (for cases like !not)
         else if self.at(SyntaxKind::NOT_KW) {
             self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
             self.bump(); // Consume the not operator

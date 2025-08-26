@@ -106,7 +106,7 @@ pub enum Token {
     #[token("//")]
     DefinedOr,
 
-    // Three-way comparison (must come before "<=" due to priority)
+    // Three-way comparison (spaceship operator)
     #[token("<=>")]
     Spaceship,
 
@@ -649,7 +649,9 @@ impl<'a> Lexer<'a> {
             | SyntaxKind::STR_CMP => LexerContext::ExpectingValue,
             SyntaxKind::LOGICAL_AND | SyntaxKind::LOGICAL_OR => LexerContext::ExpectingValue,
             SyntaxKind::LOGICAL_NOT => LexerContext::ExpectingValue, // Prefix operator
-            SyntaxKind::NOT_KW | SyntaxKind::AND_KW | SyntaxKind::OR_KW | SyntaxKind::XOR_KW => LexerContext::ExpectingValue,
+            SyntaxKind::NOT_KW | SyntaxKind::AND_KW | SyntaxKind::OR_KW | SyntaxKind::XOR_KW => {
+                LexerContext::ExpectingValue
+            }
             SyntaxKind::DEFINED_OR => LexerContext::ExpectingValue,
             SyntaxKind::SPACESHIP => LexerContext::ExpectingValue,
             SyntaxKind::REGEX_MATCH | SyntaxKind::REGEX_NOT_MATCH => LexerContext::ExpectingValue,
