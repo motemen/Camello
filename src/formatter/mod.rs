@@ -141,6 +141,11 @@ impl Formatter {
                 // Default handling for regex expressions - just format children
                 // The spacing around regex operators is handled in format_token
             }
+            SyntaxKind::BLOCK_STMT => {
+                // Special handling for BLOCK_STMT: detect empty lines between statements
+                self.format_block_stmt_with_empty_line_detection(node);
+                return;
+            }
             _ => {
                 // Check if this node contains parentheses that should be formatted multiline
                 if self.should_format_parentheses_multiline(node) {
@@ -860,6 +865,64 @@ impl Formatter {
         }
     }
 
+    fn format_block_stmt_with_empty_line_detection(&mut self, node: &PerlNode) {
+        // Collect all children as a vector for lookahead
+        let children: Vec<_> = node.children_with_tokens().collect();
+        let mut i = 0;
+
+        while i < children.len() {
+            match &children[i] {
+                NodeOrToken::Node(child_node) => {
+                    // Output pending empty lines before processing child nodes
+                    self.output_pending_empty_lines();
+                    self.format_node(&child_node);
+                    i += 1;
+                }
+                NodeOrToken::Token(token) => {
+                    if token.kind() == SyntaxKind::WHITESPACE {
+                        // Look ahead to collect consecutive WHITESPACE tokens
+                        let mut consecutive_whitespace = vec![token];
+                        let mut j = i + 1;
+
+                        while j < children.len() {
+                            if let NodeOrToken::Token(next_token) = &children[j] {
+                                if next_token.kind() == SyntaxKind::WHITESPACE {
+                                    consecutive_whitespace.push(next_token);
+                                    j += 1;
+                                } else {
+                                    break;
+                                }
+                            } else {
+                                break;
+                            }
+                        }
+
+                        // Count total newlines across all consecutive whitespace tokens
+                        let total_newlines: usize = consecutive_whitespace
+                            .iter()
+                            .map(|t| t.text().matches('\n').count())
+                            .sum();
+
+                        if total_newlines > 0 {
+                            // If there are multiple newlines across tokens, preserve as empty line
+                            if total_newlines > 1 {
+                                self.pending_empty_lines = 1;
+                            }
+                            self.handle_newline();
+                        }
+
+                        // Skip all the consecutive whitespace tokens we processed
+                        i = j;
+                    } else {
+                        self.output_pending_empty_lines();
+                        self.format_token(&token);
+                        i += 1;
+                    }
+                }
+            }
+        }
+    }
+
     /// Output pending empty lines when appropriate
     fn output_pending_empty_lines(&mut self) {
         if self.pending_empty_lines > 0 {
@@ -1316,6 +1379,101 @@ Everything after =pod should be treated as POD content.
 
         sub foo {
             return $x;
+        }
+        ");
+    }
+
+    #[test]
+    fn test_block_stmt_empty_line_preservation() {
+        // Test that user-written empty lines inside BLOCK_STMT are preserved
+        let input = r#"sub f {
+bar();
+
+return 1;
+}"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        sub f {
+            bar();
+
+            return 1;
+        }
+        ");
+    }
+
+    #[test]
+    fn test_multiple_empty_lines_in_block_stmt() {
+        // Test that multiple consecutive empty lines are collapsed to one
+        let input = r#"sub f {
+bar();
+
+
+
+return 1;
+}"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        sub f {
+            bar();
+
+            return 1;
+        }
+        ");
+    }
+
+    #[test]
+    fn test_empty_lines_in_various_block_contexts() {
+        // Test empty line preservation in different block contexts
+        let input = r#"if ($condition) {
+    1;
+
+    2;
+
+
+    3;
+
+    # space ⬆️
+    4;
+    # space ⬇️
+
+    5;
+
+    # space ↕️
+
+    6;
+
+}"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        if ($condition) {
+            1;
+
+            2;
+
+            3;
+
+            # space ⬆️
+            4;
+            # space ⬇️
+
+            5;
+
+            # space ↕️
+
+            6;
+
         }
         ");
     }
