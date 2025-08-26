@@ -7,7 +7,6 @@ use precedence::{get_operator_info, Precedence};
 
 use super::Parser;
 
-
 impl<'a> Parser<'a> {
     // Parse block function arguments: block + optional additional arguments
     fn parse_block_function_args(&mut self) {
@@ -74,7 +73,8 @@ impl<'a> Parser<'a> {
 
             // Start building binary expression node
             let checkpoint = self.builder.checkpoint();
-            self.builder.start_node_at(checkpoint, op_info.node_kind.into());
+            self.builder
+                .start_node_at(checkpoint, op_info.node_kind.into());
 
             // Consume the operator
             self.bump();
@@ -112,7 +112,7 @@ impl<'a> Parser<'a> {
     fn parse_postfix_operations(&mut self) -> bool {
         loop {
             let checkpoint = self.builder.checkpoint();
-            
+
             match self.current_kind() {
                 Some(SyntaxKind::ARROW) => {
                     self.bump(); // ->
@@ -141,8 +141,10 @@ impl<'a> Parser<'a> {
                         }
                         Some(SyntaxKind::L_BRACKET) => {
                             // Array reference access: expr->[index]
-                            self.builder
-                                .start_node_at(checkpoint, SyntaxKind::ARRAY_REF_ACCESS_EXPR.into());
+                            self.builder.start_node_at(
+                                checkpoint,
+                                SyntaxKind::ARRAY_REF_ACCESS_EXPR.into(),
+                            );
                             self.bump(); // [
                             self.skip_trivia();
 
