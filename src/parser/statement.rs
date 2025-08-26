@@ -338,7 +338,7 @@ impl<'a> Parser<'a> {
         // If block
         self.block();
 
-        self.skip_trivia();
+        // Note: Removed self.skip_trivia() here to prevent absorption of inter-statement separators
 
         while self.at(SyntaxKind::ELSIF_KW) {
             self.bump(); // elsif
@@ -351,7 +351,7 @@ impl<'a> Parser<'a> {
 
             self.block();
 
-            self.skip_trivia();
+            // Note: Removed self.skip_trivia() here as well
         }
 
         // "else"
