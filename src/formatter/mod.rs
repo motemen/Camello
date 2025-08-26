@@ -853,6 +853,9 @@ impl Formatter {
 
     fn format_block_stmt_with_empty_line_detection(&mut self, node: &PerlNode) {
         // Collect all children as a vector for lookahead
+        // FIXME:
+        // This function collects all children of a BLOCK_STMT into a Vec on every call. For files with many or large blocks, this could lead to significant memory allocations and a potential performance overhead. The design document mentions performance as a consideration, so it might be worth exploring a more memory-efficient approach.
+        // Consider using an iterator-based approach that avoids collecting all children into a vector. The itertools crate, for example, provides utilities like peekable() or PeekingNext that could allow you to look ahead at the next token without needing to allocate a Vec for the entire block.
         let children: Vec<_> = node.children_with_tokens().collect();
         let mut i = 0;
 
