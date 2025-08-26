@@ -1262,6 +1262,30 @@ Everything after =pod should be treated as POD content.
         ];
         check_formatting_cases(&cases);
     }
+
+    fn test_version_use_statements_formatting() {
+        check_formatting_cases(&[
+            // v-prefixed versions (current support)
+            ("use v5.24.1;", "use v5.24.1;\n"),
+            ("use v5.008_001;", "use v5.008_001;\n"),
+            ("use v5.36;", "use v5.36;\n"),
+            
+            // Bare version formats (new support)
+            ("use 5.24.1;", "use 5.24.1;\n"),
+            ("use 5.008_001;", "use 5.008_001;\n"),
+            ("use 5.36.0;", "use 5.36.0;\n"),
+            
+            // Simple version numbers
+            ("use 5;", "use 5;\n"),
+            ("use 5.24;", "use 5.24;\n"),
+            
+            // With spacing variations
+            ("use  v5.24.1 ;", "use v5.24.1;\n"),
+            ("use  5.24.1 ;", "use 5.24.1;\n"),
+            ("use\tv5.24.1\t;", "use v5.24.1;\n"),
+            ("use\t5.24.1\t;", "use 5.24.1;\n"),
+        ]);
+    }
 }
 
 mod expression;
