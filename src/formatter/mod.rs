@@ -236,25 +236,10 @@ impl Formatter {
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Token(token) => {
-                    let text = token.text();
-                    match token.kind() {
-                        SyntaxKind::POD_COMMAND | SyntaxKind::CUT_KW => {
-                            // Output POD commands exactly as-is
-                            self.output.push_str(text);
-                        }
-                        SyntaxKind::POD_CONTENT => {
-                            // Output POD content exactly as-is, preserving all formatting
-                            self.output.push_str(text);
-                        }
-                        _ => {
-                            // Handle any other tokens (whitespace, etc.) as-is
-                            self.output.push_str(text);
-                        }
-                    }
+                    self.output.push_str(token.text());
                 }
                 NodeOrToken::Node(_) => {
-                    // POD blocks shouldn't contain nested nodes, but handle gracefully
-                    // by preserving the original text
+                    unreachable!("POD blocks should not contain nested nodes");
                 }
             }
         }
@@ -386,15 +371,39 @@ impl Formatter {
         open_delimiter: SyntaxKind,
         close_delimiter: SyntaxKind,
     ) {
-        for child in node.children_with_tokens() {
+        self.format_multiline_delimited_iter(
+            node.children_with_tokens(),
+            open_delimiter,
+            close_delimiter,
+        );
+    }
+
+    fn format_multiline_delimited_iter(
+        &mut self,
+        iter: SyntaxElementChildren<PerlLanguage>,
+        open_delimiter: SyntaxKind,
+        close_delimiter: SyntaxKind,
+    ) {
+        for child in iter {
             match child {
                 NodeOrToken::Node(node) => {
-                    self.format_node(&node);
+                    let kind = node.kind();
+
+                    match kind {
+                        SyntaxKind::EXPR_LIST => {
+                            // Special handling for expression lists inside delimiters
+                            self.format_expr_list_multiline_iter(node.children_with_tokens());
+                        }
+                        _ => self.format_node(&node),
+                    }
                 }
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
 
                     match kind {
+                        SyntaxKind::WHITESPACE => {
+                            // Skip whitespace here - we'll handle newlines in the delimiter handlers
+                        }
                         k if k == open_delimiter => {
                             self.handle_spacing_before(kind);
                             if self.at_line_start {
@@ -416,12 +425,7 @@ impl Formatter {
         }
     }
 
-    fn format_multiline_delimited_iter(
-        &mut self,
-        iter: SyntaxElementChildren<PerlLanguage>,
-        open_delimiter: SyntaxKind,
-        close_delimiter: SyntaxKind,
-    ) {
+    fn format_expr_list_multiline_iter(&mut self, iter: SyntaxElementChildren<PerlLanguage>) {
         for child in iter {
             match child {
                 NodeOrToken::Node(node) => self.format_node(&node),
@@ -429,15 +433,12 @@ impl Formatter {
                     let kind = token.kind();
 
                     match kind {
-                        k if k == open_delimiter => {
-                            if self.at_line_start {
-                                self.add_indent();
-                                self.at_line_start = false;
-                            }
-                            self.handle_multiline_opening_delimiter(&token);
+                        SyntaxKind::WHITESPACE => {
+                            // Skip whitespace here - we'll handle newlines in the delimiter handlers
                         }
-                        k if k == close_delimiter => {
-                            self.handle_multiline_closing_delimiter(&token);
+                        SyntaxKind::COMMA => {
+                            self.format_token(&token);
+                            self.handle_newline();
                         }
                         _ => {
                             // その他のトークンは通常通り処理
@@ -850,12 +851,7 @@ impl Formatter {
         let newline_count = text.matches('\n').count();
 
         if newline_count > 0 {
-            // If there are multiple newlines, it means there were empty lines in the source
-            if newline_count > 1 {
-                // Convert multiple consecutive newlines to a single empty line
-                self.pending_empty_lines = 1;
-            }
-            self.handle_newline();
+            self.pending_empty_lines = 1;
         }
     }
 
