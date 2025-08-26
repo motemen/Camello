@@ -339,6 +339,10 @@ impl<'a> Parser<'a> {
         self.block();
 
         // Skip trivia only if we detect elsif/else ahead, to avoid consuming inter-statement whitespace
+        // FIXME: This implementation is buggy. It fails if there's a comment between the if block and elsif/else.
+        // A more robust solution would be:
+        // 1. Implement a proper multi-lookahead mechanism in the lexer.
+        // 2. Implement a lexer with pushback capability.
         if self.lookahead_for_elsif_or_else() {
             self.skip_trivia();
         }
