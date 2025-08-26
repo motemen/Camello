@@ -249,7 +249,7 @@ impl<'a> Parser<'a> {
         )
     }
 
-    // Prefix expressions: ! (high precedence) and not (when encountered here)
+    // Prefix expressions: ! (high precedence) and not (when in prefix context)
     fn prefix_expr(&mut self) -> bool {
         // Handle high-precedence prefix ! first
         if self.at(SyntaxKind::LOGICAL_NOT) {
@@ -265,6 +265,7 @@ impl<'a> Parser<'a> {
             true
         }
         // Handle not when encountered in prefix context (for cases like !not)
+        // This allows prefix combinations but doesn't affect overall precedence
         else if self.at(SyntaxKind::NOT_KW) {
             self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
             self.bump(); // Consume the not operator
