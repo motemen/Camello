@@ -16,6 +16,7 @@ pub struct Formatter {
     indent_string: String,
     prev_token_kind: Option<SyntaxKind>,
     at_line_start: bool,
+    pending_empty_lines: usize, // Number of empty lines waiting to be output
 }
 
 impl Default for Formatter {
@@ -32,6 +33,7 @@ impl Formatter {
             indent_string: "    ".to_string(), // 4 spaces
             prev_token_kind: None,
             at_line_start: true,
+            pending_empty_lines: 0,
         }
     }
 
@@ -41,9 +43,15 @@ impl Formatter {
     }
 
     fn format_node(&mut self, node: &PerlNode) {
-        // Add empty line before subs and use statements only in specific contexts
-        // This preserves existing behavior for simple cases
-        if matches!(node.kind(), SyntaxKind::SUB_DEF | SyntaxKind::USE_STMT) {
+        // Add empty line before subs, use statements, and regular statements when appropriate
+        // This preserves existing behavior for simple cases while also handling statement spacing
+        if matches!(
+            node.kind(),
+            SyntaxKind::SUB_DEF
+                | SyntaxKind::USE_STMT
+                | SyntaxKind::STMT
+                | SyntaxKind::DECLARATION_STMT
+        ) {
             self.add_empty_line_before_if_needed(node);
         }
 
@@ -133,6 +141,11 @@ impl Formatter {
                 // Default handling for regex expressions - just format children
                 // The spacing around regex operators is handled in format_token
             }
+            SyntaxKind::BLOCK_STMT => {
+                // Special handling for BLOCK_STMT: detect empty lines between statements
+                self.format_block_stmt_with_empty_line_detection(node);
+                return;
+            }
             _ => {
                 // Check if this node contains parentheses that should be formatted multiline
                 if self.should_format_parentheses_multiline(node) {
@@ -145,7 +158,18 @@ impl Formatter {
         // Default child iteration
         for child in node.children_with_tokens() {
             match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Node(child_node) => {
+                    // Output pending empty lines before processing child nodes
+                    if self.pending_empty_lines > 0
+                        && matches!(
+                            child_node.kind(),
+                            SyntaxKind::STMT | SyntaxKind::DECLARATION_STMT
+                        )
+                    {
+                        self.output_pending_empty_lines();
+                    }
+                    self.format_node(&child_node);
+                }
                 NodeOrToken::Token(token) => self.format_token(&token),
             }
         }
@@ -212,25 +236,10 @@ impl Formatter {
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Token(token) => {
-                    let text = token.text();
-                    match token.kind() {
-                        SyntaxKind::POD_COMMAND | SyntaxKind::CUT_KW => {
-                            // Output POD commands exactly as-is
-                            self.output.push_str(text);
-                        }
-                        SyntaxKind::POD_CONTENT => {
-                            // Output POD content exactly as-is, preserving all formatting
-                            self.output.push_str(text);
-                        }
-                        _ => {
-                            // Handle any other tokens (whitespace, etc.) as-is
-                            self.output.push_str(text);
-                        }
-                    }
+                    self.output.push_str(token.text());
                 }
                 NodeOrToken::Node(_) => {
-                    // POD blocks shouldn't contain nested nodes, but handle gracefully
-                    // by preserving the original text
+                    unreachable!("POD blocks should not contain nested nodes");
                 }
             }
         }
@@ -362,17 +371,38 @@ impl Formatter {
         open_delimiter: SyntaxKind,
         close_delimiter: SyntaxKind,
     ) {
-        for child in node.children_with_tokens() {
+        self.format_multiline_delimited_iter(
+            node.children_with_tokens(),
+            open_delimiter,
+            close_delimiter,
+        );
+    }
+
+    fn format_multiline_delimited_iter(
+        &mut self,
+        iter: SyntaxElementChildren<PerlLanguage>,
+        open_delimiter: SyntaxKind,
+        close_delimiter: SyntaxKind,
+    ) {
+        for child in iter {
             match child {
                 NodeOrToken::Node(node) => {
-                    self.format_node(&node);
+                    let kind = node.kind();
+
+                    match kind {
+                        SyntaxKind::EXPR_LIST => {
+                            // Special handling for expression lists inside delimiters
+                            self.format_expr_list_multiline_iter(node.children_with_tokens());
+                        }
+                        _ => self.format_node(&node),
+                    }
                 }
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
 
                     match kind {
                         SyntaxKind::WHITESPACE => {
-                            self.handle_whitespace(&token);
+                            // Skip whitespace here - we'll handle newlines in the delimiter handlers
                         }
                         k if k == open_delimiter => {
                             self.handle_spacing_before(kind);
@@ -395,12 +425,7 @@ impl Formatter {
         }
     }
 
-    fn format_multiline_delimited_iter(
-        &mut self,
-        iter: SyntaxElementChildren<PerlLanguage>,
-        open_delimiter: SyntaxKind,
-        close_delimiter: SyntaxKind,
-    ) {
+    fn format_expr_list_multiline_iter(&mut self, iter: SyntaxElementChildren<PerlLanguage>) {
         for child in iter {
             match child {
                 NodeOrToken::Node(node) => self.format_node(&node),
@@ -409,17 +434,11 @@ impl Formatter {
 
                     match kind {
                         SyntaxKind::WHITESPACE => {
-                            self.handle_whitespace(&token);
+                            // Skip whitespace here - we'll handle newlines in the delimiter handlers
                         }
-                        k if k == open_delimiter => {
-                            if self.at_line_start {
-                                self.add_indent();
-                                self.at_line_start = false;
-                            }
-                            self.handle_multiline_opening_delimiter(&token);
-                        }
-                        k if k == close_delimiter => {
-                            self.handle_multiline_closing_delimiter(&token);
+                        SyntaxKind::COMMA => {
+                            self.format_token(&token);
+                            self.handle_newline();
                         }
                         _ => {
                             // その他のトークンは通常通り処理
@@ -534,6 +553,11 @@ impl Formatter {
                 self.prev_token_kind = Some(kind);
             }
             _ => {
+                // Output pending empty lines before processing non-trivia tokens
+                if !kind.is_trivia() && self.pending_empty_lines > 0 {
+                    self.output_pending_empty_lines();
+                }
+
                 // 通常のトークンの処理
                 self.handle_spacing_before(kind);
 
@@ -725,24 +749,65 @@ impl Formatter {
     }
 
     fn add_empty_line_before_if_needed(&mut self, node: &PerlNode) {
+        // Skip automatic empty line insertion if we already have pending empty lines from source
+        if self.pending_empty_lines > 0 {
+            return;
+        }
+
         // Add an empty line if the previous sibling is of a different type,
         // or if this is a SUB_DEF with any preceding sibling (to separate all subs)
         // Exception: Don't add empty line between PACKAGE_STMT and USE_STMT
         if let Some(prev) = node.prev_sibling() {
-            let should_add_empty_line = if prev.kind() != node.kind() {
-                // Don't add empty line between PACKAGE_STMT and USE_STMT
-                !(prev.kind() == SyntaxKind::PACKAGE_STMT && node.kind() == SyntaxKind::USE_STMT)
-            } else {
-                false
+            let should_add_empty_line = match node.kind() {
+                // For SUB_DEF, always add empty line if there's a preceding sibling
+                SyntaxKind::SUB_DEF => true,
+                // For USE_STMT, add empty line if previous is different type (but not PACKAGE_STMT)
+                SyntaxKind::USE_STMT => {
+                    prev.kind() != node.kind()
+                        && !(prev.kind() == SyntaxKind::PACKAGE_STMT
+                            && node.kind() == SyntaxKind::USE_STMT)
+                }
+                // For regular statements, don't add automatic empty lines
+                // They should only get empty lines if they were in the source
+                SyntaxKind::STMT | SyntaxKind::DECLARATION_STMT => false,
+                // For other node types, use the original logic
+                _ => {
+                    prev.kind() != node.kind()
+                        && !(prev.kind() == SyntaxKind::PACKAGE_STMT
+                            && node.kind() == SyntaxKind::USE_STMT)
+                }
             };
 
-            if should_add_empty_line || node.kind() == SyntaxKind::SUB_DEF {
+            if should_add_empty_line {
                 self.add_empty_line_before();
             }
         }
     }
 
     fn add_empty_line_after_if_needed(&mut self, node: &PerlNode) {
+        // Check if the next node already has empty lines from source whitespace
+        // If so, skip automatic insertion
+        if let Some(_next) = node.next_sibling() {
+            // Look for whitespace tokens between this node and the next
+            if let Some(last_token) = node.last_token() {
+                let mut current = last_token.next_token();
+                while let Some(token) = current {
+                    if token.kind() == SyntaxKind::WHITESPACE {
+                        let text = token.text();
+                        if text.matches('\n').count() > 1 {
+                            // There are already empty lines in the source, don't add more
+                            return;
+                        }
+                    }
+                    // Stop if we reach a non-whitespace token
+                    if !token.kind().is_trivia() {
+                        break;
+                    }
+                    current = token.next_token();
+                }
+            }
+        }
+
         // Add an empty line if the next sibling is of a different type.
         // Exception: Don't add empty line between PACKAGE_STMT and USE_STMT
         if let Some(next) = node.next_sibling() {
@@ -781,12 +846,86 @@ impl Formatter {
 
     fn handle_whitespace(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
         let text = token.text();
-
-        // 改行を含む場合は改行処理を実行（従来のhandle_multiline_whitespaceの機能）
         if text.contains('\n') {
             self.handle_newline();
         }
-        // 将来的にはこの関数でコンテキストを見て空行などを処理する予定
+    }
+
+    fn format_block_stmt_with_empty_line_detection(&mut self, node: &PerlNode) {
+        // Collect all children as a vector for lookahead
+        // FIXME:
+        // This function collects all children of a BLOCK_STMT into a Vec on every call. For files with many or large blocks, this could lead to significant memory allocations and a potential performance overhead. The design document mentions performance as a consideration, so it might be worth exploring a more memory-efficient approach.
+        // Consider using an iterator-based approach that avoids collecting all children into a vector. The itertools crate, for example, provides utilities like peekable() or PeekingNext that could allow you to look ahead at the next token without needing to allocate a Vec for the entire block.
+        let children: Vec<_> = node.children_with_tokens().collect();
+        let mut i = 0;
+
+        while i < children.len() {
+            match &children[i] {
+                NodeOrToken::Node(child_node) => {
+                    // Output pending empty lines before processing child nodes
+                    self.output_pending_empty_lines();
+                    self.format_node(child_node);
+                    i += 1;
+                }
+                NodeOrToken::Token(token) => {
+                    if token.kind() == SyntaxKind::WHITESPACE {
+                        // Look ahead to collect consecutive WHITESPACE tokens
+                        let mut consecutive_whitespace = vec![token];
+                        let mut j = i + 1;
+
+                        while j < children.len() {
+                            if let NodeOrToken::Token(next_token) = &children[j] {
+                                if next_token.kind() == SyntaxKind::WHITESPACE {
+                                    consecutive_whitespace.push(next_token);
+                                    j += 1;
+                                } else {
+                                    break;
+                                }
+                            } else {
+                                break;
+                            }
+                        }
+
+                        // Count total newlines across all consecutive whitespace tokens
+                        let total_newlines: usize = consecutive_whitespace
+                            .iter()
+                            .map(|t| t.text().matches('\n').count())
+                            .sum();
+
+                        if total_newlines > 0 {
+                            // If there are multiple newlines across tokens, preserve as empty line
+                            if total_newlines > 1 {
+                                self.pending_empty_lines = 1;
+                            }
+                            self.handle_newline();
+                        }
+
+                        // Skip all the consecutive whitespace tokens we processed
+                        i = j;
+                    } else {
+                        self.output_pending_empty_lines();
+                        self.format_token(token);
+                        i += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Output pending empty lines when appropriate
+    fn output_pending_empty_lines(&mut self) {
+        if self.pending_empty_lines > 0 {
+            // Ensure we're on a new line first
+            if !self.output.ends_with('\n') {
+                self.output.push('\n');
+            }
+            // Add empty lines
+            for _ in 0..self.pending_empty_lines {
+                self.output.push('\n');
+            }
+            self.pending_empty_lines = 0;
+            self.at_line_start = true;
+        }
     }
 }
 
@@ -1177,22 +1316,155 @@ Everything after =pod should be treated as POD content.
             ("use v5.24.1;", "use v5.24.1;\n"),
             ("use v5.008_001;", "use v5.008_001;\n"),
             ("use v5.36;", "use v5.36;\n"),
-            
             // Bare version formats (new support)
             ("use 5.24.1;", "use 5.24.1;\n"),
             ("use 5.008_001;", "use 5.008_001;\n"),
             ("use 5.36.0;", "use 5.36.0;\n"),
-            
             // Simple version numbers
             ("use 5;", "use 5;\n"),
             ("use 5.24;", "use 5.24;\n"),
-            
             // With spacing variations
             ("use  v5.24.1 ;", "use v5.24.1;\n"),
             ("use  5.24.1 ;", "use 5.24.1;\n"),
             ("use\tv5.24.1\t;", "use v5.24.1;\n"),
             ("use\t5.24.1\t;", "use 5.24.1;\n"),
         ]);
+    }
+
+    #[test]
+    fn test_empty_lines_preservation() {
+        let input =
+            "use strict;\n\n\nuse warnings;\n\nmy $x = 1;\n\n\nsub foo {\n    return $x;\n}";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        use strict;
+        use warnings;
+
+        my $x = 1;
+
+        sub foo {
+            return $x;
+        }
+        ");
+    }
+
+    #[test]
+    fn test_no_empty_lines_automatic_insertion() {
+        let input = "use strict;use warnings;my $x = 1;sub foo {return $x;}";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        use strict;
+        use warnings;
+
+        my $x = 1;
+
+        sub foo {
+            return $x;
+        }
+        ");
+    }
+
+    #[test]
+    fn test_block_stmt_empty_line_preservation() {
+        // Test that user-written empty lines inside BLOCK_STMT are preserved
+        let input = r#"sub f {
+bar();
+
+return 1;
+}"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        sub f {
+            bar();
+
+            return 1;
+        }
+        ");
+    }
+
+    #[test]
+    fn test_multiple_empty_lines_in_block_stmt() {
+        // Test that multiple consecutive empty lines are collapsed to one
+        let input = r#"sub f {
+bar();
+
+
+
+return 1;
+}"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        sub f {
+            bar();
+
+            return 1;
+        }
+        ");
+    }
+
+    #[test]
+    fn test_empty_lines_in_various_block_contexts() {
+        // Test empty line preservation in different block contexts
+        let input = r#"if ($condition) {
+    1;
+
+    2;
+
+
+    3;
+
+    # space ⬆️
+    4;
+    # space ⬇️
+
+    5;
+
+    # space ↕️
+
+    6;
+
+}"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        if ($condition) {
+            1;
+
+            2;
+
+            3;
+
+            # space ⬆️
+            4;
+            # space ⬇️
+
+            5;
+
+            # space ↕️
+
+            6;
+
+        }
+        ");
     }
 }
 
