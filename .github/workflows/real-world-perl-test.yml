@@ -74,9 +74,11 @@ jobs:
             if [ -s "stderr_$name.txt" ]; then
               echo "#### ⚠️ Warnings/Parse Errors" >> all_results.md
               echo "<details><summary>Click to expand</summary>" >> all_results.md
+              echo "" >> all_results.md
               echo '```' >> all_results.md
               cat "stderr_$name.txt" >> all_results.md
               echo '```' >> all_results.md
+              echo "" >> all_results.md
               echo "</details>" >> all_results.md
             fi
             
