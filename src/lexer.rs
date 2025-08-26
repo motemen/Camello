@@ -37,6 +37,11 @@ pub enum Token {
     #[regex(r"v[0-9]+(\.[0-9_]+)*")]
     Version,
 
+    // Bare version number (5.24.1, 5.024_001, etc. - contextually determined)
+    // Matches numbers with either multiple dots OR underscores in version parts
+    #[regex(r"[0-9]+(\.[0-9]+){2,}|[0-9]+\.[0-9_]*_[0-9_]*")]
+    BareVersion,
+
     // RegexLiteral - handled manually via context-sensitive disambiguation
     RegexLiteral,
 
@@ -155,6 +160,7 @@ impl Token {
             Token::Number => SyntaxKind::NUMBER,
             Token::String => SyntaxKind::STRING,
             Token::Version => SyntaxKind::VERSION,
+            Token::BareVersion => SyntaxKind::BARE_VERSION,
             Token::RegexLiteral => SyntaxKind::REGEX_LITERAL,
             Token::EndKw => SyntaxKind::END_KW,
             Token::DataKw => SyntaxKind::DATA_KW,
@@ -645,6 +651,7 @@ impl<'a> Lexer<'a> {
             SyntaxKind::NUMBER
             | SyntaxKind::STRING
             | SyntaxKind::VERSION
+            | SyntaxKind::BARE_VERSION
             | SyntaxKind::REGEX_LITERAL => LexerContext::ExpectingOperator,
             SyntaxKind::R_PAREN | SyntaxKind::R_BRACE | SyntaxKind::R_BRACKET => {
                 LexerContext::ExpectingOperator
