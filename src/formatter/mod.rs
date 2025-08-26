@@ -16,7 +16,7 @@ pub struct Formatter {
     indent_string: String,
     prev_token_kind: Option<SyntaxKind>,
     at_line_start: bool,
-    pending_empty_lines: usize,  // Number of empty lines waiting to be output
+    pending_empty_lines: usize, // Number of empty lines waiting to be output
 }
 
 impl Default for Formatter {
@@ -43,9 +43,15 @@ impl Formatter {
     }
 
     fn format_node(&mut self, node: &PerlNode) {
-        // Add empty line before subs and use statements only in specific contexts
-        // This preserves existing behavior for simple cases
-        if matches!(node.kind(), SyntaxKind::SUB_DEF | SyntaxKind::USE_STMT) {
+        // Add empty line before subs, use statements, and regular statements when appropriate
+        // This preserves existing behavior for simple cases while also handling statement spacing
+        if matches!(
+            node.kind(),
+            SyntaxKind::SUB_DEF
+                | SyntaxKind::USE_STMT
+                | SyntaxKind::STMT
+                | SyntaxKind::DECLARATION_STMT
+        ) {
             self.add_empty_line_before_if_needed(node);
         }
 
@@ -147,7 +153,18 @@ impl Formatter {
         // Default child iteration
         for child in node.children_with_tokens() {
             match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Node(child_node) => {
+                    // Output pending empty lines before processing child nodes
+                    if self.pending_empty_lines > 0
+                        && matches!(
+                            child_node.kind(),
+                            SyntaxKind::STMT | SyntaxKind::DECLARATION_STMT
+                        )
+                    {
+                        self.output_pending_empty_lines();
+                    }
+                    self.format_node(&child_node);
+                }
                 NodeOrToken::Token(token) => self.format_token(&token),
             }
         }
@@ -741,14 +758,27 @@ impl Formatter {
         // or if this is a SUB_DEF with any preceding sibling (to separate all subs)
         // Exception: Don't add empty line between PACKAGE_STMT and USE_STMT
         if let Some(prev) = node.prev_sibling() {
-            let should_add_empty_line = if prev.kind() != node.kind() {
-                // Don't add empty line between PACKAGE_STMT and USE_STMT
-                !(prev.kind() == SyntaxKind::PACKAGE_STMT && node.kind() == SyntaxKind::USE_STMT)
-            } else {
-                false
+            let should_add_empty_line = match node.kind() {
+                // For SUB_DEF, always add empty line if there's a preceding sibling
+                SyntaxKind::SUB_DEF => true,
+                // For USE_STMT, add empty line if previous is different type (but not PACKAGE_STMT)
+                SyntaxKind::USE_STMT => {
+                    prev.kind() != node.kind()
+                        && !(prev.kind() == SyntaxKind::PACKAGE_STMT
+                            && node.kind() == SyntaxKind::USE_STMT)
+                }
+                // For regular statements, don't add automatic empty lines
+                // They should only get empty lines if they were in the source
+                SyntaxKind::STMT | SyntaxKind::DECLARATION_STMT => false,
+                // For other node types, use the original logic
+                _ => {
+                    prev.kind() != node.kind()
+                        && !(prev.kind() == SyntaxKind::PACKAGE_STMT
+                            && node.kind() == SyntaxKind::USE_STMT)
+                }
             };
 
-            if should_add_empty_line || node.kind() == SyntaxKind::SUB_DEF {
+            if should_add_empty_line {
                 self.add_empty_line_before();
             }
         }
@@ -819,7 +849,7 @@ impl Formatter {
 
         // Count newlines to detect empty lines
         let newline_count = text.matches('\n').count();
-        
+
         if newline_count > 0 {
             // If there are multiple newlines, it means there were empty lines in the source
             if newline_count > 1 {
@@ -1234,16 +1264,13 @@ Everything after =pod should be treated as POD content.
             ("use v5.24.1;", "use v5.24.1;\n"),
             ("use v5.008_001;", "use v5.008_001;\n"),
             ("use v5.36;", "use v5.36;\n"),
-            
             // Bare version formats (new support)
             ("use 5.24.1;", "use 5.24.1;\n"),
             ("use 5.008_001;", "use 5.008_001;\n"),
             ("use 5.36.0;", "use 5.36.0;\n"),
-            
             // Simple version numbers
             ("use 5;", "use 5;\n"),
             ("use 5.24;", "use 5.24;\n"),
-            
             // With spacing variations
             ("use  v5.24.1 ;", "use v5.24.1;\n"),
             ("use  5.24.1 ;", "use 5.24.1;\n"),
@@ -1254,7 +1281,8 @@ Everything after =pod should be treated as POD content.
 
     #[test]
     fn test_empty_lines_preservation() {
-        let input = "use strict;\n\n\nuse warnings;\n\nmy $x = 1;\n\n\nsub foo {\n    return $x;\n}";
+        let input =
+            "use strict;\n\n\nuse warnings;\n\nmy $x = 1;\n\n\nsub foo {\n    return $x;\n}";
         let (syntax, err) = parse_perl(input);
         assert!(err.is_empty(), "Parse errors: {:?}", err);
 
