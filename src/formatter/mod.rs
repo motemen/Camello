@@ -395,9 +395,6 @@ impl Formatter {
                     let kind = token.kind();
 
                     match kind {
-                        SyntaxKind::WHITESPACE => {
-                            self.handle_whitespace(&token);
-                        }
                         k if k == open_delimiter => {
                             self.handle_spacing_before(kind);
                             if self.at_line_start {
@@ -432,9 +429,6 @@ impl Formatter {
                     let kind = token.kind();
 
                     match kind {
-                        SyntaxKind::WHITESPACE => {
-                            self.handle_whitespace(&token);
-                        }
                         k if k == open_delimiter => {
                             if self.at_line_start {
                                 self.add_indent();
