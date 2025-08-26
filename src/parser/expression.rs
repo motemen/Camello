@@ -125,25 +125,15 @@ impl<'a> Parser<'a> {
             self.builder.finish_node();
             true
         } else {
-            self.defined_or_expr()
+            self.logical_or_expr()
         }
     }
 
-    // Defined-or operator: // (higher precedence than low-precedence logical)
-    fn defined_or_expr(&mut self) -> bool {
-        self.parse_binary_expr(
-            Self::logical_or_expr,
-            &[SyntaxKind::DEFINED_OR],
-            SyntaxKind::INFIX_EXPR,
-            "Expected expression after defined-or operator",
-        )
-    }
-
-    // Logical OR operators: ||
+    // Logical OR operators: || and defined-or //
     fn logical_or_expr(&mut self) -> bool {
         self.parse_binary_expr(
             Self::logical_and_expr,
-            &[SyntaxKind::LOGICAL_OR],
+            &[SyntaxKind::LOGICAL_OR, SyntaxKind::DEFINED_OR],
             SyntaxKind::INFIX_EXPR,
             "Expected expression after logical OR operator",
         )
@@ -249,30 +239,20 @@ impl<'a> Parser<'a> {
         )
     }
 
-    // Prefix expressions: ! (high precedence) and not (when in prefix context)
+    // Prefix expressions: ! (high precedence)
     fn prefix_expr(&mut self) -> bool {
-        // Handle high-precedence prefix ! first
+        // Handle high-precedence prefix ! only
         if self.at(SyntaxKind::LOGICAL_NOT) {
             self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
             self.bump(); // Consume the prefix operator
             self.skip_trivia();
 
-            if !self.prefix_expr() {
+            // Parse right-hand side at the right precedence level
+            // For !not $x to work, we need to be able to parse 'not' which is low-precedence
+            // But for !! to work, we need to parse another !
+            // So we need to parse from the low-precedence logical level
+            if !self.low_precedence_logical_expr() {
                 self.error("Expected expression after prefix operator");
-            }
-
-            self.builder.finish_node();
-            true
-        }
-        // Handle not when encountered in prefix context (for cases like !not)
-        // This allows prefix combinations but doesn't affect overall precedence
-        else if self.at(SyntaxKind::NOT_KW) {
-            self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
-            self.bump(); // Consume the not operator
-            self.skip_trivia();
-
-            if !self.prefix_expr() {
-                self.error("Expected expression after 'not' operator");
             }
 
             self.builder.finish_node();
