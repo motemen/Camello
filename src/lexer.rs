@@ -586,16 +586,21 @@ impl<'a> Lexer<'a> {
                     if c.is_whitespace() {
                         continue;
                     }
-                    // If first non-whitespace char is alphanumeric or sigil, it's likely a function call
-                    if c.is_alphanumeric() || c == '$' || c == '@' || c == '%' {
+                    // If first non-whitespace char is a typical tr delimiter, it's likely transliteration
+                    if matches!(c, '/' | '(' | '[') {
+                        return SyntaxKind::TR_KW;
+                    } else if c == '{' {
+                        // Special case: { could be either a tr delimiter or a block start
+                        // For now, be conservative and assume it's a block start (function body)
+                        // This handles "sub tr {}" correctly
                         return SyntaxKind::IDENT;
                     } else {
-                        // Otherwise, it's likely transliteration
-                        return SyntaxKind::TR_KW;
+                        // For other characters (alphanumeric, sigils, etc.), it's likely an identifier
+                        return SyntaxKind::IDENT;
                     }
                 }
 
-                // If we reach end of input after 'tr', assume function call
+                // If we reach end of input after 'tr', assume identifier
                 SyntaxKind::IDENT
             }
             LexerContext::ExpectingOperator => {
@@ -634,16 +639,21 @@ impl<'a> Lexer<'a> {
                     if c.is_whitespace() {
                         continue;
                     }
-                    // If first non-whitespace char is alphanumeric or sigil, it's likely a function call
-                    if c.is_alphanumeric() || c == '$' || c == '@' || c == '%' {
+                    // If first non-whitespace char is a typical y delimiter, it's likely transliteration
+                    if matches!(c, '/' | '(' | '[') {
+                        return SyntaxKind::Y_KW;
+                    } else if c == '{' {
+                        // Special case: { could be either a y delimiter or a block start
+                        // For now, be conservative and assume it's a block start (function body)
+                        // This handles "sub y {}" correctly
                         return SyntaxKind::IDENT;
                     } else {
-                        // Otherwise, it's likely transliteration
-                        return SyntaxKind::Y_KW;
+                        // For other characters (alphanumeric, sigils, etc.), it's likely an identifier
+                        return SyntaxKind::IDENT;
                     }
                 }
 
-                // If we reach end of input after 'y', assume function call
+                // If we reach end of input after 'y', assume identifier
                 SyntaxKind::IDENT
             }
             LexerContext::ExpectingOperator => {
@@ -1244,5 +1254,93 @@ mod tests {
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "other")));
+    }
+
+    #[test]
+    fn test_s_operator_disambiguation() {
+        // Test that 's' is recognized as an operator when followed by delimiters (baseline for tr/y)
+        let mut lexer = Lexer::new("$str s/abc/xyz/");
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "str")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::S_KW, "s")));
+    }
+
+    #[test]
+    fn test_tr_operator_disambiguation() {
+        // Test that 'tr' is recognized as an operator when followed by delimiters
+        let mut lexer = Lexer::new("$str tr/abc/xyz/");
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "str")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::TR_KW, "tr")));
+    }
+
+    #[test]
+    fn test_tr_as_function_name() {
+        // Test that 'tr' is an identifier when used as function name
+        let mut lexer = Lexer::new("sub tr {}");
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::SUB_KW, "sub")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "tr")));
+    }
+
+    #[test]
+    fn test_tr_as_variable_name() {
+        // Test that 'tr' is an identifier when used as variable name
+        let mut lexer = Lexer::new("my $tr = 1;");
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::MY_KW, "my")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "tr")));
+    }
+
+    #[test]
+    fn test_y_operator_disambiguation() {
+        // Test that 'y' is recognized as an operator when followed by delimiters
+        let mut lexer = Lexer::new("$str y/abc/xyz/");
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "str")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::Y_KW, "y")));
+    }
+
+    #[test]
+    fn test_y_as_function_name() {
+        // Test that 'y' is an identifier when used as function name
+        let mut lexer = Lexer::new("sub y {}");
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::SUB_KW, "sub")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "y")));
+    }
+
+    #[test]
+    fn test_y_as_variable_name() {
+        // Test that 'y' is an identifier when used as variable name
+        let mut lexer = Lexer::new("my $y = 1;");
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::MY_KW, "my")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "y")));
+    }
+
+    #[test]
+    fn test_tr_y_with_different_delimiters() {
+        // Test tr with various delimiters
+        let test_cases = [
+            ("tr/abc/xyz/", SyntaxKind::TR_KW),
+            ("tr(abc)(xyz)", SyntaxKind::TR_KW),
+            ("tr[abc][xyz]", SyntaxKind::TR_KW),
+            ("tr{abc}{xyz}", SyntaxKind::TR_KW),
+            ("y/abc/xyz/", SyntaxKind::Y_KW),
+            ("y(abc)(xyz)", SyntaxKind::Y_KW),
+            ("y[abc][xyz]", SyntaxKind::Y_KW),
+            ("y{abc}{xyz}", SyntaxKind::Y_KW),
+        ];
+
+        for (input, expected_kind) in test_cases {
+            let mut lexer = Lexer::new(input);
+            assert_eq!(lexer.next_token(), Some((expected_kind, &input[..if input.starts_with("tr") { 2 } else { 1 }])));
+        }
     }
 }
