@@ -104,6 +104,15 @@ pub enum Token {
     #[token("||")]
     LogicalOr,
 
+    #[token("!")]
+    LogicalNot,
+
+    #[token("//")]
+    DefinedOr,
+
+    #[token("<=>")]
+    Spaceship,
+
     #[token("=")]
     Eq,
 
@@ -194,6 +203,9 @@ impl Token {
             Token::RegexNotMatch => SyntaxKind::REGEX_NOT_MATCH,
             Token::LogicalAnd => SyntaxKind::LOGICAL_AND,
             Token::LogicalOr => SyntaxKind::LOGICAL_OR,
+            Token::LogicalNot => SyntaxKind::LOGICAL_NOT,
+            Token::DefinedOr => SyntaxKind::DEFINED_OR,
+            Token::Spaceship => SyntaxKind::SPACESHIP,
             Token::Whitespace => SyntaxKind::WHITESPACE,
             Token::Newline => SyntaxKind::WHITESPACE,
             Token::Comment => SyntaxKind::COMMENT,
@@ -350,6 +362,10 @@ impl<'a> Lexer<'a> {
                     "ge" => self.disambiguate_str_op("ge"),
                     "le" => self.disambiguate_str_op("le"),
                     "cmp" => self.disambiguate_str_op("cmp"),
+                    "not" => self.disambiguate_logical_op("not"),
+                    "and" => self.disambiguate_logical_op("and"),
+                    "or" => self.disambiguate_logical_op("or"),
+                    "xor" => self.disambiguate_logical_op("xor"),
                     _ => SyntaxKind::IDENT,
                 }
             }
@@ -486,6 +502,26 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn disambiguate_logical_op(&self, op: &str) -> SyntaxKind {
+        match self.context {
+            LexerContext::ExpectingOperator => {
+                // When expecting an operator, not/and/or/xor are logical operators
+                match op {
+                    "not" => SyntaxKind::NOT_KW,
+                    "and" => SyntaxKind::AND_KW,
+                    "or" => SyntaxKind::OR_KW,
+                    "xor" => SyntaxKind::XOR_KW,
+                    _ => SyntaxKind::IDENT, // Handle unknown ops gracefully
+                }
+            }
+            _ => {
+                // In other contexts, they are identifiers
+                // Examples: "sub not", "my $and", "or die"
+                SyntaxKind::IDENT
+            }
+        }
+    }
+
     fn try_consume_regex_literal(&mut self) -> Option<(SyntaxKind, &'a str)> {
         let remainder = self.logos_lexer.remainder();
 
@@ -607,7 +643,13 @@ impl<'a> Lexer<'a> {
             | SyntaxKind::STR_GE
             | SyntaxKind::STR_LE
             | SyntaxKind::STR_CMP => LexerContext::ExpectingValue,
-            SyntaxKind::LOGICAL_AND | SyntaxKind::LOGICAL_OR => LexerContext::ExpectingValue,
+            SyntaxKind::LOGICAL_AND | SyntaxKind::LOGICAL_OR | SyntaxKind::LOGICAL_NOT => {
+                LexerContext::ExpectingValue
+            }
+            SyntaxKind::NOT_KW | SyntaxKind::AND_KW | SyntaxKind::OR_KW | SyntaxKind::XOR_KW => {
+                LexerContext::ExpectingValue
+            }
+            SyntaxKind::DEFINED_OR | SyntaxKind::SPACESHIP => LexerContext::ExpectingValue,
             SyntaxKind::REGEX_MATCH | SyntaxKind::REGEX_NOT_MATCH => LexerContext::ExpectingValue,
             SyntaxKind::L_PAREN | SyntaxKind::L_BRACE | SyntaxKind::L_BRACKET => {
                 LexerContext::ExpectingValue
