@@ -331,6 +331,36 @@ impl<'a> Parser<'a> {
                     self.parse_variable();
                 }
             }
+            Some(SyntaxKind::LOGICAL_NOT) => {
+                // Logical NOT prefix operator
+                self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
+                self.bump(); // consume !
+                self.skip_trivia();
+
+                // Parse the operand with higher precedence
+                if !self.parse_expression_with_precedence(
+                    crate::parser::expression::precedence::Precedence::PREFIX,
+                ) {
+                    self.error("Expected expression after '!'");
+                }
+
+                self.builder.finish_node();
+            }
+            Some(SyntaxKind::NOT_KW) => {
+                // NOT keyword prefix operator
+                self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
+                self.bump(); // consume 'not'
+                self.skip_trivia();
+
+                // Parse the operand with logical not keyword precedence
+                if !self.parse_expression_with_precedence(
+                    crate::parser::expression::precedence::Precedence::LOGICAL_NOT_KW,
+                ) {
+                    self.error("Expected expression after 'not'");
+                }
+
+                self.builder.finish_node();
+            }
             Some(
                 SyntaxKind::MY_KW
                 | SyntaxKind::OUR_KW
