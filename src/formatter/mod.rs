@@ -101,6 +101,10 @@ impl Formatter {
                 self.format_reference_expr(node);
                 return;
             }
+            SyntaxKind::TERNARY_EXPR => {
+                self.format_ternary_expr(node);
+                return;
+            }
             SyntaxKind::FUNCTION_CALL_EXPR => {
                 self.format_function_call(node);
                 return;
@@ -605,6 +609,10 @@ impl Formatter {
         let needs_space = match (self.prev_token_kind, current) {
             // a->b: Arrow operator should never have spaces around it (highest priority)
             (Some(SyntaxKind::ARROW), _) | (Some(_), SyntaxKind::ARROW) => false,
+
+            // Ternary operator: space before ? and :
+            (Some(_), SyntaxKind::QUESTION_MARK) => true,
+            (Some(_), SyntaxKind::COLON) => true,
 
             // 演算子の前後
             (Some(_), SyntaxKind::EQ) | (Some(SyntaxKind::EQ), _) => true,
@@ -1561,6 +1569,17 @@ return 1;
 
         my $or = 1;
         ");
+    }
+
+    #[test]
+    fn test_ternary_in_data_structures_formatting() {
+        let input =
+            "my $config = { timeout => $is_production ? 30 : 5, retries => $is_critical ? 3 : 1 };";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let output = format(&syntax);
+        insta::assert_snapshot!(output, @"my $config = {timeout => $is_production ? 30 : 5, retries => $is_critical ? 3 : 1};");
     }
 }
 

@@ -10,6 +10,7 @@ impl Precedence {
     pub const LOGICAL_AND_KW: Precedence = Precedence(6); // and
     pub const LOGICAL_NOT_KW: Precedence = Precedence(7); // not
     pub const ASSIGNMENT: Precedence = Precedence(10); // =
+    pub const TERNARY: Precedence = Precedence(15); // ?: (ternary conditional)
     pub const DEFINED_OR: Precedence = Precedence(20); // // (same as ||)
     pub const LOGICAL_OR: Precedence = Precedence(20); // ||
     pub const LOGICAL_AND: Precedence = Precedence(30); // &&

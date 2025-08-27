@@ -75,6 +75,10 @@ pub enum SyntaxKind {
     COMMA,        // ,
     DOUBLE_COLON, // ::
 
+    // Ternary operator tokens
+    QUESTION_MARK, // ?
+    COLON,         // :
+
     // For qw() only
     QW_STRING, // Any text inside qw()
 
@@ -163,13 +167,14 @@ pub enum SyntaxKind {
     INFIX_EXPR,               // Infix expression (binary operation)
     PREFIX_EXPR,              // Prefix expression (unary operation, e.g., !$foo, -$x)
     POSTFIX_EXPR,             // Postfix expression (e.g., $i++, $i--)
-    METHOD_CALL_EXPR,         // Method call expression (e.g., $obj->method())
-    HASH_REF_ACCESS_EXPR,     // Hash reference access expression (e.g., $hash->{key})
-    ARRAY_REF_ACCESS_EXPR,    // Array reference access expression (e.g., $arr->[0])
-    CODE_REF_CALL_EXPR,       // Code reference call expression (e.g., $coderef->(args))
-    HASH_SUBSCRIPTION_EXPR,   // Direct hash access expression (e.g., $hash{key})
-    ARRAY_SUBSCRIPTION_EXPR,  // Direct array access expression (e.g., $array[0])
-    FUNCTION_CALL_EXPR,       // Function call expression (e.g., push @array, $value)
+    TERNARY_EXPR, // Ternary expression (conditional operator: condition ? true_expr : false_expr)
+    METHOD_CALL_EXPR, // Method call expression (e.g., $obj->method())
+    HASH_REF_ACCESS_EXPR, // Hash reference access expression (e.g., $hash->{key})
+    ARRAY_REF_ACCESS_EXPR, // Array reference access expression (e.g., $arr->[0])
+    CODE_REF_CALL_EXPR, // Code reference call expression (e.g., $coderef->(args))
+    HASH_SUBSCRIPTION_EXPR, // Direct hash access expression (e.g., $hash{key})
+    ARRAY_SUBSCRIPTION_EXPR, // Direct array access expression (e.g., $array[0])
+    FUNCTION_CALL_EXPR, // Function call expression (e.g., push @array, $value)
     BLOCK_FUNCTION_CALL_EXPR, // Block function call expression (e.g., eval { ... }, map { ... } @list)
     QW_EXPR,                  // qw() expression (quote word list)
     Q_EXPR,                   // q() expression (single-quoted string literal)
@@ -330,6 +335,8 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::R_PAREN => "R_PAREN",
             SyntaxKind::L_BRACKET => "L_BRACKET",
             SyntaxKind::R_BRACKET => "R_BRACKET",
+            SyntaxKind::QUESTION_MARK => "QUESTION_MARK",
+            SyntaxKind::COLON => "COLON",
             SyntaxKind::QW_STRING => "QW_STRING",
             SyntaxKind::Q_STRING => "Q_STRING",
             SyntaxKind::QQ_STRING => "QQ_STRING",
@@ -388,6 +395,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::INFIX_EXPR => "INFIX_EXPR",
             SyntaxKind::PREFIX_EXPR => "PREFIX_EXPR",
             SyntaxKind::POSTFIX_EXPR => "POSTFIX_EXPR",
+            SyntaxKind::TERNARY_EXPR => "TERNARY_EXPR",
             SyntaxKind::METHOD_CALL_EXPR => "METHOD_CALL_EXPR",
             SyntaxKind::HASH_REF_ACCESS_EXPR => "HASH_REF_ACCESS_EXPR",
             SyntaxKind::ARRAY_REF_ACCESS_EXPR => "ARRAY_REF_ACCESS_EXPR",

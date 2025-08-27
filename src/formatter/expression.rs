@@ -264,6 +264,53 @@ impl Formatter {
             }
         }
     }
+
+    pub fn format_ternary_expr(&mut self, node: &PerlNode) {
+        // Format ternary expressions (e.g., condition ? true_expr : false_expr)
+        // Add spaces around ? and : for readability
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(child_node) => {
+                    self.format_node(&child_node);
+                }
+                NodeOrToken::Token(token) => {
+                    let kind = token.kind();
+                    let text = token.text();
+
+                    match kind {
+                        SyntaxKind::QUESTION_MARK => {
+                            // Add space before ? and after ?
+                            self.handle_spacing_before(kind);
+                            if self.at_line_start {
+                                self.add_indent();
+                                self.at_line_start = false;
+                            }
+                            self.output.push_str(text);
+                            self.output.push(' ');
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::COLON => {
+                            // Add space before : and after :
+                            self.handle_spacing_before(kind);
+                            if self.at_line_start {
+                                self.add_indent();
+                                self.at_line_start = false;
+                            }
+                            self.output.push_str(text);
+                            self.output.push(' ');
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::WHITESPACE => {
+                            // Skip original whitespace, we manage spacing manually
+                        }
+                        _ => {
+                            self.format_token(&token);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]

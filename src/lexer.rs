@@ -81,6 +81,13 @@ pub enum Token {
     #[token("::")]
     DoubleColon,
 
+    // Ternary operator tokens
+    #[token("?")]
+    QuestionMark,
+
+    #[token(":")]
+    Colon,
+
     // 演算子 (order matters - longer ones first!)
     #[token("=~")]
     RegexMatch,
@@ -193,6 +200,8 @@ impl Token {
             Token::Semicolon => SyntaxKind::SEMICOLON,
             Token::Comma => SyntaxKind::COMMA,
             Token::DoubleColon => SyntaxKind::DOUBLE_COLON,
+            Token::QuestionMark => SyntaxKind::QUESTION_MARK,
+            Token::Colon => SyntaxKind::COLON,
             Token::Eq => SyntaxKind::EQ,
             Token::Plus => SyntaxKind::PLUS,
             Token::Minus => SyntaxKind::MINUS,
