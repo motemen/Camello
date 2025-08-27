@@ -225,6 +225,7 @@ impl<'a> Parser<'a> {
                 SyntaxKind::NUMBER,
                 SyntaxKind::STRING,
                 SyntaxKind::REGEX_LITERAL,
+                SyntaxKind::IO_EXPR,
                 SyntaxKind::IDENT,
                 SyntaxKind::L_PAREN,
                 SyntaxKind::L_BRACE,

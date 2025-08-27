@@ -265,6 +265,39 @@ impl Formatter {
         }
     }
 
+    pub fn format_io_expr(&mut self, node: &PerlNode) {
+        // Format I/O expressions (e.g., <STDIN>, <>, <$fh>)
+        // Output all child elements consecutively without spaces
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Token(token) => {
+                    let kind = token.kind();
+                    let text = token.text();
+
+                    // Apply normal spacing before the I/O operator
+                    match kind {
+                        SyntaxKind::WHITESPACE => {
+                            // Skip whitespace inside I/O expressions
+                        }
+                        _ => {
+                            // For the opening <, apply normal spacing rules
+                            if text.starts_with('<') {
+                                self.handle_spacing_before(kind);
+                                if self.at_line_start {
+                                    self.add_indent();
+                                    self.at_line_start = false;
+                                }
+                            }
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub fn format_ternary_expr(&mut self, node: &PerlNode) {
         // Format ternary expressions (e.g., condition ? true_expr : false_expr)
         // Add spaces around ? and : for readability
@@ -526,5 +559,64 @@ mod tests {
 
         let output = format(&syntax);
         insta::assert_snapshot!(output, @"my $config = {timeout => $is_production ? 30 : 5, retries => $is_critical ? 3 : 1};");
+    }
+
+    #[test]
+    fn test_io_operator_formatting() {
+        let cases = [
+            // Basic I/O operators
+            ("$line = <$fh>;", "$line = <$fh>;\n"),
+            ("$data=<FILE>;", "$data = <FILE>;\n"),
+            ("my $input = <STDIN>;", "my $input = <STDIN>;\n"),
+            ("while (<>) { print; }", "while (<>) {\n    print;\n}\n"),
+            (
+                "while (<DATA>) { chomp; print; }",
+                "while (<DATA>) {\n    chomp;\n    print;\n}\n",
+            ),
+        ];
+        crate::formatter::tests::check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_original_io_examples() {
+        // Test the three examples from the original issue
+        let input1 = "while (defined($_ = <STDIN>)) { print; }";
+        let (syntax, err) = parse_perl(input1);
+        assert!(err.is_empty(), "Parse errors for example 1: {:?}", err);
+        let formatted1 = format(&syntax);
+
+        let input2 = "while (<>) {\n    print;\n}";
+        let (syntax, err) = parse_perl(input2);
+        assert!(err.is_empty(), "Parse errors for example 2: {:?}", err);
+        let formatted2 = format(&syntax);
+
+        let input3 = "$line = <$fh>;";
+        let (syntax, err) = parse_perl(input3);
+        assert!(err.is_empty(), "Parse errors for example 3: {:?}", err);
+        let formatted3 = format(&syntax);
+
+        // Just verify they format without errors and contain the I/O operators
+        assert!(
+            formatted1.contains("<STDIN>"),
+            "Example 1 should contain <STDIN>"
+        );
+        assert!(formatted2.contains("<>"), "Example 2 should contain <>");
+        assert!(
+            formatted3.contains("<$fh>"),
+            "Example 3 should contain <$fh>"
+        );
+
+        // Snapshot the results
+        insta::assert_snapshot!(formatted1, @r"
+        while (defined($_ = <STDIN>)) {
+            print;
+        }
+        ");
+        insta::assert_snapshot!(formatted2, @r"
+        while (<>) {
+            print;
+        }
+        ");
+        insta::assert_snapshot!(formatted3, @"$line = <$fh>;");
     }
 }

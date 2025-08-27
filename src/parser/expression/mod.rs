@@ -359,6 +359,12 @@ impl<'a> Parser<'a> {
                 self.bump();
                 self.skip_trivia();
             }
+            Some(SyntaxKind::IO_EXPR) => {
+                self.builder.start_node(SyntaxKind::IO_EXPR.into());
+                self.bump();
+                self.builder.finish_node();
+                self.skip_trivia();
+            }
             Some(kind) if kind.is_variable() => {
                 self.bump();
                 self.skip_trivia();
