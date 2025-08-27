@@ -87,9 +87,9 @@ pub enum SyntaxKind {
     QW_STRING, // Any text inside qw()
 
     // Q-string family content
-    Q_STRING,      // Any text inside q() (single-quoted string content)
-    QQ_STRING,     // Any text inside qq() (double-quoted string content)
-    QX_STRING,     // Any text inside qx() (command execution content)
+    Q_STRING,            // Any text inside q() (single-quoted string content)
+    QQ_STRING,           // Any text inside qq() (double-quoted string content)
+    QX_STRING,           // Any text inside qx() (command execution content)
     M_STRING,            // Any text inside m() (match regex content)
     QR_STRING,           // Any text inside qr() (compiled regex content)
     S_PATTERN,           // Pattern part inside s() (substitution pattern)
