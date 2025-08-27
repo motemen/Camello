@@ -10,6 +10,14 @@ pub enum Token {
     #[token("@")]
     At,
 
+    // Reference operator
+    #[token("\\")]
+    Backslash,
+
+    // Ampersand (for function references)
+    #[token("&")]
+    Ampersand,
+
     // データセクションキーワード (must come before Ident to take precedence)
     #[token("__END__")]
     EndKw,
@@ -165,6 +173,8 @@ impl Token {
         match self {
             Token::Dollar => SyntaxKind::DOLLAR,
             Token::At => SyntaxKind::AT,
+            Token::Backslash => SyntaxKind::BACKSLASH,
+            Token::Ampersand => SyntaxKind::AMPERSAND,
             Token::Ident => SyntaxKind::IDENT,
             Token::Number => SyntaxKind::NUMBER,
             Token::String => SyntaxKind::STRING,
@@ -600,11 +610,13 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// Update the lexer context based on the token we just processed
     fn update_context(&mut self, syntax_kind: SyntaxKind) {
         self.context = match syntax_kind {
             // Sigils: start VariableList context
             SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT => LexerContext::VariableList,
+
+            // Reference operator: expects a value (variable, function name, etc.)
+            SyntaxKind::BACKSLASH => LexerContext::ExpectingValue,
 
             // Keywords with different expectations
             SyntaxKind::SUB_KW => LexerContext::ExpectingValue, // Expects identifier (bareword)

@@ -237,4 +237,59 @@ impl<'a> Parser<'a> {
             self.builder.finish_node();
         }
     }
+
+    /// Parses a reference expression (e.g., \$scalar, \@array, \%hash, \&code)
+    pub fn parse_reference_expr(&mut self) {
+        self.builder.start_node(SyntaxKind::REFERENCE_EXPR.into());
+
+        // Consume the backslash
+        self.bump(); // \
+        self.skip_trivia();
+
+        // Parse what comes after the backslash
+        match self.current_kind() {
+            Some(SyntaxKind::DOLLAR) | Some(SyntaxKind::AT) | Some(SyntaxKind::PERCENT) => {
+                // Reference to a variable: \$scalar, \@array, \%hash
+                self.parse_variable();
+            }
+            Some(SyntaxKind::AMPERSAND) => {
+                // Reference to a function: \&func
+                self.bump(); // consume &
+                self.skip_trivia();
+
+                if self.at(SyntaxKind::IDENT) {
+                    self.parse_identifier_or_qualified();
+                } else {
+                    self.error("Expected function name after \\&");
+                }
+            }
+            Some(SyntaxKind::IDENT) => {
+                // Reference to a bareword function: \func (shorthand for \&func)
+                self.parse_identifier_or_qualified();
+            }
+            Some(SyntaxKind::L_PAREN) => {
+                // Reference to parenthesized expression: \(expr)
+                self.bump(); // (
+                self.skip_trivia();
+
+                if !self.expression() {
+                    self.error("Expected expression in reference");
+                }
+
+                if !self.at(SyntaxKind::R_PAREN) {
+                    self.error("Expected ')' after reference expression");
+                } else {
+                    self.bump(); // )
+                    self.skip_trivia();
+                }
+            }
+            _ => {
+                self.error(
+                    "Expected variable, function name, or parenthesized expression after '\\'",
+                );
+            }
+        }
+
+        self.builder.finish_node();
+    }
 }

@@ -13,10 +13,12 @@ pub enum SyntaxKind {
     QUALIFIED_IDENT, // Qualified identifier (e.g., Foo::Bar::baz)
 
     // Sigils (prefixes indicating variable type)
-    DOLLAR,  // $
-    AT,      // @
-    PERCENT, // %
-    CARET,   // ^
+    DOLLAR,    // $
+    AT,        // @
+    PERCENT,   // %
+    CARET,     // ^
+    BACKSLASH, // \ (reference operator)
+    AMPERSAND, // & (function sigil/reference)
 
     // Composite variable nodes (used later)
     SCALAR_VAR,
@@ -178,6 +180,7 @@ pub enum SyntaxKind {
     S_EXPR,                   // s() expression (substitution literal)
     DEREF_EXPR,               // Dereference expression (e.g., @$var, %$var, $$var)
     REGEX_EXPR,               // Regex expression (e.g., $str =~ "pattern")
+    REFERENCE_EXPR,           // Reference expression (e.g., \$scalar, \@array, \%hash, \&code)
 
     // Literal references
     HASH_REF,  // Hash reference (anonymous hash)
@@ -248,7 +251,7 @@ impl SyntaxKind {
     pub fn is_sigil(self) -> bool {
         matches!(
             self,
-            SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT
+            SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT | SyntaxKind::BACKSLASH
         )
     }
 
@@ -289,6 +292,8 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::AT => "AT",
             SyntaxKind::PERCENT => "PERCENT",
             SyntaxKind::CARET => "CARET",
+            SyntaxKind::BACKSLASH => "BACKSLASH",
+            SyntaxKind::AMPERSAND => "AMPERSAND",
             SyntaxKind::SCALAR_VAR => "SCALAR_VAR",
             SyntaxKind::ARRAY_VAR => "ARRAY_VAR",
             SyntaxKind::HASH_VAR => "HASH_VAR",
@@ -398,6 +403,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::S_EXPR => "S_EXPR",
             SyntaxKind::DEREF_EXPR => "DEREF_EXPR",
             SyntaxKind::REGEX_EXPR => "REGEX_EXPR",
+            SyntaxKind::REFERENCE_EXPR => "REFERENCE_EXPR",
             SyntaxKind::HASH_REF => "HASH_REF",
             SyntaxKind::ARRAY_REF => "ARRAY_REF",
             SyntaxKind::IF_MODIFIER => "IF_MODIFIER",

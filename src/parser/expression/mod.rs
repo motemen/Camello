@@ -323,6 +323,10 @@ impl<'a> Parser<'a> {
                 self.bump();
                 self.skip_trivia();
             }
+            Some(SyntaxKind::BACKSLASH) => {
+                // Reference expression: \$scalar, \@array, \%hash, \&code
+                self.parse_reference_expr();
+            }
             Some(kind) if kind.is_sigil() => {
                 // Check if this is a dereferencing pattern (sigil followed by another sigil)
                 if self.is_dereferencing_pattern() {

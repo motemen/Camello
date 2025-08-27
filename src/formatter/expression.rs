@@ -228,6 +228,42 @@ impl Formatter {
             }
         }
     }
+
+    pub fn format_reference_expr(&mut self, node: &PerlNode) {
+        // Format reference expressions (e.g., \$scalar, \@array, \%hash, \&func)
+        // Output all child elements consecutively without spaces between the backslash and the operand
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Token(token) => {
+                    let kind = token.kind();
+                    let text = token.text();
+
+                    // Handle spacing normally for the backslash, but no spaces within the reference expression
+                    match kind {
+                        SyntaxKind::BACKSLASH => {
+                            // Apply normal spacing before the backslash
+                            self.handle_spacing_before(kind);
+                            if self.at_line_start {
+                                self.add_indent();
+                                self.at_line_start = false;
+                            }
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::WHITESPACE => {
+                            // Skip whitespace inside reference expressions to keep them compact
+                        }
+                        _ => {
+                            // For other tokens (sigils, identifiers, etc.), output directly without spacing
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]

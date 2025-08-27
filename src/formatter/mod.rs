@@ -97,6 +97,10 @@ impl Formatter {
                 self.format_deref_expr(node);
                 return;
             }
+            SyntaxKind::REFERENCE_EXPR => {
+                self.format_reference_expr(node);
+                return;
+            }
             SyntaxKind::FUNCTION_CALL_EXPR => {
                 self.format_function_call(node);
                 return;
