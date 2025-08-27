@@ -580,7 +580,7 @@ impl<'a> Lexer<'a> {
             LexerContext::ExpectingValue => {
                 // When expecting a value, check what follows tr
                 let remainder = self.logos_lexer.remainder();
-                
+
                 // Skip whitespace to see what comes next
                 for c in remainder.chars() {
                     if c.is_whitespace() {
@@ -640,7 +640,7 @@ impl<'a> Lexer<'a> {
             LexerContext::ExpectingValue => {
                 // When expecting a value, check what follows y
                 let remainder = self.logos_lexer.remainder();
-                
+
                 // Skip whitespace to see what comes next
                 for c in remainder.chars() {
                     if c.is_whitespace() {
@@ -1354,7 +1354,13 @@ mod tests {
 
         for (input, expected_kind) in test_cases {
             let mut lexer = Lexer::new(input);
-            assert_eq!(lexer.next_token(), Some((expected_kind, &input[..if input.starts_with("tr") { 2 } else { 1 }])));
+            assert_eq!(
+                lexer.next_token(),
+                Some((
+                    expected_kind,
+                    &input[..if input.starts_with("tr") { 2 } else { 1 }]
+                ))
+            );
         }
     }
 }

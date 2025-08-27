@@ -470,7 +470,7 @@ mod tests {
             ("$str =~ tr[abc][xyz];", "$str =~ tr[abc][xyz];"),
             ("$str =~ tr{abc}{xyz};", "$str =~ tr{abc}{xyz};"),
         ];
-        
+
         for (input, expected) in cases {
             let (syntax, err) = parse_perl(input);
             assert!(err.is_empty(), "Parse errors for '{}': {:?}", input, err);
@@ -488,7 +488,7 @@ mod tests {
             ("$str =~ y[abc][xyz];", "$str =~ y[abc][xyz];"),
             ("$str =~ y{abc}{xyz};", "$str =~ y{abc}{xyz};"),
         ];
-        
+
         for (input, expected) in cases {
             let (syntax, err) = parse_perl(input);
             assert!(err.is_empty(), "Parse errors for '{}': {:?}", input, err);
@@ -507,7 +507,7 @@ mod tests {
             ("$str =~ tr/abc/xyz/cs;", "$str =~ tr/abc/xyz/cs;"),
             ("$str =~ tr/abc/xyz/ds;", "$str =~ tr/abc/xyz/ds;"),
         ];
-        
+
         for (input, expected) in cases {
             let (syntax, err) = parse_perl(input);
             assert!(err.is_empty(), "Parse errors for '{}': {:?}", input, err);
@@ -523,7 +523,7 @@ mod tests {
             ("$str =~ y/abc/xyz/d;", "$str =~ y/abc/xyz/d;"),
             ("$str =~ y/abc/xyz/cs;", "$str =~ y/abc/xyz/cs;"),
         ];
-        
+
         for (input, expected) in cases {
             let (syntax, err) = parse_perl(input);
             assert!(err.is_empty(), "Parse errors for '{}': {:?}", input, err);
@@ -537,10 +537,13 @@ mod tests {
     fn test_tr_complex_patterns() {
         let cases = [
             ("$str =~ tr/a-z/A-Z/;", "$str =~ tr/a-z/A-Z/;"),
-            ("$str =~ tr/\\x41-\\x5A/a-z/;", "$str =~ tr/\\x41-\\x5A/a-z/;"),
+            (
+                "$str =~ tr/\\x41-\\x5A/a-z/;",
+                "$str =~ tr/\\x41-\\x5A/a-z/;",
+            ),
             ("$str =~ tr/0-9/*/;", "$str =~ tr/0-9/*/;"),
         ];
-        
+
         for (input, expected) in cases {
             let (syntax, err) = parse_perl(input);
             assert!(err.is_empty(), "Parse errors for '{}': {:?}", input, err);
