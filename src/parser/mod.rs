@@ -209,6 +209,16 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Peek at the next non-trivia token without consuming it
+    fn peek_non_trivia_token(&self) -> Option<(SyntaxKind, &'a str)> {
+        self.lexer.peek_non_trivia_token()
+    }
+
+    /// Check if any of the given token kinds appears next (skipping trivia)
+    fn lookahead_for_any(&self, target_kinds: &[SyntaxKind]) -> bool {
+        self.lexer.peek_for_any(target_kinds).is_some()
+    }
+
     fn is_at_start_of_expression(&self) -> bool {
         if let Some(kind) = self.current_kind() {
             self.at_any(&[
@@ -329,6 +339,77 @@ mod tests {
             "Error should mention =cut and POD, got: {:?}",
             errors
         );
+    }
+
+    #[test]
+    fn test_lexer_lookahead_functionality() {
+        // Test the lexer's new lookahead methods
+        let mut lexer = crate::lexer::Lexer::new("$var @array");
+
+        // Test peek_non_trivia_token
+        assert_eq!(
+            lexer.peek_non_trivia_token(),
+            Some((SyntaxKind::DOLLAR, "$"))
+        );
+
+        // Consume first token and test again
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
+        assert_eq!(
+            lexer.peek_non_trivia_token(),
+            Some((SyntaxKind::IDENT, "var"))
+        );
+
+        // Consume identifier
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "var")));
+
+        // Skip whitespace and test peek again
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.peek_non_trivia_token(), Some((SyntaxKind::AT, "@")));
+    }
+
+    #[test]
+    fn test_dereferencing_pattern_detection() {
+        // Test that is_dereferencing_pattern works with token-based lookahead
+
+        // Test valid dereferencing patterns
+        let test_cases = [
+            ("@$ref", true),
+            ("%$ref", true),
+            ("$$ref", true),
+            ("@ $ref", true), // with whitespace
+            ("% $ref", true), // with whitespace
+            ("$ $ref", true), // with whitespace
+        ];
+
+        for (input, expected) in test_cases {
+            let mut parser = crate::parser::Parser::new(input);
+            parser.skip_trivia();
+            assert_eq!(
+                parser.is_dereferencing_pattern(),
+                expected,
+                "Failed for input: '{}'",
+                input
+            );
+        }
+
+        // Test non-dereferencing patterns
+        let non_deref_cases = [
+            ("@array", false),
+            ("%hash", false),
+            ("$scalar", false),
+            ("@{$ref}", false), // This is different - not a simple dereference pattern
+        ];
+
+        for (input, expected) in non_deref_cases {
+            let mut parser = crate::parser::Parser::new(input);
+            parser.skip_trivia();
+            assert_eq!(
+                parser.is_dereferencing_pattern(),
+                expected,
+                "Failed for input: '{}'",
+                input
+            );
+        }
     }
 }
 
