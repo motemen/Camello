@@ -398,6 +398,8 @@ impl<'a> Lexer<'a> {
                     "m" => SyntaxKind::M_KW,
                     "qr" => SyntaxKind::QR_KW,
                     "s" => self.disambiguate_s(),
+                    "tr" => self.disambiguate_tr(),
+                    "y" => self.disambiguate_y(),
                     "use" => SyntaxKind::USE_KW,
                     "return" => SyntaxKind::RETURN_KW,
                     "x" => self.disambiguate_x(),
@@ -568,6 +570,101 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn disambiguate_tr(&self) -> SyntaxKind {
+        match self.context {
+            LexerContext::VariableList => {
+                // When in variable list context (after a sigil), tr is an identifier
+                // Examples: "$tr", "my $tr", "@tr"
+                SyntaxKind::IDENT
+            }
+            LexerContext::ExpectingValue => {
+                // When expecting a value, check what follows tr
+                let remainder = self.logos_lexer.remainder();
+                
+                // Skip whitespace to see what comes next
+                for c in remainder.chars() {
+                    if c.is_whitespace() {
+                        continue;
+                    }
+                    // If first non-whitespace char is alphanumeric or sigil, it's likely a function call
+                    if c.is_alphanumeric() || c == '$' || c == '@' || c == '%' {
+                        return SyntaxKind::IDENT;
+                    } else {
+                        // Otherwise, it's likely transliteration
+                        return SyntaxKind::TR_KW;
+                    }
+                }
+
+                // If we reach end of input after 'tr', assume function call
+                SyntaxKind::IDENT
+            }
+            LexerContext::ExpectingOperator => {
+                // When expecting an operator, tr is the transliteration operator
+                // Examples: "$str tr/a-z/A-Z/"
+                SyntaxKind::TR_KW
+            }
+            LexerContext::QlikeDelimiter => {
+                // In q-like delimiter context, tr is the transliteration operator
+                SyntaxKind::TR_KW
+            }
+            LexerContext::RawData => {
+                // Handle gracefully instead of panicking
+                SyntaxKind::IDENT
+            }
+            LexerContext::PodContent => {
+                unreachable!("tr should not appear in POD content context");
+            }
+        }
+    }
+
+    fn disambiguate_y(&self) -> SyntaxKind {
+        // y is an alias for tr, so use the same logic but return Y_KW
+        match self.context {
+            LexerContext::VariableList => {
+                // When in variable list context (after a sigil), y is an identifier
+                // Examples: "$y", "my $y", "@y"
+                SyntaxKind::IDENT
+            }
+            LexerContext::ExpectingValue => {
+                // When expecting a value, check what follows y
+                let remainder = self.logos_lexer.remainder();
+                
+                // Skip whitespace to see what comes next
+                for c in remainder.chars() {
+                    if c.is_whitespace() {
+                        continue;
+                    }
+                    // If first non-whitespace char is alphanumeric or sigil, it's likely a function call
+                    if c.is_alphanumeric() || c == '$' || c == '@' || c == '%' {
+                        return SyntaxKind::IDENT;
+                    } else {
+                        // Otherwise, it's likely transliteration
+                        return SyntaxKind::Y_KW;
+                    }
+                }
+
+                // If we reach end of input after 'y', assume function call
+                SyntaxKind::IDENT
+            }
+            LexerContext::ExpectingOperator => {
+                // When expecting an operator, y is the transliteration operator
+                // Examples: "$str y/a-z/A-Z/"
+                SyntaxKind::Y_KW
+            }
+            LexerContext::QlikeDelimiter => {
+                // In q-like delimiter context, y is the transliteration operator
+                SyntaxKind::Y_KW
+            }
+            LexerContext::RawData => {
+                // Handle gracefully instead of panicking
+                SyntaxKind::IDENT
+            }
+            LexerContext::PodContent => {
+                unreachable!("y should not appear in POD content context");
+            }
+        }
+    }
+
     fn try_consume_regex_literal(&mut self) -> Option<(SyntaxKind, &'a str)> {
         let remainder = self.logos_lexer.remainder();
 
@@ -686,7 +783,9 @@ impl<'a> Lexer<'a> {
             | SyntaxKind::QX_KW
             | SyntaxKind::M_KW
             | SyntaxKind::QR_KW
-            | SyntaxKind::S_KW => LexerContext::QlikeDelimiter,
+            | SyntaxKind::S_KW
+            | SyntaxKind::TR_KW
+            | SyntaxKind::Y_KW => LexerContext::QlikeDelimiter,
             SyntaxKind::USE_KW => LexerContext::ExpectingValue, // Expects module name
             SyntaxKind::RETURN_KW => LexerContext::ExpectingValue, // Expects return value
 
