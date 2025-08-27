@@ -586,16 +586,23 @@ impl<'a> Lexer<'a> {
                     if c.is_whitespace() {
                         continue;
                     }
-                    // If first non-whitespace char is a typical tr delimiter, it's likely transliteration
-                    if matches!(c, '/' | '(' | '[') {
+                    // If first non-whitespace char is alphanumeric or sigil, it's likely a function call
+                    if c.is_alphanumeric() || c == '$' || c == '@' || c == '%' {
+                        return SyntaxKind::IDENT;
+                    } else if matches!(c, '/' | '(' | '[') {
+                        // Definitely tr operator delimiters
                         return SyntaxKind::TR_KW;
                     } else if c == '{' {
                         // Special case: { could be either a tr delimiter or a block start
-                        // For now, be conservative and assume it's a block start (function body)
-                        // This handles "sub tr {}" correctly
-                        return SyntaxKind::IDENT;
+                        // Simple heuristic: if we can find pattern like {content}{content}, it's likely tr operator
+                        if remainder.matches('{').count() >= 2 {
+                            return SyntaxKind::TR_KW;
+                        } else {
+                            // Only one brace group, likely a function block
+                            return SyntaxKind::IDENT;
+                        }
                     } else {
-                        // For other characters (alphanumeric, sigils, etc.), it's likely an identifier
+                        // For other non-alphanumeric characters, it's likely an identifier
                         return SyntaxKind::IDENT;
                     }
                 }
@@ -639,16 +646,23 @@ impl<'a> Lexer<'a> {
                     if c.is_whitespace() {
                         continue;
                     }
-                    // If first non-whitespace char is a typical y delimiter, it's likely transliteration
-                    if matches!(c, '/' | '(' | '[') {
+                    // If first non-whitespace char is alphanumeric or sigil, it's likely a function call
+                    if c.is_alphanumeric() || c == '$' || c == '@' || c == '%' {
+                        return SyntaxKind::IDENT;
+                    } else if matches!(c, '/' | '(' | '[') {
+                        // Definitely y operator delimiters
                         return SyntaxKind::Y_KW;
                     } else if c == '{' {
                         // Special case: { could be either a y delimiter or a block start
-                        // For now, be conservative and assume it's a block start (function body)
-                        // This handles "sub y {}" correctly
-                        return SyntaxKind::IDENT;
+                        // Simple heuristic: if we can find pattern like {content}{content}, it's likely y operator
+                        if remainder.matches('{').count() >= 2 {
+                            return SyntaxKind::Y_KW;
+                        } else {
+                            // Only one brace group, likely a function block
+                            return SyntaxKind::IDENT;
+                        }
                     } else {
-                        // For other characters (alphanumeric, sigils, etc.), it's likely an identifier
+                        // For other non-alphanumeric characters, it's likely an identifier
                         return SyntaxKind::IDENT;
                     }
                 }
