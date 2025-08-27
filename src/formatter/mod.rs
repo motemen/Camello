@@ -589,6 +589,7 @@ impl Formatter {
                 | SyntaxKind::STR_GE
                 | SyntaxKind::STR_LE
                 | SyntaxKind::STR_CMP
+                | SyntaxKind::SPACESHIP
         )
     }
 
@@ -628,6 +629,16 @@ impl Formatter {
             // Logical operators
             (Some(_), SyntaxKind::LOGICAL_AND) | (Some(SyntaxKind::LOGICAL_AND), _) => true,
             (Some(_), SyntaxKind::LOGICAL_OR) | (Some(SyntaxKind::LOGICAL_OR), _) => true,
+            // Special handling for logical NOT prefix operator: no space after parentheses, no space after !
+            (Some(SyntaxKind::L_PAREN), SyntaxKind::LOGICAL_NOT) => false, // No space after (
+            (Some(_), SyntaxKind::LOGICAL_NOT) => true, // Space before ! in other cases
+            (Some(SyntaxKind::LOGICAL_NOT), _) => false, // No space after !
+            (Some(_), SyntaxKind::NOT_KW) | (Some(SyntaxKind::NOT_KW), _) => true,
+            (Some(_), SyntaxKind::AND_KW) | (Some(SyntaxKind::AND_KW), _) => true,
+            (Some(_), SyntaxKind::OR_KW) | (Some(SyntaxKind::OR_KW), _) => true,
+            (Some(_), SyntaxKind::XOR_KW) | (Some(SyntaxKind::XOR_KW), _) => true,
+            (Some(_), SyntaxKind::DEFINED_OR) | (Some(SyntaxKind::DEFINED_OR), _) => true,
+            (Some(_), SyntaxKind::SPACESHIP) | (Some(SyntaxKind::SPACESHIP), _) => true,
 
             // foo, bar
             (Some(SyntaxKind::COMMA), _) => true,
@@ -1468,6 +1479,83 @@ return 1;
             6;
 
         }
+        ");
+    }
+
+    #[test]
+    fn test_logical_operators_formatting() {
+        let cases = [
+            // Logical NOT prefix operator (no space after !)
+            ("!$x;", "!$x;\n"),
+            ("$a||!$b;", "$a || !$b;\n"),
+            ("(!$a&&$b);", "(!$a && $b);\n"),
+            // Low-precedence logical operators (space around)
+            ("$a and $b;", "$a and $b;\n"),
+            ("$x or $y;", "$x or $y;\n"),
+            ("$a xor $b;", "$a xor $b;\n"),
+            ("not $x;", "not $x;\n"),
+            // Defined-or operator
+            ("$a//$b;", "$a // $b;\n"),
+            ("$x//$y//$z;", "$x // $y // $z;\n"),
+            // Spaceship operator
+            ("$a<=>$b;", "$a <=> $b;\n"),
+            ("$x<=>$y;", "$x <=> $y;\n"),
+            // Mixed precedence expressions
+            ("$a&&$b||$c;", "$a && $b || $c;\n"),
+            ("$a||$b//$c;", "$a || $b // $c;\n"),
+            ("$a and $b or $c;", "$a and $b or $c;\n"),
+            ("$a&&$b and $c;", "$a && $b and $c;\n"),
+        ];
+        check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_complex_logical_expressions_formatting() {
+        let input = "$a&&$b||$c and $d or $e xor $f;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"$a && $b || $c and $d or $e xor $f;");
+    }
+
+    #[test]
+    fn test_logical_operators_with_parentheses() {
+        let input = "(!$a&&($b||$c))and($x//$y);";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"(!$a && ($b || $c)) and ($x // $y);");
+    }
+
+    #[test]
+    fn test_spaceship_in_expressions() {
+        let input = "$result=$a<=>$b;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"$result = $a <=> $b;");
+    }
+
+    #[test]
+    fn test_contextual_logical_keywords() {
+        // Test that and, or, etc. are treated as identifiers in non-operator contexts
+        let input = "sub and { } my $or = 1;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        sub and {
+        }
+
+        my $or = 1;
         ");
     }
 }
