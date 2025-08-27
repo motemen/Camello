@@ -183,10 +183,7 @@ impl<'a> Parser<'a> {
         // Use token-based lookahead to check if next non-trivia token is a dollar sigil
         // Valid dereference patterns are of the form: @$ref, %$ref, $$ref.
         // The variable holding the reference must be a scalar, which starts with a '$' sigil.
-        match self.peek_non_trivia_token() {
-            Some((SyntaxKind::DOLLAR, _)) => true,
-            _ => false,
-        }
+        matches!(self.peek_non_trivia_token(), Some((SyntaxKind::DOLLAR, _)))
     }
 
     /// Parses a dereferencing expression (e.g., @$var, %$var, $$var).
