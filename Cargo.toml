@@ -20,6 +20,9 @@ smol_str = "0.2"
 miette = { version = "7.0", features = ["fancy"] }
 thiserror = "1.0"
 
+# Iterator utilities for lookahead functionality
+itertools = "0.12"
+
 [dev-dependencies]
 # スナップショットテスト
 insta = "1.0"
