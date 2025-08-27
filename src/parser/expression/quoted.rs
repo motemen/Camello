@@ -376,6 +376,14 @@ impl<'a> Parser<'a> {
                         false
                     }
                 }
+                SyntaxKind::S_KW => {
+                    // Special case: 's' might be disambiguated as S_KW but should be treated as a flag
+                    if let Some((_, text)) = &self.current_token {
+                        *text == "s"
+                    } else {
+                        false
+                    }
+                }
                 _ => false,
             };
 
