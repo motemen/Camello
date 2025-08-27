@@ -1,11 +1,3 @@
-use itertools::Itertools;
-impl<'a> Iterator for Lexer<'a> {
-    type Item = (SyntaxKind, &'a str);
-    fn next(&mut self) -> Option<Self::Item> {
-        self.next_token()
-    }
-}
-
 use crate::SyntaxKind;
 use logos::Logos;
 
@@ -251,6 +243,13 @@ impl<'a> Clone for Lexer<'a> {
             context: self.context,
             at_line_start: self.at_line_start,
         }
+    }
+}
+
+impl<'a> Iterator for Lexer<'a> {
+    type Item = (SyntaxKind, &'a str);
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next_token()
     }
 }
 
@@ -852,38 +851,20 @@ impl<'a> Lexer<'a> {
 
     /// Peek at the next token without consuming it or changing lexer state
     pub fn peek_token(&self) -> Option<(SyntaxKind, &'a str)> {
-        let mut iter = self.clone().peekable();
-        iter.peek().cloned()
+        self.clone().next()
     }
 
     /// Peek at the next non-trivia token without consuming it or changing lexer state
     pub fn peek_non_trivia_token(&self) -> Option<(SyntaxKind, &'a str)> {
-        let mut iter = self.clone().multipeek();
-        while let Some((kind, text)) = iter.peek().cloned() {
-            if !kind.is_trivia() {
-                return Some((kind, text));
-            }
-            iter.next();
-        }
-        None
+        self.clone().find(|(kind, _)| !kind.is_trivia())
     }
 
     /// Peek ahead multiple tokens, skipping trivia, and return the first non-trivia token
     /// that matches any of the given kinds
     pub fn peek_for_any(&self, target_kinds: &[SyntaxKind]) -> Option<(SyntaxKind, &'a str)> {
-        let mut iter = self.clone().multipeek();
-        while let Some((kind, text)) = iter.peek().cloned() {
-            if !kind.is_trivia() {
-                if target_kinds.contains(&kind) {
-                    return Some((kind, text));
-                } else {
-                    // Found a non-trivia token that doesn't match, stop looking
-                    return None;
-                }
-            }
-            iter.next();
-        }
-        None
+        self.clone()
+            .find(|(kind, _)| !kind.is_trivia())
+            .filter(|(kind, _)| target_kinds.contains(kind))
     }
 }
 
