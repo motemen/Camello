@@ -378,13 +378,8 @@ impl<'a> Parser<'a> {
 
     /// Look ahead to see if there's an elsif or else keyword after whitespace
     fn lookahead_for_elsif_or_else(&self) -> bool {
-        let pos = self.current_pos;
-        let remaining = &self.source[pos..];
-
-        // Skip whitespace characters
-        let trimmed = remaining.trim_start();
-
-        trimmed.starts_with("elsif") || trimmed.starts_with("else")
+        // Use token-based lookahead to check for elsif or else keywords
+        self.lookahead_for_any(&[SyntaxKind::ELSIF_KW, SyntaxKind::ELSE_KW])
     }
 
     fn unless_stmt(&mut self) {
@@ -587,5 +582,70 @@ __END__",
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_elsif_else_lookahead_functionality() {
+        // Test that lookahead_for_elsif_or_else works with token-based lookahead
+        // This method is used to peek ahead and see if elsif/else follows
+        
+        // Test with whitespace before keywords - this is the main use case
+        let parser = crate::parser::Parser::new("  elsif");
+        assert!(
+            parser.lookahead_for_elsif_or_else(),
+            "Should detect 'elsif' with leading whitespace"
+        );
+
+        let parser = crate::parser::Parser::new("\n\telse");
+        assert!(
+            parser.lookahead_for_elsif_or_else(),
+            "Should detect 'else' with leading whitespace and newline"
+        );
+
+        // Test the realistic scenario - positioned after a closing brace, looking for elsif/else
+        let parser = crate::parser::Parser::new("} elsif");
+        // The parser starts at the closing brace
+        assert_eq!(parser.current_kind(), Some(SyntaxKind::R_BRACE));
+        // Advance past the brace to simulate the real usage
+        let mut parser = parser;
+        parser.bump(); // consume the }
+        // Now we should be at whitespace, and lookahead should find elsif
+        assert!(
+            parser.lookahead_for_elsif_or_else(),
+            "Should detect 'elsif' after closing brace"
+        );
+
+        // Test cases where elsif/else should NOT be detected
+        let should_not_detect_cases = [
+            "foo",
+            "my",
+            "", // empty input
+            "if",
+            "while",
+            "# comment\nfoo", // comment followed by non-elsif/else
+        ];
+
+        for input in should_not_detect_cases {
+            let parser = crate::parser::Parser::new(input);
+            assert!(
+                !parser.lookahead_for_elsif_or_else(),
+                "Should NOT detect elsif/else for input: '{}'",
+                input
+            );
+        }
+
+        // Test a simpler validation that if/elsif/else can be parsed correctly
+        let full_if_input = "if (1) { } elsif (2) { }";
+        let (green, errors) = crate::parse(full_if_input);
+        
+        // This should parse without errors
+        assert!(
+            errors.is_empty(),
+            "Should parse if/elsif without errors, got: {:?}",
+            errors
+        );
+        
+        let syntax = crate::PerlNode::new_root(green);
+        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
     }
 }

@@ -236,6 +236,16 @@ pub struct Lexer<'a> {
     at_line_start: bool, // Track if we're at the start of a line for POD detection
 }
 
+impl<'a> Clone for Lexer<'a> {
+    fn clone(&self) -> Self {
+        Self {
+            logos_lexer: self.logos_lexer.clone(),
+            context: self.context,
+            at_line_start: self.at_line_start,
+        }
+    }
+}
+
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str) -> Self {
         let logos_lexer = Token::lexer(input);
@@ -830,6 +840,50 @@ impl<'a> Lexer<'a> {
 
     pub fn span(&self) -> std::ops::Range<usize> {
         self.logos_lexer.span()
+    }
+
+    /// Peek at the next token without consuming it or changing lexer state
+    pub fn peek_token(&self) -> Option<(SyntaxKind, &'a str)> {
+        let mut lexer_clone = self.clone();
+        lexer_clone.next_token()
+    }
+
+    /// Peek at the next non-trivia token without consuming it or changing lexer state
+    pub fn peek_non_trivia_token(&self) -> Option<(SyntaxKind, &'a str)> {
+        let mut lexer_clone = self.clone();
+        loop {
+            match lexer_clone.next_token() {
+                Some((kind, text)) => {
+                    if !kind.is_trivia() {
+                        return Some((kind, text));
+                    }
+                    // Continue to next token if this is trivia
+                }
+                None => return None,
+            }
+        }
+    }
+
+    /// Peek ahead multiple tokens, skipping trivia, and return the first non-trivia token
+    /// that matches any of the given kinds
+    pub fn peek_for_any(&self, target_kinds: &[SyntaxKind]) -> Option<(SyntaxKind, &'a str)> {
+        let mut lexer_clone = self.clone();
+        loop {
+            match lexer_clone.next_token() {
+                Some((kind, text)) => {
+                    if !kind.is_trivia() {
+                        if target_kinds.contains(&kind) {
+                            return Some((kind, text));
+                        } else {
+                            // Found a non-trivia token that doesn't match, stop looking
+                            return None;
+                        }
+                    }
+                    // Continue to next token if this is trivia
+                }
+                None => return None,
+            }
+        }
     }
 }
 
