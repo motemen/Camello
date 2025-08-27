@@ -105,6 +105,14 @@ impl<'a> Parser<'a> {
         self.parse_s_expr();
     }
 
+    pub fn tr_expr(&mut self) {
+        self.parse_tr_expr();
+    }
+
+    pub fn y_expr(&mut self) {
+        self.parse_tr_expr_with_keyword(SyntaxKind::Y_KW, "y");
+    }
+
     pub fn consume_regex_flags(&mut self) {
         // Consume regex flags like 'g', 'i', 'm', 's', 'x' after the closing delimiter
         // These might be treated as IDENT tokens or specific keywords, but should be part of the regex
@@ -270,5 +278,112 @@ impl<'a> Parser<'a> {
         self.consume_regex_flags();
 
         self.builder.finish_node();
+    }
+
+    pub fn parse_tr_expr(&mut self) {
+        self.parse_tr_expr_with_keyword(SyntaxKind::TR_KW, "tr");
+    }
+
+    pub fn parse_tr_expr_with_keyword(&mut self, keyword_kind: SyntaxKind, keyword_name: &str) {
+        self.builder.start_node(SyntaxKind::TR_EXPR.into());
+
+        // "tr" or "y"
+        self.expect(keyword_kind);
+        self.skip_trivia();
+
+        // Determine delimiter and find closing delimiter
+        let (opening_delim, closing_delim) = match self.current_kind() {
+            Some(SyntaxKind::L_PAREN) => (SyntaxKind::L_PAREN, SyntaxKind::R_PAREN),
+            Some(SyntaxKind::L_BRACKET) => (SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET),
+            Some(SyntaxKind::L_BRACE) => (SyntaxKind::L_BRACE, SyntaxKind::R_BRACE),
+            Some(SyntaxKind::SLASH) => (SyntaxKind::SLASH, SyntaxKind::SLASH),
+            _ => {
+                self.error(&format!(
+                    "Expected {}() delimiter: (, [, {{, or /",
+                    keyword_name
+                ));
+                self.builder.finish_node(); // Finish the node to avoid panic
+                return;
+            }
+        };
+
+        // Consume opening delimiter
+        self.expect(opening_delim);
+
+        // Parse search list part - everything until the middle delimiter becomes TR_SEARCH_LIST
+        while !self.at(closing_delim) && !self.at_end() {
+            // Consume any tokens as search list (preserving original text)
+            if let Some((_, text)) = self.current_token.take() {
+                self.builder.token(SyntaxKind::TR_SEARCH_LIST.into(), text);
+                self.current_pos += text.len();
+                self.current_token = self.lexer.next_token();
+            }
+        }
+
+        self.expect(closing_delim);
+
+        let closing_delim_repl = if opening_delim != closing_delim {
+            // Paired delimiters for search list. Replacement can have its own delimiters.
+            let (opening_repl, closing_repl) = match self.current_kind() {
+                Some(SyntaxKind::L_PAREN) => (SyntaxKind::L_PAREN, SyntaxKind::R_PAREN),
+                Some(SyntaxKind::L_BRACKET) => (SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET),
+                Some(SyntaxKind::L_BRACE) => (SyntaxKind::L_BRACE, SyntaxKind::R_BRACE),
+                Some(SyntaxKind::SLASH) => (SyntaxKind::SLASH, SyntaxKind::SLASH), // tr(search)/repl/ is also valid
+                _ => {
+                    self.error(&format!("Expected opening delimiter for replacement part of {} expression", keyword_name));
+                    self.builder.finish_node();
+                    return;
+                }
+            };
+            self.expect(opening_repl);
+            closing_repl
+        } else {
+            // Symmetric delimiter for search list. Replacement uses the same.
+            closing_delim
+        };
+
+        // Parse replacement list part - everything until the final delimiter becomes TR_REPLACEMENT_LIST
+        while !self.at(closing_delim_repl) && !self.at_end() {
+            // Consume any tokens as replacement list (preserving original text)
+            if let Some((_, text)) = self.current_token.take() {
+                self.builder.token(SyntaxKind::TR_REPLACEMENT_LIST.into(), text);
+                self.current_pos += text.len();
+                self.current_token = self.lexer.next_token();
+            }
+        }
+
+        // Final closing delimiter
+        self.expect(closing_delim_repl);
+
+        // Consume optional flags (like 'd', 'c', 's')
+        self.consume_tr_flags();
+
+        self.builder.finish_node();
+    }
+
+    pub fn consume_tr_flags(&mut self) {
+        // Consume tr/y flags like 'd', 'c', 's' after the closing delimiter
+        // These might be treated as IDENT tokens but should be part of the tr expression
+        while let Some(kind) = self.current_kind() {
+            let is_valid_flag = match kind {
+                SyntaxKind::IDENT => {
+                    if let Some((_, text)) = &self.current_token {
+                        // Check if it's a valid tr flag
+                        text.chars()
+                            .all(|c| matches!(c, 'd' | 'c' | 's'))
+                            && !text.is_empty()
+                    } else {
+                        false
+                    }
+                }
+                _ => false,
+            };
+
+            if is_valid_flag {
+                self.bump(); // consume the flags
+            } else {
+                break; // Not a tr flag, stop consuming
+            }
+        }
     }
 }
