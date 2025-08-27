@@ -424,4 +424,107 @@ mod tests {
         let formatted = format(&syntax);
         insta::assert_snapshot!(formatted, @"$array[$index] = $value;");
     }
+
+    #[test]
+    fn test_function_call_formatting() {
+        let cases = [
+            ("push@array,$value;", "push @array, $value;\n"),
+            ("print$var,\"hello\",123;", "print $var, \"hello\", 123;\n"),
+            ("shift@array;", "shift @array;\n"),
+            // TODO: ハッシュインデックス構文をサポートする必要がある: ("delete$hash{key};", "delete $hash{key};\n"),
+            ("my_func$a,$b,$c;", "my_func $a, $b, $c;\n"),
+        ];
+        crate::formatter::tests::check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_function_call_in_sub() {
+        let input = "sub test{push@array,$value;return$result;}";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        sub test {
+            push @array, $value;
+            return $result;
+        }
+        ");
+    }
+
+    #[test]
+    fn test_function_call_with_variable_declaration_formatting() {
+        let cases = [
+            // Basic variable declaration as function argument
+            ("foo my $x;", "foo my $x;\n"),
+            ("foo my $x, my $y;", "foo my $x, my $y;\n"),
+            ("bar our $a;", "bar our $a;\n"),
+            ("baz state $s;", "baz state $s;\n"),
+            ("qux local $l;", "qux local $l;\n"),
+            // Mixed arguments
+            (
+                "args my $x, my $y => 'Type';",
+                "args my $x, my $y => 'Type';\n",
+            ),
+            ("func my $a, $b, my $c;", "func my $a, $b, my $c;\n"),
+            (
+                "test my $x, 123, \"string\";",
+                "test my $x, 123, \"string\";\n",
+            ),
+        ];
+        crate::formatter::tests::check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_eval_block_function_formatting() {
+        let input = "eval{my$x=1;print$x;};";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        eval {
+            my $x = 1;
+            print $x;
+        };
+        ");
+    }
+
+    #[test]
+    fn test_map_with_parentheses_formatting() {
+        let input = "map{$_*2}(1,2,3); sort{$a+$b}@values;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        map { $_ * 2 } (1, 2, 3);
+        sort { $a + $b } @values;
+        ");
+    }
+
+    #[test]
+    fn test_single_line_function_call_formatting() {
+        let input = "func(arg1, arg2, arg3);";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"func(arg1, arg2, arg3);");
+    }
+
+    #[test]
+    fn test_ternary_in_data_structures_formatting() {
+        let input =
+            "my $config = { timeout => $is_production ? 30 : 5, retries => $is_critical ? 3 : 1 };";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let output = format(&syntax);
+        insta::assert_snapshot!(output, @"my $config = {timeout => $is_production ? 30 : 5, retries => $is_critical ? 3 : 1};");
+    }
 }

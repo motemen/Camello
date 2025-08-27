@@ -269,9 +269,7 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
         ) => Some(true),
 
         // After identifier: special rules (exclude R_PAREN to fix function call spacing)
-        (IDENT, SEMICOLON | DOUBLE_COLON | L_PAREN | R_PAREN) => {
-            Some(false)
-        }
+        (IDENT, SEMICOLON | DOUBLE_COLON | L_PAREN | R_PAREN) => Some(false),
         (IDENT, _) => Some(true),
 
         // SUB_KW with identifiers
@@ -385,5 +383,82 @@ mod tests {
             at_line_start: false,
         };
         assert!(!needs_space_before(&context));
+    }
+
+    #[test]
+    fn test_logical_operators_formatting() {
+        let cases = [
+            // Logical NOT prefix operator (no space after !)
+            ("!$x;", "!$x;\n"),
+            ("$a||!$b;", "$a || !$b;\n"),
+            ("(!$a&&$b);", "(!$a && $b);\n"),
+            // Low-precedence logical operators (space around)
+            ("$a and $b;", "$a and $b;\n"),
+            ("$x or $y;", "$x or $y;\n"),
+            ("$a xor $b;", "$a xor $b;\n"),
+            ("not $x;", "not $x;\n"),
+            // Defined-or operator
+            ("$a//$b;", "$a // $b;\n"),
+            ("$x//$y//$z;", "$x // $y // $z;\n"),
+            // Spaceship operator
+            ("$a<=>$b;", "$a <=> $b;\n"),
+            ("$x<=>$y;", "$x <=> $y;\n"),
+            // Mixed precedence expressions
+            ("$a&&$b||$c;", "$a && $b || $c;\n"),
+            ("$a||$b//$c;", "$a || $b // $c;\n"),
+            ("$a and $b or $c;", "$a and $b or $c;\n"),
+            ("$a&&$b and $c;", "$a && $b and $c;\n"),
+        ];
+        crate::formatter::tests::check_formatting_cases(&cases);
+    }
+
+    #[test]
+    fn test_complex_logical_expressions_formatting() {
+        let input = "$a&&$b||$c and $d or $e xor $f;";
+        let (syntax, err) = crate::parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = crate::format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"$a && $b || $c and $d or $e xor $f;");
+    }
+
+    #[test]
+    fn test_logical_operators_with_parentheses() {
+        let input = "(!$a&&($b||$c))and($x//$y);";
+        let (syntax, err) = crate::parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = crate::format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"(!$a && ($b || $c)) and ($x // $y);");
+    }
+
+    #[test]
+    fn test_spaceship_in_expressions() {
+        let input = "$result=$a<=>$b;";
+        let (syntax, err) = crate::parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = crate::format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"$result = $a <=> $b;");
+    }
+
+    #[test]
+    fn test_contextual_logical_keywords() {
+        // Test that and, or, etc. are treated as identifiers in non-operator contexts
+        let input = "sub and { } my $or = 1;";
+        let (syntax, err) = crate::parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = crate::format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        sub and {
+        }
+
+        my $or = 1;
+        ");
     }
 }

@@ -149,3 +149,167 @@ impl Formatter {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::parse_perl;
+
+    #[test]
+    fn test_empty_lines_preservation() {
+        let input =
+            "use strict;\n\n\nuse warnings;\n\nmy $x = 1;\n\n\nsub foo {\n    return $x;\n}";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = crate::formatter::format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        use strict;
+        use warnings;
+
+        my $x = 1;
+
+        sub foo {
+            return $x;
+        }
+        ");
+    }
+
+    #[test]
+    fn test_no_empty_lines_automatic_insertion() {
+        let input = "use strict;use warnings;my $x = 1;sub foo {return $x;}";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = crate::formatter::format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        use strict;
+        use warnings;
+
+        my $x = 1;
+
+        sub foo {
+            return $x;
+        }
+        ");
+    }
+
+    #[test]
+    fn test_block_stmt_empty_line_preservation() {
+        // Test that user-written empty lines inside BLOCK_STMT are preserved
+        let input = r#"sub f {
+bar();
+
+return 1;
+}"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = crate::formatter::format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        sub f {
+            bar();
+
+            return 1;
+        }
+        ");
+    }
+
+    #[test]
+    fn test_multiple_empty_lines_in_block_stmt() {
+        // Test that multiple consecutive empty lines are collapsed to one
+        let input = r#"sub f {
+bar();
+
+
+
+return 1;
+}"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = crate::formatter::format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        sub f {
+            bar();
+
+            return 1;
+        }
+        ");
+    }
+
+    #[test]
+    fn test_empty_lines_in_various_block_contexts() {
+        // Test empty line preservation in different block contexts
+        let input = r#"if ($condition) {
+    1;
+
+    2;
+
+
+    3;
+
+    # space ⬆️
+    4;
+    # space ⬇️
+
+    5;
+
+    # space ↕️
+
+    6;
+
+}"#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = crate::formatter::format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        if ($condition) {
+            1;
+
+            2;
+
+            3;
+
+            # space ⬆️
+            4;
+            # space ⬇️
+
+            5;
+
+            # space ↕️
+
+            6;
+
+        }
+        ");
+    }
+
+    #[test]
+    fn test_empty_lines_before_after_subs() {
+        let input = "my$x=1;sub foo{my$y=2;}my$z=3;sub bar{return 42;}";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = crate::formatter::format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r"
+        my $x = 1;
+
+        sub foo {
+            my $y = 2;
+        }
+
+        my $z = 3;
+
+        sub bar {
+            return 42;
+        }
+        ");
+    }
+}
