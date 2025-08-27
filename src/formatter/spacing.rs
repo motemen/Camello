@@ -74,7 +74,6 @@ impl TokenSpacing {
             TokenCategory::Keyword,
         )
     }
-
 }
 
 /// Get spacing information for a token
