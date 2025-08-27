@@ -1,0 +1,247 @@
+use crate::SyntaxKind;
+
+use super::super::Parser;
+
+impl<'a> Parser<'a> {
+    pub fn hash_ref(&mut self) {
+        self.builder.start_node(SyntaxKind::HASH_REF.into());
+
+        self.expect(SyntaxKind::L_BRACE);
+        self.skip_trivia();
+
+        // Parse expressions inside braces - could be key => value pairs or a simple expression list
+        if !self.at(SyntaxKind::R_BRACE) {
+            self.expression_list();
+        }
+
+        self.skip_trivia();
+        self.expect(SyntaxKind::R_BRACE);
+        self.builder.finish_node();
+    }
+
+    pub fn array_ref(&mut self) {
+        self.builder.start_node(SyntaxKind::ARRAY_REF.into());
+
+        self.expect(SyntaxKind::L_BRACKET);
+        self.skip_trivia();
+
+        // Parse expression list inside brackets (supports trailing comma)
+        if !self.at(SyntaxKind::R_BRACKET) {
+            self.expression_list();
+        }
+
+        self.skip_trivia();
+        self.expect(SyntaxKind::R_BRACKET);
+        self.builder.finish_node();
+    }
+
+    pub fn parse_variable(&mut self) {
+        let sigil = self.current_kind().unwrap();
+        let var_kind = match sigil {
+            SyntaxKind::DOLLAR => SyntaxKind::SCALAR_VAR,
+            SyntaxKind::AT => SyntaxKind::ARRAY_VAR,
+            SyntaxKind::PERCENT => SyntaxKind::HASH_VAR,
+            _ => unreachable!(),
+        };
+
+        self.builder.start_node(var_kind.into());
+
+        // Consume the sigil
+        self.bump();
+        self.skip_trivia();
+
+        // Check what comes after the sigil
+        match self.current_kind() {
+            Some(SyntaxKind::IDENT) => {
+                // Regular identifier or qualified identifier (including $_, $_foo, etc.)
+                self.parse_identifier_or_qualified();
+            }
+            Some(SyntaxKind::NUMBER) => {
+                // Number like $1, $2, etc. - treat as regular variable name
+                self.bump();
+            }
+            Some(SyntaxKind::AT) => {
+                // Special punctuation like $@ - treat as regular variable name
+                self.bump();
+            }
+            Some(SyntaxKind::CARET) => {
+                // Handle $^ or $^X patterns
+                self.bump(); // consume ^
+
+                // Check if there's a character after ^
+                if self.at(SyntaxKind::IDENT) {
+                    // This is $^X pattern where X is an identifier (single char)
+                    self.bump();
+                }
+            }
+            Some(SyntaxKind::L_BRACE) => {
+                // Handle ${...} syntax (e.g., ${^NAME})
+                self.bump(); // consume {
+
+                // Check for ^ inside braces
+                if self.at(SyntaxKind::CARET) {
+                    self.bump(); // consume ^
+                }
+
+                // Parse identifier inside braces
+                if self.at(SyntaxKind::IDENT) {
+                    self.bump();
+                }
+
+                // Expect closing brace
+                if self.at(SyntaxKind::R_BRACE) {
+                    self.bump();
+                } else {
+                    self.error("Expected '}' to close variable name");
+                }
+            }
+            _ => {
+                // Check for other punctuation characters that might be tokenized differently
+                let text = self.current_text().unwrap_or("");
+                if matches!(
+                    text,
+                    "!" | "?" | "|" | "&" | "`" | "'" | "\"" | "~" | ":" | "\\" | "$"
+                ) {
+                    // These are punctuation characters like $!, $?, $$, etc. - treat as regular variable names
+                    self.bump();
+                } else {
+                    // Expect an identifier (including qualified identifiers)
+                    self.parse_identifier_or_qualified();
+                }
+            }
+        }
+
+        self.builder.finish_node();
+
+        self.skip_trivia();
+    }
+
+    /// Parses a variable for 'my'/'state' declarations (qualified identifiers are not allowed).  
+    pub fn parse_variable_simple(&mut self) {
+        let sigil = self.current_kind().unwrap();
+        let var_kind = match sigil {
+            SyntaxKind::DOLLAR => SyntaxKind::SCALAR_VAR,
+            SyntaxKind::AT => SyntaxKind::ARRAY_VAR,
+            SyntaxKind::PERCENT => SyntaxKind::HASH_VAR,
+            _ => unreachable!(),
+        };
+
+        self.builder.start_node(var_kind.into());
+
+        // Consume the sigil
+        self.bump();
+        self.skip_trivia();
+
+        // Expect an identifier (only simple identifiers, no qualified allowed)
+        if self.at(SyntaxKind::IDENT) {
+            self.bump();
+
+            // Check for :: after identifier - if found, it's a package-qualified name which is not allowed for my/state
+            if self.at(SyntaxKind::DOUBLE_COLON) {
+                self.error("Package-qualified variable names are not allowed with 'my' or 'state' declarations");
+            }
+        } else {
+            self.error("Expected identifier after sigil");
+        }
+
+        self.builder.finish_node();
+    }
+
+    /// Parses a variable for 'our'/'local' declarations (qualified identifiers are allowed).
+    pub fn parse_variable_qualified(&mut self) {
+        let sigil = self.current_kind().unwrap();
+        let var_kind = match sigil {
+            SyntaxKind::DOLLAR => SyntaxKind::SCALAR_VAR,
+            SyntaxKind::AT => SyntaxKind::ARRAY_VAR,
+            SyntaxKind::PERCENT => SyntaxKind::HASH_VAR,
+            _ => unreachable!(),
+        };
+
+        self.builder.start_node(var_kind.into());
+
+        // Consume the sigil
+        self.bump();
+        self.skip_trivia();
+
+        // Expect an identifier (qualified identifiers allowed)
+        self.parse_identifier_or_qualified();
+
+        self.builder.finish_node();
+    }
+
+    /// Checks if this is a dereferencing pattern (sigil followed by another sigil).
+    pub fn is_dereferencing_pattern(&self) -> bool {
+        // If the current token is not a sigil, it's not a dereference
+        if let Some(current) = self.current_kind() {
+            if !current.is_sigil() {
+                return false;
+            }
+        } else {
+            return false;
+        }
+
+        // Look ahead to the next token (simple implementation)
+        // From the current position, check if the first non-trivia token is a sigil
+        let current_text = self.current_text().unwrap_or("");
+        let remaining_source = &self.source[self.current_pos + current_text.len()..];
+
+        // Skip whitespace
+        let trimmed = remaining_source.trim_start();
+
+        // Valid dereference patterns are of the form: @$ref, %$ref, $$ref.
+        // The variable holding the reference must be a scalar, which starts with a '$' sigil.
+        trimmed.starts_with('$')
+    }
+
+    /// Parses a dereferencing expression (e.g., @$var, %$var, $$var).
+    pub fn parse_dereferencing(&mut self) {
+        self.builder.start_node(SyntaxKind::DEREF_EXPR.into());
+
+        // Consume the first sigil (dereference operator)
+        self.bump();
+        self.skip_trivia();
+
+        // Parse the variable holding the reference. It must be a scalar.
+        if self.at(SyntaxKind::DOLLAR) {
+            self.parse_variable();
+        } else {
+            self.error("Expected scalar variable (e.g., $ref) after dereference sigil");
+        }
+
+        self.builder.finish_node();
+    }
+
+    /// Parses a regular identifier or qualified identifier
+    /// Examples: "Foo", "Foo::Bar", "Foo::Bar::Baz"
+    pub fn parse_identifier_or_qualified(&mut self) {
+        // Expect an identifier
+        if !self.at(SyntaxKind::IDENT) {
+            self.error("Expected identifier");
+            return;
+        }
+
+        let checkpoint = self.builder.checkpoint();
+        self.bump(); // First identifier
+        self.skip_trivia();
+
+        // Check for package qualifiers (::)
+        if self.at(SyntaxKind::DOUBLE_COLON) {
+            self.builder
+                .start_node_at(checkpoint, SyntaxKind::QUALIFIED_IDENT.into());
+
+            while self.at(SyntaxKind::DOUBLE_COLON) {
+                self.bump(); // ::
+                self.skip_trivia();
+
+                if self.at(SyntaxKind::IDENT) {
+                    self.bump(); // Next identifier
+                    self.skip_trivia();
+                } else {
+                    // A trailing `::` is valid, so we don't report an error, just stop parsing the qualified name.
+                    break;
+                }
+            }
+            self.builder.finish_node();
+        }
+    }
+}
