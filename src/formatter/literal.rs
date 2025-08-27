@@ -238,6 +238,34 @@ impl Formatter {
         }
     }
 
+    pub fn format_tr_expr(&mut self, node: &PerlNode) {
+        // Transliteration expressions have the form tr/search/replace/flags or y/search/replace/flags
+        // We need to handle the search and replacement parts separately
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Token(token) => {
+                    let kind = token.kind();
+                    let text = token.text();
+                    match kind {
+                        SyntaxKind::TR_KW | SyntaxKind::Y_KW => {
+                            self.format_token(&token);
+                        }
+                        SyntaxKind::WHITESPACE => {
+                            // Special handling: preserve whitespace inside transliteration strings
+                            self.output.push_str(text);
+                        }
+                        _ => {
+                            // Handle any remaining tokens (including delimiters, search, replacement, and flags) directly
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn format_q_family_expr(
         &mut self,
         node: &PerlNode,
@@ -409,6 +437,141 @@ mod tests {
                 ]
             }
         };
+        "#);
+    }
+
+    #[test]
+    fn test_tr_operator_formatting() {
+        let input = "$str =~ tr/abc/xyz/;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"$str =~ tr/abc/xyz/;");
+    }
+
+    #[test]
+    fn test_y_operator_formatting() {
+        let input = "$str =~ y/abc/xyz/;";
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @"$str =~ y/abc/xyz/;");
+    }
+
+    #[test]
+    fn test_tr_with_different_delimiters() {
+        let cases = [
+            ("$str =~ tr/abc/xyz/;", "$str =~ tr/abc/xyz/;"),
+            ("$str =~ tr(abc)(xyz);", "$str =~ tr(abc)(xyz);"),
+            ("$str =~ tr[abc][xyz];", "$str =~ tr[abc][xyz];"),
+            ("$str =~ tr{abc}{xyz};", "$str =~ tr{abc}{xyz};"),
+        ];
+        
+        for (input, expected) in cases {
+            let (syntax, err) = parse_perl(input);
+            assert!(err.is_empty(), "Parse errors for '{}': {:?}", input, err);
+
+            let formatted = format(&syntax);
+            assert_eq!(formatted.trim(), expected, "Failed for input: '{}'", input);
+        }
+    }
+
+    #[test]
+    fn test_y_with_different_delimiters() {
+        let cases = [
+            ("$str =~ y/abc/xyz/;", "$str =~ y/abc/xyz/;"),
+            ("$str =~ y(abc)(xyz);", "$str =~ y(abc)(xyz);"),
+            ("$str =~ y[abc][xyz];", "$str =~ y[abc][xyz];"),
+            ("$str =~ y{abc}{xyz};", "$str =~ y{abc}{xyz};"),
+        ];
+        
+        for (input, expected) in cases {
+            let (syntax, err) = parse_perl(input);
+            assert!(err.is_empty(), "Parse errors for '{}': {:?}", input, err);
+
+            let formatted = format(&syntax);
+            assert_eq!(formatted.trim(), expected, "Failed for input: '{}'", input);
+        }
+    }
+
+    #[test]
+    fn test_tr_with_flags() {
+        let cases = [
+            ("$str =~ tr/abc/xyz/d;", "$str =~ tr/abc/xyz/d;"),
+            ("$str =~ tr/abc/xyz/c;", "$str =~ tr/abc/xyz/c;"),
+            ("$str =~ tr/abc/xyz/s;", "$str =~ tr/abc/xyz/s;"),
+            ("$str =~ tr/abc/xyz/cs;", "$str =~ tr/abc/xyz/cs;"),
+            ("$str =~ tr/abc/xyz/ds;", "$str =~ tr/abc/xyz/ds;"),
+        ];
+        
+        for (input, expected) in cases {
+            let (syntax, err) = parse_perl(input);
+            assert!(err.is_empty(), "Parse errors for '{}': {:?}", input, err);
+
+            let formatted = format(&syntax);
+            assert_eq!(formatted.trim(), expected, "Failed for input: '{}'", input);
+        }
+    }
+
+    #[test]
+    fn test_y_with_flags() {
+        let cases = [
+            ("$str =~ y/abc/xyz/d;", "$str =~ y/abc/xyz/d;"),
+            ("$str =~ y/abc/xyz/cs;", "$str =~ y/abc/xyz/cs;"),
+        ];
+        
+        for (input, expected) in cases {
+            let (syntax, err) = parse_perl(input);
+            assert!(err.is_empty(), "Parse errors for '{}': {:?}", input, err);
+
+            let formatted = format(&syntax);
+            assert_eq!(formatted.trim(), expected, "Failed for input: '{}'", input);
+        }
+    }
+
+    #[test]
+    fn test_tr_complex_patterns() {
+        let cases = [
+            ("$str =~ tr/a-z/A-Z/;", "$str =~ tr/a-z/A-Z/;"),
+            ("$str =~ tr/\\x41-\\x5A/a-z/;", "$str =~ tr/\\x41-\\x5A/a-z/;"),
+            ("$str =~ tr/0-9/*/;", "$str =~ tr/0-9/*/;"),
+        ];
+        
+        for (input, expected) in cases {
+            let (syntax, err) = parse_perl(input);
+            assert!(err.is_empty(), "Parse errors for '{}': {:?}", input, err);
+
+            let formatted = format(&syntax);
+            assert_eq!(formatted.trim(), expected, "Failed for input: '{}'", input);
+        }
+    }
+
+    #[test]
+    fn test_tr_y_in_context() {
+        let input = r#"
+        sub process_text {
+            my $text = shift;
+            $text =~ tr/a-z/A-Z/;
+            $text =~ y/0-9/*/d;
+            return $text;
+        }
+        "#;
+        let (syntax, err) = parse_perl(input);
+        assert!(err.is_empty(), "Parse errors: {:?}", err);
+
+        let formatted = format(&syntax);
+
+        insta::assert_snapshot!(formatted, @r#"
+        sub process_text {
+            my $text = shift;
+            $text =~ tr/a-z/A-Z/;
+            $text =~ y/0-9/*/d;
+            return $text;
+        }
         "#);
     }
 }

@@ -93,6 +93,10 @@ impl Formatter {
                 self.format_s_expr(node);
                 return;
             }
+            SyntaxKind::TR_EXPR => {
+                self.format_tr_expr(node);
+                return;
+            }
             SyntaxKind::DEREF_EXPR => {
                 self.format_deref_expr(node);
                 return;
