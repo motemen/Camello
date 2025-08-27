@@ -61,8 +61,6 @@ pub enum SyntaxKind {
     DATA_KW, // __DATA__
 
     // I/O operators
-    L_ANGLE,  // < (angle bracket for I/O operations)
-    R_ANGLE,  // > (angle bracket for I/O operations)
 
     // POD related
     POD_COMMAND, // =pod, =head1, =cut, etc.
@@ -334,8 +332,6 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::S_KW => "S_KW",
             SyntaxKind::USE_KW => "USE_KW",
             SyntaxKind::RETURN_KW => "RETURN_KW",
-            SyntaxKind::L_ANGLE => "L_ANGLE",
-            SyntaxKind::R_ANGLE => "R_ANGLE",
             SyntaxKind::L_BRACE => "L_BRACE",
             SyntaxKind::R_BRACE => "R_BRACE",
             SyntaxKind::L_PAREN => "L_PAREN",
