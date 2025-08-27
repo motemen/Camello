@@ -135,11 +135,10 @@ impl Formatter {
                 NodeOrToken::Node(node) => self.format_node(&node),
                 NodeOrToken::Token(token) if token.kind() == SyntaxKind::WHITESPACE => {}
                 NodeOrToken::Token(token) => {
-                    let kind = token.kind();
-                    let text = token.text();
-                    self.output.push_str(text);
+                    // Use format_token to ensure proper spacing is applied
+                    self.format_token(&token);
 
-                    if kind == SyntaxKind::ARROW {
+                    if token.kind() == SyntaxKind::ARROW {
                         break;
                     }
                 }
