@@ -236,6 +236,23 @@ pub struct Lexer<'a> {
     at_line_start: bool, // Track if we're at the start of a line for POD detection
 }
 
+impl<'a> Clone for Lexer<'a> {
+    fn clone(&self) -> Self {
+        Self {
+            logos_lexer: self.logos_lexer.clone(),
+            context: self.context,
+            at_line_start: self.at_line_start,
+        }
+    }
+}
+
+impl<'a> Iterator for Lexer<'a> {
+    type Item = (SyntaxKind, &'a str);
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next_token()
+    }
+}
+
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str) -> Self {
         let logos_lexer = Token::lexer(input);
@@ -830,6 +847,24 @@ impl<'a> Lexer<'a> {
 
     pub fn span(&self) -> std::ops::Range<usize> {
         self.logos_lexer.span()
+    }
+
+    /// Peek at the next token without consuming it or changing lexer state
+    pub fn peek_token(&self) -> Option<(SyntaxKind, &'a str)> {
+        self.clone().next()
+    }
+
+    /// Peek at the next non-trivia token without consuming it or changing lexer state
+    pub fn peek_non_trivia_token(&self) -> Option<(SyntaxKind, &'a str)> {
+        self.clone().find(|(kind, _)| !kind.is_trivia())
+    }
+
+    /// Peek ahead multiple tokens, skipping trivia, and return the first non-trivia token
+    /// that matches any of the given kinds
+    pub fn peek_for_any(&self, target_kinds: &[SyntaxKind]) -> Option<(SyntaxKind, &'a str)> {
+        self.clone()
+            .find(|(kind, _)| !kind.is_trivia())
+            .filter(|(kind, _)| target_kinds.contains(kind))
     }
 }
 

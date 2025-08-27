@@ -180,17 +180,10 @@ impl<'a> Parser<'a> {
             return false;
         }
 
-        // Look ahead to the next token (simple implementation)
-        // From the current position, check if the first non-trivia token is a sigil
-        let current_text = self.current_text().unwrap_or("");
-        let remaining_source = &self.source[self.current_pos + current_text.len()..];
-
-        // Skip whitespace
-        let trimmed = remaining_source.trim_start();
-
+        // Use token-based lookahead to check if next non-trivia token is a dollar sigil
         // Valid dereference patterns are of the form: @$ref, %$ref, $$ref.
         // The variable holding the reference must be a scalar, which starts with a '$' sigil.
-        trimmed.starts_with('$')
+        matches!(self.peek_non_trivia_token(), Some((SyntaxKind::DOLLAR, _)))
     }
 
     /// Parses a dereferencing expression (e.g., @$var, %$var, $$var).
