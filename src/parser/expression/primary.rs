@@ -241,7 +241,7 @@ impl<'a> Parser<'a> {
                     self.bump(); // Next identifier
                     self.skip_trivia();
                 } else {
-                    self.error("Expected identifier after '::'");
+                    // A trailing `::` is valid, so we don't report an error, just stop parsing the qualified name.
                     break;
                 }
             }
