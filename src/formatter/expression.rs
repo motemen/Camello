@@ -278,7 +278,7 @@ impl Formatter {
                     // Apply normal spacing before the I/O operator
                     match kind {
                         SyntaxKind::WHITESPACE => {
-                            // Skip whitespace inside I/O expressions 
+                            // Skip whitespace inside I/O expressions
                         }
                         _ => {
                             // For the opening <, apply normal spacing rules
@@ -569,7 +569,10 @@ mod tests {
             ("$data=<FILE>;", "$data = <FILE>;\n"),
             ("my $input = <STDIN>;", "my $input = <STDIN>;\n"),
             ("while (<>) { print; }", "while (<>) {\n    print;\n}\n"),
-            ("while (<DATA>) { chomp; print; }", "while (<DATA>) {\n    chomp;\n    print;\n}\n"),
+            (
+                "while (<DATA>) { chomp; print; }",
+                "while (<DATA>) {\n    chomp;\n    print;\n}\n",
+            ),
         ];
         crate::formatter::tests::check_formatting_cases(&cases);
     }
@@ -581,22 +584,28 @@ mod tests {
         let (syntax, err) = parse_perl(input1);
         assert!(err.is_empty(), "Parse errors for example 1: {:?}", err);
         let formatted1 = format(&syntax);
-        
+
         let input2 = "while (<>) {\n    print;\n}";
         let (syntax, err) = parse_perl(input2);
         assert!(err.is_empty(), "Parse errors for example 2: {:?}", err);
         let formatted2 = format(&syntax);
-        
+
         let input3 = "$line = <$fh>;";
         let (syntax, err) = parse_perl(input3);
         assert!(err.is_empty(), "Parse errors for example 3: {:?}", err);
         let formatted3 = format(&syntax);
-        
+
         // Just verify they format without errors and contain the I/O operators
-        assert!(formatted1.contains("<STDIN>"), "Example 1 should contain <STDIN>");
+        assert!(
+            formatted1.contains("<STDIN>"),
+            "Example 1 should contain <STDIN>"
+        );
         assert!(formatted2.contains("<>"), "Example 2 should contain <>");
-        assert!(formatted3.contains("<$fh>"), "Example 3 should contain <$fh>");
-        
+        assert!(
+            formatted3.contains("<$fh>"),
+            "Example 3 should contain <$fh>"
+        );
+
         // Snapshot the results
         insta::assert_snapshot!(formatted1, @r"
         while (defined($_ = <STDIN>)) {

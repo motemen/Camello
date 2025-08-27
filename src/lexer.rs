@@ -623,7 +623,7 @@ impl<'a> Lexer<'a> {
         }
 
         let mut closing_angle_pos: Option<usize> = None;
-        
+
         // Find the closing '>'
         for (i, c) in remainder.char_indices().skip(1) {
             match c {
