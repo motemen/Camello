@@ -188,8 +188,8 @@ impl<'a> Parser<'a> {
         // Skip whitespace
         let trimmed = remaining_source.trim_start();
 
-        // Valid dereference patterns: @$ref, %$ref, $$ref (sigil followed by $)
-        // Only $ sigil can be dereferenced, so we check if next token is $
+        // Valid dereference patterns are of the form: @$ref, %$ref, $$ref.
+        // The variable holding the reference must be a scalar, which starts with a '$' sigil.
         trimmed.starts_with('$')
     }
 
@@ -201,15 +201,11 @@ impl<'a> Parser<'a> {
         self.bump();
         self.skip_trivia();
 
-        // Parse the next sigil and the following variable
-        if let Some(kind) = self.current_kind() {
-            if kind.is_sigil() {
-                self.parse_variable();
-            } else {
-                self.error("Expected variable after dereference sigil");
-            }
+        // Parse the variable holding the reference. It must be a scalar.
+        if self.at(SyntaxKind::DOLLAR) {
+            self.parse_variable();
         } else {
-            self.error("Expected variable after dereference sigil");
+            self.error("Expected scalar variable (e.g., $ref) after dereference sigil");
         }
 
         self.builder.finish_node();
