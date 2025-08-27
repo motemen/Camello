@@ -101,6 +101,10 @@ impl Formatter {
                 self.format_reference_expr(node);
                 return;
             }
+            SyntaxKind::IO_EXPR => {
+                self.format_io_expr(node);
+                return;
+            }
             SyntaxKind::TERNARY_EXPR => {
                 self.format_ternary_expr(node);
                 return;
@@ -702,11 +706,6 @@ sub test {
         ");
     }
 
-
-
-
-
-
     #[test]
     fn test_if_else_stmt_formatting() {
         let input = "if($condition){do_something();}else{do_something_else();}";
@@ -723,8 +722,6 @@ sub test {
         }
         ");
     }
-
-
 
     #[test]
     fn test_unless_stmt_formatting() {
@@ -826,11 +823,6 @@ sub test {
             ("use\t5.24.1\t;", "use 5.24.1;\n"),
         ]);
     }
-
-
-
-
-
 }
 
 mod expression;

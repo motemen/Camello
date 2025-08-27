@@ -29,7 +29,6 @@ pub enum SpaceRule {
 pub enum TokenCategory {
     BinaryOperator,
     PrefixOperator,
-    PostfixOperator,
     Keyword,
     Delimiter,
     Identifier,
@@ -74,18 +73,6 @@ impl TokenSpacing {
             SpaceRule::Always,
             TokenCategory::Keyword,
         )
-    }
-
-    pub const fn delimiter() -> Self {
-        Self::new(
-            SpaceRule::Contextual,
-            SpaceRule::Never,
-            TokenCategory::Delimiter,
-        )
-    }
-
-    pub const fn punctuation() -> Self {
-        Self::new(SpaceRule::None, SpaceRule::None, TokenCategory::Punctuation)
     }
 }
 
