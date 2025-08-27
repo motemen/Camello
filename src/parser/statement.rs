@@ -588,7 +588,7 @@ __END__",
     fn test_elsif_else_lookahead_functionality() {
         // Test that lookahead_for_elsif_or_else works with token-based lookahead
         // This method is used to peek ahead and see if elsif/else follows
-        
+
         // Test with whitespace before keywords - this is the main use case
         let parser = crate::parser::Parser::new("  elsif");
         assert!(
@@ -609,7 +609,7 @@ __END__",
         // Advance past the brace to simulate the real usage
         let mut parser = parser;
         parser.bump(); // consume the }
-        // Now we should be at whitespace, and lookahead should find elsif
+                       // Now we should be at whitespace, and lookahead should find elsif
         assert!(
             parser.lookahead_for_elsif_or_else(),
             "Should detect 'elsif' after closing brace"
@@ -637,14 +637,14 @@ __END__",
         // Test a simpler validation that if/elsif/else can be parsed correctly
         let full_if_input = "if (1) { } elsif (2) { }";
         let (green, errors) = crate::parse(full_if_input);
-        
+
         // This should parse without errors
         assert!(
             errors.is_empty(),
             "Should parse if/elsif without errors, got: {:?}",
             errors
         );
-        
+
         let syntax = crate::PerlNode::new_root(green);
         assert_eq!(syntax.kind(), SyntaxKind::ROOT);
     }

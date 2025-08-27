@@ -347,15 +347,21 @@ mod tests {
         let mut lexer = crate::lexer::Lexer::new("$var @array");
 
         // Test peek_non_trivia_token
-        assert_eq!(lexer.peek_non_trivia_token(), Some((SyntaxKind::DOLLAR, "$")));
+        assert_eq!(
+            lexer.peek_non_trivia_token(),
+            Some((SyntaxKind::DOLLAR, "$"))
+        );
 
         // Consume first token and test again
         assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
-        assert_eq!(lexer.peek_non_trivia_token(), Some((SyntaxKind::IDENT, "var")));
+        assert_eq!(
+            lexer.peek_non_trivia_token(),
+            Some((SyntaxKind::IDENT, "var"))
+        );
 
         // Consume identifier
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "var")));
-        
+
         // Skip whitespace and test peek again
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.peek_non_trivia_token(), Some((SyntaxKind::AT, "@")));
@@ -364,11 +370,11 @@ mod tests {
     #[test]
     fn test_dereferencing_pattern_detection() {
         // Test that is_dereferencing_pattern works with token-based lookahead
-        
+
         // Test valid dereferencing patterns
         let test_cases = [
             ("@$ref", true),
-            ("%$ref", true), 
+            ("%$ref", true),
             ("$$ref", true),
             ("@ $ref", true), // with whitespace
             ("% $ref", true), // with whitespace
@@ -379,9 +385,9 @@ mod tests {
             let mut parser = crate::parser::Parser::new(input);
             parser.skip_trivia();
             assert_eq!(
-                parser.is_dereferencing_pattern(), 
+                parser.is_dereferencing_pattern(),
                 expected,
-                "Failed for input: '{}'", 
+                "Failed for input: '{}'",
                 input
             );
         }
