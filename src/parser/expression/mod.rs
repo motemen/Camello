@@ -57,10 +57,50 @@ impl<'a> Parser<'a> {
 
         // Parse binary operators with precedence climbing
         loop {
-            // Check if we have a binary operator
+            // Check if we have a binary operator or ternary operator
             let Some(current_kind) = self.current_kind() else {
                 break;
             };
+
+            // Handle ternary operator specially
+            if current_kind == SyntaxKind::QUESTION_MARK {
+                let ternary_precedence = crate::parser::expression::precedence::Precedence::TERNARY;
+
+                // If ternary precedence is too low, stop here
+                if ternary_precedence < min_precedence {
+                    break;
+                }
+
+                // Start building ternary expression node
+                let checkpoint = self.builder.checkpoint();
+                self.builder
+                    .start_node_at(checkpoint, SyntaxKind::TERNARY_EXPR.into());
+
+                // Consume the ? operator
+                self.bump();
+                self.skip_trivia();
+
+                // Parse the true expression with ternary precedence (right associative)
+                if !self.parse_expression_with_precedence(ternary_precedence) {
+                    self.error("Expected expression after '?'");
+                }
+
+                // Expect the : operator
+                if !self.at(SyntaxKind::COLON) {
+                    self.error("Expected ':' after true expression in ternary operator");
+                } else {
+                    self.bump(); // consume :
+                    self.skip_trivia();
+                }
+
+                // Parse the false expression with ternary precedence (right associative)
+                if !self.parse_expression_with_precedence(ternary_precedence) {
+                    self.error("Expected expression after ':' in ternary operator");
+                }
+
+                self.builder.finish_node();
+                continue;
+            }
 
             let Some(op_info) = get_operator_info(current_kind) else {
                 break;
