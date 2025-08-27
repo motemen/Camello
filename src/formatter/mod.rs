@@ -598,6 +598,9 @@ impl Formatter {
         }
 
         let needs_space = match (self.prev_token_kind, current) {
+            // a->b: Arrow operator should never have spaces around it (highest priority)
+            (Some(SyntaxKind::ARROW), _) | (Some(_), SyntaxKind::ARROW) => false,
+
             // 演算子の前後
             (Some(_), SyntaxKind::EQ) | (Some(SyntaxKind::EQ), _) => true,
             (Some(_), SyntaxKind::PLUS) | (Some(SyntaxKind::PLUS), _) => true,
@@ -651,6 +654,8 @@ impl Formatter {
             (Some(SyntaxKind::ELSE_KW), _) => true,
             (Some(SyntaxKind::PACKAGE_KW), _) => true,
             (Some(SyntaxKind::USE_KW), _) => true,
+            // Fix: Don't add space after RETURN_KW before semicolon
+            (Some(SyntaxKind::RETURN_KW), SyntaxKind::SEMICOLON) => false,
             (Some(SyntaxKind::RETURN_KW), _) => true,
 
             // Postfix conditionals: add space before if/unless in postfix position
@@ -688,14 +693,13 @@ impl Formatter {
                 true
             }
 
-            // a->b
-            (Some(SyntaxKind::ARROW), _) | (Some(_), SyntaxKind::ARROW) => false,
-
-            // After identifier not followed by a semicolon, double colon, or left parenthesis
+            // After identifier not followed by a semicolon, double colon, arrow, or left parenthesis
+            // Fix: Don't add space before ARROW to fix JSON->new spacing
             (Some(SyntaxKind::IDENT), kind)
                 if kind != SyntaxKind::SEMICOLON
                     && kind != SyntaxKind::DOUBLE_COLON
-                    && kind != SyntaxKind::L_PAREN =>
+                    && kind != SyntaxKind::L_PAREN
+                    && kind != SyntaxKind::ARROW =>
             {
                 true
             }
