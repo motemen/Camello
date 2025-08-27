@@ -113,12 +113,7 @@ pub fn get_operator_info(kind: SyntaxKind) -> Option<OperatorInfo> {
             SyntaxKind::INFIX_EXPR,
         )),
 
-        // Low-precedence logical operators
-        SyntaxKind::NOT_KW => Some(OperatorInfo::new(
-            Precedence::LOGICAL_NOT_KW,
-            false,
-            SyntaxKind::INFIX_EXPR,
-        )),
+        // Low-precedence logical operators (NOT_KW removed - it's a prefix operator)
         SyntaxKind::AND_KW => Some(OperatorInfo::new(
             Precedence::LOGICAL_AND_KW,
             false,

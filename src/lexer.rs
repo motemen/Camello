@@ -643,8 +643,12 @@ impl<'a> Lexer<'a> {
             | SyntaxKind::STR_GE
             | SyntaxKind::STR_LE
             | SyntaxKind::STR_CMP => LexerContext::ExpectingValue,
-            SyntaxKind::LOGICAL_AND | SyntaxKind::LOGICAL_OR | SyntaxKind::LOGICAL_NOT => LexerContext::ExpectingValue,
-            SyntaxKind::NOT_KW | SyntaxKind::AND_KW | SyntaxKind::OR_KW | SyntaxKind::XOR_KW => LexerContext::ExpectingValue,
+            SyntaxKind::LOGICAL_AND | SyntaxKind::LOGICAL_OR | SyntaxKind::LOGICAL_NOT => {
+                LexerContext::ExpectingValue
+            }
+            SyntaxKind::NOT_KW | SyntaxKind::AND_KW | SyntaxKind::OR_KW | SyntaxKind::XOR_KW => {
+                LexerContext::ExpectingValue
+            }
             SyntaxKind::DEFINED_OR | SyntaxKind::SPACESHIP => LexerContext::ExpectingValue,
             SyntaxKind::REGEX_MATCH | SyntaxKind::REGEX_NOT_MATCH => LexerContext::ExpectingValue,
             SyntaxKind::L_PAREN | SyntaxKind::L_BRACE | SyntaxKind::L_BRACKET => {

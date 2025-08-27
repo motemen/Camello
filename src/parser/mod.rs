@@ -232,6 +232,7 @@ impl<'a> Parser<'a> {
                 SyntaxKind::LOCAL_KW,
                 SyntaxKind::RETURN_KW, // return statements can start expressions
                 SyntaxKind::LOGICAL_NOT, // prefix logical NOT operator
+                SyntaxKind::NOT_KW,    // prefix NOT keyword operator
             ]) || kind.is_variable()
                 || kind.is_sigil()
         } else {
