@@ -355,7 +355,8 @@ impl<'a> Parser<'a> {
         match self.current_kind() {
             Some(SyntaxKind::NUMBER)
             | Some(SyntaxKind::STRING)
-            | Some(SyntaxKind::REGEX_LITERAL) => {
+            | Some(SyntaxKind::REGEX_LITERAL)
+            | Some(SyntaxKind::IO_EXPR) => {
                 self.bump();
                 self.skip_trivia();
             }

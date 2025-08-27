@@ -101,6 +101,10 @@ impl Formatter {
                 self.format_reference_expr(node);
                 return;
             }
+            SyntaxKind::IO_EXPR => {
+                self.format_io_expr(node);
+                return;
+            }
             SyntaxKind::TERNARY_EXPR => {
                 self.format_ternary_expr(node);
                 return;
