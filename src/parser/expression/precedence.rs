@@ -6,9 +6,11 @@ pub struct Precedence(pub u8);
 
 impl Precedence {
     pub const LOWEST: Precedence = Precedence(0);
-    pub const LOW_LOGICAL: Precedence = Precedence(5); // not, and, or, xor (lowest precedence)
+    pub const LOGICAL_OR_XOR: Precedence = Precedence(5); // or, xor (lowest precedence)
+    pub const LOGICAL_AND_KW: Precedence = Precedence(6); // and
+    pub const LOGICAL_NOT_KW: Precedence = Precedence(7); // not
     pub const ASSIGNMENT: Precedence = Precedence(10); // =
-    pub const DEFINED_OR: Precedence = Precedence(22); // // (between || and &&)
+    pub const DEFINED_OR: Precedence = Precedence(20); // // (same as ||)
     pub const LOGICAL_OR: Precedence = Precedence(20); // ||
     pub const LOGICAL_AND: Precedence = Precedence(30); // &&
     pub const COMPARISON: Precedence = Precedence(40); // ==, !=, <, >, <=, >=, eq, ne, lt, gt, le, ge, cmp, <=>
@@ -112,9 +114,21 @@ pub fn get_operator_info(kind: SyntaxKind) -> Option<OperatorInfo> {
         )),
 
         // Low-precedence logical operators
-        SyntaxKind::NOT_KW | SyntaxKind::AND_KW | SyntaxKind::OR_KW | SyntaxKind::XOR_KW => Some(
-            OperatorInfo::new(Precedence::LOW_LOGICAL, false, SyntaxKind::INFIX_EXPR),
-        ),
+        SyntaxKind::NOT_KW => Some(OperatorInfo::new(
+            Precedence::LOGICAL_NOT_KW,
+            false,
+            SyntaxKind::INFIX_EXPR,
+        )),
+        SyntaxKind::AND_KW => Some(OperatorInfo::new(
+            Precedence::LOGICAL_AND_KW,
+            false,
+            SyntaxKind::INFIX_EXPR,
+        )),
+        SyntaxKind::OR_KW | SyntaxKind::XOR_KW => Some(OperatorInfo::new(
+            Precedence::LOGICAL_OR_XOR,
+            false,
+            SyntaxKind::INFIX_EXPR,
+        )),
 
         _ => None,
     }
