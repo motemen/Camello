@@ -121,6 +121,19 @@ pub enum SyntaxKind {
     // Logical operators
     LOGICAL_AND, // &&
     LOGICAL_OR,  // ||
+    LOGICAL_NOT, // !
+
+    // Low-precedence logical operators
+    NOT_KW, // not
+    AND_KW, // and
+    OR_KW,  // or
+    XOR_KW, // xor
+
+    // Defined-or operator
+    DEFINED_OR, // //
+
+    // Three-way comparison (spaceship) operator
+    SPACESHIP, // <=>
 
     // ===== Node Level (composite structures) =====
     ROOT,       // File root
@@ -218,6 +231,10 @@ impl SyntaxKind {
                 | SyntaxKind::S_KW
                 | SyntaxKind::USE_KW
                 | SyntaxKind::RETURN_KW
+                | SyntaxKind::NOT_KW
+                | SyntaxKind::AND_KW
+                | SyntaxKind::OR_KW
+                | SyntaxKind::XOR_KW
         )
     }
 
@@ -250,6 +267,13 @@ impl SyntaxKind {
                 | SyntaxKind::X
                 | SyntaxKind::LOGICAL_AND
                 | SyntaxKind::LOGICAL_OR
+                | SyntaxKind::LOGICAL_NOT
+                | SyntaxKind::NOT_KW
+                | SyntaxKind::AND_KW
+                | SyntaxKind::OR_KW
+                | SyntaxKind::XOR_KW
+                | SyntaxKind::DEFINED_OR
+                | SyntaxKind::SPACESHIP
         )
     }
 }
@@ -339,6 +363,13 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::REGEX_NOT_MATCH => "REGEX_NOT_MATCH",
             SyntaxKind::LOGICAL_AND => "LOGICAL_AND",
             SyntaxKind::LOGICAL_OR => "LOGICAL_OR",
+            SyntaxKind::LOGICAL_NOT => "LOGICAL_NOT",
+            SyntaxKind::NOT_KW => "NOT_KW",
+            SyntaxKind::AND_KW => "AND_KW",
+            SyntaxKind::OR_KW => "OR_KW",
+            SyntaxKind::XOR_KW => "XOR_KW",
+            SyntaxKind::DEFINED_OR => "DEFINED_OR",
+            SyntaxKind::SPACESHIP => "SPACESHIP",
             SyntaxKind::ROOT => "ROOT",
             SyntaxKind::SUB_DEF => "SUB_DEF",
             SyntaxKind::BLOCK_STMT => "BLOCK_STMT",

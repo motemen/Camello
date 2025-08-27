@@ -6,12 +6,15 @@ pub struct Precedence(pub u8);
 
 impl Precedence {
     pub const LOWEST: Precedence = Precedence(0);
+    pub const LOW_LOGICAL: Precedence = Precedence(5); // not, and, or, xor (lowest precedence)
     pub const ASSIGNMENT: Precedence = Precedence(10); // =
+    pub const DEFINED_OR: Precedence = Precedence(22); // // (between || and &&)
     pub const LOGICAL_OR: Precedence = Precedence(20); // ||
     pub const LOGICAL_AND: Precedence = Precedence(30); // &&
-    pub const COMPARISON: Precedence = Precedence(40); // ==, !=, <, >, <=, >=, eq, ne, lt, gt, le, ge, cmp
+    pub const COMPARISON: Precedence = Precedence(40); // ==, !=, <, >, <=, >=, eq, ne, lt, gt, le, ge, cmp, <=>
     pub const ADDITIVE: Precedence = Precedence(50); // +, -, .
     pub const MULTIPLICATIVE: Precedence = Precedence(60); // *, /, %, x
+    pub const PREFIX: Precedence = Precedence(65); // ! (logical not prefix)
     pub const REGEX_MATCH: Precedence = Precedence(70); // =~, !~
     pub const POSTFIX: Precedence = Precedence(80); // ->, [], {}, ()
 }
@@ -75,7 +78,8 @@ pub fn get_operator_info(kind: SyntaxKind) -> Option<OperatorInfo> {
         | SyntaxKind::STR_LT
         | SyntaxKind::STR_GE
         | SyntaxKind::STR_LE
-        | SyntaxKind::STR_CMP => Some(OperatorInfo::new(
+        | SyntaxKind::STR_CMP
+        | SyntaxKind::SPACESHIP => Some(OperatorInfo::new(
             Precedence::COMPARISON,
             false,
             SyntaxKind::INFIX_EXPR,
@@ -98,6 +102,18 @@ pub fn get_operator_info(kind: SyntaxKind) -> Option<OperatorInfo> {
         // Multiplicative operators
         SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::MODULO | SyntaxKind::X => Some(
             OperatorInfo::new(Precedence::MULTIPLICATIVE, false, SyntaxKind::INFIX_EXPR),
+        ),
+
+        // Defined-or operator
+        SyntaxKind::DEFINED_OR => Some(OperatorInfo::new(
+            Precedence::DEFINED_OR,
+            false,
+            SyntaxKind::INFIX_EXPR,
+        )),
+
+        // Low-precedence logical operators
+        SyntaxKind::NOT_KW | SyntaxKind::AND_KW | SyntaxKind::OR_KW | SyntaxKind::XOR_KW => Some(
+            OperatorInfo::new(Precedence::LOW_LOGICAL, false, SyntaxKind::INFIX_EXPR),
         ),
 
         _ => None,
