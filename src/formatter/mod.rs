@@ -522,18 +522,6 @@ impl Formatter {
         }
     }
 
-    fn handle_spacing_before(&mut self, current: SyntaxKind) {
-        let context = spacing::SpacingContext {
-            prev_token: self.prev_token_kind,
-            current_token: current,
-            at_line_start: self.at_line_start,
-        };
-
-        if spacing::needs_space_before(&context) {
-            self.output.push(' ');
-        }
-    }
-
     fn handle_spacing_after_with_token(
         &mut self,
         current: SyntaxKind,
@@ -555,122 +543,6 @@ impl Formatter {
                 self.handle_newline();
             }
             _ => {}
-        }
-    }
-
-    fn handle_newline(&mut self) {
-        if !self.output.ends_with('\n') {
-            self.output.push('\n');
-        }
-        self.at_line_start = true;
-    }
-
-    fn add_indent(&mut self) {
-        for _ in 0..self.indent_level {
-            self.output.push_str(&self.indent_string);
-        }
-    }
-
-    fn add_empty_line_before_if_needed(&mut self, node: &PerlNode) {
-        // Skip automatic empty line insertion if we already have pending empty lines from source
-        if self.pending_empty_lines > 0 {
-            return;
-        }
-
-        // Add an empty line if the previous sibling is of a different type,
-        // or if this is a SUB_DEF with any preceding sibling (to separate all subs)
-        // Exception: Don't add empty line between PACKAGE_STMT and USE_STMT
-        if let Some(prev) = node.prev_sibling() {
-            let should_add_empty_line = match node.kind() {
-                // For SUB_DEF, always add empty line if there's a preceding sibling
-                SyntaxKind::SUB_DEF => true,
-                // For USE_STMT, add empty line if previous is different type (but not PACKAGE_STMT)
-                SyntaxKind::USE_STMT => {
-                    prev.kind() != node.kind()
-                        && !(prev.kind() == SyntaxKind::PACKAGE_STMT
-                            && node.kind() == SyntaxKind::USE_STMT)
-                }
-                // For regular statements, don't add automatic empty lines
-                // They should only get empty lines if they were in the source
-                SyntaxKind::STMT | SyntaxKind::DECLARATION_STMT => false,
-                // For other node types, use the original logic
-                _ => {
-                    prev.kind() != node.kind()
-                        && !(prev.kind() == SyntaxKind::PACKAGE_STMT
-                            && node.kind() == SyntaxKind::USE_STMT)
-                }
-            };
-
-            if should_add_empty_line {
-                self.add_empty_line_before();
-            }
-        }
-    }
-
-    fn add_empty_line_after_if_needed(&mut self, node: &PerlNode) {
-        // Check if the next node already has empty lines from source whitespace
-        // If so, skip automatic insertion
-        if let Some(_next) = node.next_sibling() {
-            // Look for whitespace tokens between this node and the next
-            if let Some(last_token) = node.last_token() {
-                let mut current = last_token.next_token();
-                while let Some(token) = current {
-                    if token.kind() == SyntaxKind::WHITESPACE {
-                        let text = token.text();
-                        if text.matches('\n').count() > 1 {
-                            // There are already empty lines in the source, don't add more
-                            return;
-                        }
-                    }
-                    // Stop if we reach a non-whitespace token
-                    if !token.kind().is_trivia() {
-                        break;
-                    }
-                    current = token.next_token();
-                }
-            }
-        }
-
-        // Add an empty line if the next sibling is of a different type.
-        // Exception: Don't add empty line between PACKAGE_STMT and USE_STMT
-        if let Some(next) = node.next_sibling() {
-            if next.kind() != node.kind() {
-                // Don't add empty line between PACKAGE_STMT and USE_STMT
-                if !(node.kind() == SyntaxKind::PACKAGE_STMT && next.kind() == SyntaxKind::USE_STMT)
-                {
-                    self.add_empty_line_after();
-                }
-            }
-        }
-    }
-
-    fn add_empty_line_before(&mut self) {
-        // Only add empty line if this is not the first node and we don't already have one
-        if !self.output.is_empty() && !self.output.ends_with("\n\n") {
-            if !self.output.ends_with('\n') {
-                self.handle_newline();
-            }
-            // Add one more newline to create an empty line
-            self.output.push('\n');
-            self.at_line_start = true;
-        }
-    }
-
-    fn add_empty_line_after(&mut self) {
-        // Force at least one empty line after the node
-        if !self.output.ends_with('\n') {
-            self.handle_newline();
-        }
-        // Add one more newline to create an empty line
-        if !self.output.ends_with("\n\n") {
-            self.output.push('\n');
-        }
-    }
-
-    fn handle_whitespace(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
-        let text = token.text();
-        if text.contains('\n') {
-            self.handle_newline();
         }
     }
 
@@ -732,22 +604,6 @@ impl Formatter {
                     }
                 }
             }
-        }
-    }
-
-    /// Output pending empty lines when appropriate
-    fn output_pending_empty_lines(&mut self) {
-        if self.pending_empty_lines > 0 {
-            // Ensure we're on a new line first
-            if !self.output.ends_with('\n') {
-                self.output.push('\n');
-            }
-            // Add empty lines
-            for _ in 0..self.pending_empty_lines {
-                self.output.push('\n');
-            }
-            self.pending_empty_lines = 0;
-            self.at_line_start = true;
         }
     }
 }
@@ -1308,3 +1164,4 @@ mod expression;
 mod literal;
 mod spacing;
 mod verbatim;
+mod whitespace;
