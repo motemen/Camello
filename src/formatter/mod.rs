@@ -522,159 +522,14 @@ impl Formatter {
         }
     }
 
-    fn is_comparison_operator(kind: SyntaxKind) -> bool {
-        matches!(
-            kind,
-            SyntaxKind::GT
-                | SyntaxKind::LT
-                | SyntaxKind::GE
-                | SyntaxKind::LE
-                | SyntaxKind::EQ_EQ
-                | SyntaxKind::NE
-                | SyntaxKind::STR_EQ
-                | SyntaxKind::STR_NE
-                | SyntaxKind::STR_GT
-                | SyntaxKind::STR_LT
-                | SyntaxKind::STR_GE
-                | SyntaxKind::STR_LE
-                | SyntaxKind::STR_CMP
-                | SyntaxKind::SPACESHIP
-        )
-    }
-
     fn handle_spacing_before(&mut self, current: SyntaxKind) {
-        if self.at_line_start {
-            return;
-        }
-
-        let needs_space = match (self.prev_token_kind, current) {
-            // a->b: Arrow operator should never have spaces around it (highest priority)
-            (Some(SyntaxKind::ARROW), _) | (Some(_), SyntaxKind::ARROW) => false,
-
-            // Ternary operator: space before ? and :
-            (Some(_), SyntaxKind::QUESTION_MARK) => true,
-            (Some(_), SyntaxKind::COLON) => true,
-
-            // 演算子の前後
-            (Some(_), SyntaxKind::EQ) | (Some(SyntaxKind::EQ), _) => true,
-            (Some(_), SyntaxKind::PLUS) | (Some(SyntaxKind::PLUS), _) => true,
-            (Some(_), SyntaxKind::MINUS) | (Some(SyntaxKind::MINUS), _) => true,
-            (Some(_), SyntaxKind::DOT) | (Some(SyntaxKind::DOT), _) => true,
-            (Some(_), SyntaxKind::FAT_COMMA) | (Some(SyntaxKind::FAT_COMMA), _) => true,
-
-            // Comparison operators
-            (Some(_), kind) if Self::is_comparison_operator(kind) => true,
-            (Some(kind), _) if Self::is_comparison_operator(kind) => true,
-
-            // Regex operators
-            (Some(_), SyntaxKind::REGEX_MATCH) | (Some(SyntaxKind::REGEX_MATCH), _) => true,
-            (Some(_), SyntaxKind::REGEX_NOT_MATCH) | (Some(SyntaxKind::REGEX_NOT_MATCH), _) => true,
-
-            // Exception: no space before semicolon when previous token is slash (for q-string delimiters)
-            (Some(SyntaxKind::SLASH), SyntaxKind::SEMICOLON) => false,
-
-            // Multiplicative operators (but not PERCENT which is used as sigil)
-            (Some(_), SyntaxKind::STAR) | (Some(SyntaxKind::STAR), _) => true,
-            (Some(_), SyntaxKind::SLASH) | (Some(SyntaxKind::SLASH), _) => true,
-            (Some(_), SyntaxKind::MODULO) | (Some(SyntaxKind::MODULO), _) => true,
-            (Some(_), SyntaxKind::X) | (Some(SyntaxKind::X), _) => true,
-
-            // Logical operators
-            (Some(_), SyntaxKind::LOGICAL_AND) | (Some(SyntaxKind::LOGICAL_AND), _) => true,
-            (Some(_), SyntaxKind::LOGICAL_OR) | (Some(SyntaxKind::LOGICAL_OR), _) => true,
-            // Special handling for logical NOT prefix operator: no space after parentheses, no space after !
-            (Some(SyntaxKind::L_PAREN), SyntaxKind::LOGICAL_NOT) => false, // No space after (
-            (Some(_), SyntaxKind::LOGICAL_NOT) => true, // Space before ! in other cases
-            (Some(SyntaxKind::LOGICAL_NOT), _) => false, // No space after !
-            (Some(_), SyntaxKind::NOT_KW) | (Some(SyntaxKind::NOT_KW), _) => true,
-            (Some(_), SyntaxKind::AND_KW) | (Some(SyntaxKind::AND_KW), _) => true,
-            (Some(_), SyntaxKind::OR_KW) | (Some(SyntaxKind::OR_KW), _) => true,
-            (Some(_), SyntaxKind::XOR_KW) | (Some(SyntaxKind::XOR_KW), _) => true,
-            (Some(_), SyntaxKind::DEFINED_OR) | (Some(SyntaxKind::DEFINED_OR), _) => true,
-            (Some(_), SyntaxKind::SPACESHIP) | (Some(SyntaxKind::SPACESHIP), _) => true,
-
-            // foo, bar
-            (Some(SyntaxKind::COMMA), _) => true,
-            (Some(_), SyntaxKind::COMMA) => false,
-
-            // キーワードの後
-            (
-                Some(
-                    SyntaxKind::MY_KW
-                    | SyntaxKind::OUR_KW
-                    | SyntaxKind::STATE_KW
-                    | SyntaxKind::LOCAL_KW,
-                ),
-                _,
-            ) => true,
-            (Some(SyntaxKind::SUB_KW), SyntaxKind::IDENT) => true,
-            (Some(SyntaxKind::SUB_KW), SyntaxKind::QUALIFIED_IDENT) => true,
-            (Some(SyntaxKind::FOR_KW), _) => true,
-            (Some(SyntaxKind::FOREACH_KW), _) => true,
-            (Some(SyntaxKind::WHILE_KW), _) => true,
-            (Some(SyntaxKind::IF_KW), _) => true,
-            (Some(SyntaxKind::UNLESS_KW), _) => true,
-            (Some(SyntaxKind::ELSIF_KW), _) => true,
-            (Some(SyntaxKind::ELSE_KW), _) => true,
-            (Some(SyntaxKind::PACKAGE_KW), _) => true,
-            (Some(SyntaxKind::USE_KW), _) => true,
-            // Fix: Don't add space after RETURN_KW before semicolon
-            (Some(SyntaxKind::RETURN_KW), SyntaxKind::SEMICOLON) => false,
-            (Some(SyntaxKind::RETURN_KW), _) => true,
-
-            // Postfix conditionals: add space before if/unless in postfix position
-            (Some(_), SyntaxKind::IF_KW) => true,
-            (Some(_), SyntaxKind::UNLESS_KW) => true,
-
-            // Before left brace "{"
-            (Some(_), SyntaxKind::L_BRACE) => true,
-
-            // After R_BRACE, add space before expressions (for block functions) but not before semicolons
-            (Some(SyntaxKind::R_BRACE), kind) if kind != SyntaxKind::SEMICOLON => true,
-
-            // No space inside parentheses, but add space before parentheses as appropriate
-            (Some(SyntaxKind::L_PAREN), _) => false,
-            (Some(_), SyntaxKind::R_PAREN) => false,
-            (Some(SyntaxKind::L_BRACE), _) => false,
-
-            // Before L_PAREN, add space after variables and keywords (but not after identifiers or qualified identifiers for function calls)
-            (Some(kind), SyntaxKind::L_PAREN)
-                if kind.is_variable()
-                    || matches!(
-                        kind,
-                        SyntaxKind::MY_KW
-                            | SyntaxKind::OUR_KW
-                            | SyntaxKind::STATE_KW
-                            | SyntaxKind::LOCAL_KW
-                            | SyntaxKind::FOR_KW
-                            | SyntaxKind::FOREACH_KW
-                            | SyntaxKind::WHILE_KW
-                            | SyntaxKind::IF_KW
-                            | SyntaxKind::UNLESS_KW
-                            | SyntaxKind::ELSIF_KW
-                    ) =>
-            {
-                true
-            }
-
-            // After identifier not followed by a semicolon, double colon, arrow, or left parenthesis
-            // Fix: Don't add space before ARROW to fix JSON->new spacing
-            (Some(SyntaxKind::IDENT), kind)
-                if kind != SyntaxKind::SEMICOLON
-                    && kind != SyntaxKind::DOUBLE_COLON
-                    && kind != SyntaxKind::L_PAREN
-                    && kind != SyntaxKind::ARROW =>
-            {
-                true
-            }
-
-            // :: の前後はスペースなし（パッケージ名区切り）
-            (Some(_), SyntaxKind::DOUBLE_COLON) | (Some(SyntaxKind::DOUBLE_COLON), _) => false,
-
-            _ => false,
+        let context = spacing::SpacingContext {
+            prev_token: self.prev_token_kind,
+            current_token: current,
+            at_line_start: self.at_line_start,
         };
 
-        if needs_space {
+        if spacing::needs_space_before(&context) {
             self.output.push(' ');
         }
     }
@@ -1451,4 +1306,5 @@ return 1;
 
 mod expression;
 mod literal;
+mod spacing;
 mod verbatim;
