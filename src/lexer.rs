@@ -311,6 +311,16 @@ impl<'a> Lexer<'a> {
                 self.update_line_position(text);
                 return Some((syntax_kind, text));
             }
+
+            // Special handling for I/O operators in ExpectingValue context
+            if let Some(io_result) = self.try_consume_io_operator() {
+                let (syntax_kind, text) = io_result;
+                if !syntax_kind.is_trivia() {
+                    self.update_context(syntax_kind);
+                }
+                self.update_line_position(text);
+                return Some((syntax_kind, text));
+            }
         } else if self.context == LexerContext::RawData {
             let remainder = self.logos_lexer.remainder();
             if remainder.is_empty() {
@@ -605,6 +615,36 @@ impl<'a> Lexer<'a> {
         None
     }
 
+    fn try_consume_io_operator(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        let remainder = self.logos_lexer.remainder();
+
+        if !remainder.starts_with('<') {
+            return None;
+        }
+
+        let mut closing_angle_pos: Option<usize> = None;
+        
+        // Find the closing '>'
+        for (i, c) in remainder.char_indices().skip(1) {
+            match c {
+                '>' => {
+                    closing_angle_pos = Some(i);
+                    break;
+                }
+                '\n' => return None, // I/O operators don't span lines
+                _ => {}
+            }
+        }
+
+        if let Some(pos) = closing_angle_pos {
+            let text = &remainder[..pos + 1];
+            self.logos_lexer.bump(text.len());
+            return Some((SyntaxKind::IO_EXPR, text));
+        }
+
+        None
+    }
+
     fn disambiguate_slash(&self) -> SyntaxKind {
         match self.context {
             LexerContext::QlikeDelimiter => {
@@ -732,7 +772,8 @@ impl<'a> Lexer<'a> {
             | SyntaxKind::STRING
             | SyntaxKind::VERSION
             | SyntaxKind::BARE_VERSION
-            | SyntaxKind::REGEX_LITERAL => LexerContext::ExpectingOperator,
+            | SyntaxKind::REGEX_LITERAL
+            | SyntaxKind::IO_EXPR => LexerContext::ExpectingOperator,
             SyntaxKind::R_PAREN | SyntaxKind::R_BRACE | SyntaxKind::R_BRACKET => {
                 LexerContext::ExpectingOperator
             }
