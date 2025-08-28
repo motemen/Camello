@@ -6,8 +6,32 @@ use super::Formatter;
 
 impl Formatter {
     pub fn format_parenthesized_expr(&mut self, node: &PerlNode) {
-        // Format any parenthesized expression with proper multiline indentation
-        self.format_multiline_delimited(node, SyntaxKind::L_PAREN, SyntaxKind::R_PAREN);
+        // Check if the parenthesized expression contains newlines
+        if self.has_newline_before_first_value(node) {
+            // Use multiline formatting for expressions with newlines
+            self.format_multiline_delimited(node, SyntaxKind::L_PAREN, SyntaxKind::R_PAREN);
+        } else {
+            // Use simple single-line formatting for compact expressions
+            for child in node.children_with_tokens() {
+                match child {
+                    NodeOrToken::Node(child_node) => {
+                        self.format_node(&child_node);
+                    }
+                    NodeOrToken::Token(token) => {
+                        let kind = token.kind();
+                        match kind {
+                            SyntaxKind::L_PAREN | SyntaxKind::R_PAREN => {
+                                // Handle spacing normally for parentheses
+                                self.format_token(&token);
+                            }
+                            _ => {
+                                self.format_token(&token);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     pub fn format_block_function_call(&mut self, node: &PerlNode) {

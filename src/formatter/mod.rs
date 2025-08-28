@@ -282,6 +282,30 @@ impl Formatter {
 
     fn format_simple_block(&mut self, node: &PerlNode) {
         // Format a simple block on a single line: { expression }
+        // For empty blocks, use {} without spaces
+        
+        let mut has_content = false;
+        
+        // First pass: check if the block has any content
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(_) => {
+                    has_content = true;
+                }
+                NodeOrToken::Token(token) => {
+                    match token.kind() {
+                        SyntaxKind::L_BRACE | SyntaxKind::R_BRACE | SyntaxKind::WHITESPACE => {
+                            // These don't count as content
+                        }
+                        _ => {
+                            has_content = true;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Second pass: format with appropriate spacing
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(child_node) => {
@@ -296,12 +320,14 @@ impl Formatter {
                                 self.at_line_start = false;
                             }
                             self.output.push_str(token.text());
-                            self.output.push(' '); // Add space after opening brace
+                            if has_content {
+                                self.output.push(' '); // Add space after opening brace only if there's content
+                            }
                             self.prev_token_kind = Some(token.kind());
                         }
                         SyntaxKind::R_BRACE => {
-                            if self.prev_token_kind != Some(SyntaxKind::L_BRACE) {
-                                self.output.push(' '); // Add space before closing brace
+                            if has_content && self.prev_token_kind != Some(SyntaxKind::L_BRACE) {
+                                self.output.push(' '); // Add space before closing brace only if there's content
                             }
                             self.output.push_str(token.text());
                             self.prev_token_kind = Some(token.kind());
