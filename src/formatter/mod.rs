@@ -81,10 +81,7 @@ impl Formatter {
                         }
                         NodeOrToken::Token(token) => {
                             self.format_token(token);
-                            if matches!(
-                                token.kind(),
-                                SyntaxKind::IDENT | SyntaxKind::QUALIFIED_IDENT
-                            ) {
+                            if token.kind() == SyntaxKind::IDENT {
                                 Some(token.clone())
                             } else {
                                 None
@@ -664,11 +661,8 @@ impl Formatter {
                                 if !found_multiple_newlines {
                                     // Add empty line after use block
                                     if !self.output.is_empty() {
-                                        if !self.output.ends_with('\n') {
-                                            self.output.push('\n');
-                                        }
+                                        self.handle_newline();
                                         self.output.push('\n');
-                                        self.at_line_start = true;
                                     }
                                 }
                             }

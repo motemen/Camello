@@ -87,7 +87,10 @@ impl Formatter {
                         SyntaxKind::QW_KW => {
                             self.format_token(&token);
                         }
-                        SyntaxKind::L_PAREN | SyntaxKind::L_BRACKET | SyntaxKind::L_BRACE => {
+                        SyntaxKind::L_PAREN
+                        | SyntaxKind::L_BRACKET
+                        | SyntaxKind::L_BRACE
+                        | SyntaxKind::SLASH => {
                             self.output.push_str(text);
                             self.prev_token_kind = Some(kind);
                         }
