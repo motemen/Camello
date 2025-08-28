@@ -57,7 +57,17 @@ impl Formatter {
 
         // Node types that require special handling
         match node.kind() {
+            SyntaxKind::ROOT => {
+                // Use the same empty line detection logic as BLOCK_STMT for root-level statements
+                self.format_block_stmt_with_empty_line_detection(node);
+                return;
+            }
             SyntaxKind::USE_STMT => {
+                // Output pending empty lines before processing use statement
+                if self.pending_empty_lines > 0 {
+                    self.output_pending_empty_lines();
+                }
+
                 // Special handling for use statements: add space between identifier and parentheses
                 for child in node.children_with_tokens() {
                     match child {
@@ -621,13 +631,58 @@ impl Formatter {
         // Use a peekable iterator to avoid collecting all children into a Vec,
         // which improves performance and reduces memory allocation.
         let mut children = node.children_with_tokens().peekable();
+        let mut prev_node_kind: Option<SyntaxKind> = None;
 
         while let Some(child) = children.next() {
             match child {
                 NodeOrToken::Node(child_node) => {
+                    let current_kind = child_node.kind();
+                    
+                    // Check if we need to add empty line after use block
+                    if let Some(prev_kind) = prev_node_kind {
+                        if prev_kind == SyntaxKind::USE_STMT && current_kind != SyntaxKind::USE_STMT {
+                            // We're transitioning from USE_STMT to a different node type
+                            // Check if there are already empty lines from source or pending
+                            let has_existing_empty_line = self.pending_empty_lines > 0 || 
+                                self.output.ends_with("\n\n");
+                            
+                            if !has_existing_empty_line {
+                                // Look ahead to see if there are whitespace tokens with multiple newlines
+                                let mut peek_iter = children.clone();
+                                let mut found_multiple_newlines = false;
+                                
+                                while let Some(NodeOrToken::Token(peeked_token)) = peek_iter.peek() {
+                                    if peeked_token.kind() == SyntaxKind::WHITESPACE {
+                                        let text = peeked_token.text();
+                                        if text.matches('\n').count() > 1 {
+                                            found_multiple_newlines = true;
+                                            break;
+                                        }
+                                        peek_iter.next();
+                                    } else {
+                                        break;
+                                    }
+                                }
+                                
+                                if !found_multiple_newlines {
+                                    // Add empty line after use block
+                                    if !self.output.is_empty() {
+                                        if !self.output.ends_with('\n') {
+                                            self.output.push('\n');
+                                        }
+                                        self.output.push('\n');
+                                        self.at_line_start = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
                     // Output pending empty lines before processing child nodes
                     self.output_pending_empty_lines();
                     self.format_node(&child_node);
+                    
+                    prev_node_kind = Some(current_kind);
                 }
                 NodeOrToken::Token(token) => {
                     if token.kind() == SyntaxKind::WHITESPACE {
