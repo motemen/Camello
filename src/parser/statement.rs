@@ -206,10 +206,23 @@ impl<'a> Parser<'a> {
         }
         self.skip_trivia();
 
-        // Option: import list (e.g., qw())
+        // Option: import list (e.g., qw()) or comma-separated expressions (x => 1, y => 2)
         if self.is_at_start_of_expression() {
+            // Parse first expression
             self.expression();
-            self.skip_trivia();
+
+            // Handle additional comma-separated expressions
+            while self.at(SyntaxKind::COMMA) {
+                self.bump(); // consume comma
+                self.skip_trivia();
+
+                if self.is_at_start_of_expression() {
+                    self.expression();
+                } else {
+                    // Allow trailing comma
+                    break;
+                }
+            }
         }
 
         // Semicolon

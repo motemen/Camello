@@ -475,6 +475,12 @@ impl<'a> Parser<'a> {
                     }
                 }
             }
+            Some(SyntaxKind::X) => {
+                // Handle 'x' as an identifier when it appears at the start of expressions
+                // This allows expressions like "x => 1" in use statements
+                self.bump(); // consume x
+                self.skip_trivia();
+            }
             Some(SyntaxKind::L_PAREN) => {
                 // Parenthesized expression
                 self.bump(); // (

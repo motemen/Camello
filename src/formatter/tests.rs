@@ -198,13 +198,60 @@ fn test_use_statement_with_parentheses_formatting() {
         // Use statement with empty parentheses (import list)
         ("use A();", "use A ();\n"),
         // Qualified module names now have space
-        ("use Module::Name();", "use Module::Name ();\n"), 
+        ("use Module::Name();", "use Module::Name ();\n"),
         // Use statement with import list - qw formatting may have extra spaces
         ("use A(qw/func1 func2/);", "use A (qw /func1 func2 /);\n"),
         ("use Module(func1,func2);", "use Module (func1, func2);\n"),
         // With spacing variations
         ("use  A  ()  ;", "use A ();\n"),
         ("use\tA\t()\t;", "use A ();\n"),
+    ]);
+}
+
+#[test]
+fn test_use_statement_with_expressions() {
+    check_formatting_cases(&[
+        // Basic hash pair expressions
+        ("use A::B x => 1;", "use A::B x => 1;\n"),
+        ("use Module x=>1;", "use Module x => 1;\n"),
+        // Multiple hash pairs
+        ("use A::B x => 1, y => 2;", "use A::B x => 1, y => 2;\n"),
+        (
+            "use Module foo=>bar,baz=>123;",
+            "use Module foo => bar, baz => 123;\n",
+        ),
+        // Different value types
+        ("use A::B key => 'value';", "use A::B key => 'value';\n"),
+        (
+            "use A::B num => 42, str => \"hello\";",
+            "use A::B num => 42, str => \"hello\";\n",
+        ),
+        // Complex expressions
+        (
+            "use A::B func => \\&function;",
+            "use A::B func => \\&function;\n",
+        ),
+        (
+            "use A::B array => [1,2,3];",
+            "use A::B array => [1, 2, 3];\n",
+        ),
+        (
+            "use A::B hash => {a=>1,b=>2};",
+            "use A::B hash => {a => 1, b => 2};\n",
+        ),
+        // Spacing variations
+        ("use  A::B  x  =>  1  ;", "use A::B x => 1;\n"),
+        ("use\tModule\tx\t=>\t1\t;", "use Module x => 1;\n"),
+        // Mixed with regular identifiers (not starting with 'x')
+        (
+            "use A::B foo => 1, bar => 2;",
+            "use A::B foo => 1, bar => 2;\n",
+        ),
+        // Complex module names with expressions
+        (
+            "use Very::Long::Module::Name x => 1;",
+            "use Very::Long::Module::Name x => 1;\n",
+        ),
     ]);
 }
 
