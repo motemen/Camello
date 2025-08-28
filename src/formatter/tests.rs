@@ -348,6 +348,14 @@ fn test_eval_block_function_formatting() {
 }
 
 #[test]
+fn test_parenthesized_eval_block_formatting() {
+    let input = "(eval {})";
+    let formatted = format_and_assert(input);
+
+    insta::assert_snapshot!(formatted, @"(eval {})");
+}
+
+#[test]
 fn test_map_with_parentheses_formatting() {
     let input = "map{$_*2}(1,2,3); sort{$a+$b}@values;";
     let formatted = format_and_assert(input);

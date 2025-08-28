@@ -243,9 +243,9 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
         (RETURN_KW, SEMICOLON) => Some(false),
         (RETURN_KW, _) => Some(true),
 
-        // R_BRACE: space before expressions but not semicolons
-        (R_BRACE, kind) if kind != SEMICOLON => Some(true),
-        (R_BRACE, SEMICOLON) => Some(false),
+        // R_BRACE: space before expressions but not semicolons or closing parentheses
+        (R_BRACE, kind) if kind != SEMICOLON && kind != R_PAREN => Some(true),
+        (R_BRACE, SEMICOLON | R_PAREN) => Some(false),
 
         // L_PAREN after certain tokens
         (SCALAR_VAR | ARRAY_VAR | HASH_VAR, L_PAREN) => Some(true),
