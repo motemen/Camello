@@ -6,64 +6,19 @@ use super::Formatter;
 
 impl Formatter {
     pub fn format_hash_ref(&mut self, node: &PerlNode) {
-        let should_multiline = self.has_newline_before_first_value(node);
-
-        if should_multiline {
-            self.format_multiline_hash_ref(node);
-        } else {
-            self.format_single_line_hash_ref(node);
-        }
-    }
-
-    fn format_single_line_hash_ref(&mut self, node: &PerlNode) {
-        // Format hash reference without newlines
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
-                NodeOrToken::Token(token) => {
-                    let kind = token.kind();
-                    let text = token.text();
-
-                    match kind {
-                        SyntaxKind::L_BRACE => {
-                            self.handle_spacing_before(kind);
-                            if self.at_line_start {
-                                self.add_indent();
-                                self.at_line_start = false;
-                            }
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
-                        }
-                        SyntaxKind::R_BRACE => {
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
-                        }
-                        _ => {
-                            // Other tokens are processed as usual
-                            self.format_token(&token);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fn format_multiline_hash_ref(&mut self, node: &PerlNode) {
-        self.format_multiline_delimited(node, SyntaxKind::L_BRACE, SyntaxKind::R_BRACE);
+        self.format_delimited_literal(node, SyntaxKind::L_BRACE, SyntaxKind::R_BRACE);
     }
 
     pub fn format_array_ref(&mut self, node: &PerlNode) {
-        let should_multiline = self.has_newline_before_first_value(node);
-
-        if should_multiline {
-            self.format_multiline_array_ref(node);
-        } else {
-            self.format_single_line_array_ref(node);
-        }
+        self.format_delimited_literal(node, SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET);
     }
 
-    fn format_single_line_array_ref(&mut self, node: &PerlNode) {
-        // Array references are formatted without newlines
+    fn format_single_line_delimited_literal(
+        &mut self,
+        node: &PerlNode,
+        opening: SyntaxKind,
+        closing: SyntaxKind,
+    ) {
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(node) => self.format_node(&node),
@@ -72,7 +27,7 @@ impl Formatter {
                     let text = token.text();
 
                     match kind {
-                        SyntaxKind::L_BRACKET => {
+                        k if k == opening => {
                             self.handle_spacing_before(kind);
                             if self.at_line_start {
                                 self.add_indent();
@@ -81,12 +36,11 @@ impl Formatter {
                             self.output.push_str(text);
                             self.prev_token_kind = Some(kind);
                         }
-                        SyntaxKind::R_BRACKET => {
+                        k if k == closing => {
                             self.output.push_str(text);
                             self.prev_token_kind = Some(kind);
                         }
                         _ => {
-                            // Other tokens are processed as usual
                             self.format_token(&token);
                         }
                     }
@@ -95,8 +49,17 @@ impl Formatter {
         }
     }
 
-    fn format_multiline_array_ref(&mut self, node: &PerlNode) {
-        self.format_multiline_delimited(node, SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET);
+    fn format_delimited_literal(
+        &mut self,
+        node: &PerlNode,
+        opening: SyntaxKind,
+        closing: SyntaxKind,
+    ) {
+        if self.has_newline_before_first_value(node) {
+            self.format_multiline_delimited(node, opening, closing);
+        } else {
+            self.format_single_line_delimited_literal(node, opening, closing);
+        }
     }
 
     pub fn format_qw_expr(&mut self, node: &PerlNode) {
@@ -211,36 +174,14 @@ impl Formatter {
     }
 
     pub fn format_s_expr(&mut self, node: &PerlNode) {
-        // Substitution expressions have the form s/pattern/replacement/flags
-        // We need to handle the pattern and replacement parts separately
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
-                NodeOrToken::Token(token) => {
-                    let kind = token.kind();
-                    let text = token.text();
-                    match kind {
-                        SyntaxKind::S_KW => {
-                            self.format_token(&token);
-                        }
-                        SyntaxKind::WHITESPACE => {
-                            // Special handling: preserve whitespace inside substitution strings
-                            self.output.push_str(text);
-                        }
-                        _ => {
-                            // Handle any remaining tokens (including delimiters, pattern, replacement, and flags) directly
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
-                        }
-                    }
-                }
-            }
-        }
+        self.format_regex_like_expr(node, &[SyntaxKind::S_KW]);
     }
 
     pub fn format_tr_expr(&mut self, node: &PerlNode) {
-        // Transliteration expressions have the form tr/search/replace/flags or y/search/replace/flags
-        // We need to handle the search and replacement parts separately
+        self.format_regex_like_expr(node, &[SyntaxKind::TR_KW, SyntaxKind::Y_KW]);
+    }
+
+    fn format_regex_like_expr(&mut self, node: &PerlNode, kw_kinds: &[SyntaxKind]) {
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(node) => self.format_node(&node),
@@ -248,15 +189,14 @@ impl Formatter {
                     let kind = token.kind();
                     let text = token.text();
                     match kind {
-                        SyntaxKind::TR_KW | SyntaxKind::Y_KW => {
+                        k if kw_kinds.contains(&k) => {
                             self.format_token(&token);
                         }
                         SyntaxKind::WHITESPACE => {
-                            // Special handling: preserve whitespace inside transliteration strings
+                            // Preserve whitespace inside these expressions
                             self.output.push_str(text);
                         }
                         _ => {
-                            // Handle any remaining tokens (including delimiters, search, replacement, and flags) directly
                             self.output.push_str(text);
                             self.prev_token_kind = Some(kind);
                         }
