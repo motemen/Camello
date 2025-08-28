@@ -70,30 +70,26 @@ impl Formatter {
 
                 // Special handling for use statements: add space between identifier and parentheses
                 for child in node.children_with_tokens() {
-                    let last_token_of_child = match &child {
-                        NodeOrToken::Node(child_node) => {
-                            self.format_node(child_node);
-                            if child_node.kind() == SyntaxKind::QUALIFIED_IDENT {
-                                child_node.last_token()
-                            } else {
-                                None
-                            }
-                        }
-                        NodeOrToken::Token(token) => {
-                            self.format_token(token);
-                            if token.kind() == SyntaxKind::IDENT {
-                                Some(token.clone())
-                            } else {
-                                None
-                            }
-                        }
+                    let is_module_name = match &child {
+                        NodeOrToken::Node(n) => n.kind() == SyntaxKind::QUALIFIED_IDENT,
+                        NodeOrToken::Token(t) => t.kind() == SyntaxKind::IDENT,
                     };
 
-                    // Add space after identifier or qualified identifier if followed by L_PAREN
-                    if let Some(last_token) = last_token_of_child {
-                        if let Some(next_token) = Self::next_significant_token(&last_token) {
-                            if next_token.kind() == SyntaxKind::L_PAREN {
-                                self.output.push(' ');
+                    match &child {
+                        NodeOrToken::Node(n) => self.format_node(n),
+                        NodeOrToken::Token(t) => self.format_token(t),
+                    };
+
+                    if is_module_name {
+                        let last_token = match &child {
+                            NodeOrToken::Node(n) => n.last_token(),
+                            NodeOrToken::Token(t) => Some(t.clone()),
+                        };
+                        if let Some(last_token) = last_token {
+                            if let Some(next_token) = Self::next_significant_token(&last_token) {
+                                if next_token.kind() == SyntaxKind::L_PAREN {
+                                    self.output.push(' ');
+                                }
                             }
                         }
                     }
@@ -640,30 +636,10 @@ impl Formatter {
                                 self.pending_empty_lines > 0 || self.output.ends_with("\n\n");
 
                             if !has_existing_empty_line {
-                                // Look ahead to see if there are whitespace tokens with multiple newlines
-                                let mut peek_iter = children.clone();
-                                let mut found_multiple_newlines = false;
-
-                                while let Some(NodeOrToken::Token(peeked_token)) = peek_iter.peek()
-                                {
-                                    if peeked_token.kind() == SyntaxKind::WHITESPACE {
-                                        let text = peeked_token.text();
-                                        if text.matches('\n').count() > 1 {
-                                            found_multiple_newlines = true;
-                                            break;
-                                        }
-                                        peek_iter.next();
-                                    } else {
-                                        break;
-                                    }
-                                }
-
-                                if !found_multiple_newlines {
-                                    // Add empty line after use block
-                                    if !self.output.is_empty() {
-                                        self.handle_newline();
-                                        self.output.push('\n');
-                                    }
+                                // Add empty line after use block
+                                if !self.output.is_empty() {
+                                    self.handle_newline();
+                                    self.output.push('\n');
                                 }
                             }
                         }
