@@ -220,7 +220,11 @@ pub fn needs_space_before(context: &SpacingContext) -> bool {
 }
 
 /// Handle special case overrides that don't fit the general rules
-fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind, _context: &SpacingContext) -> Option<bool> {
+fn handle_special_cases(
+    prev: SyntaxKind,
+    current: SyntaxKind,
+    _context: &SpacingContext,
+) -> Option<bool> {
     use SyntaxKind::*;
 
     match (prev, current) {
