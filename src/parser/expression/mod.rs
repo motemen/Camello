@@ -534,6 +534,14 @@ impl<'a> Parser<'a> {
                 // s() expression
                 self.s_expr();
             }
+            Some(SyntaxKind::TR_KW) => {
+                // tr() expression
+                self.tr_expr();
+            }
+            Some(SyntaxKind::Y_KW) => {
+                // y() expression (alias for tr)
+                self.y_expr();
+            }
             _ => {
                 // Should not reach here because is_at_start_of_expression checks this
                 return false;
