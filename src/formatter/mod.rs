@@ -57,6 +57,42 @@ impl Formatter {
 
         // Node types that require special handling
         match node.kind() {
+            SyntaxKind::USE_STMT => {
+                // Special handling for use statements: add space between identifier and parentheses
+                for child in node.children_with_tokens() {
+                    match child {
+                        NodeOrToken::Node(child_node) => {
+                            self.format_node(&child_node);
+                            
+                            // Add space after QUALIFIED_IDENT in use statements if followed by L_PAREN
+                            if child_node.kind() == SyntaxKind::QUALIFIED_IDENT {
+                                // Check if the next significant token is L_PAREN
+                                if let Some(last_token) = child_node.last_token() {
+                                    if let Some(next_token) = Self::next_significant_token(&last_token) {
+                                        if next_token.kind() == SyntaxKind::L_PAREN {
+                                            self.output.push(' ');
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        NodeOrToken::Token(token) => {
+                            self.format_token(&token);
+                            
+                            // Add space after identifier in use statements if followed by L_PAREN
+                            if matches!(token.kind(), SyntaxKind::IDENT | SyntaxKind::QUALIFIED_IDENT) {
+                                // Check if the next significant token is L_PAREN
+                                if let Some(next_token) = Self::next_significant_token(&token) {
+                                    if next_token.kind() == SyntaxKind::L_PAREN {
+                                        self.output.push(' ');
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                return;
+            }
             SyntaxKind::HASH_REF => {
                 self.format_hash_ref(node);
                 return;
