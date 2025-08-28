@@ -18,16 +18,8 @@ impl Formatter {
                         self.format_node(&child_node);
                     }
                     NodeOrToken::Token(token) => {
-                        let kind = token.kind();
-                        match kind {
-                            SyntaxKind::L_PAREN | SyntaxKind::R_PAREN => {
-                                // Handle spacing normally for parentheses
-                                self.format_token(&token);
-                            }
-                            _ => {
-                                self.format_token(&token);
-                            }
-                        }
+                        // All tokens in sub expression formatting are handled the same way
+                        self.format_token(&token);
                     }
                 }
             }
