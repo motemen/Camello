@@ -551,60 +551,43 @@ impl Formatter {
     }
 
     fn format_block_stmt_with_empty_line_detection(&mut self, node: &PerlNode) {
-        // Collect all children as a vector for lookahead
-        // FIXME:
-        // This function collects all children of a BLOCK_STMT into a Vec on every call. For files with many or large blocks, this could lead to significant memory allocations and a potential performance overhead. The design document mentions performance as a consideration, so it might be worth exploring a more memory-efficient approach.
-        // Consider using an iterator-based approach that avoids collecting all children into a vector. The itertools crate, for example, provides utilities like peekable() or PeekingNext that could allow you to look ahead at the next token without needing to allocate a Vec for the entire block.
-        let children: Vec<_> = node.children_with_tokens().collect();
-        let mut i = 0;
+        // Use a peekable iterator to avoid collecting all children into a Vec,
+        // which improves performance and reduces memory allocation.
+        let mut children = node.children_with_tokens().peekable();
 
-        while i < children.len() {
-            match &children[i] {
+        while let Some(child) = children.next() {
+            match child {
                 NodeOrToken::Node(child_node) => {
                     // Output pending empty lines before processing child nodes
                     self.output_pending_empty_lines();
-                    self.format_node(child_node);
-                    i += 1;
+                    self.format_node(&child_node);
                 }
                 NodeOrToken::Token(token) => {
                     if token.kind() == SyntaxKind::WHITESPACE {
-                        // Look ahead to collect consecutive WHITESPACE tokens
-                        let mut consecutive_whitespace = vec![token];
-                        let mut j = i + 1;
+                        let mut total_newlines = token.text().matches('\n').count();
 
-                        while j < children.len() {
-                            if let NodeOrToken::Token(next_token) = &children[j] {
-                                if next_token.kind() == SyntaxKind::WHITESPACE {
-                                    consecutive_whitespace.push(next_token);
-                                    j += 1;
-                                } else {
-                                    break;
-                                }
+                        // Look ahead to merge consecutive WHITESPACE tokens
+                        while let Some(NodeOrToken::Token(peeked_token)) = children.peek() {
+                            if peeked_token.kind() == SyntaxKind::WHITESPACE {
+                                // It's a whitespace token, so we consume it and add its newlines
+                                let consumed_token = children.next().unwrap().into_token().unwrap();
+                                total_newlines += consumed_token.text().matches('\n').count();
                             } else {
+                                // Not a whitespace token, so we stop looking ahead
                                 break;
                             }
                         }
 
-                        // Count total newlines across all consecutive whitespace tokens
-                        let total_newlines: usize = consecutive_whitespace
-                            .iter()
-                            .map(|t| t.text().matches('\n').count())
-                            .sum();
-
                         if total_newlines > 0 {
-                            // If there are multiple newlines across tokens, preserve as empty line
+                            // If there are multiple newlines across tokens, preserve as one empty line
                             if total_newlines > 1 {
                                 self.pending_empty_lines = 1;
                             }
                             self.handle_newline();
                         }
-
-                        // Skip all the consecutive whitespace tokens we processed
-                        i = j;
                     } else {
                         self.output_pending_empty_lines();
-                        self.format_token(token);
-                        i += 1;
+                        self.format_token(&token);
                     }
                 }
             }
