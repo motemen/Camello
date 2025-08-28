@@ -888,15 +888,16 @@ my $other = 2;
     let formatted = format_and_assert(input);
 
     insta::assert_snapshot!(formatted, @r"
-        my $var = 1;
-        =head1 DESCRIPTION
+    my $var = 1;
 
-        This is a POD section with detailed description.
-        It preserves all formatting exactly.
+    =head1 DESCRIPTION
 
-        =cut
-        my $other = 2;
-        ");
+    This is a POD section with detailed description.
+    It preserves all formatting exactly.
+
+    =cut
+    my $other = 2;
+    ");
 }
 
 #[test]
@@ -911,12 +912,13 @@ Everything after =pod should be treated as POD content.
     let formatted = format_and_assert(input);
 
     insta::assert_snapshot!(formatted, @r"
-        my $var = 1;
-        =pod
+    my $var = 1;
 
-        This POD block goes to EOF without =cut.
-        Everything after =pod should be treated as POD content.
-        ");
+    =pod
+
+    This POD block goes to EOF without =cut.
+    Everything after =pod should be treated as POD content.
+    ");
 }
 
 #[test]
@@ -926,6 +928,7 @@ fn test_empty_lines_preservation() {
 
     insta::assert_snapshot!(formatted, @r"
         use strict;
+        
         use warnings;
 
         my $x = 1;
