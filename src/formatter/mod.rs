@@ -57,6 +57,45 @@ impl Formatter {
 
         // Node types that require special handling
         match node.kind() {
+            SyntaxKind::ROOT => {
+                // Use the same empty line detection logic as BLOCK_STMT for root-level statements
+                self.format_block_stmt_with_empty_line_detection(node);
+                return;
+            }
+            SyntaxKind::USE_STMT => {
+                // Output pending empty lines before processing use statement
+                if self.pending_empty_lines > 0 {
+                    self.output_pending_empty_lines();
+                }
+
+                // Special handling for use statements: add space between identifier and parentheses
+                for child in node.children_with_tokens() {
+                    let is_module_name = match &child {
+                        NodeOrToken::Node(n) => n.kind() == SyntaxKind::QUALIFIED_IDENT,
+                        NodeOrToken::Token(t) => t.kind() == SyntaxKind::IDENT,
+                    };
+
+                    match &child {
+                        NodeOrToken::Node(n) => self.format_node(n),
+                        NodeOrToken::Token(t) => self.format_token(t),
+                    };
+
+                    if is_module_name {
+                        let last_token = match &child {
+                            NodeOrToken::Node(n) => n.last_token(),
+                            NodeOrToken::Token(t) => Some(t.clone()),
+                        };
+                        if let Some(last_token) = last_token {
+                            if let Some(next_token) = Self::next_significant_token(&last_token) {
+                                if next_token.kind() == SyntaxKind::L_PAREN {
+                                    self.output.push(' ');
+                                }
+                            }
+                        }
+                    }
+                }
+                return;
+            }
             SyntaxKind::HASH_REF => {
                 self.format_hash_ref(node);
                 return;
@@ -580,13 +619,37 @@ impl Formatter {
         // Use a peekable iterator to avoid collecting all children into a Vec,
         // which improves performance and reduces memory allocation.
         let mut children = node.children_with_tokens().peekable();
+        let mut prev_node_kind: Option<SyntaxKind> = None;
 
         while let Some(child) = children.next() {
             match child {
                 NodeOrToken::Node(child_node) => {
+                    let current_kind = child_node.kind();
+
+                    // Check if we need to add empty line after use block
+                    if let Some(prev_kind) = prev_node_kind {
+                        if prev_kind == SyntaxKind::USE_STMT && current_kind != SyntaxKind::USE_STMT
+                        {
+                            // We're transitioning from USE_STMT to a different node type
+                            // Check if there are already empty lines from source or pending
+                            let has_existing_empty_line =
+                                self.pending_empty_lines > 0 || self.output.ends_with("\n\n");
+
+                            if !has_existing_empty_line {
+                                // Add empty line after use block
+                                if !self.output.is_empty() {
+                                    self.handle_newline();
+                                    self.output.push('\n');
+                                }
+                            }
+                        }
+                    }
+
                     // Output pending empty lines before processing child nodes
                     self.output_pending_empty_lines();
                     self.format_node(&child_node);
+
+                    prev_node_kind = Some(current_kind);
                 }
                 NodeOrToken::Token(token) => {
                     if token.kind() == SyntaxKind::WHITESPACE {
