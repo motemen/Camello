@@ -237,6 +237,8 @@ impl<'a> Parser<'a> {
                 SyntaxKind::M_KW,
                 SyntaxKind::QR_KW,
                 SyntaxKind::S_KW,
+                SyntaxKind::TR_KW,
+                SyntaxKind::Y_KW,
                 SyntaxKind::MY_KW, // Add variable declaration keywords as start of expression
                 SyntaxKind::OUR_KW,
                 SyntaxKind::STATE_KW,

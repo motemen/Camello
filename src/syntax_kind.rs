@@ -53,6 +53,8 @@ pub enum SyntaxKind {
     M_KW,      // m keyword (match operator)
     QR_KW,     // qr keyword (compiled regex)
     S_KW,      // s keyword (substitution operator)
+    TR_KW,     // tr keyword (transliteration operator)
+    Y_KW,      // y keyword (transliteration operator, alias for tr)
     USE_KW,    // use keyword (for use warnings qw(...) syntax)
     RETURN_KW, // return keyword
 
@@ -85,13 +87,15 @@ pub enum SyntaxKind {
     QW_STRING, // Any text inside qw()
 
     // Q-string family content
-    Q_STRING,      // Any text inside q() (single-quoted string content)
-    QQ_STRING,     // Any text inside qq() (double-quoted string content)
-    QX_STRING,     // Any text inside qx() (command execution content)
-    M_STRING,      // Any text inside m() (match regex content)
-    QR_STRING,     // Any text inside qr() (compiled regex content)
-    S_PATTERN,     // Pattern part inside s() (substitution pattern)
-    S_REPLACEMENT, // Replacement part inside s() (substitution replacement)
+    Q_STRING,            // Any text inside q() (single-quoted string content)
+    QQ_STRING,           // Any text inside qq() (double-quoted string content)
+    QX_STRING,           // Any text inside qx() (command execution content)
+    M_STRING,            // Any text inside m() (match regex content)
+    QR_STRING,           // Any text inside qr() (compiled regex content)
+    S_PATTERN,           // Pattern part inside s() (substitution pattern)
+    S_REPLACEMENT,       // Replacement part inside s() (substitution replacement)
+    TR_SEARCH_LIST,      // Search list part inside tr() (characters to translate from)
+    TR_REPLACEMENT_LIST, // Replacement list part inside tr() (characters to translate to)
 
     // Operators
     EQ,        // =
@@ -185,6 +189,7 @@ pub enum SyntaxKind {
     M_EXPR,                   // m() expression (match regex literal)
     QR_EXPR,                  // qr() expression (compiled regex literal)
     S_EXPR,                   // s() expression (substitution literal)
+    TR_EXPR,                  // tr() expression (transliteration literal)
     DEREF_EXPR,               // Dereference expression (e.g., @$var, %$var, $$var)
     REGEX_EXPR,               // Regex expression (e.g., $str =~ "pattern")
     REFERENCE_EXPR,           // Reference expression (e.g., \$scalar, \@array, \%hash, \&code)
@@ -240,6 +245,8 @@ impl SyntaxKind {
                 | SyntaxKind::M_KW
                 | SyntaxKind::QR_KW
                 | SyntaxKind::S_KW
+                | SyntaxKind::TR_KW
+                | SyntaxKind::Y_KW
                 | SyntaxKind::USE_KW
                 | SyntaxKind::RETURN_KW
                 | SyntaxKind::NOT_KW
@@ -330,6 +337,8 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::M_KW => "M_KW",
             SyntaxKind::QR_KW => "QR_KW",
             SyntaxKind::S_KW => "S_KW",
+            SyntaxKind::TR_KW => "TR_KW",
+            SyntaxKind::Y_KW => "Y_KW",
             SyntaxKind::USE_KW => "USE_KW",
             SyntaxKind::RETURN_KW => "RETURN_KW",
             SyntaxKind::L_BRACE => "L_BRACE",
@@ -348,6 +357,8 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::QR_STRING => "QR_STRING",
             SyntaxKind::S_PATTERN => "S_PATTERN",
             SyntaxKind::S_REPLACEMENT => "S_REPLACEMENT",
+            SyntaxKind::TR_SEARCH_LIST => "TR_SEARCH_LIST",
+            SyntaxKind::TR_REPLACEMENT_LIST => "TR_REPLACEMENT_LIST",
             SyntaxKind::SEMICOLON => "SEMICOLON",
             SyntaxKind::COMMA => "COMMA",
             SyntaxKind::DOUBLE_COLON => "DOUBLE_COLON",
@@ -412,6 +423,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::M_EXPR => "M_EXPR",
             SyntaxKind::QR_EXPR => "QR_EXPR",
             SyntaxKind::S_EXPR => "S_EXPR",
+            SyntaxKind::TR_EXPR => "TR_EXPR",
             SyntaxKind::DEREF_EXPR => "DEREF_EXPR",
             SyntaxKind::REGEX_EXPR => "REGEX_EXPR",
             SyntaxKind::REFERENCE_EXPR => "REFERENCE_EXPR",
