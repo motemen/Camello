@@ -113,10 +113,6 @@ impl Formatter {
                 self.format_ternary_expr(node);
                 return;
             }
-            SyntaxKind::FUNCTION_CALL_EXPR => {
-                self.format_function_call(node);
-                return;
-            }
             SyntaxKind::BLOCK_FUNCTION_CALL_EXPR => {
                 self.format_block_function_call(node);
                 return;
