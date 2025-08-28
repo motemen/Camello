@@ -228,13 +228,14 @@ impl<'a> Parser<'a> {
 
                 if self.at(SyntaxKind::IDENT) {
                     self.bump(); // Next identifier
-                    self.skip_trivia();
+                                 // Don't skip trivia here - let it remain outside QUALIFIED_IDENT
                 } else {
                     // A trailing `::` is valid, so we don't report an error, just stop parsing the qualified name.
                     break;
                 }
             }
             self.builder.finish_node();
+            self.skip_trivia(); // Skip trivia after QUALIFIED_IDENT is complete
         }
     }
 

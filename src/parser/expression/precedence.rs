@@ -6,6 +6,7 @@ pub struct Precedence(pub u8);
 
 impl Precedence {
     pub const LOWEST: Precedence = Precedence(0);
+    pub const COMMA: Precedence = Precedence(1); // , => (comma and fat comma)
     pub const LOGICAL_OR_XOR: Precedence = Precedence(5); // or, xor (lowest precedence)
     pub const LOGICAL_AND_KW: Precedence = Precedence(6); // and
     pub const LOGICAL_NOT_KW: Precedence = Precedence(7); // not
@@ -47,6 +48,13 @@ impl OperatorInfo {
 /// Get operator information for binary operators
 pub fn get_operator_info(kind: SyntaxKind) -> Option<OperatorInfo> {
     match kind {
+        // Fat comma operator (=> for hash pairs) - lowest precedence
+        SyntaxKind::FAT_COMMA => Some(OperatorInfo::new(
+            Precedence::COMMA,
+            false,
+            SyntaxKind::INFIX_EXPR,
+        )),
+
         // Assignment (right associative)
         SyntaxKind::EQ => Some(OperatorInfo::new(
             Precedence::ASSIGNMENT,

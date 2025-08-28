@@ -8,6 +8,12 @@ impl Formatter {
     pub(super) fn handle_whitespace(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
         let text = token.text();
         if text.contains('\n') {
+            // Count the number of newlines to preserve empty lines
+            let newline_count = text.matches('\n').count();
+            if newline_count > 1 {
+                // Multiple newlines = one empty line to preserve (collapse duplicates)
+                self.pending_empty_lines = 1;
+            }
             self.handle_newline();
         }
     }
@@ -38,7 +44,8 @@ impl Formatter {
     }
 
     pub(super) fn add_empty_line_before_if_needed(&mut self, node: &PerlNode) {
-        // Skip automatic empty line insertion if we already have pending empty lines from source
+        // Don't add automatic empty lines if we already have pending empty lines from source
+        // The pending empty lines will be output naturally when the next non-trivia token is processed
         if self.pending_empty_lines > 0 {
             return;
         }
@@ -50,7 +57,8 @@ impl Formatter {
             let should_add_empty_line = match node.kind() {
                 // For SUB_DEF, always add empty line if there's a preceding sibling
                 SyntaxKind::SUB_DEF => true,
-                // For USE_STMT, add empty line if previous is different type (but not PACKAGE_STMT)
+                // For USE_STMT, don't add automatic empty lines between use statements
+                // They should only get empty lines if they were in the source
                 SyntaxKind::USE_STMT => {
                     prev.kind() != node.kind()
                         && !(prev.kind() == SyntaxKind::PACKAGE_STMT
