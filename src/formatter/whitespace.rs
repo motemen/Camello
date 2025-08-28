@@ -11,9 +11,8 @@ impl Formatter {
             // Count the number of newlines to preserve empty lines
             let newline_count = text.matches('\n').count();
             if newline_count > 1 {
-                // Multiple newlines = empty lines to preserve
-                // We subtract 1 because one newline is just a line break, empty lines are extra
-                self.pending_empty_lines += newline_count - 1;
+                // Multiple newlines = one empty line to preserve (collapse duplicates)
+                self.pending_empty_lines = 1;
             }
             self.handle_newline();
         }

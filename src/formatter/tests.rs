@@ -199,8 +199,8 @@ fn test_use_statement_with_parentheses_formatting() {
         ("use A();", "use A ();\n"),
         // Qualified module names now have space
         ("use Module::Name();", "use Module::Name ();\n"),
-        // Use statement with import list - qw formatting may have extra spaces
-        ("use A(qw/func1 func2/);", "use A (qw /func1 func2 /);\n"),
+        // Use statement with import list - qw formatting should not have extra spaces
+        ("use A(qw/func1 func2/);", "use A (qw/func1 func2/);\n"),
         ("use Module(func1,func2);", "use Module (func1, func2);\n"),
         // With spacing variations
         ("use  A  ()  ;", "use A ();\n"),

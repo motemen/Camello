@@ -200,7 +200,7 @@ pub fn needs_space_before(context: &SpacingContext) -> bool {
     let current_spacing = get_token_spacing(context.current_token);
 
     // Handle special cases first (highest priority overrides)
-    if let Some(needs_space) = handle_special_cases(prev, context.current_token, context) {
+    if let Some(needs_space) = handle_special_cases(prev, context.current_token) {
         return needs_space;
     }
 
@@ -220,11 +220,7 @@ pub fn needs_space_before(context: &SpacingContext) -> bool {
 }
 
 /// Handle special case overrides that don't fit the general rules
-fn handle_special_cases(
-    prev: SyntaxKind,
-    current: SyntaxKind,
-    _context: &SpacingContext,
-) -> Option<bool> {
+fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
     use SyntaxKind::*;
 
     match (prev, current) {
