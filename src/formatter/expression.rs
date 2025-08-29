@@ -342,16 +342,6 @@ impl Formatter {
                     let text = token.text();
 
                     match kind {
-                        SyntaxKind::ASTERISK => {
-                            // Apply normal spacing before the asterisk
-                            self.handle_spacing_before(kind);
-                            if self.at_line_start {
-                                self.add_indent();
-                                self.at_line_start = false;
-                            }
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
-                        }
                         SyntaxKind::WHITESPACE => {
                             // Skip whitespace inside typeglob expressions to keep them compact
                         }
@@ -361,7 +351,7 @@ impl Formatter {
                             self.prev_token_kind = Some(kind);
                         }
                         _ => {
-                            // For other tokens (identifiers, variables, etc.), apply normal formatting
+                            // For other tokens (asterisk, identifiers, variables, etc.), apply normal formatting
                             self.format_token(&token);
                         }
                     }

@@ -74,6 +74,31 @@ fn test_typeglob_brace_formatting() {
 }
 
 #[test]
+fn test_comprehensive_typeglob_formatting() {
+    let cases = [
+        // Symbolic reference assignment
+        ("*{$name} = \\&some_sub;", "*{$name} = \\&some_sub;\n"),
+        // Package-qualified typeglob with braces and string literal
+        (
+            r#"*{"Foo::bar"} = *STDOUT;"#,
+            "*{\"Foo::bar\"} = *STDOUT;\n",
+        ),
+        // Typeglob reference to different handle types
+        ("my $fh = \\*STDERR;", "my $fh = \\*STDERR;\n"),
+        // Complex symbolic reference
+        (
+            "*{\"${pkg}::${name}\"} = $value;",
+            "*{\"${pkg}::${name}\"} = $value;\n",
+        ),
+        // Typeglob assignment with different sigils
+        ("*name = \\$scalar;", "*name = \\$scalar;\n"),
+        // Typeglob in hash context
+        ("*{$hash{key}} = \\@array;", "*{$hash{key}} = \\@array;\n"),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_nested_loop_with_complex_conditions() {
     let input = "while($a+$b*$c){for(@array){print;}}";
     let formatted = format_and_assert(input);
