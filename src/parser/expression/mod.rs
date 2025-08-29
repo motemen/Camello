@@ -373,6 +373,21 @@ impl<'a> Parser<'a> {
                 // Reference expression: \$scalar, \@array, \%hash, \&code
                 self.parse_reference_expr();
             }
+            Some(SyntaxKind::ASTERISK) => {
+                // Handle typeglob expressions specially
+                // Check if this is followed by a brace or identifier (typeglob syntax)
+                let next_token = self.peek_non_trivia_token();
+                if matches!(
+                    next_token,
+                    Some((SyntaxKind::L_BRACE, _)) | Some((SyntaxKind::IDENT, _))
+                ) {
+                    self.parse_typeglob_expr();
+                } else if self.is_dereferencing_pattern() {
+                    self.parse_dereferencing();
+                } else {
+                    self.parse_variable();
+                }
+            }
             Some(kind) if kind.is_sigil() => {
                 // Check if this is a dereferencing pattern (sigil followed by another sigil)
                 if self.is_dereferencing_pattern() {
