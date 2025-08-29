@@ -995,3 +995,72 @@ fn test_empty_lines_before_after_subs() {
         }
         ");
 }
+
+#[test]
+fn test_anonymous_subroutine_formatting() {
+    // Test anonymous subroutines with our new implementation
+    let input = "my $code = sub {\n   print \"Hello\\n\";\n};\n$code->();";
+    let formatted = format_and_assert(input);
+
+    insta::assert_snapshot!(formatted, @r###"
+my $code = sub {
+    print "Hello\n";
+};
+$code->();
+"###);
+}
+
+#[test]
+fn test_anonymous_subroutine_various_cases() {
+    let cases = [
+        // Simple anonymous sub
+        ("my$s=sub{1};", "my $s = sub { 1 };\n"),
+        // Anonymous sub with parameters and multiple statements
+        (
+            "my$f=sub{my($x,$y)=@_;return $x+$y;};",
+            "my $f = sub {\n    my ($x, $y) = @_;\n    return $x + $y;\n};\n",
+        ),
+        // Anonymous sub in function call
+        ("map(sub{$_*2},@arr);", "map(sub { $_ * 2 }, @arr);\n"),
+        // Anonymous sub assignment and immediate call (multiline because of semicolon)
+        (
+            "(sub{print\"test\";})();",
+            "(sub {\n    print \"test\";\n}\n)();\n",
+        ),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
+fn test_anonymous_subroutine_in_expressions() {
+    // Test anonymous subs in different contexts
+    let cases = [
+        // As standalone assignment
+        ("my $simple = sub { 42 };", "my $simple = sub { 42 };\n"),
+        // In array context
+        ("my @subs = (sub { 1 });", "my @subs = (sub { 1 });\n"),
+        // As function argument
+        (
+            "call_me(sub { \"hello\" });",
+            "call_me(sub { \"hello\" });\n",
+        ),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
+fn test_original_issue_example() {
+    // Test the original issue example
+    let input = r#"my $code = sub {
+   print "Hello\n";
+};
+$code->();"#;
+    let formatted = format_and_assert(input);
+
+    insta::assert_snapshot!(formatted, @r###"
+my $code = sub {
+    print "Hello\n";
+};
+$code->();
+"###);
+}

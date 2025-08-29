@@ -5,6 +5,33 @@ use crate::{PerlLanguage, PerlNode, SyntaxKind};
 use super::Formatter;
 
 impl Formatter {
+    pub fn format_anon_sub_expr(&mut self, node: &PerlNode) {
+        // Format anonymous subroutine: sub { ... }
+        // Use K&R style like regular subroutines: space before opening brace
+
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(child_node) => {
+                    match child_node.kind() {
+                        SyntaxKind::BLOCK_STMT => {
+                            // Check if this is a simple block that can be formatted inline
+                            if self.is_simple_block(&child_node) {
+                                self.format_simple_block(&child_node);
+                            } else {
+                                self.format_node(&child_node);
+                            }
+                        }
+                        _ => {
+                            self.format_node(&child_node);
+                        }
+                    }
+                }
+                NodeOrToken::Token(token) => {
+                    self.format_token(&token);
+                }
+            }
+        }
+    }
     pub fn format_parenthesized_expr(&mut self, node: &PerlNode) {
         // Check if the parenthesized expression contains newlines
         if self.has_newline_before_first_value(node) {
