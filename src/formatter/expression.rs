@@ -374,23 +374,18 @@ impl Formatter {
                             // Skip whitespace inside prototypes to ensure compact formatting
                         }
                         SyntaxKind::L_PAREN => {
-                            // Subroutine prototypes always get a space before opening paren
-                            self.output.push(' ');
-
                             if self.at_line_start {
                                 self.add_indent();
                                 self.at_line_start = false;
                             }
 
-                            self.output.push_str(token.text());
-                            self.prev_token_kind = Some(token.kind());
-                        }
-                        SyntaxKind::R_PAREN => {
+                            // Subroutine prototypes always get a space before opening paren
+                            self.output.push(' ');
                             self.output.push_str(token.text());
                             self.prev_token_kind = Some(token.kind());
                         }
                         _ => {
-                            // Prototype symbols: no spacing, just output them directly
+                            // R_PAREN and prototype symbols: no spacing, just output them directly
                             self.output.push_str(token.text());
                             self.prev_token_kind = Some(token.kind());
                         }
