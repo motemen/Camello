@@ -421,6 +421,10 @@ impl<'a> Lexer<'a> {
                 // % の場合、文脈によって sigil か modulo operator かを判定
                 self.disambiguate_percent()
             }
+            Token::Star => {
+                // * の場合、文脈によって typeglob sigil か multiplication operator かを判定
+                self.disambiguate_star()
+            }
             Token::Slash => {
                 // Context-sensitive disambiguation between regex literal and division
                 self.disambiguate_slash()
@@ -449,6 +453,30 @@ impl<'a> Lexer<'a> {
             }
             LexerContext::PodContent => {
                 unreachable!("% should not appear in POD content context");
+            }
+        }
+    }
+
+    fn disambiguate_star(&self) -> SyntaxKind {
+        match self.context {
+            LexerContext::ExpectingValue
+            | LexerContext::VariableList
+            | LexerContext::QlikeDelimiter => {
+                // When expecting a value or in variable list, * is a typeglob sigil
+                // Examples: "my *glob", "*{$name}", "*STDIN"
+                SyntaxKind::ASTERISK
+            }
+            LexerContext::ExpectingOperator => {
+                // When expecting an operator, * is the multiplication operator
+                // Examples: "$a * $b", "func() * 2"
+                SyntaxKind::STAR
+            }
+            LexerContext::RawData => {
+                // Handle gracefully instead of panicking
+                SyntaxKind::STAR
+            }
+            LexerContext::PodContent => {
+                unreachable!("* should not appear in POD content context");
             }
         }
     }
@@ -783,7 +811,9 @@ impl<'a> Lexer<'a> {
     fn update_context(&mut self, syntax_kind: SyntaxKind) {
         self.context = match syntax_kind {
             // Sigils: start VariableList context
-            SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT => LexerContext::VariableList,
+            SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT | SyntaxKind::ASTERISK => {
+                LexerContext::VariableList
+            }
 
             // Reference operator: expects a value (variable, function name, etc.)
             SyntaxKind::BACKSLASH => LexerContext::ExpectingValue,

@@ -32,6 +32,7 @@ fn test_all_var_decl_types_formatting() {
         ("my@arr=(1,2,3);", "my @arr = (1, 2, 3);\n"),
         ("our%hash=(a=>1);", "our %hash = (a => 1);\n"),
         ("state($x,$y)=(1,2);", "state ($x, $y) = (1, 2);\n"),
+        ("my*glob=\\*STDIN;", "my *glob = \\*STDIN;\n"),
     ];
     check_formatting_cases(&cases);
 }
@@ -46,6 +47,29 @@ fn test_for_stmt_formatting() {
             my $x = 1;
             print $x;
         }
+        ");
+}
+
+#[test]
+fn test_typeglob_formatting() {
+    // Test simple typeglob reference
+    let input = "my $fh = \\*STDIN;";
+    let formatted = format_and_assert(input);
+    assert_eq!(formatted, "my $fh = \\*STDIN;\n");
+
+    // Test typeglob identifier
+    let input = "*STDOUT;";
+    let formatted = format_and_assert(input);
+    assert_eq!(formatted, "*STDOUT;\n");
+}
+
+#[test]
+fn test_typeglob_brace_formatting() {
+    // Test typeglob with braces - this might need different handling
+    let input = "*{$name};";
+    let formatted = format_and_assert(input);
+    insta::assert_snapshot!(formatted, @r"
+        *{$name};
         ");
 }
 
