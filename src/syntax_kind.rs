@@ -150,9 +150,10 @@ pub enum SyntaxKind {
     SPACESHIP, // <=>
 
     // ===== Node Level (composite structures) =====
-    ROOT,       // File root
-    SUB_DEF,    // Subroutine definition
-    BLOCK_STMT, // Block statement
+    ROOT,          // File root
+    SUB_DEF,       // Subroutine definition
+    SUB_PROTOTYPE, // Subroutine prototype (e.g., (\@@), ($@), etc.)
+    BLOCK_STMT,    // Block statement
 
     // Declarations
     DECLARATION_STMT, // Variable declaration (my, our, state, etc.)
@@ -411,6 +412,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::SPACESHIP => "SPACESHIP",
             SyntaxKind::ROOT => "ROOT",
             SyntaxKind::SUB_DEF => "SUB_DEF",
+            SyntaxKind::SUB_PROTOTYPE => "SUB_PROTOTYPE",
             SyntaxKind::BLOCK_STMT => "BLOCK_STMT",
             SyntaxKind::DECLARATION_STMT => "DECLARATION_STMT",
             SyntaxKind::PACKAGE_STMT => "PACKAGE_STMT",
