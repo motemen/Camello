@@ -194,6 +194,7 @@ pub enum SyntaxKind {
     REGEX_EXPR,               // Regex expression (e.g., $str =~ "pattern")
     REFERENCE_EXPR,           // Reference expression (e.g., \$scalar, \@array, \%hash, \&code)
     IO_EXPR,                  // I/O expression (e.g., <STDIN>, <>, <$fh>)
+    ANON_SUB_EXPR,            // Anonymous subroutine expression (e.g., sub { ... })
 
     // Literal references
     HASH_REF,  // Hash reference (anonymous hash)
@@ -428,6 +429,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::REGEX_EXPR => "REGEX_EXPR",
             SyntaxKind::REFERENCE_EXPR => "REFERENCE_EXPR",
             SyntaxKind::IO_EXPR => "IO_EXPR",
+            SyntaxKind::ANON_SUB_EXPR => "ANON_SUB_EXPR",
             SyntaxKind::HASH_REF => "HASH_REF",
             SyntaxKind::ARRAY_REF => "ARRAY_REF",
             SyntaxKind::IF_MODIFIER => "IF_MODIFIER",

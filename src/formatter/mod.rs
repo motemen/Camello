@@ -148,6 +148,10 @@ impl Formatter {
                 self.format_io_expr(node);
                 return;
             }
+            SyntaxKind::ANON_SUB_EXPR => {
+                self.format_anon_sub_expr(node);
+                return;
+            }
             SyntaxKind::TERNARY_EXPR => {
                 self.format_ternary_expr(node);
                 return;

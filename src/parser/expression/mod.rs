@@ -548,11 +548,29 @@ impl<'a> Parser<'a> {
                 // y() expression (alias for tr)
                 self.y_expr();
             }
+            Some(SyntaxKind::SUB_KW) => {
+                // Anonymous subroutine expression: sub { ... }
+                self.anon_sub_expr();
+            }
             _ => {
                 // Should not reach here because is_at_start_of_expression checks this
                 return false;
             }
         }
         true
+    }
+
+    /// Parse anonymous subroutine expression: sub { ... }
+    fn anon_sub_expr(&mut self) {
+        self.builder.start_node(SyntaxKind::ANON_SUB_EXPR.into());
+
+        // Consume 'sub' keyword
+        self.expect(SyntaxKind::SUB_KW);
+        self.skip_trivia();
+
+        // Parse the block
+        self.block();
+
+        self.builder.finish_node();
     }
 }
