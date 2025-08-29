@@ -441,7 +441,7 @@ impl<'a> Parser<'a> {
         true
     }
 
-    fn block(&mut self) {
+    pub fn block(&mut self) {
         self.builder.start_node(SyntaxKind::BLOCK_STMT.into());
 
         self.expect(SyntaxKind::L_BRACE);
