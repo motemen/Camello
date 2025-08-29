@@ -163,15 +163,24 @@ pub const fn get_token_spacing(kind: SyntaxKind) -> TokenSpacing {
         // Double colon: no spaces around
         SyntaxKind::DOUBLE_COLON => TokenSpacing::new(Never, Never, Punctuation),
 
+        // Sigils: no space after sigil
+        SyntaxKind::DOLLAR
+        | SyntaxKind::AT
+        | SyntaxKind::PERCENT
+        | SyntaxKind::ASTERISK
+        | SyntaxKind::BACKSLASH
+        | SyntaxKind::AMPERSAND => TokenSpacing::new(Contextual, Never, PrefixOperator),
+
         // Identifiers and variables
         SyntaxKind::IDENT | SyntaxKind::QUALIFIED_IDENT => {
             TokenSpacing::new(Contextual, Contextual, Identifier)
         }
 
         // Variables
-        SyntaxKind::SCALAR_VAR | SyntaxKind::ARRAY_VAR | SyntaxKind::HASH_VAR => {
-            TokenSpacing::new(Contextual, Contextual, Variable)
-        }
+        SyntaxKind::SCALAR_VAR
+        | SyntaxKind::ARRAY_VAR
+        | SyntaxKind::HASH_VAR
+        | SyntaxKind::TYPEGLOB_VAR => TokenSpacing::new(Contextual, Contextual, Variable),
 
         // Default: no specific spacing requirements
         _ => TokenSpacing::new(None, None, TokenCategory::Literal),
@@ -248,7 +257,7 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
         (R_BRACE, SEMICOLON | R_PAREN) => Some(false),
 
         // L_PAREN after certain tokens
-        (SCALAR_VAR | ARRAY_VAR | HASH_VAR, L_PAREN) => Some(true),
+        (SCALAR_VAR | ARRAY_VAR | HASH_VAR | TYPEGLOB_VAR, L_PAREN) => Some(true),
         (
             MY_KW | OUR_KW | STATE_KW | LOCAL_KW | FOR_KW | FOREACH_KW | WHILE_KW | IF_KW
             | UNLESS_KW | ELSIF_KW,

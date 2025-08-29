@@ -32,6 +32,7 @@ fn test_all_var_decl_types_formatting() {
         ("my@arr=(1,2,3);", "my @arr = (1, 2, 3);\n"),
         ("our%hash=(a=>1);", "our %hash = (a => 1);\n"),
         ("state($x,$y)=(1,2);", "state ($x, $y) = (1, 2);\n"),
+        ("my*glob=\\*STDIN;", "my *glob = \\*STDIN;\n"),
     ];
     check_formatting_cases(&cases);
 }
@@ -47,6 +48,54 @@ fn test_for_stmt_formatting() {
             print $x;
         }
         ");
+}
+
+#[test]
+fn test_typeglob_formatting() {
+    // Test simple typeglob reference
+    let input = "my $fh = \\*STDIN;";
+    let formatted = format_and_assert(input);
+    assert_eq!(formatted, "my $fh = \\*STDIN;\n");
+
+    // Test typeglob identifier
+    let input = "*STDOUT;";
+    let formatted = format_and_assert(input);
+    assert_eq!(formatted, "*STDOUT;\n");
+}
+
+#[test]
+fn test_typeglob_brace_formatting() {
+    // Test typeglob with braces - this might need different handling
+    let input = "*{$name};";
+    let formatted = format_and_assert(input);
+    insta::assert_snapshot!(formatted, @r"
+        *{$name};
+        ");
+}
+
+#[test]
+fn test_comprehensive_typeglob_formatting() {
+    let cases = [
+        // Symbolic reference assignment
+        ("*{$name} = \\&some_sub;", "*{$name} = \\&some_sub;\n"),
+        // Package-qualified typeglob with braces and string literal
+        (
+            r#"*{"Foo::bar"} = *STDOUT;"#,
+            "*{\"Foo::bar\"} = *STDOUT;\n",
+        ),
+        // Typeglob reference to different handle types
+        ("my $fh = \\*STDERR;", "my $fh = \\*STDERR;\n"),
+        // Complex symbolic reference
+        (
+            "*{\"${pkg}::${name}\"} = $value;",
+            "*{\"${pkg}::${name}\"} = $value;\n",
+        ),
+        // Typeglob assignment with different sigils
+        ("*name = \\$scalar;", "*name = \\$scalar;\n"),
+        // Typeglob in hash context
+        ("*{$hash{key}} = \\@array;", "*{$hash{key}} = \\@array;\n"),
+    ];
+    check_formatting_cases(&cases);
 }
 
 #[test]
