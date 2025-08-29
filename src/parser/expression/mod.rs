@@ -40,8 +40,15 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Check if a function name is a block-receiving function (has & prototype)
+    /// This includes built-in functions and should be extended to handle user-defined functions with & prototypes
     fn is_block_function(function_name: &str) -> bool {
-        matches!(function_name, "eval" | "map" | "grep" | "sort" | "do")
+        matches!(
+            function_name,
+            // Built-in block functions
+            "eval" | "map" | "grep" | "sort" | "do" // Note: User-defined functions with & prototypes should also be detected
+                                                    // but that requires tracking function definitions across the parse
+        )
     }
 
     pub fn expression(&mut self) -> bool {
