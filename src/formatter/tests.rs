@@ -1179,3 +1179,58 @@ my $code = sub {
 $code->();
 "###);
 }
+
+#[test]
+fn test_subroutine_prototypes_formatting() {
+    // Test all the examples from the GitHub issue
+    let cases = [
+        // Basic prototypes
+        ("sub mypush (\\\\@@) {}", "sub mypush (\\\\@@) {\n}\n"),
+        ("sub myjoin ($@) {}", "sub myjoin ($@) {\n}\n"),
+        (
+            "sub mysplice (\\\\@$$@) {}",
+            "sub mysplice (\\\\@$$@) {\n}\n",
+        ),
+        ("sub mykeys (\\\\[%@]) {}", "sub mykeys (\\\\[%@]) {\n}\n"),
+        ("sub myopen (*;$) {}", "sub myopen (*;$) {\n}\n"),
+        ("sub mygrep (&@) {}", "sub mygrep (&@) {\n}\n"),
+        ("sub myrand (;$) {}", "sub myrand (;$) {\n}\n"),
+        ("sub mytime () {}", "sub mytime () {\n}\n"),
+        // With whitespace variations
+        ("sub test( $ @ )  { }", "sub test ($@) {\n}\n"),
+        ("sub foo(\t\\\\@\t){}  ", "sub foo (\\\\@) {\n}\n"),
+        // With simple function body
+        (
+            "sub mypush (\\\\@@) { my $x = 1; }",
+            "sub mypush (\\\\@@) {\n    my $x = 1;\n}\n",
+        ),
+    ];
+
+    check_formatting_cases(&cases);
+}
+
+#[test]
+fn test_subroutine_prototype_spacing() {
+    // Test that prototypes have proper spacing before parentheses
+    let input = "sub test(\\\\@){my $x = 1;}";
+    let formatted = format_and_assert(input);
+
+    insta::assert_snapshot!(formatted, @r"
+        sub test (\\@) {
+            my $x = 1;
+        }
+        ");
+}
+
+#[test]
+fn test_complex_subroutine_prototype() {
+    // Test complex prototype with mixed symbols
+    let input = "sub complex_func (\\\\@$$;*&\\\\[%@]) { my ($arr_ref, $scalar1, $scalar2, $opt_typeglob, $code_block, $hash_or_array_ref) = @_; }";
+    let formatted = format_and_assert(input);
+
+    insta::assert_snapshot!(formatted, @r"
+        sub complex_func (\\@$$;*&\\[%@]) {
+            my ($arr_ref, $scalar1, $scalar2, $opt_typeglob, $code_block, $hash_or_array_ref) = @_;
+        }
+        ");
+}
