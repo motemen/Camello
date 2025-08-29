@@ -359,4 +359,44 @@ impl Formatter {
             }
         }
     }
+
+    pub fn format_sub_prototype(&mut self, node: &PerlNode) {
+        // Format subroutine prototype: no spaces between parentheses and prototype symbols
+        // Example: (@@), ($@), (\@$$@), etc.
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(child_node) => {
+                    self.format_node(&child_node);
+                }
+                NodeOrToken::Token(token) => {
+                    match token.kind() {
+                        SyntaxKind::WHITESPACE => {
+                            // Skip whitespace inside prototypes to ensure compact formatting
+                        }
+                        SyntaxKind::L_PAREN => {
+                            // Subroutine prototypes always get a space before opening paren
+                            self.output.push(' ');
+
+                            if self.at_line_start {
+                                self.add_indent();
+                                self.at_line_start = false;
+                            }
+
+                            self.output.push_str(token.text());
+                            self.prev_token_kind = Some(token.kind());
+                        }
+                        SyntaxKind::R_PAREN => {
+                            self.output.push_str(token.text());
+                            self.prev_token_kind = Some(token.kind());
+                        }
+                        _ => {
+                            // Prototype symbols: no spacing, just output them directly
+                            self.output.push_str(token.text());
+                            self.prev_token_kind = Some(token.kind());
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

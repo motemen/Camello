@@ -161,6 +161,12 @@ impl<'a> Parser<'a> {
         self.parse_identifier_or_qualified();
         self.skip_trivia();
 
+        // Parse optional prototype
+        if self.at(SyntaxKind::L_PAREN) {
+            self.parse_sub_prototype();
+            self.skip_trivia();
+        }
+
         self.block();
 
         self.builder.finish_node();
@@ -521,6 +527,40 @@ impl<'a> Parser<'a> {
         } else {
             self.error(&format!("Expected '(' after '{}'", construct_name));
         }
+    }
+
+    /// Parse subroutine prototype like (\@@), ($@), (\@$$@), etc.
+    fn parse_sub_prototype(&mut self) {
+        self.builder.start_node(SyntaxKind::SUB_PROTOTYPE.into());
+
+        self.expect(SyntaxKind::L_PAREN);
+        self.skip_trivia();
+
+        // Parse prototype symbols until we hit the closing paren
+        while !self.at(SyntaxKind::R_PAREN) && !self.at_end() {
+            match self.current_kind() {
+                Some(SyntaxKind::BACKSLASH)    // \ for reference to arrays/hashes
+                | Some(SyntaxKind::AT)         // @ for arrays
+                | Some(SyntaxKind::PERCENT)    // % for hashes  
+                | Some(SyntaxKind::DOLLAR)     // $ for scalars
+                | Some(SyntaxKind::AMPERSAND)  // & for code blocks
+                | Some(SyntaxKind::ASTERISK)   // * for typeglobs
+                | Some(SyntaxKind::SEMICOLON)  // ; for optional parameters
+                | Some(SyntaxKind::L_BRACKET)  // [ for grouping alternatives
+                | Some(SyntaxKind::R_BRACKET)  // ] for grouping alternatives
+                => {
+                    self.bump(); // consume the prototype character
+                    self.skip_trivia(); // skip whitespace after each symbol
+                }
+                _ => {
+                    self.error("Invalid character in subroutine prototype");
+                    break;
+                }
+            }
+        }
+
+        self.expect(SyntaxKind::R_PAREN);
+        self.builder.finish_node();
     }
 }
 

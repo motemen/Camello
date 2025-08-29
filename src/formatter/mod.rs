@@ -164,6 +164,10 @@ impl Formatter {
                 self.format_block_function_call(node);
                 return;
             }
+            SyntaxKind::SUB_PROTOTYPE => {
+                self.format_sub_prototype(node);
+                return;
+            }
             SyntaxKind::METHOD_CALL_EXPR => {
                 self.format_method_call(node);
                 return;
