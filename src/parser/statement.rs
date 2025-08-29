@@ -538,16 +538,19 @@ impl<'a> Parser<'a> {
 
         // Parse prototype symbols until we hit the closing paren
         while !self.at(SyntaxKind::R_PAREN) && !self.at_end() {
-            match self.current_kind() {
-                Some(SyntaxKind::BACKSLASH)    // \ for reference to arrays/hashes
-                | Some(SyntaxKind::AT)         // @ for arrays
-                | Some(SyntaxKind::PERCENT)    // % for hashes  
-                | Some(SyntaxKind::DOLLAR)     // $ for scalars
-                | Some(SyntaxKind::AMPERSAND)  // & for code blocks
-                | Some(SyntaxKind::ASTERISK)   // * for typeglobs
-                | Some(SyntaxKind::SEMICOLON)  // ; for optional parameters
-                | Some(SyntaxKind::L_BRACKET)  // [ for grouping alternatives
-                | Some(SyntaxKind::R_BRACKET)  // ] for grouping alternatives
+            let kind = self
+                .current_kind()
+                .expect("Parser should not be at end of input here");
+            match kind {
+                SyntaxKind::BACKSLASH    // \ for reference to arrays/hashes
+                | SyntaxKind::AT         // @ for arrays
+                | SyntaxKind::PERCENT    // % for hashes  
+                | SyntaxKind::DOLLAR     // $ for scalars
+                | SyntaxKind::AMPERSAND  // & for code blocks
+                | SyntaxKind::ASTERISK   // * for typeglobs
+                | SyntaxKind::SEMICOLON  // ; for optional parameters
+                | SyntaxKind::L_BRACKET  // [ for grouping alternatives
+                | SyntaxKind::R_BRACKET  // ] for grouping alternatives
                 => {
                     self.bump(); // consume the prototype character
                     self.skip_trivia(); // skip whitespace after each symbol
