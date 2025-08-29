@@ -41,6 +41,7 @@ impl<'a> Parser<'a> {
             SyntaxKind::DOLLAR => SyntaxKind::SCALAR_VAR,
             SyntaxKind::AT => SyntaxKind::ARRAY_VAR,
             SyntaxKind::PERCENT => SyntaxKind::HASH_VAR,
+            SyntaxKind::ASTERISK => SyntaxKind::TYPEGLOB_VAR,
             _ => unreachable!(),
         };
 
@@ -123,6 +124,7 @@ impl<'a> Parser<'a> {
             SyntaxKind::DOLLAR => SyntaxKind::SCALAR_VAR,
             SyntaxKind::AT => SyntaxKind::ARRAY_VAR,
             SyntaxKind::PERCENT => SyntaxKind::HASH_VAR,
+            SyntaxKind::ASTERISK => SyntaxKind::TYPEGLOB_VAR,
             _ => unreachable!(),
         };
 
@@ -154,6 +156,7 @@ impl<'a> Parser<'a> {
             SyntaxKind::DOLLAR => SyntaxKind::SCALAR_VAR,
             SyntaxKind::AT => SyntaxKind::ARRAY_VAR,
             SyntaxKind::PERCENT => SyntaxKind::HASH_VAR,
+            SyntaxKind::ASTERISK => SyntaxKind::TYPEGLOB_VAR,
             _ => unreachable!(),
         };
 
@@ -249,8 +252,11 @@ impl<'a> Parser<'a> {
 
         // Parse what comes after the backslash
         match self.current_kind() {
-            Some(SyntaxKind::DOLLAR) | Some(SyntaxKind::AT) | Some(SyntaxKind::PERCENT) => {
-                // Reference to a variable: \$scalar, \@array, \%hash
+            Some(SyntaxKind::DOLLAR)
+            | Some(SyntaxKind::AT)
+            | Some(SyntaxKind::PERCENT)
+            | Some(SyntaxKind::ASTERISK) => {
+                // Reference to a variable: \$scalar, \@array, \%hash, \*typeglob
                 self.parse_variable();
             }
             Some(SyntaxKind::AMPERSAND) => {
@@ -288,6 +294,44 @@ impl<'a> Parser<'a> {
                 self.error(
                     "Expected variable, function name, or parenthesized expression after '\\'",
                 );
+            }
+        }
+
+        self.builder.finish_node();
+    }
+
+    /// Parses a typeglob expression (e.g., *{$name}, *STDIN)
+    pub fn parse_typeglob_expr(&mut self) {
+        self.builder.start_node(SyntaxKind::TYPEGLOB_EXPR.into());
+
+        // Consume the asterisk
+        self.expect(SyntaxKind::ASTERISK);
+        self.skip_trivia();
+
+        // Check what comes after the asterisk
+        match self.current_kind() {
+            Some(SyntaxKind::L_BRACE) => {
+                // Handle *{expression} syntax
+                self.bump(); // consume {
+                self.skip_trivia();
+
+                if !self.expression() {
+                    self.error("Expected expression in typeglob braces");
+                }
+
+                if !self.at(SyntaxKind::R_BRACE) {
+                    self.error("Expected '}' after typeglob expression");
+                } else {
+                    self.bump(); // }
+                    self.skip_trivia();
+                }
+            }
+            Some(SyntaxKind::IDENT) => {
+                // Handle *STDIN syntax (simple identifier)
+                self.parse_identifier_or_qualified();
+            }
+            _ => {
+                self.error("Expected '{' or identifier after '*' in typeglob expression");
             }
         }
 

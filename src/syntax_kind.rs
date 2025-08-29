@@ -19,11 +19,13 @@ pub enum SyntaxKind {
     CARET,     // ^
     BACKSLASH, // \ (reference operator)
     AMPERSAND, // & (function sigil/reference)
+    ASTERISK,  // * (typeglob sigil)
 
     // Composite variable nodes (used later)
     SCALAR_VAR,
     ARRAY_VAR,
     HASH_VAR,
+    TYPEGLOB_VAR,
 
     // Literals
     NUMBER,
@@ -195,6 +197,7 @@ pub enum SyntaxKind {
     REFERENCE_EXPR,           // Reference expression (e.g., \$scalar, \@array, \%hash, \&code)
     IO_EXPR,                  // I/O expression (e.g., <STDIN>, <>, <$fh>)
     ANON_SUB_EXPR,            // Anonymous subroutine expression (e.g., sub { ... })
+    TYPEGLOB_EXPR,            // Typeglob expression (e.g., *{$name}, *STDIN)
 
     // Literal references
     HASH_REF,  // Hash reference (anonymous hash)
@@ -260,14 +263,21 @@ impl SyntaxKind {
     pub fn is_variable(self) -> bool {
         matches!(
             self,
-            SyntaxKind::SCALAR_VAR | SyntaxKind::ARRAY_VAR | SyntaxKind::HASH_VAR
+            SyntaxKind::SCALAR_VAR
+                | SyntaxKind::ARRAY_VAR
+                | SyntaxKind::HASH_VAR
+                | SyntaxKind::TYPEGLOB_VAR
         )
     }
 
     pub fn is_sigil(self) -> bool {
         matches!(
             self,
-            SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT | SyntaxKind::BACKSLASH
+            SyntaxKind::DOLLAR
+                | SyntaxKind::AT
+                | SyntaxKind::PERCENT
+                | SyntaxKind::BACKSLASH
+                | SyntaxKind::ASTERISK
         )
     }
 
@@ -310,9 +320,11 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::CARET => "CARET",
             SyntaxKind::BACKSLASH => "BACKSLASH",
             SyntaxKind::AMPERSAND => "AMPERSAND",
+            SyntaxKind::ASTERISK => "ASTERISK",
             SyntaxKind::SCALAR_VAR => "SCALAR_VAR",
             SyntaxKind::ARRAY_VAR => "ARRAY_VAR",
             SyntaxKind::HASH_VAR => "HASH_VAR",
+            SyntaxKind::TYPEGLOB_VAR => "TYPEGLOB_VAR",
             SyntaxKind::NUMBER => "NUMBER",
             SyntaxKind::STRING => "STRING",
             SyntaxKind::VERSION => "VERSION",
@@ -430,6 +442,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::REFERENCE_EXPR => "REFERENCE_EXPR",
             SyntaxKind::IO_EXPR => "IO_EXPR",
             SyntaxKind::ANON_SUB_EXPR => "ANON_SUB_EXPR",
+            SyntaxKind::TYPEGLOB_EXPR => "TYPEGLOB_EXPR",
             SyntaxKind::HASH_REF => "HASH_REF",
             SyntaxKind::ARRAY_REF => "ARRAY_REF",
             SyntaxKind::IF_MODIFIER => "IF_MODIFIER",

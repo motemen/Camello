@@ -330,4 +330,43 @@ impl Formatter {
             }
         }
     }
+
+    pub fn format_typeglob_expr(&mut self, node: &PerlNode) {
+        // Format typeglob expressions (e.g., *{$name}, *STDIN)
+        // Keep braces compact - no multiline formatting
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Token(token) => {
+                    let kind = token.kind();
+                    let text = token.text();
+
+                    match kind {
+                        SyntaxKind::ASTERISK => {
+                            // Apply normal spacing before the asterisk
+                            self.handle_spacing_before(kind);
+                            if self.at_line_start {
+                                self.add_indent();
+                                self.at_line_start = false;
+                            }
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                        SyntaxKind::WHITESPACE => {
+                            // Skip whitespace inside typeglob expressions to keep them compact
+                        }
+                        SyntaxKind::L_BRACE | SyntaxKind::R_BRACE => {
+                            // Handle braces directly without spacing - keep typeglobs compact
+                            self.output.push_str(text);
+                            self.prev_token_kind = Some(kind);
+                        }
+                        _ => {
+                            // For other tokens (identifiers, variables, etc.), apply normal formatting
+                            self.format_token(&token);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
