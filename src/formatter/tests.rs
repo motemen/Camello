@@ -317,6 +317,41 @@ fn test_method_call_formatting() {
             "$obj->get()->set($value)->save();\n",
         ),
         ("func()->method();", "func()->method();\n"),
+        // Dynamic method calls
+        ("$obj->$method();", "$obj->$method();\n"),
+        ("Class->$method();", "Class->$method();\n"),
+        ("$obj->$method($a,$b);", "$obj->$method($a, $b);\n"),
+        ("$object->$method_name($arg1,$arg2);", "$object->$method_name($arg1, $arg2);\n"),
+        // Chained dynamic method calls  
+        ("$obj->$method1()->$method2();", "$obj->$method1()->$method2();\n"),
+        ("$obj->get()->$set_method($value);", "$obj->get()->$set_method($value);\n"),
+        // Mixed regular and dynamic
+        ("$obj->regular()->$dynamic();", "$obj->regular()->$dynamic();\n"),
+        ("$obj->$dynamic()->regular();", "$obj->$dynamic()->regular();\n"),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test] 
+fn test_dynamic_method_call_formatting() {
+    let cases = [
+        // Basic dynamic method calls
+        ("$obj->$method();", "$obj->$method();\n"),
+        ("Class->$method();", "Class->$method();\n"), 
+        ("$self->$dynamic_method;", "$self->$dynamic_method;\n"),
+        
+        // Dynamic method calls with arguments
+        ("$obj->$method($arg);", "$obj->$method($arg);\n"),
+        ("$object->$method_name($a,$b,$c);", "$object->$method_name($a, $b, $c);\n"),
+        
+        // Complex expressions as method invocants
+        ("func()->$method();", "func()->$method();\n"),
+        ("$hash_ref->{method}->$dynamic();", "$hash_ref->{method}->$dynamic();\n"),
+        ("($obj || $default)->$method();", "($obj || $default)->$method();\n"),
+        
+        // Without parentheses (valid in Perl)
+        ("$obj->$method_var;", "$obj->$method_var;\n"),
+        ("Class->$static_method;", "Class->$static_method;\n"),
     ];
     check_formatting_cases(&cases);
 }
