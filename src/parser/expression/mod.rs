@@ -234,19 +234,7 @@ impl<'a> Parser<'a> {
                             self.parse_identifier_or_qualified();
                             self.skip_trivia();
 
-                            if self.at(SyntaxKind::L_PAREN) {
-                                self.bump(); // (
-                                self.skip_trivia();
-
-                                self.expression_list();
-
-                                if !self.at(SyntaxKind::R_PAREN) {
-                                    self.error("Expected ')' after method arguments");
-                                } else {
-                                    self.bump(); // )
-                                    self.skip_trivia();
-                                }
-                            }
+                            self.parse_method_arguments();
 
                             self.builder.finish_node();
                         }
@@ -258,24 +246,14 @@ impl<'a> Parser<'a> {
                             self.parse_variable();
                             self.skip_trivia();
 
-                            if self.at(SyntaxKind::L_PAREN) {
-                                self.bump(); // (
-                                self.skip_trivia();
-
-                                self.expression_list();
-
-                                if !self.at(SyntaxKind::R_PAREN) {
-                                    self.error("Expected ')' after method arguments");
-                                } else {
-                                    self.bump(); // )
-                                    self.skip_trivia();
-                                }
-                            }
+                            self.parse_method_arguments();
 
                             self.builder.finish_node();
                         }
                         _ => {
-                            self.error("Expected '{', '[', '(', identifier, or variable after '->'");
+                            self.error(
+                                "Expected '{', '[', '(', identifier, or variable after '->'",
+                            );
                             break;
                         }
                     }
@@ -618,5 +596,22 @@ impl<'a> Parser<'a> {
         self.block();
 
         self.builder.finish_node();
+    }
+
+    /// Parse method arguments if parentheses are present
+    fn parse_method_arguments(&mut self) {
+        if self.at(SyntaxKind::L_PAREN) {
+            self.bump(); // (
+            self.skip_trivia();
+
+            self.expression_list();
+
+            if !self.at(SyntaxKind::R_PAREN) {
+                self.error("Expected ')' after method arguments");
+            } else {
+                self.bump(); // )
+                self.skip_trivia();
+            }
+        }
     }
 }
