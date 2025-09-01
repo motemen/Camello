@@ -1281,3 +1281,27 @@ fn test_complex_subroutine_prototype() {
         }
         ");
 }
+
+#[test]
+fn test_regex_literals_in_function_calls() {
+    check_formatting_cases(&[
+        // Basic split with regex literal
+        ("split(/\\s+/, $string)", "split(/\\s+/, $string)"),
+        // Split with regex flags
+        ("split(/\\s+/g, $string)", "split(/\\s+/g, $string)"),
+        // Complex regex patterns
+        ("split(/\\d{2,4}/, $input)", "split(/\\d{2,4}/, $input)"),
+        ("split(/[a-zA-Z]+/, $data)", "split(/[a-zA-Z]+/, $data)"),
+        // Regex in other contexts
+        ("match(/pattern/, $str)", "match(/pattern/, $str)"),
+        (
+            "if ($str =~ /pattern/) { }",
+            "if ($str =~ /pattern/) {\n}\n",
+        ),
+        // Make sure division still works correctly
+        ("$a / $b", "$a / $b"),
+        ("my $result = $x / $y;", "my $result = $x / $y;\n"),
+        // Mixed regex and division
+        ("split(/\\s+/, $str) / 2", "split(/\\s+/, $str) / 2"),
+    ]);
+}
