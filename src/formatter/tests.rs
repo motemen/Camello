@@ -1289,6 +1289,31 @@ fn test_file_test_operator_formatting() {
 }
 
 #[test]
+fn test_x_operator_formatting() {
+    // Test string repetition operator 'x'
+    let cases = [
+        // Basic x operator
+        ("\"a\" x 5;", "\"a\" x 5;\n"),
+        ("'hello' x 3;", "'hello' x 3;\n"),
+        ("$str x $count;", "$str x $count;\n"),
+        // q expressions with x operator
+        ("q(a) x 10;", "q(a) x 10;\n"),
+        ("q/abc/ x 3;", "q/abc/ x 3;\n"),
+        ("q{hello} x $times;", "q{hello} x $times;\n"),
+        // qq expressions with x operator
+        ("qq(a) x 10;", "qq(a) x 10;\n"),
+        ("qq/abc/ x 3;", "qq/abc/ x 3;\n"),
+        // qw expressions with x operator
+        ("qw(a) x 10;", "qw(a) x 10;\n"),
+        ("qw/word1 word2/ x 2;", "qw/word1 word2/ x 2;\n"),
+        // Complex expressions
+        ("($str . $suffix) x 2;", "($str . $suffix) x 2;\n"),
+        ("func() x 4;", "func() x 4;\n"),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_regex_literals_in_function_calls() {
     check_formatting_cases(&[
         // Basic split with regex literal - with parentheses

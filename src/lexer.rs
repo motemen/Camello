@@ -1028,7 +1028,12 @@ impl<'a> Lexer<'a> {
             | SyntaxKind::VERSION
             | SyntaxKind::BARE_VERSION
             | SyntaxKind::REGEX_LITERAL
-            | SyntaxKind::IO_EXPR => LexerContext::ExpectingOperator,
+            | SyntaxKind::IO_EXPR
+            // Quote family string types also expect operator next
+            | SyntaxKind::Q_STRING
+            | SyntaxKind::QQ_STRING
+            | SyntaxKind::QX_STRING
+            | SyntaxKind::QW_STRING => LexerContext::ExpectingOperator,
             SyntaxKind::R_PAREN | SyntaxKind::R_BRACE | SyntaxKind::R_BRACKET => {
                 LexerContext::ExpectingOperator
             }
@@ -1044,6 +1049,11 @@ impl<'a> Lexer<'a> {
             // Keep current context for other tokens
             _ => self.context,
         };
+    }
+
+    /// Set lexer context explicitly (for parser to use)
+    pub fn set_context(&mut self, context: LexerContext) {
+        self.context = context;
     }
 
     /// Track line position for POD detection

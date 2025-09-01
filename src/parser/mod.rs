@@ -1,4 +1,4 @@
-use crate::{lexer::Lexer, SyntaxKind};
+use crate::{lexer::{Lexer, LexerContext}, SyntaxKind};
 use miette::{Diagnostic, SourceSpan};
 use rowan::{GreenNode, GreenNodeBuilder, TextRange};
 
@@ -217,6 +217,11 @@ impl<'a> Parser<'a> {
     /// Check if any of the given token kinds appears next (skipping trivia)
     fn lookahead_for_any(&self, target_kinds: &[SyntaxKind]) -> bool {
         self.lexer.peek_for_any(target_kinds).is_some()
+    }
+
+    /// Set lexer context explicitly (used after parsing certain constructs)
+    fn set_lexer_context(&mut self, context: LexerContext) {
+        self.lexer.set_context(context);
     }
 
     fn is_at_start_of_expression(&self) -> bool {
