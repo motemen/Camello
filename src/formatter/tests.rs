@@ -1283,6 +1283,12 @@ fn test_complex_subroutine_prototype() {
 }
 
 #[test]
+fn test_file_test_operator_formatting() {
+    let cases = [("-f $file;", "-f $file;\n")];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_regex_literals_in_function_calls() {
     check_formatting_cases(&[
         // Basic split with regex literal - with parentheses
@@ -1292,54 +1298,68 @@ fn test_regex_literals_in_function_calls() {
         // Complex regex patterns
         ("split(/\\d{2,4}/, $input)", "split(/\\d{2,4}/, $input)"),
         ("split(/[a-zA-Z]+/, $data)", "split(/[a-zA-Z]+/, $data)"),
-        
         // The main fix: builtin functions without parentheses
         ("split /\\s+/, $string", "split /\\s+/, $string"),
         ("split /pattern/, $str", "split /pattern/, $str"),
         ("warn /warning/", "warn /warning/"),
         ("print /pattern/", "print /pattern/"),
         ("say /hello/", "say /hello/"),
-        
         // Other builtin functions with regex literals
         ("grep /pattern/, @array", "grep /pattern/, @array"),
         ("map /transform/, @list", "map /transform/, @list"),
         ("substr /abc/, 1, 2", "substr /abc/, 1, 2"),
         ("index /needle/, $haystack", "index /needle/, $haystack"),
-        
         // Multiple arguments with regex
         ("split /\\s+/, $string, 3", "split /\\s+/, $string, 3"),
-        ("grep /\\d+/, @numbers, @more", "grep /\\d+/, @numbers, @more"),
-        
+        (
+            "grep /\\d+/, @numbers, @more",
+            "grep /\\d+/, @numbers, @more",
+        ),
         // Complex regex patterns without parentheses
         ("split /\\d{2,4}/, $input", "split /\\d{2,4}/, $input"),
-        ("grep /[a-zA-Z]+\\d*/, @mixed", "grep /[a-zA-Z]+\\d*/, @mixed"),
+        (
+            "grep /[a-zA-Z]+\\d*/, @mixed",
+            "grep /[a-zA-Z]+\\d*/, @mixed",
+        ),
         ("warn /^Error: .*$/", "warn /^Error: .*$/"),
-        
         // Regex in other contexts (should still work)
         ("match(/pattern/, $str)", "match(/pattern/, $str)"),
         (
             "if ($str =~ /pattern/) { }",
             "if ($str =~ /pattern/) {\n}\n",
         ),
-        
         // Make sure division still works correctly
         ("$a / $b", "$a / $b"),
         ("my $result = $x / $y;", "my $result = $x / $y;\n"),
-        ("$count = $total / $divisor;", "$count = $total / $divisor;\n"),
-        
+        (
+            "$count = $total / $divisor;",
+            "$count = $total / $divisor;\n",
+        ),
         // Mixed regex and division - ensure proper context switching
         ("split(/\\s+/, $str) / 2", "split(/\\s+/, $str) / 2"),
         ("warn /alert/ / $count", "warn /alert/ / $count"),
-        
         // Edge cases: builtin functions in statements
-        ("my $func = split /pattern/, $str;", "my $func = split /pattern/, $str;\n"),
-        ("return split /\\s/, $input;", "return split /\\s/, $input;\n"),
-        ("push @results, grep /match/, @data;", "push @results, grep /match/, @data;\n"),
-        
+        (
+            "my $func = split /pattern/, $str;",
+            "my $func = split /pattern/, $str;\n",
+        ),
+        (
+            "return split /\\s/, $input;",
+            "return split /\\s/, $input;\n",
+        ),
+        (
+            "push @results, grep /match/, @data;",
+            "push @results, grep /match/, @data;\n",
+        ),
         // Chained function calls
-        ("join '', split /\\s+/, $text", "join '', split /\\s+/, $text"),
-        ("print reverse split /,/, $csv", "print reverse split /,/, $csv"),
-        
+        (
+            "join '', split /\\s+/, $text",
+            "join '', split /\\s+/, $text",
+        ),
+        (
+            "print reverse split /,/, $csv",
+            "print reverse split /,/, $csv",
+        ),
         // Regex with modifiers in builtin functions
         ("split /pattern/i, $str", "split /pattern/i, $str"),
         ("grep /test/g, @array", "grep /test/g, @array"),
