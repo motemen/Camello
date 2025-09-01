@@ -54,6 +54,14 @@ impl<'a> Parser<'a> {
         self.expect(closing_delim);
 
         self.builder.finish_node();
+
+        // Set lexer context to ExpectingOperator after completing the qw expression
+        // This allows proper parsing of operators like 'x' that follow qw expressions
+        self.set_lexer_context(crate::lexer::LexerContext::ExpectingOperator);
+        
+        // Force a fresh token fetch to ensure the context change takes effect
+        // Skip any trivia and refresh the current token with the new context
+        self.skip_trivia();
     }
 
     pub fn q_expr(&mut self) {
@@ -204,6 +212,14 @@ impl<'a> Parser<'a> {
         }
 
         self.builder.finish_node();
+
+        // Set lexer context to ExpectingOperator after completing the q-family expression
+        // This allows proper parsing of operators like 'x' that follow q expressions
+        self.set_lexer_context(crate::lexer::LexerContext::ExpectingOperator);
+        
+        // Force a fresh token fetch to ensure the context change takes effect
+        // Skip any trivia and refresh the current token with the new context
+        self.skip_trivia();
     }
 
     pub fn parse_s_expr(&mut self) {
