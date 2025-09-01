@@ -287,7 +287,8 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    pub fn next_token(&mut self) -> Option<(SyntaxKind, &'a str)> {
+    /// Handle POD content and RawData modes
+    fn try_handle_pod_and_raw_data(&mut self) -> Option<(SyntaxKind, &'a str)> {
         // Handle POD content mode - consume everything until =cut or EOF
         if self.context == LexerContext::PodContent {
             if let Some(pod_result) = self.try_consume_pod_content() {
@@ -305,6 +306,50 @@ impl<'a> Lexer<'a> {
             }
         }
 
+        // Handle raw data mode
+        if self.context == LexerContext::RawData {
+            let remainder = self.logos_lexer.remainder();
+            if remainder.is_empty() {
+                return None; // No more data to consume
+            }
+            self.logos_lexer.bump(remainder.len());
+            return Some((SyntaxKind::RAW_STRING, remainder));
+        }
+
+        None
+    }
+
+    /// Handle special token parsing in ExpectingValue context
+    fn try_handle_expecting_value_tokens(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        if self.context != LexerContext::ExpectingValue {
+            return None;
+        }
+
+        // Array of token consumers to try in order
+        let consumers = [
+            Self::try_consume_file_test_op,
+            Self::try_consume_regex_literal,
+            Self::try_consume_io_operator,
+        ];
+
+        for consumer in consumers {
+            if let Some(result) = consumer(self) {
+                let (syntax_kind, text) = result;
+                self.update_context(syntax_kind);
+                self.update_line_position(text);
+                return Some((syntax_kind, text));
+            }
+        }
+
+        None
+    }
+
+    pub fn next_token(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        // Handle POD content mode and RawData mode first
+        if let Some(result) = self.try_handle_pod_and_raw_data() {
+            return Some(result);
+        }
+
         // Handle qw content mode - parse whitespace-separated words
         if self.context == LexerContext::QwContent {
             if let Some(qw_result) = self.try_consume_qw_content() {
@@ -312,40 +357,9 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        // Special handling for regex literals in ExpectingValue context (but not after qw)
-        if self.context == LexerContext::ExpectingValue {
-            if let Some(file_test_op) = self.try_consume_file_test_op() {
-                let (syntax_kind, text) = file_test_op;
-                self.update_context(syntax_kind);
-                self.update_line_position(text);
-                return Some((syntax_kind, text));
-            }
-
-            if let Some(regex_result) = self.try_consume_regex_literal() {
-                let (syntax_kind, text) = regex_result;
-                if !syntax_kind.is_trivia() {
-                    self.update_context(syntax_kind);
-                }
-                self.update_line_position(text);
-                return Some((syntax_kind, text));
-            }
-
-            // Special handling for I/O operators in ExpectingValue context
-            if let Some(io_result) = self.try_consume_io_operator() {
-                let (syntax_kind, text) = io_result;
-                if !syntax_kind.is_trivia() {
-                    self.update_context(syntax_kind);
-                }
-                self.update_line_position(text);
-                return Some((syntax_kind, text));
-            }
-        } else if self.context == LexerContext::RawData {
-            let remainder = self.logos_lexer.remainder();
-            if remainder.is_empty() {
-                return None; // No more data to consume
-            }
-            self.logos_lexer.bump(remainder.len());
-            return Some((SyntaxKind::RAW_STRING, remainder));
+        // Handle special tokens in ExpectingValue context
+        if let Some(result) = self.try_handle_expecting_value_tokens() {
+            return Some(result);
         }
 
         match self.logos_lexer.next() {
@@ -360,13 +374,11 @@ impl<'a> Lexer<'a> {
                 }
 
                 // Update context based on the token we just processed
-                if !syntax_kind.is_trivia() {
-                    // Special case for built-in functions - they expect values as arguments
-                    if syntax_kind == SyntaxKind::IDENT && self.is_builtin_function(text) {
-                        self.context = LexerContext::ExpectingValue;
-                    } else {
-                        self.update_context(syntax_kind);
-                    }
+                // Special case for built-in functions - they expect values as arguments
+                if syntax_kind == SyntaxKind::IDENT && self.is_builtin_function(text) {
+                    self.context = LexerContext::ExpectingValue;
+                } else {
+                    self.update_context(syntax_kind);
                 }
 
                 // Track line position for POD detection
@@ -498,12 +510,8 @@ impl<'a> Lexer<'a> {
                 // Examples: "$a * $b", "func() * 2"
                 SyntaxKind::STAR
             }
-            LexerContext::RawData => {
-                // Handle gracefully instead of panicking
-                SyntaxKind::STAR
-            }
-            LexerContext::PodContent => {
-                unreachable!("* should not appear in POD content context");
+            LexerContext::PodContent | LexerContext::RawData => {
+                unreachable!("* should not appear in PodContent or RawData context");
             }
         }
     }
@@ -601,12 +609,8 @@ impl<'a> Lexer<'a> {
                 // In q-like delimiter context, s is the substitution operator
                 SyntaxKind::S_KW
             }
-            LexerContext::RawData => {
-                // Handle gracefully instead of panicking
-                SyntaxKind::IDENT
-            }
-            LexerContext::PodContent => {
-                unreachable!("x should not appear in POD content context");
+            LexerContext::PodContent | LexerContext::RawData => {
+                unreachable!("s should not appear in PodContent or RawData context");
             }
         }
     }
@@ -684,12 +688,8 @@ impl<'a> Lexer<'a> {
                 // In q-like delimiter context, tr is the transliteration operator
                 SyntaxKind::TR_KW
             }
-            LexerContext::RawData => {
-                // Handle gracefully instead of panicking
-                SyntaxKind::IDENT
-            }
-            LexerContext::PodContent => {
-                unreachable!("tr should not appear in POD content context");
+            LexerContext::PodContent | LexerContext::RawData => {
+                unreachable!("tr should not appear in PodContent or RawData context");
             }
         }
     }
@@ -748,12 +748,8 @@ impl<'a> Lexer<'a> {
                 // In q-like delimiter context, y is the transliteration operator
                 SyntaxKind::Y_KW
             }
-            LexerContext::RawData => {
-                // Handle gracefully instead of panicking
-                SyntaxKind::IDENT
-            }
-            LexerContext::PodContent => {
-                unreachable!("y should not appear in POD content context");
+            LexerContext::PodContent | LexerContext::RawData => {
+                unreachable!("y should not appear in PodContent or RawData context");
             }
         }
     }
