@@ -127,6 +127,12 @@ pub const fn get_token_spacing(kind: SyntaxKind) -> TokenSpacing {
         }
         SyntaxKind::DEFINED_OR => TokenSpacing::binary_op(),
 
+        SyntaxKind::FILE_TEST_OP => TokenSpacing::new(
+            SpaceRule::Contextual,
+            SpaceRule::Always,
+            TokenCategory::PrefixOperator,
+        ),
+
         // Comma: no space before, space after
         SyntaxKind::COMMA => TokenSpacing::new(Never, Always, Punctuation),
 

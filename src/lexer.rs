@@ -314,6 +314,13 @@ impl<'a> Lexer<'a> {
 
         // Special handling for regex literals in ExpectingValue context (but not after qw)
         if self.context == LexerContext::ExpectingValue {
+            if let Some(file_test_op) = self.try_consume_file_test_op() {
+                let (syntax_kind, text) = file_test_op;
+                self.update_context(syntax_kind);
+                self.update_line_position(text);
+                return Some((syntax_kind, text));
+            }
+
             if let Some(regex_result) = self.try_consume_regex_literal() {
                 let (syntax_kind, text) = regex_result;
                 if !syntax_kind.is_trivia() {
@@ -828,6 +835,20 @@ impl<'a> Lexer<'a> {
         None
     }
 
+    fn try_consume_file_test_op(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        let remainder = self.logos_lexer.remainder();
+        if remainder.starts_with('-') {
+            if let Some(c) = remainder.chars().nth(1) {
+                if c.is_alphabetic() {
+                    let text = &remainder[..2];
+                    self.logos_lexer.bump(2);
+                    return Some((SyntaxKind::FILE_TEST_OP, text));
+                }
+            }
+        }
+        None
+    }
+
     fn disambiguate_slash(&self) -> SyntaxKind {
         match self.context {
             LexerContext::QlikeDelimiter => {
@@ -845,7 +866,8 @@ impl<'a> Lexer<'a> {
     /// Check if the given identifier text represents a built-in function
     /// Built-in functions expect values as arguments, so they should transition to ExpectingValue context
     fn is_builtin_function(&self, text: &str) -> bool {
-        matches!(text,
+        matches!(
+            text,
             // Core functions that commonly take regex patterns
             "split" | "grep" | "map" | "sort" |
             // I/O functions
@@ -947,6 +969,7 @@ impl<'a> Lexer<'a> {
                 LexerContext::ExpectingValue
             }
             SyntaxKind::DEFINED_OR | SyntaxKind::SPACESHIP => LexerContext::ExpectingValue,
+            SyntaxKind::FILE_TEST_OP => LexerContext::ExpectingValue,
             SyntaxKind::REGEX_MATCH | SyntaxKind::REGEX_NOT_MATCH => LexerContext::ExpectingValue,
             SyntaxKind::L_PAREN | SyntaxKind::L_BRACE | SyntaxKind::L_BRACKET => {
                 if self.context == LexerContext::QwDelimiter {

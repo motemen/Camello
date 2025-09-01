@@ -149,6 +149,9 @@ pub enum SyntaxKind {
     // Three-way comparison (spaceship) operator
     SPACESHIP, // <=>
 
+    // File test operators
+    FILE_TEST_OP, // -f, -d, etc.
+
     // ===== Node Level (composite structures) =====
     ROOT,          // File root
     SUB_DEF,       // Subroutine definition
@@ -199,6 +202,7 @@ pub enum SyntaxKind {
     IO_EXPR,                  // I/O expression (e.g., <STDIN>, <>, <$fh>)
     ANON_SUB_EXPR,            // Anonymous subroutine expression (e.g., sub { ... })
     TYPEGLOB_EXPR,            // Typeglob expression (e.g., *{$name}, *STDIN)
+    FILE_TEST_EXPR,           // File test expression (e.g., -f $file)
 
     // Literal references
     HASH_REF,  // Hash reference (anonymous hash)
@@ -410,6 +414,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::XOR_KW => "XOR_KW",
             SyntaxKind::DEFINED_OR => "DEFINED_OR",
             SyntaxKind::SPACESHIP => "SPACESHIP",
+            SyntaxKind::FILE_TEST_OP => "FILE_TEST_OP",
             SyntaxKind::ROOT => "ROOT",
             SyntaxKind::SUB_DEF => "SUB_DEF",
             SyntaxKind::SUB_PROTOTYPE => "SUB_PROTOTYPE",
@@ -445,6 +450,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::IO_EXPR => "IO_EXPR",
             SyntaxKind::ANON_SUB_EXPR => "ANON_SUB_EXPR",
             SyntaxKind::TYPEGLOB_EXPR => "TYPEGLOB_EXPR",
+            SyntaxKind::FILE_TEST_EXPR => "FILE_TEST_EXPR",
             SyntaxKind::HASH_REF => "HASH_REF",
             SyntaxKind::ARRAY_REF => "ARRAY_REF",
             SyntaxKind::IF_MODIFIER => "IF_MODIFIER",

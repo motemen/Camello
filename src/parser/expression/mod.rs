@@ -578,6 +578,19 @@ impl<'a> Parser<'a> {
                 // Anonymous subroutine expression: sub { ... }
                 self.anon_sub_expr();
             }
+            Some(SyntaxKind::FILE_TEST_OP) => {
+                self.builder.start_node(SyntaxKind::FILE_TEST_EXPR.into());
+                self.bump(); // consume file test operator
+                self.skip_trivia();
+
+                if !self.parse_expression_with_precedence(
+                    crate::parser::expression::precedence::Precedence::PREFIX,
+                ) {
+                    self.error("Expected expression after file test operator");
+                }
+
+                self.builder.finish_node();
+            }
             _ => {
                 // Should not reach here because is_at_start_of_expression checks this
                 return false;
