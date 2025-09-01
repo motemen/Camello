@@ -96,6 +96,10 @@ impl Formatter {
                 }
                 return;
             }
+            SyntaxKind::PREFIX_EXPR => {
+                self.format_prefix_expr(node);
+                return;
+            }
             SyntaxKind::HASH_REF => {
                 self.format_hash_ref(node);
                 return;

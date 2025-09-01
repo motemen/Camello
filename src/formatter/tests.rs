@@ -1391,3 +1391,80 @@ fn test_regex_literals_in_function_calls() {
         ("warn /debug/x", "warn /debug/x"),
     ]);
 }
+
+#[test]
+fn test_unary_plus_operator_formatting() {
+    let cases = vec![
+        // Basic unary plus
+        ("my $x = +42;", "my $x = +42;\n"),
+        ("my $y = +$var;", "my $y = +$var;\n"),
+        // Unary plus with hash reference (the main use case)
+        ("my $h = +{ a => 1 };", "my $h = +{a => 1};\n"),
+        ("my $h = +{a=>1,b=>2};", "my $h = +{a => 1, b => 2};\n"),
+        // Unary plus with array reference
+        ("my $a = +[ 1, 2, 3 ];", "my $a = +[1, 2, 3];\n"),
+        ("my $a = +[1,2,3];", "my $a = +[1, 2, 3];\n"),
+        // Nested unary plus
+        ("my $x = +(+$y);", "my $x = +(+$y);\n"),
+        // Unary plus in expressions
+        ("my $result = +$x * 2;", "my $result = +$x * 2;\n"),
+        ("my $result = 3 + +$x;", "my $result = 3 + +$x;\n"),
+        // Complex cases
+        (
+            "my $complex = +{ key => +[ +$a, +$b ] };",
+            "my $complex = +{key => +[+$a, +$b]};\n",
+        ),
+    ];
+
+    check_formatting_cases(&cases);
+}
+
+#[test]
+fn test_unary_minus_operator_formatting() {
+    let cases = vec![
+        // Basic unary minus
+        ("my $x = -42;", "my $x = -42;\n"),
+        ("my $y = -$var;", "my $y = -$var;\n"),
+        // Unary minus with complex expressions
+        ("my $h = -{ a => 1 };", "my $h = -{a => 1};\n"),
+        ("my $a = -[ 1, 2, 3 ];", "my $a = -[1, 2, 3];\n"),
+        // Nested unary minus
+        ("my $x = -(-$y);", "my $x = -(-$y);\n"),
+        // Mixed unary operators
+        ("my $x = +-$y;", "my $x = +-$y;\n"),
+        ("my $x = -+$y;", "my $x = -+$y;\n"),
+        // Unary minus in expressions
+        ("my $result = -$x * 2;", "my $result = -$x * 2;\n"),
+        ("my $result = 3 - -$x;", "my $result = 3 - -$x;\n"),
+    ];
+
+    check_formatting_cases(&cases);
+}
+
+#[test]
+fn test_unary_operators_in_context() {
+    let cases = vec![
+        // Function arguments with parentheses (works correctly)
+        ("func(+$x, -$y);", "func(+$x, -$y);\n"),
+        ("print(+{a => 1});", "print(+{a => 1});\n"),
+        // Function calls without parentheses (space between function and args is correct in Perl)
+        ("print +{a => 1};", "print + {a => 1};\n"),
+        // Return statements
+        (
+            "sub foo { return +{ result => $val }; }",
+            "sub foo {\n    return +{result => $val};\n}\n",
+        ),
+        // Assignment context
+        ("@arr = (+1, -2, +$x);", "@arr = (+1, -2, +$x);\n"),
+        // Hash and array contexts
+        ("%hash = ( key => +$val );", "%hash = (key => +$val);\n"),
+        ("@array = [ +$a, -$b ];", "@array = [+$a, -$b];\n"),
+        // Conditional context
+        (
+            "if (+$x > 0) { print \"positive\"; }",
+            "if (+$x > 0) {\n    print \"positive\";\n}\n",
+        ),
+    ];
+
+    check_formatting_cases(&cases);
+}
