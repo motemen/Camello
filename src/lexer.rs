@@ -354,7 +354,12 @@ impl<'a> Lexer<'a> {
 
                 // Update context based on the token we just processed
                 if !syntax_kind.is_trivia() {
-                    self.update_context(syntax_kind);
+                    // Special case for built-in functions - they expect values as arguments
+                    if syntax_kind == SyntaxKind::IDENT && self.is_builtin_function(text) {
+                        self.context = LexerContext::ExpectingValue;
+                    } else {
+                        self.update_context(syntax_kind);
+                    }
                 }
 
                 // Track line position for POD detection
@@ -835,6 +840,27 @@ impl<'a> Lexer<'a> {
                 SyntaxKind::SLASH
             }
         }
+    }
+
+    /// Check if the given identifier text represents a built-in function
+    /// Built-in functions expect values as arguments, so they should transition to ExpectingValue context
+    fn is_builtin_function(&self, text: &str) -> bool {
+        matches!(text,
+            // Core functions that commonly take regex patterns
+            "split" | "grep" | "map" | "sort" |
+            // I/O functions
+            "print" | "printf" | "say" | "warn" | "die" |
+            // Array/Hash functions
+            "push" | "pop" | "shift" | "unshift" | "splice" |
+            "keys" | "values" | "each" | "exists" | "delete" |
+            // String functions
+            "length" | "substr" | "index" | "rindex" | "chomp" | "chop" |
+            // File operations
+            "open" | "close" | "read" | "write" | "seek" | "tell" |
+            // Other common functions
+            "defined" | "undef" | "ref" | "bless" | "tie" | "untie" |
+            "eval" | "exec" | "system" | "sleep" | "exit"
+        )
     }
 
     fn update_context(&mut self, syntax_kind: SyntaxKind) {

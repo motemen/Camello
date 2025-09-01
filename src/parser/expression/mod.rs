@@ -470,9 +470,11 @@ impl<'a> Parser<'a> {
                         || self.at_any(&[
                             SyntaxKind::NUMBER,
                             SyntaxKind::STRING,
-                            SyntaxKind::L_BRACE,   // Hash reference: {}
-                            SyntaxKind::L_BRACKET, // Array reference: []
-                            SyntaxKind::MY_KW,     // Variable declarations as arguments
+                            SyntaxKind::REGEX_LITERAL, // Regex literals like /pattern/
+                            SyntaxKind::SLASH,         // Slash can start regex literal
+                            SyntaxKind::L_BRACE,       // Hash reference: {}
+                            SyntaxKind::L_BRACKET,     // Array reference: []
+                            SyntaxKind::MY_KW,         // Variable declarations as arguments
                             SyntaxKind::OUR_KW,
                             SyntaxKind::STATE_KW,
                             SyntaxKind::LOCAL_KW,
