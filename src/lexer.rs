@@ -241,8 +241,12 @@ pub enum LexerContext {
     ExpectingOperator,
     /// In a variable list context (after a sigil, expecting more variables)
     VariableList,
-    /// Inside a quote-like operator (qw, q, qq, s, etc.), expecting a delimiter or content.
+    /// Inside a quote-like operator (q, qq, qx, s, etc.), expecting a delimiter or content.
     QlikeDelimiter,
+    /// After qw keyword, expecting opening delimiter.
+    QwDelimiter,
+    /// Inside qw() content, parsing whitespace-separated words.
+    QwContent,
     /// In a data section context (after __END__ or __DATA__)
     RawData,
     /// In a POD block, consuming all content until =cut
@@ -298,6 +302,13 @@ impl<'a> Lexer<'a> {
                 self.update_context(syntax_kind);
                 self.at_line_start = false; // No longer at line start
                 return Some((syntax_kind, text));
+            }
+        }
+
+        // Handle qw content mode - parse whitespace-separated words
+        if self.context == LexerContext::QwContent {
+            if let Some(qw_result) = self.try_consume_qw_content() {
+                return Some(qw_result);
             }
         }
 
@@ -437,7 +448,9 @@ impl<'a> Lexer<'a> {
         match self.context {
             LexerContext::ExpectingValue
             | LexerContext::VariableList
-            | LexerContext::QlikeDelimiter => {
+            | LexerContext::QlikeDelimiter
+            | LexerContext::QwDelimiter
+            | LexerContext::QwContent => {
                 // When expecting a value or in variable list, % is a sigil for a hash
                 // Examples: "my %hash", "{ key => %val }"
                 SyntaxKind::PERCENT
@@ -461,7 +474,9 @@ impl<'a> Lexer<'a> {
         match self.context {
             LexerContext::ExpectingValue
             | LexerContext::VariableList
-            | LexerContext::QlikeDelimiter => {
+            | LexerContext::QlikeDelimiter
+            | LexerContext::QwDelimiter
+            | LexerContext::QwContent => {
                 // When expecting a value or in variable list, * is a typeglob sigil
                 // Examples: "my *glob", "*{$name}", "*STDIN"
                 SyntaxKind::ASTERISK
@@ -508,7 +523,9 @@ impl<'a> Lexer<'a> {
         match self.context {
             LexerContext::ExpectingValue
             | LexerContext::VariableList
-            | LexerContext::QlikeDelimiter => {
+            | LexerContext::QlikeDelimiter
+            | LexerContext::QwDelimiter
+            | LexerContext::QwContent => {
                 // When expecting a value or in variable list, x is an identifier
                 // Examples: "sub x", "$x", "my $x"
                 SyntaxKind::IDENT
@@ -533,6 +550,10 @@ impl<'a> Lexer<'a> {
             LexerContext::VariableList => {
                 // When in variable list context (after a sigil), s is an identifier
                 // Examples: "$s", "my $s", "@s"
+                SyntaxKind::IDENT
+            }
+            LexerContext::QwDelimiter | LexerContext::QwContent => {
+                // In qw contexts, s is an identifier
                 SyntaxKind::IDENT
             }
             LexerContext::ExpectingValue => {
@@ -605,6 +626,10 @@ impl<'a> Lexer<'a> {
                 // Examples: "$tr", "my $tr", "@tr"
                 SyntaxKind::IDENT
             }
+            LexerContext::QwDelimiter | LexerContext::QwContent => {
+                // In qw contexts, tr is an identifier
+                SyntaxKind::IDENT
+            }
             LexerContext::ExpectingValue => {
                 // When expecting a value, check what follows tr
                 let remainder = self.logos_lexer.remainder();
@@ -663,6 +688,10 @@ impl<'a> Lexer<'a> {
             LexerContext::VariableList => {
                 // When in variable list context (after a sigil), y is an identifier
                 // Examples: "$y", "my $y", "@y"
+                SyntaxKind::IDENT
+            }
+            LexerContext::QwDelimiter | LexerContext::QwContent => {
+                // In qw contexts, y is an identifier
                 SyntaxKind::IDENT
             }
             LexerContext::ExpectingValue => {
@@ -830,9 +859,10 @@ impl<'a> Lexer<'a> {
             SyntaxKind::UNLESS_KW => LexerContext::ExpectingValue,  // Expects unless condition
             SyntaxKind::WHILE_KW => LexerContext::ExpectingValue,   // Expects while condition
             SyntaxKind::PACKAGE_KW => LexerContext::ExpectingValue, // Expects package name
-            // Quote-like operators all transition to the same context
-            SyntaxKind::QW_KW
-            | SyntaxKind::Q_KW
+            // qw keyword - special handling for whitespace-separated words
+            SyntaxKind::QW_KW => LexerContext::QwDelimiter,
+            // Other quote-like operators
+            SyntaxKind::Q_KW
             | SyntaxKind::QQ_KW
             | SyntaxKind::QX_KW
             | SyntaxKind::M_KW
@@ -856,7 +886,17 @@ impl<'a> Lexer<'a> {
             SyntaxKind::SLASH => {
                 // After slash in different contexts
                 match self.context {
-                    LexerContext::QlikeDelimiter => LexerContext::ExpectingOperator, // q-family closing delimiter
+                    LexerContext::QwDelimiter => {
+                        // Opening delimiter in qw/ - transition to qw content parsing
+                        LexerContext::QwContent
+                    }
+                    LexerContext::QlikeDelimiter => {
+                        LexerContext::ExpectingOperator // q-family closing delimiter
+                    }
+                    LexerContext::QwContent => {
+                        // Closing delimiter in qw/ - transition back to expecting operator
+                        LexerContext::ExpectingOperator
+                    }
                     _ => LexerContext::ExpectingValue,
                 }
             }
@@ -883,7 +923,12 @@ impl<'a> Lexer<'a> {
             SyntaxKind::DEFINED_OR | SyntaxKind::SPACESHIP => LexerContext::ExpectingValue,
             SyntaxKind::REGEX_MATCH | SyntaxKind::REGEX_NOT_MATCH => LexerContext::ExpectingValue,
             SyntaxKind::L_PAREN | SyntaxKind::L_BRACE | SyntaxKind::L_BRACKET => {
-                LexerContext::ExpectingValue
+                if self.context == LexerContext::QwDelimiter {
+                    // Opening delimiter in qw() - transition to qw content parsing
+                    LexerContext::QwContent
+                } else {
+                    LexerContext::ExpectingValue
+                }
             }
             SyntaxKind::COMMA => LexerContext::ExpectingValue,
 
@@ -907,7 +952,15 @@ impl<'a> Lexer<'a> {
                     }
                     LexerContext::QlikeDelimiter => {
                         // In q-like delimiter context, after identifier, stay in same context
-                        // (we're inside qw/words/ or q/.../ construct)
+                        // (we're inside q/.../ construct)
+                        self.context
+                    }
+                    LexerContext::QwDelimiter => {
+                        // Should not happen - we should transition to QwContent after delimiter
+                        LexerContext::ExpectingOperator
+                    }
+                    LexerContext::QwContent => {
+                        // In qw content context, stay in same context to parse more words
                         self.context
                     }
                     LexerContext::RawData => {
@@ -1058,6 +1111,57 @@ impl<'a> Lexer<'a> {
         // No =cut found, consume all remaining content as POD
         self.logos_lexer.bump(remainder.len());
         Some((SyntaxKind::POD_CONTENT, remainder))
+    }
+
+    /// Try to consume qw() content, tokenizing whitespace-separated words
+    fn try_consume_qw_content(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        let remainder = self.logos_lexer.remainder();
+        if remainder.is_empty() {
+            return None;
+        }
+
+        let first_char = remainder.chars().next().unwrap();
+
+        // If we start with whitespace, consume all leading whitespace
+        if first_char.is_whitespace() {
+            let mut end_pos = 0;
+            for ch in remainder.chars() {
+                if !ch.is_whitespace() {
+                    break;
+                }
+                end_pos += ch.len_utf8();
+            }
+
+            if end_pos > 0 {
+                let whitespace = &remainder[..end_pos];
+                self.logos_lexer.bump(end_pos);
+                return Some((SyntaxKind::WHITESPACE, whitespace));
+            }
+            return None;
+        }
+
+        // If we start with a closing delimiter, let the normal lexer handle it
+        if matches!(first_char, ')' | ']' | '}' | '/') {
+            return None;
+        }
+
+        // Otherwise, consume a word (non-whitespace sequence)
+        let mut end_pos = 0;
+        for ch in remainder.chars() {
+            // Stop at whitespace or closing delimiters
+            if ch.is_whitespace() || matches!(ch, ')' | ']' | '}' | '/') {
+                break;
+            }
+            end_pos += ch.len_utf8();
+        }
+
+        if end_pos > 0 {
+            let word = &remainder[..end_pos];
+            self.logos_lexer.bump(end_pos);
+            return Some((SyntaxKind::QW_STRING, word));
+        }
+
+        None
     }
 
     pub fn span(&self) -> std::ops::Range<usize> {
@@ -1366,6 +1470,103 @@ mod tests {
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "y")));
+    }
+
+    #[test]
+    fn test_qw_basic_parsing() {
+        // Test basic qw() parsing with parentheses
+        let mut lexer = Lexer::new("qw(hello world)");
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::L_PAREN, "(")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "hello")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "world")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::R_PAREN, ")")));
+        assert_eq!(lexer.next_token(), None);
+    }
+
+    #[test]
+    fn test_qw_with_colon_content() {
+        // Test the specific case that was broken: qw(:common)
+        let mut lexer = Lexer::new("qw(:common)");
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::L_PAREN, "(")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, ":common")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::R_PAREN, ")")));
+        assert_eq!(lexer.next_token(), None);
+    }
+
+    #[test]
+    fn test_qw_with_multiple_words() {
+        // Test qw with multiple words including special characters
+        let mut lexer = Lexer::new("qw(a:b c:d e)");
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::L_PAREN, "(")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "a:b")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "c:d")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "e")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::R_PAREN, ")")));
+        assert_eq!(lexer.next_token(), None);
+    }
+
+    #[test]
+    fn test_qw_with_different_delimiters() {
+        // Test qw with slash delimiters
+        let mut lexer = Lexer::new("qw/x:y z/");
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::SLASH, "/")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "x:y")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "z")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::SLASH, "/")));
+        assert_eq!(lexer.next_token(), None);
+
+        // Test qw with bracket delimiters
+        let mut lexer = Lexer::new("qw[foo bar]");
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::L_BRACKET, "[")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "foo")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "bar")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::R_BRACKET, "]")));
+        assert_eq!(lexer.next_token(), None);
+
+        // Test qw with brace delimiters
+        let mut lexer = Lexer::new("qw{alpha beta}");
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::L_BRACE, "{")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "alpha")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "beta")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::R_BRACE, "}")));
+        assert_eq!(lexer.next_token(), None);
+    }
+
+    #[test]
+    fn test_qw_empty() {
+        // Test empty qw()
+        let mut lexer = Lexer::new("qw()");
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::L_PAREN, "(")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::R_PAREN, ")")));
+        assert_eq!(lexer.next_token(), None);
+    }
+
+    #[test]
+    fn test_qw_with_whitespace() {
+        // Test qw with extra whitespace
+        let mut lexer = Lexer::new("qw(  hello   world  )");
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::L_PAREN, "(")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, "  ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "hello")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, "   ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "world")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, "  ")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::R_PAREN, ")")));
+        assert_eq!(lexer.next_token(), None);
     }
 
     #[test]

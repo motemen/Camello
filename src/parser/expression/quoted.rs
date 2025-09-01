@@ -26,7 +26,7 @@ impl<'a> Parser<'a> {
         self.expect(opening_delim);
         // Don't skip trivia here - we need whitespace to separate words
 
-        // Parse words inside qw() - consume existing tokens and convert to QW_STRING
+        // Parse words inside qw() - lexer now provides QW_STRING tokens directly
         while !self.at(closing_delim) && !self.at_end() {
             // Skip whitespace/trivia
             if let Some(kind) = self.current_kind() {
@@ -41,12 +41,12 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            // Consume any non-whitespace tokens as QW_STRING
-            if let Some((_, text)) = self.current_token.take() {
-                // Add as QW_STRING token
-                self.builder.token(SyntaxKind::QW_STRING.into(), text);
-                self.current_pos += text.len();
-                self.current_token = self.lexer.next_token();
+            // Expect QW_STRING tokens from the lexer
+            if self.at(SyntaxKind::QW_STRING) {
+                self.bump(); // Consume QW_STRING token
+            } else {
+                // If we encounter unexpected token, break
+                break;
             }
         }
 
