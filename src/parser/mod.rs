@@ -1,4 +1,7 @@
-use crate::{lexer::{Lexer, LexerContext}, SyntaxKind};
+use crate::{
+    lexer::{Lexer, LexerContext},
+    SyntaxKind,
+};
 use miette::{Diagnostic, SourceSpan};
 use rowan::{GreenNode, GreenNodeBuilder, TextRange};
 
@@ -250,6 +253,8 @@ impl<'a> Parser<'a> {
                 SyntaxKind::LOCAL_KW,
                 SyntaxKind::RETURN_KW, // return statements can start expressions
                 SyntaxKind::SUB_KW,    // anonymous subroutines in expression context
+                SyntaxKind::PLUS,      // unary plus operator
+                SyntaxKind::MINUS,     // unary minus operator
                 SyntaxKind::LOGICAL_NOT, // prefix logical NOT operator
                 SyntaxKind::NOT_KW,    // prefix NOT keyword operator
                 SyntaxKind::FILE_TEST_OP, // file test operators

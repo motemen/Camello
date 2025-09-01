@@ -405,6 +405,36 @@ impl<'a> Parser<'a> {
                     self.parse_variable();
                 }
             }
+            Some(SyntaxKind::PLUS) => {
+                // Unary plus prefix operator
+                self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
+                self.bump(); // consume +
+                self.skip_trivia();
+
+                // Parse the operand with higher precedence
+                if !self.parse_expression_with_precedence(
+                    crate::parser::expression::precedence::Precedence::PREFIX,
+                ) {
+                    self.error("Expected expression after unary '+'");
+                }
+
+                self.builder.finish_node();
+            }
+            Some(SyntaxKind::MINUS) => {
+                // Unary minus prefix operator
+                self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
+                self.bump(); // consume -
+                self.skip_trivia();
+
+                // Parse the operand with higher precedence
+                if !self.parse_expression_with_precedence(
+                    crate::parser::expression::precedence::Precedence::PREFIX,
+                ) {
+                    self.error("Expected expression after unary '-'");
+                }
+
+                self.builder.finish_node();
+            }
             Some(SyntaxKind::LOGICAL_NOT) => {
                 // Logical NOT prefix operator
                 self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
