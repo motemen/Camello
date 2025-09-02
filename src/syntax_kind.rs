@@ -77,6 +77,7 @@ pub enum SyntaxKind {
     R_PAREN,      // )
     L_BRACKET,    // [
     R_BRACKET,    // ]
+    DELIMITER,    // Generic delimiter for quote-like operators (contains actual delimiter text)
     SEMICOLON,    // ;
     COMMA,        // ,
     DOUBLE_COLON, // ::
@@ -365,6 +366,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::R_PAREN => "R_PAREN",
             SyntaxKind::L_BRACKET => "L_BRACKET",
             SyntaxKind::R_BRACKET => "R_BRACKET",
+            SyntaxKind::DELIMITER => "DELIMITER",
             SyntaxKind::QUESTION_MARK => "QUESTION_MARK",
             SyntaxKind::COLON => "COLON",
             SyntaxKind::QW_STRING => "QW_STRING",

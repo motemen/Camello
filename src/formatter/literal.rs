@@ -87,12 +87,8 @@ impl Formatter {
                         SyntaxKind::QW_KW => {
                             self.format_token(&token);
                         }
-                        SyntaxKind::L_PAREN
-                        | SyntaxKind::L_BRACKET
-                        | SyntaxKind::L_BRACE
-                        | SyntaxKind::SLASH => {
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
+                        SyntaxKind::DELIMITER => {
+                            self.format_token(&token);
                         }
                         SyntaxKind::QW_STRING => {
                             // Add spaces between QW_STRING tokens
@@ -101,10 +97,6 @@ impl Formatter {
                             }
                             self.output.push_str(text);
                             first_word = false;
-                            self.prev_token_kind = Some(kind);
-                        }
-                        SyntaxKind::R_PAREN | SyntaxKind::R_BRACKET | SyntaxKind::R_BRACE => {
-                            self.output.push_str(text);
                             self.prev_token_kind = Some(kind);
                         }
                         _ => {
@@ -117,6 +109,8 @@ impl Formatter {
     }
 
     fn format_multiline_qw_expr(&mut self, node: &PerlNode) {
+        let mut opened = false;
+
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(node) => self.format_node(&node),
@@ -128,9 +122,13 @@ impl Formatter {
                         SyntaxKind::QW_KW => {
                             self.format_token(&token);
                         }
-                        // FIXME: Handle other delimiters like /, |, etc. make generic
-                        SyntaxKind::L_PAREN | SyntaxKind::L_BRACKET | SyntaxKind::L_BRACE => {
-                            self.handle_multiline_opening_delimiter(&token);
+                        SyntaxKind::DELIMITER => {
+                            if opened {
+                                self.handle_multiline_closing_delimiter(&token);
+                            } else {
+                                self.handle_multiline_opening_delimiter(&token);
+                                opened = true;
+                            }
                         }
                         SyntaxKind::QW_STRING => {
                             if self.at_line_start {
@@ -140,9 +138,6 @@ impl Formatter {
                             self.output.push_str(text);
                             self.handle_newline();
                             self.prev_token_kind = Some(kind);
-                        }
-                        SyntaxKind::R_PAREN | SyntaxKind::R_BRACKET | SyntaxKind::R_BRACE => {
-                            self.handle_multiline_closing_delimiter(&token);
                         }
                         SyntaxKind::WHITESPACE => {
                             // Newline is handled for QW_STRING tokens, so skip whitespace here
@@ -226,7 +221,10 @@ impl Formatter {
                         k if k == kw_kind => {
                             self.format_token(&token);
                         }
-                        SyntaxKind::L_PAREN | SyntaxKind::L_BRACKET | SyntaxKind::SLASH => {
+                        SyntaxKind::L_PAREN
+                        | SyntaxKind::L_BRACKET
+                        | SyntaxKind::SLASH
+                        | SyntaxKind::DELIMITER => {
                             self.output.push_str(text);
                             self.prev_token_kind = Some(kind);
                         }
