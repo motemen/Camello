@@ -872,31 +872,129 @@ impl<'a> Lexer<'a> {
         )
     }
 
-    fn update_context(&mut self, syntax_kind: SyntaxKind) {
-        self.context = match syntax_kind {
-            // Sigils: start VariableList context
-            SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT | SyntaxKind::ASTERISK => {
-                LexerContext::VariableList
-            }
+    fn is_sigil(&self, kind: SyntaxKind) -> bool {
+        matches!(
+            kind,
+            SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT | SyntaxKind::ASTERISK
+        )
+    }
 
-            // Reference operator: expects a value (variable, function name, etc.)
+    fn is_keyword(&self, kind: SyntaxKind) -> bool {
+        matches!(
+            kind,
+            SyntaxKind::SUB_KW
+                | SyntaxKind::MY_KW
+                | SyntaxKind::OUR_KW
+                | SyntaxKind::STATE_KW
+                | SyntaxKind::LOCAL_KW
+                | SyntaxKind::FOR_KW
+                | SyntaxKind::FOREACH_KW
+                | SyntaxKind::IF_KW
+                | SyntaxKind::UNLESS_KW
+                | SyntaxKind::WHILE_KW
+                | SyntaxKind::PACKAGE_KW
+                | SyntaxKind::USE_KW
+                | SyntaxKind::RETURN_KW
+                | SyntaxKind::QW_KW
+                | SyntaxKind::Q_KW
+                | SyntaxKind::QQ_KW
+                | SyntaxKind::QX_KW
+                | SyntaxKind::M_KW
+                | SyntaxKind::QR_KW
+                | SyntaxKind::S_KW
+                | SyntaxKind::TR_KW
+                | SyntaxKind::Y_KW
+                | SyntaxKind::END_KW
+                | SyntaxKind::DATA_KW
+                | SyntaxKind::BACKSLASH
+        )
+    }
+
+    fn is_operator(&self, kind: SyntaxKind) -> bool {
+        matches!(
+            kind,
+            SyntaxKind::EQ
+                | SyntaxKind::PLUS
+                | SyntaxKind::MINUS
+                | SyntaxKind::DOT
+                | SyntaxKind::ARROW
+                | SyntaxKind::STAR
+                | SyntaxKind::MODULO
+                | SyntaxKind::X
+                | SyntaxKind::SLASH
+                | SyntaxKind::GT
+                | SyntaxKind::LT
+                | SyntaxKind::GE
+                | SyntaxKind::LE
+                | SyntaxKind::EQ_EQ
+                | SyntaxKind::NE
+                | SyntaxKind::STR_EQ
+                | SyntaxKind::STR_NE
+                | SyntaxKind::STR_GT
+                | SyntaxKind::STR_LT
+                | SyntaxKind::STR_GE
+                | SyntaxKind::STR_LE
+                | SyntaxKind::STR_CMP
+                | SyntaxKind::LOGICAL_AND
+                | SyntaxKind::LOGICAL_OR
+                | SyntaxKind::LOGICAL_NOT
+                | SyntaxKind::NOT_KW
+                | SyntaxKind::AND_KW
+                | SyntaxKind::OR_KW
+                | SyntaxKind::XOR_KW
+                | SyntaxKind::DEFINED_OR
+                | SyntaxKind::SPACESHIP
+                | SyntaxKind::FILE_TEST_OP
+                | SyntaxKind::REGEX_MATCH
+                | SyntaxKind::REGEX_NOT_MATCH
+                | SyntaxKind::COMMA
+        )
+    }
+
+    fn is_literal(&self, kind: SyntaxKind) -> bool {
+        matches!(
+            kind,
+            SyntaxKind::NUMBER
+                | SyntaxKind::STRING
+                | SyntaxKind::VERSION
+                | SyntaxKind::BARE_VERSION
+                | SyntaxKind::REGEX_LITERAL
+                | SyntaxKind::IO_EXPR
+                | SyntaxKind::Q_STRING
+                | SyntaxKind::QQ_STRING
+                | SyntaxKind::QX_STRING
+                | SyntaxKind::QW_STRING
+        )
+    }
+
+    fn is_left_delimiter(&self, kind: SyntaxKind) -> bool {
+        matches!(
+            kind,
+            SyntaxKind::L_PAREN | SyntaxKind::L_BRACE | SyntaxKind::L_BRACKET
+        )
+    }
+
+    fn is_right_delimiter(&self, kind: SyntaxKind) -> bool {
+        matches!(
+            kind,
+            SyntaxKind::R_PAREN | SyntaxKind::R_BRACE | SyntaxKind::R_BRACKET
+        )
+    }
+
+    fn handle_sigil_context(&self, kind: SyntaxKind) -> LexerContext {
+        match kind {
             SyntaxKind::BACKSLASH => LexerContext::ExpectingValue,
+            _ => LexerContext::VariableList,
+        }
+    }
 
-            // Keywords with different expectations
-            SyntaxKind::SUB_KW => LexerContext::ExpectingValue, // Expects identifier (bareword)
+    fn handle_keyword_context(&self, kind: SyntaxKind) -> LexerContext {
+        match kind {
             SyntaxKind::MY_KW
             | SyntaxKind::OUR_KW
             | SyntaxKind::STATE_KW
-            | SyntaxKind::LOCAL_KW => LexerContext::VariableList, // Expects variables or variable lists
-            SyntaxKind::FOR_KW => LexerContext::ExpectingValue, // Expects for condition/iterator
-            SyntaxKind::FOREACH_KW => LexerContext::ExpectingValue, // Expects foreach condition/iterator
-            SyntaxKind::IF_KW => LexerContext::ExpectingValue,      // Expects if condition
-            SyntaxKind::UNLESS_KW => LexerContext::ExpectingValue,  // Expects unless condition
-            SyntaxKind::WHILE_KW => LexerContext::ExpectingValue,   // Expects while condition
-            SyntaxKind::PACKAGE_KW => LexerContext::ExpectingValue, // Expects package name
-            // qw keyword - special handling for whitespace-separated words
+            | SyntaxKind::LOCAL_KW => LexerContext::VariableList,
             SyntaxKind::QW_KW => LexerContext::QwDelimiter,
-            // Other quote-like operators
             SyntaxKind::Q_KW
             | SyntaxKind::QQ_KW
             | SyntaxKind::QX_KW
@@ -905,129 +1003,76 @@ impl<'a> Lexer<'a> {
             | SyntaxKind::S_KW
             | SyntaxKind::TR_KW
             | SyntaxKind::Y_KW => LexerContext::QlikeDelimiter,
-            SyntaxKind::USE_KW => LexerContext::ExpectingValue, // Expects module name
-            SyntaxKind::RETURN_KW => LexerContext::ExpectingValue, // Expects return value
-
-            // Data section keywords - after these, normal parsing stops
             SyntaxKind::END_KW | SyntaxKind::DATA_KW => LexerContext::RawData,
+            _ => LexerContext::ExpectingValue,
+        }
+    }
 
-            // Operators expect a value next and break out of VariableList context
-            SyntaxKind::EQ
-            | SyntaxKind::PLUS
-            | SyntaxKind::MINUS
-            | SyntaxKind::DOT
-            | SyntaxKind::ARROW => LexerContext::ExpectingValue,
-            SyntaxKind::STAR | SyntaxKind::MODULO | SyntaxKind::X => LexerContext::ExpectingValue,
-            SyntaxKind::SLASH => {
-                // After slash in different contexts
-                match self.context {
-                    LexerContext::QwDelimiter => {
-                        // Opening delimiter in qw/ - transition to qw content parsing
-                        LexerContext::QwContent
-                    }
-                    LexerContext::QlikeDelimiter => {
-                        LexerContext::ExpectingOperator // q-family closing delimiter
-                    }
-                    LexerContext::QwContent => {
-                        // Closing delimiter in qw/ - transition back to expecting operator
-                        LexerContext::ExpectingOperator
-                    }
-                    _ => LexerContext::ExpectingValue,
-                }
-            }
-            // Comparison operators
-            SyntaxKind::GT
-            | SyntaxKind::LT
-            | SyntaxKind::GE
-            | SyntaxKind::LE
-            | SyntaxKind::EQ_EQ
-            | SyntaxKind::NE
-            | SyntaxKind::STR_EQ
-            | SyntaxKind::STR_NE
-            | SyntaxKind::STR_GT
-            | SyntaxKind::STR_LT
-            | SyntaxKind::STR_GE
-            | SyntaxKind::STR_LE
-            | SyntaxKind::STR_CMP => LexerContext::ExpectingValue,
-            SyntaxKind::LOGICAL_AND | SyntaxKind::LOGICAL_OR | SyntaxKind::LOGICAL_NOT => {
-                LexerContext::ExpectingValue
-            }
-            SyntaxKind::NOT_KW | SyntaxKind::AND_KW | SyntaxKind::OR_KW | SyntaxKind::XOR_KW => {
-                LexerContext::ExpectingValue
-            }
-            SyntaxKind::DEFINED_OR | SyntaxKind::SPACESHIP => LexerContext::ExpectingValue,
-            SyntaxKind::FILE_TEST_OP => LexerContext::ExpectingValue,
-            SyntaxKind::REGEX_MATCH | SyntaxKind::REGEX_NOT_MATCH => LexerContext::ExpectingValue,
-            SyntaxKind::L_PAREN | SyntaxKind::L_BRACE | SyntaxKind::L_BRACKET => {
-                if self.context == LexerContext::QwDelimiter {
-                    // Opening delimiter in qw() - transition to qw content parsing
-                    LexerContext::QwContent
-                } else {
-                    LexerContext::ExpectingValue
-                }
-            }
-            SyntaxKind::COMMA => LexerContext::ExpectingValue,
+    fn handle_operator_context(&self, kind: SyntaxKind) -> LexerContext {
+        match kind {
+            SyntaxKind::SLASH => self.handle_slash_context(),
+            _ => LexerContext::ExpectingValue,
+        }
+    }
 
-            // IDENT needs special handling based on current context
-            SyntaxKind::IDENT => {
-                match self.context {
-                    LexerContext::VariableList => {
-                        // Transition out of VariableList after first identifier
-                        // This makes $ followed by identifier transition to ExpectingOperator
-                        // which will correctly handle % as modulo in expressions
-                        LexerContext::ExpectingOperator
-                    }
-                    LexerContext::ExpectingValue => {
-                        // If we're expecting a value and get an identifier,
-                        // we now expect an operator (normal expression)
-                        LexerContext::ExpectingOperator
-                    }
-                    LexerContext::ExpectingOperator => {
-                        // This shouldn't happen, but if it does, expect operator
-                        LexerContext::ExpectingOperator
-                    }
-                    LexerContext::QlikeDelimiter => {
-                        // In q-like delimiter context, after identifier, stay in same context
-                        // (we're inside q/.../ construct)
-                        self.context
-                    }
-                    LexerContext::QwDelimiter => {
-                        // Should not happen - we should transition to QwContent after delimiter
-                        LexerContext::ExpectingOperator
-                    }
-                    LexerContext::QwContent => {
-                        // In qw content context, stay in same context to parse more words
-                        self.context
-                    }
-                    LexerContext::RawData => {
-                        // Handle gracefully instead of panicking
-                        self.context
-                    }
-                }
+    fn handle_left_delimiter_context(&self, _kind: SyntaxKind) -> LexerContext {
+        if self.context == LexerContext::QwDelimiter {
+            LexerContext::QwContent
+        } else {
+            LexerContext::ExpectingValue
+        }
+    }
+
+    fn handle_slash_context(&self) -> LexerContext {
+        match self.context {
+            LexerContext::QwDelimiter => LexerContext::QwContent,
+            LexerContext::QlikeDelimiter => LexerContext::ExpectingOperator,
+            LexerContext::QwContent => LexerContext::ExpectingOperator,
+            _ => LexerContext::ExpectingValue,
+        }
+    }
+
+    fn handle_identifier_context(&self) -> LexerContext {
+        match self.context {
+            LexerContext::VariableList | LexerContext::ExpectingValue => {
+                LexerContext::ExpectingOperator
+            }
+            LexerContext::ExpectingOperator => LexerContext::ExpectingOperator,
+            LexerContext::QlikeDelimiter | LexerContext::QwContent | LexerContext::RawData => {
+                self.context
+            }
+            LexerContext::QwDelimiter => LexerContext::ExpectingOperator,
+        }
+    }
+
+    fn update_context(&mut self, syntax_kind: SyntaxKind) {
+        self.context = match syntax_kind {
+            // Sigils and reference operators
+            kind if self.is_sigil(kind) || kind == SyntaxKind::BACKSLASH => {
+                self.handle_sigil_context(kind)
             }
 
-            // Literals expect an operator next
-            SyntaxKind::NUMBER
-            | SyntaxKind::STRING
-            | SyntaxKind::VERSION
-            | SyntaxKind::BARE_VERSION
-            | SyntaxKind::REGEX_LITERAL
-            | SyntaxKind::IO_EXPR
-            // Quote family string types also expect operator next
-            | SyntaxKind::Q_STRING
-            | SyntaxKind::QQ_STRING
-            | SyntaxKind::QX_STRING
-            | SyntaxKind::QW_STRING => LexerContext::ExpectingOperator,
-            SyntaxKind::R_PAREN | SyntaxKind::R_BRACE | SyntaxKind::R_BRACKET => {
+            // Keywords
+            kind if self.is_keyword(kind) => self.handle_keyword_context(kind),
+
+            // Operators
+            kind if self.is_operator(kind) => self.handle_operator_context(kind),
+
+            // Left delimiters need special handling for qw
+            kind if self.is_left_delimiter(kind) => self.handle_left_delimiter_context(kind),
+
+            // Identifiers need context-dependent handling
+            SyntaxKind::IDENT => self.handle_identifier_context(),
+
+            // Literals and closing delimiters expect operators
+            kind if self.is_literal(kind) || self.is_right_delimiter(kind) => {
                 LexerContext::ExpectingOperator
             }
 
-            // Statement terminators reset to expecting value
-            SyntaxKind::SEMICOLON => LexerContext::ExpectingValue,
-
-            // POD-related transitions
-            SyntaxKind::CUT_KW => LexerContext::ExpectingValue, // =cut ends POD block
-            SyntaxKind::POD_CONTENT => LexerContext::ExpectingValue, // POD content processed
+            // Statement terminators and POD reset context
+            SyntaxKind::SEMICOLON | SyntaxKind::CUT_KW | SyntaxKind::POD_CONTENT => {
+                LexerContext::ExpectingValue
+            }
 
             // Keep current context for other tokens
             _ => self.context,
