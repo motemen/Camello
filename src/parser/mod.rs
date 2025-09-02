@@ -464,40 +464,6 @@ mod tests {
     }
 
     #[test]
-    fn test_debug_parser_bump_trace() {
-        use crate::PerlNode;
-
-        let input = "print q(hello);";
-        println!("Testing input: {}", input);
-
-        // Create our own parser to trace the bump() calls
-        let mut parser = Parser::new(input);
-
-        // Manually trace the first few tokens
-        println!("Token 1: {:?}", parser.current_token);
-        if parser.current_token.is_some() {
-            parser.bump();
-            println!("Token 2: {:?}", parser.current_token);
-        }
-        if parser.current_token.is_some() {
-            parser.bump();
-            println!("Token 3: {:?}", parser.current_token);
-        }
-        if parser.current_token.is_some() {
-            parser.bump();
-            println!("Token 4: {:?}", parser.current_token);
-        }
-        if parser.current_token.is_some() {
-            parser.bump();
-            println!("Token 5: {:?}", parser.current_token);
-        }
-        if parser.current_token.is_some() {
-            parser.bump();
-            println!("Token 6: {:?}", parser.current_token);
-        }
-    }
-
-    #[test]
     fn test_debug_qq_hash_parsing() {
         use crate::PerlNode;
 
