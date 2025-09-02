@@ -654,9 +654,9 @@ fn test_single_line_qw_formatting() {
 #[test]
 fn test_multiline_qw_formatting() {
     let input = r#"my @words = qw(
-    hello
-    world
-    test
+hello
+world
+test
 );"#;
     let formatted = format_and_assert(input);
 

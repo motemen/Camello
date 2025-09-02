@@ -168,6 +168,42 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Check if current token is a DELIMITER with specific text
+    fn at_delimiter_text(&self, delimiter_text: &str) -> bool {
+        if let Some(SyntaxKind::DELIMITER) = self.current_kind() {
+            if let Some((_, text)) = &self.current_token {
+                return *text == delimiter_text;
+            }
+        }
+        false
+    }
+
+    /// Expect a DELIMITER token with specific text
+    fn expect_delimiter_text(&mut self, delimiter_text: &str) {
+        if self.at_delimiter_text(delimiter_text) {
+            self.bump();
+        } else {
+            let msg = format!(
+                "Expected delimiter '{}', found {:?}",
+                delimiter_text,
+                self.current_kind()
+            );
+            self.error(&msg);
+        }
+    }
+
+    /// Get the matching closing delimiter for an opening delimiter
+    fn get_closing_delimiter(&self, opening: &str) -> String {
+        match opening {
+            "(" => ")".to_string(),
+            "[" => "]".to_string(),
+            "{" => "}".to_string(),
+            "<" => ">".to_string(),
+            // For symmetric delimiters, the closing is the same as opening
+            ch => ch.to_string(),
+        }
+    }
+
     fn error(&mut self, message: &str) {
         let text_len = self.current_text().map_or(0, |t| t.len());
         let range = TextRange::new(

@@ -10,24 +10,29 @@ impl<'a> Parser<'a> {
         self.expect(SyntaxKind::QW_KW);
         self.skip_trivia();
 
-        // Determine delimiter and find closing delimiter
-        let (opening_delim, closing_delim) = match self.current_kind() {
-            Some(SyntaxKind::L_PAREN) => (SyntaxKind::L_PAREN, SyntaxKind::R_PAREN),
-            Some(SyntaxKind::L_BRACKET) => (SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET),
-            Some(SyntaxKind::L_BRACE) => (SyntaxKind::L_BRACE, SyntaxKind::R_BRACE),
-            Some(SyntaxKind::SLASH) => (SyntaxKind::SLASH, SyntaxKind::SLASH),
-            _ => {
-                self.error("Expected qw() delimiter: (, [, {, or /");
-                return;
-            }
+        // Consume opening delimiter (should be DELIMITER token)
+        if !self.at(SyntaxKind::DELIMITER) {
+            self.error("Expected qw delimiter");
+            return;
+        }
+
+        // Get the delimiter text to determine the closing delimiter
+        let opening_delim_text = if let Some((_, text)) = &self.current_token {
+            text.to_string()
+        } else {
+            self.error("Expected delimiter text");
+            return;
         };
 
         // Consume opening delimiter
-        self.expect(opening_delim);
+        self.expect(SyntaxKind::DELIMITER);
+
+        // Determine the closing delimiter based on opening delimiter
+        let closing_delim_text = self.get_closing_delimiter(&opening_delim_text);
         // Don't skip trivia here - we need whitespace to separate words
 
         // Parse words inside qw() - lexer now provides QW_STRING tokens directly
-        while !self.at(closing_delim) && !self.at_end() {
+        while !self.at_delimiter_text(&closing_delim_text) && !self.at_end() {
             // Skip whitespace/trivia
             if let Some(kind) = self.current_kind() {
                 if kind.is_trivia() {
@@ -37,7 +42,7 @@ impl<'a> Parser<'a> {
             }
 
             // Check if we're at the closing delimiter
-            if self.at(closing_delim) {
+            if self.at_delimiter_text(&closing_delim_text) {
                 break;
             }
 
@@ -50,8 +55,8 @@ impl<'a> Parser<'a> {
             }
         }
 
-        // Closing delimiter
-        self.expect(closing_delim);
+        // Closing delimiter (should be DELIMITER token with matching text)
+        self.expect_delimiter_text(&closing_delim_text);
 
         self.builder.finish_node();
 
@@ -169,32 +174,30 @@ impl<'a> Parser<'a> {
         self.expect(kw_kind);
         self.skip_trivia();
 
-        // Determine delimiter and find closing delimiter
-        let (opening_delim, closing_delim) = match self.current_kind() {
-            Some(SyntaxKind::L_PAREN) => (SyntaxKind::L_PAREN, SyntaxKind::R_PAREN),
-            Some(SyntaxKind::L_BRACKET) => (SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET),
-            Some(SyntaxKind::L_BRACE) => (SyntaxKind::L_BRACE, SyntaxKind::R_BRACE),
-            Some(SyntaxKind::SLASH) => (SyntaxKind::SLASH, SyntaxKind::SLASH),
-            _ => {
-                self.error(&format!(
-                    "Expected {}() delimiter: (, [, {{, or /",
-                    operator_name
-                ));
-                self.builder.finish_node(); // Finish the node to avoid panic
-                return;
-            }
+        // Consume opening delimiter (should be DELIMITER token)
+        if !self.at(SyntaxKind::DELIMITER) {
+            self.error(&format!("Expected {} delimiter", operator_name));
+            self.builder.finish_node();
+            return;
+        }
+
+        // Get the delimiter text to determine the closing delimiter
+        let opening_delim_text = if let Some((_, text)) = &self.current_token {
+            text.to_string()
+        } else {
+            self.error("Expected delimiter text");
+            self.builder.finish_node();
+            return;
         };
 
         // Consume opening delimiter
-        self.expect(opening_delim);
+        self.expect(SyntaxKind::DELIMITER);
+
+        // Determine the closing delimiter based on opening delimiter
+        let closing_delim_text = self.get_closing_delimiter(&opening_delim_text);
 
         // Parse content inside - everything becomes the specific string kind
-        while !self.at(closing_delim) && !self.at_end() {
-            // Check if we're at the closing delimiter
-            if self.at(closing_delim) {
-                break;
-            }
-
+        while !self.at_delimiter_text(&closing_delim_text) && !self.at_end() {
             // Consume any tokens as the string kind (preserving original text)
             if let Some((_, text)) = self.current_token.take() {
                 self.builder.token(string_kind.into(), text);
@@ -203,8 +206,8 @@ impl<'a> Parser<'a> {
             }
         }
 
-        // Closing delimiter
-        self.expect(closing_delim);
+        // Closing delimiter (should be DELIMITER token with matching text)
+        self.expect_delimiter_text(&closing_delim_text);
 
         // For regex expressions (m and qr), consume optional flags
         if matches!(expr_kind, SyntaxKind::M_EXPR | SyntaxKind::QR_EXPR) {

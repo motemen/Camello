@@ -162,6 +162,7 @@ pub const fn get_token_spacing(kind: SyntaxKind) -> TokenSpacing {
         SyntaxKind::R_PAREN => TokenSpacing::new(Never, Contextual, Delimiter),
         SyntaxKind::L_BRACKET => TokenSpacing::new(Contextual, Never, Delimiter),
         SyntaxKind::R_BRACKET => TokenSpacing::new(Never, Contextual, Delimiter),
+        SyntaxKind::DELIMITER => TokenSpacing::new(Never, Never, Delimiter),
 
         // Semicolon: no space before, contextual after
         SyntaxKind::SEMICOLON => TokenSpacing::new(Never, Contextual, Punctuation),
