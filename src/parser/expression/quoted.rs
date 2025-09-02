@@ -228,32 +228,32 @@ impl<'a> Parser<'a> {
     fn parse_delimited_content(
         &mut self,
         content_kind: SyntaxKind,
-        closing_delimiter: Option<&str>,
-    ) -> Option<(String, String)> {
-        let (opening_delim, closing_delim) = if let Some(delim) = closing_delimiter {
-            // Use provided closing delimiter
-            (String::new(), delim.to_string())
+        symmetric_delimiter: Option<&str>,
+    ) -> Option<(String, bool)> {
+        let (delimiter, is_symmetric) = if let Some(delim) = symmetric_delimiter {
+            // Use provided symmetric delimiter
+            (delim.to_string(), true)
         } else {
             // Parse opening delimiter and derive closing delimiter
-            let (opening_delim, closing_delim) = match self.current_token {
-                Some((SyntaxKind::DELIMITER, ref text)) => {
-                    let closing_delim = self.get_closing_delimiter(text);
-                    (text.to_string(), closing_delim)
-                }
+            let opening_delim = match self.current_token {
+                Some((SyntaxKind::DELIMITER, ref text)) => text.to_string(),
                 _ => {
                     self.error("Expected delimiter text");
                     return None;
                 }
             };
 
+            let closing_delim = self.get_closing_delimiter(&opening_delim);
+            let is_symmetric = opening_delim == closing_delim;
+
             self.expect_delimiter_text(&opening_delim);
-            (opening_delim, closing_delim)
+            (closing_delim, is_symmetric)
         };
 
         // Parse content until closing delimiter
         while self
             .current_token
-            .is_some_and(|(kind, text)| kind != SyntaxKind::DELIMITER || text != &closing_delim)
+            .is_some_and(|(kind, text)| kind != SyntaxKind::DELIMITER || text != &delimiter)
         {
             // Consume any tokens as the specified content kind (preserving original text)
             if let Some((_, text)) = self.current_token.take() {
@@ -264,9 +264,9 @@ impl<'a> Parser<'a> {
         }
 
         // Consume closing delimiter
-        self.expect_delimiter_text(&closing_delim);
+        self.expect_delimiter_text(&delimiter);
 
-        Some((opening_delim, closing_delim))
+        Some((delimiter, is_symmetric))
     }
 
     pub fn parse_s_expr(&mut self) {
@@ -277,32 +277,21 @@ impl<'a> Parser<'a> {
         self.skip_trivia();
 
         // Parse pattern part - handles opening delimiter, content, and middle delimiter
-        let (pattern_opening_delim, pattern_closing_delim) =
-            match self.parse_delimited_content(SyntaxKind::S_PATTERN, None) {
-                Some(delims) => delims,
-                None => {
-                    self.builder.finish_node();
-                    return;
-                }
-            };
+        let Some((pattern_delimiter, is_symmetric)) =
+            self.parse_delimited_content(SyntaxKind::S_PATTERN, None)
+        else {
+            self.builder.finish_node();
+            return;
+        };
 
-        // Determine if the pattern delimiter is paired (different opening/closing)
-        let is_paired_delimiter = !pattern_opening_delim.is_empty()
-            && self.get_closing_delimiter(&pattern_opening_delim) != pattern_opening_delim;
-
-        match self.parse_delimited_content(
+        // For symmetric delimiters, reuse the same delimiter for replacement part
+        // For paired delimiters, replacement part has its own delimiters
+        let Some(_) = self.parse_delimited_content(
             SyntaxKind::S_REPLACEMENT,
-            if is_paired_delimiter {
-                None
-            } else {
-                Some(&pattern_closing_delim)
-            },
-        ) {
-            Some(_) => {}
-            None => {
-                self.builder.finish_node();
-                return;
-            }
+            is_symmetric.then_some(&pattern_delimiter),
+        ) else {
+            self.builder.finish_node();
+            return;
         };
 
         // Consume optional flags (like 'g', 'i', 'm', 's', 'x')
