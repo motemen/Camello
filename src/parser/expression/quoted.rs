@@ -196,13 +196,19 @@ impl<'a> Parser<'a> {
         // Determine the closing delimiter based on opening delimiter
         let closing_delim_text = self.get_closing_delimiter(&opening_delim_text);
 
-        // Parse content inside - everything becomes the specific string kind
-        while !self.at_delimiter_text(&closing_delim_text) && !self.at_end() {
-            // Consume any tokens as the string kind (preserving original text)
-            if let Some((_, text)) = self.current_token.take() {
-                self.builder.token(string_kind.into(), text);
-                self.current_pos += text.len();
-                self.current_token = self.lexer.next_token();
+        // Parse content inside - handle both pre-tokenized string content and individual tokens
+        if self.at(string_kind) {
+            // Lexer already provided the complete string token (new behavior)
+            self.bump();
+        } else {
+            // Fallback: parse individual tokens and reconstruct (old behavior)
+            while !self.at_delimiter_text(&closing_delim_text) && !self.at_end() {
+                // Consume any tokens as the string kind (preserving original text)
+                if let Some((_, text)) = self.current_token.take() {
+                    self.builder.token(string_kind.into(), text);
+                    self.current_pos += text.len();
+                    self.current_token = self.lexer.next_token();
+                }
             }
         }
 
