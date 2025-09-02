@@ -265,10 +265,8 @@ impl<'a> Parser<'a> {
         }
 
         // Closing delimiter (for replacement part)
-        if self.at(SyntaxKind::DELIMITER) {
-            self.bump();
-            self.skip_trivia();
-        }
+        self.expect(SyntaxKind::DELIMITER);
+        self.skip_trivia();
 
         // Optional flags
         while self.at(SyntaxKind::IDENT) {
@@ -324,10 +322,8 @@ impl<'a> Parser<'a> {
         }
 
         // Closing delimiter (for replacement part)
-        if self.at(SyntaxKind::DELIMITER) {
-            self.bump();
-            self.skip_trivia();
-        }
+        self.expect(SyntaxKind::DELIMITER);
+        self.skip_trivia();
 
         // Optional flags
         self.consume_tr_flags();
