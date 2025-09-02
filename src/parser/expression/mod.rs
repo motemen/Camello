@@ -508,6 +508,16 @@ impl<'a> Parser<'a> {
                             SyntaxKind::OUR_KW,
                             SyntaxKind::STATE_KW,
                             SyntaxKind::LOCAL_KW,
+                            // Add q-family keywords as valid function arguments
+                            SyntaxKind::Q_KW,
+                            SyntaxKind::QQ_KW,
+                            SyntaxKind::QX_KW,
+                            SyntaxKind::QW_KW,
+                            SyntaxKind::M_KW,
+                            SyntaxKind::QR_KW,
+                            SyntaxKind::S_KW,
+                            SyntaxKind::TR_KW,
+                            SyntaxKind::Y_KW,
                         ])
                         || kind.is_sigil()
                     {

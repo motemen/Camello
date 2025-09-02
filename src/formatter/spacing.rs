@@ -278,13 +278,14 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
         // SUB_KW with identifiers
         (SUB_KW, IDENT | QUALIFIED_IDENT) => Some(true),
 
-        // DELIMITER followed by binary operators needs space 
+        // DELIMITER followed by binary operators needs space
         // (e.g., q(a) x 10, m/pattern/ and $var)
-        (DELIMITER, X | PLUS | MINUS | STAR | SLASH | MODULO | DOT | EQ 
-                   | LT | GT | LE | GE | EQ_EQ | NE 
-                   | STR_EQ | STR_NE | STR_GT | STR_LT | STR_GE | STR_LE | STR_CMP | SPACESHIP
-                   | LOGICAL_AND | LOGICAL_OR | REGEX_MATCH | REGEX_NOT_MATCH
-                   | AND_KW | OR_KW | XOR_KW) => Some(true),
+        (
+            DELIMITER,
+            X | PLUS | MINUS | STAR | SLASH | MODULO | DOT | EQ | LT | GT | LE | GE | EQ_EQ | NE
+            | STR_EQ | STR_NE | STR_GT | STR_LT | STR_GE | STR_LE | STR_CMP | SPACESHIP
+            | LOGICAL_AND | LOGICAL_OR | REGEX_MATCH | REGEX_NOT_MATCH | AND_KW | OR_KW | XOR_KW,
+        ) => Some(true),
 
         // No space inside parentheses/brackets/braces
         (_, R_PAREN | R_BRACE | R_BRACKET) => Some(false),

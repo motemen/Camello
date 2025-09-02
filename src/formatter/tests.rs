@@ -697,6 +697,141 @@ items => [
 }
 
 #[test]
+fn test_q_arbitrary_delimiters_formatting() {
+    let input = r#"# Test q() with various delimiters
+print q(hello);       # parentheses
+print q/world/;       # slash
+print q{foo};         # braces
+print q[bar];         # brackets
+print q<baz>;         # angle brackets
+print q|pipe|;        # pipe
+print q#hash#;        # hash
+print q@at@;          # at sign
+print q%percent%;     # percent
+print q^caret^;       # caret
+print q*asterisk*;    # asterisk
+print q+plus+;        # plus
+print q=equals=;      # equals
+print q!exclamation!; # exclamation
+print q~tilde~;       # tilde
+print q`backtick`;    # backtick"#;
+
+    let formatted = format_and_assert(input);
+
+    insta::assert_snapshot!(formatted, @r"
+    # Test q() with various delimiters
+    print q(hello); # parentheses
+    print q/world/; # slash
+    print q{foo}; # braces
+    print q[bar]; # brackets
+    print q<baz>; # angle brackets
+    print q|pipe|; # pipe
+    print q#hash#; # hash
+    print q@at@; # at sign
+    print q%percent%; # percent
+    print q^caret^; # caret
+    print q*asterisk*; # asterisk
+    print q+plus+; # plus
+    print q=equals=; # equals
+    print q!exclamation!; # exclamation
+    print q~tilde~; # tilde
+    print q`backtick`; # backtick
+    ");
+}
+
+#[test]
+fn test_qq_arbitrary_delimiters_formatting() {
+    let input = r#"# Test qq() with various delimiters (simple content)
+print qq(hello world);
+print qq/simple text/;
+print qq{foo bar};
+print qq[baz qux];
+print qq<test string>;"#;
+
+    let formatted = format_and_assert(input);
+
+    insta::assert_snapshot!(formatted, @r###"
+    # Test qq() with various delimiters (simple content)
+    print qq(hello world);
+    print qq/simple text/;
+    print qq{foo bar};
+    print qq[baz qux];
+    print qq<test string>;
+    "###);
+}
+
+#[test]
+fn test_qx_arbitrary_delimiters_formatting() {
+    let input = r#"# Test qx() with various delimiters
+my $result = qx(ls -la);
+my $result = qx/ps aux/;
+my $result = qx{date};
+my $result = qx[whoami];
+my $result = qx<pwd>;"#;
+
+    let formatted = format_and_assert(input);
+
+    insta::assert_snapshot!(formatted, @r###"
+    # Test qx() with various delimiters
+    my $result = qx(ls -la);
+    my $result = qx/ps aux/;
+    my $result = qx{date};
+    my $result = qx[whoami];
+    my $result = qx<pwd>;
+    "###);
+}
+
+#[test]
+fn test_m_arbitrary_delimiters_formatting() {
+    let input = r#"# Test m// with various delimiters
+if ($string =~ m(pattern)i) { }
+if ($string =~ m/pattern/i) { }
+if ($string =~ m{pattern}i) { }
+if ($string =~ m[pattern]i) { }
+if ($string =~ m<pattern>i) { }
+if ($string =~ m|pattern|i) { }"#;
+
+    let formatted = format_and_assert(input);
+
+    insta::assert_snapshot!(formatted, @r"
+    # Test m// with various delimiters
+    if ($string =~ m(pattern)i) {
+    }
+    if ($string =~ m/pattern/i) {
+    }
+    if ($string =~ m{pattern}i) {
+    }
+    if ($string =~ m[pattern]i) {
+    }
+    if ($string =~ m<pattern>i) {
+    }
+    if ($string =~ m|pattern|i) {
+    }
+    ");
+}
+
+#[test]
+fn test_qr_arbitrary_delimiters_formatting() {
+    let input = r#"# Test qr// with various delimiters
+my $regex = qr(pattern)i;
+my $regex = qr/pattern/i;
+my $regex = qr{pattern}i;
+my $regex = qr[pattern]i;
+my $regex = qr<pattern>i;"#;
+
+    let formatted = format_and_assert(input);
+
+    insta::assert_snapshot!(formatted, @r###"
+    # Test qr// with various delimiters
+    my $regex = qr(pattern)i;
+    my $regex = qr/pattern/i;
+    my $regex = qr{pattern}i;
+    my $regex = qr[pattern]i;
+    my $regex = qr<pattern>i;
+    "###);
+}
+
+#[test]
 fn test_s_operator_formatting() {
     let input = "$str =~ s/abc/xyz/;";
     let formatted = format_and_assert(input);
