@@ -629,8 +629,8 @@ fn test_single_line_array_ref_formatting() {
 #[test]
 fn test_multiline_array_ref_formatting() {
     let input = r#"my $array = [
-    1,
-    2, 3
+1,
+2, 3
 ];"#;
     let formatted = format_and_assert(input);
 
@@ -672,14 +672,13 @@ test
 #[test]
 fn test_mixed_single_and_multiline() {
     let input = r#"my $mixed = {
-    simple => { a => 1, b => 2 },
-    complex => {
-        nested => [1, 2, 3],
-        items => [
-            "first",
-            "second"
-        ]
-    }
+simple => { a => 1, b => 2 },
+complex => {
+nested => [1, 2, 3],
+items => [
+        "first",
+        "second" ]
+}
 };"#;
     let formatted = format_and_assert(input);
 
@@ -695,6 +694,14 @@ fn test_mixed_single_and_multiline() {
             }
         };
         "#);
+}
+
+#[test]
+fn test_s_operator_formatting() {
+    let input = "$str =~ s/abc/xyz/;";
+    let formatted = format_and_assert(input);
+
+    insta::assert_snapshot!(formatted, @"$str =~ s/abc/xyz/;");
 }
 
 #[test]
