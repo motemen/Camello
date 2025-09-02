@@ -76,16 +76,12 @@ impl<'a> Parser<'a> {
             }
 
             // Check for POD commands at the top level
-            if matches!(
-                self.current_kind(),
-                Some(SyntaxKind::POD_COMMAND) | Some(SyntaxKind::CUT_KW)
-            ) {
-                if self.current_kind() == Some(SyntaxKind::POD_COMMAND) {
-                    self.pod_block();
-                } else {
-                    // =cut without preceding POD
-                    self.error("Found =cut without a preceding POD command");
-                }
+            if self.at(SyntaxKind::POD_CONTENT) {
+                self.pod_block();
+            } else if self.at(SyntaxKind::CUT_KW) {
+                // =cut without preceding POD
+                self.error("Found =cut without a preceding POD command");
+                self.bump(); // Consume the =cut token
             } else if !self.statement() {
                 self.error("Expected a statement, but found an unexpected token.");
             }
@@ -114,23 +110,8 @@ impl<'a> Parser<'a> {
     fn pod_block(&mut self) {
         self.builder.start_node(SyntaxKind::POD_BLOCK.into());
 
-        // Consume the POD command (=pod, =head1, etc.)
+        // Consume the entire POD content (lexer already consumed the whole block)
         self.bump();
-
-        // Consume any POD content until =cut
-        while !self.at_end() && !self.at(SyntaxKind::CUT_KW) {
-            if self.at(SyntaxKind::POD_CONTENT) {
-                self.bump();
-            } else {
-                // This shouldn't happen in POD mode, but handle gracefully
-                break;
-            }
-        }
-
-        // Consume the =cut if present (or handle EOF gracefully)
-        if self.at(SyntaxKind::CUT_KW) {
-            self.bump();
-        }
 
         self.builder.finish_node();
     }

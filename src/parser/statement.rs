@@ -48,7 +48,7 @@ impl<'a> Parser<'a> {
                 self.data_section();
                 true
             }
-            Some(SyntaxKind::POD_COMMAND) => {
+            Some(SyntaxKind::POD_CONTENT) => {
                 self.pod_block();
                 true
             }

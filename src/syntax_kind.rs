@@ -67,8 +67,8 @@ pub enum SyntaxKind {
     // I/O operators
 
     // POD related
-    POD_COMMAND, // =pod, =head1, =cut, etc.
-    CUT_KW,      // =cut keyword
+    POD_START, // =pod, =head1, etc. (any =identifier)
+    CUT_KW,    // =cut keyword
 
     // Symbols / Delimiters
     L_BRACE,      // {
@@ -465,7 +465,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::DATA_KW => "DATA_KW",
             SyntaxKind::END_KW => "END_KW",
             SyntaxKind::RAW_STRING => "RAW_STRING",
-            SyntaxKind::POD_COMMAND => "POD_COMMAND",
+            SyntaxKind::POD_START => "POD_START",
             SyntaxKind::CUT_KW => "CUT_KW",
             SyntaxKind::POD_BLOCK => "POD_BLOCK",
             SyntaxKind::POD_CONTENT => "POD_CONTENT",
