@@ -129,7 +129,10 @@ impl Formatter {
                             self.format_token(&token);
                         }
                         // FIXME: Handle other delimiters like /, |, etc. make generic
-                        SyntaxKind::L_PAREN | SyntaxKind::L_BRACKET | SyntaxKind::L_BRACE => {
+                        SyntaxKind::L_PAREN
+                        | SyntaxKind::L_BRACKET
+                        | SyntaxKind::L_BRACE
+                        | SyntaxKind::DELIMITER => {
                             self.handle_multiline_opening_delimiter(&token);
                         }
                         SyntaxKind::QW_STRING => {
@@ -226,7 +229,10 @@ impl Formatter {
                         k if k == kw_kind => {
                             self.format_token(&token);
                         }
-                        SyntaxKind::L_PAREN | SyntaxKind::L_BRACKET | SyntaxKind::SLASH => {
+                        SyntaxKind::L_PAREN
+                        | SyntaxKind::L_BRACKET
+                        | SyntaxKind::SLASH
+                        | SyntaxKind::DELIMITER => {
                             self.output.push_str(text);
                             self.prev_token_kind = Some(kind);
                         }

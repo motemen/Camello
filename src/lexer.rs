@@ -354,6 +354,31 @@ impl<'a> Lexer<'a> {
             }
         }
 
+        // Handle quote-like delimiter mode - parse delimiters for q/qq/qx/etc.
+        if self.context == LexerContext::QlikeDelimiter
+            || self.context == LexerContext::QwDelimiter
+            || self.context == LexerContext::QwContent
+        {
+            if let Some((kind, text)) = self.try_consume_quote_delimiter() {
+                // Update context based on the current context
+                match self.context {
+                    LexerContext::QwDelimiter => {
+                        self.context = LexerContext::QwContent;
+                    }
+                    LexerContext::QwContent => {
+                        // Closing delimiter in QwContent means end of qw expression
+                        self.context = LexerContext::ExpectingOperator;
+                    }
+                    LexerContext::QlikeDelimiter => {
+                        // For q-like expressions, we'll handle the context in the parser
+                        // since they have different content handling
+                    }
+                    _ => {}
+                }
+                return Some((kind, text));
+            }
+        }
+
         // Handle special tokens in ExpectingValue context
         if let Some(result) = self.try_handle_expecting_value_tokens() {
             return Some(result);
@@ -1214,7 +1239,7 @@ impl<'a> Lexer<'a> {
         }
 
         // If we start with a closing delimiter, let the normal lexer handle it
-        if matches!(first_char, ')' | ']' | '}' | '/') {
+        if self.is_quote_delimiter(first_char) {
             return None;
         }
 
@@ -1222,7 +1247,7 @@ impl<'a> Lexer<'a> {
         let mut end_pos = 0;
         for ch in remainder.chars() {
             // Stop at whitespace or closing delimiters
-            if ch.is_whitespace() || matches!(ch, ')' | ']' | '}' | '/') {
+            if ch.is_whitespace() || self.is_quote_delimiter(ch) {
                 break;
             }
             end_pos += ch.len_utf8();
@@ -1257,6 +1282,36 @@ impl<'a> Lexer<'a> {
         self.clone()
             .find(|(kind, _)| !kind.is_trivia())
             .filter(|(kind, _)| target_kinds.contains(kind))
+    }
+
+    /// Check if a character can be used as a quote-like delimiter
+    fn is_quote_delimiter(&self, ch: char) -> bool {
+        match ch {
+            // Paired delimiters
+            '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>' => true,
+            // Common single-character delimiters (excluding : ; , . - _ which are common in words)
+            '/' | '|' | '#' | '!' | '~' | '@' | '$' | '%' | '^' | '&' | '*' | '+' | '=' | '?'
+            | '`' | '\'' | '"' => true,
+            _ => false,
+        }
+    }
+
+    /// Try to consume a delimiter token in QlikeDelimiter context
+    fn try_consume_quote_delimiter(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        let remainder = self.logos_lexer.remainder();
+        if remainder.is_empty() {
+            return None;
+        }
+
+        let first_char = remainder.chars().next().unwrap();
+
+        if self.is_quote_delimiter(first_char) {
+            let delim_str = &remainder[..first_char.len_utf8()];
+            self.logos_lexer.bump(first_char.len_utf8());
+            return Some((SyntaxKind::DELIMITER, delim_str));
+        }
+
+        None
     }
 }
 
@@ -1464,11 +1519,11 @@ mod tests {
         // Test basic qw() parsing with parentheses
         let mut lexer = Lexer::new("qw(hello world)");
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::L_PAREN, "(")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "(")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "hello")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "world")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::R_PAREN, ")")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, ")")));
         assert_eq!(lexer.next_token(), None);
     }
 
@@ -1477,9 +1532,9 @@ mod tests {
         // Test the specific case that was broken: qw(:common)
         let mut lexer = Lexer::new("qw(:common)");
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::L_PAREN, "(")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "(")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, ":common")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::R_PAREN, ")")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, ")")));
         assert_eq!(lexer.next_token(), None);
     }
 
@@ -1488,13 +1543,13 @@ mod tests {
         // Test qw with multiple words including special characters
         let mut lexer = Lexer::new("qw(a:b c:d e)");
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::L_PAREN, "(")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "(")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "a:b")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "c:d")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "e")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::R_PAREN, ")")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, ")")));
         assert_eq!(lexer.next_token(), None);
     }
 
@@ -1503,31 +1558,31 @@ mod tests {
         // Test qw with slash delimiters
         let mut lexer = Lexer::new("qw/x:y z/");
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::SLASH, "/")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "x:y")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "z")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::SLASH, "/")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
         assert_eq!(lexer.next_token(), None);
 
         // Test qw with bracket delimiters
         let mut lexer = Lexer::new("qw[foo bar]");
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::L_BRACKET, "[")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "[")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "foo")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "bar")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::R_BRACKET, "]")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "]")));
         assert_eq!(lexer.next_token(), None);
 
         // Test qw with brace delimiters
         let mut lexer = Lexer::new("qw{alpha beta}");
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::L_BRACE, "{")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "{")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "alpha")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "beta")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::R_BRACE, "}")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "}")));
         assert_eq!(lexer.next_token(), None);
     }
 
@@ -1536,8 +1591,8 @@ mod tests {
         // Test empty qw()
         let mut lexer = Lexer::new("qw()");
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::L_PAREN, "(")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::R_PAREN, ")")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "(")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, ")")));
         assert_eq!(lexer.next_token(), None);
     }
 
@@ -1546,13 +1601,13 @@ mod tests {
         // Test qw with extra whitespace
         let mut lexer = Lexer::new("qw(  hello   world  )");
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::L_PAREN, "(")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "(")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, "  ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "hello")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, "   ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "world")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, "  ")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::R_PAREN, ")")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, ")")));
         assert_eq!(lexer.next_token(), None);
     }
 
