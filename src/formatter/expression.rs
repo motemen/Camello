@@ -208,14 +208,12 @@ impl Formatter {
                 NodeOrToken::Node(node) => self.format_node(&node),
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
-                    let text = token.text();
 
                     // Do not add spaces in dereference expressions
                     match kind {
                         SyntaxKind::WHITESPACE => {}
                         _ => {
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
+                            self.format_token(&token);
                         }
                     }
                 }
