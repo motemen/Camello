@@ -225,6 +225,50 @@ impl<'a> Parser<'a> {
         self.skip_trivia();
     }
 
+    fn parse_delimited_content(
+        &mut self,
+        content_kind: SyntaxKind,
+        closing_delimiter: Option<&str>,
+    ) -> Option<(String, String)> {
+        let (opening_delim, closing_delim) = if let Some(delim) = closing_delimiter {
+            // Use provided closing delimiter
+            (String::new(), delim.to_string())
+        } else {
+            // Parse opening delimiter and derive closing delimiter
+            let (opening_delim, closing_delim) = match self.current_token {
+                Some((SyntaxKind::DELIMITER, ref text)) => {
+                    let closing_delim = self.get_closing_delimiter(text);
+                    (text.to_string(), closing_delim)
+                }
+                _ => {
+                    self.error("Expected delimiter text");
+                    return None;
+                }
+            };
+
+            self.expect_delimiter_text(&opening_delim);
+            (opening_delim, closing_delim)
+        };
+
+        // Parse content until closing delimiter
+        while self
+            .current_token
+            .is_some_and(|(kind, text)| kind != SyntaxKind::DELIMITER || text != &closing_delim)
+        {
+            // Consume any tokens as the specified content kind (preserving original text)
+            if let Some((_, text)) = self.current_token.take() {
+                self.builder.token(content_kind.into(), text);
+                self.current_pos += text.len();
+                self.current_token = self.lexer.next_token();
+            }
+        }
+
+        // Consume closing delimiter
+        self.expect_delimiter_text(&closing_delim);
+
+        Some((opening_delim, closing_delim))
+    }
+
     pub fn parse_s_expr(&mut self) {
         self.builder.start_node(SyntaxKind::S_EXPR.into());
 
@@ -232,67 +276,34 @@ impl<'a> Parser<'a> {
         self.expect(SyntaxKind::S_KW);
         self.skip_trivia();
 
-        let (mut opening_delim, mut closing_delim) = match self.current_token {
-            Some((SyntaxKind::DELIMITER, ref text)) => {
-                let closing_delim = self.get_closing_delimiter(text);
-                (text.to_string(), closing_delim)
-            }
-            _ => {
-                self.error("Expected delimiter text");
-                self.builder.finish_node();
-                return;
-            }
-        };
-
-        self.expect_delimiter_text(&opening_delim);
-
-        // Parse pattern part - everything until the middle delimiter becomes S_PATTERN
-        while self
-            .current_token
-            .is_some_and(|(kind, text)| kind != SyntaxKind::DELIMITER || text != &closing_delim)
-        {
-            // Consume any tokens as pattern (preserving original text)
-            if let Some((_, text)) = self.current_token.take() {
-                self.builder.token(SyntaxKind::S_PATTERN.into(), text);
-                self.current_pos += text.len();
-                self.current_token = self.lexer.next_token();
-            }
-        }
-
-        self.expect_delimiter_text(&closing_delim);
-
-        if opening_delim != closing_delim {
-            // Paired delimiters. Consume opening delimiter for replacement part
-            (opening_delim, closing_delim) = match self.current_token {
-                Some((SyntaxKind::DELIMITER, ref text)) => {
-                    let closing_delim = self.get_closing_delimiter(text);
-                    (text.to_string(), closing_delim)
-                }
-                _ => {
-                    self.error("Expected delimiter text");
+        // Parse pattern part - handles opening delimiter, content, and middle delimiter
+        let (pattern_opening_delim, pattern_closing_delim) =
+            match self.parse_delimited_content(SyntaxKind::S_PATTERN, None) {
+                Some(delims) => delims,
+                None => {
                     self.builder.finish_node();
                     return;
                 }
             };
 
-            self.expect_delimiter_text(&opening_delim);
-        }
+        // Determine if the pattern delimiter is paired (different opening/closing)
+        let is_paired_delimiter = !pattern_opening_delim.is_empty()
+            && self.get_closing_delimiter(&pattern_opening_delim) != pattern_opening_delim;
 
-        // Parse replacement part - everything until the final delimiter becomes S_REPLACEMENT
-        while self
-            .current_token
-            .is_some_and(|(kind, text)| kind != SyntaxKind::DELIMITER || text != &closing_delim)
-        {
-            // Consume any tokens as replacement (preserving original text)
-            if let Some((_, text)) = self.current_token.take() {
-                self.builder.token(SyntaxKind::S_REPLACEMENT.into(), text);
-                self.current_pos += text.len();
-                self.current_token = self.lexer.next_token();
+        match self.parse_delimited_content(
+            SyntaxKind::S_REPLACEMENT,
+            if is_paired_delimiter {
+                None
+            } else {
+                Some(&pattern_closing_delim)
+            },
+        ) {
+            Some(_) => {}
+            None => {
+                self.builder.finish_node();
+                return;
             }
-        }
-
-        // Final closing delimiter
-        self.expect_delimiter_text(&closing_delim);
+        };
 
         // Consume optional flags (like 'g', 'i', 'm', 's', 'x')
         self.consume_regex_flags();
