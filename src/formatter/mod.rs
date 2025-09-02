@@ -261,7 +261,12 @@ impl Formatter {
         if !children.by_ref().any(|child| {
             matches!(
                 child.as_token().map(|t| t.kind()),
-                Some(SyntaxKind::L_BRACE | SyntaxKind::L_BRACKET | SyntaxKind::L_PAREN)
+                Some(
+                    SyntaxKind::L_BRACE
+                        | SyntaxKind::L_BRACKET
+                        | SyntaxKind::L_PAREN
+                        | SyntaxKind::DELIMITER
+                )
             )
         }) {
             return false;

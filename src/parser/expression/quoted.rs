@@ -10,24 +10,29 @@ impl<'a> Parser<'a> {
         self.expect(SyntaxKind::QW_KW);
         self.skip_trivia();
 
-        // Determine delimiter and find closing delimiter
-        let (opening_delim, closing_delim) = match self.current_kind() {
-            Some(SyntaxKind::L_PAREN) => (SyntaxKind::L_PAREN, SyntaxKind::R_PAREN),
-            Some(SyntaxKind::L_BRACKET) => (SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET),
-            Some(SyntaxKind::L_BRACE) => (SyntaxKind::L_BRACE, SyntaxKind::R_BRACE),
-            Some(SyntaxKind::SLASH) => (SyntaxKind::SLASH, SyntaxKind::SLASH),
-            _ => {
-                self.error("Expected qw() delimiter: (, [, {, or /");
-                return;
-            }
+        // Consume opening delimiter (should be DELIMITER token)
+        if !self.at(SyntaxKind::DELIMITER) {
+            self.error("Expected qw delimiter");
+            return;
+        }
+
+        // Get the delimiter text to determine the closing delimiter
+        let opening_delim_text = if let Some((_, text)) = &self.current_token {
+            text.to_string()
+        } else {
+            self.error("Expected delimiter text");
+            return;
         };
 
         // Consume opening delimiter
-        self.expect(opening_delim);
+        self.expect(SyntaxKind::DELIMITER);
+
+        // Determine the closing delimiter based on opening delimiter
+        let closing_delim_text = self.get_closing_delimiter(&opening_delim_text);
         // Don't skip trivia here - we need whitespace to separate words
 
         // Parse words inside qw() - lexer now provides QW_STRING tokens directly
-        while !self.at(closing_delim) && !self.at_end() {
+        while !self.at_delimiter_text(&closing_delim_text) && !self.at_end() {
             // Skip whitespace/trivia
             if let Some(kind) = self.current_kind() {
                 if kind.is_trivia() {
@@ -37,7 +42,7 @@ impl<'a> Parser<'a> {
             }
 
             // Check if we're at the closing delimiter
-            if self.at(closing_delim) {
+            if self.at_delimiter_text(&closing_delim_text) {
                 break;
             }
 
@@ -50,8 +55,8 @@ impl<'a> Parser<'a> {
             }
         }
 
-        // Closing delimiter
-        self.expect(closing_delim);
+        // Closing delimiter (should be DELIMITER token with matching text)
+        self.expect_delimiter_text(&closing_delim_text);
 
         self.builder.finish_node();
 
@@ -118,7 +123,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn y_expr(&mut self) {
-        self.parse_tr_expr_with_keyword(SyntaxKind::Y_KW, "y");
+        self.parse_tr_expr_with_keyword(SyntaxKind::Y_KW);
     }
 
     pub fn consume_regex_flags(&mut self) {
@@ -169,42 +174,46 @@ impl<'a> Parser<'a> {
         self.expect(kw_kind);
         self.skip_trivia();
 
-        // Determine delimiter and find closing delimiter
-        let (opening_delim, closing_delim) = match self.current_kind() {
-            Some(SyntaxKind::L_PAREN) => (SyntaxKind::L_PAREN, SyntaxKind::R_PAREN),
-            Some(SyntaxKind::L_BRACKET) => (SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET),
-            Some(SyntaxKind::L_BRACE) => (SyntaxKind::L_BRACE, SyntaxKind::R_BRACE),
-            Some(SyntaxKind::SLASH) => (SyntaxKind::SLASH, SyntaxKind::SLASH),
-            _ => {
-                self.error(&format!(
-                    "Expected {}() delimiter: (, [, {{, or /",
-                    operator_name
-                ));
-                self.builder.finish_node(); // Finish the node to avoid panic
-                return;
-            }
+        // Consume opening delimiter (should be DELIMITER token)
+        if !self.at(SyntaxKind::DELIMITER) {
+            self.error(&format!("Expected {} delimiter", operator_name));
+            self.builder.finish_node();
+            return;
+        }
+
+        // Get the delimiter text to determine the closing delimiter
+        let opening_delim_text = if let Some((_, text)) = &self.current_token {
+            text.to_string()
+        } else {
+            self.error("Expected delimiter text");
+            self.builder.finish_node();
+            return;
         };
 
         // Consume opening delimiter
-        self.expect(opening_delim);
+        self.expect(SyntaxKind::DELIMITER);
 
-        // Parse content inside - everything becomes the specific string kind
-        while !self.at(closing_delim) && !self.at_end() {
-            // Check if we're at the closing delimiter
-            if self.at(closing_delim) {
-                break;
-            }
+        // Determine the closing delimiter based on opening delimiter
+        let closing_delim_text = self.get_closing_delimiter(&opening_delim_text);
 
-            // Consume any tokens as the string kind (preserving original text)
-            if let Some((_, text)) = self.current_token.take() {
-                self.builder.token(string_kind.into(), text);
-                self.current_pos += text.len();
-                self.current_token = self.lexer.next_token();
+        // Parse content inside - handle both pre-tokenized string content and individual tokens
+        if self.at(string_kind) {
+            // Lexer already provided the complete string token (new behavior)
+            self.bump();
+        } else {
+            // Fallback: parse individual tokens and reconstruct (old behavior)
+            while !self.at_delimiter_text(&closing_delim_text) && !self.at_end() {
+                // Consume any tokens as the string kind (preserving original text)
+                if let Some((_, text)) = self.current_token.take() {
+                    self.builder.token(string_kind.into(), text);
+                    self.current_pos += text.len();
+                    self.current_token = self.lexer.next_token();
+                }
             }
         }
 
-        // Closing delimiter
-        self.expect(closing_delim);
+        // Closing delimiter (should be DELIMITER token with matching text)
+        self.expect_delimiter_text(&closing_delim_text);
 
         // For regex expressions (m and qr), consume optional flags
         if matches!(expr_kind, SyntaxKind::M_EXPR | SyntaxKind::QR_EXPR) {
@@ -229,153 +238,94 @@ impl<'a> Parser<'a> {
         self.expect(SyntaxKind::S_KW);
         self.skip_trivia();
 
-        // Determine delimiter and find closing delimiter
-        let (opening_delim, closing_delim) = match self.current_kind() {
-            Some(SyntaxKind::L_PAREN) => (SyntaxKind::L_PAREN, SyntaxKind::R_PAREN),
-            Some(SyntaxKind::L_BRACKET) => (SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET),
-            Some(SyntaxKind::L_BRACE) => (SyntaxKind::L_BRACE, SyntaxKind::R_BRACE),
-            Some(SyntaxKind::SLASH) => (SyntaxKind::SLASH, SyntaxKind::SLASH),
-            _ => {
-                self.error("Expected s() delimiter: (, [, {, or /");
-                self.builder.finish_node(); // Finish the node to avoid panic
-                return;
-            }
-        };
+        // Opening delimiter
+        self.expect(SyntaxKind::DELIMITER);
+        self.skip_trivia();
 
-        // Consume opening delimiter
-        self.expect(opening_delim);
-
-        // Parse pattern part - everything until the middle delimiter becomes S_PATTERN
-        while !self.at(closing_delim) && !self.at_end() {
-            // Consume any tokens as pattern (preserving original text)
-            if let Some((_, text)) = self.current_token.take() {
-                self.builder.token(SyntaxKind::S_PATTERN.into(), text);
-                self.current_pos += text.len();
-                self.current_token = self.lexer.next_token();
-            }
+        // Pattern content (lexer generates S_PATTERN token)
+        if self.at(SyntaxKind::S_PATTERN) {
+            self.bump();
+            self.skip_trivia();
         }
 
-        self.expect(closing_delim);
+        // Middle delimiter (closing pattern delimiter)
+        self.expect(SyntaxKind::DELIMITER);
+        self.skip_trivia();
 
-        let closing_delim_repl = if opening_delim != closing_delim {
-            // Paired delimiters for pattern. Replacement can have its own delimiters.
-            let (opening_repl, closing_repl) = match self.current_kind() {
-                Some(SyntaxKind::L_PAREN) => (SyntaxKind::L_PAREN, SyntaxKind::R_PAREN),
-                Some(SyntaxKind::L_BRACKET) => (SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET),
-                Some(SyntaxKind::L_BRACE) => (SyntaxKind::L_BRACE, SyntaxKind::R_BRACE),
-                Some(SyntaxKind::SLASH) => (SyntaxKind::SLASH, SyntaxKind::SLASH), // s(pat)/repl/ is also valid
-                _ => {
-                    self.error("Expected opening delimiter for replacement part of s expression");
-                    self.builder.finish_node();
-                    return;
-                }
-            };
-            self.expect(opening_repl);
-            closing_repl
-        } else {
-            // Symmetric delimiter for pattern. Replacement uses the same.
-            closing_delim
-        };
-
-        // Parse replacement part - everything until the final delimiter becomes S_REPLACEMENT
-        while !self.at(closing_delim_repl) && !self.at_end() {
-            // Consume any tokens as replacement (preserving original text)
-            if let Some((_, text)) = self.current_token.take() {
-                self.builder.token(SyntaxKind::S_REPLACEMENT.into(), text);
-                self.current_pos += text.len();
-                self.current_token = self.lexer.next_token();
-            }
+        // For asymmetric delimiters, there might be another opening delimiter for replacement
+        if self.at(SyntaxKind::DELIMITER) {
+            self.bump(); // Opening delimiter for replacement part
+            self.skip_trivia();
         }
 
-        // Final closing delimiter
-        self.expect(closing_delim_repl);
+        // Replacement content (lexer generates S_REPLACEMENT token)
+        if self.at(SyntaxKind::S_REPLACEMENT) {
+            self.bump();
+            self.skip_trivia();
+        }
 
-        // Consume optional flags (like 'g', 'i', 'm', 's', 'x')
-        self.consume_regex_flags();
+        // Closing delimiter (for replacement part)
+        self.expect(SyntaxKind::DELIMITER);
+        self.skip_trivia();
+
+        // Optional flags
+        while self.at(SyntaxKind::IDENT) {
+            let flag_text = self.current_text().unwrap_or("");
+            if flag_text
+                .chars()
+                .all(|c| matches!(c, 'g' | 'i' | 'm' | 's' | 'x' | 'e' | 'o'))
+            {
+                self.bump();
+            } else {
+                break;
+            }
+        }
 
         self.builder.finish_node();
     }
 
     pub fn parse_tr_expr(&mut self) {
-        self.parse_tr_expr_with_keyword(SyntaxKind::TR_KW, "tr");
+        self.parse_tr_expr_with_keyword(SyntaxKind::TR_KW);
     }
 
-    pub fn parse_tr_expr_with_keyword(&mut self, keyword_kind: SyntaxKind, keyword_name: &str) {
+    pub fn parse_tr_expr_with_keyword(&mut self, keyword_kind: SyntaxKind) {
         self.builder.start_node(SyntaxKind::TR_EXPR.into());
 
         // "tr" or "y"
         self.expect(keyword_kind);
         self.skip_trivia();
 
-        // Determine delimiter and find closing delimiter
-        let (opening_delim, closing_delim) = match self.current_kind() {
-            Some(SyntaxKind::L_PAREN) => (SyntaxKind::L_PAREN, SyntaxKind::R_PAREN),
-            Some(SyntaxKind::L_BRACKET) => (SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET),
-            Some(SyntaxKind::L_BRACE) => (SyntaxKind::L_BRACE, SyntaxKind::R_BRACE),
-            Some(SyntaxKind::SLASH) => (SyntaxKind::SLASH, SyntaxKind::SLASH),
-            _ => {
-                self.error(&format!(
-                    "Expected {}() delimiter: (, [, {{, or /",
-                    keyword_name
-                ));
-                self.builder.finish_node(); // Finish the node to avoid panic
-                return;
-            }
-        };
+        // Opening delimiter
+        self.expect(SyntaxKind::DELIMITER);
+        self.skip_trivia();
 
-        // Consume opening delimiter
-        self.expect(opening_delim);
-
-        // Parse search list part - everything until the middle delimiter becomes TR_SEARCH_LIST
-        while !self.at(closing_delim) && !self.at_end() {
-            // Consume any tokens as search list (preserving original text)
-            if let Some((_, text)) = self.current_token.take() {
-                self.builder.token(SyntaxKind::TR_SEARCH_LIST.into(), text);
-                self.current_pos += text.len();
-                self.current_token = self.lexer.next_token();
-            }
+        // Search list content (lexer generates TR_SEARCH_LIST token)
+        if self.at(SyntaxKind::TR_SEARCH_LIST) {
+            self.bump();
+            self.skip_trivia();
         }
 
-        self.expect(closing_delim);
+        // Middle delimiter
+        self.expect(SyntaxKind::DELIMITER);
+        self.skip_trivia();
 
-        let closing_delim_repl = if opening_delim != closing_delim {
-            // Paired delimiters for search list. Replacement can have its own delimiters.
-            let (opening_repl, closing_repl) = match self.current_kind() {
-                Some(SyntaxKind::L_PAREN) => (SyntaxKind::L_PAREN, SyntaxKind::R_PAREN),
-                Some(SyntaxKind::L_BRACKET) => (SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET),
-                Some(SyntaxKind::L_BRACE) => (SyntaxKind::L_BRACE, SyntaxKind::R_BRACE),
-                Some(SyntaxKind::SLASH) => (SyntaxKind::SLASH, SyntaxKind::SLASH), // tr(search)/repl/ is also valid
-                _ => {
-                    self.error(&format!(
-                        "Expected opening delimiter for replacement part of {} expression",
-                        keyword_name
-                    ));
-                    self.builder.finish_node();
-                    return;
-                }
-            };
-            self.expect(opening_repl);
-            closing_repl
-        } else {
-            // Symmetric delimiter for search list. Replacement uses the same.
-            closing_delim
-        };
-
-        // Parse replacement list part - everything until the final delimiter becomes TR_REPLACEMENT_LIST
-        while !self.at(closing_delim_repl) && !self.at_end() {
-            // Consume any tokens as replacement list (preserving original text)
-            if let Some((_, text)) = self.current_token.take() {
-                self.builder
-                    .token(SyntaxKind::TR_REPLACEMENT_LIST.into(), text);
-                self.current_pos += text.len();
-                self.current_token = self.lexer.next_token();
-            }
+        // For asymmetric delimiters, there might be another opening delimiter for replacement
+        if self.at(SyntaxKind::DELIMITER) {
+            self.bump(); // Opening delimiter for replacement part
+            self.skip_trivia();
         }
 
-        // Final closing delimiter
-        self.expect(closing_delim_repl);
+        // Replacement list content (lexer generates TR_REPLACEMENT_LIST token)
+        if self.at(SyntaxKind::TR_REPLACEMENT_LIST) {
+            self.bump();
+            self.skip_trivia();
+        }
 
-        // Consume optional flags (like 'd', 'c', 's')
+        // Closing delimiter (for replacement part)
+        self.expect(SyntaxKind::DELIMITER);
+        self.skip_trivia();
+
+        // Optional flags
         self.consume_tr_flags();
 
         self.builder.finish_node();
@@ -396,6 +346,7 @@ impl<'a> Parser<'a> {
                 }
                 SyntaxKind::S_KW => {
                     // Special case: 's' might be disambiguated as S_KW but should be treated as a flag
+                    // FIXME: This is a bit hacky - ideally lexer shouldn't produce S_KW here
                     if let Some((_, text)) = &self.current_token {
                         *text == "s"
                     } else {

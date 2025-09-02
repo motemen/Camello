@@ -243,18 +243,62 @@ pub enum LexerContext {
     VariableList,
     /// Inside a quote-like operator (q, qq, qx, s, etc.), expecting a delimiter or content.
     QlikeDelimiter,
+    /// Inside q-family expressions (q, qq, qx), parsing content until closing delimiter.
+    QlikeContent,
     /// After qw keyword, expecting opening delimiter.
     QwDelimiter,
     /// Inside qw() content, parsing whitespace-separated words.
     QwContent,
     /// In a data section context (after __END__ or __DATA__)
     RawData,
+    /// In a quote-like operator context (s///, tr///, y///)
+    InQuoteLike,
+}
+
+/// Generic quote-like operator part states (for s///, tr///, y///)
+#[derive(Debug, Clone, PartialEq)]
+pub enum QuoteLikePart {
+    /// Expecting first delimiter after operator keyword
+    ExpectingFirstDelimiter,
+    /// Inside search list/pattern content
+    InSearchList,
+    /// Expecting middle delimiter (end of search list/pattern)
+    ExpectingMiddleDelimiter,
+    /// Expecting second delimiter (for non-symmetric delimiters)
+    ExpectingSecondDelimiter,
+    /// Inside replacement list content
+    InReplacementList,
+    /// Expecting final delimiter (end of replacement)
+    ExpectingFinalDelimiter,
+    /// Parsing flags after final delimiter
+    InFlags,
+}
+
+/// Type of quote-like operator
+#[derive(Debug, Clone, PartialEq)]
+pub enum QuoteLikeOperatorType {
+    /// s/// (substitution operator)
+    Substitution,
+    /// tr/// (transliteration operator)
+    Transliteration,
+    /// y/// (transliteration operator, alias for tr)
+    Transliteration2,
+}
+
+/// State for quote-like operators (s///, tr///, y///)
+#[derive(Debug, Clone)]
+pub struct QuoteLikeState {
+    pub operator_type: QuoteLikeOperatorType,
+    pub part: QuoteLikePart,
+    pub delimiter: String,
+    pub is_symmetric: bool,
 }
 
 pub struct Lexer<'a> {
     logos_lexer: logos::Lexer<'a, Token>,
     context: LexerContext,
     at_line_start: bool, // Track if we're at the start of a line for POD detection
+    quote_like_state: Option<QuoteLikeState>,
 }
 
 impl<'a> Clone for Lexer<'a> {
@@ -263,6 +307,7 @@ impl<'a> Clone for Lexer<'a> {
             logos_lexer: self.logos_lexer.clone(),
             context: self.context,
             at_line_start: self.at_line_start,
+            quote_like_state: self.quote_like_state.clone(),
         }
     }
 }
@@ -282,6 +327,7 @@ impl<'a> Lexer<'a> {
             logos_lexer,
             context: LexerContext::ExpectingValue, // Start expecting a value
             at_line_start: true,                   // Start at beginning of input (line start)
+            quote_like_state: None,
         }
     }
 
@@ -341,6 +387,82 @@ impl<'a> Lexer<'a> {
         None
     }
 
+    fn try_handle_quote_like_content(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        if self.context != LexerContext::InQuoteLike {
+            return None;
+        }
+
+        if let Some(state) = &self.quote_like_state {
+            let delimiter = state.delimiter.clone();
+            match (&state.operator_type, &state.part) {
+                // Substitution operator (s///)
+                (QuoteLikeOperatorType::Substitution, QuoteLikePart::InSearchList) => {
+                    self.try_consume_quote_like_content(SyntaxKind::S_PATTERN, &delimiter)
+                }
+                (QuoteLikeOperatorType::Substitution, QuoteLikePart::InReplacementList) => {
+                    self.try_consume_quote_like_content(SyntaxKind::S_REPLACEMENT, &delimiter)
+                }
+                // Transliteration operators (tr///, y///)
+                (
+                    QuoteLikeOperatorType::Transliteration
+                    | QuoteLikeOperatorType::Transliteration2,
+                    QuoteLikePart::InSearchList,
+                ) => self.try_consume_quote_like_content(SyntaxKind::TR_SEARCH_LIST, &delimiter),
+                (
+                    QuoteLikeOperatorType::Transliteration
+                    | QuoteLikeOperatorType::Transliteration2,
+                    QuoteLikePart::InReplacementList,
+                ) => {
+                    self.try_consume_quote_like_content(SyntaxKind::TR_REPLACEMENT_LIST, &delimiter)
+                }
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
+
+    fn try_consume_quote_like_content(
+        &mut self,
+        content_kind: SyntaxKind,
+        delimiter: &str,
+    ) -> Option<(SyntaxKind, &'a str)> {
+        let remainder = self.logos_lexer.remainder();
+        if remainder.is_empty() {
+            return None;
+        }
+
+        // Find the next occurrence of the delimiter
+        let mut end_pos = remainder.len(); // Default to end of input
+        let mut escaped = false;
+
+        for (i, c) in remainder.char_indices() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+
+            if c == '\\' {
+                escaped = true;
+                continue;
+            }
+
+            // Check if we're at the start of the delimiter
+            if remainder[i..].starts_with(delimiter) {
+                end_pos = i;
+                break;
+            }
+        }
+
+        if end_pos > 0 {
+            let content = &remainder[..end_pos];
+            self.logos_lexer.bump(end_pos);
+            return Some((content_kind, content));
+        }
+
+        None
+    }
+
     pub fn next_token(&mut self) -> Option<(SyntaxKind, &'a str)> {
         // Handle POD content mode and RawData mode first
         if let Some(result) = self.try_handle_pod_and_raw_data() {
@@ -351,6 +473,53 @@ impl<'a> Lexer<'a> {
         if self.context == LexerContext::QwContent {
             if let Some(qw_result) = self.try_consume_qw_content() {
                 return Some(qw_result);
+            }
+        }
+
+        // Handle q-family content mode - parse content until delimiter
+        if self.context == LexerContext::QlikeContent {
+            if let Some(qlike_result) = self.try_consume_qlike_content() {
+                return Some(qlike_result);
+            }
+        }
+
+        // Handle substitution content mode
+        if let Some(result) = self.try_handle_quote_like_content() {
+            return Some(result);
+        }
+
+        // Handle quote-like delimiter mode - parse delimiters for q/qq/qx/etc.
+        if self.context == LexerContext::QlikeDelimiter
+            || self.context == LexerContext::QlikeContent
+            || self.context == LexerContext::QwDelimiter
+            || self.context == LexerContext::QwContent
+            || self.context == LexerContext::InQuoteLike
+        {
+            if let Some((kind, text)) = self.try_consume_quote_delimiter() {
+                // Update context based on the current context
+                match self.context {
+                    LexerContext::QwDelimiter => {
+                        self.context = LexerContext::QwContent;
+                    }
+                    LexerContext::QwContent => {
+                        // Closing delimiter in QwContent means end of qw expression
+                        self.context = LexerContext::ExpectingOperator;
+                    }
+                    LexerContext::QlikeDelimiter => {
+                        // For q-like expressions, transition to content parsing mode
+                        self.context = LexerContext::QlikeContent;
+                    }
+                    LexerContext::QlikeContent => {
+                        // Closing delimiter in QlikeContent means end of q-family expression
+                        self.context = LexerContext::ExpectingOperator;
+                    }
+                    LexerContext::InQuoteLike => {
+                        // Handle delimiter transitions in substitution context
+                        self.context = self.handle_delimiter_in_quote_like_context_with_text(text);
+                    }
+                    _ => {}
+                }
+                return Some((kind, text));
             }
         }
 
@@ -470,8 +639,10 @@ impl<'a> Lexer<'a> {
             LexerContext::ExpectingValue
             | LexerContext::VariableList
             | LexerContext::QlikeDelimiter
+            | LexerContext::QlikeContent
             | LexerContext::QwDelimiter
-            | LexerContext::QwContent => {
+            | LexerContext::QwContent
+            | LexerContext::InQuoteLike => {
                 // When expecting a value or in variable list, % is a sigil for a hash
                 // Examples: "my %hash", "{ key => %val }"
                 SyntaxKind::PERCENT
@@ -493,8 +664,10 @@ impl<'a> Lexer<'a> {
             LexerContext::ExpectingValue
             | LexerContext::VariableList
             | LexerContext::QlikeDelimiter
+            | LexerContext::QlikeContent
             | LexerContext::QwDelimiter
-            | LexerContext::QwContent => {
+            | LexerContext::QwContent
+            | LexerContext::InQuoteLike => {
                 // When expecting a value or in variable list, * is a typeglob sigil
                 // Examples: "my *glob", "*{$name}", "*STDIN"
                 SyntaxKind::ASTERISK
@@ -538,8 +711,10 @@ impl<'a> Lexer<'a> {
             LexerContext::ExpectingValue
             | LexerContext::VariableList
             | LexerContext::QlikeDelimiter
+            | LexerContext::QlikeContent
             | LexerContext::QwDelimiter
-            | LexerContext::QwContent => {
+            | LexerContext::QwContent
+            | LexerContext::InQuoteLike => {
                 // When expecting a value or in variable list, x is an identifier
                 // Examples: "sub x", "$x", "my $x"
                 SyntaxKind::IDENT
@@ -567,6 +742,10 @@ impl<'a> Lexer<'a> {
                 // In qw contexts, s is an identifier
                 SyntaxKind::IDENT
             }
+            LexerContext::QlikeContent => {
+                // In q-like content, s is an identifier (content)
+                SyntaxKind::IDENT
+            }
             LexerContext::ExpectingValue => {
                 // Look ahead to determine if this is s/// substitution or a bareword function call
                 // Gemini's suggestion: check for alphanumeric after optional whitespace
@@ -583,7 +762,7 @@ impl<'a> Lexer<'a> {
                     if c.is_alphanumeric() || c == '$' || c == '@' || c == '%' {
                         return SyntaxKind::IDENT;
                     } else {
-                        // Otherwise, it's likely substitution
+                        // Otherwise, it's likely substitution - we'll transition to Substitution context
                         return SyntaxKind::S_KW;
                     }
                 }
@@ -599,6 +778,10 @@ impl<'a> Lexer<'a> {
             LexerContext::QlikeDelimiter => {
                 // In q-like delimiter context, s is the substitution operator
                 SyntaxKind::S_KW
+            }
+            LexerContext::InQuoteLike => {
+                // In substitution context, s should be treated as content or flag
+                SyntaxKind::IDENT
             }
             LexerContext::RawData => {
                 unreachable!("s should not appear in RawData context");
@@ -635,6 +818,10 @@ impl<'a> Lexer<'a> {
             }
             LexerContext::QwDelimiter | LexerContext::QwContent => {
                 // In qw contexts, tr is an identifier
+                SyntaxKind::IDENT
+            }
+            LexerContext::QlikeContent => {
+                // In q-like content, tr is an identifier (content)
                 SyntaxKind::IDENT
             }
             LexerContext::ExpectingValue => {
@@ -679,6 +866,10 @@ impl<'a> Lexer<'a> {
                 // In q-like delimiter context, tr is the transliteration operator
                 SyntaxKind::TR_KW
             }
+            LexerContext::InQuoteLike => {
+                // In substitution context, tr should be treated as content
+                SyntaxKind::IDENT
+            }
             LexerContext::RawData => {
                 unreachable!("tr should not appear in RawData context");
             }
@@ -695,6 +886,10 @@ impl<'a> Lexer<'a> {
             }
             LexerContext::QwDelimiter | LexerContext::QwContent => {
                 // In qw contexts, y is an identifier
+                SyntaxKind::IDENT
+            }
+            LexerContext::QlikeContent => {
+                // In q-like content, y is an identifier (content)
                 SyntaxKind::IDENT
             }
             LexerContext::ExpectingValue => {
@@ -738,6 +933,10 @@ impl<'a> Lexer<'a> {
             LexerContext::QlikeDelimiter => {
                 // In q-like delimiter context, y is the transliteration operator
                 SyntaxKind::Y_KW
+            }
+            LexerContext::InQuoteLike => {
+                // In substitution context, y should be treated as content
+                SyntaxKind::IDENT
             }
             LexerContext::RawData => {
                 unreachable!("y should not appear in RawData context");
@@ -872,31 +1071,129 @@ impl<'a> Lexer<'a> {
         )
     }
 
-    fn update_context(&mut self, syntax_kind: SyntaxKind) {
-        self.context = match syntax_kind {
-            // Sigils: start VariableList context
-            SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT | SyntaxKind::ASTERISK => {
-                LexerContext::VariableList
-            }
+    fn is_sigil(&self, kind: SyntaxKind) -> bool {
+        matches!(
+            kind,
+            SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT | SyntaxKind::ASTERISK
+        )
+    }
 
-            // Reference operator: expects a value (variable, function name, etc.)
+    fn is_keyword(&self, kind: SyntaxKind) -> bool {
+        matches!(
+            kind,
+            SyntaxKind::SUB_KW
+                | SyntaxKind::MY_KW
+                | SyntaxKind::OUR_KW
+                | SyntaxKind::STATE_KW
+                | SyntaxKind::LOCAL_KW
+                | SyntaxKind::FOR_KW
+                | SyntaxKind::FOREACH_KW
+                | SyntaxKind::IF_KW
+                | SyntaxKind::UNLESS_KW
+                | SyntaxKind::WHILE_KW
+                | SyntaxKind::PACKAGE_KW
+                | SyntaxKind::USE_KW
+                | SyntaxKind::RETURN_KW
+                | SyntaxKind::QW_KW
+                | SyntaxKind::Q_KW
+                | SyntaxKind::QQ_KW
+                | SyntaxKind::QX_KW
+                | SyntaxKind::M_KW
+                | SyntaxKind::QR_KW
+                | SyntaxKind::S_KW
+                | SyntaxKind::TR_KW
+                | SyntaxKind::Y_KW
+                | SyntaxKind::END_KW
+                | SyntaxKind::DATA_KW
+                | SyntaxKind::BACKSLASH
+        )
+    }
+
+    fn is_operator(&self, kind: SyntaxKind) -> bool {
+        matches!(
+            kind,
+            SyntaxKind::EQ
+                | SyntaxKind::PLUS
+                | SyntaxKind::MINUS
+                | SyntaxKind::DOT
+                | SyntaxKind::ARROW
+                | SyntaxKind::STAR
+                | SyntaxKind::MODULO
+                | SyntaxKind::X
+                | SyntaxKind::SLASH
+                | SyntaxKind::GT
+                | SyntaxKind::LT
+                | SyntaxKind::GE
+                | SyntaxKind::LE
+                | SyntaxKind::EQ_EQ
+                | SyntaxKind::NE
+                | SyntaxKind::STR_EQ
+                | SyntaxKind::STR_NE
+                | SyntaxKind::STR_GT
+                | SyntaxKind::STR_LT
+                | SyntaxKind::STR_GE
+                | SyntaxKind::STR_LE
+                | SyntaxKind::STR_CMP
+                | SyntaxKind::LOGICAL_AND
+                | SyntaxKind::LOGICAL_OR
+                | SyntaxKind::LOGICAL_NOT
+                | SyntaxKind::NOT_KW
+                | SyntaxKind::AND_KW
+                | SyntaxKind::OR_KW
+                | SyntaxKind::XOR_KW
+                | SyntaxKind::DEFINED_OR
+                | SyntaxKind::SPACESHIP
+                | SyntaxKind::FILE_TEST_OP
+                | SyntaxKind::REGEX_MATCH
+                | SyntaxKind::REGEX_NOT_MATCH
+                | SyntaxKind::COMMA
+        )
+    }
+
+    fn is_literal(&self, kind: SyntaxKind) -> bool {
+        matches!(
+            kind,
+            SyntaxKind::NUMBER
+                | SyntaxKind::STRING
+                | SyntaxKind::VERSION
+                | SyntaxKind::BARE_VERSION
+                | SyntaxKind::REGEX_LITERAL
+                | SyntaxKind::IO_EXPR
+                | SyntaxKind::Q_STRING
+                | SyntaxKind::QQ_STRING
+                | SyntaxKind::QX_STRING
+                | SyntaxKind::QW_STRING
+        )
+    }
+
+    fn is_left_delimiter(&self, kind: SyntaxKind) -> bool {
+        matches!(
+            kind,
+            SyntaxKind::L_PAREN | SyntaxKind::L_BRACE | SyntaxKind::L_BRACKET
+        )
+    }
+
+    fn is_right_delimiter(&self, kind: SyntaxKind) -> bool {
+        matches!(
+            kind,
+            SyntaxKind::R_PAREN | SyntaxKind::R_BRACE | SyntaxKind::R_BRACKET
+        )
+    }
+
+    fn handle_sigil_context(&self, kind: SyntaxKind) -> LexerContext {
+        match kind {
             SyntaxKind::BACKSLASH => LexerContext::ExpectingValue,
+            _ => LexerContext::VariableList,
+        }
+    }
 
-            // Keywords with different expectations
-            SyntaxKind::SUB_KW => LexerContext::ExpectingValue, // Expects identifier (bareword)
+    fn handle_keyword_context(&self, kind: SyntaxKind) -> LexerContext {
+        match kind {
             SyntaxKind::MY_KW
             | SyntaxKind::OUR_KW
             | SyntaxKind::STATE_KW
-            | SyntaxKind::LOCAL_KW => LexerContext::VariableList, // Expects variables or variable lists
-            SyntaxKind::FOR_KW => LexerContext::ExpectingValue, // Expects for condition/iterator
-            SyntaxKind::FOREACH_KW => LexerContext::ExpectingValue, // Expects foreach condition/iterator
-            SyntaxKind::IF_KW => LexerContext::ExpectingValue,      // Expects if condition
-            SyntaxKind::UNLESS_KW => LexerContext::ExpectingValue,  // Expects unless condition
-            SyntaxKind::WHILE_KW => LexerContext::ExpectingValue,   // Expects while condition
-            SyntaxKind::PACKAGE_KW => LexerContext::ExpectingValue, // Expects package name
-            // qw keyword - special handling for whitespace-separated words
+            | SyntaxKind::LOCAL_KW => LexerContext::VariableList,
             SyntaxKind::QW_KW => LexerContext::QwDelimiter,
-            // Other quote-like operators
             SyntaxKind::Q_KW
             | SyntaxKind::QQ_KW
             | SyntaxKind::QX_KW
@@ -905,129 +1202,189 @@ impl<'a> Lexer<'a> {
             | SyntaxKind::S_KW
             | SyntaxKind::TR_KW
             | SyntaxKind::Y_KW => LexerContext::QlikeDelimiter,
-            SyntaxKind::USE_KW => LexerContext::ExpectingValue, // Expects module name
-            SyntaxKind::RETURN_KW => LexerContext::ExpectingValue, // Expects return value
-
-            // Data section keywords - after these, normal parsing stops
             SyntaxKind::END_KW | SyntaxKind::DATA_KW => LexerContext::RawData,
+            _ => LexerContext::ExpectingValue,
+        }
+    }
 
-            // Operators expect a value next and break out of VariableList context
-            SyntaxKind::EQ
-            | SyntaxKind::PLUS
-            | SyntaxKind::MINUS
-            | SyntaxKind::DOT
-            | SyntaxKind::ARROW => LexerContext::ExpectingValue,
-            SyntaxKind::STAR | SyntaxKind::MODULO | SyntaxKind::X => LexerContext::ExpectingValue,
-            SyntaxKind::SLASH => {
-                // After slash in different contexts
-                match self.context {
-                    LexerContext::QwDelimiter => {
-                        // Opening delimiter in qw/ - transition to qw content parsing
-                        LexerContext::QwContent
-                    }
-                    LexerContext::QlikeDelimiter => {
-                        LexerContext::ExpectingOperator // q-family closing delimiter
-                    }
-                    LexerContext::QwContent => {
-                        // Closing delimiter in qw/ - transition back to expecting operator
-                        LexerContext::ExpectingOperator
-                    }
-                    _ => LexerContext::ExpectingValue,
-                }
-            }
-            // Comparison operators
-            SyntaxKind::GT
-            | SyntaxKind::LT
-            | SyntaxKind::GE
-            | SyntaxKind::LE
-            | SyntaxKind::EQ_EQ
-            | SyntaxKind::NE
-            | SyntaxKind::STR_EQ
-            | SyntaxKind::STR_NE
-            | SyntaxKind::STR_GT
-            | SyntaxKind::STR_LT
-            | SyntaxKind::STR_GE
-            | SyntaxKind::STR_LE
-            | SyntaxKind::STR_CMP => LexerContext::ExpectingValue,
-            SyntaxKind::LOGICAL_AND | SyntaxKind::LOGICAL_OR | SyntaxKind::LOGICAL_NOT => {
-                LexerContext::ExpectingValue
-            }
-            SyntaxKind::NOT_KW | SyntaxKind::AND_KW | SyntaxKind::OR_KW | SyntaxKind::XOR_KW => {
-                LexerContext::ExpectingValue
-            }
-            SyntaxKind::DEFINED_OR | SyntaxKind::SPACESHIP => LexerContext::ExpectingValue,
-            SyntaxKind::FILE_TEST_OP => LexerContext::ExpectingValue,
-            SyntaxKind::REGEX_MATCH | SyntaxKind::REGEX_NOT_MATCH => LexerContext::ExpectingValue,
-            SyntaxKind::L_PAREN | SyntaxKind::L_BRACE | SyntaxKind::L_BRACKET => {
-                if self.context == LexerContext::QwDelimiter {
-                    // Opening delimiter in qw() - transition to qw content parsing
-                    LexerContext::QwContent
-                } else {
-                    LexerContext::ExpectingValue
-                }
-            }
-            SyntaxKind::COMMA => LexerContext::ExpectingValue,
+    fn handle_operator_context(&self, kind: SyntaxKind) -> LexerContext {
+        match kind {
+            SyntaxKind::SLASH => self.handle_slash_context(),
+            _ => LexerContext::ExpectingValue,
+        }
+    }
 
-            // IDENT needs special handling based on current context
-            SyntaxKind::IDENT => {
-                match self.context {
-                    LexerContext::VariableList => {
-                        // Transition out of VariableList after first identifier
-                        // This makes $ followed by identifier transition to ExpectingOperator
-                        // which will correctly handle % as modulo in expressions
-                        LexerContext::ExpectingOperator
+    fn handle_left_delimiter_context(&self, _kind: SyntaxKind) -> LexerContext {
+        if self.context == LexerContext::QwDelimiter {
+            LexerContext::QwContent
+        } else {
+            LexerContext::ExpectingValue
+        }
+    }
+
+    fn handle_slash_context(&self) -> LexerContext {
+        match self.context {
+            LexerContext::QwDelimiter => LexerContext::QwContent,
+            LexerContext::QlikeDelimiter => LexerContext::ExpectingOperator,
+            LexerContext::QwContent => LexerContext::ExpectingOperator,
+            _ => LexerContext::ExpectingValue,
+        }
+    }
+
+    fn handle_identifier_context(&self) -> LexerContext {
+        match self.context {
+            LexerContext::VariableList | LexerContext::ExpectingValue => {
+                LexerContext::ExpectingOperator
+            }
+            LexerContext::ExpectingOperator => LexerContext::ExpectingOperator,
+            LexerContext::QlikeDelimiter
+            | LexerContext::QlikeContent
+            | LexerContext::QwContent
+            | LexerContext::RawData
+            | LexerContext::InQuoteLike => self.context,
+            LexerContext::QwDelimiter => LexerContext::ExpectingOperator,
+        }
+    }
+
+    /// Get the matching closing delimiter for asymmetric pairs
+    fn get_closing_delimiter(&self, opening: &str) -> String {
+        match opening {
+            "{" => "}".to_string(),
+            "[" => "]".to_string(),
+            "(" => ")".to_string(),
+            "<" => ">".to_string(),
+            _ => opening.to_string(), // For symmetric delimiters, return the same
+        }
+    }
+
+    fn handle_delimiter_in_quote_like_context_with_text(
+        &mut self,
+        delimiter_text: &str,
+    ) -> LexerContext {
+        if self.context != LexerContext::InQuoteLike {
+            return self.context;
+        }
+
+        if let Some(state) = &self.quote_like_state {
+            match &state.part {
+                QuoteLikePart::ExpectingFirstDelimiter => {
+                    // First delimiter - determine if symmetric or not
+                    let is_symmetric = match delimiter_text {
+                        "/" | "#" | "!" | "|" | "~" => true,
+                        "{" | "[" | "(" | "<" => false,
+                        _ => true, // Assume symmetric for other delimiters
+                    };
+
+                    let closing_delimiter = if is_symmetric {
+                        delimiter_text.to_string()
+                    } else {
+                        self.get_closing_delimiter(delimiter_text)
+                    };
+
+                    // Now we can mutably borrow
+                    if let Some(state) = &mut self.quote_like_state {
+                        state.delimiter = closing_delimiter;
+                        state.is_symmetric = is_symmetric;
+                        state.part = QuoteLikePart::InSearchList;
                     }
-                    LexerContext::ExpectingValue => {
-                        // If we're expecting a value and get an identifier,
-                        // we now expect an operator (normal expression)
-                        LexerContext::ExpectingOperator
-                    }
-                    LexerContext::ExpectingOperator => {
-                        // This shouldn't happen, but if it does, expect operator
-                        LexerContext::ExpectingOperator
-                    }
-                    LexerContext::QlikeDelimiter => {
-                        // In q-like delimiter context, after identifier, stay in same context
-                        // (we're inside q/.../ construct)
-                        self.context
-                    }
-                    LexerContext::QwDelimiter => {
-                        // Should not happen - we should transition to QwContent after delimiter
-                        LexerContext::ExpectingOperator
-                    }
-                    LexerContext::QwContent => {
-                        // In qw content context, stay in same context to parse more words
-                        self.context
-                    }
-                    LexerContext::RawData => {
-                        // Handle gracefully instead of panicking
-                        self.context
-                    }
+
+                    LexerContext::InQuoteLike
                 }
+                QuoteLikePart::InSearchList => {
+                    // End of pattern part - check if this matches expected delimiter
+                    if state.is_symmetric || delimiter_text == state.delimiter {
+                        if let Some(state) = &mut self.quote_like_state {
+                            if state.is_symmetric {
+                                state.part = QuoteLikePart::InReplacementList;
+                            } else {
+                                state.part = QuoteLikePart::ExpectingSecondDelimiter;
+                            }
+                        }
+                    }
+
+                    LexerContext::InQuoteLike
+                }
+                QuoteLikePart::ExpectingSecondDelimiter => {
+                    // Start of replacement for non-symmetric delimiters
+                    if let Some(state) = &mut self.quote_like_state {
+                        state.part = QuoteLikePart::InReplacementList;
+                    }
+                    LexerContext::InQuoteLike
+                }
+                QuoteLikePart::InReplacementList => {
+                    // End of replacement part - check if this matches expected delimiter
+                    if state.is_symmetric || delimiter_text == state.delimiter {
+                        self.quote_like_state = None;
+                        return LexerContext::ExpectingOperator;
+                    }
+
+                    LexerContext::InQuoteLike
+                }
+                _ => LexerContext::InQuoteLike,
+            }
+        } else {
+            self.context
+        }
+    }
+
+    fn update_context(&mut self, syntax_kind: SyntaxKind) {
+        self.context = match syntax_kind {
+            // Special handling for quote-like operators to transition to QuoteLike context
+            // This must come before general keyword handling
+            SyntaxKind::S_KW => {
+                self.quote_like_state = Some(QuoteLikeState {
+                    operator_type: QuoteLikeOperatorType::Substitution,
+                    part: QuoteLikePart::ExpectingFirstDelimiter,
+                    delimiter: String::new(),
+                    is_symmetric: false,
+                });
+                LexerContext::InQuoteLike
+            }
+            SyntaxKind::TR_KW => {
+                self.quote_like_state = Some(QuoteLikeState {
+                    operator_type: QuoteLikeOperatorType::Transliteration,
+                    part: QuoteLikePart::ExpectingFirstDelimiter,
+                    delimiter: String::new(),
+                    is_symmetric: false,
+                });
+                LexerContext::InQuoteLike
+            }
+            SyntaxKind::Y_KW => {
+                self.quote_like_state = Some(QuoteLikeState {
+                    operator_type: QuoteLikeOperatorType::Transliteration2,
+                    part: QuoteLikePart::ExpectingFirstDelimiter,
+                    delimiter: String::new(),
+                    is_symmetric: false,
+                });
+                LexerContext::InQuoteLike
             }
 
-            // Literals expect an operator next
-            SyntaxKind::NUMBER
-            | SyntaxKind::STRING
-            | SyntaxKind::VERSION
-            | SyntaxKind::BARE_VERSION
-            | SyntaxKind::REGEX_LITERAL
-            | SyntaxKind::IO_EXPR
-            // Quote family string types also expect operator next
-            | SyntaxKind::Q_STRING
-            | SyntaxKind::QQ_STRING
-            | SyntaxKind::QX_STRING
-            | SyntaxKind::QW_STRING => LexerContext::ExpectingOperator,
-            SyntaxKind::R_PAREN | SyntaxKind::R_BRACE | SyntaxKind::R_BRACKET => {
+            // Sigils and reference operators
+            kind if self.is_sigil(kind) || kind == SyntaxKind::BACKSLASH => {
+                self.handle_sigil_context(kind)
+            }
+
+            // Keywords (except S_KW which is handled above)
+            kind if self.is_keyword(kind) => self.handle_keyword_context(kind),
+
+            // Operators
+            kind if self.is_operator(kind) => self.handle_operator_context(kind),
+
+            // Left delimiters need special handling for qw and substitution
+            kind if self.is_left_delimiter(kind) => self.handle_left_delimiter_context(kind),
+
+            // Identifiers need context-dependent handling
+            SyntaxKind::IDENT => self.handle_identifier_context(),
+
+            // Literals and closing delimiters expect operators
+            kind if self.is_literal(kind) || self.is_right_delimiter(kind) => {
                 LexerContext::ExpectingOperator
             }
 
-            // Statement terminators reset to expecting value
-            SyntaxKind::SEMICOLON => LexerContext::ExpectingValue,
-
-            // POD-related transitions
-            SyntaxKind::CUT_KW => LexerContext::ExpectingValue, // =cut ends POD block
-            SyntaxKind::POD_CONTENT => LexerContext::ExpectingValue, // POD content processed
+            // Statement terminators and POD reset context
+            SyntaxKind::SEMICOLON | SyntaxKind::CUT_KW | SyntaxKind::POD_CONTENT => {
+                LexerContext::ExpectingValue
+            }
 
             // Keep current context for other tokens
             _ => self.context,
@@ -1169,7 +1526,7 @@ impl<'a> Lexer<'a> {
         }
 
         // If we start with a closing delimiter, let the normal lexer handle it
-        if matches!(first_char, ')' | ']' | '}' | '/') {
+        if self.is_quote_delimiter(first_char) {
             return None;
         }
 
@@ -1177,7 +1534,7 @@ impl<'a> Lexer<'a> {
         let mut end_pos = 0;
         for ch in remainder.chars() {
             // Stop at whitespace or closing delimiters
-            if ch.is_whitespace() || matches!(ch, ')' | ']' | '}' | '/') {
+            if ch.is_whitespace() || self.is_quote_delimiter(ch) {
                 break;
             }
             end_pos += ch.len_utf8();
@@ -1187,6 +1544,51 @@ impl<'a> Lexer<'a> {
             let word = &remainder[..end_pos];
             self.logos_lexer.bump(end_pos);
             return Some((SyntaxKind::QW_STRING, word));
+        }
+
+        None
+    }
+
+    /// Try to consume q-family content, treating everything until the closing delimiter as a single token
+    fn try_consume_qlike_content(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        let remainder = self.logos_lexer.remainder();
+        if remainder.is_empty() {
+            return None;
+        }
+
+        let first_char = remainder.chars().next().unwrap();
+
+        // If we start with a potential closing delimiter, let the normal lexer handle it
+        if self.is_quote_delimiter(first_char) {
+            return None;
+        }
+
+        // Find the next quote delimiter (which should be the closing delimiter)
+        let mut end_pos = remainder.len(); // Default to end of input
+        let mut escaped = false;
+
+        for (i, ch) in remainder.char_indices() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+
+            if ch == '\\' {
+                escaped = true;
+                continue;
+            }
+
+            // Stop at any quote delimiter
+            if self.is_quote_delimiter(ch) {
+                end_pos = i;
+                break;
+            }
+        }
+
+        if end_pos > 0 {
+            let content = &remainder[..end_pos];
+            self.logos_lexer.bump(end_pos);
+            return Some((SyntaxKind::Q_STRING, content));
         }
 
         None
@@ -1212,6 +1614,36 @@ impl<'a> Lexer<'a> {
         self.clone()
             .find(|(kind, _)| !kind.is_trivia())
             .filter(|(kind, _)| target_kinds.contains(kind))
+    }
+
+    /// Check if a character can be used as a quote-like delimiter
+    fn is_quote_delimiter(&self, ch: char) -> bool {
+        match ch {
+            // Paired delimiters
+            '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>' => true,
+            // Common single-character delimiters (excluding : ; , . - _ which are common in words)
+            '/' | '|' | '#' | '!' | '~' | '@' | '$' | '%' | '^' | '&' | '*' | '+' | '=' | '?'
+            | '`' | '\'' | '"' => true,
+            _ => false,
+        }
+    }
+
+    /// Try to consume a delimiter token in QlikeDelimiter context
+    fn try_consume_quote_delimiter(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        let remainder = self.logos_lexer.remainder();
+        if remainder.is_empty() {
+            return None;
+        }
+
+        let first_char = remainder.chars().next().unwrap();
+
+        if self.is_quote_delimiter(first_char) {
+            let delim_str = &remainder[..first_char.len_utf8()];
+            self.logos_lexer.bump(first_char.len_utf8());
+            return Some((SyntaxKind::DELIMITER, delim_str));
+        }
+
+        None
     }
 }
 
@@ -1415,15 +1847,101 @@ mod tests {
     }
 
     #[test]
+    fn test_substitution_lexing() {
+        // Test basic s/pattern/replacement/ lexing
+        let mut lexer = Lexer::new("s/world/universe/");
+
+        // First token should be S_KW
+        let token1 = lexer.next_token();
+        println!(
+            "Token 1: {:?}, Context: {:?}, State: {:?}",
+            token1, lexer.context, lexer.quote_like_state
+        );
+        assert_eq!(token1, Some((SyntaxKind::S_KW, "s")));
+
+        // Should be in substitution context now
+        assert_eq!(lexer.context, LexerContext::InQuoteLike);
+
+        // Next should be opening delimiter
+        let token2 = lexer.next_token();
+        println!(
+            "Token 2: {:?}, Context: {:?}, State: {:?}",
+            token2, lexer.context, lexer.quote_like_state
+        );
+        assert_eq!(token2, Some((SyntaxKind::DELIMITER, "/")));
+
+        // After first delimiter, should be in InSearchList state
+        if let Some(ref state) = lexer.quote_like_state {
+            assert_eq!(state.part, QuoteLikePart::InSearchList);
+        }
+
+        // Pattern content
+        let token3 = lexer.next_token();
+        println!(
+            "Token 3: {:?}, Context: {:?}, State: {:?}",
+            token3, lexer.context, lexer.quote_like_state
+        );
+        assert_eq!(token3, Some((SyntaxKind::S_PATTERN, "world")));
+
+        // Middle delimiter
+        let token4 = lexer.next_token();
+        println!(
+            "Token 4: {:?}, Context: {:?}, State: {:?}",
+            token4, lexer.context, lexer.quote_like_state
+        );
+        assert_eq!(token4, Some((SyntaxKind::DELIMITER, "/")));
+
+        // Replacement content
+        let token5 = lexer.next_token();
+        println!(
+            "Token 5: {:?}, Context: {:?}, State: {:?}",
+            token5, lexer.context, lexer.quote_like_state
+        );
+        assert_eq!(token5, Some((SyntaxKind::S_REPLACEMENT, "universe")));
+
+        // Closing delimiter
+        let token6 = lexer.next_token();
+        println!(
+            "Token 6: {:?}, Context: {:?}, State: {:?}",
+            token6, lexer.context, lexer.quote_like_state
+        );
+        assert_eq!(token6, Some((SyntaxKind::DELIMITER, "/")));
+
+        // Should be back to expecting operator
+        assert_eq!(lexer.context, LexerContext::ExpectingOperator);
+    }
+
+    #[test]
+    fn test_asymmetric_delimiters() {
+        let input = "$text =~ s{old}{new}g;";
+        let mut lexer = Lexer::new(input);
+
+        println!("Testing asymmetric delimiters: {}", input);
+
+        let mut token_num = 1;
+        while let Some((token, text)) = lexer.next_token() {
+            println!(
+                "Token {}: Some(({:?}, {:?})), Context: {:?}, State: {:?}",
+                token_num, token, text, lexer.context, lexer.quote_like_state
+            );
+            token_num += 1;
+
+            if token_num > 20 {
+                break;
+            }
+        }
+    }
+
+    #[test]
     fn test_qw_basic_parsing() {
         // Test basic qw() parsing with parentheses
         let mut lexer = Lexer::new("qw(hello world)");
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::L_PAREN, "(")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "(")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "hello")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "world")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::R_PAREN, ")")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, ")")));
         assert_eq!(lexer.next_token(), None);
     }
 
@@ -1432,9 +1950,9 @@ mod tests {
         // Test the specific case that was broken: qw(:common)
         let mut lexer = Lexer::new("qw(:common)");
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::L_PAREN, "(")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "(")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, ":common")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::R_PAREN, ")")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, ")")));
         assert_eq!(lexer.next_token(), None);
     }
 
@@ -1443,13 +1961,13 @@ mod tests {
         // Test qw with multiple words including special characters
         let mut lexer = Lexer::new("qw(a:b c:d e)");
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::L_PAREN, "(")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "(")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "a:b")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "c:d")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "e")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::R_PAREN, ")")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, ")")));
         assert_eq!(lexer.next_token(), None);
     }
 
@@ -1458,31 +1976,31 @@ mod tests {
         // Test qw with slash delimiters
         let mut lexer = Lexer::new("qw/x:y z/");
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::SLASH, "/")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "x:y")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "z")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::SLASH, "/")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
         assert_eq!(lexer.next_token(), None);
 
         // Test qw with bracket delimiters
         let mut lexer = Lexer::new("qw[foo bar]");
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::L_BRACKET, "[")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "[")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "foo")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "bar")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::R_BRACKET, "]")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "]")));
         assert_eq!(lexer.next_token(), None);
 
         // Test qw with brace delimiters
         let mut lexer = Lexer::new("qw{alpha beta}");
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::L_BRACE, "{")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "{")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "alpha")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "beta")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::R_BRACE, "}")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "}")));
         assert_eq!(lexer.next_token(), None);
     }
 
@@ -1491,8 +2009,8 @@ mod tests {
         // Test empty qw()
         let mut lexer = Lexer::new("qw()");
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::L_PAREN, "(")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::R_PAREN, ")")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "(")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, ")")));
         assert_eq!(lexer.next_token(), None);
     }
 
@@ -1501,13 +2019,13 @@ mod tests {
         // Test qw with extra whitespace
         let mut lexer = Lexer::new("qw(  hello   world  )");
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::L_PAREN, "(")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "(")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, "  ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "hello")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, "   ")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "world")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, "  ")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::R_PAREN, ")")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, ")")));
         assert_eq!(lexer.next_token(), None);
     }
 
@@ -1534,6 +2052,111 @@ mod tests {
                     &input[..if input.starts_with("tr") { 2 } else { 1 }]
                 ))
             );
+        }
+    }
+
+    #[test]
+    fn test_q_basic_parsing() {
+        // Test basic q() parsing with parentheses
+        let mut lexer = Lexer::new("q(hello)");
+        let mut tokens = Vec::new();
+
+        while let Some((kind, text)) = lexer.next_token() {
+            println!(
+                "Token: {:?}, Text: {:?}, Context: {:?}",
+                kind, text, lexer.context
+            );
+            tokens.push((kind, text));
+        }
+
+        // Debug the token sequence
+        assert_eq!(tokens.len(), 4); // Should have: Q_KW, DELIMITER, Q_STRING, DELIMITER
+        assert_eq!(tokens[0], (SyntaxKind::Q_KW, "q"));
+        assert_eq!(tokens[1], (SyntaxKind::DELIMITER, "("));
+        assert_eq!(tokens[2], (SyntaxKind::Q_STRING, "hello"));
+        assert_eq!(tokens[3], (SyntaxKind::DELIMITER, ")"));
+    }
+
+    #[test]
+    fn test_full_q_expression() {
+        // Test a complete q expression as would appear in a statement
+        let mut lexer = Lexer::new("print q(hello);");
+        let mut tokens = Vec::new();
+
+        while let Some((kind, text)) = lexer.next_token() {
+            println!(
+                "Full expression Token: {:?}, Text: {:?}, Context: {:?}",
+                kind, text, lexer.context
+            );
+            tokens.push((kind, text));
+        }
+
+        // Should have: IDENT, WHITESPACE, Q_KW, DELIMITER, Q_STRING, DELIMITER, SEMICOLON
+        assert!(tokens.len() >= 5);
+        // Find the Q_KW token
+        let q_pos = tokens
+            .iter()
+            .position(|(kind, _)| *kind == SyntaxKind::Q_KW)
+            .unwrap();
+        assert_eq!(tokens[q_pos], (SyntaxKind::Q_KW, "q"));
+        assert_eq!(tokens[q_pos + 1], (SyntaxKind::DELIMITER, "("));
+        assert_eq!(tokens[q_pos + 2], (SyntaxKind::Q_STRING, "hello"));
+        assert_eq!(tokens[q_pos + 3], (SyntaxKind::DELIMITER, ")"));
+    }
+
+    #[test]
+    fn test_debug_q_simple() {
+        let mut lexer = Lexer::new("q(hello)");
+        let mut tokens = Vec::new();
+
+        while let Some((kind, text)) = lexer.next_token() {
+            println!(
+                "Token: {:?}, Text: {:?}, Context: {:?}",
+                kind, text, lexer.context
+            );
+            tokens.push((kind, text));
+        }
+
+        // Check that we get the expected tokens
+        assert_eq!(tokens[0], (SyntaxKind::Q_KW, "q"));
+        assert_eq!(tokens[1], (SyntaxKind::DELIMITER, "("));
+        assert_eq!(tokens[2], (SyntaxKind::Q_STRING, "hello"));
+        assert_eq!(tokens[3], (SyntaxKind::DELIMITER, ")"));
+    }
+
+    #[test]
+    fn test_debug_print_q_tokens() {
+        let mut lexer = Lexer::new("print q(hello);");
+        let mut tokens = Vec::new();
+
+        while let Some((kind, text)) = lexer.next_token() {
+            println!(
+                "Token: {:?}, Text: {:?}, Context: {:?}",
+                kind, text, lexer.context
+            );
+            tokens.push((kind, text));
+        }
+
+        // Print all tokens for debugging
+        println!("All tokens: {:?}", tokens);
+    }
+
+    #[test]
+    fn test_debug_parser_lexer_sync() {
+        // Test that mimics how the parser uses the lexer
+        let mut lexer = Lexer::new("print q(hello);");
+
+        // Mimic parser initialization: get first token
+        let mut current_token = lexer.next_token();
+        println!("Initial token: {:?}", current_token);
+
+        // Mimic parser.bump() for each token
+        while let Some((kind, text)) = current_token {
+            println!(
+                "Parser processing token: {:?}, Text: {:?}, Lexer context: {:?}",
+                kind, text, lexer.context
+            );
+            current_token = lexer.next_token(); // This is what parser.bump() does
         }
     }
 }

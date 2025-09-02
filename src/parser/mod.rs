@@ -168,6 +168,42 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Check if current token is a DELIMITER with specific text
+    fn at_delimiter_text(&self, delimiter_text: &str) -> bool {
+        if let Some(SyntaxKind::DELIMITER) = self.current_kind() {
+            if let Some((_, text)) = &self.current_token {
+                return *text == delimiter_text;
+            }
+        }
+        false
+    }
+
+    /// Expect a DELIMITER token with specific text
+    fn expect_delimiter_text(&mut self, delimiter_text: &str) {
+        if self.at_delimiter_text(delimiter_text) {
+            self.bump();
+        } else {
+            let msg = format!(
+                "Expected delimiter '{}', found {:?}",
+                delimiter_text,
+                self.current_kind()
+            );
+            self.error(&msg);
+        }
+    }
+
+    /// Get the matching closing delimiter for an opening delimiter
+    fn get_closing_delimiter(&self, opening: &str) -> String {
+        match opening {
+            "(" => ")".to_string(),
+            "[" => "]".to_string(),
+            "{" => "}".to_string(),
+            "<" => ">".to_string(),
+            // For symmetric delimiters, the closing is the same as opening
+            ch => ch.to_string(),
+        }
+    }
+
     fn error(&mut self, message: &str) {
         let text_len = self.current_text().map_or(0, |t| t.len());
         let range = TextRange::new(
@@ -362,6 +398,120 @@ mod tests {
         // Skip whitespace and test peek again
         assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
         assert_eq!(lexer.peek_non_trivia_token(), Some((SyntaxKind::AT, "@")));
+    }
+
+    #[test]
+    fn test_debug_q_parsing() {
+        use crate::PerlNode;
+
+        let input = "q(hello)";
+        println!("Testing input: {}", input);
+        let (green, errors) = parse(input);
+
+        println!("Parse errors: {:?}", errors);
+
+        let syntax = PerlNode::new_root(green);
+        println!("AST: {:#?}", syntax);
+
+        // Even if there are errors, check if we got some structure
+        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+    }
+
+    #[test]
+    fn test_debug_print_q_parsing() {
+        use crate::PerlNode;
+
+        let input = "print q(hello);";
+        println!("Testing input: {}", input);
+        let (green, errors) = parse(input);
+
+        println!("Parse errors: {:?}", errors);
+
+        let syntax = PerlNode::new_root(green);
+        println!("AST: {:#?}", syntax);
+
+        // Even if there are errors, check if we got some structure
+        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+    }
+
+    #[test]
+    fn test_debug_parser_token_processing() {
+        let input = "print q(hello);";
+        println!("Testing input: {}", input);
+
+        let mut parser = Parser::new(input);
+
+        // Debug the parser's token processing step by step
+        println!("Initial current_token: {:?}", parser.current_token);
+
+        // Simulate first few parser operations
+        parser.skip_trivia(); // This might advance tokens
+        println!(
+            "After skip_trivia: current_token: {:?}",
+            parser.current_token
+        );
+
+        // Simulate parsing statement
+        if parser.is_at_start_of_expression() {
+            println!("Is at start of expression: true");
+            println!(
+                "About to parse expression, current_token: {:?}",
+                parser.current_token
+            );
+        } else {
+            println!("Is at start of expression: false");
+        }
+    }
+
+    #[test]
+    fn test_debug_parser_bump_trace() {
+        use crate::PerlNode;
+
+        let input = "print q(hello);";
+        println!("Testing input: {}", input);
+
+        // Create our own parser to trace the bump() calls
+        let mut parser = Parser::new(input);
+
+        // Manually trace the first few tokens
+        println!("Token 1: {:?}", parser.current_token);
+        if parser.current_token.is_some() {
+            parser.bump();
+            println!("Token 2: {:?}", parser.current_token);
+        }
+        if parser.current_token.is_some() {
+            parser.bump();
+            println!("Token 3: {:?}", parser.current_token);
+        }
+        if parser.current_token.is_some() {
+            parser.bump();
+            println!("Token 4: {:?}", parser.current_token);
+        }
+        if parser.current_token.is_some() {
+            parser.bump();
+            println!("Token 5: {:?}", parser.current_token);
+        }
+        if parser.current_token.is_some() {
+            parser.bump();
+            println!("Token 6: {:?}", parser.current_token);
+        }
+    }
+
+    #[test]
+    fn test_debug_qq_hash_parsing() {
+        use crate::PerlNode;
+
+        let input = "qq#hash $var#";
+        println!("Testing input: {}", input);
+        let (green, errors) = parse(input);
+
+        println!("Parse errors: {:?}", errors);
+
+        let syntax = PerlNode::new_root(green);
+        println!("AST: {:#?}", syntax);
+
+        // Even if there are errors, check if we got some structure
+        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
     }
 
     #[test]
