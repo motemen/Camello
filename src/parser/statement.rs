@@ -345,7 +345,12 @@ impl<'a> Parser<'a> {
 
     /// Parse the variable part of a for loop (my $var, $var)
     fn parse_for_variable(&mut self) {
-        if self.at_any(&[SyntaxKind::MY_KW, SyntaxKind::OUR_KW, SyntaxKind::LOCAL_KW]) {
+        if self.at_any(&[
+            SyntaxKind::MY_KW,
+            SyntaxKind::OUR_KW,
+            SyntaxKind::STATE_KW,
+            SyntaxKind::LOCAL_KW,
+        ]) {
             // Variable declaration case - parse as a variable declaration
             self.builder.start_node(SyntaxKind::DECLARATION_STMT.into());
 
@@ -355,7 +360,7 @@ impl<'a> Parser<'a> {
 
             // Parse the variable - must be a scalar
             if self.at(SyntaxKind::DOLLAR) {
-                // Use qualified parsing for our/local, simple for my
+                // Use qualified parsing for our/local, simple for my/state
                 if matches!(decl_kind, SyntaxKind::OUR_KW | SyntaxKind::LOCAL_KW) {
                     self.parse_variable_qualified();
                 } else {
