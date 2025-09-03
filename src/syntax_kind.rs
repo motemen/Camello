@@ -101,6 +101,10 @@ pub enum SyntaxKind {
     TR_SEARCH_LIST,      // Search list part inside tr() (characters to translate from)
     TR_REPLACEMENT_LIST, // Replacement list part inside tr() (characters to translate to)
 
+    // Flags for quote-like operators
+    S_FLAGS,  // Flags for substitution operator (s///msixpodualngcer)
+    TR_FLAGS, // Flags for transliteration operator (tr///cdsr)
+
     // Operators
     EQ,        // =
     PLUS,      // +
@@ -388,6 +392,8 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::S_REPLACEMENT => "S_REPLACEMENT",
             SyntaxKind::TR_SEARCH_LIST => "TR_SEARCH_LIST",
             SyntaxKind::TR_REPLACEMENT_LIST => "TR_REPLACEMENT_LIST",
+            SyntaxKind::S_FLAGS => "S_FLAGS",
+            SyntaxKind::TR_FLAGS => "TR_FLAGS",
             SyntaxKind::SEMICOLON => "SEMICOLON",
             SyntaxKind::COMMA => "COMMA",
             SyntaxKind::DOUBLE_COLON => "DOUBLE_COLON",
