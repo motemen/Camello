@@ -153,6 +153,11 @@ pub enum SyntaxKind {
     // File test operators
     FILE_TEST_OP, // -f, -d, etc.
 
+    // Postfix dereference operators (introduced in Perl 5.20)
+    POSTFIX_DEREF_ARRAY,  // ->@*
+    POSTFIX_DEREF_HASH,   // ->%*
+    POSTFIX_DEREF_SCALAR, // ->$*
+
     // ===== Node Level (composite structures) =====
     ROOT,          // File root
     SUB_DEF,       // Subroutine definition
@@ -204,6 +209,7 @@ pub enum SyntaxKind {
     ANON_SUB_EXPR,            // Anonymous subroutine expression (e.g., sub { ... })
     TYPEGLOB_EXPR,            // Typeglob expression (e.g., *{$name}, *STDIN)
     FILE_TEST_EXPR,           // File test expression (e.g., -f $file)
+    POSTFIX_DEREF_EXPR,       // Postfix dereference expression (e.g., $ref->@*, $ref->%*, $ref->$*)
 
     // Literal references
     HASH_REF,  // Hash reference (anonymous hash)
@@ -417,6 +423,9 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::DEFINED_OR => "DEFINED_OR",
             SyntaxKind::SPACESHIP => "SPACESHIP",
             SyntaxKind::FILE_TEST_OP => "FILE_TEST_OP",
+            SyntaxKind::POSTFIX_DEREF_ARRAY => "POSTFIX_DEREF_ARRAY",
+            SyntaxKind::POSTFIX_DEREF_HASH => "POSTFIX_DEREF_HASH",
+            SyntaxKind::POSTFIX_DEREF_SCALAR => "POSTFIX_DEREF_SCALAR",
             SyntaxKind::ROOT => "ROOT",
             SyntaxKind::SUB_DEF => "SUB_DEF",
             SyntaxKind::SUB_PROTOTYPE => "SUB_PROTOTYPE",
@@ -453,6 +462,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::ANON_SUB_EXPR => "ANON_SUB_EXPR",
             SyntaxKind::TYPEGLOB_EXPR => "TYPEGLOB_EXPR",
             SyntaxKind::FILE_TEST_EXPR => "FILE_TEST_EXPR",
+            SyntaxKind::POSTFIX_DEREF_EXPR => "POSTFIX_DEREF_EXPR",
             SyntaxKind::HASH_REF => "HASH_REF",
             SyntaxKind::ARRAY_REF => "ARRAY_REF",
             SyntaxKind::IF_MODIFIER => "IF_MODIFIER",

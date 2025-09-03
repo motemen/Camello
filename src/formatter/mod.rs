@@ -176,6 +176,10 @@ impl Formatter {
                 self.format_method_call(node);
                 return;
             }
+            SyntaxKind::POSTFIX_DEREF_EXPR => {
+                self.format_postfix_deref_expr(node);
+                return;
+            }
             SyntaxKind::HASH_REF_ACCESS_EXPR => {
                 self.format_hash_ref_access(node);
                 return;
