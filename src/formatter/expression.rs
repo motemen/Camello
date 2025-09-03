@@ -242,32 +242,23 @@ impl Formatter {
     pub fn format_reference_expr(&mut self, node: &PerlNode) {
         // Format reference expressions (e.g., \$scalar, \@array, \%hash, \&func)
         // Output all child elements consecutively without spaces between the backslash and the operand
+        // FIXME: format_children(skip_whitespace = true)
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(node) => self.format_node(&node),
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
-                    let text = token.text();
 
                     // Handle spacing normally for the backslash, but no spaces within the reference expression
                     match kind {
                         SyntaxKind::BACKSLASH => {
-                            // Apply normal spacing before the backslash
-                            self.handle_spacing_before(kind);
-                            if self.at_line_start {
-                                self.add_indent();
-                                self.at_line_start = false;
-                            }
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
+                            self.format_token(&token);
                         }
                         SyntaxKind::WHITESPACE => {
                             // Skip whitespace inside reference expressions to keep them compact
                         }
                         _ => {
-                            // For other tokens (sigils, identifiers, etc.), output directly without spacing
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
+                            self.format_token(&token);
                         }
                     }
                 }
@@ -278,12 +269,12 @@ impl Formatter {
     pub fn format_io_expr(&mut self, node: &PerlNode) {
         // Format I/O expressions (e.g., <STDIN>, <>, <$fh>)
         // Output all child elements consecutively without spaces
+        // FIXME: format_children(skip_whitespace = true)
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(node) => self.format_node(&node),
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
-                    let text = token.text();
 
                     // Apply normal spacing before the I/O operator
                     match kind {
@@ -292,34 +283,12 @@ impl Formatter {
                         }
                         _ => {
                             // For the opening <, apply normal spacing rules
-                            if text.starts_with('<') {
-                                self.handle_spacing_before(kind);
-                                if self.at_line_start {
-                                    self.add_indent();
-                                    self.at_line_start = false;
-                                }
-                            }
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
+                            self.format_token(&token);
                         }
                     }
                 }
             }
         }
-    }
-
-    fn format_ternary_operator(&mut self, token: &SyntaxToken<PerlLanguage>) {
-        let kind = token.kind();
-        let text = token.text();
-        // Add space before ?/: and after ?/:
-        self.handle_spacing_before(kind);
-        if self.at_line_start {
-            self.add_indent();
-            self.at_line_start = false;
-        }
-        self.output.push_str(text);
-        self.output.push(' ');
-        self.prev_token_kind = Some(kind);
     }
 
     pub fn format_ternary_expr(&mut self, node: &PerlNode) {
@@ -332,9 +301,6 @@ impl Formatter {
                 }
                 NodeOrToken::Token(token) => {
                     match token.kind() {
-                        SyntaxKind::QUESTION_MARK | SyntaxKind::COLON => {
-                            self.format_ternary_operator(&token);
-                        }
                         SyntaxKind::WHITESPACE => {
                             // Skip original whitespace, we manage spacing manually
                         }
@@ -446,6 +412,7 @@ impl Formatter {
                     let text = token.text();
 
                     match kind {
+                        // FIXME: change to UNARY_PLUS, UNARY_MINUS
                         SyntaxKind::PLUS | SyntaxKind::MINUS => {
                             // Handle unary + and - specially
                             self.handle_spacing_before(kind);
