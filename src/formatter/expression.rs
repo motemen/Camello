@@ -1,4 +1,4 @@
-use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
+use rowan::{NodeOrToken, SyntaxElementChildren};
 
 use crate::{PerlLanguage, PerlNode, SyntaxKind};
 

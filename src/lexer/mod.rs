@@ -1662,6 +1662,7 @@ impl<'a> Lexer<'a> {
     }
 
     /// Try to consume qw() content, tokenizing whitespace-separated words
+    // FIXME: receive closing delimiter
     fn try_consume_qw_content(&mut self) -> Option<(SyntaxKind, &'a str)> {
         let remainder = self.logos_lexer.remainder();
         if remainder.is_empty() {

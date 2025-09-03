@@ -29,7 +29,7 @@ fn test_postfix_dereference_lexing() {
         let found_deref = tokens.iter().any(|(kind, _)| *kind == expected_deref);
         assert!(
             found_deref,
-            "Expected {} token in {}",
+            "Expected {:?} token in {:?}",
             expected_deref, input
         );
     }
