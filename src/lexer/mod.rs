@@ -173,6 +173,11 @@ pub enum Token {
 
     // データセクション（__END__ / __DATA__ 以降のすべてのテキスト）
     DataSection,
+
+    // Postfix dereference operators (handled manually due to context sensitivity)
+    PostfixDerefArray,  // ->@*
+    PostfixDerefHash,   // ->%*
+    PostfixDerefScalar, // ->$*
 }
 
 impl Token {
@@ -229,6 +234,9 @@ impl Token {
             Token::Newline => SyntaxKind::WHITESPACE,
             Token::Comment => SyntaxKind::COMMENT,
             Token::DataSection => SyntaxKind::DATA_SECTION,
+            Token::PostfixDerefArray => SyntaxKind::POSTFIX_DEREF_ARRAY,
+            Token::PostfixDerefHash => SyntaxKind::POSTFIX_DEREF_HASH,
+            Token::PostfixDerefScalar => SyntaxKind::POSTFIX_DEREF_SCALAR,
         }
     }
 }
@@ -526,6 +534,14 @@ impl<'a> Lexer<'a> {
         // Handle special tokens in ExpectingValue context
         if let Some(result) = self.try_handle_expecting_value_tokens() {
             return Some(result);
+        }
+
+        // Handle postfix dereference operators (->@*, ->%*, ->$*)
+        if let Some(result) = self.try_consume_postfix_deref() {
+            let (syntax_kind, text) = result;
+            self.update_context(syntax_kind);
+            self.update_line_position(text);
+            return Some((syntax_kind, text));
         }
 
         match self.logos_lexer.next() {
@@ -1035,6 +1051,31 @@ impl<'a> Lexer<'a> {
         None
     }
 
+    /// Try to consume postfix dereference operators (->@*, ->%*, ->$*)
+    fn try_consume_postfix_deref(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        let remainder = self.logos_lexer.remainder();
+
+        // Check for ->@*, ->%*, ->$*
+        if remainder.len() >= 4 && remainder.starts_with("->") {
+            let chars: Vec<char> = remainder.chars().collect();
+            if chars.len() >= 4 && chars[3] == '*' {
+                let syntax_kind = match chars[2] {
+                    '@' => Some(SyntaxKind::POSTFIX_DEREF_ARRAY),
+                    '%' => Some(SyntaxKind::POSTFIX_DEREF_HASH),
+                    '$' => Some(SyntaxKind::POSTFIX_DEREF_SCALAR),
+                    _ => None,
+                };
+
+                if let Some(kind) = syntax_kind {
+                    let text = &remainder[..4]; // "->@*", "->%*", or "->$*"
+                    self.logos_lexer.bump(4);
+                    return Some((kind, text));
+                }
+            }
+        }
+        None
+    }
+
     fn disambiguate_slash(&self) -> SyntaxKind {
         match self.context {
             LexerContext::QlikeDelimiter => {
@@ -1147,6 +1188,9 @@ impl<'a> Lexer<'a> {
                 | SyntaxKind::REGEX_MATCH
                 | SyntaxKind::REGEX_NOT_MATCH
                 | SyntaxKind::COMMA
+                | SyntaxKind::POSTFIX_DEREF_ARRAY
+                | SyntaxKind::POSTFIX_DEREF_HASH
+                | SyntaxKind::POSTFIX_DEREF_SCALAR
         )
     }
 
@@ -1380,6 +1424,11 @@ impl<'a> Lexer<'a> {
             kind if self.is_literal(kind) || self.is_right_delimiter(kind) => {
                 LexerContext::ExpectingOperator
             }
+
+            // Postfix dereference operators expect operators next
+            SyntaxKind::POSTFIX_DEREF_ARRAY
+            | SyntaxKind::POSTFIX_DEREF_HASH
+            | SyntaxKind::POSTFIX_DEREF_SCALAR => LexerContext::ExpectingOperator,
 
             // Statement terminators and POD reset context
             SyntaxKind::SEMICOLON | SyntaxKind::CUT_KW | SyntaxKind::POD_CONTENT => {
