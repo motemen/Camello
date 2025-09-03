@@ -38,6 +38,18 @@ fn test_all_var_decl_types_formatting() {
 }
 
 #[test]
+fn test_postfix_dereference_formatting() {
+    let cases = [
+        ("$ref->@*;", "$ref->@*;\n"),
+        ("$ref->%*;", "$ref->%*;\n"),
+        ("$ref->$*;", "$ref->$*;\n"),
+        ("$foo->@*[0];", "$foo->@*[0];\n"),
+        ("$bar->%*{key};", "$bar->%*{key};\n"),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_for_stmt_formatting() {
     let input = "for my$var(@list){my$x=1;print$x;}";
     let formatted = format_and_assert(input);

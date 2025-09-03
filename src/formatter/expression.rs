@@ -110,6 +110,24 @@ impl Formatter {
         self.format_subscription_iter(children, SyntaxKind::L_PAREN, SyntaxKind::R_PAREN);
     }
 
+    pub fn format_postfix_deref_expr(&mut self, node: &PerlNode) {
+        // Postfix dereference expressions: $ref->@*, $ref->%*, $ref->$*
+        // These are simple - just format the base expression and the postfix dereference token
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(child_node) => {
+                    self.format_node(&child_node);
+                }
+                NodeOrToken::Token(token) => {
+                    // Skip whitespace to keep the postfix dereference compact
+                    if token.kind() != SyntaxKind::WHITESPACE {
+                        self.format_token(&token);
+                    }
+                }
+            }
+        }
+    }
+
     fn format_until_arrow_iter(&mut self, iter: &mut SyntaxElementChildren<PerlLanguage>) {
         for child in iter {
             match child {
