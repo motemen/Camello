@@ -316,6 +316,18 @@ impl<'a> Parser<'a> {
 
                     self.builder.finish_node();
                 }
+                Some(
+                    SyntaxKind::POSTFIX_DEREF_ARRAY
+                    | SyntaxKind::POSTFIX_DEREF_HASH
+                    | SyntaxKind::POSTFIX_DEREF_SCALAR,
+                ) => {
+                    // Postfix dereference: expr->@*, expr->%*, expr->$*
+                    self.builder
+                        .start_node_at(checkpoint, SyntaxKind::POSTFIX_DEREF_EXPR.into());
+                    self.bump(); // ->@*, ->%*, or ->$*
+                    self.skip_trivia();
+                    self.builder.finish_node();
+                }
                 _ => {
                     // No more postfix operations
                     break;

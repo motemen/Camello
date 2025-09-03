@@ -2,6 +2,40 @@ use super::*;
 use crate::SyntaxKind;
 
 #[test]
+fn test_postfix_dereference_lexing() {
+    let test_cases = [
+        ("$ref->@*", SyntaxKind::POSTFIX_DEREF_ARRAY),
+        ("$ref->%*", SyntaxKind::POSTFIX_DEREF_HASH),
+        ("$ref->$*", SyntaxKind::POSTFIX_DEREF_SCALAR),
+    ];
+
+    for (input, expected_deref) in test_cases {
+        let mut lexer = Lexer::new(input);
+        let mut tokens = Vec::new();
+        while let Some((kind, text)) = lexer.next_token() {
+            tokens.push((kind, text));
+        }
+
+        println!("Input: {}, Tokens: {:?}", input, tokens);
+
+        // Should have: $, identifier, and then the postfix dereference token
+        assert!(
+            tokens.len() >= 3,
+            "Expected at least 3 tokens for {}",
+            input
+        );
+
+        // Find the postfix dereference token
+        let found_deref = tokens.iter().any(|(kind, _)| *kind == expected_deref);
+        assert!(
+            found_deref,
+            "Expected {} token in {}",
+            expected_deref, input
+        );
+    }
+}
+
+#[test]
 fn test_percent_modulo_vs_sigil() {
     // Test the critical case mentioned by Gemini: $var % other_var should be modulo
     let mut lexer = Lexer::new("$var % other_var");
