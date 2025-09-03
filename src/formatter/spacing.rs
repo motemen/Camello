@@ -248,8 +248,8 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
         (_, COMMA) => Some(false),
         (COMMA, _) => Some(true),
 
-        // Exception: no space before semicolon when previous token is slash (for q-string delimiters)
-        (SLASH, SEMICOLON) => Some(false),
+        (QUESTION_MARK, _) => Some(true),
+        (COLON, _) => Some(true),
 
         // Logical NOT: special handling
         (L_PAREN, LOGICAL_NOT) => Some(false), // No space after (
