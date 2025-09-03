@@ -58,6 +58,7 @@ pub enum SyntaxKind {
     TR_KW,     // tr keyword (transliteration operator)
     Y_KW,      // y keyword (transliteration operator, alias for tr)
     USE_KW,    // use keyword (for use warnings qw(...) syntax)
+    NO_KW,     // no keyword (for no warnings qw(...) syntax)
     RETURN_KW, // return keyword
 
     // Data section
@@ -168,6 +169,7 @@ pub enum SyntaxKind {
     DECLARATION_STMT, // Variable declaration (my, our, state, etc.)
     PACKAGE_STMT,     // Package declaration (package Foo::Bar)
     USE_STMT,         // use statement (use warnings qw(all);)
+    NO_STMT,          // no statement (no warnings qw(all);)
     FOR_STMT,         // for statement
     WHILE_STMT,       // while statement
     IF_STMT,          // if statement
@@ -365,6 +367,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::TR_KW => "TR_KW",
             SyntaxKind::Y_KW => "Y_KW",
             SyntaxKind::USE_KW => "USE_KW",
+            SyntaxKind::NO_KW => "NO_KW",
             SyntaxKind::RETURN_KW => "RETURN_KW",
             SyntaxKind::L_BRACE => "L_BRACE",
             SyntaxKind::R_BRACE => "R_BRACE",
@@ -433,6 +436,7 @@ impl std::fmt::Display for SyntaxKind {
             SyntaxKind::DECLARATION_STMT => "DECLARATION_STMT",
             SyntaxKind::PACKAGE_STMT => "PACKAGE_STMT",
             SyntaxKind::USE_STMT => "USE_STMT",
+            SyntaxKind::NO_STMT => "NO_STMT",
             SyntaxKind::FOR_STMT => "FOR_STMT",
             SyntaxKind::WHILE_STMT => "WHILE_STMT",
             SyntaxKind::IF_STMT => "IF_STMT",
