@@ -52,17 +52,18 @@ impl Formatter {
 
         // Add an empty line if the previous sibling is of a different type,
         // or if this is a SUB_DEF with any preceding sibling (to separate all subs)
-        // Exception: Don't add empty line between PACKAGE_STMT and USE_STMT
+        // Exception: Don't add empty line between PACKAGE_STMT and USE_STMT/NO_STMT
         if let Some(prev) = node.prev_sibling() {
             let should_add_empty_line = match node.kind() {
                 // For SUB_DEF, always add empty line if there's a preceding sibling
                 SyntaxKind::SUB_DEF => true,
-                // For USE_STMT, don't add automatic empty lines between use statements
+                // For USE_STMT/NO_STMT, don't add automatic empty lines between use/no statements
                 // They should only get empty lines if they were in the source
-                SyntaxKind::USE_STMT => {
+                SyntaxKind::USE_STMT | SyntaxKind::NO_STMT => {
                     prev.kind() != node.kind()
                         && !(prev.kind() == SyntaxKind::PACKAGE_STMT
-                            && node.kind() == SyntaxKind::USE_STMT)
+                            && (node.kind() == SyntaxKind::USE_STMT
+                                || node.kind() == SyntaxKind::NO_STMT))
                 }
                 // For regular statements, don't add automatic empty lines
                 // They should only get empty lines if they were in the source
@@ -71,7 +72,8 @@ impl Formatter {
                 _ => {
                     prev.kind() != node.kind()
                         && !(prev.kind() == SyntaxKind::PACKAGE_STMT
-                            && node.kind() == SyntaxKind::USE_STMT)
+                            && (node.kind() == SyntaxKind::USE_STMT
+                                || node.kind() == SyntaxKind::NO_STMT))
                 }
             };
 
@@ -106,11 +108,12 @@ impl Formatter {
         }
 
         // Add an empty line if the next sibling is of a different type.
-        // Exception: Don't add empty line between PACKAGE_STMT and USE_STMT
+        // Exception: Don't add empty line between PACKAGE_STMT and USE_STMT/NO_STMT
         if let Some(next) = node.next_sibling() {
             if next.kind() != node.kind() {
-                // Don't add empty line between PACKAGE_STMT and USE_STMT
-                if !(node.kind() == SyntaxKind::PACKAGE_STMT && next.kind() == SyntaxKind::USE_STMT)
+                // Don't add empty line between PACKAGE_STMT and USE_STMT/NO_STMT
+                if !(node.kind() == SyntaxKind::PACKAGE_STMT
+                    && (next.kind() == SyntaxKind::USE_STMT || next.kind() == SyntaxKind::NO_STMT))
                 {
                     self.add_empty_line_after();
                 }

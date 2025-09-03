@@ -254,6 +254,108 @@ fn test_version_use_statements_formatting() {
 }
 
 #[test]
+fn test_version_no_statements_formatting() {
+    check_formatting_cases(&[
+        // v-prefixed versions
+        ("no v5.24.1;", "no v5.24.1;\n"),
+        ("no v5.008_001;", "no v5.008_001;\n"),
+        ("no v5.36;", "no v5.36;\n"),
+        // Bare version formats
+        ("no 5.24.1;", "no 5.24.1;\n"),
+        ("no 5.008_001;", "no 5.008_001;\n"),
+        ("no 5.36.0;", "no 5.36.0;\n"),
+        // Simple version numbers
+        ("no 5;", "no 5;\n"),
+        ("no 5.24;", "no 5.24;\n"),
+        // With spacing variations
+        ("no  v5.24.1 ;", "no v5.24.1;\n"),
+        ("no  5.24.1 ;", "no 5.24.1;\n"),
+        ("no\tv5.24.1\t;", "no v5.24.1;\n"),
+        ("no\t5.24.1\t;", "no 5.24.1;\n"),
+    ]);
+}
+
+#[test]
+fn test_no_statement_with_module_names() {
+    check_formatting_cases(&[
+        // Basic module disabling
+        ("no strict;", "no strict;\n"),
+        ("no warnings;", "no warnings;\n"),
+        ("no strict 'refs';", "no strict 'refs';\n"),
+        ("no warnings 'all';", "no warnings 'all';\n"),
+        // Qualified module names
+        ("no Module::Name;", "no Module::Name;\n"),
+        (
+            "no Very::Long::Module::Name;",
+            "no Very::Long::Module::Name;\n",
+        ),
+        // With spacing variations
+        ("no  strict  ;", "no strict;\n"),
+        ("no\twarnings\t;", "no warnings;\n"),
+    ]);
+}
+
+#[test]
+fn test_no_statement_with_parentheses_formatting() {
+    check_formatting_cases(&[
+        // No statement with empty parentheses
+        ("no A();", "no A ();\n"),
+        // Qualified module names
+        ("no Module::Name();", "no Module::Name ();\n"),
+        // With import list
+        ("no A(qw/func1 func2/);", "no A (qw/func1 func2/);\n"),
+        ("no Module(func1,func2);", "no Module (func1, func2);\n"),
+        // With spacing variations
+        ("no  A  ()  ;", "no A ();\n"),
+        ("no\tA\t()\t;", "no A ();\n"),
+    ]);
+}
+
+#[test]
+fn test_no_statement_with_expressions() {
+    check_formatting_cases(&[
+        // Basic hash pair expressions
+        ("no A::B x => 1;", "no A::B x => 1;\n"),
+        ("no Module x=>1;", "no Module x => 1;\n"),
+        // Multiple hash pairs
+        ("no A::B x => 1, y => 2;", "no A::B x => 1, y => 2;\n"),
+        (
+            "no Module foo=>bar,baz=>123;",
+            "no Module foo => bar, baz => 123;\n",
+        ),
+        // Different value types
+        ("no A::B key => 'value';", "no A::B key => 'value';\n"),
+        (
+            "no A::B num => 42, str => \"hello\";",
+            "no A::B num => 42, str => \"hello\";\n",
+        ),
+        // References and complex structures
+        (
+            "no A::B func => \\&function;",
+            "no A::B func => \\&function;\n",
+        ),
+        ("no A::B array => [1,2,3];", "no A::B array => [1, 2, 3];\n"),
+        (
+            "no A::B hash => {a=>1,b=>2};",
+            "no A::B hash => {a => 1, b => 2};\n",
+        ),
+        // With spacing variations
+        ("no  A::B  x  =>  1  ;", "no A::B x => 1;\n"),
+        ("no\tModule\tx\t=>\t1\t;", "no Module x => 1;\n"),
+        // Multiple parameters with good spacing
+        (
+            "no A::B foo => 1, bar => 2;",
+            "no A::B foo => 1, bar => 2;\n",
+        ),
+        // Long module name
+        (
+            "no Very::Long::Module::Name x => 1;",
+            "no Very::Long::Module::Name x => 1;\n",
+        ),
+    ]);
+}
+
+#[test]
 fn test_use_statement_with_parentheses_formatting() {
     check_formatting_cases(&[
         // Use statement with empty parentheses (import list)

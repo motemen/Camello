@@ -618,6 +618,7 @@ impl<'a> Lexer<'a> {
                     "tr" => self.disambiguate_tr(),
                     "y" => self.disambiguate_y(),
                     "use" => SyntaxKind::USE_KW,
+                    "no" => SyntaxKind::NO_KW,
                     "return" => SyntaxKind::RETURN_KW,
                     "x" => self.disambiguate_x(),
                     "eq" => self.disambiguate_str_op("eq"),

@@ -49,6 +49,7 @@ impl Formatter {
             node.kind(),
             SyntaxKind::SUB_DEF
                 | SyntaxKind::USE_STMT
+                | SyntaxKind::NO_STMT
                 | SyntaxKind::STMT
                 | SyntaxKind::DECLARATION_STMT
         ) {
@@ -62,13 +63,13 @@ impl Formatter {
                 self.format_block_stmt_with_empty_line_detection(node);
                 return;
             }
-            SyntaxKind::USE_STMT => {
-                // Output pending empty lines before processing use statement
+            SyntaxKind::USE_STMT | SyntaxKind::NO_STMT => {
+                // Output pending empty lines before processing use/no statement
                 if self.pending_empty_lines > 0 {
                     self.output_pending_empty_lines();
                 }
 
-                // Special handling for use statements: add space between identifier and parentheses
+                // Special handling for use/no statements: add space between identifier and parentheses
                 for child in node.children_with_tokens() {
                     let is_module_name = match &child {
                         NodeOrToken::Node(n) => n.kind() == SyntaxKind::QUALIFIED_IDENT,
@@ -245,8 +246,11 @@ impl Formatter {
             }
         }
 
-        // Add empty line after subs and use statements, but only if there are siblings
-        if matches!(node.kind(), SyntaxKind::SUB_DEF | SyntaxKind::USE_STMT) {
+        // Add empty line after subs, use, and no statements, but only if there are siblings
+        if matches!(
+            node.kind(),
+            SyntaxKind::SUB_DEF | SyntaxKind::USE_STMT | SyntaxKind::NO_STMT
+        ) {
             self.add_empty_line_after_if_needed(node);
         }
 
@@ -651,17 +655,19 @@ impl Formatter {
                 NodeOrToken::Node(child_node) => {
                     let current_kind = child_node.kind();
 
-                    // Check if we need to add empty line after use block
+                    // Check if we need to add empty line after use/no block
                     if let Some(prev_kind) = prev_node_kind {
-                        if prev_kind == SyntaxKind::USE_STMT && current_kind != SyntaxKind::USE_STMT
+                        if (prev_kind == SyntaxKind::USE_STMT || prev_kind == SyntaxKind::NO_STMT)
+                            && (current_kind != SyntaxKind::USE_STMT
+                                && current_kind != SyntaxKind::NO_STMT)
                         {
-                            // We're transitioning from USE_STMT to a different node type
+                            // We're transitioning from USE_STMT/NO_STMT to a different node type
                             // Check if there are already empty lines from source or pending
                             let has_existing_empty_line =
                                 self.pending_empty_lines > 0 || self.output.ends_with("\n\n");
 
                             if !has_existing_empty_line {
-                                // Add empty line after use block
+                                // Add empty line after use/no block
                                 if !self.output.is_empty() {
                                     self.handle_newline();
                                     self.output.push('\n');

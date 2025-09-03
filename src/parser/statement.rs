@@ -44,6 +44,10 @@ impl<'a> Parser<'a> {
                 self.use_stmt();
                 true
             }
+            Some(SyntaxKind::NO_KW) => {
+                self.no_stmt();
+                true
+            }
             Some(SyntaxKind::END_KW) | Some(SyntaxKind::DATA_KW) => {
                 self.data_section();
                 true
@@ -205,6 +209,54 @@ impl<'a> Parser<'a> {
             self.bump();
         } else if self.at(SyntaxKind::NUMBER) {
             // Simple version number (e.g., use 5;)
+            self.bump();
+        } else {
+            // Module name (qualified identifier)
+            self.parse_identifier_or_qualified();
+        }
+        self.skip_trivia();
+
+        // Option: import list (e.g., qw()) or comma-separated expressions (x => 1, y => 2)
+        if self.is_at_start_of_expression() {
+            // Parse first expression
+            self.expression();
+
+            // Handle additional comma-separated expressions
+            while self.at(SyntaxKind::COMMA) {
+                self.bump(); // consume comma
+                self.skip_trivia();
+
+                if self.is_at_start_of_expression() {
+                    self.expression();
+                } else {
+                    // Allow trailing comma
+                    break;
+                }
+            }
+        }
+
+        // Semicolon
+        self.expect(SyntaxKind::SEMICOLON);
+
+        self.builder.finish_node();
+    }
+
+    fn no_stmt(&mut self) {
+        self.builder.start_node(SyntaxKind::NO_STMT.into());
+
+        // "no"
+        self.expect(SyntaxKind::NO_KW);
+        self.skip_trivia();
+
+        // VERSION literal or module name (qualified identifier)
+        if self.at(SyntaxKind::VERSION) {
+            // Version literal (e.g., no v5.42;)
+            self.bump();
+        } else if self.at(SyntaxKind::BARE_VERSION) {
+            // Bare version literal (e.g., no 5.24.1;)
+            self.bump();
+        } else if self.at(SyntaxKind::NUMBER) {
+            // Simple version number (e.g., no 5;)
             self.bump();
         } else {
             // Module name (qualified identifier)
