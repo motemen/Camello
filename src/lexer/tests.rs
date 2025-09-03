@@ -291,8 +291,224 @@ fn test_substitution_lexing() {
     );
     assert_eq!(token6, Some((SyntaxKind::DELIMITER, "/")));
 
-    // Should be back to expecting operator
+    // Should be in ExpectingQuoteLikeFlags context after the closing delimiter
+    assert_eq!(lexer.context, LexerContext::ExpectingQuoteLikeFlags);
+}
+
+#[test]
+fn test_substitution_with_flags() {
+    // Test s/pattern/replacement/flags lexing - this demonstrates the current issue
+    let mut lexer = Lexer::new("s/world/universe/gi");
+
+    // Parse through the substitution operator
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::S_KW, "s")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::S_PATTERN, "world")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
+    assert_eq!(
+        lexer.next_token(),
+        Some((SyntaxKind::S_REPLACEMENT, "universe"))
+    );
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
+
+    // Now the lexer should parse flags as a single token
+    let flags_token = lexer.next_token();
+    println!(
+        "Flags token: {:?}, Context: {:?}",
+        flags_token, lexer.context
+    );
+
+    // This should now correctly parse as S_FLAGS
+    assert_eq!(flags_token, Some((SyntaxKind::S_FLAGS, "gi")));
+}
+
+#[test]
+fn test_tr_with_flags() {
+    // Test tr/searchlist/replacementlist/flags lexing
+    let mut lexer = Lexer::new("tr/abc/XYZ/d");
+
+    // Parse through the transliteration operator
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::TR_KW, "tr")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
+    assert_eq!(
+        lexer.next_token(),
+        Some((SyntaxKind::TR_SEARCH_LIST, "abc"))
+    );
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
+    assert_eq!(
+        lexer.next_token(),
+        Some((SyntaxKind::TR_REPLACEMENT_LIST, "XYZ"))
+    );
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
+
+    // Now the lexer should parse flags as a single token
+    let flags_token = lexer.next_token();
+    println!(
+        "TR Flags token: {:?}, Context: {:?}",
+        flags_token, lexer.context
+    );
+
+    // This should now correctly parse as TR_FLAGS
+    assert_eq!(flags_token, Some((SyntaxKind::TR_FLAGS, "d")));
+}
+
+#[test]
+fn test_substitution_various_flags() {
+    // Test s/// with different flag combinations
+
+    // Test all valid s/// flags
+    let test_cases = [
+        ("s/a/b/m", "m"),
+        ("s/a/b/s", "s"),
+        ("s/a/b/i", "i"),
+        ("s/a/b/x", "x"),
+        ("s/a/b/p", "p"),
+        ("s/a/b/o", "o"),
+        ("s/a/b/d", "d"),
+        ("s/a/b/u", "u"),
+        ("s/a/b/a", "a"),
+        ("s/a/b/l", "l"),
+        ("s/a/b/n", "n"),
+        ("s/a/b/g", "g"),
+        ("s/a/b/c", "c"),
+        ("s/a/b/e", "e"),
+        ("s/a/b/r", "r"),
+        // Multiple flags
+        ("s/a/b/gi", "gi"),
+        ("s/a/b/gim", "gim"),
+        ("s/a/b/msixpodualngcer", "msixpodualngcer"), // All flags
+    ];
+
+    for (input, expected_flags) in test_cases {
+        let mut lexer = Lexer::new(input);
+
+        // Skip to the flags token
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::S_KW, "s")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::S_PATTERN, "a")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::S_REPLACEMENT, "b")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
+
+        // Test flags
+        let flags_token = lexer.next_token();
+        assert_eq!(
+            flags_token,
+            Some((SyntaxKind::S_FLAGS, expected_flags)),
+            "Failed for input: {}",
+            input
+        );
+    }
+}
+
+#[test]
+fn test_tr_various_flags() {
+    // Test tr/// with different flag combinations
+
+    let test_cases = [
+        ("tr/a/b/c", "c"),
+        ("tr/a/b/d", "d"),
+        ("tr/a/b/s", "s"),
+        ("tr/a/b/r", "r"),
+        // Multiple flags
+        ("tr/a/b/cd", "cd"),
+        ("tr/a/b/sr", "sr"),
+        ("tr/a/b/cdsr", "cdsr"), // All flags
+    ];
+
+    for (input, expected_flags) in test_cases {
+        let mut lexer = Lexer::new(input);
+
+        // Skip to the flags token
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::TR_KW, "tr")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::TR_SEARCH_LIST, "a")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
+        assert_eq!(
+            lexer.next_token(),
+            Some((SyntaxKind::TR_REPLACEMENT_LIST, "b"))
+        );
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
+
+        // Test flags
+        let flags_token = lexer.next_token();
+        assert_eq!(
+            flags_token,
+            Some((SyntaxKind::TR_FLAGS, expected_flags)),
+            "Failed for input: {}",
+            input
+        );
+    }
+}
+
+#[test]
+fn test_no_flags_handling() {
+    // Test operators without flags
+
+    let mut lexer = Lexer::new("s/a/b/");
+
+    // Parse through the substitution operator
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::S_KW, "s")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::S_PATTERN, "a")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::S_REPLACEMENT, "b")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
+
+    // Should be in ExpectingQuoteLikeFlags context after the closing delimiter
+    assert_eq!(lexer.context, LexerContext::ExpectingQuoteLikeFlags);
+
+    // The next call to next_token should handle the empty flags case and return None
+    // This should also transition the context back to ExpectingOperator
+    assert_eq!(lexer.next_token(), None);
     assert_eq!(lexer.context, LexerContext::ExpectingOperator);
+}
+
+#[test]
+fn test_invalid_flags_rejected() {
+    // Test that invalid flags are not consumed as flags
+
+    let mut lexer = Lexer::new("s/a/b/xyz"); // 'z' is not a valid s/// flag
+
+    // Parse through the substitution operator
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::S_KW, "s")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::S_PATTERN, "a")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::S_REPLACEMENT, "b")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
+
+    // Invalid flags should be treated as an ERROR token
+    let flags_token = lexer.next_token();
+    println!("Flags token: {:?}", flags_token);
+    assert_eq!(flags_token, Some((SyntaxKind::ERROR, "xyz")));
+
+    // After error token, should be at end of input or continue with next statement
+    let next_token = lexer.next_token();
+    println!("Next token: {:?}", next_token);
+    assert_eq!(next_token, None);
+}
+
+#[test]
+fn test_mixed_valid_invalid_flags() {
+    // Test that even one invalid flag makes the entire sequence an error
+
+    let mut lexer = Lexer::new("s/a/b/giz"); // 'z' is not a valid s/// flag
+
+    // Parse through the substitution operator
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::S_KW, "s")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::S_PATTERN, "a")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::S_REPLACEMENT, "b")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
+
+    // The entire flag sequence should be treated as an error
+    let flags_token = lexer.next_token();
+    assert_eq!(flags_token, Some((SyntaxKind::ERROR, "giz")));
+
+    // Should be at end of input
+    assert_eq!(lexer.next_token(), None);
 }
 
 #[test]

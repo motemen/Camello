@@ -261,6 +261,8 @@ pub enum LexerContext {
     RawData,
     /// In a quote-like operator context (s///, tr///, y///)
     InQuoteLike,
+    /// Expecting flags after s/// or tr/// operators
+    ExpectingQuoteLikeFlags,
 }
 
 /// Generic quote-like operator part states (for s///, tr///, y///)
@@ -307,6 +309,7 @@ pub struct Lexer<'a> {
     context: LexerContext,
     at_line_start: bool, // Track if we're at the start of a line for POD detection
     quote_like_state: Option<QuoteLikeState>,
+    expecting_flags_for: Option<QuoteLikeOperatorType>, // Track which operator we're expecting flags for
 }
 
 impl<'a> Clone for Lexer<'a> {
@@ -316,6 +319,7 @@ impl<'a> Clone for Lexer<'a> {
             context: self.context,
             at_line_start: self.at_line_start,
             quote_like_state: self.quote_like_state.clone(),
+            expecting_flags_for: self.expecting_flags_for.clone(),
         }
     }
 }
@@ -336,6 +340,7 @@ impl<'a> Lexer<'a> {
             context: LexerContext::ExpectingValue, // Start expecting a value
             at_line_start: true,                   // Start at beginning of input (line start)
             quote_like_state: None,
+            expecting_flags_for: None,
         }
     }
 
@@ -536,6 +541,13 @@ impl<'a> Lexer<'a> {
             return Some(result);
         }
 
+        // Handle quote-like flags (s///flags, tr///flags)
+        if self.context == LexerContext::ExpectingQuoteLikeFlags {
+            if let Some(result) = self.try_consume_quote_like_flags() {
+                return Some(result);
+            }
+        }
+
         // Handle postfix dereference operators (->@*, ->%*, ->$*)
         if let Some(result) = self.try_consume_postfix_deref() {
             let (syntax_kind, text) = result;
@@ -664,8 +676,8 @@ impl<'a> Lexer<'a> {
                 // Examples: "my %hash", "{ key => %val }"
                 SyntaxKind::PERCENT
             }
-            LexerContext::ExpectingOperator => {
-                // When expecting an operator, % is the modulo operator
+            LexerContext::ExpectingOperator | LexerContext::ExpectingQuoteLikeFlags => {
+                // When expecting an operator or flags, % is the modulo operator
                 // Examples: "@array % hash", "$var % other_var", "func() % 2"
                 SyntaxKind::MODULO
             }
@@ -689,8 +701,8 @@ impl<'a> Lexer<'a> {
                 // Examples: "my *glob", "*{$name}", "*STDIN"
                 SyntaxKind::ASTERISK
             }
-            LexerContext::ExpectingOperator => {
-                // When expecting an operator, * is the multiplication operator
+            LexerContext::ExpectingOperator | LexerContext::ExpectingQuoteLikeFlags => {
+                // When expecting an operator or flags, * is the multiplication operator
                 // Examples: "$a * $b", "func() * 2"
                 SyntaxKind::STAR
             }
@@ -702,7 +714,7 @@ impl<'a> Lexer<'a> {
 
     fn disambiguate_str_op(&self, op: &str) -> SyntaxKind {
         match self.context {
-            LexerContext::ExpectingOperator => {
+            LexerContext::ExpectingOperator | LexerContext::ExpectingQuoteLikeFlags => {
                 // When expecting an operator, eq/ne are string comparison operators
                 match op {
                     "eq" => SyntaxKind::STR_EQ,
@@ -736,7 +748,7 @@ impl<'a> Lexer<'a> {
                 // Examples: "sub x", "$x", "my $x"
                 SyntaxKind::IDENT
             }
-            LexerContext::ExpectingOperator => {
+            LexerContext::ExpectingOperator | LexerContext::ExpectingQuoteLikeFlags => {
                 // When expecting an operator, x is the repetition operator
                 // Examples: "$str x 3", "'hello' x 2"
                 SyntaxKind::X
@@ -787,7 +799,7 @@ impl<'a> Lexer<'a> {
                 // If we reach end of input after 's', assume function call
                 SyntaxKind::IDENT
             }
-            LexerContext::ExpectingOperator => {
+            LexerContext::ExpectingOperator | LexerContext::ExpectingQuoteLikeFlags => {
                 // When expecting an operator, s is the substitution operator
                 // Examples: "$str s/old/new/"
                 SyntaxKind::S_KW
@@ -808,7 +820,7 @@ impl<'a> Lexer<'a> {
 
     fn disambiguate_logical_op(&self, op: &str) -> SyntaxKind {
         match self.context {
-            LexerContext::ExpectingOperator => {
+            LexerContext::ExpectingOperator | LexerContext::ExpectingQuoteLikeFlags => {
                 // When expecting an operator, not/and/or/xor are logical operators
                 match op {
                     "not" => SyntaxKind::NOT_KW,
@@ -874,7 +886,7 @@ impl<'a> Lexer<'a> {
                 // If we reach end of input after 'tr', assume identifier
                 SyntaxKind::IDENT
             }
-            LexerContext::ExpectingOperator => {
+            LexerContext::ExpectingOperator | LexerContext::ExpectingQuoteLikeFlags => {
                 // When expecting an operator, tr is the transliteration operator
                 // Examples: "$str tr/a-z/A-Z/"
                 SyntaxKind::TR_KW
@@ -942,7 +954,7 @@ impl<'a> Lexer<'a> {
                 // If we reach end of input after 'y', assume identifier
                 SyntaxKind::IDENT
             }
-            LexerContext::ExpectingOperator => {
+            LexerContext::ExpectingOperator | LexerContext::ExpectingQuoteLikeFlags => {
                 // When expecting an operator, y is the transliteration operator
                 // Examples: "$str y/a-z/A-Z/"
                 SyntaxKind::Y_KW
@@ -1074,6 +1086,94 @@ impl<'a> Lexer<'a> {
                 }
             }
         }
+        None
+    }
+
+    /// Try to consume quote-like operator flags (s///flags, tr///flags)
+    fn try_consume_quote_like_flags(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        if self.context != LexerContext::ExpectingQuoteLikeFlags {
+            return None;
+        }
+
+        let start_pos = self.logos_lexer.span().end;
+        let input = self.logos_lexer.source();
+        let remaining = &input[start_pos..];
+
+        // Define valid flag characters for each operator type
+        let valid_flags = match &self.expecting_flags_for {
+            Some(QuoteLikeOperatorType::Substitution) => "msixpodualngcer",
+            Some(
+                QuoteLikeOperatorType::Transliteration | QuoteLikeOperatorType::Transliteration2,
+            ) => "cdsr",
+            None => return None,
+        };
+
+        // Consume consecutive flag characters
+        let mut flag_end = 0;
+        let mut has_valid_flags = false;
+        let mut has_invalid_flags = false;
+
+        for ch in remaining.chars() {
+            if ch.is_alphabetic() {
+                if valid_flags.contains(ch) {
+                    has_valid_flags = true;
+                    flag_end += ch.len_utf8();
+                } else {
+                    // Found invalid flag character
+                    has_invalid_flags = true;
+                    flag_end += ch.len_utf8();
+                }
+            } else {
+                // Non-alphabetic character - stop parsing flags
+                break;
+            }
+        }
+
+        if flag_end > 0 {
+            if has_invalid_flags {
+                // If there are any invalid flags, treat the entire flag sequence as an error
+                let flags_slice = &input[start_pos..start_pos + flag_end];
+
+                // Create a new lexer starting after the consumed flags
+                let new_start = start_pos + flag_end;
+                let remaining_input = &input[new_start..];
+                self.logos_lexer = Token::lexer(remaining_input);
+
+                // Reset state
+                self.expecting_flags_for = None;
+                self.context = LexerContext::ExpectingOperator;
+
+                return Some((SyntaxKind::ERROR, flags_slice));
+            } else if has_valid_flags {
+                // All flags are valid
+                let syntax_kind = match &self.expecting_flags_for {
+                    Some(QuoteLikeOperatorType::Substitution) => SyntaxKind::S_FLAGS,
+                    Some(
+                        QuoteLikeOperatorType::Transliteration
+                        | QuoteLikeOperatorType::Transliteration2,
+                    ) => SyntaxKind::TR_FLAGS,
+                    None => unreachable!(),
+                };
+
+                // Get the flags text
+                let flags_slice = &input[start_pos..start_pos + flag_end];
+
+                // Create a new lexer starting after the consumed flags
+                let new_start = start_pos + flag_end;
+                let remaining_input = &input[new_start..];
+                self.logos_lexer = Token::lexer(remaining_input);
+
+                // Reset state
+                self.expecting_flags_for = None;
+                self.context = LexerContext::ExpectingOperator;
+
+                return Some((syntax_kind, flags_slice));
+            }
+        }
+
+        // No flags found, transition back to normal parsing
+        self.expecting_flags_for = None;
+        self.context = LexerContext::ExpectingOperator;
         None
     }
 
@@ -1281,7 +1381,9 @@ impl<'a> Lexer<'a> {
             LexerContext::VariableList | LexerContext::ExpectingValue => {
                 LexerContext::ExpectingOperator
             }
-            LexerContext::ExpectingOperator => LexerContext::ExpectingOperator,
+            LexerContext::ExpectingOperator | LexerContext::ExpectingQuoteLikeFlags => {
+                LexerContext::ExpectingOperator
+            }
             LexerContext::QlikeDelimiter
             | LexerContext::QlikeContent
             | LexerContext::QwContent
@@ -1359,8 +1461,19 @@ impl<'a> Lexer<'a> {
                 QuoteLikePart::InReplacementList => {
                     // End of replacement part - check if this matches expected delimiter
                     if state.is_symmetric || delimiter_text == state.delimiter {
+                        // Store operator type for flag parsing
+                        let operator_type = state.operator_type.clone();
                         self.quote_like_state = None;
-                        return LexerContext::ExpectingOperator;
+
+                        // Transition to expecting flags context for s/// and tr///
+                        match operator_type {
+                            QuoteLikeOperatorType::Substitution
+                            | QuoteLikeOperatorType::Transliteration
+                            | QuoteLikeOperatorType::Transliteration2 => {
+                                self.expecting_flags_for = Some(operator_type);
+                                return LexerContext::ExpectingQuoteLikeFlags;
+                            }
+                        }
                     }
 
                     LexerContext::InQuoteLike
