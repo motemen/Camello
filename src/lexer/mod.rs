@@ -304,16 +304,6 @@ impl<'a> Iterator for Lexer<'a> {
     }
 }
 
-impl LexerContext {
-    fn get_prefix(&self) -> Option<SyntaxKind> {
-        if let LexerContext::QuoteLike { prefix, .. } = self {
-            Some(*prefix)
-        } else {
-            None
-        }
-    }
-}
-
 impl<'a> Lexer<'a> {
     #[must_use]
     pub fn new(input: &'a str) -> Self {
@@ -357,12 +347,182 @@ impl<'a> Lexer<'a> {
         None
     }
 
-    /// Handle special token parsing in `ExpectingValue` context
-    fn try_handle_expecting_value_tokens(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        if self.context != LexerContext::ExpectingValue {
+    /// Handle special token parsing in various contexts
+    fn try_handle_special_tokens(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        // Handle quote-like content first
+        if let Some(result) = self.try_handle_quote_like_content_internal() {
+            return Some(result);
+        }
+
+        // Handle quote-like delimiters
+        if let Some(result) = self.try_handle_quote_like_delimiter_internal() {
+            return Some(result);
+        }
+
+        // Handle special tokens in ExpectingValue context
+        if self.context == LexerContext::ExpectingValue {
+            if let Some(result) = self.try_handle_expecting_value_context() {
+                return Some(result);
+            }
+        }
+
+        None
+    }
+
+    /// Handle quote-like content based on current context and state
+    fn try_handle_quote_like_content_internal(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        let LexerContext::QuoteLike {
+            mode,
+            state,
+            delimiter,
+            ..
+        } = self.context
+        else {
+            return None;
+        };
+
+        match (mode, state) {
+            // Q family (q, qq, qx) - single content
+            (QuoteLikeMode::Q, QuoteLikeState::FirstContent) => self.consume_quote_content(
+                SyntaxKind::Q_STRING,
+                delimiter,
+                QuoteLikeState::FirstCloseDelimiter,
+            ),
+            // QW - whitespace-separated words
+            (QuoteLikeMode::QW, QuoteLikeState::FirstContent) => self.handle_qw_content(delimiter),
+            // S (substitution) - first content is pattern, second is replacement
+            (QuoteLikeMode::S, QuoteLikeState::FirstContent) => self.consume_quote_content(
+                SyntaxKind::S_PATTERN,
+                delimiter,
+                QuoteLikeState::SecondOpenDelimiter,
+            ),
+            (QuoteLikeMode::S, QuoteLikeState::SecondContent) => self.consume_quote_content(
+                SyntaxKind::S_REPLACEMENT,
+                delimiter,
+                QuoteLikeState::SecondCloseDelimiter,
+            ),
+            // TR (transliteration) - from and to patterns
+            (QuoteLikeMode::TR, QuoteLikeState::FirstContent) => self.consume_quote_content(
+                SyntaxKind::TR_SEARCH_LIST,
+                delimiter,
+                QuoteLikeState::SecondOpenDelimiter,
+            ),
+            (QuoteLikeMode::TR, QuoteLikeState::SecondContent) => self.consume_quote_content(
+                SyntaxKind::TR_REPLACEMENT_LIST,
+                delimiter,
+                QuoteLikeState::SecondCloseDelimiter,
+            ),
+            // M - regex pattern
+            (QuoteLikeMode::M, QuoteLikeState::FirstContent) => self.consume_quote_content(
+                SyntaxKind::M_STRING,
+                delimiter,
+                QuoteLikeState::FirstCloseDelimiter,
+            ),
+            _ => None,
+        }
+    }
+
+    /// Helper method to consume quote-like content and transition state
+    fn consume_quote_content(
+        &mut self,
+        content_kind: SyntaxKind,
+        delimiter: char,
+        next_state: QuoteLikeState,
+    ) -> Option<(SyntaxKind, &'a str)> {
+        let closing_delimiter = Self::get_closing_delimiter(delimiter);
+        if let Some(content) =
+            self.try_consume_quote_like_string_content(content_kind, &closing_delimiter)
+        {
+            // Update context to next state
+            if let LexerContext::QuoteLike { prefix, mode, .. } = self.context {
+                self.context = LexerContext::QuoteLike {
+                    prefix,
+                    mode,
+                    state: next_state,
+                    delimiter,
+                };
+            }
+            Some(content)
+        } else {
+            None
+        }
+    }
+
+    /// Handle QW (qw) content specifically
+    fn handle_qw_content(&mut self, delimiter: char) -> Option<(SyntaxKind, &'a str)> {
+        // Check if we hit closing delimiter first
+        let remainder = self.logos_lexer.remainder();
+        if !remainder.is_empty() {
+            let first_char = remainder.chars().next().unwrap();
+            let expected_closing_delimiter = match delimiter {
+                '{' => '}',
+                '[' => ']',
+                '(' => ')',
+                '<' => '>',
+                other => other,
+            };
+            // If we hit closing delimiter, transition to FirstCloseDelimiter state
+            if first_char == expected_closing_delimiter {
+                if let LexerContext::QuoteLike { prefix, mode, .. } = self.context {
+                    self.context = LexerContext::QuoteLike {
+                        prefix,
+                        mode,
+                        state: QuoteLikeState::FirstCloseDelimiter,
+                        delimiter,
+                    };
+                }
+                return None; // Let normal lexer handle the delimiter
+            }
+        }
+
+        // Otherwise, try to consume QW content
+        self.try_consume_qw_content()
+    }
+
+    /// Handle quote-like delimiter recognition and consumption
+    fn try_handle_quote_like_delimiter_internal(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        let LexerContext::QuoteLike {
+            state, delimiter, ..
+        } = &self.context
+        else {
+            return None;
+        };
+
+        let remainder = self.logos_lexer.remainder();
+        if remainder.is_empty() {
             return None;
         }
 
+        let first_char = remainder.chars().next().unwrap();
+        let should_consume = match state {
+            QuoteLikeState::FirstOpenDelimiter => {
+                // Any valid quote delimiter can start
+                self.is_quote_delimiter(first_char)
+            }
+            QuoteLikeState::FirstCloseDelimiter | QuoteLikeState::SecondCloseDelimiter => {
+                // Must match the expected closing delimiter
+                let expected_closing = Self::get_closing_delimiter(*delimiter);
+                first_char.to_string() == expected_closing
+            }
+            QuoteLikeState::SecondOpenDelimiter => {
+                // Can be any delimiter for the second part
+                self.is_quote_delimiter(first_char)
+            }
+            _ => false,
+        };
+
+        if should_consume {
+            let delim_str = &remainder[..first_char.len_utf8()];
+            self.logos_lexer.bump(first_char.len_utf8());
+            self.handle_quote_like_delimiter(delim_str);
+            Some((SyntaxKind::DELIMITER, delim_str))
+        } else {
+            None
+        }
+    }
+
+    /// Handle special tokens when expecting a value
+    fn try_handle_expecting_value_context(&mut self) -> Option<(SyntaxKind, &'a str)> {
         // Array of token consumers to try in order
         let consumers = [
             Self::try_consume_file_test_op,
@@ -382,156 +542,8 @@ impl<'a> Lexer<'a> {
         None
     }
 
-    fn try_handle_quote_like_content(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        if let LexerContext::QuoteLike {
-            mode,
-            state,
-            delimiter,
-            ..
-        } = self.context
-        {
-            match (mode, state) {
-                // Q family (q, qq, qx) - single content
-                (QuoteLikeMode::Q, QuoteLikeState::FirstContent) => {
-                    let closing_delimiter = self.get_closing_delimiter(delimiter);
-                    if let Some(content) = self.try_consume_quote_like_content_internal(
-                        SyntaxKind::Q_STRING,
-                        &closing_delimiter,
-                    ) {
-                        // After consuming content, expect closing delimiter
-                        self.context = LexerContext::QuoteLike {
-                            prefix: self.context.get_prefix().unwrap(),
-                            mode,
-                            state: QuoteLikeState::FirstCloseDelimiter,
-                            delimiter,
-                        };
-                        return Some(content);
-                    }
-                    None
-                }
-                // QW - whitespace-separated words
-                (QuoteLikeMode::QW, QuoteLikeState::FirstContent) => {
-                    // Check if we hit closing delimiter first
-                    let remainder = self.logos_lexer.remainder();
-                    if !remainder.is_empty() {
-                        let first_char = remainder.chars().next().unwrap();
-                        let expected_closing_delimiter = match delimiter {
-                            '{' => '}',
-                            '[' => ']',
-                            '(' => ')',
-                            '<' => '>',
-                            other => other,
-                        };
-                        // If we hit closing delimiter, transition to FirstCloseDelimiter state
-                        if first_char == expected_closing_delimiter {
-                            self.context = LexerContext::QuoteLike {
-                                prefix: self.context.get_prefix().unwrap(),
-                                mode,
-                                state: QuoteLikeState::FirstCloseDelimiter,
-                                delimiter,
-                            };
-                            return None; // Let normal lexer handle the delimiter
-                        }
-                    }
-
-                    // Otherwise, try to consume QW content
-                    self.try_consume_qw_content()
-                }
-                // S (substitution) - first content is pattern, second is replacement
-                (QuoteLikeMode::S, QuoteLikeState::FirstContent) => {
-                    let closing_delimiter = self.get_closing_delimiter(delimiter);
-                    if let Some(content) = self.try_consume_quote_like_content_internal(
-                        SyntaxKind::S_PATTERN,
-                        &closing_delimiter,
-                    ) {
-                        self.context = LexerContext::QuoteLike {
-                            prefix: self.context.get_prefix().unwrap(),
-                            mode,
-                            state: QuoteLikeState::SecondOpenDelimiter,
-                            delimiter,
-                        };
-                        return Some(content);
-                    }
-                    None
-                }
-                (QuoteLikeMode::S, QuoteLikeState::SecondContent) => {
-                    let closing_delimiter = self.get_closing_delimiter(delimiter);
-                    if let Some(content) = self.try_consume_quote_like_content_internal(
-                        SyntaxKind::S_REPLACEMENT,
-                        &closing_delimiter,
-                    ) {
-                        // After consuming replacement content, expect closing delimiter
-                        self.context = LexerContext::QuoteLike {
-                            prefix: self.context.get_prefix().unwrap(),
-                            mode,
-                            state: QuoteLikeState::SecondCloseDelimiter,
-                            delimiter,
-                        };
-                        return Some(content);
-                    }
-                    None
-                }
-                // TR (transliteration) - from and to patterns
-                (QuoteLikeMode::TR, QuoteLikeState::FirstContent) => {
-                    let closing_delimiter = self.get_closing_delimiter(delimiter);
-                    if let Some(content) = self.try_consume_quote_like_content_internal(
-                        SyntaxKind::TR_SEARCH_LIST,
-                        &closing_delimiter,
-                    ) {
-                        self.context = LexerContext::QuoteLike {
-                            prefix: self.context.get_prefix().unwrap(),
-                            mode,
-                            state: QuoteLikeState::SecondOpenDelimiter,
-                            delimiter,
-                        };
-                        return Some(content);
-                    }
-                    None
-                }
-                (QuoteLikeMode::TR, QuoteLikeState::SecondContent) => {
-                    let closing_delimiter = self.get_closing_delimiter(delimiter);
-                    if let Some(content) = self.try_consume_quote_like_content_internal(
-                        SyntaxKind::TR_REPLACEMENT_LIST,
-                        &closing_delimiter,
-                    ) {
-                        // After consuming to content, expect closing delimiter
-                        self.context = LexerContext::QuoteLike {
-                            prefix: self.context.get_prefix().unwrap(),
-                            mode,
-                            state: QuoteLikeState::SecondCloseDelimiter,
-                            delimiter,
-                        };
-                        return Some(content);
-                    }
-                    None
-                }
-                // M - regex pattern
-                (QuoteLikeMode::M, QuoteLikeState::FirstContent) => {
-                    let closing_delimiter = self.get_closing_delimiter(delimiter);
-                    if let Some(content) = self.try_consume_quote_like_content_internal(
-                        SyntaxKind::M_STRING,
-                        &closing_delimiter,
-                    ) {
-                        // After consuming content, expect closing delimiter
-                        self.context = LexerContext::QuoteLike {
-                            prefix: self.context.get_prefix().unwrap(),
-                            mode,
-                            state: QuoteLikeState::FirstCloseDelimiter,
-                            delimiter,
-                        };
-                        return Some(content);
-                    }
-                    None
-                }
-                _ => None,
-            }
-        } else {
-            None
-        }
-    }
-
     /// Get the closing delimiter for the given opening delimiter
-    fn get_closing_delimiter(&self, opening: char) -> String {
+    fn get_closing_delimiter(opening: char) -> String {
         match opening {
             '{' => "}".to_string(),
             '[' => "]".to_string(),
@@ -541,7 +553,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn try_consume_quote_like_content_internal(
+    fn try_consume_quote_like_string_content(
         &mut self,
         content_kind: SyntaxKind,
         delimiter: &str,
@@ -605,21 +617,8 @@ impl<'a> Lexer<'a> {
             return Some(result);
         }
 
-        // Handle quote-like content and delimiter modes
-        if let Some(result) = self.try_handle_quote_like_content() {
-            return Some(result);
-        }
-
-        // Handle quote-like delimiter mode
-        if let LexerContext::QuoteLike { .. } = self.context {
-            if let Some((kind, text)) = self.try_consume_quote_delimiter() {
-                self.handle_quote_like_delimiter(text);
-                return Some((kind, text));
-            }
-        }
-
-        // Handle special tokens in ExpectingValue context
-        if let Some(result) = self.try_handle_expecting_value_tokens() {
+        // Handle special tokens (quote-like content, delimiters, and ExpectingValue tokens)
+        if let Some(result) = self.try_handle_special_tokens() {
             return Some(result);
         }
 
@@ -1875,47 +1874,6 @@ impl<'a> Lexer<'a> {
             | '`' | '\'' | '"' => true,
             _ => false,
         }
-    }
-
-    /// Try to consume a delimiter token in quote-like context
-    fn try_consume_quote_delimiter(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        let remainder = self.logos_lexer.remainder();
-        if remainder.is_empty() {
-            return None;
-        }
-
-        let first_char = remainder.chars().next().unwrap();
-
-        // Check if this character can be a delimiter in quote-like context
-        if let LexerContext::QuoteLike {
-            state, delimiter, ..
-        } = &self.context
-        {
-            let should_consume = match state {
-                QuoteLikeState::FirstOpenDelimiter => {
-                    // Any valid quote delimiter can start
-                    self.is_quote_delimiter(first_char)
-                }
-                QuoteLikeState::FirstCloseDelimiter | QuoteLikeState::SecondCloseDelimiter => {
-                    // Must match the expected closing delimiter
-                    let expected_closing = self.get_closing_delimiter(*delimiter);
-                    first_char.to_string() == expected_closing
-                }
-                QuoteLikeState::SecondOpenDelimiter => {
-                    // Can be any delimiter for the second part
-                    self.is_quote_delimiter(first_char)
-                }
-                _ => false,
-            };
-
-            if should_consume {
-                let delim_str = &remainder[..first_char.len_utf8()];
-                self.logos_lexer.bump(first_char.len_utf8());
-                return Some((SyntaxKind::DELIMITER, delim_str));
-            }
-        }
-
-        None
     }
 }
 
