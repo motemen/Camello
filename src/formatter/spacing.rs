@@ -103,6 +103,9 @@ pub const fn get_token_spacing(kind: SyntaxKind) -> TokenSpacing {
         | SyntaxKind::MODULO
         | SyntaxKind::X => TokenSpacing::binary_op(),
 
+        // Unary operators (prefix)
+        SyntaxKind::UNARY_PLUS | SyntaxKind::UNARY_MINUS => TokenSpacing::prefix_op(),
+
         // Comparison operators
         SyntaxKind::GT
         | SyntaxKind::LT
@@ -247,8 +250,8 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
         LOGICAL_OR, LT, L_BRACE, L_BRACKET, L_PAREN, MINUS, MODULO, MY_KW, NE, OR_KW, OUR_KW, PLUS,
         QUALIFIED_IDENT, QUESTION_MARK, REGEX_MATCH, REGEX_NOT_MATCH, RETURN_KW, R_BRACE,
         R_BRACKET, R_PAREN, SCALAR_VAR, SEMICOLON, SLASH, SPACESHIP, STAR, STATE_KW, STR_CMP,
-        STR_EQ, STR_GE, STR_GT, STR_LE, STR_LT, STR_NE, SUB_KW, TYPEGLOB_VAR, UNLESS_KW, WHILE_KW,
-        X, XOR_KW,
+        STR_EQ, STR_GE, STR_GT, STR_LE, STR_LT, STR_NE, SUB_KW, TYPEGLOB_VAR,
+        UNLESS_KW, WHILE_KW, X, XOR_KW,
     };
 
     match (prev, current) {

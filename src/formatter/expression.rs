@@ -376,82 +376,16 @@ impl Formatter {
 
     pub fn format_prefix_expr(&mut self, node: &PerlNode) {
         // Format prefix expressions (e.g., +$var, -42, !$bool, not $bool)
-        // Handle unary + and - specially to keep them compact, but use normal formatting for other operators
-
-        let mut found_operator = false;
-        let mut operator_kind = None;
+        // Now that we have UNARY_PLUS and UNARY_MINUS syntax kinds, we can use normal token formatting
 
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(child_node) => {
-                    // If we just processed a unary + or - operator, format the operand without leading space
-                    if found_operator
-                        && matches!(operator_kind, Some(SyntaxKind::PLUS | SyntaxKind::MINUS))
-                    {
-                        // Set prev_token_kind to something that won't trigger spacing
-                        self.prev_token_kind = Some(SyntaxKind::L_PAREN); // L_PAREN prevents spaces before most things
-
-                        // Format the operand node
-                        self.format_node(&child_node);
-
-                        // Restore the prev_token_kind to the operator we just processed
-                        self.prev_token_kind = operator_kind;
-                    } else {
-                        // For logical NOT and other operators, use normal formatting
-                        self.format_node(&child_node);
-                    }
+                    self.format_node(&child_node);
                 }
                 NodeOrToken::Token(token) => {
-                    let kind = token.kind();
-                    let text = token.text();
-
-                    match kind {
-                        // FIXME: change to UNARY_PLUS, UNARY_MINUS
-                        SyntaxKind::PLUS | SyntaxKind::MINUS => {
-                            // Handle unary + and - specially
-                            self.handle_spacing_before(kind);
-                            if self.at_line_start {
-                                self.add_indent();
-                                self.at_line_start = false;
-                            }
-                            // Output the operator directly without spacing after
-                            self.output.push_str(text);
-                            self.prev_token_kind = Some(kind);
-                            found_operator = true;
-                            operator_kind = Some(kind);
-                        }
-                        SyntaxKind::LOGICAL_NOT | SyntaxKind::NOT_KW => {
-                            // For logical operators, use standard token formatting to preserve existing behavior
-                            self.format_token(&token);
-                        }
-                        SyntaxKind::WHITESPACE => {
-                            // Skip whitespace only between unary +/- and their operands
-                            if !matches!(operator_kind, Some(SyntaxKind::PLUS | SyntaxKind::MINUS))
-                            {
-                                self.format_token(&token);
-                            }
-                        }
-                        _ => {
-                            // For other tokens, use normal formatting unless we're in a +/- prefix context
-                            if found_operator
-                                && matches!(
-                                    operator_kind,
-                                    Some(SyntaxKind::PLUS | SyntaxKind::MINUS)
-                                )
-                            {
-                                // For operands after +/-, output directly without normal formatting to avoid spaces
-                                if self.at_line_start {
-                                    self.add_indent();
-                                    self.at_line_start = false;
-                                }
-                                self.output.push_str(text);
-                                self.prev_token_kind = Some(kind);
-                            } else {
-                                // Use normal token formatting
-                                self.format_token(&token);
-                            }
-                        }
-                    }
+                    // All prefix operators now use standard token formatting with rule-based spacing
+                    self.format_token(&token);
                 }
             }
         }
