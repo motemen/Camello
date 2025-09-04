@@ -747,33 +747,36 @@ impl Formatter {
 
     /// Pre-process alignment groups and store alignment information
     fn preprocess_alignment_groups(&mut self, node: &PerlNode) {
-        let nodes: Vec<_> = node.children().collect();
+        // Collect all children (both nodes and tokens) to detect empty lines properly
+        let children: Vec<_> = node.children_with_tokens().collect();
         let mut i = 0;
         
-        while i < nodes.len() {
-            let current_node = &nodes[i];
-            
-            // Check if this node can start an alignment group
-            if let Some((operator, position)) = self.can_be_aligned(current_node) {
-                let alignment_group = self.collect_alignment_group_from_nodes(&nodes, i, operator);
-                
-                if alignment_group.len() > 1 {
-                    // Calculate target alignment position
-                    let target_pos = alignment_group.iter()
-                        .map(|c| c.operator_position)
-                        .max()
-                        .unwrap_or(0);
+        while i < children.len() {
+            if let Some(NodeOrToken::Node(current_node)) = children.get(i) {
+                // Check if this node can start an alignment group
+                if let Some((operator, _position)) = self.can_be_aligned(current_node) {
+                    let alignment_group = self.collect_alignment_group_from_elements(&children, i, operator);
                     
-                    // Store alignment information for each node in the group
-                    for candidate in &alignment_group {
-                        self.alignment_state.alignment_map.insert(
-                            candidate.node.text_range(), 
-                            target_pos
-                        );
+                    if alignment_group.len() > 1 {
+                        // Calculate target alignment position
+                        let target_pos = alignment_group.iter()
+                            .map(|c| c.operator_position)
+                            .max()
+                            .unwrap_or(0);
+                        
+                        // Store alignment information for each node in the group
+                        for candidate in &alignment_group {
+                            self.alignment_state.alignment_map.insert(
+                                candidate.node.text_range(), 
+                                target_pos
+                            );
+                        }
+                        
+                        // Skip the elements we just processed
+                        i += self.count_elements_in_group(&children, i, &alignment_group);
+                    } else {
+                        i += 1;
                     }
-                    
-                    // Skip the nodes we just processed
-                    i += alignment_group.len();
                 } else {
                     i += 1;
                 }
@@ -786,8 +789,11 @@ impl Formatter {
     /// Collect alignment group starting from a specific node index
     fn collect_alignment_group_from_nodes(&self, nodes: &[PerlNode], start_idx: usize, operator: SyntaxKind) -> Vec<AlignmentCandidate> {
         let mut candidates = Vec::new();
+        let mut i = start_idx;
         
-        for (offset, node) in nodes[start_idx..].iter().enumerate() {
+        while i < nodes.len() {
+            let node = &nodes[i];
+            
             if let Some((node_op, position)) = self.can_be_aligned(node) {
                 if node_op == operator {
                     candidates.push(AlignmentCandidate {
@@ -802,26 +808,150 @@ impl Formatter {
                 }
             } else {
                 // Non-alignable node breaks the group (unless it's just whitespace)
-                // For now, let's break on any non-alignable node
-                break;
-            }
-            
-            // Check for empty lines between nodes that would break alignment
-            if offset > 0 {
-                let prev_node = &nodes[start_idx + offset - 1];
-                if self.has_empty_line_between_nodes(prev_node, node) {
+                // Check if this is a whitespace node with empty lines
+                if node.kind() == SyntaxKind::WHITESPACE {
+                    // Check if this whitespace has multiple newlines (empty line)
+                    let has_empty_line = node.descendants_with_tokens()
+                        .any(|elem| {
+                            if let Some(token) = elem.as_token() {
+                                token.kind() == SyntaxKind::WHITESPACE && 
+                                token.text().matches('\n').count() > 1
+                            } else {
+                                false
+                            }
+                        });
+                    
+                    if has_empty_line {
+                        // Empty line breaks alignment
+                        break;
+                    }
+                    // Single newlines don't break alignment, just skip to next node
+                } else {
+                    // Non-whitespace, non-alignable node breaks the group
                     break;
                 }
             }
+            
+            i += 1;
         }
         
         candidates
     }
 
+    /// Collect alignment group from mixed node/token elements
+    fn collect_alignment_group_from_elements(&self, elements: &[NodeOrToken<PerlNode, SyntaxToken<PerlLanguage>>], start_idx: usize, operator: SyntaxKind) -> Vec<AlignmentCandidate> {
+        let mut candidates = Vec::new();
+        let mut i = start_idx;
+        
+        while i < elements.len() {
+            match &elements[i] {
+                NodeOrToken::Node(node) => {
+                    if let Some((node_op, position)) = self.can_be_aligned(node) {
+                        if node_op == operator {
+                            candidates.push(AlignmentCandidate {
+                                node: node.clone(),
+                                operator: node_op,
+                                operator_position: position,
+                                target_position: 0,
+                            });
+                        } else {
+                            // Different operator breaks group
+                            break;
+                        }
+                    } else {
+                        // Non-alignable node breaks group
+                        break;
+                    }
+                }
+                NodeOrToken::Token(token) => {
+                    if token.kind() == SyntaxKind::WHITESPACE {
+                        // Look ahead to collect consecutive whitespace tokens
+                        let mut total_newlines = token.text().matches('\n').count();
+                        let mut j = i + 1;
+                        
+                        // Accumulate newlines from consecutive whitespace tokens
+                        while j < elements.len() {
+                            if let Some(NodeOrToken::Token(next_token)) = elements.get(j) {
+                                if next_token.kind() == SyntaxKind::WHITESPACE {
+                                    total_newlines += next_token.text().matches('\n').count();
+                                    j += 1;
+                                } else {
+                                    break;
+                                }
+                            } else {
+                                break;
+                            }
+                        }
+                        
+                        if total_newlines > 1 {
+                            // Empty line breaks alignment
+                            break;
+                        }
+                        
+                        // Skip the whitespace tokens we just processed
+                        i = j - 1; // -1 because loop will increment
+                    }
+                    // Other tokens don't break alignment groups (e.g., comments)
+                }
+            }
+            i += 1;
+        }
+        
+        candidates
+    }
+
+    /// Count how many elements (nodes + tokens) are consumed by an alignment group
+    fn count_elements_in_group(&self, elements: &[NodeOrToken<PerlNode, SyntaxToken<PerlLanguage>>], start_idx: usize, group: &[AlignmentCandidate]) -> usize {
+        if group.is_empty() {
+            return 1;
+        }
+        
+        let last_node_range = group.last().unwrap().node.text_range();
+        let mut count = 0;
+        
+        for (idx, element) in elements[start_idx..].iter().enumerate() {
+            count = idx + 1;
+            match element {
+                NodeOrToken::Node(node) => {
+                    if node.text_range() == last_node_range {
+                        break;
+                    }
+                }
+                NodeOrToken::Token(_) => {
+                    // Continue counting
+                }
+            }
+        }
+        
+        count
+    }
+
     /// Check if there's an empty line between two nodes
-    fn has_empty_line_between_nodes(&self, _node1: &PerlNode, _node2: &PerlNode) -> bool {
-        // For simplicity, assume no empty lines for now
-        // In a full implementation, we'd check the whitespace tokens between the nodes
+    fn has_empty_line_between_nodes(&self, node1: &PerlNode, node2: &PerlNode) -> bool {
+        // Look for whitespace tokens between node1 and node2 by examining siblings
+        let mut current = node1.next_sibling();
+        let mut total_newlines = 0;
+        
+        while let Some(sibling) = current {
+            if sibling == *node2 {
+                // We reached node2, check if we found empty lines
+                return total_newlines > 1;
+            }
+            
+            if sibling.kind() == SyntaxKind::WHITESPACE {
+                // This is a whitespace token - check for newlines
+                for token in sibling.descendants_with_tokens() {
+                    if let Some(token) = token.as_token() {
+                        if token.kind() == SyntaxKind::WHITESPACE {
+                            total_newlines += token.text().matches('\n').count();
+                        }
+                    }
+                }
+            }
+            
+            current = sibling.next_sibling();
+        }
+        
         false
     }
 
@@ -870,9 +1000,10 @@ impl Formatter {
         None
     }
 
-    /// Get the content of a node up to (but not including) a specific token
+    /// Get the formatted content of a node up to (but not including) a specific token
     fn get_content_before_token(&self, node: &PerlNode, target_token: &SyntaxToken<PerlLanguage>) -> String {
-        let mut content = String::new();
+        // Create a temporary formatter to get the formatted content up to the target token
+        let mut temp_formatter = Formatter::new();
         let target_start = target_token.text_range().start();
         
         for element in node.descendants_with_tokens() {
@@ -881,9 +1012,8 @@ impl Formatter {
                     break; // Stop when we reach the target token
                 }
                 rowan::NodeOrToken::Token(token) => {
-                    if !token.kind().is_trivia() || token.kind() == SyntaxKind::WHITESPACE {
-                        content.push_str(token.text());
-                    }
+                    // Format this token as it would be formatted normally
+                    temp_formatter.format_token(&token);
                 }
                 rowan::NodeOrToken::Node(_) => {
                     // Nodes are handled by their tokens
@@ -891,7 +1021,7 @@ impl Formatter {
             }
         }
         
-        content
+        temp_formatter.output
     }
 
     /// Format a node that needs alignment
