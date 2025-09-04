@@ -358,59 +358,6 @@ impl<'a> Lexer<'a> {
         })
     }
 
-    /// Handle quote-like content based on current context and state
-    fn try_handle_quote_like_content_internal(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        let LexerContext::QuoteLike {
-            mode,
-            state,
-            delimiter,
-            ..
-        } = self.context
-        else {
-            return None;
-        };
-
-        match (mode, state) {
-            // Q family (q, qq, qx) - single content
-            (QuoteLikeMode::Q, QuoteLikeState::FirstContent) => self.consume_quote_content(
-                SyntaxKind::Q_STRING,
-                delimiter,
-                QuoteLikeState::FirstCloseDelimiter,
-            ),
-            // QW - whitespace-separated words
-            (QuoteLikeMode::QW, QuoteLikeState::FirstContent) => self.handle_qw_content(delimiter),
-            // S (substitution) - first content is pattern, second is replacement
-            (QuoteLikeMode::S, QuoteLikeState::FirstContent) => self.consume_quote_content(
-                SyntaxKind::S_PATTERN,
-                delimiter,
-                QuoteLikeState::SecondOpenDelimiter,
-            ),
-            (QuoteLikeMode::S, QuoteLikeState::SecondContent) => self.consume_quote_content(
-                SyntaxKind::S_REPLACEMENT,
-                delimiter,
-                QuoteLikeState::SecondCloseDelimiter,
-            ),
-            // TR (transliteration) - from and to patterns
-            (QuoteLikeMode::TR, QuoteLikeState::FirstContent) => self.consume_quote_content(
-                SyntaxKind::TR_SEARCH_LIST,
-                delimiter,
-                QuoteLikeState::SecondOpenDelimiter,
-            ),
-            (QuoteLikeMode::TR, QuoteLikeState::SecondContent) => self.consume_quote_content(
-                SyntaxKind::TR_REPLACEMENT_LIST,
-                delimiter,
-                QuoteLikeState::SecondCloseDelimiter,
-            ),
-            // M - regex pattern
-            (QuoteLikeMode::M, QuoteLikeState::FirstContent) => self.consume_quote_content(
-                SyntaxKind::M_STRING,
-                delimiter,
-                QuoteLikeState::FirstCloseDelimiter,
-            ),
-            _ => None,
-        }
-    }
-
     /// Handle quote-like delimiter recognition and consumption
     fn try_handle_quote_like_delimiter_internal(&mut self) -> Option<(SyntaxKind, &'a str)> {
         let LexerContext::QuoteLike {
@@ -455,8 +402,133 @@ impl<'a> Lexer<'a> {
 
     /// Handle quote-like tokens (both content and delimiters) based on current context and state
     fn try_handle_quote_like_internal(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        self.try_handle_quote_like_content_internal()
-            .or_else(|| self.try_handle_quote_like_delimiter_internal())
+        let LexerContext::QuoteLike {
+            mode,
+            state,
+            delimiter,
+            ..
+        } = self.context
+        else {
+            return None;
+        };
+
+        match (mode, state) {
+            // Content states - try content first, then fall back to delimiter
+            (QuoteLikeMode::Q, QuoteLikeState::FirstContent) => self
+                .consume_quote_content(
+                    SyntaxKind::Q_STRING,
+                    delimiter,
+                    QuoteLikeState::FirstCloseDelimiter,
+                )
+                .or_else(|| self.try_handle_quote_like_delimiter_internal()),
+
+            (QuoteLikeMode::QW, QuoteLikeState::FirstContent) => {
+                // Special handling for QW - try content first, then delimiter
+                self.handle_qw_content(delimiter)
+                    .or_else(|| self.try_handle_quote_like_delimiter_internal())
+            }
+
+            (QuoteLikeMode::M, QuoteLikeState::FirstContent) => self
+                .consume_quote_content(
+                    SyntaxKind::M_STRING,
+                    delimiter,
+                    QuoteLikeState::FirstCloseDelimiter,
+                )
+                .or_else(|| self.try_handle_quote_like_delimiter_internal()),
+
+            (QuoteLikeMode::S, QuoteLikeState::FirstContent) => self
+                .consume_quote_content(
+                    SyntaxKind::S_PATTERN,
+                    delimiter,
+                    QuoteLikeState::SecondOpenDelimiter,
+                )
+                .or_else(|| self.try_handle_quote_like_delimiter_internal()),
+
+            (QuoteLikeMode::S, QuoteLikeState::SecondContent) => self
+                .consume_quote_content(
+                    SyntaxKind::S_REPLACEMENT,
+                    delimiter,
+                    QuoteLikeState::SecondCloseDelimiter,
+                )
+                .or_else(|| self.try_handle_quote_like_delimiter_internal()),
+
+            (QuoteLikeMode::TR, QuoteLikeState::FirstContent) => self
+                .consume_quote_content(
+                    SyntaxKind::TR_SEARCH_LIST,
+                    delimiter,
+                    QuoteLikeState::SecondOpenDelimiter,
+                )
+                .or_else(|| self.try_handle_quote_like_delimiter_internal()),
+
+            (QuoteLikeMode::TR, QuoteLikeState::SecondContent) => self
+                .consume_quote_content(
+                    SyntaxKind::TR_REPLACEMENT_LIST,
+                    delimiter,
+                    QuoteLikeState::SecondCloseDelimiter,
+                )
+                .or_else(|| self.try_handle_quote_like_delimiter_internal()),
+
+            // Delimiter states - only handle delimiters
+            (
+                QuoteLikeMode::Q,
+                QuoteLikeState::FirstOpenDelimiter | QuoteLikeState::FirstCloseDelimiter,
+            )
+            | (
+                QuoteLikeMode::QW,
+                QuoteLikeState::FirstOpenDelimiter | QuoteLikeState::FirstCloseDelimiter,
+            )
+            | (
+                QuoteLikeMode::M,
+                QuoteLikeState::FirstOpenDelimiter | QuoteLikeState::FirstCloseDelimiter,
+            )
+            | (
+                QuoteLikeMode::S,
+                QuoteLikeState::FirstOpenDelimiter
+                | QuoteLikeState::FirstCloseDelimiter
+                | QuoteLikeState::SecondOpenDelimiter
+                | QuoteLikeState::SecondCloseDelimiter,
+            )
+            | (
+                QuoteLikeMode::TR,
+                QuoteLikeState::FirstOpenDelimiter
+                | QuoteLikeState::FirstCloseDelimiter
+                | QuoteLikeState::SecondOpenDelimiter
+                | QuoteLikeState::SecondCloseDelimiter,
+            ) => self.try_handle_quote_like_delimiter_internal(),
+
+            // Flag states
+            (QuoteLikeMode::S, QuoteLikeState::Flags) => {
+                self.try_consume_quote_like_flags(&QuoteLikeMode::S)
+            }
+            (QuoteLikeMode::TR, QuoteLikeState::Flags) => {
+                self.try_consume_quote_like_flags(&QuoteLikeMode::TR)
+            }
+
+            // Invalid state combinations that should never occur
+            (
+                QuoteLikeMode::Q,
+                QuoteLikeState::SecondOpenDelimiter
+                | QuoteLikeState::SecondContent
+                | QuoteLikeState::SecondCloseDelimiter
+                | QuoteLikeState::Flags,
+            )
+            | (
+                QuoteLikeMode::QW,
+                QuoteLikeState::SecondOpenDelimiter
+                | QuoteLikeState::SecondContent
+                | QuoteLikeState::SecondCloseDelimiter
+                | QuoteLikeState::Flags,
+            )
+            | (
+                QuoteLikeMode::M,
+                QuoteLikeState::SecondOpenDelimiter
+                | QuoteLikeState::SecondContent
+                | QuoteLikeState::SecondCloseDelimiter
+                | QuoteLikeState::Flags,
+            ) => {
+                unreachable!("Invalid state combination for single-delimiter quote-like operators: {:?}, {:?}", mode, state)
+            }
+        }
     }
 
     /// Helper method to consume quote-like content and transition state
@@ -615,19 +687,6 @@ impl<'a> Lexer<'a> {
         // Handle special tokens (quote-like content, delimiters, and ExpectingValue tokens)
         if let Some(result) = self.try_handle_special_tokens() {
             return Some(result);
-        }
-
-        // Handle quote-like flags (s///flags, tr///flags)
-        if let LexerContext::QuoteLike {
-            state: QuoteLikeState::Flags,
-            mode,
-            ..
-        } = &self.context
-        {
-            let mode_clone = *mode;
-            if let Some(result) = self.try_consume_quote_like_flags(&mode_clone) {
-                return Some(result);
-            }
         }
 
         // Handle postfix dereference operators (->@*, ->%*, ->$*)
