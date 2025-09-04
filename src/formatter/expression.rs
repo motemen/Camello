@@ -251,9 +251,6 @@ impl Formatter {
 
                     // Handle spacing normally for the backslash, but no spaces within the reference expression
                     match kind {
-                        SyntaxKind::BACKSLASH => {
-                            self.format_token(&token);
-                        }
                         SyntaxKind::WHITESPACE => {
                             // Skip whitespace inside reference expressions to keep them compact
                         }
@@ -389,10 +386,7 @@ impl Formatter {
                 NodeOrToken::Node(child_node) => {
                     // If we just processed a unary + or - operator, format the operand without leading space
                     if found_operator
-                        && matches!(
-                            operator_kind,
-                            Some(SyntaxKind::PLUS) | Some(SyntaxKind::MINUS)
-                        )
+                        && matches!(operator_kind, Some(SyntaxKind::PLUS | SyntaxKind::MINUS))
                     {
                         // Set prev_token_kind to something that won't trigger spacing
                         self.prev_token_kind = Some(SyntaxKind::L_PAREN); // L_PAREN prevents spaces before most things
@@ -432,10 +426,8 @@ impl Formatter {
                         }
                         SyntaxKind::WHITESPACE => {
                             // Skip whitespace only between unary +/- and their operands
-                            if !matches!(
-                                operator_kind,
-                                Some(SyntaxKind::PLUS) | Some(SyntaxKind::MINUS)
-                            ) {
+                            if !matches!(operator_kind, Some(SyntaxKind::PLUS | SyntaxKind::MINUS))
+                            {
                                 self.format_token(&token);
                             }
                         }
@@ -444,7 +436,7 @@ impl Formatter {
                             if found_operator
                                 && matches!(
                                     operator_kind,
-                                    Some(SyntaxKind::PLUS) | Some(SyntaxKind::MINUS)
+                                    Some(SyntaxKind::PLUS | SyntaxKind::MINUS)
                                 )
                             {
                                 // For operands after +/-, output directly without normal formatting to avoid spaces

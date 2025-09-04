@@ -78,27 +78,30 @@ impl TokenSpacing {
 
 /// Get spacing information for a token
 pub const fn get_token_spacing(kind: SyntaxKind) -> TokenSpacing {
-    use SpaceRule::*;
-    use TokenCategory::*;
+    use SpaceRule::{Always, Contextual, Never, None};
+    use TokenCategory::{
+        BinaryOperator, Delimiter, Identifier, Keyword, PrefixOperator, Punctuation, Variable,
+    };
 
     match kind {
         // Arrow operator (highest priority - never spaces)
         SyntaxKind::ARROW => TokenSpacing::new(Never, Never, BinaryOperator),
 
         // Ternary operators
-        SyntaxKind::QUESTION_MARK => TokenSpacing::new(Always, Never, BinaryOperator),
-        SyntaxKind::COLON => TokenSpacing::new(Always, Never, BinaryOperator),
+        SyntaxKind::QUESTION_MARK | SyntaxKind::COLON => {
+            TokenSpacing::new(Always, Never, BinaryOperator)
+        }
 
         // Binary operators that always need spaces
-        SyntaxKind::EQ => TokenSpacing::binary_op(),
-        SyntaxKind::PLUS => TokenSpacing::binary_op(),
-        SyntaxKind::MINUS => TokenSpacing::binary_op(),
-        SyntaxKind::DOT => TokenSpacing::binary_op(),
-        SyntaxKind::FAT_COMMA => TokenSpacing::binary_op(),
-        SyntaxKind::STAR => TokenSpacing::binary_op(),
-        SyntaxKind::SLASH => TokenSpacing::binary_op(),
-        SyntaxKind::MODULO => TokenSpacing::binary_op(),
-        SyntaxKind::X => TokenSpacing::binary_op(),
+        SyntaxKind::EQ
+        | SyntaxKind::PLUS
+        | SyntaxKind::MINUS
+        | SyntaxKind::DOT
+        | SyntaxKind::FAT_COMMA
+        | SyntaxKind::STAR
+        | SyntaxKind::SLASH
+        | SyntaxKind::MODULO
+        | SyntaxKind::X => TokenSpacing::binary_op(),
 
         // Comparison operators
         SyntaxKind::GT
@@ -238,7 +241,15 @@ pub fn needs_space_before(context: &SpacingContext) -> bool {
 
 /// Handle special case overrides that don't fit the general rules
 fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
-    use SyntaxKind::*;
+    use SyntaxKind::{
+        AND_KW, ARRAY_VAR, ARROW, COLON, COMMA, DELIMITER, DOT, DOUBLE_COLON, ELSIF_KW, EQ, EQ_EQ,
+        FOREACH_KW, FOR_KW, GE, GT, HASH_VAR, IDENT, IF_KW, LE, LOCAL_KW, LOGICAL_AND, LOGICAL_NOT,
+        LOGICAL_OR, LT, L_BRACE, L_BRACKET, L_PAREN, MINUS, MODULO, MY_KW, NE, OR_KW, OUR_KW, PLUS,
+        QUALIFIED_IDENT, QUESTION_MARK, REGEX_MATCH, REGEX_NOT_MATCH, RETURN_KW, R_BRACE,
+        R_BRACKET, R_PAREN, SCALAR_VAR, SEMICOLON, SLASH, SPACESHIP, STAR, STATE_KW, STR_CMP,
+        STR_EQ, STR_GE, STR_GT, STR_LE, STR_LT, STR_NE, SUB_KW, TYPEGLOB_VAR, UNLESS_KW, WHILE_KW,
+        X, XOR_KW,
+    };
 
     match (prev, current) {
         // Arrow operator: highest priority, never spaces
@@ -303,7 +314,9 @@ fn handle_contextual_spacing(
     _prev_spacing: &TokenSpacing,
     _current_spacing: &TokenSpacing,
 ) -> bool {
-    use SyntaxKind::*;
+    use SyntaxKind::{
+        COMMA, IF_KW, L_BRACE, L_BRACKET, L_PAREN, R_BRACE, R_BRACKET, R_PAREN, UNLESS_KW,
+    };
 
     match (prev, current) {
         // Comma: always space after

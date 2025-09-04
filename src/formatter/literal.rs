@@ -84,12 +84,6 @@ impl Formatter {
                     let text = token.text();
 
                     match kind {
-                        SyntaxKind::QW_KW => {
-                            self.format_token(&token);
-                        }
-                        SyntaxKind::DELIMITER => {
-                            self.format_token(&token);
-                        }
                         SyntaxKind::QW_STRING => {
                             // Add spaces between QW_STRING tokens
                             if !first_word {
@@ -119,9 +113,6 @@ impl Formatter {
                     let text = token.text();
 
                     match kind {
-                        SyntaxKind::QW_KW => {
-                            self.format_token(&token);
-                        }
                         SyntaxKind::DELIMITER => {
                             if opened {
                                 self.handle_multiline_closing_delimiter(&token);

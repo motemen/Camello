@@ -81,16 +81,13 @@ fn read_source(path: Option<PathBuf>, eval: Option<String>) -> Result<(String, S
     if let Some(code) = eval {
         return Ok((code, "<command-line>".to_string()));
     }
-    match path {
-        Some(path) => {
-            let input = fs::read_to_string(&path).into_diagnostic()?;
-            Ok((input, path.display().to_string()))
-        }
-        None => {
-            let mut input = String::new();
-            io::stdin().read_to_string(&mut input).into_diagnostic()?;
-            Ok((input, "<stdin>".to_string()))
-        }
+    if let Some(path) = path {
+        let input = fs::read_to_string(&path).into_diagnostic()?;
+        Ok((input, path.display().to_string()))
+    } else {
+        let mut input = String::new();
+        io::stdin().read_to_string(&mut input).into_diagnostic()?;
+        Ok((input, "<stdin>".to_string()))
     }
 }
 
@@ -108,34 +105,31 @@ fn format_file(
 
     // If there are errors, display them, but continue processing
     if !errors.is_empty() {
-        eprintln!("Parse error in '{}':", source_name);
-        errors
-            .iter()
-            .for_each(|e| eprintln!("{:?}", Report::new(e.clone())));
+        eprintln!("Parse error in '{source_name}':");
+        for e in errors.iter() {
+            eprintln!("{:?}", Report::new(e.clone()));
+        }
         eprintln!("Proceeding with best-effort formatting...\n");
     }
 
     if check {
         // Check mode: check if already formatted
-        if input.trim() != formatted.trim() {
-            eprintln!("Source '{}' is not formatted", source_name);
-            std::process::exit(1);
+        if input.trim() == formatted.trim() {
+            println!("Source '{source_name}' is already formatted");
         } else {
-            println!("Source '{}' is already formatted", source_name);
+            eprintln!("Source '{source_name}' is not formatted");
+            std::process::exit(1);
         }
     } else {
         // Format mode: output the result
-        match output {
-            Some(output_path) => {
-                // Write to file
-                fs::write(&output_path, formatted).into_diagnostic()?;
-                println!("Formatted code written to '{}'", output_path.display());
-            }
-            None => {
-                // Write to standard output
-                print!("{}", formatted);
-                io::stdout().flush().into_diagnostic()?;
-            }
+        if let Some(output_path) = output {
+            // Write to file
+            fs::write(&output_path, formatted).into_diagnostic()?;
+            println!("Formatted code written to '{}'", output_path.display());
+        } else {
+            // Write to standard output
+            print!("{formatted}");
+            io::stdout().flush().into_diagnostic()?;
         }
     }
 
@@ -148,14 +142,14 @@ fn dump_file(path: Option<PathBuf>, eval: Option<String>) -> Result<()> {
     let (syntax, errors) = parse_perl(&input);
 
     if !errors.is_empty() {
-        eprintln!("Parse errors in '{}':", source_name);
+        eprintln!("Parse errors in '{source_name}':");
         for error in errors {
             eprintln!("{:?}", Report::new(error));
         }
     }
 
-    println!("Parsed AST for '{}':", source_name);
-    println!("{:#?}", syntax);
+    println!("Parsed AST for '{source_name}':");
+    println!("{syntax:#?}");
 
     Ok(())
 }

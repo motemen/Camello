@@ -181,6 +181,7 @@ pub enum Token {
 }
 
 impl Token {
+    #[must_use]
     pub fn to_syntax_kind(&self) -> SyntaxKind {
         match self {
             Token::Dollar => SyntaxKind::DOLLAR,
@@ -286,11 +287,11 @@ pub struct Lexer<'a> {
     at_line_start: bool, // Track if we're at the start of a line for POD detection
 }
 
-impl<'a> Clone for Lexer<'a> {
+impl Clone for Lexer<'_> {
     fn clone(&self) -> Self {
         Self {
             logos_lexer: self.logos_lexer.clone(),
-            context: self.context.clone(),
+            context: self.context,
             at_line_start: self.at_line_start,
         }
     }
@@ -314,6 +315,7 @@ impl LexerContext {
 }
 
 impl<'a> Lexer<'a> {
+    #[must_use]
     pub fn new(input: &'a str) -> Self {
         let logos_lexer = Token::lexer(input);
 
@@ -324,7 +326,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// Handle POD content and RawData modes
+    /// Handle POD content and `RawData` modes
     fn try_handle_pod_and_raw_data(&mut self) -> Option<(SyntaxKind, &'a str)> {
         // Check for POD start at line start
         if self.at_line_start {
@@ -355,7 +357,7 @@ impl<'a> Lexer<'a> {
         None
     }
 
-    /// Handle special token parsing in ExpectingValue context
+    /// Handle special token parsing in `ExpectingValue` context
     fn try_handle_expecting_value_tokens(&mut self) -> Option<(SyntaxKind, &'a str)> {
         if self.context != LexerContext::ExpectingValue {
             return None;
@@ -576,9 +578,8 @@ impl<'a> Lexer<'a> {
                 if nest_level == 0 {
                     end_pos = i;
                     break;
-                } else {
-                    nest_level -= 1;
                 }
+                nest_level -= 1;
             } else if self.is_nested_delimiter_pair(c, delimiter.chars().next().unwrap_or('\0')) {
                 nest_level += 1;
             }
@@ -635,7 +636,7 @@ impl<'a> Lexer<'a> {
             ..
         } = &self.context
         {
-            let mode_clone = mode.clone();
+            let mode_clone = *mode;
             if let Some(result) = self.try_consume_quote_like_flags(&mode_clone) {
                 return Some(result);
             }
@@ -673,7 +674,7 @@ impl<'a> Lexer<'a> {
 
                 Some((syntax_kind, text))
             }
-            Some(Err(_)) => {
+            Some(Err(())) => {
                 // エラートークンとして処理
                 let text = self.logos_lexer.slice();
                 Some((SyntaxKind::ERROR, text))
@@ -907,10 +908,9 @@ impl<'a> Lexer<'a> {
                     // If first non-whitespace char is alphanumeric or sigil, it's likely a function call
                     if c.is_alphanumeric() || c == '$' || c == '@' || c == '%' {
                         return SyntaxKind::IDENT;
-                    } else {
-                        // Otherwise, it's likely substitution
-                        return SyntaxKind::S_KW;
                     }
+                    // Otherwise, it's likely substitution
+                    return SyntaxKind::S_KW;
                 }
 
                 // If we reach end of input after 's', assume function call
@@ -978,14 +978,12 @@ impl<'a> Lexer<'a> {
                         // Simple heuristic: if we can find pattern like {content}{content}, it's likely tr operator
                         if remainder.matches('{').count() >= 2 {
                             return SyntaxKind::TR_KW;
-                        } else {
-                            // Only one brace group, likely a function block
-                            return SyntaxKind::IDENT;
                         }
-                    } else {
-                        // For other non-alphanumeric characters, it's likely an identifier
+                        // Only one brace group, likely a function block
                         return SyntaxKind::IDENT;
                     }
+                    // For other non-alphanumeric characters, it's likely an identifier
+                    return SyntaxKind::IDENT;
                 }
 
                 // If we reach end of input after 'tr', assume identifier
@@ -1034,14 +1032,12 @@ impl<'a> Lexer<'a> {
                         // Simple heuristic: if we can find pattern like {content}{content}, it's likely y operator
                         if remainder.matches('{').count() >= 2 {
                             return SyntaxKind::Y_KW;
-                        } else {
-                            // Only one brace group, likely a function block
-                            return SyntaxKind::IDENT;
                         }
-                    } else {
-                        // For other non-alphanumeric characters, it's likely an identifier
+                        // Only one brace group, likely a function block
                         return SyntaxKind::IDENT;
                     }
+                    // For other non-alphanumeric characters, it's likely an identifier
+                    return SyntaxKind::IDENT;
                 }
 
                 // If we reach end of input after 'y', assume identifier
@@ -1127,7 +1123,7 @@ impl<'a> Lexer<'a> {
         }
 
         if let Some(pos) = closing_angle_pos {
-            let text = &remainder[..pos + 1];
+            let text = &remainder[..=pos];
             self.logos_lexer.bump(text.len());
             return Some((SyntaxKind::IO_EXPR, text));
         }
@@ -1268,7 +1264,7 @@ impl<'a> Lexer<'a> {
     }
 
     /// Check if the given identifier text represents a built-in function
-    /// Built-in functions expect values as arguments, so they should transition to ExpectingValue context
+    /// Built-in functions expect values as arguments, so they should transition to `ExpectingValue` context
     fn is_builtin_function(&self, text: &str) -> bool {
         matches!(
             text,
@@ -1702,12 +1698,12 @@ impl<'a> Lexer<'a> {
             let line = &remainder[..line_end];
             line.len() > 1
                 && line.starts_with('=')
-                && line.chars().nth(1).is_some_and(|c| c.is_alphabetic())
+                && line.chars().nth(1).is_some_and(char::is_alphabetic)
                 && !line.starts_with("=cut")
         } else {
             remainder.len() > 1
                 && remainder.starts_with('=')
-                && remainder.chars().nth(1).is_some_and(|c| c.is_alphabetic())
+                && remainder.chars().nth(1).is_some_and(char::is_alphabetic)
                 && !remainder.starts_with("=cut")
         };
 
@@ -1768,7 +1764,7 @@ impl<'a> Lexer<'a> {
                 // Check that =cut is followed by non-alphanumeric or end of line
                 if line.len() == 4 || !line.chars().nth(4).unwrap().is_alphanumeric() {
                     // Consume the =cut line including newline
-                    let cut_text = &remainder[..line_end + 1];
+                    let cut_text = &remainder[..=line_end];
                     self.logos_lexer.bump(cut_text.len());
                     return Some((SyntaxKind::CUT_KW, cut_text));
                 }
@@ -1784,7 +1780,7 @@ impl<'a> Lexer<'a> {
         None
     }
 
-    /// Try to consume qw() content, tokenizing whitespace-separated words
+    /// Try to consume `qw()` content, tokenizing whitespace-separated words
     fn try_consume_qw_content(&mut self) -> Option<(SyntaxKind, &'a str)> {
         let remainder = self.logos_lexer.remainder();
         if remainder.is_empty() {
@@ -1849,22 +1845,26 @@ impl<'a> Lexer<'a> {
         None
     }
 
+    #[must_use]
     pub fn span(&self) -> std::ops::Range<usize> {
         self.logos_lexer.span()
     }
 
     /// Peek at the next token without consuming it or changing lexer state
+    #[must_use]
     pub fn peek_token(&self) -> Option<(SyntaxKind, &'a str)> {
         self.clone().next()
     }
 
     /// Peek at the next non-trivia token without consuming it or changing lexer state
+    #[must_use]
     pub fn peek_non_trivia_token(&self) -> Option<(SyntaxKind, &'a str)> {
         self.clone().find(|(kind, _)| !kind.is_trivia())
     }
 
     /// Peek ahead multiple tokens, skipping trivia, and return the first non-trivia token
     /// that matches any of the given kinds
+    #[must_use]
     pub fn peek_for_any(&self, target_kinds: &[SyntaxKind]) -> Option<(SyntaxKind, &'a str)> {
         self.clone()
             .find(|(kind, _)| !kind.is_trivia())

@@ -57,14 +57,6 @@ impl Formatter {
             let should_add_empty_line = match node.kind() {
                 // For SUB_DEF, always add empty line if there's a preceding sibling
                 SyntaxKind::SUB_DEF => true,
-                // For USE_STMT/NO_STMT, don't add automatic empty lines between use/no statements
-                // They should only get empty lines if they were in the source
-                SyntaxKind::USE_STMT | SyntaxKind::NO_STMT => {
-                    prev.kind() != node.kind()
-                        && !(prev.kind() == SyntaxKind::PACKAGE_STMT
-                            && (node.kind() == SyntaxKind::USE_STMT
-                                || node.kind() == SyntaxKind::NO_STMT))
-                }
                 // For regular statements, don't add automatic empty lines
                 // They should only get empty lines if they were in the source
                 SyntaxKind::STMT | SyntaxKind::DECLARATION_STMT => false,

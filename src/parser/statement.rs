@@ -2,7 +2,7 @@ use crate::SyntaxKind;
 
 use super::Parser;
 
-impl<'a> Parser<'a> {
+impl Parser<'_> {
     pub fn statement(&mut self) -> bool {
         self.skip_trivia();
 
@@ -28,7 +28,7 @@ impl<'a> Parser<'a> {
                 self.unless_stmt();
                 true
             }
-            Some(SyntaxKind::FOR_KW) | Some(SyntaxKind::FOREACH_KW) => {
+            Some(SyntaxKind::FOR_KW | SyntaxKind::FOREACH_KW) => {
                 self.for_stmt();
                 true
             }
@@ -48,7 +48,7 @@ impl<'a> Parser<'a> {
                 self.no_stmt();
                 true
             }
-            Some(SyntaxKind::END_KW) | Some(SyntaxKind::DATA_KW) => {
+            Some(SyntaxKind::END_KW | SyntaxKind::DATA_KW) => {
                 self.data_section();
                 true
             }
@@ -107,7 +107,7 @@ impl<'a> Parser<'a> {
             self.skip_trivia();
 
             while !self.at(SyntaxKind::R_PAREN) && !self.at_end() {
-                if self.current_kind().map(|k| k.is_sigil()).unwrap_or(false) {
+                if self.current_kind().is_some_and(super::super::syntax_kind::SyntaxKind::is_sigil) {
                     self.parse_variable_by_decl_kind(decl_kind);
                 } else {
                     self.error("Expected variable in parenthesized list");
@@ -126,7 +126,7 @@ impl<'a> Parser<'a> {
             }
 
             self.expect(SyntaxKind::R_PAREN);
-        } else if self.current_kind().map(|k| k.is_sigil()).unwrap_or(false) {
+        } else if self.current_kind().is_some_and(super::super::syntax_kind::SyntaxKind::is_sigil) {
             self.parse_variable_by_decl_kind(decl_kind);
         } else {
             self.error("Expected variable or parenthesized list of variables after variable declaration keyword");
@@ -574,15 +574,14 @@ impl<'a> Parser<'a> {
             // Parse the condition
             if !self.expression() {
                 self.error(&format!(
-                    "Expected expression in {} condition",
-                    construct_name
+                    "Expected expression in {construct_name} condition"
                 ));
             }
 
             self.skip_trivia();
             self.expect(SyntaxKind::R_PAREN);
         } else {
-            self.error(&format!("Expected '(' after '{}'", construct_name));
+            self.error(&format!("Expected '(' after '{construct_name}'"));
         }
     }
 

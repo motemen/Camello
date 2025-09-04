@@ -2,7 +2,7 @@ use crate::SyntaxKind;
 
 use super::super::Parser;
 
-impl<'a> Parser<'a> {
+impl Parser<'_> {
     pub fn hash_ref(&mut self) {
         self.builder.start_node(SyntaxKind::HASH_REF.into());
 
@@ -173,7 +173,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Checks if this is a dereferencing pattern (sigil followed by another sigil).
-    pub fn is_dereferencing_pattern(&self) -> bool {
+    #[must_use] pub fn is_dereferencing_pattern(&self) -> bool {
         // If the current token is not a sigil, it's not a dereference
         if let Some(current) = self.current_kind() {
             if !current.is_sigil() {
@@ -208,7 +208,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parses a regular identifier or qualified identifier
-    /// Examples: "Foo", "Foo::Bar", "Foo::Bar::Baz"
+    /// Examples: "Foo", "`Foo::Bar`", "`Foo::Bar::Baz`"
     pub fn parse_identifier_or_qualified(&mut self) {
         // Expect an identifier
         if !self.at(SyntaxKind::IDENT) {
@@ -252,10 +252,8 @@ impl<'a> Parser<'a> {
 
         // Parse what comes after the backslash
         match self.current_kind() {
-            Some(SyntaxKind::DOLLAR)
-            | Some(SyntaxKind::AT)
-            | Some(SyntaxKind::PERCENT)
-            | Some(SyntaxKind::ASTERISK) => {
+            Some(SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT |
+SyntaxKind::ASTERISK) => {
                 // Reference to a variable: \$scalar, \@array, \%hash, \*typeglob
                 self.parse_variable();
             }
@@ -283,11 +281,11 @@ impl<'a> Parser<'a> {
                     self.error("Expected expression in reference");
                 }
 
-                if !self.at(SyntaxKind::R_PAREN) {
-                    self.error("Expected ')' after reference expression");
-                } else {
+                if self.at(SyntaxKind::R_PAREN) {
                     self.bump(); // )
                     self.skip_trivia();
+                } else {
+                    self.error("Expected ')' after reference expression");
                 }
             }
             _ => {
@@ -319,11 +317,11 @@ impl<'a> Parser<'a> {
                     self.error("Expected expression in typeglob braces");
                 }
 
-                if !self.at(SyntaxKind::R_BRACE) {
-                    self.error("Expected '}' after typeglob expression");
-                } else {
+                if self.at(SyntaxKind::R_BRACE) {
                     self.bump(); // }
                     self.skip_trivia();
+                } else {
+                    self.error("Expected '}' after typeglob expression");
                 }
             }
             Some(SyntaxKind::IDENT) => {

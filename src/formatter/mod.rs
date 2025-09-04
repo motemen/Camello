@@ -26,7 +26,7 @@ impl Default for Formatter {
 }
 
 impl Formatter {
-    pub fn new() -> Self {
+    #[must_use] pub fn new() -> Self {
         Self {
             output: String::new(),
             indent_level: 0,
@@ -79,7 +79,7 @@ impl Formatter {
                     match &child {
                         NodeOrToken::Node(n) => self.format_node(n),
                         NodeOrToken::Token(t) => self.format_token(t),
-                    };
+                    }
 
                     if is_module_name {
                         let last_token = match &child {
@@ -268,7 +268,7 @@ impl Formatter {
         // Find the opening delimiter.
         if !children.by_ref().any(|child| {
             matches!(
-                child.as_token().map(|t| t.kind()),
+                child.as_token().map(rowan::SyntaxToken::kind),
                 Some(
                     SyntaxKind::L_BRACE
                         | SyntaxKind::L_BRACKET
@@ -278,7 +278,7 @@ impl Formatter {
             )
         }) {
             return false;
-        };
+        }
 
         // Check subsequent children for a newline before a non-trivia element.
         for child in children {
@@ -589,10 +589,8 @@ impl Formatter {
                 let next_kind = Self::next_significant_token(token).map(|t| t.kind());
                 if !matches!(
                     next_kind,
-                    Some(SyntaxKind::ELSIF_KW)
-                        | Some(SyntaxKind::ELSE_KW)
-                        | Some(SyntaxKind::SEMICOLON)
-                        | Some(SyntaxKind::L_PAREN)
+                    Some(SyntaxKind::ELSIF_KW | SyntaxKind::ELSE_KW | SyntaxKind::SEMICOLON |
+SyntaxKind::L_PAREN)
                 ) {
                     self.handle_newline();
                 }
@@ -715,7 +713,7 @@ impl Formatter {
     }
 }
 
-pub fn format(node: &PerlNode) -> String {
+#[must_use] pub fn format(node: &PerlNode) -> String {
     let mut formatter = Formatter::new();
     formatter.format(node)
 }
