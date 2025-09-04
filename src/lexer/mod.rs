@@ -1504,75 +1504,11 @@ impl<'a> Lexer<'a> {
             // Operators
             kind if self.is_operator(kind) => self.handle_operator_context(kind),
 
-            // Handle DELIMITER token in quote-like context
+            // DELIMITER tokens in quote-like contexts are handled by handle_quote_like_delimiter
+            // Don't override the context here, let handle_quote_like_delimiter manage it
             SyntaxKind::DELIMITER => {
-                if let LexerContext::QuoteLike { prefix, mode, state, .. } = self.context {
-                    match state {
-                        QuoteLikeState::FirstOpenDelimiter => {
-                            // Get the actual delimiter character from the text
-                            // This is a simplified approach - we'll use the first character
-                            // In a production system, you might want more sophisticated delimiter detection
-                            let delimiter = ')'; // For now, assume closing paren
-                            LexerContext::QuoteLike {
-                                prefix,
-                                mode,
-                                state: QuoteLikeState::FirstContent,
-                                delimiter,
-                            }
-                        }
-                        QuoteLikeState::FirstCloseDelimiter => {
-                            // End of single-delimiter modes
-                            match mode {
-                                QuoteLikeMode::Q | QuoteLikeMode::QW | QuoteLikeMode::M => {
-                                    LexerContext::ExpectingOperator
-                                }
-                                QuoteLikeMode::S | QuoteLikeMode::TR => {
-                                    // Double delimiter modes need second part
-                                    let is_symmetric = self.is_symmetric_delimiter('/');//Default for now
-                                    if is_symmetric {
-                                        LexerContext::QuoteLike {
-                                            prefix,
-                                            mode,
-                                            state: QuoteLikeState::SecondContent,
-                                            delimiter: '/', // will be properly set
-                                        }
-                                    } else {
-                                        LexerContext::QuoteLike {
-                                            prefix,
-                                            mode,
-                                            state: QuoteLikeState::SecondOpenDelimiter,
-                                            delimiter: '/', // will be properly set
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        QuoteLikeState::SecondOpenDelimiter => {
-                            LexerContext::QuoteLike {
-                                prefix,
-                                mode,
-                                state: QuoteLikeState::SecondContent,
-                                delimiter: ')', // simplified
-                            }
-                        }
-                        QuoteLikeState::SecondCloseDelimiter => {
-                            match mode {
-                                QuoteLikeMode::S | QuoteLikeMode::TR => {
-                                    LexerContext::QuoteLike {
-                                        prefix,
-                                        mode,
-                                        state: QuoteLikeState::Flags,
-                                        delimiter: '/', // doesn't matter for flags
-                                    }
-                                }
-                                _ => LexerContext::ExpectingOperator,
-                            }
-                        }
-                        _ => LexerContext::ExpectingOperator,
-                    }
-                } else {
-                    LexerContext::ExpectingOperator
-                }
+                // Keep current context - handle_quote_like_delimiter has already processed this
+                self.context
             }
 
             // Left delimiters in quote-like context (fallback for non-DELIMITER tokens)
