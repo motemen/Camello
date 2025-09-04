@@ -256,8 +256,8 @@ pub enum LexerContext {
     QuoteLike {
         prefix: SyntaxKind,    // S_KW, Q_KW, QQ_KW, QW_KW, TR_KW, Y_KW, M_KW, QR_KW
         mode: QuoteLikeMode,   // Q (q/qq/qx), QW (qw), M (m/qr), S (s), TR (tr/y)
-        state: QuoteLikeState, // パース状態
-        delimiter: char,       // 現在のデリミタ '{', '(', '/', etc.
+        state: QuoteLikeState, // Parsing state
+        delimiter: char,       // Current delimiter: '{', '(', '/', etc.
     },
 }
 
