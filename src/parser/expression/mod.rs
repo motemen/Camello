@@ -7,7 +7,7 @@ use precedence::{get_operator_info, Precedence};
 
 use super::Parser;
 
-impl<'a> Parser<'a> {
+impl Parser<'_> {
     // Parse block function arguments: block + optional additional arguments
     fn parse_block_function_args(&mut self) {
         // Parse the block (which should be at L_BRACE)
@@ -93,11 +93,11 @@ impl<'a> Parser<'a> {
                 }
 
                 // Expect the : operator
-                if !self.at(SyntaxKind::COLON) {
-                    self.error("Expected ':' after true expression in ternary operator");
-                } else {
+                if self.at(SyntaxKind::COLON) {
                     self.bump(); // consume :
                     self.skip_trivia();
+                } else {
+                    self.error("Expected ':' after true expression in ternary operator");
                 }
 
                 // Parse the false expression with ternary precedence (right associative)
@@ -177,11 +177,11 @@ impl<'a> Parser<'a> {
                                 self.error("Expected expression in hash reference access");
                             }
 
-                            if !self.at(SyntaxKind::R_BRACE) {
-                                self.error("Expected '}' after hash key");
-                            } else {
+                            if self.at(SyntaxKind::R_BRACE) {
                                 self.bump(); // }
                                 self.skip_trivia();
+                            } else {
+                                self.error("Expected '}' after hash key");
                             }
 
                             self.builder.finish_node();
@@ -199,11 +199,11 @@ impl<'a> Parser<'a> {
                                 self.error("Expected expression in array reference access");
                             }
 
-                            if !self.at(SyntaxKind::R_BRACKET) {
-                                self.error("Expected ']' after array index");
-                            } else {
+                            if self.at(SyntaxKind::R_BRACKET) {
                                 self.bump(); // ]
                                 self.skip_trivia();
+                            } else {
+                                self.error("Expected ']' after array index");
                             }
 
                             self.builder.finish_node();
@@ -217,11 +217,11 @@ impl<'a> Parser<'a> {
 
                             self.expression_list();
 
-                            if !self.at(SyntaxKind::R_PAREN) {
-                                self.error("Expected ')' after code reference arguments");
-                            } else {
+                            if self.at(SyntaxKind::R_PAREN) {
                                 self.bump(); // )
                                 self.skip_trivia();
+                            } else {
+                                self.error("Expected ')' after code reference arguments");
                             }
 
                             self.builder.finish_node();
@@ -267,11 +267,11 @@ impl<'a> Parser<'a> {
 
                     self.expression_list();
 
-                    if !self.at(SyntaxKind::R_PAREN) {
-                        self.error("Expected ')' after function arguments");
-                    } else {
+                    if self.at(SyntaxKind::R_PAREN) {
                         self.bump(); // )
                         self.skip_trivia();
+                    } else {
+                        self.error("Expected ')' after function arguments");
                     }
 
                     self.builder.finish_node();
@@ -287,11 +287,11 @@ impl<'a> Parser<'a> {
                         self.error("Expected expression in array subscription");
                     }
 
-                    if !self.at(SyntaxKind::R_BRACKET) {
-                        self.error("Expected ']' after array index");
-                    } else {
+                    if self.at(SyntaxKind::R_BRACKET) {
                         self.bump(); // ]
                         self.skip_trivia();
+                    } else {
+                        self.error("Expected ']' after array index");
                     }
 
                     self.builder.finish_node();
@@ -307,11 +307,11 @@ impl<'a> Parser<'a> {
                         self.error("Expected expression in hash subscription");
                     }
 
-                    if !self.at(SyntaxKind::R_BRACE) {
-                        self.error("Expected '}' after hash key");
-                    } else {
+                    if self.at(SyntaxKind::R_BRACE) {
                         self.bump(); // }
                         self.skip_trivia();
+                    } else {
+                        self.error("Expected '}' after hash key");
                     }
 
                     self.builder.finish_node();
@@ -374,9 +374,7 @@ impl<'a> Parser<'a> {
         }
 
         match self.current_kind() {
-            Some(SyntaxKind::NUMBER)
-            | Some(SyntaxKind::STRING)
-            | Some(SyntaxKind::REGEX_LITERAL) => {
+            Some(SyntaxKind::NUMBER | SyntaxKind::STRING | SyntaxKind::REGEX_LITERAL) => {
                 self.bump();
                 self.skip_trivia();
             }
@@ -400,7 +398,7 @@ impl<'a> Parser<'a> {
                 let next_token = self.peek_non_trivia_token();
                 if matches!(
                     next_token,
-                    Some((SyntaxKind::L_BRACE, _)) | Some((SyntaxKind::IDENT, _))
+                    Some((SyntaxKind::L_BRACE | SyntaxKind::IDENT, _))
                 ) {
                     self.parse_typeglob_expr();
                 } else if self.is_dereferencing_pattern() {
@@ -420,7 +418,7 @@ impl<'a> Parser<'a> {
             Some(SyntaxKind::PLUS) => {
                 // Unary plus prefix operator
                 self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
-                self.bump(); // consume +
+                self.bump(); // consume + // FIXME: bump as UNARY_PLUS
                 self.skip_trivia();
 
                 // Parse the operand with higher precedence
@@ -435,7 +433,7 @@ impl<'a> Parser<'a> {
             Some(SyntaxKind::MINUS) => {
                 // Unary minus prefix operator
                 self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
-                self.bump(); // consume -
+                self.bump(); // consume - // FIXME: bump as UNARY_MINUS
                 self.skip_trivia();
 
                 // Parse the operand with higher precedence
@@ -673,11 +671,11 @@ impl<'a> Parser<'a> {
 
             self.expression_list();
 
-            if !self.at(SyntaxKind::R_PAREN) {
-                self.error("Expected ')' after method arguments");
-            } else {
+            if self.at(SyntaxKind::R_PAREN) {
                 self.bump(); // )
                 self.skip_trivia();
+            } else {
+                self.error("Expected ')' after method arguments");
             }
         }
     }

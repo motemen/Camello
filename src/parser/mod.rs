@@ -17,6 +17,7 @@ pub struct ParseError {
 }
 
 impl ParseError {
+    #[must_use]
     pub fn new(message: String, range: TextRange, source_code: &str) -> Self {
         let span = SourceSpan::new(usize::from(range.start()).into(), usize::from(range.len()));
         Self {
@@ -38,6 +39,7 @@ pub struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
+    #[must_use]
     pub fn new(input: &'a str) -> Self {
         let mut lexer = Lexer::new(input);
         let current_token = lexer.next_token();
@@ -52,6 +54,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    #[must_use]
     pub fn parse(input: &str) -> (GreenNode, Vec<ParseError>) {
         let mut parser = Parser::new(input);
         parser.root();
@@ -68,7 +71,7 @@ impl<'a> Parser<'a> {
             // Check if we've encountered a data section keyword
             if matches!(
                 self.current_kind(),
-                Some(SyntaxKind::END_KW) | Some(SyntaxKind::DATA_KW)
+                Some(SyntaxKind::END_KW | SyntaxKind::DATA_KW)
             ) {
                 self.data_section();
                 // After data section, everything else is consumed as part of it
@@ -99,7 +102,7 @@ impl<'a> Parser<'a> {
         self.bump();
 
         if self.at(SyntaxKind::RAW_STRING) || self.at_end() {
-            self.bump()
+            self.bump();
         } else {
             self.error("Expected raw string after data section keyword");
         }
@@ -205,7 +208,7 @@ impl<'a> Parser<'a> {
     }
 
     fn error(&mut self, message: &str) {
-        let text_len = self.current_text().map_or(0, |t| t.len());
+        let text_len = self.current_text().map_or(0, str::len);
         let range = TextRange::new(
             (self.current_pos as u32).into(),
             ((self.current_pos + text_len) as u32).into(),
@@ -284,6 +287,7 @@ impl<'a> Parser<'a> {
     }
 }
 
+#[must_use]
 pub fn parse(input: &str) -> (GreenNode, Vec<ParseError>) {
     Parser::parse(input)
 }
