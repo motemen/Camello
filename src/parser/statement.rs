@@ -107,7 +107,10 @@ impl Parser<'_> {
             self.skip_trivia();
 
             while !self.at(SyntaxKind::R_PAREN) && !self.at_end() {
-                if self.current_kind().is_some_and(super::super::syntax_kind::SyntaxKind::is_sigil) {
+                if self
+                    .current_kind()
+                    .is_some_and(super::super::syntax_kind::SyntaxKind::is_sigil)
+                {
                     self.parse_variable_by_decl_kind(decl_kind);
                 } else {
                     self.error("Expected variable in parenthesized list");
@@ -126,7 +129,10 @@ impl Parser<'_> {
             }
 
             self.expect(SyntaxKind::R_PAREN);
-        } else if self.current_kind().is_some_and(super::super::syntax_kind::SyntaxKind::is_sigil) {
+        } else if self
+            .current_kind()
+            .is_some_and(super::super::syntax_kind::SyntaxKind::is_sigil)
+        {
             self.parse_variable_by_decl_kind(decl_kind);
         } else {
             self.error("Expected variable or parenthesized list of variables after variable declaration keyword");

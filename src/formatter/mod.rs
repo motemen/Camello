@@ -26,7 +26,8 @@ impl Default for Formatter {
 }
 
 impl Formatter {
-    #[must_use] pub fn new() -> Self {
+    #[must_use]
+    pub fn new() -> Self {
         Self {
             output: String::new(),
             indent_level: 0,
@@ -589,8 +590,12 @@ impl Formatter {
                 let next_kind = Self::next_significant_token(token).map(|t| t.kind());
                 if !matches!(
                     next_kind,
-                    Some(SyntaxKind::ELSIF_KW | SyntaxKind::ELSE_KW | SyntaxKind::SEMICOLON |
-SyntaxKind::L_PAREN)
+                    Some(
+                        SyntaxKind::ELSIF_KW
+                            | SyntaxKind::ELSE_KW
+                            | SyntaxKind::SEMICOLON
+                            | SyntaxKind::L_PAREN
+                    )
                 ) {
                     self.handle_newline();
                 }
@@ -713,7 +718,8 @@ SyntaxKind::L_PAREN)
     }
 }
 
-#[must_use] pub fn format(node: &PerlNode) -> String {
+#[must_use]
+pub fn format(node: &PerlNode) -> String {
     let mut formatter = Formatter::new();
     formatter.format(node)
 }

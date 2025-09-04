@@ -173,7 +173,8 @@ impl Parser<'_> {
     }
 
     /// Checks if this is a dereferencing pattern (sigil followed by another sigil).
-    #[must_use] pub fn is_dereferencing_pattern(&self) -> bool {
+    #[must_use]
+    pub fn is_dereferencing_pattern(&self) -> bool {
         // If the current token is not a sigil, it's not a dereference
         if let Some(current) = self.current_kind() {
             if !current.is_sigil() {
@@ -252,8 +253,9 @@ impl Parser<'_> {
 
         // Parse what comes after the backslash
         match self.current_kind() {
-            Some(SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT |
-SyntaxKind::ASTERISK) => {
+            Some(
+                SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT | SyntaxKind::ASTERISK,
+            ) => {
                 // Reference to a variable: \$scalar, \@array, \%hash, \*typeglob
                 self.parse_variable();
             }
