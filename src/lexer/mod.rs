@@ -272,13 +272,13 @@ pub enum QuoteLikeMode {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum QuoteLikeState {
-    FirstOpenDelimiter,   // 最初のデリミタを期待
-    FirstContent,         // 最初のコンテンツ
-    FirstCloseDelimiter,  // 最初のクローズデリミタを期待
-    SecondOpenDelimiter,  // 2番目のオープンデリミタを期待 (s///, tr///用)
-    SecondContent,        // 2番目のコンテンツ
-    SecondCloseDelimiter, // 2番目のクローズデリミタを期待
-    Flags,                // フラグ部分 (s///g, tr///d等)
+    FirstOpenDelimiter,   // Expecting the first delimiter
+    FirstContent,         // Inside the first content section
+    FirstCloseDelimiter,  // Expecting the first closing delimiter
+    SecondOpenDelimiter,  // Expecting the second opening delimiter (for s///, tr///)
+    SecondContent,        // Inside the second content section
+    SecondCloseDelimiter, // Expecting the second closing delimiter
+    Flags,                // Parsing flags (e.g., s///g, tr///d)
 }
 
 pub struct Lexer<'a> {
