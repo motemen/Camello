@@ -106,14 +106,14 @@ pub enum SyntaxKind {
     TR_FLAGS, // Flags for transliteration operator (tr///cdsr)
 
     // Operators
-    EQ,        // =
-    PLUS,      // + (binary addition)
-    MINUS,     // - (binary subtraction)
+    EQ,          // =
+    PLUS,        // + (binary addition)
+    MINUS,       // - (binary subtraction)
     UNARY_PLUS,  // + (unary plus)
     UNARY_MINUS, // - (unary minus)
-    DOT,       // . (string concatenation)
-    ARROW,     // ->
-    FAT_COMMA, // =>
+    DOT,         // . (string concatenation)
+    ARROW,       // ->
+    FAT_COMMA,   // =>
 
     // Multiplicative operators
     STAR,   // *
