@@ -418,7 +418,7 @@ impl Parser<'_> {
             Some(SyntaxKind::PLUS) => {
                 // Unary plus prefix operator
                 self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
-                self.bump(); // consume + // FIXME: bump as UNARY_PLUS
+                self.bump_with_kind(SyntaxKind::UNARY_PLUS);
                 self.skip_trivia();
 
                 // Parse the operand with higher precedence
@@ -433,7 +433,7 @@ impl Parser<'_> {
             Some(SyntaxKind::MINUS) => {
                 // Unary minus prefix operator
                 self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
-                self.bump(); // consume - // FIXME: bump as UNARY_MINUS
+                self.bump_with_kind(SyntaxKind::UNARY_MINUS);
                 self.skip_trivia();
 
                 // Parse the operand with higher precedence
