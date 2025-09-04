@@ -271,14 +271,22 @@ pub enum QuoteLikeMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DelimiterPhase {
+    First,
+    Second,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DelimiterType {
+    Open,
+    Close,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum QuoteLikeState {
-    FirstOpenDelimiter,   // Expecting the first delimiter
-    FirstContent,         // Inside the first content section
-    FirstCloseDelimiter,  // Expecting the first closing delimiter
-    SecondOpenDelimiter,  // Expecting the second opening delimiter (for s///, tr///)
-    SecondContent,        // Inside the second content section
-    SecondCloseDelimiter, // Expecting the second closing delimiter
-    Flags,                // Parsing flags (e.g., s///g, tr///d)
+    Delimiter { phase: DelimiterPhase, kind: DelimiterType },
+    Content { phase: DelimiterPhase },
+    Flags,
 }
 
 pub struct Lexer<'a> {
@@ -374,18 +382,14 @@ impl<'a> Lexer<'a> {
 
         let first_char = remainder.chars().next().unwrap();
         let should_consume = match state {
-            QuoteLikeState::FirstOpenDelimiter => {
+            QuoteLikeState::Delimiter { kind: DelimiterType::Open, .. } => {
                 // Any valid quote delimiter can start
                 self.is_quote_delimiter(first_char)
             }
-            QuoteLikeState::FirstCloseDelimiter | QuoteLikeState::SecondCloseDelimiter => {
+            QuoteLikeState::Delimiter { kind: DelimiterType::Close, .. } => {
                 // Must match the expected closing delimiter
                 let expected_closing = Self::get_closing_delimiter(*delimiter);
                 first_char.to_string() == expected_closing
-            }
-            QuoteLikeState::SecondOpenDelimiter => {
-                // Can be any delimiter for the second part
-                self.is_quote_delimiter(first_char)
             }
             _ => false,
         };
@@ -414,118 +418,73 @@ impl<'a> Lexer<'a> {
 
         match (mode, state) {
             // Content states - try content first, then fall back to delimiter
-            (QuoteLikeMode::Q, QuoteLikeState::FirstContent) => self
+            (QuoteLikeMode::Q, QuoteLikeState::Content { phase: DelimiterPhase::First }) => self
                 .consume_quote_content(
                     SyntaxKind::Q_STRING,
                     delimiter,
-                    QuoteLikeState::FirstCloseDelimiter,
+                    QuoteLikeState::Delimiter { phase: DelimiterPhase::First, kind: DelimiterType::Close },
                 )
                 .or_else(|| self.try_handle_quote_like_delimiter_internal()),
 
-            (QuoteLikeMode::QW, QuoteLikeState::FirstContent) => {
+            (QuoteLikeMode::QW, QuoteLikeState::Content { phase: DelimiterPhase::First }) => {
                 // Special handling for QW - try content first, then delimiter
                 self.handle_qw_content(delimiter)
                     .or_else(|| self.try_handle_quote_like_delimiter_internal())
             }
 
-            (QuoteLikeMode::M, QuoteLikeState::FirstContent) => self
+            (QuoteLikeMode::M, QuoteLikeState::Content { phase: DelimiterPhase::First }) => self
                 .consume_quote_content(
                     SyntaxKind::M_STRING,
                     delimiter,
-                    QuoteLikeState::FirstCloseDelimiter,
+                    QuoteLikeState::Delimiter { phase: DelimiterPhase::First, kind: DelimiterType::Close },
                 )
                 .or_else(|| self.try_handle_quote_like_delimiter_internal()),
 
-            (QuoteLikeMode::S, QuoteLikeState::FirstContent) => self
+            (QuoteLikeMode::S, QuoteLikeState::Content { phase: DelimiterPhase::First }) => self
                 .consume_quote_content(
                     SyntaxKind::S_PATTERN,
                     delimiter,
-                    QuoteLikeState::SecondOpenDelimiter,
+                    QuoteLikeState::Delimiter { phase: DelimiterPhase::Second, kind: DelimiterType::Open },
                 )
                 .or_else(|| self.try_handle_quote_like_delimiter_internal()),
 
-            (QuoteLikeMode::S, QuoteLikeState::SecondContent) => self
+            (QuoteLikeMode::S, QuoteLikeState::Content { phase: DelimiterPhase::Second }) => self
                 .consume_quote_content(
                     SyntaxKind::S_REPLACEMENT,
                     delimiter,
-                    QuoteLikeState::SecondCloseDelimiter,
+                    QuoteLikeState::Delimiter { phase: DelimiterPhase::Second, kind: DelimiterType::Close },
                 )
                 .or_else(|| self.try_handle_quote_like_delimiter_internal()),
 
-            (QuoteLikeMode::TR, QuoteLikeState::FirstContent) => self
+            (QuoteLikeMode::TR, QuoteLikeState::Content { phase: DelimiterPhase::First }) => self
                 .consume_quote_content(
                     SyntaxKind::TR_SEARCH_LIST,
                     delimiter,
-                    QuoteLikeState::SecondOpenDelimiter,
+                    QuoteLikeState::Delimiter { phase: DelimiterPhase::Second, kind: DelimiterType::Open },
                 )
                 .or_else(|| self.try_handle_quote_like_delimiter_internal()),
 
-            (QuoteLikeMode::TR, QuoteLikeState::SecondContent) => self
+            (QuoteLikeMode::TR, QuoteLikeState::Content { phase: DelimiterPhase::Second }) => self
                 .consume_quote_content(
                     SyntaxKind::TR_REPLACEMENT_LIST,
                     delimiter,
-                    QuoteLikeState::SecondCloseDelimiter,
+                    QuoteLikeState::Delimiter { phase: DelimiterPhase::Second, kind: DelimiterType::Close },
                 )
                 .or_else(|| self.try_handle_quote_like_delimiter_internal()),
 
             // Delimiter states - only handle delimiters
-            (
-                QuoteLikeMode::Q,
-                QuoteLikeState::FirstOpenDelimiter | QuoteLikeState::FirstCloseDelimiter,
-            )
-            | (
-                QuoteLikeMode::QW,
-                QuoteLikeState::FirstOpenDelimiter | QuoteLikeState::FirstCloseDelimiter,
-            )
-            | (
-                QuoteLikeMode::M,
-                QuoteLikeState::FirstOpenDelimiter | QuoteLikeState::FirstCloseDelimiter,
-            )
-            | (
-                QuoteLikeMode::S,
-                QuoteLikeState::FirstOpenDelimiter
-                | QuoteLikeState::FirstCloseDelimiter
-                | QuoteLikeState::SecondOpenDelimiter
-                | QuoteLikeState::SecondCloseDelimiter,
-            )
-            | (
-                QuoteLikeMode::TR,
-                QuoteLikeState::FirstOpenDelimiter
-                | QuoteLikeState::FirstCloseDelimiter
-                | QuoteLikeState::SecondOpenDelimiter
-                | QuoteLikeState::SecondCloseDelimiter,
-            ) => self.try_handle_quote_like_delimiter_internal(),
+            (_, QuoteLikeState::Delimiter { .. }) => {
+                self.try_handle_quote_like_delimiter_internal()
+            }
 
             // Flag states
-            (QuoteLikeMode::S, QuoteLikeState::Flags) => {
-                self.try_consume_quote_like_flags(&QuoteLikeMode::S)
-            }
-            (QuoteLikeMode::TR, QuoteLikeState::Flags) => {
-                self.try_consume_quote_like_flags(&QuoteLikeMode::TR)
+            (QuoteLikeMode::S | QuoteLikeMode::TR, QuoteLikeState::Flags) => {
+                self.try_consume_quote_like_flags(&mode)
             }
 
             // Invalid state combinations that should never occur
-            (
-                QuoteLikeMode::Q,
-                QuoteLikeState::SecondOpenDelimiter
-                | QuoteLikeState::SecondContent
-                | QuoteLikeState::SecondCloseDelimiter
-                | QuoteLikeState::Flags,
-            )
-            | (
-                QuoteLikeMode::QW,
-                QuoteLikeState::SecondOpenDelimiter
-                | QuoteLikeState::SecondContent
-                | QuoteLikeState::SecondCloseDelimiter
-                | QuoteLikeState::Flags,
-            )
-            | (
-                QuoteLikeMode::M,
-                QuoteLikeState::SecondOpenDelimiter
-                | QuoteLikeState::SecondContent
-                | QuoteLikeState::SecondCloseDelimiter
-                | QuoteLikeState::Flags,
-            ) => {
+            (QuoteLikeMode::Q | QuoteLikeMode::QW | QuoteLikeMode::M, QuoteLikeState::Content { phase: DelimiterPhase::Second }) |
+            (QuoteLikeMode::Q | QuoteLikeMode::QW | QuoteLikeMode::M, QuoteLikeState::Flags) => {
                 unreachable!("Invalid state combination for single-delimiter quote-like operators: {:?}, {:?}", mode, state)
             }
         }
@@ -576,7 +535,7 @@ impl<'a> Lexer<'a> {
                     self.context = LexerContext::QuoteLike {
                         prefix,
                         mode,
-                        state: QuoteLikeState::FirstCloseDelimiter,
+                        state: QuoteLikeState::Delimiter { phase: DelimiterPhase::First, kind: DelimiterType::Close },
                         delimiter,
                     };
                 }
@@ -1460,55 +1419,55 @@ impl<'a> Lexer<'a> {
             SyntaxKind::QW_KW => LexerContext::QuoteLike {
                 prefix: SyntaxKind::QW_KW,
                 mode: QuoteLikeMode::QW,
-                state: QuoteLikeState::FirstOpenDelimiter,
+                state: QuoteLikeState::Delimiter { phase: DelimiterPhase::First, kind: DelimiterType::Open },
                 delimiter: '\0', // Will be set when delimiter is found
             },
             SyntaxKind::Q_KW => LexerContext::QuoteLike {
                 prefix: SyntaxKind::Q_KW,
                 mode: QuoteLikeMode::Q,
-                state: QuoteLikeState::FirstOpenDelimiter,
+                state: QuoteLikeState::Delimiter { phase: DelimiterPhase::First, kind: DelimiterType::Open },
                 delimiter: '\0',
             },
             SyntaxKind::QQ_KW => LexerContext::QuoteLike {
                 prefix: SyntaxKind::QQ_KW,
                 mode: QuoteLikeMode::Q,
-                state: QuoteLikeState::FirstOpenDelimiter,
+                state: QuoteLikeState::Delimiter { phase: DelimiterPhase::First, kind: DelimiterType::Open },
                 delimiter: '\0',
             },
             SyntaxKind::QX_KW => LexerContext::QuoteLike {
                 prefix: SyntaxKind::QX_KW,
                 mode: QuoteLikeMode::Q,
-                state: QuoteLikeState::FirstOpenDelimiter,
+                state: QuoteLikeState::Delimiter { phase: DelimiterPhase::First, kind: DelimiterType::Open },
                 delimiter: '\0',
             },
             SyntaxKind::M_KW => LexerContext::QuoteLike {
                 prefix: SyntaxKind::M_KW,
                 mode: QuoteLikeMode::M,
-                state: QuoteLikeState::FirstOpenDelimiter,
+                state: QuoteLikeState::Delimiter { phase: DelimiterPhase::First, kind: DelimiterType::Open },
                 delimiter: '\0',
             },
             SyntaxKind::QR_KW => LexerContext::QuoteLike {
                 prefix: SyntaxKind::QR_KW,
                 mode: QuoteLikeMode::M,
-                state: QuoteLikeState::FirstOpenDelimiter,
+                state: QuoteLikeState::Delimiter { phase: DelimiterPhase::First, kind: DelimiterType::Open },
                 delimiter: '\0',
             },
             SyntaxKind::S_KW => LexerContext::QuoteLike {
                 prefix: SyntaxKind::S_KW,
                 mode: QuoteLikeMode::S,
-                state: QuoteLikeState::FirstOpenDelimiter,
+                state: QuoteLikeState::Delimiter { phase: DelimiterPhase::First, kind: DelimiterType::Open },
                 delimiter: '\0',
             },
             SyntaxKind::TR_KW => LexerContext::QuoteLike {
                 prefix: SyntaxKind::TR_KW,
                 mode: QuoteLikeMode::TR,
-                state: QuoteLikeState::FirstOpenDelimiter,
+                state: QuoteLikeState::Delimiter { phase: DelimiterPhase::First, kind: DelimiterType::Open },
                 delimiter: '\0',
             },
             SyntaxKind::Y_KW => LexerContext::QuoteLike {
                 prefix: SyntaxKind::Y_KW,
                 mode: QuoteLikeMode::TR,
-                state: QuoteLikeState::FirstOpenDelimiter,
+                state: QuoteLikeState::Delimiter { phase: DelimiterPhase::First, kind: DelimiterType::Open },
                 delimiter: '\0',
             },
             SyntaxKind::END_KW | SyntaxKind::DATA_KW => LexerContext::RawData,
@@ -1565,16 +1524,16 @@ impl<'a> Lexer<'a> {
             let delimiter_char = delimiter_text.chars().next().unwrap_or(delimiter);
 
             match state {
-                QuoteLikeState::FirstOpenDelimiter => {
+                QuoteLikeState::Delimiter { phase: DelimiterPhase::First, kind: DelimiterType::Open } => {
                     // Set the delimiter and transition to content
                     self.context = LexerContext::QuoteLike {
                         prefix,
                         mode,
-                        state: QuoteLikeState::FirstContent,
+                        state: QuoteLikeState::Content { phase: DelimiterPhase::First },
                         delimiter: delimiter_char,
                     };
                 }
-                QuoteLikeState::FirstCloseDelimiter => {
+                QuoteLikeState::Delimiter { phase: DelimiterPhase::First, kind: DelimiterType::Close } => {
                     // Check if this is a double-delimiter mode (S, TR)
                     match mode {
                         QuoteLikeMode::S | QuoteLikeMode::TR => {
@@ -1585,7 +1544,7 @@ impl<'a> Lexer<'a> {
                                 self.context = LexerContext::QuoteLike {
                                     prefix,
                                     mode,
-                                    state: QuoteLikeState::SecondContent,
+                                    state: QuoteLikeState::Content { phase: DelimiterPhase::Second },
                                     delimiter,
                                 };
                             } else {
@@ -1593,7 +1552,7 @@ impl<'a> Lexer<'a> {
                                 self.context = LexerContext::QuoteLike {
                                     prefix,
                                     mode,
-                                    state: QuoteLikeState::SecondOpenDelimiter,
+                                    state: QuoteLikeState::Delimiter { phase: DelimiterPhase::Second, kind: DelimiterType::Open },
                                     delimiter,
                                 };
                             }
@@ -1604,16 +1563,16 @@ impl<'a> Lexer<'a> {
                         }
                     }
                 }
-                QuoteLikeState::SecondOpenDelimiter => {
+                QuoteLikeState::Delimiter { phase: DelimiterPhase::Second, kind: DelimiterType::Open } => {
                     // Start of second content
                     self.context = LexerContext::QuoteLike {
                         prefix,
                         mode,
-                        state: QuoteLikeState::SecondContent,
+                        state: QuoteLikeState::Content { phase: DelimiterPhase::Second },
                         delimiter: delimiter_char,
                     };
                 }
-                QuoteLikeState::SecondCloseDelimiter => {
+                QuoteLikeState::Delimiter { phase: DelimiterPhase::Second, kind: DelimiterType::Close } => {
                     // Check if this mode has flags
                     match mode {
                         QuoteLikeMode::S | QuoteLikeMode::TR => {
@@ -1663,34 +1622,36 @@ impl<'a> Lexer<'a> {
                     ..
                 } = self.context
                 {
-                    if state == QuoteLikeState::FirstOpenDelimiter {
-                        let delimiter = match kind {
-                            SyntaxKind::L_PAREN => ')',
-                            SyntaxKind::L_BRACE => '}',
-                            SyntaxKind::L_BRACKET => ']',
-                            _ => '\0',
-                        };
-                        LexerContext::QuoteLike {
-                            prefix,
-                            mode,
-                            state: QuoteLikeState::FirstContent,
-                            delimiter,
+                    match state {
+                        QuoteLikeState::Delimiter { phase: DelimiterPhase::First, kind: DelimiterType::Open } => {
+                            let delimiter = match kind {
+                                SyntaxKind::L_PAREN => ')',
+                                SyntaxKind::L_BRACE => '}',
+                                SyntaxKind::L_BRACKET => ']',
+                                _ => '\0',
+                            };
+                            LexerContext::QuoteLike {
+                                prefix,
+                                mode,
+                                state: QuoteLikeState::Content { phase: DelimiterPhase::First },
+                                delimiter,
+                            }
                         }
-                    } else if state == QuoteLikeState::SecondOpenDelimiter {
-                        let delimiter = match kind {
-                            SyntaxKind::L_PAREN => ')',
-                            SyntaxKind::L_BRACE => '}',
-                            SyntaxKind::L_BRACKET => ']',
-                            _ => '\0',
-                        };
-                        LexerContext::QuoteLike {
-                            prefix,
-                            mode,
-                            state: QuoteLikeState::SecondContent,
-                            delimiter,
+                        QuoteLikeState::Delimiter { phase: DelimiterPhase::Second, kind: DelimiterType::Open } => {
+                            let delimiter = match kind {
+                                SyntaxKind::L_PAREN => ')',
+                                SyntaxKind::L_BRACE => '}',
+                                SyntaxKind::L_BRACKET => ']',
+                                _ => '\0',
+                            };
+                            LexerContext::QuoteLike {
+                                prefix,
+                                mode,
+                                state: QuoteLikeState::Content { phase: DelimiterPhase::Second },
+                                delimiter,
+                            }
                         }
-                    } else {
-                        self.context
+                        _ => self.context,
                     }
                 } else {
                     LexerContext::ExpectingValue
