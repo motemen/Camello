@@ -437,7 +437,7 @@ fn test_mixed_valid_invalid_flags() {
     assert_eq!(lexer.next_token(), None);
 }
 
-// TODO: Update this test for the new unified QuoteLike API  
+// TODO: Update this test for the new unified QuoteLike API
 // #[test]
 fn _disabled_test_asymmetric_delimiters() {
     // This test needs to be updated for the new unified QuoteLike API
@@ -669,5 +669,29 @@ fn test_debug_parser_lexer_sync() {
             kind, text, lexer.context
         );
         current_token = lexer.next_token(); // This is what parser.bump() does
+    }
+}
+
+#[test]
+fn test_qw_context_debug() {
+    // Test QW lexer context transitions for debugging
+    let mut lexer = Lexer::new("my @a = qw(a);");
+    let mut tokens = Vec::new();
+
+    while let Some((kind, text)) = lexer.next_token() {
+        println!(
+            "Token: {:?}, Text: {:?}, Context: {:?}",
+            kind, text, lexer.context
+        );
+        tokens.push((kind, text));
+    }
+
+    // Print all tokens for debugging
+    println!("All tokens: {:?}", tokens);
+
+    // Check the last few tokens to see what's happening
+    let len = tokens.len();
+    if len >= 3 {
+        println!("Last 3 tokens: {:?}", &tokens[len - 3..]);
     }
 }

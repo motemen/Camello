@@ -766,6 +766,23 @@ fn test_single_line_qw_formatting() {
 }
 
 #[test]
+fn test_qw_variable_assignment() {
+    // Test the case that was failing: my @a = qw(a);
+    let cases = [
+        ("my @a = qw(a);", "my @a = qw(a);\n"),
+        (
+            "my @words = qw(one two three);",
+            "my @words = qw(one two three);\n",
+        ),
+        (
+            "our @list = qw/alpha beta gamma/;",
+            "our @list = qw/alpha beta gamma/;\n",
+        ),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_multiline_qw_formatting() {
     let input = r#"my @words = qw(
 hello
