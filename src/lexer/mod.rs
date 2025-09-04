@@ -415,19 +415,13 @@ impl<'a> Lexer<'a> {
                     let remainder = self.logos_lexer.remainder();
                     if !remainder.is_empty() {
                         let first_char = remainder.chars().next().unwrap();
-                        let expected_closing_delimiter =
-                            if let LexerContext::QuoteLike { delimiter, .. } = &self.context {
-                                match delimiter {
-                                    '{' => '}',
-                                    '[' => ']',
-                                    '(' => ')',
-                                    '<' => '>',
-                                    other => *other,
-                                }
-                            } else {
-                                return None;
-                            };
-
+                        let expected_closing_delimiter = match delimiter {
+                            '{' => '}',
+                            '[' => ']',
+                            '(' => ')',
+                            '<' => '>',
+                            other => other,
+                        };
                         // If we hit closing delimiter, transition to FirstCloseDelimiter state
                         if first_char == expected_closing_delimiter {
                             self.context = LexerContext::QuoteLike {
