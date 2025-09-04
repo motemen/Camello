@@ -349,24 +349,13 @@ impl<'a> Lexer<'a> {
 
     /// Handle special token parsing in various contexts
     fn try_handle_special_tokens(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        // Handle quote-like content first
-        if let Some(result) = self.try_handle_quote_like_content_internal() {
-            return Some(result);
-        }
-
-        // Handle quote-like delimiters
-        if let Some(result) = self.try_handle_quote_like_delimiter_internal() {
-            return Some(result);
-        }
-
-        // Handle special tokens in ExpectingValue context
-        if self.context == LexerContext::ExpectingValue {
-            if let Some(result) = self.try_handle_expecting_value_context() {
-                return Some(result);
+        self.try_handle_quote_like_internal().or_else(|| {
+            if self.context == LexerContext::ExpectingValue {
+                self.try_handle_expecting_value_context()
+            } else {
+                None
             }
-        }
-
-        None
+        })
     }
 
     /// Handle quote-like content based on current context and state
@@ -420,6 +409,54 @@ impl<'a> Lexer<'a> {
             ),
             _ => None,
         }
+    }
+
+    /// Handle quote-like delimiter recognition and consumption
+    fn try_handle_quote_like_delimiter_internal(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        let LexerContext::QuoteLike {
+            state, delimiter, ..
+        } = &self.context
+        else {
+            return None;
+        };
+
+        let remainder = self.logos_lexer.remainder();
+        if remainder.is_empty() {
+            return None;
+        }
+
+        let first_char = remainder.chars().next().unwrap();
+        let should_consume = match state {
+            QuoteLikeState::FirstOpenDelimiter => {
+                // Any valid quote delimiter can start
+                self.is_quote_delimiter(first_char)
+            }
+            QuoteLikeState::FirstCloseDelimiter | QuoteLikeState::SecondCloseDelimiter => {
+                // Must match the expected closing delimiter
+                let expected_closing = Self::get_closing_delimiter(*delimiter);
+                first_char.to_string() == expected_closing
+            }
+            QuoteLikeState::SecondOpenDelimiter => {
+                // Can be any delimiter for the second part
+                self.is_quote_delimiter(first_char)
+            }
+            _ => false,
+        };
+
+        if should_consume {
+            let delim_str = &remainder[..first_char.len_utf8()];
+            self.logos_lexer.bump(first_char.len_utf8());
+            self.handle_quote_like_delimiter(delim_str);
+            Some((SyntaxKind::DELIMITER, delim_str))
+        } else {
+            None
+        }
+    }
+
+    /// Handle quote-like tokens (both content and delimiters) based on current context and state
+    fn try_handle_quote_like_internal(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        self.try_handle_quote_like_content_internal()
+            .or_else(|| self.try_handle_quote_like_delimiter_internal())
     }
 
     /// Helper method to consume quote-like content and transition state
@@ -477,48 +514,6 @@ impl<'a> Lexer<'a> {
 
         // Otherwise, try to consume QW content
         self.try_consume_qw_content()
-    }
-
-    /// Handle quote-like delimiter recognition and consumption
-    fn try_handle_quote_like_delimiter_internal(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        let LexerContext::QuoteLike {
-            state, delimiter, ..
-        } = &self.context
-        else {
-            return None;
-        };
-
-        let remainder = self.logos_lexer.remainder();
-        if remainder.is_empty() {
-            return None;
-        }
-
-        let first_char = remainder.chars().next().unwrap();
-        let should_consume = match state {
-            QuoteLikeState::FirstOpenDelimiter => {
-                // Any valid quote delimiter can start
-                self.is_quote_delimiter(first_char)
-            }
-            QuoteLikeState::FirstCloseDelimiter | QuoteLikeState::SecondCloseDelimiter => {
-                // Must match the expected closing delimiter
-                let expected_closing = Self::get_closing_delimiter(*delimiter);
-                first_char.to_string() == expected_closing
-            }
-            QuoteLikeState::SecondOpenDelimiter => {
-                // Can be any delimiter for the second part
-                self.is_quote_delimiter(first_char)
-            }
-            _ => false,
-        };
-
-        if should_consume {
-            let delim_str = &remainder[..first_char.len_utf8()];
-            self.logos_lexer.bump(first_char.len_utf8());
-            self.handle_quote_like_delimiter(delim_str);
-            Some((SyntaxKind::DELIMITER, delim_str))
-        } else {
-            None
-        }
     }
 
     /// Handle special tokens when expecting a value
