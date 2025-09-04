@@ -1,6 +1,6 @@
 use crate::{PerlLanguage, PerlNode, SyntaxKind};
-use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
-use std::collections::VecDeque;
+use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken, TextRange};
+use std::collections::HashMap;
 
 // Helper function for checking disallowed tokens
 fn has_disallowed_tokens(node: &PerlNode) -> bool {
@@ -11,22 +11,19 @@ fn has_disallowed_tokens(node: &PerlNode) -> bool {
     })
 }
 
-// Information about a line that can be aligned
+// Information about a statement that can participate in alignment
 #[derive(Debug, Clone)]
 struct AlignmentCandidate {
-    line_content: String,     // Content of the line up to the alignment operator
-    operator: SyntaxKind,     // The alignment operator (EQ or FAT_COMMA)
-    position: usize,          // Column position where operator should be placed
-    line_number: usize,       // Line number for debugging
+    node: PerlNode,               // The statement node
+    operator: SyntaxKind,         // The alignment operator (EQ or FAT_COMMA) 
+    operator_position: usize,     // Position where operator should be aligned
+    target_position: usize,       // Target position for alignment (calculated later)
 }
 
-// Tracks alignment state
+// Tracks alignment state across consecutive statements
 #[derive(Debug, Default)]
 struct AlignmentState {
-    candidates: VecDeque<AlignmentCandidate>,
-    current_line: String,
-    current_line_number: usize,
-    in_alignment_group: bool,
+    alignment_map: HashMap<TextRange, usize>, // Maps node text range to target position
 }
 
 pub struct Formatter {
@@ -76,6 +73,13 @@ impl Formatter {
                 | SyntaxKind::DECLARATION_STMT
         ) {
             self.add_empty_line_before_if_needed(node);
+        }
+
+        // Check if this node needs alignment
+        let needs_alignment = self.alignment_state.alignment_map.contains_key(&node.text_range());
+        if needs_alignment {
+            self.format_node_with_alignment(node);
+            return;
         }
 
         // Node types that require special handling
@@ -669,6 +673,9 @@ impl Formatter {
     }
 
     fn format_block_stmt_with_empty_line_detection(&mut self, node: &PerlNode) {
+        // Pre-process alignment groups before formatting
+        self.preprocess_alignment_groups(node);
+        
         // Use a peekable iterator to avoid collecting all children into a Vec,
         // which improves performance and reduces memory allocation.
         let mut children = node.children_with_tokens().peekable();
@@ -738,116 +745,186 @@ impl Formatter {
         }
     }
 
+    /// Pre-process alignment groups and store alignment information
+    fn preprocess_alignment_groups(&mut self, node: &PerlNode) {
+        let nodes: Vec<_> = node.children().collect();
+        let mut i = 0;
+        
+        while i < nodes.len() {
+            let current_node = &nodes[i];
+            
+            // Check if this node can start an alignment group
+            if let Some((operator, position)) = self.can_be_aligned(current_node) {
+                let alignment_group = self.collect_alignment_group_from_nodes(&nodes, i, operator);
+                
+                if alignment_group.len() > 1 {
+                    // Calculate target alignment position
+                    let target_pos = alignment_group.iter()
+                        .map(|c| c.operator_position)
+                        .max()
+                        .unwrap_or(0);
+                    
+                    // Store alignment information for each node in the group
+                    for candidate in &alignment_group {
+                        self.alignment_state.alignment_map.insert(
+                            candidate.node.text_range(), 
+                            target_pos
+                        );
+                    }
+                    
+                    // Skip the nodes we just processed
+                    i += alignment_group.len();
+                } else {
+                    i += 1;
+                }
+            } else {
+                i += 1;
+            }
+        }
+    }
+
+    /// Collect alignment group starting from a specific node index
+    fn collect_alignment_group_from_nodes(&self, nodes: &[PerlNode], start_idx: usize, operator: SyntaxKind) -> Vec<AlignmentCandidate> {
+        let mut candidates = Vec::new();
+        
+        for (offset, node) in nodes[start_idx..].iter().enumerate() {
+            if let Some((node_op, position)) = self.can_be_aligned(node) {
+                if node_op == operator {
+                    candidates.push(AlignmentCandidate {
+                        node: node.clone(),
+                        operator: node_op,
+                        operator_position: position,
+                        target_position: 0, // Will be calculated later
+                    });
+                } else {
+                    // Different operator type breaks the group
+                    break;
+                }
+            } else {
+                // Non-alignable node breaks the group (unless it's just whitespace)
+                // For now, let's break on any non-alignable node
+                break;
+            }
+            
+            // Check for empty lines between nodes that would break alignment
+            if offset > 0 {
+                let prev_node = &nodes[start_idx + offset - 1];
+                if self.has_empty_line_between_nodes(prev_node, node) {
+                    break;
+                }
+            }
+        }
+        
+        candidates
+    }
+
+    /// Check if there's an empty line between two nodes
+    fn has_empty_line_between_nodes(&self, _node1: &PerlNode, _node2: &PerlNode) -> bool {
+        // For simplicity, assume no empty lines for now
+        // In a full implementation, we'd check the whitespace tokens between the nodes
+        false
+    }
+
+    /// Helper to advance the token iterator to the next node (simplified)
+    fn advance_iterator_to_next_node(&self, children: &mut std::iter::Peekable<SyntaxElementChildren<PerlLanguage>>) {
+        // Skip tokens until we hit another node or end of iterator
+        // This is a simplified approach - in a real implementation we'd need more sophisticated tracking
+        while let Some(child) = children.peek() {
+            match child {
+                NodeOrToken::Node(_) => break, // Found next node
+                NodeOrToken::Token(_) => {
+                    children.next(); // Skip this token
+                }
+            }
+        }
+    }
+
     // ===== Alignment Methods =====
     
-    /// Check if we need to start tracking a potential alignment candidate
-    fn maybe_start_alignment(&mut self, token_kind: SyntaxKind) {
-        if matches!(token_kind, SyntaxKind::EQ | SyntaxKind::FAT_COMMA) {
-            // This could be an alignment candidate
-            // We'll finalize it when we see the semicolon or comma
-            self.alignment_state.in_alignment_group = true;
-        }
-    }
-
-    /// Check if we need to complete an alignment candidate
-    fn maybe_complete_alignment(&mut self, token_kind: SyntaxKind) {
-        if !self.alignment_state.in_alignment_group {
-            return;
-        }
-
-        // Complete alignment on statement terminators
-        if matches!(token_kind, SyntaxKind::SEMICOLON | SyntaxKind::COMMA) {
-            // Find the alignment operator in current line
-            if let Some(pos) = self.find_alignment_operator_in_current_line() {
-                let candidate = AlignmentCandidate {
-                    line_content: self.alignment_state.current_line.clone(),
-                    operator: pos.0,
-                    position: pos.1,
-                    line_number: self.alignment_state.current_line_number,
-                };
-                self.alignment_state.candidates.push_back(candidate);
+    /// Check if a node can participate in alignment and return the operator and its position
+    fn can_be_aligned(&self, node: &PerlNode) -> Option<(SyntaxKind, usize)> {
+        match node.kind() {
+            SyntaxKind::DECLARATION_STMT => {
+                // Check if this is a simple variable declaration with assignment
+                // e.g., "my $var = value;"
+                if let Some(eq_token) = self.find_operator_in_node(node, SyntaxKind::EQ) {
+                    let content_before = self.get_content_before_token(node, &eq_token);
+                    return Some((SyntaxKind::EQ, content_before.chars().count()));
+                }
             }
-            
-            // Reset for next line
-            self.alignment_state.in_alignment_group = false;
-            self.alignment_state.current_line.clear();
+            // We can extend this to handle other statement types that have assignments
+            _ => {}
         }
-    }
-
-    /// Find alignment operator (= or =>) in the current line buffer
-    fn find_alignment_operator_in_current_line(&self) -> Option<(SyntaxKind, usize)> {
-        let line = &self.alignment_state.current_line;
-        
-        // Look for => first (longer pattern)
-        if let Some(pos) = line.find("=>") {
-            return Some((SyntaxKind::FAT_COMMA, pos));
-        }
-        
-        // Look for = (but not ==, <=, >=, etc.)
-        if let Some(pos) = line.find('=') {
-            // Make sure it's not part of another operator
-            let is_standalone = (pos == 0 || !matches!(line.chars().nth(pos - 1), Some('!' | '<' | '>' | '=' | '~'))) 
-                && (pos + 1 >= line.len() || !matches!(line.chars().nth(pos + 1), Some('=' | '~')));
-            
-            if is_standalone {
-                return Some((SyntaxKind::EQ, pos));
-            }
-        }
-        
         None
     }
 
-    /// Reset alignment state (called on empty lines or incompatible statements)
-    fn reset_alignment(&mut self) {
-        if !self.alignment_state.candidates.is_empty() {
-            // Process any pending alignment group
-            self.process_alignment_group();
-        }
-        self.alignment_state.candidates.clear();
-        self.alignment_state.current_line.clear();
-        self.alignment_state.in_alignment_group = false;
-    }
-
-    /// Process and output an alignment group with proper padding
-    fn process_alignment_group(&mut self) {
-        if self.alignment_state.candidates.len() < 2 {
-            // No alignment needed for single lines
-            return;
-        }
-
-        // Group by operator type - collect into separate vectors to avoid borrowing issues
-        let mut eq_candidates = Vec::new();
-        let mut fat_comma_candidates = Vec::new();
-        
-        for candidate in &self.alignment_state.candidates {
-            match candidate.operator {
-                SyntaxKind::EQ => eq_candidates.push(candidate.clone()),
-                SyntaxKind::FAT_COMMA => fat_comma_candidates.push(candidate.clone()),
-                _ => {}
+    /// Find a specific operator token within a node
+    fn find_operator_in_node(&self, node: &PerlNode, operator: SyntaxKind) -> Option<SyntaxToken<PerlLanguage>> {
+        for token in node.descendants_with_tokens() {
+            if let Some(token) = token.as_token() {
+                if token.kind() == operator {
+                    return Some(token.clone());
+                }
             }
         }
-
-        // Process each group separately
-        self.align_group(&eq_candidates);
-        self.align_group(&fat_comma_candidates);
+        None
     }
 
-    /// Align a group of candidates with the same operator
-    fn align_group(&mut self, candidates: &[AlignmentCandidate]) {
-        if candidates.len() < 2 {
-            return;
+    /// Get the content of a node up to (but not including) a specific token
+    fn get_content_before_token(&self, node: &PerlNode, target_token: &SyntaxToken<PerlLanguage>) -> String {
+        let mut content = String::new();
+        let target_start = target_token.text_range().start();
+        
+        for element in node.descendants_with_tokens() {
+            match element {
+                rowan::NodeOrToken::Token(token) if token.text_range().start() >= target_start => {
+                    break; // Stop when we reach the target token
+                }
+                rowan::NodeOrToken::Token(token) => {
+                    if !token.kind().is_trivia() || token.kind() == SyntaxKind::WHITESPACE {
+                        content.push_str(token.text());
+                    }
+                }
+                rowan::NodeOrToken::Node(_) => {
+                    // Nodes are handled by their tokens
+                }
+            }
         }
+        
+        content
+    }
 
-        // Find the maximum position needed
-        let _max_pos = candidates.iter().map(|c| c.position).max().unwrap_or(0);
+    /// Format a node that needs alignment
+    fn format_node_with_alignment(&mut self, node: &PerlNode) {
+        let target_pos = self.alignment_state.alignment_map[&node.text_range()];
         
-        // This would require more complex rewriting of already-output content
-        // For now, let's implement a simpler approach that tracks alignment
-        // during the initial formatting pass
-        
-        // TODO: Implement alignment padding logic
-        // This is a complex change that would require buffering output
-        // and rewriting with proper padding
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(child_node) => {
+                    self.format_node(&child_node);
+                }
+                NodeOrToken::Token(token) => {
+                    if matches!(token.kind(), SyntaxKind::EQ | SyntaxKind::FAT_COMMA) {
+                        // This is the alignment operator - add padding before it
+                        let current_line_start = self.output.rfind('\n').map(|pos| pos + 1).unwrap_or(0);
+                        let current_pos = self.output[current_line_start..].chars().count();
+                        
+                        // Calculate padding needed
+                        let padding_needed = target_pos.saturating_sub(current_pos);
+                        
+                        // Add extra spaces for alignment
+                        for _ in 0..padding_needed {
+                            self.output.push(' ');
+                        }
+                        
+                        // Format the token normally (this will add appropriate spacing)
+                        self.format_token(&token);
+                    } else {
+                        self.format_token(&token);
+                    }
+                }
+            }
+        }
     }
 }
 
