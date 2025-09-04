@@ -1741,3 +1741,56 @@ fn test_unary_operators_in_context() {
 
     check_formatting_cases(&cases);
 }
+
+#[test] 
+fn test_assignment_alignment() {
+    let input = "my $x = 1;\nmy $var = f();";
+    let formatted = format_and_assert(input);
+    
+    // Test that assignments are aligned
+    insta::assert_snapshot!(formatted, @r"
+        my $x   = 1;
+        my $var = f();
+        ");
+}
+
+#[test]
+fn test_assignment_alignment_with_empty_lines() {
+    let input = "my $x = 1;\nmy $var = f();\n\nmy $y = [];";
+    let formatted = format_and_assert(input);
+    
+    // Test that empty lines reset alignment
+    insta::assert_snapshot!(formatted, @r"
+        my $x   = 1;
+        my $var = f();
+
+        my $y = [];
+        ");
+}
+
+#[test]
+fn test_fat_comma_alignment() {
+    let input = "my $h = {\n    k1 => 1,\n    key => 2,\n};";
+    let formatted = format_and_assert(input);
+    
+    // Test that fat commas are aligned
+    insta::assert_snapshot!(formatted, @r"
+        my $h = {
+            k1  => 1,
+            key => 2,
+        };
+        ");
+}
+
+#[test]
+fn test_mixed_alignment_operators() {
+    let input = "my $x = 1;\nmy $h = { k => 2 };\nmy $var = f();";
+    let formatted = format_and_assert(input);
+    
+    // Test that different operators don't interfere with each other
+    insta::assert_snapshot!(formatted, @r"
+        my $x   = 1;
+        my $h   = {k => 2};
+        my $var = f();
+        ");
+}

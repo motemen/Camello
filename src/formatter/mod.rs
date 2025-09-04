@@ -1,5 +1,6 @@
 use crate::{PerlLanguage, PerlNode, SyntaxKind};
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
+use std::collections::VecDeque;
 
 // Helper function for checking disallowed tokens
 fn has_disallowed_tokens(node: &PerlNode) -> bool {
@@ -10,6 +11,24 @@ fn has_disallowed_tokens(node: &PerlNode) -> bool {
     })
 }
 
+// Information about a line that can be aligned
+#[derive(Debug, Clone)]
+struct AlignmentCandidate {
+    line_content: String,     // Content of the line up to the alignment operator
+    operator: SyntaxKind,     // The alignment operator (EQ or FAT_COMMA)
+    position: usize,          // Column position where operator should be placed
+    line_number: usize,       // Line number for debugging
+}
+
+// Tracks alignment state
+#[derive(Debug, Default)]
+struct AlignmentState {
+    candidates: VecDeque<AlignmentCandidate>,
+    current_line: String,
+    current_line_number: usize,
+    in_alignment_group: bool,
+}
+
 pub struct Formatter {
     output: String,
     indent_level: usize,
@@ -17,6 +36,7 @@ pub struct Formatter {
     prev_token_kind: Option<SyntaxKind>,
     at_line_start: bool,
     pending_empty_lines: usize, // Number of empty lines waiting to be output
+    alignment_state: AlignmentState, // Track alignment candidates
 }
 
 impl Default for Formatter {
@@ -35,6 +55,7 @@ impl Formatter {
             prev_token_kind: None,
             at_line_start: true,
             pending_empty_lines: 0,
+            alignment_state: AlignmentState::default(),
         }
     }
 
@@ -715,6 +736,118 @@ impl Formatter {
                 }
             }
         }
+    }
+
+    // ===== Alignment Methods =====
+    
+    /// Check if we need to start tracking a potential alignment candidate
+    fn maybe_start_alignment(&mut self, token_kind: SyntaxKind) {
+        if matches!(token_kind, SyntaxKind::EQ | SyntaxKind::FAT_COMMA) {
+            // This could be an alignment candidate
+            // We'll finalize it when we see the semicolon or comma
+            self.alignment_state.in_alignment_group = true;
+        }
+    }
+
+    /// Check if we need to complete an alignment candidate
+    fn maybe_complete_alignment(&mut self, token_kind: SyntaxKind) {
+        if !self.alignment_state.in_alignment_group {
+            return;
+        }
+
+        // Complete alignment on statement terminators
+        if matches!(token_kind, SyntaxKind::SEMICOLON | SyntaxKind::COMMA) {
+            // Find the alignment operator in current line
+            if let Some(pos) = self.find_alignment_operator_in_current_line() {
+                let candidate = AlignmentCandidate {
+                    line_content: self.alignment_state.current_line.clone(),
+                    operator: pos.0,
+                    position: pos.1,
+                    line_number: self.alignment_state.current_line_number,
+                };
+                self.alignment_state.candidates.push_back(candidate);
+            }
+            
+            // Reset for next line
+            self.alignment_state.in_alignment_group = false;
+            self.alignment_state.current_line.clear();
+        }
+    }
+
+    /// Find alignment operator (= or =>) in the current line buffer
+    fn find_alignment_operator_in_current_line(&self) -> Option<(SyntaxKind, usize)> {
+        let line = &self.alignment_state.current_line;
+        
+        // Look for => first (longer pattern)
+        if let Some(pos) = line.find("=>") {
+            return Some((SyntaxKind::FAT_COMMA, pos));
+        }
+        
+        // Look for = (but not ==, <=, >=, etc.)
+        if let Some(pos) = line.find('=') {
+            // Make sure it's not part of another operator
+            let is_standalone = (pos == 0 || !matches!(line.chars().nth(pos - 1), Some('!' | '<' | '>' | '=' | '~'))) 
+                && (pos + 1 >= line.len() || !matches!(line.chars().nth(pos + 1), Some('=' | '~')));
+            
+            if is_standalone {
+                return Some((SyntaxKind::EQ, pos));
+            }
+        }
+        
+        None
+    }
+
+    /// Reset alignment state (called on empty lines or incompatible statements)
+    fn reset_alignment(&mut self) {
+        if !self.alignment_state.candidates.is_empty() {
+            // Process any pending alignment group
+            self.process_alignment_group();
+        }
+        self.alignment_state.candidates.clear();
+        self.alignment_state.current_line.clear();
+        self.alignment_state.in_alignment_group = false;
+    }
+
+    /// Process and output an alignment group with proper padding
+    fn process_alignment_group(&mut self) {
+        if self.alignment_state.candidates.len() < 2 {
+            // No alignment needed for single lines
+            return;
+        }
+
+        // Group by operator type - collect into separate vectors to avoid borrowing issues
+        let mut eq_candidates = Vec::new();
+        let mut fat_comma_candidates = Vec::new();
+        
+        for candidate in &self.alignment_state.candidates {
+            match candidate.operator {
+                SyntaxKind::EQ => eq_candidates.push(candidate.clone()),
+                SyntaxKind::FAT_COMMA => fat_comma_candidates.push(candidate.clone()),
+                _ => {}
+            }
+        }
+
+        // Process each group separately
+        self.align_group(&eq_candidates);
+        self.align_group(&fat_comma_candidates);
+    }
+
+    /// Align a group of candidates with the same operator
+    fn align_group(&mut self, candidates: &[AlignmentCandidate]) {
+        if candidates.len() < 2 {
+            return;
+        }
+
+        // Find the maximum position needed
+        let _max_pos = candidates.iter().map(|c| c.position).max().unwrap_or(0);
+        
+        // This would require more complex rewriting of already-output content
+        // For now, let's implement a simpler approach that tracks alignment
+        // during the initial formatting pass
+        
+        // TODO: Implement alignment padding logic
+        // This is a complex change that would require buffering output
+        // and rewriting with proper padding
     }
 }
 
