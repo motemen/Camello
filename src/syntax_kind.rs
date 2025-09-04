@@ -107,8 +107,10 @@ pub enum SyntaxKind {
 
     // Operators
     EQ,        // =
-    PLUS,      // +
-    MINUS,     // -
+    PLUS,      // + (binary addition)
+    MINUS,     // - (binary subtraction)
+    UNARY_PLUS,  // + (unary plus)
+    UNARY_MINUS, // - (unary minus)
     DOT,       // . (string concatenation)
     ARROW,     // ->
     FAT_COMMA, // =>
@@ -311,6 +313,8 @@ impl SyntaxKind {
             SyntaxKind::EQ
                 | SyntaxKind::PLUS
                 | SyntaxKind::MINUS
+                | SyntaxKind::UNARY_PLUS
+                | SyntaxKind::UNARY_MINUS
                 | SyntaxKind::DOT
                 | SyntaxKind::ARROW
                 | SyntaxKind::FAT_COMMA
