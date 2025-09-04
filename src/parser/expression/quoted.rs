@@ -13,6 +13,7 @@ impl<'a> Parser<'a> {
         // Consume opening delimiter (should be DELIMITER token)
         if !self.at(SyntaxKind::DELIMITER) {
             self.error("Expected qw delimiter");
+            self.builder.finish_node();
             return;
         }
 
@@ -21,6 +22,7 @@ impl<'a> Parser<'a> {
             text.to_string()
         } else {
             self.error("Expected delimiter text");
+            self.builder.finish_node();
             return;
         };
 
@@ -29,9 +31,8 @@ impl<'a> Parser<'a> {
 
         // Determine the closing delimiter based on opening delimiter
         let closing_delim_text = self.get_closing_delimiter(&opening_delim_text);
-        // Don't skip trivia here - we need whitespace to separate words
 
-        // Parse words inside qw() - lexer now provides QW_STRING tokens directly
+        // Parse words inside qw() - lexer provides QW_STRING tokens directly
         while !self.at_delimiter_text(&closing_delim_text) && !self.at_end() {
             // Skip whitespace/trivia
             if let Some(kind) = self.current_kind() {
