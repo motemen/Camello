@@ -103,6 +103,9 @@ pub const fn get_token_spacing(kind: SyntaxKind) -> TokenSpacing {
         | SyntaxKind::MODULO
         | SyntaxKind::X => TokenSpacing::binary_op(),
 
+        // Unary operators (prefix)
+        SyntaxKind::UNARY_PLUS | SyntaxKind::UNARY_MINUS => TokenSpacing::prefix_op(),
+
         // Comparison operators
         SyntaxKind::GT
         | SyntaxKind::LT

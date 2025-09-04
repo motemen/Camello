@@ -152,6 +152,14 @@ impl<'a> Parser<'a> {
         self.current_token = self.lexer.next_token();
     }
 
+    fn bump_with_kind(&mut self, syntax_kind: SyntaxKind) {
+        if let Some((_, text)) = self.current_token.take() {
+            self.builder.token(syntax_kind.into(), text);
+            self.current_pos += text.len();
+        }
+        self.current_token = self.lexer.next_token();
+    }
+
     fn expect(&mut self, expected: SyntaxKind) {
         if self.at(expected) {
             self.bump();
