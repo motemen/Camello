@@ -236,15 +236,15 @@ pub enum SyntaxKind {
 }
 
 impl SyntaxKind {
-    pub fn is_trivia(self) -> bool {
+    #[must_use] pub fn is_trivia(self) -> bool {
         matches!(self, SyntaxKind::WHITESPACE | SyntaxKind::COMMENT)
     }
 
-    pub fn is_whitespace(self) -> bool {
+    #[must_use] pub fn is_whitespace(self) -> bool {
         self == SyntaxKind::WHITESPACE
     }
 
-    pub fn is_keyword(self) -> bool {
+    #[must_use] pub fn is_keyword(self) -> bool {
         matches!(
             self,
             SyntaxKind::SUB_KW
@@ -278,7 +278,7 @@ impl SyntaxKind {
         )
     }
 
-    pub fn is_variable(self) -> bool {
+    #[must_use] pub fn is_variable(self) -> bool {
         matches!(
             self,
             SyntaxKind::SCALAR_VAR
@@ -288,7 +288,7 @@ impl SyntaxKind {
         )
     }
 
-    pub fn is_sigil(self) -> bool {
+    #[must_use] pub fn is_sigil(self) -> bool {
         matches!(
             self,
             SyntaxKind::DOLLAR
@@ -299,7 +299,7 @@ impl SyntaxKind {
         )
     }
 
-    pub fn is_operator(self) -> bool {
+    #[must_use] pub fn is_operator(self) -> bool {
         matches!(
             self,
             SyntaxKind::EQ
