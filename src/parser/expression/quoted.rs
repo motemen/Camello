@@ -22,18 +22,7 @@ impl Parser<'_> {
 
         // Parse words inside qw() - lexer provides QW_STRING tokens directly
         while !self.at_delimiter(closing_delim) && !self.at_end() {
-            // Skip whitespace/trivia
-            if let Some(kind) = self.current_kind() {
-                if kind.is_trivia() {
-                    self.bump();
-                    continue;
-                }
-            }
-
-            // Check if we're at the closing delimiter
-            if self.at_delimiter(closing_delim) {
-                break;
-            }
+            self.skip_trivia();
 
             // Expect QW_STRING tokens from the lexer
             if self.at(SyntaxKind::QW_STRING) {
@@ -59,14 +48,18 @@ impl Parser<'_> {
     }
 
     pub fn q_expr(&mut self) {
-        self.parse_q_family_expr(SyntaxKind::Q_EXPR, SyntaxKind::Q_KW, SyntaxKind::Q_STRING);
+        self.parse_q_family_expr(
+            SyntaxKind::Q_EXPR,
+            SyntaxKind::Q_KW,
+            SyntaxKind::LITERAL_STRING,
+        );
     }
 
     pub fn qq_expr(&mut self) {
         self.parse_q_family_expr(
             SyntaxKind::QQ_EXPR,
             SyntaxKind::QQ_KW,
-            SyntaxKind::QQ_STRING,
+            SyntaxKind::INTERPOLATED_STRING,
         );
     }
 
@@ -74,24 +67,34 @@ impl Parser<'_> {
         self.parse_q_family_expr(
             SyntaxKind::QX_EXPR,
             SyntaxKind::QX_KW,
-            SyntaxKind::QX_STRING,
+            SyntaxKind::INTERPOLATED_STRING,
         );
     }
 
     pub fn m_expr(&mut self) {
-        self.parse_q_family_expr(SyntaxKind::M_EXPR, SyntaxKind::M_KW, SyntaxKind::M_STRING);
+        self.parse_q_family_expr(
+            SyntaxKind::M_EXPR,
+            SyntaxKind::M_KW,
+            SyntaxKind::REGEX_PATTERN,
+        );
     }
 
     pub fn qr_expr(&mut self) {
         self.parse_q_family_expr(
             SyntaxKind::QR_EXPR,
             SyntaxKind::QR_KW,
-            SyntaxKind::QR_STRING,
+            SyntaxKind::REGEX_PATTERN,
         );
     }
 
     pub fn s_expr(&mut self) {
-        self.parse_s_expr();
+        self.parse_two_part_expr(
+            SyntaxKind::S_EXPR,
+            SyntaxKind::S_KW,
+            SyntaxKind::REGEX_PATTERN,
+            SyntaxKind::INTERPOLATED_STRING,
+            SyntaxKind::S_FLAGS,
+        );
     }
 
     pub fn tr_expr(&mut self) {
@@ -138,8 +141,7 @@ impl Parser<'_> {
         self.expect(SyntaxKind::DELIMITER);
 
         // Parse content inside - handle both pre-tokenized string content and individual tokens
-        // self.expect(string_kind);
-        self.bump_with_kind(string_kind);
+        self.expect(string_kind);
 
         // Closing delimiter (should be DELIMITER token with matching text)
         self.expect_delimiter(closing_delim);
@@ -160,16 +162,6 @@ impl Parser<'_> {
         // Force a fresh token fetch to ensure the context change takes effect
         // Skip any trivia and refresh the current token with the new context
         self.skip_trivia();
-    }
-
-    fn parse_s_expr(&mut self) {
-        self.parse_two_part_expr(
-            SyntaxKind::S_EXPR,
-            SyntaxKind::S_KW,
-            SyntaxKind::S_PATTERN,
-            SyntaxKind::S_REPLACEMENT,
-            SyntaxKind::S_FLAGS,
-        );
     }
 
     fn parse_two_part_expr(
@@ -238,10 +230,7 @@ impl Parser<'_> {
 
     /// Check if current token is a DELIMITER with specific char
     fn at_delimiter(&self, delimiter: char) -> bool {
-        if let Some((SyntaxKind::DELIMITER, text)) = self.current_token {
-            return text.chars().eq(std::iter::once(delimiter));
-        }
-        false
+        self.current_delimiter().is_some_and(|d| d == delimiter)
     }
 
     fn current_delimiter(&self) -> Option<char> {
