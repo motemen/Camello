@@ -1,15 +1,6 @@
 use crate::{PerlLanguage, PerlNode, SyntaxKind};
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
 
-// Helper function for checking disallowed tokens
-fn has_disallowed_tokens(node: &PerlNode) -> bool {
-    node.descendants_with_tokens().any(|element| {
-        element.as_token().is_some_and(|token| {
-            matches!(token.kind(), SyntaxKind::SEMICOLON | SyntaxKind::COMMENT)
-        })
-    })
-}
-
 pub struct Formatter {
     output: String,
     indent_level: usize,
@@ -61,7 +52,7 @@ impl Formatter {
         match node.kind() {
             SyntaxKind::ROOT => {
                 // Use the same empty line detection logic as BLOCK_STMT for root-level statements
-                self.format_block_stmt_with_empty_line_detection(node);
+                self.format_block(node);
                 return;
             }
             SyntaxKind::USE_STMT | SyntaxKind::NO_STMT => {
@@ -192,7 +183,7 @@ impl Formatter {
             }
             SyntaxKind::BLOCK_STMT => {
                 // Special handling for BLOCK_STMT: detect empty lines between statements
-                self.format_block_stmt_with_empty_line_detection(node);
+                self.format_block(node);
                 return;
             }
             _ => {
@@ -322,7 +313,15 @@ impl Formatter {
             .count();
 
         // Simple if: 1 or fewer statements AND no semicolons or comments anywhere
-        statement_count <= 1 && !has_disallowed_tokens(node)
+        if statement_count > 1 {
+            return false;
+        }
+
+        return !node.descendants_with_tokens().any(|element| {
+            element.as_token().is_some_and(|token| {
+                matches!(token.kind(), SyntaxKind::SEMICOLON | SyntaxKind::COMMENT)
+            })
+        });
     }
 
     fn format_simple_block(&mut self, node: &PerlNode) {
@@ -623,7 +622,12 @@ impl Formatter {
         }
     }
 
-    fn format_block_stmt_with_empty_line_detection(&mut self, node: &PerlNode) {
+    fn format_block(&mut self, node: &PerlNode) {
+        if self.is_simple_block(node) {
+            self.format_simple_block(node);
+            return;
+        }
+
         // Use a peekable iterator to avoid collecting all children into a Vec,
         // which improves performance and reduces memory allocation.
         let mut children = node.children_with_tokens().peekable();
