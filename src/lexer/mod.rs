@@ -1061,9 +1061,9 @@ impl<'a> Lexer<'a> {
                 | SyntaxKind::BARE_VERSION
                 | SyntaxKind::REGEX_LITERAL
                 | SyntaxKind::IO_EXPR
-                | SyntaxKind::Q_STRING
-                | SyntaxKind::QQ_STRING
-                | SyntaxKind::QX_STRING
+                | SyntaxKind::LITERAL_STRING
+                | SyntaxKind::INTERPOLATED_STRING
+                | SyntaxKind::REGEX_PATTERN
                 | SyntaxKind::QW_STRING
         )
     }

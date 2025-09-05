@@ -90,14 +90,12 @@ pub enum SyntaxKind {
     // For qw() only
     QW_STRING, // Any text inside qw()
 
-    // Q-string family content
-    Q_STRING,            // Any text inside q() (single-quoted string content)
-    QQ_STRING,           // Any text inside qq() (double-quoted string content)
-    QX_STRING,           // Any text inside qx() (command execution content)
-    M_STRING,            // Any text inside m() (match regex content)
-    QR_STRING,           // Any text inside qr() (compiled regex content)
-    S_PATTERN,           // Pattern part inside s() (substitution pattern)
-    S_REPLACEMENT,       // Replacement part inside s() (substitution replacement)
+    // Unified string and regex content types
+    LITERAL_STRING,      // Content inside q() (non-interpolated string)
+    INTERPOLATED_STRING, // Content inside qq(), qx(), and s() replacement (interpolated string)
+    REGEX_PATTERN,       // Content inside m(), qr(), and s() pattern (regex pattern)
+
+    // Transliteration-specific (tr/y have unique semantics)
     TR_SEARCH_LIST,      // Search list part inside tr() (characters to translate from)
     TR_REPLACEMENT_LIST, // Replacement list part inside tr() (characters to translate to)
 

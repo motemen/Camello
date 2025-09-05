@@ -245,11 +245,14 @@ fn test_substitution_with_flags() {
     // Parse through the substitution operator
     assert_eq!(lexer.next_token(), Some((SyntaxKind::S_KW, "s")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::S_PATTERN, "world")));
+    assert_eq!(
+        lexer.next_token(),
+        Some((SyntaxKind::REGEX_PATTERN, "world"))
+    );
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
     assert_eq!(
         lexer.next_token(),
-        Some((SyntaxKind::S_REPLACEMENT, "universe"))
+        Some((SyntaxKind::INTERPOLATED_STRING, "universe"))
     );
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
 
@@ -327,9 +330,12 @@ fn test_substitution_various_flags() {
         // Skip to the flags token
         assert_eq!(lexer.next_token(), Some((SyntaxKind::S_KW, "s")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::S_PATTERN, "a")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::REGEX_PATTERN, "a")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::S_REPLACEMENT, "b")));
+        assert_eq!(
+            lexer.next_token(),
+            Some((SyntaxKind::INTERPOLATED_STRING, "b"))
+        );
         assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
 
         // Test flags
@@ -399,9 +405,12 @@ fn test_invalid_flags_rejected() {
     // Parse through the substitution operator
     assert_eq!(lexer.next_token(), Some((SyntaxKind::S_KW, "s")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::S_PATTERN, "a")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::REGEX_PATTERN, "a")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::S_REPLACEMENT, "b")));
+    assert_eq!(
+        lexer.next_token(),
+        Some((SyntaxKind::INTERPOLATED_STRING, "b"))
+    );
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
 
     // Invalid flags should be treated as an ERROR token
@@ -424,9 +433,12 @@ fn test_mixed_valid_invalid_flags() {
     // Parse through the substitution operator
     assert_eq!(lexer.next_token(), Some((SyntaxKind::S_KW, "s")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::S_PATTERN, "a")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::REGEX_PATTERN, "a")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::S_REPLACEMENT, "b")));
+    assert_eq!(
+        lexer.next_token(),
+        Some((SyntaxKind::INTERPOLATED_STRING, "b"))
+    );
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
 
     // The entire flag sequence should be treated as an error
@@ -585,7 +597,7 @@ fn test_q_basic_parsing() {
     assert_eq!(tokens.len(), 4); // Should have: Q_KW, DELIMITER, Q_STRING, DELIMITER
     assert_eq!(tokens[0], (SyntaxKind::Q_KW, "q"));
     assert_eq!(tokens[1], (SyntaxKind::DELIMITER, "("));
-    assert_eq!(tokens[2], (SyntaxKind::Q_STRING, "hello"));
+    assert_eq!(tokens[2], (SyntaxKind::LITERAL_STRING, "hello"));
     assert_eq!(tokens[3], (SyntaxKind::DELIMITER, ")"));
 }
 
@@ -612,7 +624,7 @@ fn test_full_q_expression() {
         .unwrap();
     assert_eq!(tokens[q_pos], (SyntaxKind::Q_KW, "q"));
     assert_eq!(tokens[q_pos + 1], (SyntaxKind::DELIMITER, "("));
-    assert_eq!(tokens[q_pos + 2], (SyntaxKind::Q_STRING, "hello"));
+    assert_eq!(tokens[q_pos + 2], (SyntaxKind::LITERAL_STRING, "hello"));
     assert_eq!(tokens[q_pos + 3], (SyntaxKind::DELIMITER, ")"));
 }
 
@@ -632,7 +644,7 @@ fn test_debug_q_simple() {
     // Check that we get the expected tokens
     assert_eq!(tokens[0], (SyntaxKind::Q_KW, "q"));
     assert_eq!(tokens[1], (SyntaxKind::DELIMITER, "("));
-    assert_eq!(tokens[2], (SyntaxKind::Q_STRING, "hello"));
+    assert_eq!(tokens[2], (SyntaxKind::LITERAL_STRING, "hello"));
     assert_eq!(tokens[3], (SyntaxKind::DELIMITER, ")"));
 }
 
