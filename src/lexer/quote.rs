@@ -72,7 +72,7 @@ impl<'a> Lexer<'a> {
                 },
             ) => self
                 .consume_quote_content(
-                    SyntaxKind::Q_STRING,
+                    SyntaxKind::Q_STRING, // FIXME: Should be Q_CONTENT or QQ_CONTENT based on prefix and delimiter
                     delimiter,
                     QuoteLikeState::Delimiter {
                         phase: DelimiterPhase::First,
@@ -99,7 +99,7 @@ impl<'a> Lexer<'a> {
                 },
             ) => self
                 .consume_quote_content(
-                    SyntaxKind::M_STRING,
+                    SyntaxKind::M_STRING, // FIXME: Should be REGEX_CONTENT?
                     delimiter,
                     QuoteLikeState::Delimiter {
                         phase: DelimiterPhase::First,
