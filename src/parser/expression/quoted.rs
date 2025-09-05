@@ -235,7 +235,8 @@ impl Parser<'_> {
 
     fn current_delimiter(&self) -> Option<char> {
         if let Some((SyntaxKind::DELIMITER, text)) = self.current_token {
-            if let [delimiter] = text.chars().collect::<Vec<_>>()[..] {
+            let mut chars = text.chars();
+            if let (Some(delimiter), None) = (chars.next(), chars.next()) {
                 return Some(delimiter);
             }
         }
