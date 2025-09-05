@@ -1,3 +1,7 @@
+//! This module provides functionality for handling quote-like delimiters and tokens in the lexer.
+//! It includes methods for recognizing, consuming, and transitioning between different states
+//! of quote-like constructs, such as `q`, `qw`, `m`, `qr`, `s`, and `tr` operators.
+
 use super::{
     DelimiterPhase, DelimiterType, Lexer, LexerContext, QuoteLikeMode, QuoteLikeState, Token,
 };
@@ -5,7 +9,15 @@ use crate::SyntaxKind;
 use logos::Logos;
 
 impl<'a> Lexer<'a> {
-    /// Handle quote-like delimiter recognition and consumption
+    /// Attempts to handle a quote-like delimiter based on the current lexer context.
+    ///
+    /// This method checks the current state and determines whether the next character
+    /// in the input matches the expected delimiter. If it does, the delimiter is consumed
+    /// and the lexer transitions to the appropriate state.
+    ///
+    /// Returns:
+    /// - `Some((SyntaxKind::DELIMITER, &str))` if a delimiter is successfully consumed.
+    /// - `None` if no valid delimiter is found.
     pub(super) fn try_handle_quote_like_delimiter_internal(
         &mut self,
     ) -> Option<(SyntaxKind, &'a str)> {
@@ -51,7 +63,14 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// Handle quote-like tokens (both content and delimiters) based on current context and state
+    /// Handles quote-like tokens, including both content and delimiters, based on the current context and state.
+    ///
+    /// This method processes various quote-like modes (`q`, `qw`, `m`, `qr`, `s`, `tr`) and their respective states.
+    /// It transitions between content and delimiter states as needed.
+    ///
+    /// Returns:
+    /// - `Some((SyntaxKind, &str))` if a token is successfully consumed.
+    /// - `None` if no valid token is found.
     pub(super) fn try_handle_quote_like_internal(&mut self) -> Option<(SyntaxKind, &'a str)> {
         let LexerContext::QuoteLike {
             mode,
@@ -70,16 +89,21 @@ impl<'a> Lexer<'a> {
                 QuoteLikeState::Content {
                     phase: DelimiterPhase::First,
                 },
-            ) => self
-                .consume_quote_content(
-                    SyntaxKind::Q_STRING, // FIXME: Should be Q_CONTENT or QQ_CONTENT based on prefix and delimiter
+            ) => {
+                let LexerContext::QuoteLike { prefix, .. } = self.context else {
+                    return None;
+                };
+                let content_kind = self.get_q_mode_content_kind(prefix);
+                self.consume_quote_content(
+                    content_kind,
                     delimiter,
                     QuoteLikeState::Delimiter {
                         phase: DelimiterPhase::First,
                         kind: DelimiterType::Close,
                     },
                 )
-                .or_else(|| self.try_handle_quote_like_delimiter_internal()),
+                .or_else(|| self.try_handle_quote_like_delimiter_internal())
+            }
 
             (
                 QuoteLikeMode::QW,
@@ -99,7 +123,7 @@ impl<'a> Lexer<'a> {
                 },
             ) => self
                 .consume_quote_content(
-                    SyntaxKind::M_STRING, // FIXME: Should be REGEX_CONTENT?
+                    SyntaxKind::REGEX_PATTERN,
                     delimiter,
                     QuoteLikeState::Delimiter {
                         phase: DelimiterPhase::First,
@@ -115,7 +139,7 @@ impl<'a> Lexer<'a> {
                 },
             ) => self
                 .consume_quote_content(
-                    SyntaxKind::QR_STRING,
+                    SyntaxKind::REGEX_PATTERN,
                     delimiter,
                     QuoteLikeState::Delimiter {
                         phase: DelimiterPhase::First,
@@ -131,7 +155,7 @@ impl<'a> Lexer<'a> {
                 },
             ) => self
                 .consume_quote_content(
-                    SyntaxKind::S_PATTERN,
+                    SyntaxKind::REGEX_PATTERN,
                     delimiter,
                     QuoteLikeState::Delimiter {
                         phase: DelimiterPhase::Second,
@@ -147,7 +171,7 @@ impl<'a> Lexer<'a> {
                 },
             ) => self
                 .consume_quote_content(
-                    SyntaxKind::S_REPLACEMENT,
+                    SyntaxKind::INTERPOLATED_STRING,
                     delimiter,
                     QuoteLikeState::Delimiter {
                         phase: DelimiterPhase::Second,
@@ -221,7 +245,19 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// Helper method to consume quote-like content and transition state
+    /// Consumes quote-like content and transitions the lexer state.
+    ///
+    /// This helper method is used to process the content of quote-like constructs.
+    /// It identifies the closing delimiter and updates the lexer context to the next state.
+    ///
+    /// Parameters:
+    /// - `content_kind`: The syntax kind of the content being consumed.
+    /// - `delimiter`: The opening delimiter character.
+    /// - `next_state`: The next lexer state to transition to after consuming the content.
+    ///
+    /// Returns:
+    /// - `Some((SyntaxKind, &str))` if content is successfully consumed.
+    /// - `None` if no valid content is found.
     fn consume_quote_content(
         &mut self,
         content_kind: SyntaxKind,
@@ -247,7 +283,32 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// Handle QW (qw) content specifically
+    /// Determines the appropriate content SyntaxKind for Q mode based on the prefix.
+    ///
+    /// Parameters:
+    /// - `prefix`: The quote-like keyword prefix (Q_KW, QQ_KW, QX_KW).
+    ///
+    /// Returns:
+    /// - The corresponding SyntaxKind for the content.
+    fn get_q_mode_content_kind(&self, prefix: SyntaxKind) -> SyntaxKind {
+        match prefix {
+            SyntaxKind::Q_KW => SyntaxKind::LITERAL_STRING,
+            SyntaxKind::QQ_KW | SyntaxKind::QX_KW => SyntaxKind::INTERPOLATED_STRING,
+            _ => SyntaxKind::LITERAL_STRING, // fallback
+        }
+    }
+
+    /// Handles `qw` (quote word) content specifically.
+    ///
+    /// This method processes whitespace-separated words within `qw` constructs.
+    /// It also checks for the closing delimiter and transitions the lexer state accordingly.
+    ///
+    /// Parameters:
+    /// - `delimiter`: The opening delimiter character.
+    ///
+    /// Returns:
+    /// - `Some((SyntaxKind, &str))` if content is successfully consumed.
+    /// - `None` if no valid content is found.
     fn handle_qw_content(&mut self, delimiter: char) -> Option<(SyntaxKind, &'a str)> {
         // Check if we hit closing delimiter first
         let remainder = self.logos_lexer.remainder();
@@ -281,7 +342,13 @@ impl<'a> Lexer<'a> {
         self.try_consume_qw_content()
     }
 
-    /// Get the closing delimiter for the given opening delimiter
+    /// Retrieves the closing delimiter corresponding to a given opening delimiter.
+    ///
+    /// Parameters:
+    /// - `opening`: The opening delimiter character.
+    ///
+    /// Returns:
+    /// - A `String` representing the closing delimiter.
     fn get_closing_delimiter(opening: char) -> String {
         match opening {
             '{' => "}".to_string(),
@@ -292,6 +359,18 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Attempts to consume the content of a quote-like string.
+    ///
+    /// This method identifies the end of the string content based on the closing delimiter
+    /// and handles escape sequences and nested delimiters.
+    ///
+    /// Parameters:
+    /// - `content_kind`: The syntax kind of the content being consumed.
+    /// - `delimiter`: The closing delimiter string.
+    ///
+    /// Returns:
+    /// - `Some((SyntaxKind, &str))` if content is successfully consumed.
+    /// - `None` if no valid content is found.
     fn try_consume_quote_like_string_content(
         &mut self,
         content_kind: SyntaxKind,
@@ -339,7 +418,15 @@ impl<'a> Lexer<'a> {
         None
     }
 
-    /// Check if a character opens a nested delimiter that matches the closing delimiter
+    /// Checks if a character opens a nested delimiter that matches the closing delimiter.
+    ///
+    /// Parameters:
+    /// - `open_char`: The opening character.
+    /// - `close_char`: The closing character.
+    ///
+    /// Returns:
+    /// - `true` if the characters form a valid nested delimiter pair.
+    /// - `false` otherwise.
     fn is_nested_delimiter_pair(&self, open_char: char, close_char: char) -> bool {
         match close_char {
             ')' => open_char == '(',
@@ -350,7 +437,16 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// Try to consume quote-like operator flags (m///flags, qr///flags, s///flags, tr///flags)
+    /// Attempts to consume flags for quote-like operators (e.g., `m//flags`, `qr//flags`).
+    ///
+    /// This method processes consecutive flag characters and validates them based on the operator mode.
+    ///
+    /// Parameters:
+    /// - `mode`: The quote-like mode (e.g., `m`, `qr`, `s`, `tr`).
+    ///
+    /// Returns:
+    /// - `Some((SyntaxKind, &str))` if flags are successfully consumed.
+    /// - `None` if no valid flags are found.
     pub(super) fn try_consume_quote_like_flags(
         &mut self,
         mode: &QuoteLikeMode,
@@ -433,7 +529,12 @@ impl<'a> Lexer<'a> {
         None
     }
 
-    /// Handle delimiter transitions in quote-like context
+    /// Handles delimiter transitions in quote-like contexts.
+    ///
+    /// This method updates the lexer state based on the current delimiter and context.
+    ///
+    /// Parameters:
+    /// - `delimiter_text`: The text of the delimiter being processed.
     fn handle_quote_like_delimiter(&mut self, delimiter_text: &str) {
         if let LexerContext::QuoteLike {
             mode,
@@ -544,7 +645,14 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// Check if a delimiter is symmetric (same opening and closing character)
+    /// Checks if a delimiter is symmetric (i.e., the same character is used for opening and closing).
+    ///
+    /// Parameters:
+    /// - `delimiter`: The delimiter character.
+    ///
+    /// Returns:
+    /// - `true` if the delimiter is symmetric.
+    /// - `false` otherwise.
     fn is_symmetric_delimiter(&self, delimiter: char) -> bool {
         matches!(
             delimiter,
@@ -567,7 +675,13 @@ impl<'a> Lexer<'a> {
         )
     }
 
-    /// Try to consume `qw()` content, tokenizing whitespace-separated words
+    /// Attempts to consume `qw()` content, tokenizing whitespace-separated words.
+    ///
+    /// This method processes words within `qw` constructs and handles leading whitespace.
+    ///
+    /// Returns:
+    /// - `Some((SyntaxKind, &str))` if content is successfully consumed.
+    /// - `None` if no valid content is found.
     fn try_consume_qw_content(&mut self) -> Option<(SyntaxKind, &'a str)> {
         let remainder = self.logos_lexer.remainder();
         if remainder.is_empty() {
@@ -632,7 +746,14 @@ impl<'a> Lexer<'a> {
         None
     }
 
-    /// Check if a character can be used as a quote-like delimiter
+    /// Checks if a character can be used as a quote-like delimiter.
+    ///
+    /// Parameters:
+    /// - `ch`: The character to check.
+    ///
+    /// Returns:
+    /// - `true` if the character is a valid quote-like delimiter.
+    /// - `false` otherwise.
     fn is_quote_delimiter(&self, ch: char) -> bool {
         match ch {
             // Paired delimiters

@@ -143,23 +143,23 @@ impl Formatter {
     }
 
     pub fn format_q_expr(&mut self, node: &PerlNode) {
-        self.format_q_family_expr(node, SyntaxKind::Q_KW, SyntaxKind::Q_STRING);
+        self.format_q_family_expr(node, SyntaxKind::Q_KW, SyntaxKind::LITERAL_STRING);
     }
 
     pub fn format_qq_expr(&mut self, node: &PerlNode) {
-        self.format_q_family_expr(node, SyntaxKind::QQ_KW, SyntaxKind::QQ_STRING);
+        self.format_q_family_expr(node, SyntaxKind::QQ_KW, SyntaxKind::INTERPOLATED_STRING);
     }
 
     pub fn format_qx_expr(&mut self, node: &PerlNode) {
-        self.format_q_family_expr(node, SyntaxKind::QX_KW, SyntaxKind::QX_STRING);
+        self.format_q_family_expr(node, SyntaxKind::QX_KW, SyntaxKind::INTERPOLATED_STRING);
     }
 
     pub fn format_m_expr(&mut self, node: &PerlNode) {
-        self.format_q_family_expr(node, SyntaxKind::M_KW, SyntaxKind::M_STRING);
+        self.format_q_family_expr(node, SyntaxKind::M_KW, SyntaxKind::REGEX_PATTERN);
     }
 
     pub fn format_qr_expr(&mut self, node: &PerlNode) {
-        self.format_q_family_expr(node, SyntaxKind::QR_KW, SyntaxKind::QR_STRING);
+        self.format_q_family_expr(node, SyntaxKind::QR_KW, SyntaxKind::REGEX_PATTERN);
     }
 
     pub fn format_s_expr(&mut self, node: &PerlNode) {
