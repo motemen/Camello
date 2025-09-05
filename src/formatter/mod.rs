@@ -98,10 +98,6 @@ impl Formatter {
                 }
                 return;
             }
-            SyntaxKind::PREFIX_EXPR => {
-                self.format_prefix_expr(node);
-                return;
-            }
             SyntaxKind::HASH_REF => {
                 self.format_hash_ref(node);
                 return;
@@ -142,24 +138,8 @@ impl Formatter {
                 self.format_tr_expr(node);
                 return;
             }
-            SyntaxKind::DEREF_EXPR => {
-                self.format_deref_expr(node);
-                return;
-            }
-            SyntaxKind::REFERENCE_EXPR => {
-                self.format_reference_expr(node);
-                return;
-            }
-            SyntaxKind::IO_EXPR => {
-                self.format_io_expr(node);
-                return;
-            }
             SyntaxKind::ANON_SUB_EXPR => {
                 self.format_anon_sub_expr(node);
-                return;
-            }
-            SyntaxKind::TERNARY_EXPR => {
-                self.format_ternary_expr(node);
                 return;
             }
             SyntaxKind::TYPEGLOB_EXPR => {
@@ -176,10 +156,6 @@ impl Formatter {
             }
             SyntaxKind::METHOD_CALL_EXPR => {
                 self.format_method_call(node);
-                return;
-            }
-            SyntaxKind::POSTFIX_DEREF_EXPR => {
-                self.format_postfix_deref_expr(node);
                 return;
             }
             SyntaxKind::HASH_REF_ACCESS_EXPR => {

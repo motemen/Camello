@@ -910,6 +910,7 @@ impl<'a> Lexer<'a> {
     }
 
     /// Try to consume postfix dereference operators (->@*, ->%*, ->$*)
+    // FIXME: This is a bit of a hacky solution - ideally Logos would support context-sensitive lexing
     fn try_consume_postfix_deref(&mut self) -> Option<(SyntaxKind, &'a str)> {
         let remainder = self.logos_lexer.remainder();
 

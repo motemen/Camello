@@ -39,17 +39,7 @@ impl Formatter {
             self.format_multiline_delimited(node, SyntaxKind::L_PAREN, SyntaxKind::R_PAREN);
         } else {
             // Use simple single-line formatting for compact expressions
-            for child in node.children_with_tokens() {
-                match child {
-                    NodeOrToken::Node(child_node) => {
-                        self.format_node(&child_node);
-                    }
-                    NodeOrToken::Token(token) => {
-                        // All tokens in sub expression formatting are handled the same way
-                        self.format_token(&token);
-                    }
-                }
-            }
+            self.format_children(node, true);
         }
     }
 
@@ -108,24 +98,6 @@ impl Formatter {
         }
         // Use multiline formatting for the parenthesized arguments
         self.format_subscription_iter(children, SyntaxKind::L_PAREN, SyntaxKind::R_PAREN);
-    }
-
-    pub fn format_postfix_deref_expr(&mut self, node: &PerlNode) {
-        // Postfix dereference expressions: $ref->@*, $ref->%*, $ref->$*
-        // These are simple - just format the base expression and the postfix dereference token
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(child_node) => {
-                    self.format_node(&child_node);
-                }
-                NodeOrToken::Token(token) => {
-                    // Skip whitespace to keep the postfix dereference compact
-                    if token.kind() != SyntaxKind::WHITESPACE {
-                        self.format_token(&token);
-                    }
-                }
-            }
-        }
     }
 
     fn format_until_arrow_iter(&mut self, iter: &mut SyntaxElementChildren<PerlLanguage>) {
@@ -218,98 +190,6 @@ impl Formatter {
         self.format_subscription_expr(node, SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET);
     }
 
-    pub fn format_deref_expr(&mut self, node: &PerlNode) {
-        // Format dereference expressions (e.g., @$var, %$var, $$var)
-        // Output all child elements consecutively without spaces
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
-                NodeOrToken::Token(token) => {
-                    let kind = token.kind();
-
-                    // Do not add spaces in dereference expressions
-                    match kind {
-                        SyntaxKind::WHITESPACE => {}
-                        _ => {
-                            self.format_token(&token);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    pub fn format_reference_expr(&mut self, node: &PerlNode) {
-        // Format reference expressions (e.g., \$scalar, \@array, \%hash, \&func)
-        // Output all child elements consecutively without spaces between the backslash and the operand
-        // FIXME: format_children(skip_whitespace = true)
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
-                NodeOrToken::Token(token) => {
-                    let kind = token.kind();
-
-                    // Handle spacing normally for the backslash, but no spaces within the reference expression
-                    match kind {
-                        SyntaxKind::WHITESPACE => {
-                            // Skip whitespace inside reference expressions to keep them compact
-                        }
-                        _ => {
-                            self.format_token(&token);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    pub fn format_io_expr(&mut self, node: &PerlNode) {
-        // Format I/O expressions (e.g., <STDIN>, <>, <$fh>)
-        // Output all child elements consecutively without spaces
-        // FIXME: format_children(skip_whitespace = true)
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
-                NodeOrToken::Token(token) => {
-                    let kind = token.kind();
-
-                    // Apply normal spacing before the I/O operator
-                    match kind {
-                        SyntaxKind::WHITESPACE => {
-                            // Skip whitespace inside I/O expressions
-                        }
-                        _ => {
-                            // For the opening <, apply normal spacing rules
-                            self.format_token(&token);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    pub fn format_ternary_expr(&mut self, node: &PerlNode) {
-        // Format ternary expressions (e.g., condition ? true_expr : false_expr)
-        // Add spaces around ? and : for readability
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(child_node) => {
-                    self.format_node(&child_node);
-                }
-                NodeOrToken::Token(token) => {
-                    match token.kind() {
-                        SyntaxKind::WHITESPACE => {
-                            // Skip original whitespace, we manage spacing manually
-                        }
-                        _ => {
-                            self.format_token(&token);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     pub fn format_typeglob_expr(&mut self, node: &PerlNode) {
         // Format typeglob expressions (e.g., *{$name}, *STDIN)
         // Keep braces compact - no multiline formatting
@@ -374,17 +254,18 @@ impl Formatter {
         }
     }
 
-    pub fn format_prefix_expr(&mut self, node: &PerlNode) {
-        // Format prefix expressions (e.g., +$var, -42, !$bool, not $bool)
-        // Now that we have UNARY_PLUS and UNARY_MINUS syntax kinds, we can use normal token formatting
-
+    fn format_children(&mut self, node: &PerlNode, skip_whitespace: bool) {
         for child in node.children_with_tokens() {
             match child {
-                NodeOrToken::Node(child_node) => {
-                    self.format_node(&child_node);
-                }
+                NodeOrToken::Node(node) => self.format_node(&node),
                 NodeOrToken::Token(token) => {
-                    // All prefix operators now use standard token formatting with rule-based spacing
+                    let kind = token.kind();
+
+                    if skip_whitespace && kind == SyntaxKind::WHITESPACE {
+                        // Skip whitespace if the flag is set
+                        continue;
+                    }
+
                     self.format_token(&token);
                 }
             }

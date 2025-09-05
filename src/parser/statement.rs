@@ -199,22 +199,28 @@ impl Parser<'_> {
         self.builder.finish_node();
     }
 
-    fn use_stmt(&mut self) {
-        self.builder.start_node(SyntaxKind::USE_STMT.into());
+    fn use_or_no_stmt(&mut self, is_use: bool) {
+        let (keyword_kind, stmt_kind) = if is_use {
+            (SyntaxKind::USE_KW, SyntaxKind::USE_STMT)
+        } else {
+            (SyntaxKind::NO_KW, SyntaxKind::NO_STMT)
+        };
 
-        // "use"
-        self.expect(SyntaxKind::USE_KW);
+        self.builder.start_node(stmt_kind.into());
+
+        // "use" or "no"
+        self.expect(keyword_kind);
         self.skip_trivia();
 
         // VERSION literal or module name (qualified identifier)
         if self.at(SyntaxKind::VERSION) {
-            // Version literal (e.g., use v5.42;)
+            // Version literal (e.g., use v5.42; or no v5.42;)
             self.bump();
         } else if self.at(SyntaxKind::BARE_VERSION) {
-            // Bare version literal (e.g., use 5.24.1;)
+            // Bare version literal (e.g., use 5.24.1; or no 5.24.1;)
             self.bump();
         } else if self.at(SyntaxKind::NUMBER) {
-            // Simple version number (e.g., use 5;)
+            // Simple version number (e.g., use 5; or no 5;)
             self.bump();
         } else {
             // Module name (qualified identifier)
@@ -247,52 +253,12 @@ impl Parser<'_> {
         self.builder.finish_node();
     }
 
+    fn use_stmt(&mut self) {
+        self.use_or_no_stmt(true);
+    }
+
     fn no_stmt(&mut self) {
-        self.builder.start_node(SyntaxKind::NO_STMT.into());
-
-        // "no"
-        self.expect(SyntaxKind::NO_KW);
-        self.skip_trivia();
-
-        // VERSION literal or module name (qualified identifier)
-        if self.at(SyntaxKind::VERSION) {
-            // Version literal (e.g., no v5.42;)
-            self.bump();
-        } else if self.at(SyntaxKind::BARE_VERSION) {
-            // Bare version literal (e.g., no 5.24.1;)
-            self.bump();
-        } else if self.at(SyntaxKind::NUMBER) {
-            // Simple version number (e.g., no 5;)
-            self.bump();
-        } else {
-            // Module name (qualified identifier)
-            self.parse_identifier_or_qualified();
-        }
-        self.skip_trivia();
-
-        // Option: import list (e.g., qw()) or comma-separated expressions (x => 1, y => 2)
-        if self.is_at_start_of_expression() {
-            // Parse first expression
-            self.expression();
-
-            // Handle additional comma-separated expressions
-            while self.at(SyntaxKind::COMMA) {
-                self.bump(); // consume comma
-                self.skip_trivia();
-
-                if self.is_at_start_of_expression() {
-                    self.expression();
-                } else {
-                    // Allow trailing comma
-                    break;
-                }
-            }
-        }
-
-        // Semicolon
-        self.expect(SyntaxKind::SEMICOLON);
-
-        self.builder.finish_node();
+        self.use_or_no_stmt(false);
     }
 
     fn for_stmt(&mut self) {
