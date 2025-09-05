@@ -109,6 +109,22 @@ impl<'a> Lexer<'a> {
                 .or_else(|| self.try_handle_quote_like_delimiter_internal()),
 
             (
+                QuoteLikeMode::QR,
+                QuoteLikeState::Content {
+                    phase: DelimiterPhase::First,
+                },
+            ) => self
+                .consume_quote_content(
+                    SyntaxKind::QR_STRING,
+                    delimiter,
+                    QuoteLikeState::Delimiter {
+                        phase: DelimiterPhase::First,
+                        kind: DelimiterType::Close,
+                    },
+                )
+                .or_else(|| self.try_handle_quote_like_delimiter_internal()),
+
+            (
                 QuoteLikeMode::S,
                 QuoteLikeState::Content {
                     phase: DelimiterPhase::First,
@@ -178,18 +194,27 @@ impl<'a> Lexer<'a> {
             }
 
             // Flag states
-            (QuoteLikeMode::S | QuoteLikeMode::TR, QuoteLikeState::Flags) => {
+            (QuoteLikeMode::M | QuoteLikeMode::QR | QuoteLikeMode::S | QuoteLikeMode::TR, QuoteLikeState::Flags) => {
                 self.try_consume_quote_like_flags(&mode)
             }
 
             // Invalid state combinations that should never occur
             (
-                QuoteLikeMode::Q | QuoteLikeMode::QW | QuoteLikeMode::M,
+                QuoteLikeMode::Q | QuoteLikeMode::QW,
                 QuoteLikeState::Content {
                     phase: DelimiterPhase::Second,
                 },
             )
-            | (QuoteLikeMode::Q | QuoteLikeMode::QW | QuoteLikeMode::M, QuoteLikeState::Flags) => {
+            | (QuoteLikeMode::Q | QuoteLikeMode::QW, QuoteLikeState::Flags) => {
+                unreachable!("Invalid state combination for single-delimiter quote-like operators: {:?}, {:?}", mode, state)
+            }
+
+            (
+                QuoteLikeMode::M | QuoteLikeMode::QR,
+                QuoteLikeState::Content {
+                    phase: DelimiterPhase::Second,
+                },
+            ) => {
                 unreachable!("Invalid state combination for single-delimiter quote-like operators: {:?}, {:?}", mode, state)
             }
         }
@@ -324,7 +349,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// Try to consume quote-like operator flags (s///flags, tr///flags)
+    /// Try to consume quote-like operator flags (m///flags, qr///flags, s///flags, tr///flags)
     pub(super) fn try_consume_quote_like_flags(
         &mut self,
         mode: &QuoteLikeMode,
@@ -335,6 +360,8 @@ impl<'a> Lexer<'a> {
 
         // Define valid flag characters for each operator type
         let valid_flags = match mode {
+            QuoteLikeMode::M => "msixpodualngcer",
+            QuoteLikeMode::QR => "msixpodualngcer",
             QuoteLikeMode::S => "msixpodualngcer",
             QuoteLikeMode::TR => "cdsr",
             _ => return None, // Other modes don't have flags
@@ -378,6 +405,8 @@ impl<'a> Lexer<'a> {
             } else if has_valid_flags {
                 // All flags are valid
                 let syntax_kind = match mode {
+                    QuoteLikeMode::M => SyntaxKind::M_FLAGS,
+                    QuoteLikeMode::QR => SyntaxKind::QR_FLAGS,
                     QuoteLikeMode::S => SyntaxKind::S_FLAGS,
                     QuoteLikeMode::TR => SyntaxKind::TR_FLAGS,
                     _ => unreachable!(),
@@ -433,7 +462,7 @@ impl<'a> Lexer<'a> {
                     phase: DelimiterPhase::First,
                     kind: DelimiterType::Close,
                 } => {
-                    // Check if this is a double-delimiter mode (S, TR)
+                    // Check if this is a double-delimiter mode (S, TR) or a mode with flags (M, QR)
                     match mode {
                         QuoteLikeMode::S | QuoteLikeMode::TR => {
                             // Check if delimiter is symmetric
@@ -461,8 +490,17 @@ impl<'a> Lexer<'a> {
                                 };
                             }
                         }
+                        QuoteLikeMode::M | QuoteLikeMode::QR => {
+                            // m// and qr// can have flags, so transition to Flags state
+                            self.context = LexerContext::QuoteLike {
+                                prefix,
+                                mode,
+                                state: QuoteLikeState::Flags,
+                                delimiter,
+                            };
+                        }
                         _ => {
-                            // Single delimiter modes - we're done
+                            // Other single delimiter modes (q, qw) are done
                             self.context = LexerContext::ExpectingOperator;
                         }
                     }

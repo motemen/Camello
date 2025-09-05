@@ -267,7 +267,8 @@ pub enum LexerContext {
 pub enum QuoteLikeMode {
     Q,  // q, qq, qx (single delimiter)
     QW, // qw (single delimiter, whitespace-separated words)
-    M,  // m, qr (single delimiter, regex)
+    M,  // m (single delimiter, regex)
+    QR, // qr (single delimiter, compiled regex)
     S,  // s (double delimiter)
     TR, // tr, y (double delimiter)
 }
@@ -456,7 +457,7 @@ impl<'a> Lexer<'a> {
         // Consume everything remaining as data section, preserving all content
         let data_text = remainder;
         self.logos_lexer.bump(remainder.len());
-        Some((SyntaxKind::DATA_SECTION, data_text))
+        Some((SyntaxKind::RAW_STRING, data_text))
     }
 
     fn disambiguate(&self, token: Token, text: &str) -> SyntaxKind {
@@ -1141,7 +1142,7 @@ impl<'a> Lexer<'a> {
             },
             SyntaxKind::QR_KW => LexerContext::QuoteLike {
                 prefix: SyntaxKind::QR_KW,
-                mode: QuoteLikeMode::M,
+                mode: QuoteLikeMode::QR,
                 state: QuoteLikeState::Delimiter {
                     phase: DelimiterPhase::First,
                     kind: DelimiterType::Open,
@@ -1175,8 +1176,7 @@ impl<'a> Lexer<'a> {
                 },
                 delimiter: '\0',
             },
-            SyntaxKind::END_KW | SyntaxKind::DATA_KW => LexerContext::RawData,
-            _ => LexerContext::ExpectingValue,
+            _ => LexerContext::ExpectingValue, // For other keywords
         }
     }
 
@@ -1281,6 +1281,9 @@ impl<'a> Lexer<'a> {
             SyntaxKind::POSTFIX_DEREF_ARRAY
             | SyntaxKind::POSTFIX_DEREF_HASH
             | SyntaxKind::POSTFIX_DEREF_SCALAR => LexerContext::ExpectingOperator,
+
+            // Data section keywords transition to raw data context
+            SyntaxKind::END_KW | SyntaxKind::DATA_KW => LexerContext::RawData,
 
             // Statement terminators and POD reset context
             SyntaxKind::SEMICOLON | SyntaxKind::CUT_KW | SyntaxKind::POD_CONTENT => {

@@ -102,6 +102,8 @@ pub enum SyntaxKind {
     TR_REPLACEMENT_LIST, // Replacement list part inside tr() (characters to translate to)
 
     // Flags for quote-like operators
+    M_FLAGS,  // Flags for match operator (m///msixpodualngcer)
+    QR_FLAGS, // Flags for compiled regex operator (qr///msixpodualngcer)
     S_FLAGS,  // Flags for substitution operator (s///msixpodualngcer)
     TR_FLAGS, // Flags for transliteration operator (tr///cdsr)
 

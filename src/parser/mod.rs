@@ -101,11 +101,11 @@ impl<'a> Parser<'a> {
         // Consume the __END__ or __DATA__ keyword
         self.bump();
 
-        if self.at(SyntaxKind::RAW_STRING) || self.at_end() {
-            self.bump();
-        } else {
-            self.error("Expected raw string after data section keyword");
+        // Use lexer's consume_data_section to get the remaining content
+        if let Some((syntax_kind, text)) = self.lexer.consume_data_section() {
+            self.builder.token(syntax_kind.into(), text);
         }
+        // If there's no remaining content, that's also valid (empty data section)
 
         self.builder.finish_node();
     }
