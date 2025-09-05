@@ -926,18 +926,12 @@ if ($string =~ m|pattern|i) { }"#;
 
     insta::assert_snapshot!(formatted, @r"
     # Test m// with various delimiters
-    if ($string =~ m(pattern)i) {
-    }
-    if ($string =~ m/pattern/i) {
-    }
-    if ($string =~ m{pattern}i) {
-    }
-    if ($string =~ m[pattern]i) {
-    }
-    if ($string =~ m<pattern>i) {
-    }
-    if ($string =~ m|pattern|i) {
-    }
+    if ($string =~ m(pattern)i) {}
+    if ($string =~ m/pattern/i) {}
+    if ($string =~ m{pattern}i) {}
+    if ($string =~ m[pattern]i) {}
+    if ($string =~ m<pattern>i) {}
+    if ($string =~ m|pattern|i) {}
     ");
 }
 
@@ -1215,11 +1209,10 @@ fn test_contextual_logical_keywords() {
     let formatted = format_and_assert(input);
 
     insta::assert_snapshot!(formatted, @r"
-        sub and {
-        }
+    sub and {}
 
-        my $or = 1;
-        ");
+    my $or = 1;
+    ");
 }
 
 #[test]
@@ -1502,31 +1495,47 @@ $code->();
 
 #[test]
 fn test_subroutine_prototypes_formatting() {
-    // Test all the examples from the GitHub issue
-    let cases = [
-        // Basic prototypes
-        ("sub mypush (\\\\@@) {}", "sub mypush (\\\\@@) {\n}\n"),
-        ("sub myjoin ($@) {}", "sub myjoin ($@) {\n}\n"),
-        (
-            "sub mysplice (\\\\@$$@) {}",
-            "sub mysplice (\\\\@$$@) {\n}\n",
-        ),
-        ("sub mykeys (\\\\[%@]) {}", "sub mykeys (\\\\[%@]) {\n}\n"),
-        ("sub myopen (*;$) {}", "sub myopen (*;$) {\n}\n"),
-        ("sub mygrep (&@) {}", "sub mygrep (&@) {\n}\n"),
-        ("sub myrand (;$) {}", "sub myrand (;$) {\n}\n"),
-        ("sub mytime () {}", "sub mytime () {\n}\n"),
-        // With whitespace variations
-        ("sub test( $ @ )  { }", "sub test ($@) {\n}\n"),
-        ("sub foo(\t\\\\@\t){}  ", "sub foo (\\\\@) {\n}\n"),
-        // With simple function body
-        (
-            "sub mypush (\\\\@@) { my $x = 1; }",
-            "sub mypush (\\\\@@) {\n    my $x = 1;\n}\n",
-        ),
-    ];
+    // Basic prototypes
+    // All examples from the GitHub issue, joined as single-line code
+    let input = concat!(
+        "sub mypush (\\\\@@) {}",
+        "sub myjoin ($@) {}",
+        "sub mysplice (\\\\@$$@) {}",
+        "sub mykeys (\\\\[%@]) {}",
+        "sub myopen (*;$) {}",
+        "sub mygrep (&@) {}",
+        "sub myrand (;$) {}",
+        "sub mytime () {}",
+        "sub test( $ @ )  { }",
+        "sub foo(\t\\\\@\t){}  ",
+        "sub mypush (\\\\@@) { my $x = 1; }",
+    );
+    let formatted = format_and_assert(input);
+    insta::assert_snapshot!(formatted, @r"
+    sub mypush (\\@@) {}
 
-    check_formatting_cases(&cases);
+    sub myjoin ($@) {}
+
+    sub mysplice (\\@$$@) {}
+
+    sub mykeys (\\[%@]) {}
+
+    sub myopen (*;$) {}
+
+    sub mygrep (&@) {}
+
+    sub myrand (;$) {}
+
+    sub mytime () {}
+
+    sub test ($@) {}
+
+    sub foo (\\@) {}
+
+    sub mypush (\\@@) {
+        my $x = 1;
+    }
+    ");
 }
 
 #[test]
@@ -1622,10 +1631,7 @@ fn test_regex_literals_in_function_calls() {
         ("warn /^Error: .*$/", "warn /^Error: .*$/"),
         // Regex in other contexts (should still work)
         ("match(/pattern/, $str)", "match(/pattern/, $str)"),
-        (
-            "if ($str =~ /pattern/) { }",
-            "if ($str =~ /pattern/) {\n}\n",
-        ),
+        ("if ($str =~ /pattern/) { }", "if ($str =~ /pattern/) {}"),
         // Make sure division still works correctly
         ("$a / $b", "$a / $b"),
         ("my $result = $x / $y;", "my $result = $x / $y;\n"),
