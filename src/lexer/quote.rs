@@ -194,9 +194,10 @@ impl<'a> Lexer<'a> {
             }
 
             // Flag states
-            (QuoteLikeMode::M | QuoteLikeMode::QR | QuoteLikeMode::S | QuoteLikeMode::TR, QuoteLikeState::Flags) => {
-                self.try_consume_quote_like_flags(&mode)
-            }
+            (
+                QuoteLikeMode::M | QuoteLikeMode::QR | QuoteLikeMode::S | QuoteLikeMode::TR,
+                QuoteLikeState::Flags,
+            ) => self.try_consume_quote_like_flags(&mode),
 
             // Invalid state combinations that should never occur
             (
