@@ -11,17 +11,8 @@ impl Parser<'_> {
         self.skip_trivia();
 
         // Consume opening delimiter (should be DELIMITER token)
-        if !self.at(SyntaxKind::DELIMITER) {
+        let Some(closing_delim) = self.current_delimiter().map(Self::get_closing_delimiter) else {
             self.error("Expected qw delimiter");
-            self.builder.finish_node();
-            return;
-        }
-
-        // Get the delimiter text to determine the closing delimiter
-        let opening_delim_text = if let Some((_, text)) = &self.current_token {
-            (*text).to_string()
-        } else {
-            self.error("Expected delimiter text");
             self.builder.finish_node();
             return;
         };
@@ -29,11 +20,8 @@ impl Parser<'_> {
         // Consume opening delimiter
         self.expect(SyntaxKind::DELIMITER);
 
-        // Determine the closing delimiter based on opening delimiter
-        let closing_delim_text = self.get_closing_delimiter(&opening_delim_text);
-
         // Parse words inside qw() - lexer provides QW_STRING tokens directly
-        while !self.at_delimiter_text(&closing_delim_text) && !self.at_end() {
+        while !self.at_delimiter(closing_delim) && !self.at_end() {
             // Skip whitespace/trivia
             if let Some(kind) = self.current_kind() {
                 if kind.is_trivia() {
@@ -43,7 +31,7 @@ impl Parser<'_> {
             }
 
             // Check if we're at the closing delimiter
-            if self.at_delimiter_text(&closing_delim_text) {
+            if self.at_delimiter(closing_delim) {
                 break;
             }
 
@@ -57,7 +45,7 @@ impl Parser<'_> {
         }
 
         // Closing delimiter (should be DELIMITER token with matching text)
-        self.expect_delimiter_text(&closing_delim_text);
+        self.expect_delimiter(closing_delim);
 
         self.builder.finish_node();
 
@@ -71,12 +59,7 @@ impl Parser<'_> {
     }
 
     pub fn q_expr(&mut self) {
-        self.parse_q_family_expr(
-            SyntaxKind::Q_EXPR,
-            SyntaxKind::Q_KW,
-            SyntaxKind::Q_STRING,
-            "q",
-        );
+        self.parse_q_family_expr(SyntaxKind::Q_EXPR, SyntaxKind::Q_KW, SyntaxKind::Q_STRING);
     }
 
     pub fn qq_expr(&mut self) {
@@ -84,7 +67,6 @@ impl Parser<'_> {
             SyntaxKind::QQ_EXPR,
             SyntaxKind::QQ_KW,
             SyntaxKind::QQ_STRING,
-            "qq",
         );
     }
 
@@ -93,17 +75,11 @@ impl Parser<'_> {
             SyntaxKind::QX_EXPR,
             SyntaxKind::QX_KW,
             SyntaxKind::QX_STRING,
-            "qx",
         );
     }
 
     pub fn m_expr(&mut self) {
-        self.parse_q_family_expr(
-            SyntaxKind::M_EXPR,
-            SyntaxKind::M_KW,
-            SyntaxKind::M_STRING,
-            "m",
-        );
+        self.parse_q_family_expr(SyntaxKind::M_EXPR, SyntaxKind::M_KW, SyntaxKind::M_STRING);
     }
 
     pub fn qr_expr(&mut self) {
@@ -111,7 +87,6 @@ impl Parser<'_> {
             SyntaxKind::QR_EXPR,
             SyntaxKind::QR_KW,
             SyntaxKind::QR_STRING,
-            "qr",
         );
     }
 
@@ -120,54 +95,30 @@ impl Parser<'_> {
     }
 
     pub fn tr_expr(&mut self) {
-        self.parse_tr_expr();
+        self.parse_two_part_expr(
+            SyntaxKind::TR_EXPR,
+            SyntaxKind::TR_KW,
+            SyntaxKind::TR_SEARCH_LIST,
+            SyntaxKind::TR_REPLACEMENT_LIST,
+            SyntaxKind::TR_FLAGS,
+        );
     }
 
     pub fn y_expr(&mut self) {
-        self.parse_tr_expr_with_keyword(SyntaxKind::Y_KW);
+        self.parse_two_part_expr(
+            SyntaxKind::TR_EXPR,
+            SyntaxKind::Y_KW,
+            SyntaxKind::TR_SEARCH_LIST,
+            SyntaxKind::TR_REPLACEMENT_LIST,
+            SyntaxKind::TR_FLAGS,
+        );
     }
 
-    pub fn consume_regex_flags(&mut self) {
-        // Consume regex flags like 'g', 'i', 'm', 's', 'x' after the closing delimiter
-        // These might be treated as IDENT tokens or specific keywords, but should be part of the regex
-        while let Some(kind) = self.current_kind() {
-            let is_valid_flag = match kind {
-                SyntaxKind::IDENT => {
-                    if let Some((_, text)) = &self.current_token {
-                        // Check if it's a valid regex flag
-                        text.chars()
-                            .all(|c| matches!(c, 'g' | 'i' | 'm' | 's' | 'x'))
-                            && !text.is_empty()
-                    } else {
-                        false
-                    }
-                }
-                // Handle single character flags that might be interpreted as keywords
-                SyntaxKind::M_KW => {
-                    // 'm' flag might be interpreted as M_KW
-                    if let Some((_, text)) = &self.current_token {
-                        *text == "m"
-                    } else {
-                        false
-                    }
-                }
-                _ => false,
-            };
-
-            if is_valid_flag {
-                self.bump(); // consume the flags
-            } else {
-                break; // Not a regex flag, stop consuming
-            }
-        }
-    }
-
-    pub fn parse_q_family_expr(
+    fn parse_q_family_expr(
         &mut self,
         expr_kind: SyntaxKind,
         kw_kind: SyntaxKind,
         string_kind: SyntaxKind,
-        operator_name: &str,
     ) {
         self.builder.start_node(expr_kind.into());
 
@@ -176,17 +127,9 @@ impl Parser<'_> {
         self.skip_trivia();
 
         // Consume opening delimiter (should be DELIMITER token)
-        if !self.at(SyntaxKind::DELIMITER) {
-            self.error(&format!("Expected {operator_name} delimiter"));
-            self.builder.finish_node();
-            return;
-        }
-
         // Get the delimiter text to determine the closing delimiter
-        let opening_delim_text = if let Some((_, text)) = &self.current_token {
-            (*text).to_string()
-        } else {
-            self.error("Expected delimiter text");
+        let Some(closing_delim) = self.current_delimiter().map(Self::get_closing_delimiter) else {
+            self.error("Expected qw delimiter");
             self.builder.finish_node();
             return;
         };
@@ -194,27 +137,12 @@ impl Parser<'_> {
         // Consume opening delimiter
         self.expect(SyntaxKind::DELIMITER);
 
-        // Determine the closing delimiter based on opening delimiter
-        let closing_delim_text = self.get_closing_delimiter(&opening_delim_text);
-
         // Parse content inside - handle both pre-tokenized string content and individual tokens
-        if self.at(string_kind) {
-            // Lexer already provided the complete string token (new behavior)
-            self.bump();
-        } else {
-            // Fallback: parse individual tokens and reconstruct (old behavior)
-            while !self.at_delimiter_text(&closing_delim_text) && !self.at_end() {
-                // Consume any tokens as the string kind (preserving original text)
-                if let Some((_, text)) = self.current_token.take() {
-                    self.builder.token(string_kind.into(), text);
-                    self.current_pos += text.len();
-                    self.current_token = self.lexer.next_token();
-                }
-            }
-        }
+        // self.expect(string_kind);
+        self.bump_with_kind(string_kind);
 
         // Closing delimiter (should be DELIMITER token with matching text)
-        self.expect_delimiter_text(&closing_delim_text);
+        self.expect_delimiter(closing_delim);
 
         // For regex expressions (m and qr), consume optional flags generated by lexer
         if (expr_kind == SyntaxKind::M_EXPR && self.at(SyntaxKind::M_FLAGS))
@@ -234,102 +162,108 @@ impl Parser<'_> {
         self.skip_trivia();
     }
 
-    pub fn parse_s_expr(&mut self) {
-        self.builder.start_node(SyntaxKind::S_EXPR.into());
+    fn parse_s_expr(&mut self) {
+        self.parse_two_part_expr(
+            SyntaxKind::S_EXPR,
+            SyntaxKind::S_KW,
+            SyntaxKind::S_PATTERN,
+            SyntaxKind::S_REPLACEMENT,
+            SyntaxKind::S_FLAGS,
+        );
+    }
 
-        // "s"
-        self.expect(SyntaxKind::S_KW);
+    fn parse_two_part_expr(
+        &mut self,
+        expr_kind: SyntaxKind,
+        kw_kind: SyntaxKind,
+        first_part_kind: SyntaxKind,
+        second_part_kind: SyntaxKind,
+        flags_kind: SyntaxKind,
+    ) {
+        self.builder.start_node(expr_kind.into());
+
+        // Keyword (e.g., "s", "tr", "y")
+        self.expect(kw_kind);
         self.skip_trivia();
 
         // Opening delimiter
         self.expect(SyntaxKind::DELIMITER);
         self.skip_trivia();
 
-        // Pattern content (lexer generates S_PATTERN token)
-        if self.at(SyntaxKind::S_PATTERN) {
+        // First content part (pattern/search list)
+        if self.at(first_part_kind) {
             self.bump();
             self.skip_trivia();
         }
 
-        // Middle delimiter (closing pattern delimiter)
+        // Middle delimiter (closing first part delimiter)
         self.expect(SyntaxKind::DELIMITER);
         self.skip_trivia();
 
-        // For asymmetric delimiters, there might be another opening delimiter for replacement
+        // For asymmetric delimiters, there might be another opening delimiter for second part
         if self.at(SyntaxKind::DELIMITER) {
-            self.bump(); // Opening delimiter for replacement part
+            self.bump(); // Opening delimiter for second part
             self.skip_trivia();
         }
 
-        // Replacement content (lexer generates S_REPLACEMENT token)
-        if self.at(SyntaxKind::S_REPLACEMENT) {
+        // Second content part (replacement/replacement list)
+        if self.at(second_part_kind) {
             self.bump();
             self.skip_trivia();
         }
 
-        // Closing delimiter (for replacement part)
-        self.expect(SyntaxKind::DELIMITER);
-        self.skip_trivia();
-
-        // Optional flags - handled by lexer as S_FLAGS token
-        if self.at(SyntaxKind::S_FLAGS) {
-            self.bump();
-        }
-
-        self.builder.finish_node();
-    }
-
-    pub fn parse_tr_expr(&mut self) {
-        self.parse_tr_expr_with_keyword(SyntaxKind::TR_KW);
-    }
-
-    pub fn parse_tr_expr_with_keyword(&mut self, keyword_kind: SyntaxKind) {
-        self.builder.start_node(SyntaxKind::TR_EXPR.into());
-
-        // "tr" or "y"
-        self.expect(keyword_kind);
-        self.skip_trivia();
-
-        // Opening delimiter
-        self.expect(SyntaxKind::DELIMITER);
-        self.skip_trivia();
-
-        // Search list content (lexer generates TR_SEARCH_LIST token)
-        if self.at(SyntaxKind::TR_SEARCH_LIST) {
-            self.bump();
-            self.skip_trivia();
-        }
-
-        // Middle delimiter
-        self.expect(SyntaxKind::DELIMITER);
-        self.skip_trivia();
-
-        // For asymmetric delimiters, there might be another opening delimiter for replacement
-        if self.at(SyntaxKind::DELIMITER) {
-            self.bump(); // Opening delimiter for replacement part
-            self.skip_trivia();
-        }
-
-        // Replacement list content (lexer generates TR_REPLACEMENT_LIST token)
-        if self.at(SyntaxKind::TR_REPLACEMENT_LIST) {
-            self.bump();
-            self.skip_trivia();
-        }
-
-        // Closing delimiter (for replacement part)
+        // Closing delimiter (for second part)
         self.expect(SyntaxKind::DELIMITER);
         self.skip_trivia();
 
         // Optional flags
-        self.consume_tr_flags();
+        if self.at(flags_kind) {
+            self.bump();
+        }
 
         self.builder.finish_node();
     }
 
-    pub fn consume_tr_flags(&mut self) {
-        // Consume tr/y flags token generated by the lexer
-        if self.at(SyntaxKind::TR_FLAGS) {
-            self.bump(); // consume the TR_FLAGS token
+    /// Get the matching closing delimiter for an opening delimiter
+    fn get_closing_delimiter(opening: char) -> char {
+        match opening {
+            '(' => ')',
+            '[' => ']',
+            '{' => '}',
+            '<' => '>',
+            // For symmetric delimiters, the closing is the same as opening
+            ch => ch,
+        }
+    }
+
+    /// Check if current token is a DELIMITER with specific char
+    fn at_delimiter(&self, delimiter: char) -> bool {
+        if let Some((SyntaxKind::DELIMITER, text)) = self.current_token {
+            return text.chars().eq(std::iter::once(delimiter));
+        }
+        false
+    }
+
+    fn current_delimiter(&self) -> Option<char> {
+        if let Some((SyntaxKind::DELIMITER, text)) = self.current_token {
+            if let [delimiter] = text.chars().collect::<Vec<_>>()[..] {
+                return Some(delimiter);
+            }
+        }
+        None
+    }
+
+    /// Expect a DELIMITER token with specific text
+    fn expect_delimiter(&mut self, delimiter: char) {
+        if self.at_delimiter(delimiter) {
+            self.bump();
+        } else {
+            let msg = format!(
+                "Expected delimiter '{}', found {:?}",
+                delimiter,
+                self.current_kind()
+            );
+            self.error(&msg);
         }
     }
 }
