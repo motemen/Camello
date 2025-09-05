@@ -8,6 +8,18 @@ This project provides a robust toolkit for parsing and formatting modern Perl co
 
 The long-term vision is to expand beyond formatting and evolve into a comprehensive static analysis tool, incorporating features such as linting and type checking.
 
+## Key Functions
+
+This section highlights the main entry points and core functions within the codebase.
+
+- **`pub fn format_code(source: &str) -> String`** (`src/lib.rs`): The primary public API. It takes a string of Perl code, orchestrates the lexing, parsing, and formatting process, and returns the formatted code as a string.
+
+- **`pub fn parse_file(source: &str) -> Parse<CstNode>`** (`src/lib.rs`): The main entry point for parsing. It takes a string of Perl code and returns a `Parse` result, which contains the Concrete Syntax Tree (CST) and a list of any syntax errors encountered.
+
+- **`Parser::root(&mut self)`** (`src/parser/mod.rs`): The top-level parsing function that starts the recursive descent process for an entire file. It's the internal entry point called by `parse_file`.
+
+- **`format_node(node: &SyntaxNode, builder: &mut Builder)`** (in `src/formatter/mod.rs`): The heart of the formatter. This function recursively traverses the CST, applying formatting rules (indentation, spacing, newlines) for each `SyntaxNode` and appending the result to a string builder.
+
 ## Development Commands
 
 ### Building and Testing
@@ -40,6 +52,9 @@ cargo run -- format input.pl
 # Dump the parsed CST for debugging
 cargo run -- dump -e 'my $var=1;'
 cargo run -- dump input.pl
+
+# Check if a file is already formatted (exits with non-zero if not)
+cargo run -- format --check input.pl
 ```
 
 ## Architecture Overview
@@ -73,6 +88,10 @@ Perl Source [Lexer] -> Tokens [Parser] -> CST [Formatter] -> Formatted Code
 
 **CLI** (`src/cli.rs`): Clap-based interface supporting `format`, `check`, `dump` subcommands, and input from files, strings (`-e`), or stdin.
 
+**Crate Structure** (`src/main.rs`, `src/lib.rs`): The project is a mixed binary/library crate.
+- `src/lib.rs`: The library root, containing the core parsing and formatting logic and exposing public APIs like `format_code`.
+- `src/main.rs`: The binary entry point, which parses command-line arguments via `src/cli.rs` and calls the library functions.
+
 ### Rowan Integration
 
 The project uses a custom `PerlLanguage` type implementing Rowan's `Language` trait. SyntaxKind conversion is handled via `From<SyntaxKind> for rowan::SyntaxKind`.
@@ -85,6 +104,20 @@ The parser implements multiple error recovery strategies:
 3. **Structure-level**: Continues parsing subsequent statements even after encountering a malformed one.
 
 ## Key Implementation Notes
+
+### Parser Structure (`src/parser/`)
+- `mod.rs`: The main parser module, defining the `Parser` struct and core parsing loop.
+- `statement.rs`: Handles statement-level parsing (e.g., `if`, `while`, `sub`).
+- `expression/mod.rs`: Manages expression parsing using a Pratt parser.
+- `expression/precedence.rs`: Defines operator precedence and associativity.
+- `expression/primary.rs`: Parses primary expressions like variables, literals, and parenthesized expressions.
+- `expression/quoted.rs`: Handles complex quote-like operators.
+
+### Formatter Structure (`src/formatter/`)
+- `mod.rs`: The main formatter module, responsible for traversing the CST.
+- `expression.rs`, `literal.rs`: Handle formatting for specific syntax node types.
+- `spacing.rs`, `whitespace.rs`: Manage whitespace and spacing rules.
+- `verbatim.rs`: Preserves sections that should not be formatted.
 
 ### Adding New Syntax Support
 
@@ -117,6 +150,6 @@ Our testing strategy prioritizes end-to-end formatting correctness and maintaina
     -   Their primary role is to validate specific **error handling** and **context-sensitive ambiguity resolution** (e.g., distinguishing `/` as division vs. a regex delimiter).
     -   Avoid adding unit tests for simple tokenization or parsing of basic syntax that is already implicitly covered by the formatter snapshot tests. This reduces redundancy and maintenance overhead.
 
--   **Integration Tests**: Verifies CLI behavior and file I/O.
+-   **Integration Tests (`tests/` directory)**: Verifies CLI behavior, file I/O, and end-to-end functionality using real-world or complex examples.
 
 This approach ensures that our tests are both effective and efficient, focusing developer effort on creating robust, real-world formatting scenarios rather than on redundant, low-level unit tests.
