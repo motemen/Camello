@@ -397,13 +397,13 @@ fn test_keyword_variable_names() {
     assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "package")));
-    
+
     let mut lexer = Lexer::new("my @if = (1, 2);");
     assert_eq!(lexer.next_token(), Some((SyntaxKind::MY_KW, "my")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::AT, "@")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "if")));
-    
+
     let mut lexer = Lexer::new("my %while = ();");
     assert_eq!(lexer.next_token(), Some((SyntaxKind::MY_KW, "my")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
@@ -411,7 +411,7 @@ fn test_keyword_variable_names() {
     assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "while")));
 }
 
-#[test] 
+#[test]
 fn test_keywords_still_work_in_normal_context() {
     // Test that keywords are still recognized as keywords in normal contexts
     let mut lexer = Lexer::new("if ($condition) { package Foo; }");
@@ -424,29 +424,32 @@ fn test_keywords_still_work_in_normal_context() {
     assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::L_BRACE, "{")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::PACKAGE_KW, "package")));
+    assert_eq!(
+        lexer.next_token(),
+        Some((SyntaxKind::PACKAGE_KW, "package"))
+    );
 }
 
 #[test]
 fn test_various_keyword_variable_names() {
     let test_cases = vec![
         ("our $sub", SyntaxKind::IDENT),
-        ("local $else", SyntaxKind::IDENT), 
+        ("local $else", SyntaxKind::IDENT),
         ("state $for", SyntaxKind::IDENT),
         ("my $unless", SyntaxKind::IDENT),
         ("my $return", SyntaxKind::IDENT),
         ("my $use", SyntaxKind::IDENT),
         ("my $no", SyntaxKind::IDENT),
     ];
-    
+
     for (input, expected_kind) in test_cases {
         let mut lexer = Lexer::new(input);
-        
+
         // Skip the declaration keyword and whitespace
         lexer.next_token(); // declaration keyword
         lexer.next_token(); // whitespace
         lexer.next_token(); // sigil
-        
+
         // The next token should be the identifier, not a keyword
         let token = lexer.next_token();
         assert!(token.is_some(), "Expected token for input: {}", input);

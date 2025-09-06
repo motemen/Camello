@@ -1755,28 +1755,27 @@ fn test_keyword_variable_names_formatting() {
         // Basic keyword variable names mentioned in the issue
         ("my $package = \"test\";", "my $package = \"test\";\n"),
         ("my @if = (1, 2, 3);", "my @if = (1, 2, 3);\n"),
-        
         // Various declaration types with keyword variable names
         ("our $sub = 1;", "our $sub = 1;\n"),
         ("state $while = 2;", "state $while = 2;\n"),
         ("local $for = 3;", "local $for = 3;\n"),
         ("my %else = (a => 1);", "my %else = (a => 1);\n"),
-        
         // More keywords as variable names
         ("my $unless = 4;", "my $unless = 4;\n"),
         ("my $elsif = 5;", "my $elsif = 5;\n"),
         ("my $return = 6;", "my $return = 6;\n"),
         ("my $use = 7;", "my $use = 7;\n"),
         ("my $no = 8;", "my $no = 8;\n"),
-        
         // Mixed normal and keyword variables
-        ("my ($x, $if, $y) = (1, 2, 3);", "my ($x, $if, $y) = (1, 2, 3);\n"),
+        (
+            "my ($x, $if, $y) = (1, 2, 3);",
+            "my ($x, $if, $y) = (1, 2, 3);\n",
+        ),
         ("my @package = qw(foo bar);", "my @package = qw(foo bar);\n"),
-        
         // In expressions
         ("$if + $package;", "$if + $package;\n"),
         ("print $use, $no;", "print $use, $no;\n"),
     ];
-    
+
     check_formatting_cases(&cases);
 }
