@@ -464,72 +464,65 @@ impl<'a> Lexer<'a> {
         match token {
             Token::Ident => {
                 // 識別子の場合、キーワードかどうかチェック
-                // VariableList context では、多くのキーワードを識別子として扱う
-                if matches!(self.context, LexerContext::VariableList) {
-                    match text {
-                        // These keywords can still be keywords even in variable context
-                        "my" => SyntaxKind::MY_KW,
-                        "our" => SyntaxKind::OUR_KW,
-                        "state" => SyntaxKind::STATE_KW,
-                        "local" => SyntaxKind::LOCAL_KW,
-                        "s" => self.disambiguate_s(),
-                        "tr" => self.disambiguate_tr(),
-                        "y" => self.disambiguate_y(),
-                        "x" => self.disambiguate_x(),
-                        "eq" => self.disambiguate_str_op("eq"),
-                        "ne" => self.disambiguate_str_op("ne"),
-                        "gt" => self.disambiguate_str_op("gt"),
-                        "lt" => self.disambiguate_str_op("lt"),
-                        "ge" => self.disambiguate_str_op("ge"),
-                        "le" => self.disambiguate_str_op("le"),
-                        "cmp" => self.disambiguate_str_op("cmp"),
-                        "not" => self.disambiguate_logical_op("not"),
-                        "and" => self.disambiguate_logical_op("and"),
-                        "or" => self.disambiguate_logical_op("or"),
-                        "xor" => self.disambiguate_logical_op("xor"),
-                        // All other keywords become identifiers in variable context
-                        _ => SyntaxKind::IDENT,
-                    }
-                } else {
-                    match text {
-                        "sub" => SyntaxKind::SUB_KW,
-                        "my" => SyntaxKind::MY_KW,
-                        "our" => SyntaxKind::OUR_KW,
-                        "state" => SyntaxKind::STATE_KW,
-                        "local" => SyntaxKind::LOCAL_KW,
-                        "if" => SyntaxKind::IF_KW,
-                        "unless" => SyntaxKind::UNLESS_KW,
-                        "elsif" => SyntaxKind::ELSIF_KW,
-                        "else" => SyntaxKind::ELSE_KW,
-                        "for" => SyntaxKind::FOR_KW,
-                        "foreach" => SyntaxKind::FOREACH_KW,
-                        "while" => SyntaxKind::WHILE_KW,
-                        "package" => SyntaxKind::PACKAGE_KW,
-                        "qw" => SyntaxKind::QW_KW,
-                        "q" => SyntaxKind::Q_KW,
-                        "qq" => SyntaxKind::QQ_KW,
-                        "qx" => SyntaxKind::QX_KW,
-                        "m" => SyntaxKind::M_KW,
-                        "qr" => SyntaxKind::QR_KW,
-                        "s" => self.disambiguate_s(),
-                        "tr" => self.disambiguate_tr(),
-                        "y" => self.disambiguate_y(),
-                        "use" => SyntaxKind::USE_KW,
-                        "no" => SyntaxKind::NO_KW,
-                        "return" => SyntaxKind::RETURN_KW,
-                        "x" => self.disambiguate_x(),
-                        "eq" => self.disambiguate_str_op("eq"),
-                        "ne" => self.disambiguate_str_op("ne"),
-                        "gt" => self.disambiguate_str_op("gt"),
-                        "lt" => self.disambiguate_str_op("lt"),
-                        "ge" => self.disambiguate_str_op("ge"),
-                        "le" => self.disambiguate_str_op("le"),
-                        "cmp" => self.disambiguate_str_op("cmp"),
-                        "not" => self.disambiguate_logical_op("not"),
-                        "and" => self.disambiguate_logical_op("and"),
-                        "or" => self.disambiguate_logical_op("or"),
-                        "xor" => self.disambiguate_logical_op("xor"),
-                        _ => SyntaxKind::IDENT,
+                let in_variable_context = matches!(self.context, LexerContext::VariableList);
+
+                // Common keywords that need disambiguation regardless of context
+                match text {
+                    "s" => self.disambiguate_s(),
+                    "tr" => self.disambiguate_tr(),
+                    "y" => self.disambiguate_y(),
+                    "x" => self.disambiguate_x(),
+                    "eq" => self.disambiguate_str_op("eq"),
+                    "ne" => self.disambiguate_str_op("ne"),
+                    "gt" => self.disambiguate_str_op("gt"),
+                    "lt" => self.disambiguate_str_op("lt"),
+                    "ge" => self.disambiguate_str_op("ge"),
+                    "le" => self.disambiguate_str_op("le"),
+                    "cmp" => self.disambiguate_str_op("cmp"),
+                    "not" => self.disambiguate_logical_op("not"),
+                    "and" => self.disambiguate_logical_op("and"),
+                    "or" => self.disambiguate_logical_op("or"),
+                    "xor" => self.disambiguate_logical_op("xor"),
+                    _ => {
+                        // Handle context-sensitive keywords
+                        if in_variable_context {
+                            // In variable context, only declaration keywords remain as keywords
+                            match text {
+                                "my" => SyntaxKind::MY_KW,
+                                "our" => SyntaxKind::OUR_KW,
+                                "state" => SyntaxKind::STATE_KW,
+                                "local" => SyntaxKind::LOCAL_KW,
+                                // All other keywords become identifiers in variable context
+                                _ => SyntaxKind::IDENT,
+                            }
+                        } else {
+                            // Normal context - all keywords are recognized
+                            match text {
+                                "sub" => SyntaxKind::SUB_KW,
+                                "my" => SyntaxKind::MY_KW,
+                                "our" => SyntaxKind::OUR_KW,
+                                "state" => SyntaxKind::STATE_KW,
+                                "local" => SyntaxKind::LOCAL_KW,
+                                "if" => SyntaxKind::IF_KW,
+                                "unless" => SyntaxKind::UNLESS_KW,
+                                "elsif" => SyntaxKind::ELSIF_KW,
+                                "else" => SyntaxKind::ELSE_KW,
+                                "for" => SyntaxKind::FOR_KW,
+                                "foreach" => SyntaxKind::FOREACH_KW,
+                                "while" => SyntaxKind::WHILE_KW,
+                                "package" => SyntaxKind::PACKAGE_KW,
+                                "qw" => SyntaxKind::QW_KW,
+                                "q" => SyntaxKind::Q_KW,
+                                "qq" => SyntaxKind::QQ_KW,
+                                "qx" => SyntaxKind::QX_KW,
+                                "m" => SyntaxKind::M_KW,
+                                "qr" => SyntaxKind::QR_KW,
+                                "use" => SyntaxKind::USE_KW,
+                                "no" => SyntaxKind::NO_KW,
+                                "return" => SyntaxKind::RETURN_KW,
+                                _ => SyntaxKind::IDENT,
+                            }
+                        }
                     }
                 }
             }
