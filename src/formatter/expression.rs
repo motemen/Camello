@@ -172,6 +172,33 @@ impl Formatter {
         self.format_ref_access_expr(node, SyntaxKind::L_PAREN, SyntaxKind::R_PAREN);
     }
 
+    pub fn format_deref_expr(&mut self, node: &PerlNode) {
+        // Handle dereferencing expressions like @$var, @{expr}
+        // For braced expressions, format them compactly without newlines or indentation
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(child_node) => {
+                    self.format_node(&child_node);
+                }
+                NodeOrToken::Token(token) => {
+                    match token.kind() {
+                        SyntaxKind::WHITESPACE => {
+                            // Skip whitespace to ensure compact formatting.
+                        }
+                        SyntaxKind::L_BRACE | SyntaxKind::R_BRACE => {
+                            // Format braces without extra spacing or newlines
+                            self.output.push_str(token.text());
+                            self.prev_token_kind = Some(token.kind());
+                        }
+                        _ => {
+                            self.format_token(&token);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn format_subscription_expr(
         &mut self,
         node: &PerlNode,

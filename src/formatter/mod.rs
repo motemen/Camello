@@ -169,6 +169,10 @@ impl Formatter {
                 self.format_array_subscription(node);
                 return;
             }
+            SyntaxKind::DEREF_EXPR => {
+                self.format_deref_expr(node);
+                return;
+            }
             SyntaxKind::DATA_SECTION => {
                 self.format_data_section(node);
                 return;

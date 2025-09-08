@@ -481,13 +481,27 @@ mod tests {
             );
         }
 
-        // Test non-dereferencing patterns
-        let non_deref_cases = [
-            ("@array", false),
-            ("%hash", false),
-            ("$scalar", false),
-            ("@{$ref}", false), // This is different - not a simple dereference pattern
+        // Test expression dereferencing patterns (new functionality)
+        let expr_deref_cases = [
+            ("@{$ref}", true),
+            ("%{$ref}", true),
+            ("${$ref}", true),
+            ("@{ $ref }", true), // with whitespace
+            ("@{func()}", true),
         ];
+        for (input, expected) in expr_deref_cases {
+            let mut parser = crate::parser::Parser::new(input);
+            parser.skip_trivia();
+            assert_eq!(
+                parser.is_dereferencing_pattern(),
+                expected,
+                "Failed for input: '{}'",
+                input
+            );
+        }
+
+        // Test non-dereferencing patterns
+        let non_deref_cases = [("@array", false), ("%hash", false), ("$scalar", false)];
 
         for (input, expected) in non_deref_cases {
             let mut parser = crate::parser::Parser::new(input);

@@ -486,7 +486,11 @@ fn test_declaration_keywords_as_variable_names() {
         assert_eq!(kind, expected_kind, "Failed for input: {}", input);
         // Verify that the text is the expected variable name
         let expected_var_name = input.split('$').nth(1).unwrap();
-        assert_eq!(text, expected_var_name, "Variable name mismatch for input: {}", input);
+        assert_eq!(
+            text, expected_var_name,
+            "Variable name mismatch for input: {}",
+            input
+        );
     }
 }
 
