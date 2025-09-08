@@ -182,6 +182,9 @@ impl Formatter {
                 }
                 NodeOrToken::Token(token) => {
                     match token.kind() {
+                        SyntaxKind::WHITESPACE => {
+                            // Skip whitespace to ensure compact formatting.
+                        }
                         SyntaxKind::L_BRACE | SyntaxKind::R_BRACE => {
                             // Format braces without extra spacing or newlines
                             self.output.push_str(token.text());
