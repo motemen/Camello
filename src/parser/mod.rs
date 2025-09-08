@@ -499,13 +499,9 @@ mod tests {
                 input
             );
         }
-        
+
         // Test non-dereferencing patterns
-        let non_deref_cases = [
-            ("@array", false),
-            ("%hash", false),
-            ("$scalar", false),
-        ];
+        let non_deref_cases = [("@array", false), ("%hash", false), ("$scalar", false)];
 
         for (input, expected) in non_deref_cases {
             let mut parser = crate::parser::Parser::new(input);
