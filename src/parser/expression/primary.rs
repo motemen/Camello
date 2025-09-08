@@ -172,7 +172,7 @@ impl Parser<'_> {
         self.builder.finish_node();
     }
 
-    /// Checks if this is a dereferencing pattern (sigil followed by another sigil).
+    /// Checks if this is a dereferencing pattern (sigil followed by another sigil or brace).
     #[must_use]
     pub fn is_dereferencing_pattern(&self) -> bool {
         // If the current token is not a sigil, it's not a dereference
@@ -184,13 +184,15 @@ impl Parser<'_> {
             return false;
         }
 
-        // Use token-based lookahead to check if next non-trivia token is a dollar sigil
-        // Valid dereference patterns are of the form: @$ref, %$ref, $$ref.
-        // The variable holding the reference must be a scalar, which starts with a '$' sigil.
-        matches!(self.peek_non_trivia_token(), Some((SyntaxKind::DOLLAR, _)))
+        // Use token-based lookahead to check if next non-trivia token is a dollar sigil or brace
+        // Valid dereference patterns are of the form: @$ref, %$ref, $$ref, @{expr}, %{expr}, ${expr}
+        matches!(
+            self.peek_non_trivia_token(),
+            Some((SyntaxKind::DOLLAR | SyntaxKind::L_BRACE, _))
+        )
     }
 
-    /// Parses a dereferencing expression (e.g., @$var, %$var, $$var).
+    /// Parses a dereferencing expression (e.g., @$var, %$var, $$var, @{expr}, %{expr}, ${expr}).
     pub fn parse_dereferencing(&mut self) {
         self.builder.start_node(SyntaxKind::DEREF_EXPR.into());
 
@@ -198,11 +200,31 @@ impl Parser<'_> {
         self.bump();
         self.skip_trivia();
 
-        // Parse the variable holding the reference. It must be a scalar.
-        if self.at(SyntaxKind::DOLLAR) {
-            self.parse_variable();
-        } else {
-            self.error("Expected scalar variable (e.g., $ref) after dereference sigil");
+        // Parse what comes after the dereference sigil
+        match self.current_kind() {
+            Some(SyntaxKind::DOLLAR) => {
+                // Traditional dereferencing: @$var, %$var, $$var
+                self.parse_variable();
+            }
+            Some(SyntaxKind::L_BRACE) => {
+                // Expression dereferencing: @{expr}, %{expr}, ${expr}
+                self.bump(); // consume {
+                self.skip_trivia();
+
+                if !self.expression() {
+                    self.error("Expected expression in dereferencing braces");
+                }
+
+                if self.at(SyntaxKind::R_BRACE) {
+                    self.bump(); // consume }
+                    self.skip_trivia();
+                } else {
+                    self.error("Expected '}' after dereferencing expression");
+                }
+            }
+            _ => {
+                self.error("Expected scalar variable (e.g., $ref) or expression in braces (e.g., {expr}) after dereference sigil");
+            }
         }
 
         self.builder.finish_node();
