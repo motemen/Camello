@@ -1779,3 +1779,29 @@ fn test_keyword_variable_names_formatting() {
 
     check_formatting_cases(&cases);
 }
+
+#[test]
+fn test_declaration_keywords_as_variable_names_formatting() {
+    // Test that declaration keywords (my, our, state, local) can be used as variable names
+    let cases = [
+        // Declaration keywords as variable names - the main fix
+        ("my $my = 1;", "my $my = 1;\n"),
+        ("my $our = 2;", "my $our = 2;\n"),
+        ("my $state = 3;", "my $state = 3;\n"),
+        ("my $local = 4;", "my $local = 4;\n"),
+        // Mixed declaration types
+        ("our $my = 5;", "our $my = 5;\n"),
+        ("state $our = 6;", "state $our = 6;\n"),
+        ("local $state = 7;", "local $state = 7;\n"),
+        // Different sigil types
+        ("my @my = (1, 2);", "my @my = (1, 2);\n"),
+        ("my %our = (a => 1);", "my %our = (a => 1);\n"),
+        // In expressions
+        ("$my + $our;", "$my + $our;\n"),
+        ("print $state, $local;", "print $state, $local;\n"),
+        // Multiple on one line
+        ("my ($my, $our, $state) = (1, 2, 3);", "my ($my, $our, $state) = (1, 2, 3);\n"),
+    ];
+
+    check_formatting_cases(&cases);
+}
