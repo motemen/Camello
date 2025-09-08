@@ -317,11 +317,11 @@ impl Formatter {
             return false;
         }
 
-        return !node.descendants_with_tokens().any(|element| {
+        !node.descendants_with_tokens().any(|element| {
             element.as_token().is_some_and(|token| {
                 matches!(token.kind(), SyntaxKind::SEMICOLON | SyntaxKind::COMMENT)
             })
-        });
+        })
     }
 
     fn format_simple_block(&mut self, node: &PerlNode) {
