@@ -1800,7 +1800,34 @@ fn test_declaration_keywords_as_variable_names_formatting() {
         ("$my + $our;", "$my + $our;\n"),
         ("print $state, $local;", "print $state, $local;\n"),
         // Multiple on one line
-        ("my ($my, $our, $state) = (1, 2, 3);", "my ($my, $our, $state) = (1, 2, 3);\n"),
+        (
+            "my ($my, $our, $state) = (1, 2, 3);",
+            "my ($my, $our, $state) = (1, 2, 3);\n",
+        ),
+    ];
+
+    check_formatting_cases(&cases);
+}
+
+#[test]
+fn test_expression_dereference_formatting() {
+    let cases = [
+        // Traditional dereferencing (should continue to work)
+        ("@$ref;", "@$ref;\n"),
+        ("%$ref;", "%$ref;\n"),
+        ("$$ref;", "$$ref;\n"),
+        // New expression dereferencing
+        ("@{ func() };", "@{func()};\n"),
+        ("%{ func() };", "%{func()};\n"),
+        ("${ func() };", "${func()};\n"),
+        // More complex expressions
+        ("@{ $obj->method() };", "@{$obj->method()};\n"),
+        ("%{ get_hash_ref() };", "%{get_hash_ref()};\n"),
+        ("${ $array[0] };", "${$array[0]};\n"),
+        // With spacing variations
+        ("@{func()};", "@{func()};\n"),
+        ("@{ func() };", "@{func()};\n"),
+        ("@{  func()  };", "@{func()};\n"),
     ];
 
     check_formatting_cases(&cases);
