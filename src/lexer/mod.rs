@@ -486,15 +486,8 @@ impl<'a> Lexer<'a> {
                     _ => {
                         // Handle context-sensitive keywords
                         if in_variable_context {
-                            // In variable context, only declaration keywords remain as keywords
-                            match text {
-                                "my" => SyntaxKind::MY_KW,
-                                "our" => SyntaxKind::OUR_KW,
-                                "state" => SyntaxKind::STATE_KW,
-                                "local" => SyntaxKind::LOCAL_KW,
-                                // All other keywords become identifiers in variable context
-                                _ => SyntaxKind::IDENT,
-                            }
+                            // In variable context, ALL keywords become identifiers (including declaration keywords)
+                            SyntaxKind::IDENT
                         } else {
                             // Normal context - all keywords are recognized
                             match text {
