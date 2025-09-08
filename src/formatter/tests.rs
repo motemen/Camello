@@ -1747,3 +1747,61 @@ fn test_unary_operators_in_context() {
 
     check_formatting_cases(&cases);
 }
+
+#[test]
+fn test_keyword_variable_names_formatting() {
+    // Test that keywords can be used as variable names and are formatted correctly
+    let cases = [
+        // Basic keyword variable names mentioned in the issue
+        ("my $package = \"test\";", "my $package = \"test\";\n"),
+        ("my @if = (1, 2, 3);", "my @if = (1, 2, 3);\n"),
+        // Various declaration types with keyword variable names
+        ("our $sub = 1;", "our $sub = 1;\n"),
+        ("state $while = 2;", "state $while = 2;\n"),
+        ("local $for = 3;", "local $for = 3;\n"),
+        ("my %else = (a => 1);", "my %else = (a => 1);\n"),
+        // More keywords as variable names
+        ("my $unless = 4;", "my $unless = 4;\n"),
+        ("my $elsif = 5;", "my $elsif = 5;\n"),
+        ("my $return = 6;", "my $return = 6;\n"),
+        ("my $use = 7;", "my $use = 7;\n"),
+        ("my $no = 8;", "my $no = 8;\n"),
+        // Mixed normal and keyword variables
+        (
+            "my ($x, $if, $y) = (1, 2, 3);",
+            "my ($x, $if, $y) = (1, 2, 3);\n",
+        ),
+        ("my @package = qw(foo bar);", "my @package = qw(foo bar);\n"),
+        // In expressions
+        ("$if + $package;", "$if + $package;\n"),
+        ("print $use, $no;", "print $use, $no;\n"),
+    ];
+
+    check_formatting_cases(&cases);
+}
+
+#[test]
+fn test_declaration_keywords_as_variable_names_formatting() {
+    // Test that declaration keywords (my, our, state, local) can be used as variable names
+    let cases = [
+        // Declaration keywords as variable names - the main fix
+        ("my $my = 1;", "my $my = 1;\n"),
+        ("my $our = 2;", "my $our = 2;\n"),
+        ("my $state = 3;", "my $state = 3;\n"),
+        ("my $local = 4;", "my $local = 4;\n"),
+        // Mixed declaration types
+        ("our $my = 5;", "our $my = 5;\n"),
+        ("state $our = 6;", "state $our = 6;\n"),
+        ("local $state = 7;", "local $state = 7;\n"),
+        // Different sigil types
+        ("my @my = (1, 2);", "my @my = (1, 2);\n"),
+        ("my %our = (a => 1);", "my %our = (a => 1);\n"),
+        // In expressions
+        ("$my + $our;", "$my + $our;\n"),
+        ("print $state, $local;", "print $state, $local;\n"),
+        // Multiple on one line
+        ("my ($my, $our, $state) = (1, 2, 3);", "my ($my, $our, $state) = (1, 2, 3);\n"),
+    ];
+
+    check_formatting_cases(&cases);
+}
