@@ -158,7 +158,10 @@ impl Parser<'_> {
     }
 
     /// Parse all postfix operations (method calls, subscripts, etc.)
-    fn parse_postfix_operations_with_checkpoint(&mut self, initial_checkpoint: rowan::Checkpoint) -> bool {
+    fn parse_postfix_operations_with_checkpoint(
+        &mut self,
+        initial_checkpoint: rowan::Checkpoint,
+    ) -> bool {
         loop {
             match self.current_kind() {
                 Some(SyntaxKind::ARROW) => {
@@ -168,8 +171,10 @@ impl Parser<'_> {
                     match self.current_kind() {
                         Some(SyntaxKind::L_BRACE) => {
                             // Hash reference access: expr->{key}
-                            self.builder
-                                .start_node_at(initial_checkpoint, SyntaxKind::HASH_REF_ACCESS_EXPR.into());
+                            self.builder.start_node_at(
+                                initial_checkpoint,
+                                SyntaxKind::HASH_REF_ACCESS_EXPR.into(),
+                            );
                             self.bump(); // {
                             self.skip_trivia();
 
@@ -210,8 +215,10 @@ impl Parser<'_> {
                         }
                         Some(SyntaxKind::L_PAREN) => {
                             // Code reference call: expr->(args)
-                            self.builder
-                                .start_node_at(initial_checkpoint, SyntaxKind::CODE_REF_CALL_EXPR.into());
+                            self.builder.start_node_at(
+                                initial_checkpoint,
+                                SyntaxKind::CODE_REF_CALL_EXPR.into(),
+                            );
                             self.bump(); // (
                             self.skip_trivia();
 
@@ -228,8 +235,10 @@ impl Parser<'_> {
                         }
                         Some(SyntaxKind::IDENT) => {
                             // Method call: expr->method()
-                            self.builder
-                                .start_node_at(initial_checkpoint, SyntaxKind::METHOD_CALL_EXPR.into());
+                            self.builder.start_node_at(
+                                initial_checkpoint,
+                                SyntaxKind::METHOD_CALL_EXPR.into(),
+                            );
 
                             self.parse_identifier_or_qualified();
                             self.skip_trivia();
@@ -240,8 +249,10 @@ impl Parser<'_> {
                         }
                         Some(kind) if kind.is_sigil() => {
                             // Dynamic method call: expr->$method()
-                            self.builder
-                                .start_node_at(initial_checkpoint, SyntaxKind::METHOD_CALL_EXPR.into());
+                            self.builder.start_node_at(
+                                initial_checkpoint,
+                                SyntaxKind::METHOD_CALL_EXPR.into(),
+                            );
 
                             self.parse_variable();
                             self.skip_trivia();
@@ -278,8 +289,10 @@ impl Parser<'_> {
                 }
                 Some(SyntaxKind::L_BRACKET) => {
                     // Direct array subscription: expr[index]
-                    self.builder
-                        .start_node_at(initial_checkpoint, SyntaxKind::ARRAY_SUBSCRIPTION_EXPR.into());
+                    self.builder.start_node_at(
+                        initial_checkpoint,
+                        SyntaxKind::ARRAY_SUBSCRIPTION_EXPR.into(),
+                    );
                     self.bump(); // [
                     self.skip_trivia();
 
@@ -298,8 +311,10 @@ impl Parser<'_> {
                 }
                 Some(SyntaxKind::L_BRACE) => {
                     // Direct hash subscription: expr{key}
-                    self.builder
-                        .start_node_at(initial_checkpoint, SyntaxKind::HASH_SUBSCRIPTION_EXPR.into());
+                    self.builder.start_node_at(
+                        initial_checkpoint,
+                        SyntaxKind::HASH_SUBSCRIPTION_EXPR.into(),
+                    );
                     self.bump(); // {
                     self.skip_trivia();
 
