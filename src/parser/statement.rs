@@ -1,4 +1,4 @@
-use crate::SyntaxKind;
+use crate::{lexer::LexerContext, SyntaxKind};
 
 use super::Parser;
 
@@ -559,11 +559,12 @@ impl Parser<'_> {
         }
     }
 
-    /// Parse subroutine prototype like (\@@), ($@), (\@$$@), etc.
+    /// Parse subroutine prototype like (\@@), ($@), (\@$@), etc.
     fn parse_sub_prototype(&mut self) {
         self.builder.start_node(SyntaxKind::SUB_PROTOTYPE.into());
 
         self.expect(SyntaxKind::L_PAREN);
+        self.lexer.set_context(LexerContext::SubPrototype);
         self.skip_trivia();
 
         // Parse prototype symbols until we hit the closing paren
@@ -593,6 +594,7 @@ impl Parser<'_> {
         }
 
         self.expect(SyntaxKind::R_PAREN);
+        self.lexer.set_context(LexerContext::ExpectingValue);
         self.builder.finish_node();
     }
 }
