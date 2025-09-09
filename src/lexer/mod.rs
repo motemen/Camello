@@ -1020,24 +1020,24 @@ impl<'a> Lexer<'a> {
                 '^' => {
                     // Special variable starting with ^ (e.g. $^O, $^X)
                     let mut end_pos = first_char.len_utf8();
-                    remainder[end_pos..].chars().next().and_then(|c| {
+                    remainder[end_pos..].chars().next().map(|c| {
                         if c.is_ascii_uppercase() || c == '_' {
                             end_pos += c.len_utf8();
                             let text = &remainder[..end_pos];
                             self.logos_lexer.bump(end_pos);
-                            return Some((SyntaxKind::IDENT, text));
+                            (SyntaxKind::IDENT, text)
                         } else {
                             // `$^` is also a valid variable
                             let text = &remainder[..end_pos];
                             self.logos_lexer.bump(end_pos);
-                            return Some((SyntaxKind::IDENT, text));
+                            (SyntaxKind::IDENT, text)
                         }
                     })
                 }
                 '{' => {
                     // Special variable like ${^MATCH}
                     let mut end_pos = first_char.len_utf8();
-                    if remainder[end_pos..].chars().next() == Some('^') {
+                    if remainder[end_pos..].starts_with('^') {
                         end_pos += 1; // Skip '^'
                         for c in remainder[end_pos..].chars() {
                             end_pos += c.len_utf8();
@@ -1061,7 +1061,7 @@ impl<'a> Lexer<'a> {
                     if remainder[end_pos..]
                         .chars()
                         .next()
-                        .map_or(false, |c| c.is_alphanumeric() || c == '_')
+                        .is_some_and(|c| c.is_alphanumeric() || c == '_')
                     {
                         return None; // Likely a dereference, not a variable name
                     }
@@ -1078,7 +1078,7 @@ impl<'a> Lexer<'a> {
                     if remainder[end_pos..]
                         .chars()
                         .next()
-                        .map_or(false, |c| c.is_alphanumeric() || c == '_')
+                        .is_some_and(|c| c.is_alphanumeric() || c == '_')
                     {
                         let id_end = remainder[end_pos..]
                             .chars()
