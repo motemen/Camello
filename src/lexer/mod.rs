@@ -1035,22 +1035,35 @@ impl<'a> Lexer<'a> {
                     })
                 }
                 '{' => {
-                    // Special variable like ${^MATCH}
+                    // Handles ${var} and ${^VAR}
                     let mut end_pos = first_char.len_utf8();
-                    if remainder[end_pos..].starts_with('^') {
+                    let is_special = remainder[end_pos..].starts_with('^');
+                    if is_special {
                         end_pos += 1; // Skip '^'
-                        for c in remainder[end_pos..].chars() {
-                            end_pos += c.len_utf8();
-                            if c == '}' {
+                    }
+
+                    let name_start_pos = end_pos;
+                    for c in remainder[end_pos..].chars() {
+                        end_pos += c.len_utf8();
+                        if c == '}' {
+                            // Check for empty name, e.g., ${} or ${^}
+                            if end_pos > name_start_pos + c.len_utf8() {
                                 let text = &remainder[..end_pos];
                                 self.logos_lexer.bump(end_pos);
                                 return Some((SyntaxKind::IDENT, text));
-                            } else if !(c.is_ascii_uppercase() || c == '_') {
-                                break; // Invalid variable name
                             }
+                            break; // Empty name is invalid
                         }
-                    } else {
-                        return None; // Invalid variable name
+
+                        let is_valid_char = if is_special {
+                            c.is_ascii_uppercase() || c == '_'
+                        } else {
+                            c.is_alphanumeric() || c == '_'
+                        };
+
+                        if !is_valid_char {
+                            break; // Invalid character in variable name
+                        }
                     }
                     None
                 }
