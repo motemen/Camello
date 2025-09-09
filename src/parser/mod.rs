@@ -243,6 +243,7 @@ impl<'a> Parser<'a> {
                 SyntaxKind::OUR_KW,
                 SyntaxKind::STATE_KW,
                 SyntaxKind::LOCAL_KW,
+                SyntaxKind::UNDEF_KW,  // undef can appear in expression context
                 SyntaxKind::RETURN_KW, // return statements can start expressions
                 SyntaxKind::SUB_KW,    // anonymous subroutines in expression context
                 SyntaxKind::PLUS,      // unary plus operator
