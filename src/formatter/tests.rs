@@ -38,6 +38,35 @@ fn test_all_var_decl_types_formatting() {
 }
 
 #[test]
+fn test_undef_in_variable_declaration_formatting() {
+    let cases = [
+        ("my(undef,$x)=@_;", "my (undef, $x) = @_;\n"),
+        ("my($a,undef,$c)=@list;", "my ($a, undef, $c) = @list;\n"),
+        (
+            "my(undef,undef,$result)=func();",
+            "my (undef, undef, $result) = func();\n",
+        ),
+        ("our(undef,$y)=(1,2);", "our (undef, $y) = (1, 2);\n"),
+        ("state($x,undef)=@array;", "state ($x, undef) = @array;\n"),
+        // Mixed variable declarations and undef (not part of variable declaration statement)
+        ("(undef,my @a)=@_;", "(undef, my @a) = @_;\n"),
+        (
+            "(my $x,undef,our @y)=get_values();",
+            "(my $x, undef, our @y) = get_values();\n",
+        ),
+        (
+            "(undef,state $cache,my %hash)=complex_func(@args);",
+            "(undef, state $cache, my %hash) = complex_func(@args);\n",
+        ),
+        (
+            "(local $old,undef)=backup();",
+            "(local $old, undef) = backup();\n",
+        ),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_postfix_dereference_formatting() {
     let cases = [
         ("$ref->@*;", "$ref->@*;\n"),

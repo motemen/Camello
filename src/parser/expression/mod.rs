@@ -484,6 +484,11 @@ impl Parser<'_> {
                 // Variable declaration as expression (e.g., my $x = 1)
                 self.var_decl_expr();
             }
+            Some(SyntaxKind::UNDEF_KW) => {
+                // undef keyword as expression
+                self.bump(); // consume undef
+                self.skip_trivia();
+            }
             Some(SyntaxKind::IDENT) => {
                 let start = self.builder.checkpoint();
 

@@ -60,6 +60,7 @@ pub enum SyntaxKind {
     USE_KW,    // use keyword (for use warnings qw(...) syntax)
     NO_KW,     // no keyword (for no warnings qw(...) syntax)
     RETURN_KW, // return keyword
+    UNDEF_KW,  // undef keyword
 
     // Data section
     END_KW,  // __END__
