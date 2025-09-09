@@ -994,6 +994,15 @@ fn test_s_operator_formatting() {
 }
 
 #[test]
+fn test_s_operator_whitespace_handling() {
+    // Test case for issue where S_EXPR incorrectly includes trailing whitespace
+    let input = "s/re// or return;";
+    let formatted = format_and_assert(input);
+
+    insta::assert_snapshot!(formatted, @"s/re// or return;");
+}
+
+#[test]
 fn test_tr_operator_formatting() {
     let input = "$str =~ tr/abc/xyz/;";
     let formatted = format_and_assert(input);
