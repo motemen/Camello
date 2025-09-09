@@ -252,6 +252,8 @@ pub enum LexerContext {
     ExpectingOperator,
     /// After a sigil, expecting a variable name
     ExpectingVariableName,
+    /// In a subroutine prototype
+    SubPrototype,
     /// In a data section context (after __END__ or __DATA__)
     RawData,
     /// In a quote-like operator context
@@ -572,6 +574,10 @@ impl<'a> Lexer<'a> {
 
     fn disambiguate_percent(&self) -> SyntaxKind {
         match &self.context {
+            LexerContext::SubPrototype => {
+                // In prototype, `%` is a symbol, which logos maps to PERCENT
+                SyntaxKind::PERCENT
+            }
             LexerContext::ExpectingVariableName => {
                 // When in variable list context (after a sigil), % is an identifier
                 // Though there are no valid variable names starting with %, treat as IDENT for error recovery
@@ -600,6 +606,10 @@ impl<'a> Lexer<'a> {
 
     fn disambiguate_star(&self) -> SyntaxKind {
         match &self.context {
+            LexerContext::SubPrototype => {
+                // In prototype, `*` is a symbol, which logos maps to ASTERISK
+                SyntaxKind::ASTERISK
+            }
             LexerContext::ExpectingValue | LexerContext::ExpectingVariableName => {
                 // When expecting a value or in variable list, * is a typeglob sigil
                 // Examples: "my *glob", "*{$name}", "*STDIN"
@@ -622,6 +632,7 @@ impl<'a> Lexer<'a> {
 
     fn disambiguate_str_op(&self, op: &str) -> SyntaxKind {
         match &self.context {
+            LexerContext::SubPrototype => SyntaxKind::ERROR, // Not valid in prototype
             LexerContext::ExpectingOperator => {
                 // When expecting an operator, eq/ne are string comparison operators
                 match op {
@@ -649,6 +660,7 @@ impl<'a> Lexer<'a> {
 
     fn disambiguate_x(&self) -> SyntaxKind {
         match &self.context {
+            LexerContext::SubPrototype => SyntaxKind::ERROR, // Not valid in prototype
             LexerContext::ExpectingValue | LexerContext::ExpectingVariableName => {
                 // When expecting a value or in variable list, x is an identifier
                 // Examples: "sub x", "$x", "my $x"
@@ -672,6 +684,7 @@ impl<'a> Lexer<'a> {
 
     fn disambiguate_s(&self) -> SyntaxKind {
         match &self.context {
+            LexerContext::SubPrototype => SyntaxKind::ERROR, // Not valid in prototype
             LexerContext::ExpectingVariableName => {
                 // When in variable list context (after a sigil), s is an identifier
                 // Examples: "$s", "my $s", "@s"
@@ -716,6 +729,7 @@ impl<'a> Lexer<'a> {
 
     fn disambiguate_logical_op(&self, op: &str) -> SyntaxKind {
         match &self.context {
+            LexerContext::SubPrototype => SyntaxKind::ERROR, // Not valid in prototype
             LexerContext::ExpectingOperator => {
                 // When expecting an operator, not/and/or/xor are logical operators
                 match op {
@@ -740,6 +754,7 @@ impl<'a> Lexer<'a> {
 
     fn disambiguate_tr(&self) -> SyntaxKind {
         match &self.context {
+            LexerContext::SubPrototype => SyntaxKind::ERROR, // Not valid in prototype
             LexerContext::ExpectingVariableName => {
                 // When in variable list context (after a sigil), tr is an identifier
                 // Examples: "$tr", "my $tr", "@tr"
@@ -794,6 +809,7 @@ impl<'a> Lexer<'a> {
     fn disambiguate_y(&self) -> SyntaxKind {
         // y is an alias for tr, so use the same logic but return Y_KW
         match &self.context {
+            LexerContext::SubPrototype => SyntaxKind::ERROR, // Not valid in prototype
             LexerContext::ExpectingVariableName => {
                 // When in variable list context (after a sigil), y is an identifier
                 // Examples: "$y", "my $y", "@y"
@@ -1210,6 +1226,7 @@ impl<'a> Lexer<'a> {
                 | SyntaxKind::POSTFIX_DEREF_ARRAY
                 | SyntaxKind::POSTFIX_DEREF_HASH
                 | SyntaxKind::POSTFIX_DEREF_SCALAR
+                | SyntaxKind::BACKSLASH
         )
     }
 
@@ -1241,13 +1258,6 @@ impl<'a> Lexer<'a> {
             kind,
             SyntaxKind::R_PAREN | SyntaxKind::R_BRACE | SyntaxKind::R_BRACKET
         )
-    }
-
-    fn handle_sigil_context(&self, kind: SyntaxKind) -> LexerContext {
-        match kind {
-            SyntaxKind::BACKSLASH => LexerContext::ExpectingVariableName,
-            _ => LexerContext::ExpectingVariableName,
-        }
     }
 
     fn handle_keyword_context(&self, kind: SyntaxKind) -> LexerContext {
@@ -1347,6 +1357,7 @@ impl<'a> Lexer<'a> {
 
     fn handle_identifier_context(&self) -> LexerContext {
         match &self.context {
+            LexerContext::SubPrototype => self.context, // Remain in prototype context
             LexerContext::ExpectingVariableName | LexerContext::ExpectingValue => {
                 LexerContext::ExpectingOperator
             }
@@ -1356,11 +1367,13 @@ impl<'a> Lexer<'a> {
     }
 
     fn update_context(&mut self, syntax_kind: SyntaxKind) {
-        self.context = match syntax_kind {
-            // Sigils and reference operators
-            kind if self.is_sigil(kind) => self.handle_sigil_context(kind),
+        if self.context == LexerContext::SubPrototype {
+            // In Prototype context, do not change context
+            return;
+        }
 
-            SyntaxKind::BACKSLASH => LexerContext::ExpectingValue,
+        self.context = match syntax_kind {
+            kind if self.is_sigil(kind) => LexerContext::ExpectingVariableName,
 
             // Keywords
             kind if self.is_keyword(kind) => self.handle_keyword_context(kind),
