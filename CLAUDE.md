@@ -139,6 +139,8 @@ cargo run -- dump input.pl
 cargo run -- format --check input.pl
 ```
 
+Use `-E` instead of `-e` to use character escapes in the input string. e.g. `-E 'sub foo {\n\twarn;\n}'`.
+
 ### Testing Strategy
 
 Our testing strategy prioritizes end-to-end formatting correctness and maintainability by focusing on snapshot tests.
