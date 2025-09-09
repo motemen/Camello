@@ -57,6 +57,8 @@ impl Parser<'_> {
 
     /// Core Pratt parser: parse expression with given minimum precedence
     pub fn parse_expression_with_precedence(&mut self, min_precedence: Precedence) -> bool {
+        let checkpoint = self.builder.checkpoint();
+
         // Parse left-hand side (primary expression with postfix operations)
         if !self.parse_primary_with_postfix() {
             return false;
@@ -79,7 +81,6 @@ impl Parser<'_> {
                 }
 
                 // Start building ternary expression node
-                let checkpoint = self.builder.checkpoint();
                 self.builder
                     .start_node_at(checkpoint, SyntaxKind::TERNARY_EXPR.into());
 
@@ -119,7 +120,6 @@ impl Parser<'_> {
             }
 
             // Start building binary expression node
-            let checkpoint = self.builder.checkpoint();
             self.builder
                 .start_node_at(checkpoint, op_info.node_kind.into());
 
@@ -147,19 +147,22 @@ impl Parser<'_> {
 
     /// Parse primary expression with postfix operations
     fn parse_primary_with_postfix(&mut self) -> bool {
+        let checkpoint = self.builder.checkpoint();
+
         if !self.primary_expr() {
             return false;
         }
 
         // Handle postfix operations
-        self.parse_postfix_operations()
+        self.parse_postfix_operations_with_checkpoint(checkpoint)
     }
 
     /// Parse all postfix operations (method calls, subscripts, etc.)
-    fn parse_postfix_operations(&mut self) -> bool {
+    fn parse_postfix_operations_with_checkpoint(
+        &mut self,
+        initial_checkpoint: rowan::Checkpoint,
+    ) -> bool {
         loop {
-            let checkpoint = self.builder.checkpoint();
-
             match self.current_kind() {
                 Some(SyntaxKind::ARROW) => {
                     self.bump(); // ->
@@ -168,8 +171,10 @@ impl Parser<'_> {
                     match self.current_kind() {
                         Some(SyntaxKind::L_BRACE) => {
                             // Hash reference access: expr->{key}
-                            self.builder
-                                .start_node_at(checkpoint, SyntaxKind::HASH_REF_ACCESS_EXPR.into());
+                            self.builder.start_node_at(
+                                initial_checkpoint,
+                                SyntaxKind::HASH_REF_ACCESS_EXPR.into(),
+                            );
                             self.bump(); // {
                             self.skip_trivia();
 
@@ -189,7 +194,7 @@ impl Parser<'_> {
                         Some(SyntaxKind::L_BRACKET) => {
                             // Array reference access: expr->[index]
                             self.builder.start_node_at(
-                                checkpoint,
+                                initial_checkpoint,
                                 SyntaxKind::ARRAY_REF_ACCESS_EXPR.into(),
                             );
                             self.bump(); // [
@@ -210,8 +215,10 @@ impl Parser<'_> {
                         }
                         Some(SyntaxKind::L_PAREN) => {
                             // Code reference call: expr->(args)
-                            self.builder
-                                .start_node_at(checkpoint, SyntaxKind::CODE_REF_CALL_EXPR.into());
+                            self.builder.start_node_at(
+                                initial_checkpoint,
+                                SyntaxKind::CODE_REF_CALL_EXPR.into(),
+                            );
                             self.bump(); // (
                             self.skip_trivia();
 
@@ -228,8 +235,10 @@ impl Parser<'_> {
                         }
                         Some(SyntaxKind::IDENT) => {
                             // Method call: expr->method()
-                            self.builder
-                                .start_node_at(checkpoint, SyntaxKind::METHOD_CALL_EXPR.into());
+                            self.builder.start_node_at(
+                                initial_checkpoint,
+                                SyntaxKind::METHOD_CALL_EXPR.into(),
+                            );
 
                             self.parse_identifier_or_qualified();
                             self.skip_trivia();
@@ -240,8 +249,10 @@ impl Parser<'_> {
                         }
                         Some(kind) if kind.is_sigil() => {
                             // Dynamic method call: expr->$method()
-                            self.builder
-                                .start_node_at(checkpoint, SyntaxKind::METHOD_CALL_EXPR.into());
+                            self.builder.start_node_at(
+                                initial_checkpoint,
+                                SyntaxKind::METHOD_CALL_EXPR.into(),
+                            );
 
                             self.parse_variable();
                             self.skip_trivia();
@@ -261,7 +272,7 @@ impl Parser<'_> {
                 Some(SyntaxKind::L_PAREN) => {
                     // Function call: expr(args)
                     self.builder
-                        .start_node_at(checkpoint, SyntaxKind::FUNCTION_CALL_EXPR.into());
+                        .start_node_at(initial_checkpoint, SyntaxKind::FUNCTION_CALL_EXPR.into());
                     self.bump(); // (
                     self.skip_trivia();
 
@@ -278,8 +289,10 @@ impl Parser<'_> {
                 }
                 Some(SyntaxKind::L_BRACKET) => {
                     // Direct array subscription: expr[index]
-                    self.builder
-                        .start_node_at(checkpoint, SyntaxKind::ARRAY_SUBSCRIPTION_EXPR.into());
+                    self.builder.start_node_at(
+                        initial_checkpoint,
+                        SyntaxKind::ARRAY_SUBSCRIPTION_EXPR.into(),
+                    );
                     self.bump(); // [
                     self.skip_trivia();
 
@@ -298,8 +311,10 @@ impl Parser<'_> {
                 }
                 Some(SyntaxKind::L_BRACE) => {
                     // Direct hash subscription: expr{key}
-                    self.builder
-                        .start_node_at(checkpoint, SyntaxKind::HASH_SUBSCRIPTION_EXPR.into());
+                    self.builder.start_node_at(
+                        initial_checkpoint,
+                        SyntaxKind::HASH_SUBSCRIPTION_EXPR.into(),
+                    );
                     self.bump(); // {
                     self.skip_trivia();
 
@@ -323,7 +338,7 @@ impl Parser<'_> {
                 ) => {
                     // Postfix dereference: expr->@*, expr->%*, expr->$*
                     self.builder
-                        .start_node_at(checkpoint, SyntaxKind::POSTFIX_DEREF_EXPR.into());
+                        .start_node_at(initial_checkpoint, SyntaxKind::POSTFIX_DEREF_EXPR.into());
                     self.bump(); // ->@*, ->%*, or ->$*
                     self.skip_trivia();
                     self.builder.finish_node();
