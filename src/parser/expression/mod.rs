@@ -57,6 +57,8 @@ impl Parser<'_> {
 
     /// Core Pratt parser: parse expression with given minimum precedence
     pub fn parse_expression_with_precedence(&mut self, min_precedence: Precedence) -> bool {
+        let checkpoint = self.builder.checkpoint();
+
         // Parse left-hand side (primary expression with postfix operations)
         if !self.parse_primary_with_postfix() {
             return false;
@@ -79,7 +81,6 @@ impl Parser<'_> {
                 }
 
                 // Start building ternary expression node
-                let checkpoint = self.builder.checkpoint();
                 self.builder
                     .start_node_at(checkpoint, SyntaxKind::TERNARY_EXPR.into());
 
@@ -119,7 +120,6 @@ impl Parser<'_> {
             }
 
             // Start building binary expression node
-            let checkpoint = self.builder.checkpoint();
             self.builder
                 .start_node_at(checkpoint, op_info.node_kind.into());
 
