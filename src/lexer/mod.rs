@@ -250,8 +250,8 @@ pub enum LexerContext {
     ExpectingValue,
     /// Expecting an operator (after identifiers, numbers, variables)
     ExpectingOperator,
-    /// In a variable list context (after a sigil, expecting more variables)
-    VariableList,
+    /// After a sigil, expecting a variable name
+    ExpectingVariableName,
     /// In a data section context (after __END__ or __DATA__)
     RawData,
     /// In a quote-like operator context
@@ -407,8 +407,14 @@ impl<'a> Lexer<'a> {
         }
 
         // Handle postfix dereference operators (->@*, ->%*, ->$*)
-        if let Some(result) = self.try_consume_postfix_deref() {
-            let (syntax_kind, text) = result;
+        if let Some((syntax_kind, text)) = self.try_consume_postfix_deref() {
+            self.update_context(syntax_kind);
+            self.update_line_position(text);
+            return Some((syntax_kind, text));
+        }
+
+        // Handle variable names
+        if let Some((syntax_kind, text)) = self.try_consume_variable_name() {
             self.update_context(syntax_kind);
             self.update_line_position(text);
             return Some((syntax_kind, text));
@@ -464,7 +470,8 @@ impl<'a> Lexer<'a> {
         match token {
             Token::Ident => {
                 // 識別子の場合、キーワードかどうかチェック
-                let in_variable_context = matches!(self.context, LexerContext::VariableList);
+                let in_variable_context =
+                    matches!(self.context, LexerContext::ExpectingVariableName);
 
                 // Common keywords that need disambiguation regardless of context
                 match text {
@@ -472,17 +479,10 @@ impl<'a> Lexer<'a> {
                     "tr" => self.disambiguate_tr(),
                     "y" => self.disambiguate_y(),
                     "x" => self.disambiguate_x(),
-                    "eq" => self.disambiguate_str_op("eq"),
-                    "ne" => self.disambiguate_str_op("ne"),
-                    "gt" => self.disambiguate_str_op("gt"),
-                    "lt" => self.disambiguate_str_op("lt"),
-                    "ge" => self.disambiguate_str_op("ge"),
-                    "le" => self.disambiguate_str_op("le"),
-                    "cmp" => self.disambiguate_str_op("cmp"),
-                    "not" => self.disambiguate_logical_op("not"),
-                    "and" => self.disambiguate_logical_op("and"),
-                    "or" => self.disambiguate_logical_op("or"),
-                    "xor" => self.disambiguate_logical_op("xor"),
+                    "eq" | "ne" | "gt" | "lt" | "ge" | "le" | "cmp" => {
+                        self.disambiguate_str_op(text)
+                    }
+                    "not" | "and" | "or" | "xor" => self.disambiguate_logical_op(text),
                     _ => {
                         // Handle context-sensitive keywords
                         if in_variable_context {
@@ -572,7 +572,12 @@ impl<'a> Lexer<'a> {
 
     fn disambiguate_percent(&self) -> SyntaxKind {
         match &self.context {
-            LexerContext::ExpectingValue | LexerContext::VariableList => {
+            LexerContext::ExpectingVariableName => {
+                // When in variable list context (after a sigil), % is an identifier
+                // Though there are no valid variable names starting with %, treat as IDENT for error recovery
+                SyntaxKind::IDENT
+            }
+            LexerContext::ExpectingValue => {
                 // When expecting a value or in variable list, % is a sigil for a hash
                 // Examples: "my %hash", "{ key => %val }"
                 SyntaxKind::PERCENT
@@ -595,7 +600,7 @@ impl<'a> Lexer<'a> {
 
     fn disambiguate_star(&self) -> SyntaxKind {
         match &self.context {
-            LexerContext::ExpectingValue | LexerContext::VariableList => {
+            LexerContext::ExpectingValue | LexerContext::ExpectingVariableName => {
                 // When expecting a value or in variable list, * is a typeglob sigil
                 // Examples: "my *glob", "*{$name}", "*STDIN"
                 SyntaxKind::ASTERISK
@@ -630,6 +635,10 @@ impl<'a> Lexer<'a> {
                     _ => SyntaxKind::IDENT, // Handle unknown ops gracefully
                 }
             }
+            LexerContext::ExpectingVariableName => {
+                // When in variable list context (after a sigil), string operators are treated as identifiers
+                SyntaxKind::IDENT
+            }
             _ => {
                 // In other contexts, they are identifiers
                 // Examples: "sub eq", "my $ne"
@@ -640,7 +649,7 @@ impl<'a> Lexer<'a> {
 
     fn disambiguate_x(&self) -> SyntaxKind {
         match &self.context {
-            LexerContext::ExpectingValue | LexerContext::VariableList => {
+            LexerContext::ExpectingValue | LexerContext::ExpectingVariableName => {
                 // When expecting a value or in variable list, x is an identifier
                 // Examples: "sub x", "$x", "my $x"
                 SyntaxKind::IDENT
@@ -663,7 +672,7 @@ impl<'a> Lexer<'a> {
 
     fn disambiguate_s(&self) -> SyntaxKind {
         match &self.context {
-            LexerContext::VariableList => {
+            LexerContext::ExpectingVariableName => {
                 // When in variable list context (after a sigil), s is an identifier
                 // Examples: "$s", "my $s", "@s"
                 SyntaxKind::IDENT
@@ -717,6 +726,10 @@ impl<'a> Lexer<'a> {
                     _ => SyntaxKind::IDENT, // Handle unknown ops gracefully
                 }
             }
+            LexerContext::ExpectingVariableName => {
+                // When in variable list context (after a sigil), logical operators are treated as identifiers
+                SyntaxKind::IDENT
+            }
             _ => {
                 // In other contexts, they are identifiers
                 // Examples: "sub not", "my $and", "or die"
@@ -727,7 +740,7 @@ impl<'a> Lexer<'a> {
 
     fn disambiguate_tr(&self) -> SyntaxKind {
         match &self.context {
-            LexerContext::VariableList => {
+            LexerContext::ExpectingVariableName => {
                 // When in variable list context (after a sigil), tr is an identifier
                 // Examples: "$tr", "my $tr", "@tr"
                 SyntaxKind::IDENT
@@ -781,7 +794,7 @@ impl<'a> Lexer<'a> {
     fn disambiguate_y(&self) -> SyntaxKind {
         // y is an alias for tr, so use the same logic but return Y_KW
         match &self.context {
-            LexerContext::VariableList => {
+            LexerContext::ExpectingVariableName => {
                 // When in variable list context (after a sigil), y is an identifier
                 // Examples: "$y", "my $y", "@y"
                 SyntaxKind::IDENT
@@ -949,8 +962,141 @@ impl<'a> Lexer<'a> {
         None
     }
 
+    // If in ExpectingVariableName context, the next token must be an identifier
+    // eg.
+    // - Regular variables: $var, @array, %hash, *glob
+    // - Special variables: $_, $!, $?, etc.
+    // - Special variables: $^O, $^X, etc.
+    // - Special variables: ${^MATCH}, etc.
+    fn try_consume_variable_name(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        if self.context != LexerContext::ExpectingVariableName {
+            return None;
+        }
+
+        let remainder = self.logos_lexer.remainder();
+
+        remainder
+            .chars()
+            .next()
+            .and_then(|first_char| match first_char {
+                'a'..='z' | 'A'..='Z' | '_' => {
+                    // Standard variable name starting with letter or underscore
+                    let end_pos = remainder
+                        .chars()
+                        .take_while(|c| c.is_alphanumeric() || *c == '_')
+                        .map(|c| c.len_utf8())
+                        .sum();
+                    let text = &remainder[..end_pos];
+                    self.logos_lexer.bump(end_pos);
+                    Some((SyntaxKind::IDENT, text))
+                }
+                '0'..='9' => {
+                    // Variable name starting with digit (e.g. $1, $2)
+                    let end_pos = remainder
+                        .chars()
+                        .take_while(|c| c.is_ascii_digit())
+                        .map(|c| c.len_utf8())
+                        .sum();
+                    let text = &remainder[..end_pos];
+                    self.logos_lexer.bump(end_pos);
+                    Some((SyntaxKind::IDENT, text))
+                }
+                '^' => {
+                    // Special variable starting with ^ (e.g. $^O, $^X)
+                    let mut end_pos = first_char.len_utf8();
+                    remainder[end_pos..].chars().next().and_then(|c| {
+                        if c.is_ascii_uppercase() || c == '_' {
+                            end_pos += c.len_utf8();
+                            let text = &remainder[..end_pos];
+                            self.logos_lexer.bump(end_pos);
+                            return Some((SyntaxKind::IDENT, text));
+                        } else {
+                            // `$^` is also a valid variable
+                            let text = &remainder[..end_pos];
+                            self.logos_lexer.bump(end_pos);
+                            return Some((SyntaxKind::IDENT, text));
+                        }
+                    })
+                }
+                '{' => {
+                    // Special variable like ${^MATCH}
+                    let mut end_pos = first_char.len_utf8();
+                    if remainder[end_pos..].chars().next() == Some('^') {
+                        end_pos += 1; // Skip '^'
+                        for c in remainder[end_pos..].chars() {
+                            end_pos += c.len_utf8();
+                            if c == '}' {
+                                let text = &remainder[..end_pos];
+                                self.logos_lexer.bump(end_pos);
+                                return Some((SyntaxKind::IDENT, text));
+                            } else if !(c.is_ascii_uppercase() || c == '_') {
+                                break; // Invalid variable name
+                            }
+                        }
+                    } else {
+                        return None; // Invalid variable name
+                    }
+                    None
+                }
+                '$' => {
+                    // Special variable like @$, $$
+                    // If followed by identifier, it is a dereference (e.g. $$var) so return None here
+                    let end_pos = first_char.len_utf8();
+                    if remainder[end_pos..]
+                        .chars()
+                        .next()
+                        .map_or(false, |c| c.is_alphanumeric() || c == '_')
+                    {
+                        return None; // Likely a dereference, not a variable name
+                    }
+
+                    // Otherwise, treat $ as a special variable
+                    let text = &remainder[..end_pos];
+                    self.logos_lexer.bump(end_pos);
+                    Some((SyntaxKind::IDENT, text))
+                }
+                '#' => {
+                    // Special variable like `$#array` or `$#`
+                    // Check if followed by identifier
+                    let end_pos = first_char.len_utf8();
+                    if remainder[end_pos..]
+                        .chars()
+                        .next()
+                        .map_or(false, |c| c.is_alphanumeric() || c == '_')
+                    {
+                        let id_end = remainder[end_pos..]
+                            .chars()
+                            .take_while(|c| c.is_alphanumeric() || *c == '_')
+                            .map(|c| c.len_utf8())
+                            .sum::<usize>();
+                        let total_end = end_pos + id_end;
+                        let text = &remainder[..total_end];
+                        self.logos_lexer.bump(total_end);
+                        return Some((SyntaxKind::IDENT, text));
+                    }
+                    // Otherwise, treat # as a special variable
+                    let text = &remainder[..end_pos];
+                    self.logos_lexer.bump(end_pos);
+                    Some((SyntaxKind::IDENT, text))
+                }
+                // Special single-character variables like $_, $!, $?, etc.
+                '!' | '@' | '%' | '&' | '*' | '+' | '-' | '/' | '\\' | '<' | '>' | '=' | '~'
+                | '`' | ':' | ';' | ',' | '.' | '?' | '(' | ')' => {
+                    let end_pos = first_char.len_utf8();
+                    let text = &remainder[..end_pos];
+                    self.logos_lexer.bump(end_pos);
+                    Some((SyntaxKind::IDENT, text))
+                }
+                _ => None,
+            })
+    }
+
     fn disambiguate_slash(&self) -> SyntaxKind {
         match &self.context {
+            LexerContext::ExpectingVariableName => {
+                // When in variable list context (after a sigil), / is treated as an identifier
+                SyntaxKind::IDENT
+            }
             LexerContext::QuoteLike { .. } => {
                 // In quote-like context, slash is a delimiter, not regex literal or division
                 SyntaxKind::DELIMITER
@@ -988,7 +1134,7 @@ impl<'a> Lexer<'a> {
     fn is_sigil(&self, kind: SyntaxKind) -> bool {
         matches!(
             kind,
-            SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT | SyntaxKind::ASTERISK
+            SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT
         )
     }
 
@@ -1099,8 +1245,8 @@ impl<'a> Lexer<'a> {
 
     fn handle_sigil_context(&self, kind: SyntaxKind) -> LexerContext {
         match kind {
-            SyntaxKind::BACKSLASH => LexerContext::ExpectingValue,
-            _ => LexerContext::VariableList,
+            SyntaxKind::BACKSLASH => LexerContext::ExpectingVariableName,
+            _ => LexerContext::ExpectingVariableName,
         }
     }
 
@@ -1109,7 +1255,7 @@ impl<'a> Lexer<'a> {
             SyntaxKind::MY_KW
             | SyntaxKind::OUR_KW
             | SyntaxKind::STATE_KW
-            | SyntaxKind::LOCAL_KW => LexerContext::VariableList,
+            | SyntaxKind::LOCAL_KW => LexerContext::ExpectingValue,
             SyntaxKind::QW_KW => LexerContext::QuoteLike {
                 prefix: SyntaxKind::QW_KW,
                 mode: QuoteLikeMode::QW,
@@ -1201,7 +1347,7 @@ impl<'a> Lexer<'a> {
 
     fn handle_identifier_context(&self) -> LexerContext {
         match &self.context {
-            LexerContext::VariableList | LexerContext::ExpectingValue => {
+            LexerContext::ExpectingVariableName | LexerContext::ExpectingValue => {
                 LexerContext::ExpectingOperator
             }
             LexerContext::ExpectingOperator => LexerContext::ExpectingOperator,
@@ -1212,9 +1358,9 @@ impl<'a> Lexer<'a> {
     fn update_context(&mut self, syntax_kind: SyntaxKind) {
         self.context = match syntax_kind {
             // Sigils and reference operators
-            kind if self.is_sigil(kind) || kind == SyntaxKind::BACKSLASH => {
-                self.handle_sigil_context(kind)
-            }
+            kind if self.is_sigil(kind) => self.handle_sigil_context(kind),
+
+            SyntaxKind::BACKSLASH => LexerContext::ExpectingValue,
 
             // Keywords
             kind if self.is_keyword(kind) => self.handle_keyword_context(kind),
