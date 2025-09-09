@@ -206,14 +206,22 @@ impl Parser<'_> {
 
         // Closing delimiter (for second part)
         self.expect(SyntaxKind::DELIMITER);
-        self.skip_trivia();
 
-        // Optional flags
+        // Optional flags - only skip trivia if we have flags to consume
         if self.at(flags_kind) {
+            self.skip_trivia();
             self.bump();
         }
 
         self.builder.finish_node();
+
+        // Set lexer context to ExpectingOperator after completing the two-part expression
+        // This allows proper parsing of operators like 'or' that follow s/tr/y expressions
+        self.set_lexer_context(crate::lexer::LexerContext::ExpectingOperator);
+
+        // Force a fresh token fetch to ensure the context change takes effect
+        // Skip any trivia and refresh the current token with the new context
+        self.skip_trivia();
     }
 
     /// Get the matching closing delimiter for an opening delimiter
