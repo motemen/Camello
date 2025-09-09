@@ -48,6 +48,20 @@ fn test_undef_in_variable_declaration_formatting() {
         ),
         ("our(undef,$y)=(1,2);", "our (undef, $y) = (1, 2);\n"),
         ("state($x,undef)=@array;", "state ($x, undef) = @array;\n"),
+        // Mixed variable declarations and undef (not part of variable declaration statement)
+        ("(undef,my @a)=@_;", "(undef, my @a) = @_;\n"),
+        (
+            "(my $x,undef,our @y)=get_values();",
+            "(my $x, undef, our @y) = get_values();\n",
+        ),
+        (
+            "(undef,state $cache,my %hash)=complex_func(@args);",
+            "(undef, state $cache, my %hash) = complex_func(@args);\n",
+        ),
+        (
+            "(local $old,undef)=backup();",
+            "(local $old, undef) = backup();\n",
+        ),
     ];
     check_formatting_cases(&cases);
 }
