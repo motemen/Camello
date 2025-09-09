@@ -360,3 +360,24 @@ impl Parser<'_> {
         self.builder.finish_node();
     }
 }
+
+// Extend SyntaxKind to include a helper for operator groups
+impl SyntaxKind {
+    /// Checks if the token is part of the operator group (e.g., `||`, `&&`, etc.)
+    /// Returns true if this token kind can be used as a compound assignment operator (e.g., ||=, &&=, .=, +=, etc.)
+    pub fn is_compoundable_operator(&self) -> bool {
+        matches!(
+            self,
+            SyntaxKind::LOGICAL_AND
+                | SyntaxKind::LOGICAL_OR
+                | SyntaxKind::DEFINED_OR
+                | SyntaxKind::DOT
+                | SyntaxKind::AMPERSAND
+                | SyntaxKind::PLUS
+                | SyntaxKind::MINUS
+                | SyntaxKind::STAR
+                | SyntaxKind::SLASH
+                | SyntaxKind::MODULO
+        )
+    }
+}
