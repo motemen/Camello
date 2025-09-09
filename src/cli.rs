@@ -28,9 +28,18 @@ pub enum Commands {
             short,
             long = "eval",
             help = "Perl code to format",
-            conflicts_with = "path"
+            conflicts_with_all = ["path", "eval_escape"]
         )]
         eval: Option<String>,
+
+        /// 整形するPerlコード（エスケープシーケンス解釈付き）
+        #[arg(
+            short = 'E',
+            long = "eval-escape",
+            help = "Perl code to format with escape sequence interpretation (\\n becomes newline)",
+            conflicts_with_all = ["path", "eval"]
+        )]
+        eval_escape: Option<String>,
 
         /// ファイルがすでに整形済みかどうかを確認し、変更は行わない
         #[arg(long, help = "Check if file is already formatted")]
@@ -51,10 +60,63 @@ pub enum Commands {
             short,
             long = "eval",
             help = "Perl code to parse and dump",
-            conflicts_with = "path"
+            conflicts_with_all = ["path", "eval_escape"]
         )]
         eval: Option<String>,
+
+        /// パース・ダンプするPerlコード（エスケープシーケンス解釈付き）
+        #[arg(
+            short = 'E',
+            long = "eval-escape",
+            help = "Perl code to parse and dump with escape sequence interpretation (\\n becomes newline)",
+            conflicts_with_all = ["path", "eval"]
+        )]
+        eval_escape: Option<String>,
     },
+}
+/// エスケープシーケンスを解釈する関数
+fn interpret_escape_sequences(input: &str) -> String {
+    let mut result = String::new();
+    let mut chars = input.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            match chars.peek() {
+                Some('n') => {
+                    chars.next(); // consume 'n'
+                    result.push('\n');
+                }
+                Some('t') => {
+                    chars.next(); // consume 't'
+                    result.push('\t');
+                }
+                Some('r') => {
+                    chars.next(); // consume 'r'
+                    result.push('\r');
+                }
+                Some('\\') => {
+                    chars.next(); // consume second '\'
+                    result.push('\\');
+                }
+                Some('"') => {
+                    chars.next(); // consume '"'
+                    result.push('"');
+                }
+                Some('\'') => {
+                    chars.next(); // consume '\''
+                    result.push('\'');
+                }
+                _ => {
+                    // Unknown escape sequence, keep as is
+                    result.push(ch);
+                }
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+
+    result
 }
 
 pub fn run() -> Result<()> {
@@ -64,22 +126,35 @@ pub fn run() -> Result<()> {
         Commands::Format {
             path,
             eval,
+            eval_escape,
             check,
             output,
         } => {
-            format_file(path, eval, check, output)?;
+            format_file(path, eval, eval_escape, check, output)?;
         }
-        Commands::Dump { path, eval } => {
-            dump_file(path, eval)?;
+        Commands::Dump {
+            path,
+            eval,
+            eval_escape,
+        } => {
+            dump_file(path, eval, eval_escape)?;
         }
     }
 
     Ok(())
 }
 
-fn read_source(path: Option<PathBuf>, eval: Option<String>) -> Result<(String, String)> {
+fn read_source(
+    path: Option<PathBuf>,
+    eval: Option<String>,
+    eval_escape: Option<String>,
+) -> Result<(String, String)> {
     if let Some(code) = eval {
         return Ok((code, "<command-line>".to_string()));
+    }
+    if let Some(code) = eval_escape {
+        let interpreted_code = interpret_escape_sequences(&code);
+        return Ok((interpreted_code, "<command-line>".to_string()));
     }
     if let Some(path) = path {
         let input = fs::read_to_string(&path).into_diagnostic()?;
@@ -94,11 +169,12 @@ fn read_source(path: Option<PathBuf>, eval: Option<String>) -> Result<(String, S
 fn format_file(
     path: Option<PathBuf>,
     eval: Option<String>,
+    eval_escape: Option<String>,
     check: bool,
     output: Option<PathBuf>,
 ) -> Result<()> {
     // Read from file or standard input
-    let (input, source_name) = read_source(path, eval)?;
+    let (input, source_name) = read_source(path, eval, eval_escape)?;
 
     // Execute formatting
     let (formatted, errors) = format_perl(&input);
@@ -109,7 +185,7 @@ fn format_file(
         for e in errors.iter() {
             eprintln!("{:?}", Report::new(e.clone()));
         }
-        eprintln!("Proceeding with best-effort formatting...\n");
+        eprintln!("Proceeding with best-effort formatting...\\n");
     }
 
     if check {
@@ -136,9 +212,13 @@ fn format_file(
     Ok(())
 }
 
-fn dump_file(path: Option<PathBuf>, eval: Option<String>) -> Result<()> {
+fn dump_file(
+    path: Option<PathBuf>,
+    eval: Option<String>,
+    eval_escape: Option<String>,
+) -> Result<()> {
     // ファイルまたは標準入力から読み込む
-    let (input, source_name) = read_source(path, eval)?;
+    let (input, source_name) = read_source(path, eval, eval_escape)?;
     let (syntax, errors) = parse_perl(&input);
 
     if !errors.is_empty() {
@@ -154,11 +234,70 @@ fn dump_file(path: Option<PathBuf>, eval: Option<String>) -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn test_interpret_escape_sequences() {
+    assert_eq!(interpret_escape_sequences("hello\\nworld"), "hello\nworld");
+    assert_eq!(interpret_escape_sequences("tab\\there"), "tab\there");
+    assert_eq!(interpret_escape_sequences("quote\\\"test"), "quote\"test");
+    assert_eq!(
+        interpret_escape_sequences("backslash\\\\test"),
+        "backslash\\test"
+    );
+    assert_eq!(interpret_escape_sequences("normal text"), "normal text");
+    assert_eq!(
+        interpret_escape_sequences("print 1\\nif yes();"),
+        "print 1\nif yes();"
+    );
+}
+
+#[test]
+fn test_format_with_escape_sequences() -> Result<(), Box<dyn std::error::Error>> {
+    // Test -E option functionality
+    assert!(format_file(
+        None,
+        None,
+        Some("my$var=1;\\nprint $var;".to_string()),
+        false,
+        None
+    )
+    .is_ok());
+    Ok(())
+}
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
     use tempfile::tempdir;
+
+    #[test]
+    fn test_interpret_escape_sequences() {
+        assert_eq!(interpret_escape_sequences("hello\\nworld"), "hello\nworld");
+        assert_eq!(interpret_escape_sequences("tab\\there"), "tab\there");
+        assert_eq!(interpret_escape_sequences("quote\\\"test"), "quote\"test");
+        assert_eq!(
+            interpret_escape_sequences("backslash\\\\test"),
+            "backslash\\test"
+        );
+        assert_eq!(interpret_escape_sequences("normal text"), "normal text");
+        assert_eq!(
+            interpret_escape_sequences("print 1\\nif yes();"),
+            "print 1\nif yes();"
+        );
+    }
+
+    #[test]
+    fn test_format_with_escape_sequences() -> Result<(), Box<dyn std::error::Error>> {
+        // Test -E option functionality
+        assert!(format_file(
+            None,
+            None,
+            Some("my$var=1;\\nprint $var;".to_string()),
+            false,
+            None
+        )
+        .is_ok());
+        Ok(())
+    }
 
     #[test]
     fn test_format_file_to_stdout() -> Result<(), Box<dyn std::error::Error>> {
@@ -168,7 +307,7 @@ mod tests {
         fs::write(&file_path, "my$var=1;")?;
 
         // Execute formatting (not actually executed, but confirm no errors)
-        assert!(format_file(Some(file_path), None, false, None).is_ok());
+        assert!(format_file(Some(file_path), None, None, false, None).is_ok());
 
         Ok(())
     }
@@ -176,7 +315,7 @@ mod tests {
     #[test]
     fn test_format_string_to_stdout() -> Result<(), Box<dyn std::error::Error>> {
         // Execute formatting (not actually executed, but confirm no errors)
-        assert!(format_file(None, Some("my$var=1;".to_string()), false, None).is_ok());
+        assert!(format_file(None, Some("my$var=1;".to_string()), None, false, None).is_ok());
 
         Ok(())
     }
@@ -185,10 +324,10 @@ mod tests {
     fn test_check_mode() -> Result<(), Box<dyn std::error::Error>> {
         let dir = tempdir()?;
         let file_path = dir.path().join("formatted.pl");
-        fs::write(&file_path, "my $var = 1;\n")?;
+        fs::write(&file_path, "my $var = 1;\n")?; // Use actual newline, not escaped
 
         // Check that the file is correctly formatted
-        assert!(format_file(Some(file_path), None, true, None).is_ok());
+        assert!(format_file(Some(file_path), None, None, true, None).is_ok());
 
         Ok(())
     }
