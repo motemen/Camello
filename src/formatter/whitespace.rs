@@ -82,19 +82,26 @@ impl Formatter {
             // Look for whitespace tokens between this node and the next
             if let Some(last_token) = node.last_token() {
                 let mut current = last_token.next_token();
+                let mut total_newlines = 0;
+
+                // Count newlines across all consecutive whitespace tokens
                 while let Some(token) = current {
                     if token.kind() == SyntaxKind::WHITESPACE {
                         let text = token.text();
-                        if text.matches('\n').count() > 1 {
-                            // There are already empty lines in the source, don't add more
-                            return;
-                        }
-                    }
-                    // Stop if we reach a non-whitespace token
-                    if !token.kind().is_trivia() {
+                        total_newlines += text.matches('\n').count();
+                        current = token.next_token();
+                    } else if token.kind().is_trivia() {
+                        // Skip other trivia tokens like comments
+                        current = token.next_token();
+                    } else {
+                        // Stop if we reach a non-trivia token
                         break;
                     }
-                    current = token.next_token();
+                }
+
+                // If there are already multiple newlines (indicating empty lines), don't add more
+                if total_newlines > 1 {
+                    return;
                 }
             }
         }

@@ -1285,7 +1285,20 @@ Everything after =pod should be treated as POD content.
 
 #[test]
 fn test_empty_lines_preservation() {
-    let input = "use strict;\n\n\nuse warnings;\n\nmy $x = 1;\n\n\nsub foo {\n    return $x;\n}";
+    let input = r#"use strict;
+
+
+use warnings;
+
+my $x = 1;
+
+
+sub foo {
+    return $x;
+}
+
+1;"#;
+
     let formatted = format_and_assert(input);
 
     insta::assert_snapshot!(formatted, @r"
@@ -1298,12 +1311,13 @@ fn test_empty_lines_preservation() {
         sub foo {
             return $x;
         }
-        ");
+        
+        1;");
 }
 
 #[test]
 fn test_no_empty_lines_automatic_insertion() {
-    let input = "use strict;use warnings;my $x = 1;sub foo {return $x;}";
+    let input = "use strict;use warnings;my $x = 1;sub foo {return $x;}1;";
     let formatted = format_and_assert(input);
 
     insta::assert_snapshot!(formatted, @r"
@@ -1315,6 +1329,8 @@ fn test_no_empty_lines_automatic_insertion() {
         sub foo {
             return $x;
         }
+
+        1;
         ");
 }
 
