@@ -1163,7 +1163,7 @@ impl<'a> Lexer<'a> {
     fn is_sigil(&self, kind: SyntaxKind) -> bool {
         matches!(
             kind,
-            SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT
+            SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT | SyntaxKind::ASTERISK
         )
     }
 
