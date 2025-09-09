@@ -231,7 +231,8 @@ pub enum SyntaxKind {
     // Other statements
     STMT, // General statement
 
-    EXPR_LIST, // Expression list (e.g., $a, $b, $c)
+    EXPR_LIST,           // Expression list (e.g., $a, $b, $c)
+    COMPOUND_ASSIGNMENT, // Compound assignment (e.g., +=, ||=
 
     // ===== Other =====
     ERROR, // Parse error

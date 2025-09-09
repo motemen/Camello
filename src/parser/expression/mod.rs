@@ -123,8 +123,19 @@ impl Parser<'_> {
             self.builder
                 .start_node_at(checkpoint, op_info.node_kind.into());
 
+            let op_checkpoint = self.builder.checkpoint();
+
             // Consume the operator
             self.bump();
+
+            if current_kind.is_compoundable_operator() && self.at(SyntaxKind::EQ) {
+                // Handle compound assignment operators (e.g., +=, ||=, etc.)
+                self.builder
+                    .start_node_at(op_checkpoint, SyntaxKind::COMPOUND_ASSIGNMENT.into());
+                self.bump(); // consume =
+                self.builder.finish_node();
+            }
+
             self.skip_trivia();
 
             // Calculate next precedence level
