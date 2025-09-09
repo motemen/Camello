@@ -112,6 +112,8 @@ impl Parser<'_> {
                     .is_some_and(super::super::syntax_kind::SyntaxKind::is_sigil)
                 {
                     self.parse_variable_by_decl_kind(decl_kind);
+                } else if self.at(SyntaxKind::UNDEF_KW) {
+                    self.bump(); // consume 'undef'
                 } else {
                     self.error("Expected variable in parenthesized list");
                     break; // Break loop when error occurs

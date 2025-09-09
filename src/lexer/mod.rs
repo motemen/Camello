@@ -513,6 +513,7 @@ impl<'a> Lexer<'a> {
                                 "use" => SyntaxKind::USE_KW,
                                 "no" => SyntaxKind::NO_KW,
                                 "return" => SyntaxKind::RETURN_KW,
+                                "undef" => SyntaxKind::UNDEF_KW,
                                 _ => SyntaxKind::IDENT,
                             }
                         }
