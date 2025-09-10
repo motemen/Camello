@@ -335,6 +335,25 @@ impl SyntaxKind {
                 | SyntaxKind::SPACESHIP
         )
     }
+
+    /// Checks if the token is part of the operator group (e.g., `||`, `&&`, etc.)
+    /// Returns true if this token kind can be used as a compound assignment operator (e.g., ||=, &&=, .=, +=, etc.)
+    #[must_use]
+    pub fn is_compoundable_operator(self) -> bool {
+        matches!(
+            self,
+            SyntaxKind::LOGICAL_AND
+                | SyntaxKind::LOGICAL_OR
+                | SyntaxKind::DEFINED_OR
+                | SyntaxKind::DOT
+                | SyntaxKind::AMPERSAND
+                | SyntaxKind::PLUS
+                | SyntaxKind::MINUS
+                | SyntaxKind::STAR
+                | SyntaxKind::SLASH
+                | SyntaxKind::MODULO
+        )
+    }
 }
 
 impl From<SyntaxKind> for rowan::SyntaxKind {
