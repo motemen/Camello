@@ -352,6 +352,7 @@ impl SyntaxKind {
                 | SyntaxKind::STAR
                 | SyntaxKind::SLASH
                 | SyntaxKind::MODULO
+                | SyntaxKind::X
         )
     }
 }
