@@ -161,6 +161,9 @@ pub enum Token {
     #[token("^")]
     Caret,
 
+    #[token("|")]
+    Pipe,
+
     // 空白
     #[regex(r"[ \t\f]+")]
     Whitespace,
@@ -189,7 +192,7 @@ impl Token {
             Token::Dollar => SyntaxKind::DOLLAR,
             Token::At => SyntaxKind::AT,
             Token::Backslash => SyntaxKind::BACKSLASH,
-            Token::Ampersand => SyntaxKind::AMPERSAND,
+            Token::Ampersand => SyntaxKind::AMPERSAND, // Will be disambiguated
             Token::Ident => SyntaxKind::IDENT,
             Token::Number => SyntaxKind::NUMBER,
             Token::String => SyntaxKind::STRING,
@@ -221,7 +224,8 @@ impl Token {
             Token::Percent => SyntaxKind::MODULO,
             Token::Greater => SyntaxKind::GT,
             Token::Less => SyntaxKind::LT,
-            Token::Caret => SyntaxKind::CARET,
+            Token::Caret => SyntaxKind::CARET, // Will be disambiguated
+            Token::Pipe => SyntaxKind::BITWISE_OR,
             Token::GreaterEqual => SyntaxKind::GE,
             Token::LessEqual => SyntaxKind::LE,
             Token::EqualEqual => SyntaxKind::EQ_EQ,
@@ -534,6 +538,12 @@ impl<'a> Lexer<'a> {
                 // Context-sensitive disambiguation between regex literal and division
                 self.disambiguate_slash()
             }
+            Token::Ampersand => self.disambiguate_ampersand(),
+            Token::Caret => self.disambiguate_caret(),
+            Token::Pipe => {
+                // Pipe is always bitwise OR in current context
+                SyntaxKind::BITWISE_OR
+            }
             // Bracket-like delimiters
             Token::LParen
             | Token::LBrace
@@ -551,13 +561,11 @@ impl<'a> Lexer<'a> {
             // Other potential delimiter characters in quote-like contexts
             Token::Greater
             | Token::Less
-            | Token::Caret
             | Token::Plus
             | Token::Minus
             | Token::Eq
             | Token::At
             | Token::Dollar
-            | Token::Ampersand
             | Token::Colon
             | Token::QuestionMark
             | Token::Dot
@@ -1135,6 +1143,57 @@ impl<'a> Lexer<'a> {
                 // Slash is always division operator in disambiguate context
                 // because regex literals are handled in try_consume_regex_literal
                 SyntaxKind::SLASH
+            }
+        }
+    }
+
+    /// Disambiguate ampersand (&) based on context
+    fn disambiguate_ampersand(&self) -> SyntaxKind {
+        match self.context {
+            LexerContext::ExpectingVariableName => {
+                // After sigil, & is part of function name
+                SyntaxKind::AMPERSAND
+            }
+            LexerContext::SubPrototype => {
+                // In subroutine prototype, & indicates code reference
+                SyntaxKind::AMPERSAND
+            }
+            LexerContext::QuoteLike { .. } => {
+                // In quote-like context, & is a delimiter
+                SyntaxKind::DELIMITER
+            }
+            LexerContext::ExpectingValue => {
+                // In expecting value context, & is likely a function sigil or reference
+                SyntaxKind::AMPERSAND
+            }
+            _ => {
+                // In operator context, it's likely bitwise AND
+                SyntaxKind::BITWISE_AND
+            }
+        }
+    }
+
+    /// Disambiguate caret (^) based on context
+    fn disambiguate_caret(&self) -> SyntaxKind {
+        match self.context {
+            LexerContext::ExpectingVariableName => {
+                // After sigil, ^ is part of variable name
+                SyntaxKind::CARET
+            }
+            LexerContext::SubPrototype => {
+                SyntaxKind::ERROR // ^ is not valid in prototype
+            }
+            LexerContext::QuoteLike { .. } => {
+                // In quote-like context, ^ is a delimiter
+                SyntaxKind::DELIMITER
+            }
+            LexerContext::ExpectingValue => {
+                // In expecting value context, ^ is likely a sigil
+                SyntaxKind::CARET
+            }
+            _ => {
+                // In operator context, it's bitwise XOR
+                SyntaxKind::BITWISE_XOR
             }
         }
     }

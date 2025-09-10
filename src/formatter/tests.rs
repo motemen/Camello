@@ -1886,3 +1886,60 @@ fn test_expression_dereference_formatting() {
 
     check_formatting_cases(&cases);
 }
+
+#[test]
+fn test_compound_assignment_precedence() {
+    let cases = [
+        // Basic compound assignments
+        ("$x += 1;", "$x += 1;\n"),
+        ("$x -= 2;", "$x -= 2;\n"),
+        ("$x *= 3;", "$x *= 3;\n"),
+        ("$x /= 4;", "$x /= 4;\n"),
+        ("$x %= 5;", "$x %= 5;\n"),
+        ("$x .= 'text';", "$x .= 'text';\n"),
+        // Logical compound assignments
+        ("$x ||= 'default';", "$x ||= 'default';\n"),
+        ("$x &&= 'value';", "$x &&= 'value';\n"),
+        ("$x //= 'defined';", "$x //= 'defined';\n"),
+        // String repetition compound assignment
+        ("$x x= 3;", "$x x= 3;\n"),
+        // Bitwise compound assignments
+        ("$x &= $mask;", "$x &= $mask;\n"),
+        ("$flags |= $bit;", "$flags |= $bit;\n"),
+        ("$value ^= $toggle;", "$value ^= $toggle;\n"),
+        // Test precedence: compound assignment should have assignment precedence
+        // This should be parsed as: $x += ($y + $z), not ($x += $y) + $z
+        ("$x += $y + $z;", "$x += $y + $z;\n"),
+        ("$result ||= $a + $b * $c;", "$result ||= $a + $b * $c;\n"),
+        // Complex expressions with compound assignment
+        ("$hash{key} += $value * 2;", "$hash{key} += $value * 2;\n"),
+        ("@array[0] .= ' suffix';", "@array[0] .= ' suffix';\n"),
+    ];
+
+    check_formatting_cases(&cases);
+}
+
+#[test]
+fn test_bitwise_operators_formatting() {
+    let cases = [
+        // Basic bitwise operators
+        ("$a & $b;", "$a & $b;\n"),
+        ("$x | $y;", "$x | $y;\n"),
+        ("$flags ^ $mask;", "$flags ^ $mask;\n"),
+        // Bitwise operators with precedence
+        ("$result = $a & $b | $c;", "$result = $a & $b | $c;\n"), // & has higher precedence than |
+        ("$value = $x | $y & $z;", "$value = $x | $y & $z;\n"),   // & binds tighter than |
+        ("$flags = $a ^ $b | $c;", "$flags = $a ^ $b | $c;\n"), // ^ and | have same precedence, left-to-right
+        // Bitwise operators in complex expressions
+        (
+            "$mask = ($a & $b) | ($c ^ $d);",
+            "$mask = ($a & $b) | ($c ^ $d);\n",
+        ),
+        ("$result = $x + $y & $mask;", "$result = $x + $y & $mask;\n"), // + has higher precedence than &
+        // Mixed with logical operators
+        ("$test = $a & $b && $c;", "$test = $a & $b && $c;\n"), // && has lower precedence than &
+        ("$check = $x | $y || $z;", "$check = $x | $y || $z;\n"), // || has lower precedence than |
+    ];
+
+    check_formatting_cases(&cases);
+}
