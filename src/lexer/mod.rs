@@ -255,7 +255,7 @@ pub enum LexerContext {
     /// Expecting an operator (after identifiers, numbers, variables)
     ExpectingOperator,
     /// After a sigil, expecting a variable name
-    ExpectingVariableName,
+    VariableName,
     /// In a subroutine prototype
     SubPrototype,
     /// In a data section context (after __END__ or __DATA__)
@@ -267,6 +267,27 @@ pub enum LexerContext {
         state: QuoteLikeState, // Parsing state
         delimiter: char,       // Current delimiter: '{', '(', '/', etc.
     },
+}
+/// Context for token disambiguation in default parsing contexts
+/// This enum limits disambiguation to only the contexts where ambiguity resolution is needed
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum DisambiguationContext {
+    /// Expecting a value, identifier, or sigil (after keywords, operators, sigils)
+    ExpectingValue,
+    /// Expecting an operator (after identifiers, numbers, variables)
+    ExpectingOperator,
+}
+
+impl From<LexerContext> for Option<DisambiguationContext> {
+    fn from(lexer_context: LexerContext) -> Self {
+        match lexer_context {
+            LexerContext::ExpectingValue => Some(DisambiguationContext::ExpectingValue),
+            LexerContext::ExpectingOperator => Some(DisambiguationContext::ExpectingOperator),
+            // Other contexts (SubPrototype, RawData, QuoteLike, ExpectingVariableName)
+            // don't use disambiguation - they have dedicated handlers
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -338,48 +359,6 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// Handle POD content and `RawData` modes
-    fn try_handle_pod_and_raw_data(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        // Check for POD start at line start
-        if self.at_line_start {
-            // Check for standalone =cut first (error case)
-            if let Some(cut_result) = self.try_consume_standalone_cut() {
-                let (syntax_kind, text) = cut_result;
-                self.at_line_start = false;
-                return Some((syntax_kind, text));
-            }
-            // Check for POD start - this will consume the entire POD block
-            if let Some(pod_block) = self.try_consume_pod_content() {
-                let (syntax_kind, text) = pod_block;
-                self.at_line_start = false;
-                return Some((syntax_kind, text));
-            }
-        }
-
-        // Handle raw data mode
-        if self.context == LexerContext::RawData {
-            let remainder = self.logos_lexer.remainder();
-            if remainder.is_empty() {
-                return None; // No more data to consume
-            }
-            self.logos_lexer.bump(remainder.len());
-            return Some((SyntaxKind::RAW_STRING, remainder));
-        }
-
-        None
-    }
-
-    /// Handle special token parsing in various contexts
-    fn try_handle_special_tokens(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        self.try_handle_quote_like_internal().or_else(|| {
-            if self.context == LexerContext::ExpectingValue {
-                self.try_handle_expecting_value_context()
-            } else {
-                None
-            }
-        })
-    }
-
     /// Handle special tokens when expecting a value
     fn try_handle_expecting_value_context(&mut self) -> Option<(SyntaxKind, &'a str)> {
         // Array of token consumers to try in order
@@ -402,25 +381,163 @@ impl<'a> Lexer<'a> {
     }
 
     pub fn next_token(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        // Handle POD content mode and RawData mode first
-        if let Some(result) = self.try_handle_pod_and_raw_data() {
-            return Some(result);
+        match self.context {
+            LexerContext::RawData => self.handle_raw_data(),
+            LexerContext::QuoteLike { .. } => self.handle_quote_like(),
+            LexerContext::VariableName => self.handle_variable_name(),
+            LexerContext::SubPrototype => self.handle_sub_prototype(),
+            LexerContext::ExpectingValue | LexerContext::ExpectingOperator => {
+                self.handle_default_context()
+            }
+        }
+    }
+
+    /// Handle RawData context: __DATA__ や POD の処理を担当
+    fn handle_raw_data(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        // Check for POD start at line start
+        if self.at_line_start {
+            // Check for standalone =cut first (error case)
+            if let Some(cut_result) = self.try_consume_standalone_cut() {
+                let (syntax_kind, text) = cut_result;
+                self.at_line_start = false;
+                return Some((syntax_kind, text));
+            }
+            // Check for POD start - this will consume the entire POD block
+            if let Some(pod_block) = self.try_consume_pod_content() {
+                let (syntax_kind, text) = pod_block;
+                self.at_line_start = false;
+                return Some((syntax_kind, text));
+            }
         }
 
-        // Handle special tokens (quote-like content, delimiters, and ExpectingValue tokens)
-        if let Some(result) = self.try_handle_special_tokens() {
-            return Some(result);
+        // Handle raw data mode
+        let remainder = self.logos_lexer.remainder();
+        if remainder.is_empty() {
+            return None; // No more data to consume
+        }
+        self.logos_lexer.bump(remainder.len());
+        Some((SyntaxKind::RAW_STRING, remainder))
+    }
+
+    /// Handle QuoteLike context: q{...} や s/.../.../などのクオート風演算子の処理を担当
+    fn handle_quote_like(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        if let Some(result) = self.try_handle_quote_like_internal() {
+            let (syntax_kind, text) = result;
+            // Quote-like internal already handles context transitions
+            // Only update line position here
+            self.update_line_position(text);
+            Some((syntax_kind, text))
+        } else {
+            // Check if context changed during quote-like processing
+            // If so, fall back to appropriate handler
+            match self.context {
+                LexerContext::QuoteLike { .. } => None, // Still in quote-like, no token available
+                _ => {
+                    // Context changed, delegate to new context handler
+                    match self.context {
+                        LexerContext::ExpectingValue | LexerContext::ExpectingOperator => {
+                            self.handle_default_context()
+                        }
+                        LexerContext::VariableName => self.handle_variable_name(),
+                        LexerContext::SubPrototype => self.handle_sub_prototype(),
+                        LexerContext::RawData => self.handle_raw_data(),
+                        LexerContext::QuoteLike { .. } => unreachable!(), // Already handled above
+                    }
+                }
+            }
+        }
+    }
+
+    /// Handle ExpectingVariableName context: 変数名のトークン化を担当
+    fn handle_variable_name(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        if let Some((syntax_kind, text)) = self.try_consume_variable_name() {
+            self.update_context(syntax_kind);
+            self.update_line_position(text);
+            Some((syntax_kind, text))
+        } else {
+            // Fall back to default context handling if no variable name found
+            self.set_context(LexerContext::ExpectingValue);
+            self.handle_default_context()
+        }
+    }
+
+    /// Map tokens to appropriate SyntaxKind in subroutine prototype context
+    /// In prototypes, symbols have fixed meanings regardless of position
+    fn map_prototype_token(&self, token: Token) -> SyntaxKind {
+        match token {
+            Token::Backslash => SyntaxKind::BACKSLASH,
+            Token::At => SyntaxKind::AT,
+            Token::Percent => SyntaxKind::PERCENT, // Always hash sigil in prototypes
+            Token::Dollar => SyntaxKind::DOLLAR,
+            Token::Ampersand => SyntaxKind::AMPERSAND,
+            Token::Star => SyntaxKind::ASTERISK, // Always typeglob sigil in prototypes
+            Token::Semicolon => SyntaxKind::SEMICOLON,
+            Token::LBracket => SyntaxKind::L_BRACKET,
+            Token::RBracket => SyntaxKind::R_BRACKET,
+            Token::LParen => SyntaxKind::L_PAREN,
+            Token::RParen => SyntaxKind::R_PAREN,
+            // Whitespace and comments are handled normally
+            Token::Whitespace => SyntaxKind::WHITESPACE,
+            Token::Newline => SyntaxKind::WHITESPACE,
+            Token::Comment => SyntaxKind::COMMENT,
+            // All other tokens are converted using default mapping
+            _ => token.to_syntax_kind(),
+        }
+    }
+
+    /// Handle SubPrototype context: サブルーチンプロトタイプの解析を担当
+    fn handle_sub_prototype(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        // Get the next token from logos lexer
+        match self.logos_lexer.next() {
+            Some(Ok(token)) => {
+                let text = self.logos_lexer.slice();
+                // Map token to appropriate SyntaxKind using prototype-specific rules
+                let syntax_kind = self.map_prototype_token(token);
+
+                // Update line position for POD detection
+                self.update_line_position(text);
+
+                Some((syntax_kind, text))
+            }
+            Some(Err(())) => {
+                // エラートークンとして処理
+                let text = self.logos_lexer.slice();
+                Some((SyntaxKind::ERROR, text))
+            }
+            None => None,
+        }
+    }
+
+    /// Handle default context (ExpectingValue | ExpectingOperator): 通常ケースを担当
+    fn handle_default_context(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        // Handle POD content at line start first
+        if self.at_line_start {
+            // Check for standalone =cut first (error case)
+            if let Some(cut_result) = self.try_consume_standalone_cut() {
+                let (syntax_kind, text) = cut_result;
+                self.at_line_start = false;
+                return Some((syntax_kind, text));
+            }
+            // Check for POD start - this will consume the entire POD block
+            if let Some(pod_block) = self.try_consume_pod_content() {
+                let (syntax_kind, text) = pod_block;
+                self.at_line_start = false;
+                return Some((syntax_kind, text));
+            }
+        }
+
+        // Handle special tokens when expecting a value
+        if self.context == LexerContext::ExpectingValue {
+            if let Some(result) = self.try_handle_expecting_value_context() {
+                let (syntax_kind, text) = result;
+                self.update_context(syntax_kind);
+                self.update_line_position(text);
+                return Some((syntax_kind, text));
+            }
         }
 
         // Handle postfix dereference operators (->@*, ->%*, ->$*)
         if let Some((syntax_kind, text)) = self.try_consume_postfix_deref() {
-            self.update_context(syntax_kind);
-            self.update_line_position(text);
-            return Some((syntax_kind, text));
-        }
-
-        // Handle variable names
-        if let Some((syntax_kind, text)) = self.try_consume_variable_name() {
             self.update_context(syntax_kind);
             self.update_line_position(text);
             return Some((syntax_kind, text));
@@ -473,92 +590,83 @@ impl<'a> Lexer<'a> {
     }
 
     fn disambiguate(&self, token: Token, text: &str) -> SyntaxKind {
+        // Convert current lexer context to disambiguation context
+        // Handle ExpectingVariableName as a special case that also needs disambiguation
+        let disambiguation_context = Option::<DisambiguationContext>::from(self.context)
+        .expect("disambiguate should only be called from ExpectingValue/ExpectingOperator/ExpectingVariableName contexts");
+
         match token {
             Token::Ident => {
-                // 識別子の場合、キーワードかどうかチェック
-                let in_variable_context =
-                    matches!(self.context, LexerContext::ExpectingVariableName);
-
                 // Common keywords that need disambiguation regardless of context
                 match text {
-                    "s" => self.disambiguate_s(),
-                    "tr" => self.disambiguate_tr(),
-                    "y" => self.disambiguate_y(),
-                    "x" => self.disambiguate_x(),
+                    "s" => self.disambiguate_s(disambiguation_context),
+                    "tr" => self.disambiguate_tr(disambiguation_context),
+                    "y" => self.disambiguate_y(disambiguation_context),
+                    "x" => Self::disambiguate_x(disambiguation_context),
                     "eq" | "ne" | "gt" | "lt" | "ge" | "le" | "cmp" => {
-                        self.disambiguate_str_op(text)
+                        Self::disambiguate_str_op(disambiguation_context, text)
                     }
-                    "not" | "and" | "or" | "xor" => self.disambiguate_logical_op(text),
+                    "not" | "and" | "or" | "xor" => {
+                        Self::disambiguate_logical_op(disambiguation_context, text)
+                    }
                     _ => {
                         // Handle context-sensitive keywords
-                        if in_variable_context {
-                            // In variable context, ALL keywords become identifiers (including declaration keywords)
-                            SyntaxKind::IDENT
-                        } else {
-                            // Normal context - all keywords are recognized
-                            match text {
-                                "sub" => SyntaxKind::SUB_KW,
-                                "my" => SyntaxKind::MY_KW,
-                                "our" => SyntaxKind::OUR_KW,
-                                "state" => SyntaxKind::STATE_KW,
-                                "local" => SyntaxKind::LOCAL_KW,
-                                "if" => SyntaxKind::IF_KW,
-                                "unless" => SyntaxKind::UNLESS_KW,
-                                "elsif" => SyntaxKind::ELSIF_KW,
-                                "else" => SyntaxKind::ELSE_KW,
-                                "for" => SyntaxKind::FOR_KW,
-                                "foreach" => SyntaxKind::FOREACH_KW,
-                                "while" => SyntaxKind::WHILE_KW,
-                                "package" => SyntaxKind::PACKAGE_KW,
-                                "qw" => SyntaxKind::QW_KW,
-                                "q" => SyntaxKind::Q_KW,
-                                "qq" => SyntaxKind::QQ_KW,
-                                "qx" => SyntaxKind::QX_KW,
-                                "m" => SyntaxKind::M_KW,
-                                "qr" => SyntaxKind::QR_KW,
-                                "use" => SyntaxKind::USE_KW,
-                                "no" => SyntaxKind::NO_KW,
-                                "return" => SyntaxKind::RETURN_KW,
-                                "undef" => SyntaxKind::UNDEF_KW,
-                                _ => SyntaxKind::IDENT,
-                            }
+                        // Normal context - all keywords are recognized
+                        match text {
+                            "sub" => SyntaxKind::SUB_KW,
+                            "my" => SyntaxKind::MY_KW,
+                            "our" => SyntaxKind::OUR_KW,
+                            "state" => SyntaxKind::STATE_KW,
+                            "local" => SyntaxKind::LOCAL_KW,
+                            "if" => SyntaxKind::IF_KW,
+                            "unless" => SyntaxKind::UNLESS_KW,
+                            "elsif" => SyntaxKind::ELSIF_KW,
+                            "else" => SyntaxKind::ELSE_KW,
+                            "for" => SyntaxKind::FOR_KW,
+                            "foreach" => SyntaxKind::FOREACH_KW,
+                            "while" => SyntaxKind::WHILE_KW,
+                            "package" => SyntaxKind::PACKAGE_KW,
+                            "qw" => SyntaxKind::QW_KW,
+                            "q" => SyntaxKind::Q_KW,
+                            "qq" => SyntaxKind::QQ_KW,
+                            "qx" => SyntaxKind::QX_KW,
+                            "m" => SyntaxKind::M_KW,
+                            "qr" => SyntaxKind::QR_KW,
+                            "use" => SyntaxKind::USE_KW,
+                            "no" => SyntaxKind::NO_KW,
+                            "return" => SyntaxKind::RETURN_KW,
+                            "undef" => SyntaxKind::UNDEF_KW,
+                            _ => SyntaxKind::IDENT,
                         }
                     }
                 }
             }
             Token::Percent => {
                 // % の場合、文脈によって sigil か modulo operator かを判定
-                self.disambiguate_percent()
+                Self::disambiguate_percent(disambiguation_context)
             }
             Token::Star => {
                 // * の場合、文脈によって typeglob sigil か multiplication operator かを判定
-                self.disambiguate_star()
+                Self::disambiguate_star(disambiguation_context)
             }
             Token::Slash => {
                 // Context-sensitive disambiguation between regex literal and division
-                self.disambiguate_slash()
+                Self::disambiguate_slash(disambiguation_context)
             }
-            Token::Ampersand => self.disambiguate_ampersand(),
-            Token::Caret => self.disambiguate_caret(),
+            Token::Ampersand => Self::disambiguate_ampersand(disambiguation_context),
+            Token::Caret => Self::disambiguate_caret(disambiguation_context),
             Token::Pipe => {
                 // Pipe is always bitwise OR in current context
                 SyntaxKind::BITWISE_OR
             }
-            // Bracket-like delimiters
+            // Bracket-like delimiters - simplified for default context only
             Token::LParen
             | Token::LBrace
             | Token::LBracket
             | Token::RParen
             | Token::RBrace
-            | Token::RBracket => {
-                // In quote-like context, these should be treated as delimiters
-                if let LexerContext::QuoteLike { .. } = self.context {
-                    SyntaxKind::DELIMITER
-                } else {
-                    token.to_syntax_kind()
-                }
-            }
-            // Other potential delimiter characters in quote-like contexts
+            | Token::RBracket => token.to_syntax_kind(),
+            // Other tokens - no special handling needed for default context
             Token::Greater
             | Token::Less
             | Token::Plus
@@ -570,79 +678,46 @@ impl<'a> Lexer<'a> {
             | Token::QuestionMark
             | Token::Dot
             | Token::Comma
-            | Token::Semicolon => {
-                if let LexerContext::QuoteLike { .. } = self.context {
-                    SyntaxKind::DELIMITER
-                } else {
-                    token.to_syntax_kind()
-                }
-            }
+            | Token::Semicolon => token.to_syntax_kind(),
             _ => token.to_syntax_kind(),
         }
     }
 
-    fn disambiguate_percent(&self) -> SyntaxKind {
-        match &self.context {
-            LexerContext::SubPrototype => {
-                // In prototype, `%` is a symbol, which logos maps to PERCENT
-                SyntaxKind::PERCENT
-            }
-            LexerContext::ExpectingVariableName => {
-                // When in variable list context (after a sigil), % is an identifier
-                // Though there are no valid variable names starting with %, treat as IDENT for error recovery
-                SyntaxKind::IDENT
-            }
-            LexerContext::ExpectingValue => {
-                // When expecting a value or in variable list, % is a sigil for a hash
+    /// Disambiguate % between hash sigil and modulo operator
+    fn disambiguate_percent(context: DisambiguationContext) -> SyntaxKind {
+        match context {
+            DisambiguationContext::ExpectingValue => {
+                // When expecting a value, % is a sigil for a hash
                 // Examples: "my %hash", "{ key => %val }"
                 SyntaxKind::PERCENT
             }
-            LexerContext::QuoteLike { .. } => {
-                // In quote-like context, % is a sigil
-                SyntaxKind::PERCENT
-            }
-            LexerContext::ExpectingOperator => {
+            DisambiguationContext::ExpectingOperator => {
                 // When expecting an operator, % is the modulo operator
                 // Examples: "@array % hash", "$var % other_var", "func() % 2"
                 SyntaxKind::MODULO
             }
-            LexerContext::RawData => {
-                // Handle gracefully instead of panicking
-                SyntaxKind::MODULO
-            }
         }
     }
 
-    fn disambiguate_star(&self) -> SyntaxKind {
-        match &self.context {
-            LexerContext::SubPrototype => {
-                // In prototype, `*` is a symbol, which logos maps to ASTERISK
-                SyntaxKind::ASTERISK
-            }
-            LexerContext::ExpectingValue | LexerContext::ExpectingVariableName => {
-                // When expecting a value or in variable list, * is a typeglob sigil
+    /// Disambiguate * between typeglob sigil and multiplication operator  
+    fn disambiguate_star(context: DisambiguationContext) -> SyntaxKind {
+        match context {
+            DisambiguationContext::ExpectingValue => {
+                // When expecting a value, * is a typeglob sigil
                 // Examples: "my *glob", "*{$name}", "*STDIN"
                 SyntaxKind::ASTERISK
             }
-            LexerContext::QuoteLike { .. } => {
-                // In quote-like context, * is a typeglob sigil
-                SyntaxKind::ASTERISK
-            }
-            LexerContext::ExpectingOperator => {
+            DisambiguationContext::ExpectingOperator => {
                 // When expecting an operator, * is the multiplication operator
                 // Examples: "$a * $b", "func() * 2"
                 SyntaxKind::STAR
             }
-            LexerContext::RawData => {
-                unreachable!("* should not appear in RawData context");
-            }
         }
     }
 
-    fn disambiguate_str_op(&self, op: &str) -> SyntaxKind {
-        match &self.context {
-            LexerContext::SubPrototype => SyntaxKind::ERROR, // Not valid in prototype
-            LexerContext::ExpectingOperator => {
+    fn disambiguate_str_op(context: DisambiguationContext, op: &str) -> SyntaxKind {
+        match context {
+            DisambiguationContext::ExpectingOperator => {
                 // When expecting an operator, eq/ne are string comparison operators
                 match op {
                     "eq" => SyntaxKind::STR_EQ,
@@ -655,55 +730,32 @@ impl<'a> Lexer<'a> {
                     _ => SyntaxKind::IDENT, // Handle unknown ops gracefully
                 }
             }
-            LexerContext::ExpectingVariableName => {
-                // When in variable list context (after a sigil), string operators are treated as identifiers
-                SyntaxKind::IDENT
-            }
-            _ => {
-                // In other contexts, they are identifiers
+            DisambiguationContext::ExpectingValue => {
+                // In ExpectingValue context, they are identifiers
                 // Examples: "sub eq", "my $ne"
                 SyntaxKind::IDENT
             }
         }
     }
 
-    fn disambiguate_x(&self) -> SyntaxKind {
-        match &self.context {
-            LexerContext::SubPrototype => SyntaxKind::ERROR, // Not valid in prototype
-            LexerContext::ExpectingValue | LexerContext::ExpectingVariableName => {
-                // When expecting a value or in variable list, x is an identifier
+    fn disambiguate_x(context: DisambiguationContext) -> SyntaxKind {
+        match context {
+            DisambiguationContext::ExpectingValue => {
+                // When expecting a value, x is an identifier
                 // Examples: "sub x", "$x", "my $x"
                 SyntaxKind::IDENT
             }
-            LexerContext::QuoteLike { .. } => {
-                // In quote-like context, x is an identifier
-                SyntaxKind::IDENT
-            }
-            LexerContext::ExpectingOperator => {
+            DisambiguationContext::ExpectingOperator => {
                 // When expecting an operator, x is the repetition operator
                 // Examples: "$str x 3", "'hello' x 2"
                 SyntaxKind::X
             }
-            LexerContext::RawData => {
-                // Handle gracefully instead of panicking
-                SyntaxKind::IDENT
-            }
         }
     }
 
-    fn disambiguate_s(&self) -> SyntaxKind {
-        match &self.context {
-            LexerContext::SubPrototype => SyntaxKind::ERROR, // Not valid in prototype
-            LexerContext::ExpectingVariableName => {
-                // When in variable list context (after a sigil), s is an identifier
-                // Examples: "$s", "my $s", "@s"
-                SyntaxKind::IDENT
-            }
-            LexerContext::QuoteLike { .. } => {
-                // In quote-like context, s should be treated as content or flag
-                SyntaxKind::IDENT
-            }
-            LexerContext::ExpectingValue => {
+    fn disambiguate_s(&self, context: DisambiguationContext) -> SyntaxKind {
+        match context {
+            DisambiguationContext::ExpectingValue => {
                 // Look ahead to determine if this is s/// substitution or a bareword function call
                 let remainder = self.logos_lexer.remainder();
 
@@ -725,21 +777,17 @@ impl<'a> Lexer<'a> {
                 // If we reach end of input after 's', assume function call
                 SyntaxKind::IDENT
             }
-            LexerContext::ExpectingOperator => {
+            DisambiguationContext::ExpectingOperator => {
                 // When expecting an operator, s is the substitution operator
                 // Examples: "$str s/old/new/"
                 SyntaxKind::S_KW
             }
-            LexerContext::RawData => {
-                unreachable!("s should not appear in RawData context");
-            }
         }
     }
 
-    fn disambiguate_logical_op(&self, op: &str) -> SyntaxKind {
-        match &self.context {
-            LexerContext::SubPrototype => SyntaxKind::ERROR, // Not valid in prototype
-            LexerContext::ExpectingOperator => {
+    fn disambiguate_logical_op(context: DisambiguationContext, op: &str) -> SyntaxKind {
+        match context {
+            DisambiguationContext::ExpectingOperator => {
                 // When expecting an operator, not/and/or/xor are logical operators
                 match op {
                     "not" => SyntaxKind::NOT_KW,
@@ -749,31 +797,17 @@ impl<'a> Lexer<'a> {
                     _ => SyntaxKind::IDENT, // Handle unknown ops gracefully
                 }
             }
-            LexerContext::ExpectingVariableName => {
-                // When in variable list context (after a sigil), logical operators are treated as identifiers
-                SyntaxKind::IDENT
-            }
-            _ => {
-                // In other contexts, they are identifiers
+            DisambiguationContext::ExpectingValue => {
+                // In ExpectingValue context, they are identifiers
                 // Examples: "sub not", "my $and", "or die"
                 SyntaxKind::IDENT
             }
         }
     }
 
-    fn disambiguate_tr(&self) -> SyntaxKind {
-        match &self.context {
-            LexerContext::SubPrototype => SyntaxKind::ERROR, // Not valid in prototype
-            LexerContext::ExpectingVariableName => {
-                // When in variable list context (after a sigil), tr is an identifier
-                // Examples: "$tr", "my $tr", "@tr"
-                SyntaxKind::IDENT
-            }
-            LexerContext::QuoteLike { .. } => {
-                // In quote-like context, tr should be treated as content
-                SyntaxKind::IDENT
-            }
-            LexerContext::ExpectingValue => {
+    fn disambiguate_tr(&self, context: DisambiguationContext) -> SyntaxKind {
+        match context {
+            DisambiguationContext::ExpectingValue => {
                 // When expecting a value, check what follows tr
                 let remainder = self.logos_lexer.remainder();
 
@@ -804,31 +838,18 @@ impl<'a> Lexer<'a> {
                 // If we reach end of input after 'tr', assume identifier
                 SyntaxKind::IDENT
             }
-            LexerContext::ExpectingOperator => {
+            DisambiguationContext::ExpectingOperator => {
                 // When expecting an operator, tr is the transliteration operator
                 // Examples: "$str tr/a-z/A-Z/"
                 SyntaxKind::TR_KW
             }
-            LexerContext::RawData => {
-                unreachable!("tr should not appear in RawData context");
-            }
         }
     }
 
-    fn disambiguate_y(&self) -> SyntaxKind {
+    fn disambiguate_y(&self, context: DisambiguationContext) -> SyntaxKind {
         // y is an alias for tr, so use the same logic but return Y_KW
-        match &self.context {
-            LexerContext::SubPrototype => SyntaxKind::ERROR, // Not valid in prototype
-            LexerContext::ExpectingVariableName => {
-                // When in variable list context (after a sigil), y is an identifier
-                // Examples: "$y", "my $y", "@y"
-                SyntaxKind::IDENT
-            }
-            LexerContext::QuoteLike { .. } => {
-                // In quote-like context, y should be treated as content
-                SyntaxKind::IDENT
-            }
-            LexerContext::ExpectingValue => {
+        match context {
+            DisambiguationContext::ExpectingValue => {
                 // When expecting a value, check what follows y
                 let remainder = self.logos_lexer.remainder();
 
@@ -859,13 +880,10 @@ impl<'a> Lexer<'a> {
                 // If we reach end of input after 'y', assume identifier
                 SyntaxKind::IDENT
             }
-            LexerContext::ExpectingOperator => {
+            DisambiguationContext::ExpectingOperator => {
                 // When expecting an operator, y is the transliteration operator
                 // Examples: "$str y/a-z/A-Z/"
                 SyntaxKind::Y_KW
-            }
-            LexerContext::RawData => {
-                unreachable!("y should not appear in RawData context");
             }
         }
     }
@@ -994,7 +1012,7 @@ impl<'a> Lexer<'a> {
     // - Special variables: $^O, $^X, etc.
     // - Special variables: ${^MATCH}, etc.
     fn try_consume_variable_name(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        if self.context != LexerContext::ExpectingVariableName {
+        if self.context != LexerContext::VariableName {
             return None;
         }
 
@@ -1129,69 +1147,35 @@ impl<'a> Lexer<'a> {
             })
     }
 
-    fn disambiguate_slash(&self) -> SyntaxKind {
-        match &self.context {
-            LexerContext::ExpectingVariableName => {
-                // When in variable list context (after a sigil), / is treated as an identifier
-                SyntaxKind::IDENT
-            }
-            LexerContext::QuoteLike { .. } => {
-                // In quote-like context, slash is a delimiter, not regex literal or division
-                SyntaxKind::DELIMITER
-            }
-            _ => {
-                // Slash is always division operator in disambiguate context
-                // because regex literals are handled in try_consume_regex_literal
-                SyntaxKind::SLASH
-            }
-        }
+    fn disambiguate_slash(_context: DisambiguationContext) -> SyntaxKind {
+        // Slash is always division operator in disambiguate context
+        // because regex literals are handled in try_consume_regex_literal
+        SyntaxKind::SLASH
     }
 
     /// Disambiguate ampersand (&) based on context
-    fn disambiguate_ampersand(&self) -> SyntaxKind {
-        match self.context {
-            LexerContext::ExpectingVariableName => {
-                // After sigil, & is part of function name
+    fn disambiguate_ampersand(context: DisambiguationContext) -> SyntaxKind {
+        match context {
+            DisambiguationContext::ExpectingValue => {
+                // In value context, & is reference/sigil
                 SyntaxKind::AMPERSAND
             }
-            LexerContext::SubPrototype => {
-                // In subroutine prototype, & indicates code reference
-                SyntaxKind::AMPERSAND
-            }
-            LexerContext::QuoteLike { .. } => {
-                // In quote-like context, & is a delimiter
-                SyntaxKind::DELIMITER
-            }
-            LexerContext::ExpectingValue => {
-                // In expecting value context, & is likely a function sigil or reference
-                SyntaxKind::AMPERSAND
-            }
-            _ => {
-                // In operator context, it's likely bitwise AND
+            DisambiguationContext::ExpectingOperator => {
+                // In operator context, it's bitwise AND
                 SyntaxKind::BITWISE_AND
             }
         }
     }
 
     /// Disambiguate caret (^) based on context
-    fn disambiguate_caret(&self) -> SyntaxKind {
-        match self.context {
-            LexerContext::ExpectingVariableName => {
-                // After sigil, ^ is part of variable name
-                SyntaxKind::CARET
-            }
-            LexerContext::SubPrototype => {
-                SyntaxKind::ERROR // ^ is not valid in prototype
-            }
-            LexerContext::QuoteLike { .. } => {
-                // In quote-like context, ^ is a delimiter
-                SyntaxKind::DELIMITER
-            }
-            LexerContext::ExpectingValue => {
+    fn disambiguate_caret(context: DisambiguationContext) -> SyntaxKind {
+        match context {
+            DisambiguationContext::ExpectingValue => {
                 // In expecting value context, ^ is likely a sigil
+                // (e.g., special variables like $^O, $^X)
                 SyntaxKind::CARET
             }
-            _ => {
+            DisambiguationContext::ExpectingOperator => {
                 // In operator context, it's bitwise XOR
                 SyntaxKind::BITWISE_XOR
             }
@@ -1431,7 +1415,7 @@ impl<'a> Lexer<'a> {
     fn handle_identifier_context(&self) -> LexerContext {
         match &self.context {
             LexerContext::SubPrototype => self.context, // Remain in prototype context
-            LexerContext::ExpectingVariableName | LexerContext::ExpectingValue => {
+            LexerContext::VariableName | LexerContext::ExpectingValue => {
                 LexerContext::ExpectingOperator
             }
             LexerContext::ExpectingOperator => LexerContext::ExpectingOperator,
@@ -1446,7 +1430,7 @@ impl<'a> Lexer<'a> {
         }
 
         self.context = match syntax_kind {
-            kind if self.is_sigil(kind) => LexerContext::ExpectingVariableName,
+            kind if self.is_sigil(kind) => LexerContext::VariableName,
 
             // Keywords
             kind if self.is_keyword(kind) => self.handle_keyword_context(kind),

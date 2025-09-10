@@ -34,6 +34,7 @@ impl<'a> Lexer<'a> {
         }
 
         let first_char = remainder.chars().next().unwrap();
+
         let should_consume = match state {
             QuoteLikeState::Delimiter {
                 kind: DelimiterType::Open,
@@ -158,8 +159,8 @@ impl<'a> Lexer<'a> {
                     SyntaxKind::REGEX_PATTERN,
                     delimiter,
                     QuoteLikeState::Delimiter {
-                        phase: DelimiterPhase::Second,
-                        kind: DelimiterType::Open,
+                        phase: DelimiterPhase::First,
+                        kind: DelimiterType::Close,
                     },
                 )
                 .or_else(|| self.try_handle_quote_like_delimiter_internal()),
@@ -190,8 +191,8 @@ impl<'a> Lexer<'a> {
                     SyntaxKind::TR_SEARCH_LIST,
                     delimiter,
                     QuoteLikeState::Delimiter {
-                        phase: DelimiterPhase::Second,
-                        kind: DelimiterType::Open,
+                        phase: DelimiterPhase::First,
+                        kind: DelimiterType::Close,
                     },
                 )
                 .or_else(|| self.try_handle_quote_like_delimiter_internal()),
@@ -212,9 +213,54 @@ impl<'a> Lexer<'a> {
                 )
                 .or_else(|| self.try_handle_quote_like_delimiter_internal()),
 
-            // Delimiter states - only handle delimiters
+            // Delimiter states - handle delimiters or fallback to logos for other tokens
             (_, QuoteLikeState::Delimiter { .. }) => {
-                self.try_handle_quote_like_delimiter_internal()
+                self.try_handle_quote_like_delimiter_internal().or_else(|| {
+                    // If no specific delimiter handling, try generic token processing
+                    match self.logos_lexer.next() {
+                        Some(Ok(token)) => {
+                            let text = self.logos_lexer.slice();
+                            let syntax_kind = match token {
+                                // In quote-like context, these should be treated as delimiters
+                                Token::LParen
+                                | Token::LBrace
+                                | Token::LBracket
+                                | Token::RParen
+                                | Token::RBrace
+                                | Token::RBracket
+                                | Token::Greater
+                                | Token::Less
+                                | Token::Plus
+                                | Token::Minus
+                                | Token::Eq
+                                | Token::At
+                                | Token::Dollar
+                                | Token::Colon
+                                | Token::QuestionMark
+                                | Token::Dot
+                                | Token::Comma
+                                | Token::Semicolon
+                                | Token::Slash
+                                | Token::Ampersand
+                                | Token::Caret
+                                | Token::Pipe
+                                | Token::Percent
+                                | Token::Star => {
+                                    // Call handle_quote_like_delimiter to update state
+                                    self.handle_quote_like_delimiter(text);
+                                    SyntaxKind::DELIMITER
+                                }
+                                _ => token.to_syntax_kind(),
+                            };
+                            Some((syntax_kind, text))
+                        }
+                        Some(Err(())) => {
+                            let text = self.logos_lexer.slice();
+                            Some((SyntaxKind::ERROR, text))
+                        }
+                        None => None,
+                    }
+                })
             }
 
             // Flag states
