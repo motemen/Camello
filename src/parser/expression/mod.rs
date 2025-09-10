@@ -418,7 +418,7 @@ impl Parser<'_> {
         }
 
         match self.current_kind() {
-            Some(SyntaxKind::NUMBER | SyntaxKind::STRING | SyntaxKind::REGEX_LITERAL) => {
+            Some(SyntaxKind::NUMBER | SyntaxKind::STRING | SyntaxKind::REGEX_LITERAL | SyntaxKind::YADA_YADA) => {
                 self.bump();
                 self.skip_trivia();
             }

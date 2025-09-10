@@ -142,6 +142,10 @@ pub enum Token {
     #[token(".")]
     Dot,
 
+    // Yada-yada operator (must come after DOT to take precedence)
+    #[token("...")]
+    YadaYada,
+
     // Multiplicative operators
     #[token("*")]
     Star,
@@ -217,6 +221,7 @@ impl Token {
             Token::Plus => SyntaxKind::PLUS,
             Token::Minus => SyntaxKind::MINUS,
             Token::Dot => SyntaxKind::DOT,
+            Token::YadaYada => SyntaxKind::YADA_YADA,
             Token::Arrow => SyntaxKind::ARROW,
             Token::FatComma => SyntaxKind::FAT_COMMA,
             Token::Star => SyntaxKind::STAR,

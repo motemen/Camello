@@ -62,6 +62,9 @@ pub enum SyntaxKind {
     RETURN_KW, // return keyword
     UNDEF_KW,  // undef keyword
 
+    // Yada-yada operator (placeholder/stub)
+    YADA_YADA, // ... (yada-yada operator)
+
     // Data section
     END_KW,  // __END__
     DATA_KW, // __DATA__
@@ -232,6 +235,7 @@ pub enum SyntaxKind {
     // Modifiers
     IF_MODIFIER,     // Postfix if modifier (e.g., print "hello" if $debug;)
     UNLESS_MODIFIER, // Postfix unless modifier (e.g., return $x unless $x > $y;)
+    FOR_MODIFIER,    // Postfix for modifier (e.g., print $item for @list;)
 
     // Other statements
     STMT, // General statement

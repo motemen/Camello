@@ -224,6 +224,28 @@ fn test_postfix_conditional_formatting() {
 }
 
 #[test]
+fn test_postfix_for_modifier_formatting() {
+    let cases = [
+        // Basic postfix for tests
+        ("print $item for @list;", "print $item for @list;\n"),
+        ("... for @values;", "... for @values;\n"),
+        // Variable assignments with postfix for
+        (
+            "my $temp = $value for @data;",
+            "my $temp = $value for @data;\n",
+        ),
+        // Simple expressions with postfix for
+        (
+            "$counter = 1 for @items;",
+            "$counter = 1 for @items;\n",
+        ),
+        // Test foreach as synonym
+        ("print $x foreach @array;", "print $x foreach @array;\n"),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_inline_comment_preservation() {
     let cases = [
         // Inline comments should stay on the same line

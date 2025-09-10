@@ -510,7 +510,7 @@ impl Parser<'_> {
     }
 
     fn parse_optional_postfix_conditional(&mut self) {
-        if self.at(SyntaxKind::IF_KW) || self.at(SyntaxKind::UNLESS_KW) {
+        if self.at(SyntaxKind::IF_KW) || self.at(SyntaxKind::UNLESS_KW) || self.at(SyntaxKind::FOR_KW) || self.at(SyntaxKind::FOREACH_KW) {
             self.parse_postfix_conditional();
         }
     }
@@ -518,22 +518,29 @@ impl Parser<'_> {
     fn parse_postfix_conditional(&mut self) {
         let keyword_kind = self
             .current_kind()
-            .expect("Current token should be if/unless keyword");
-        let modifier_kind = if keyword_kind == SyntaxKind::IF_KW {
-            SyntaxKind::IF_MODIFIER
-        } else {
-            SyntaxKind::UNLESS_MODIFIER
+            .expect("Current token should be if/unless/for keyword");
+        let modifier_kind = match keyword_kind {
+            SyntaxKind::IF_KW => SyntaxKind::IF_MODIFIER,
+            SyntaxKind::UNLESS_KW => SyntaxKind::UNLESS_MODIFIER,
+            SyntaxKind::FOR_KW | SyntaxKind::FOREACH_KW => SyntaxKind::FOR_MODIFIER,
+            _ => panic!("Unexpected postfix conditional keyword: {:?}", keyword_kind),
         };
 
         self.builder.start_node(modifier_kind.into());
 
-        // Consume the if/unless keyword
+        // Consume the keyword
         self.bump();
         self.skip_trivia();
 
-        // Parse the condition expression
+        // Parse the expression (condition for if/unless, list for for/foreach)
+        let error_message = match keyword_kind {
+            SyntaxKind::IF_KW | SyntaxKind::UNLESS_KW => "Expected condition after postfix if/unless",
+            SyntaxKind::FOR_KW | SyntaxKind::FOREACH_KW => "Expected list expression after postfix for/foreach",
+            _ => unreachable!(),
+        };
+
         if !self.expression() {
-            self.error("Expected condition after postfix if/unless");
+            self.error(error_message);
         }
 
         self.builder.finish_node();
