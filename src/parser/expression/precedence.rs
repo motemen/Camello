@@ -16,6 +16,8 @@ impl Precedence {
     pub const LOGICAL_OR: Precedence = Precedence(20); // ||
     pub const LOGICAL_AND: Precedence = Precedence(30); // &&
     pub const COMPARISON: Precedence = Precedence(40); // ==, !=, <, >, <=, >=, eq, ne, lt, gt, le, ge, cmp, <=>
+    pub const BITWISE_OR: Precedence = Precedence(45); // |, ^ (bitwise OR and XOR)
+    pub const BITWISE_AND: Precedence = Precedence(47); // & (bitwise AND)
     pub const ADDITIVE: Precedence = Precedence(50); // +, -, .
     pub const MULTIPLICATIVE: Precedence = Precedence(60); // *, /, %, x
     pub const PREFIX: Precedence = Precedence(65); // ! (logical not prefix)
@@ -114,6 +116,18 @@ pub fn get_operator_info(kind: SyntaxKind) -> Option<OperatorInfo> {
         SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::MODULO | SyntaxKind::X => Some(
             OperatorInfo::new(Precedence::MULTIPLICATIVE, false, SyntaxKind::INFIX_EXPR),
         ),
+
+        // Bitwise operators
+        SyntaxKind::BITWISE_AND => Some(OperatorInfo::new(
+            Precedence::BITWISE_AND,
+            false,
+            SyntaxKind::INFIX_EXPR,
+        )),
+        SyntaxKind::BITWISE_OR | SyntaxKind::BITWISE_XOR => Some(OperatorInfo::new(
+            Precedence::BITWISE_OR,
+            false,
+            SyntaxKind::INFIX_EXPR,
+        )),
 
         // Defined-or operator
         SyntaxKind::DEFINED_OR => Some(OperatorInfo::new(

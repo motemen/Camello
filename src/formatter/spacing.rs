@@ -133,6 +133,11 @@ pub const fn get_token_spacing(kind: SyntaxKind) -> TokenSpacing {
         }
         SyntaxKind::DEFINED_OR => TokenSpacing::binary_op(),
 
+        // Bitwise operators
+        SyntaxKind::BITWISE_AND | SyntaxKind::BITWISE_OR | SyntaxKind::BITWISE_XOR => {
+            TokenSpacing::binary_op()
+        }
+
         SyntaxKind::FILE_TEST_OP => TokenSpacing::new(
             SpaceRule::Contextual,
             SpaceRule::Always,
@@ -244,19 +249,15 @@ pub fn needs_space_before(context: &SpacingContext) -> bool {
 
 /// Handle special case overrides that don't fit the general rules
 fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
-    use SyntaxKind::{
-        AND_KW, ARRAY_VAR, ARROW, COLON, COMMA, DELIMITER, DOT, DOUBLE_COLON, ELSIF_KW, EQ, EQ_EQ,
-        FOREACH_KW, FOR_KW, GE, GT, HASH_VAR, IDENT, IF_KW, LE, LOCAL_KW, LOGICAL_AND, LOGICAL_NOT,
-        LOGICAL_OR, LT, L_BRACE, L_BRACKET, L_PAREN, MINUS, MODULO, MY_KW, NE, OR_KW, OUR_KW, PLUS,
-        QUALIFIED_IDENT, QUESTION_MARK, REGEX_MATCH, REGEX_NOT_MATCH, RETURN_KW, R_BRACE,
-        R_BRACKET, R_PAREN, SCALAR_VAR, SEMICOLON, SLASH, SPACESHIP, STAR, STATE_KW, STR_CMP,
-        STR_EQ, STR_GE, STR_GT, STR_LE, STR_LT, STR_NE, SUB_KW, TYPEGLOB_VAR, UNLESS_KW, WHILE_KW,
-        X, XOR_KW,
-    };
+    use SyntaxKind::*;
 
     match (prev, current) {
         // Arrow operator: highest priority, never spaces
         (ARROW, _) | (_, ARROW) => Some(false),
+
+        // Compound assignment operators: no space between operator and =
+        // e.g., ||=, &&=, +=, -=, *=, /=, %=, .=, //=, &=
+        (prev_op, EQ) if prev_op.is_compoundable_operator() => Some(false),
 
         // Comma: no space before, space after (high priority)
         (_, COMMA) => Some(false),
@@ -299,7 +300,8 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
             DELIMITER,
             X | PLUS | MINUS | STAR | SLASH | MODULO | DOT | EQ | LT | GT | LE | GE | EQ_EQ | NE
             | STR_EQ | STR_NE | STR_GT | STR_LT | STR_GE | STR_LE | STR_CMP | SPACESHIP
-            | LOGICAL_AND | LOGICAL_OR | REGEX_MATCH | REGEX_NOT_MATCH | AND_KW | OR_KW | XOR_KW,
+            | LOGICAL_AND | LOGICAL_OR | REGEX_MATCH | REGEX_NOT_MATCH | AND_KW | OR_KW | XOR_KW
+            | BITWISE_AND | BITWISE_OR | BITWISE_XOR,
         ) => Some(true),
 
         // No space inside parentheses/brackets/braces

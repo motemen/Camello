@@ -3,7 +3,7 @@ pub mod primary;
 pub mod quoted;
 
 use crate::SyntaxKind;
-use precedence::{get_operator_info, Precedence};
+use precedence::{get_operator_info, OperatorInfo, Precedence};
 
 use super::Parser;
 
@@ -110,7 +110,25 @@ impl Parser<'_> {
                 continue;
             }
 
-            let Some(op_info) = get_operator_info(current_kind) else {
+            // Check if this is a compound assignment operator (e.g., +=, ||=, etc.)
+            let is_compound_assignment = current_kind.is_compoundable_operator() && {
+                // Look ahead to see if there's an '=' after the current operator
+                self.peek_non_trivia_token()
+                    .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::EQ)
+            };
+
+            let op_info = if is_compound_assignment {
+                // Use assignment precedence for compound assignment operators
+                Some(OperatorInfo::new(
+                    Precedence::ASSIGNMENT,
+                    true, // Assignment is right associative
+                    SyntaxKind::INFIX_EXPR,
+                ))
+            } else {
+                get_operator_info(current_kind)
+            };
+
+            let Some(op_info) = op_info else {
                 break;
             };
 
@@ -123,8 +141,19 @@ impl Parser<'_> {
             self.builder
                 .start_node_at(checkpoint, op_info.node_kind.into());
 
+            let op_checkpoint = self.builder.checkpoint();
+
             // Consume the operator
             self.bump();
+
+            if is_compound_assignment {
+                // Handle compound assignment operators (e.g., +=, ||=, etc.)
+                self.builder
+                    .start_node_at(op_checkpoint, SyntaxKind::COMPOUND_ASSIGNMENT.into());
+                self.bump(); // consume =
+                self.builder.finish_node();
+            }
+
             self.skip_trivia();
 
             // Calculate next precedence level

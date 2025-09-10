@@ -146,6 +146,11 @@ pub enum SyntaxKind {
     LOGICAL_OR,  // ||
     LOGICAL_NOT, // !
 
+    // Bitwise operators
+    BITWISE_AND, // &
+    BITWISE_OR,  // |
+    BITWISE_XOR, // ^
+
     // Low-precedence logical operators
     NOT_KW, // not
     AND_KW, // and
@@ -231,7 +236,8 @@ pub enum SyntaxKind {
     // Other statements
     STMT, // General statement
 
-    EXPR_LIST, // Expression list (e.g., $a, $b, $c)
+    EXPR_LIST,           // Expression list (e.g., $a, $b, $c)
+    COMPOUND_ASSIGNMENT, // Compound assignment (e.g., +=, ||=
 
     // ===== Other =====
     ERROR, // Parse error
@@ -332,6 +338,28 @@ impl SyntaxKind {
                 | SyntaxKind::XOR_KW
                 | SyntaxKind::DEFINED_OR
                 | SyntaxKind::SPACESHIP
+        )
+    }
+
+    /// Checks if the token is part of the operator group (e.g., `||`, `&&`, etc.)
+    /// Returns true if this token kind can be used as a compound assignment operator (e.g., ||=, &&=, .=, +=, etc.)
+    #[must_use]
+    pub fn is_compoundable_operator(self) -> bool {
+        matches!(
+            self,
+            SyntaxKind::LOGICAL_AND
+                | SyntaxKind::LOGICAL_OR
+                | SyntaxKind::DEFINED_OR
+                | SyntaxKind::DOT
+                | SyntaxKind::BITWISE_AND
+                | SyntaxKind::BITWISE_OR
+                | SyntaxKind::BITWISE_XOR
+                | SyntaxKind::PLUS
+                | SyntaxKind::MINUS
+                | SyntaxKind::STAR
+                | SyntaxKind::SLASH
+                | SyntaxKind::MODULO
+                | SyntaxKind::X
         )
     }
 }
