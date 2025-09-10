@@ -527,7 +527,10 @@ impl Parser<'_> {
             SyntaxKind::IF_KW => SyntaxKind::IF_MODIFIER,
             SyntaxKind::UNLESS_KW => SyntaxKind::UNLESS_MODIFIER,
             SyntaxKind::FOR_KW | SyntaxKind::FOREACH_KW => SyntaxKind::FOR_MODIFIER,
-            _ => panic!("Unexpected postfix conditional keyword: {:?}", keyword_kind),
+            _ => {
+                self.error("Unexpected postfix conditional keyword");
+                return;
+            }
         };
 
         self.builder.start_node(modifier_kind.into());
@@ -544,7 +547,10 @@ impl Parser<'_> {
             SyntaxKind::FOR_KW | SyntaxKind::FOREACH_KW => {
                 "Expected list expression after postfix for/foreach"
             }
-            _ => unreachable!(),
+            _ => {
+                // This should not happen due to the check above, but handle gracefully
+                "Expected expression after postfix modifier"
+            }
         };
 
         if !self.expression() {
