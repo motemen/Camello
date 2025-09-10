@@ -199,39 +199,6 @@ impl Formatter {
         }
     }
 
-    pub fn format_compound_assignment(&mut self, node: &PerlNode) {
-        // Compound assignment like +=, ||=, etc. should have no spaces between the operator and =
-        // But normal spacing rules should apply before and after the compound operator
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(child_node) => self.format_node(&child_node),
-                NodeOrToken::Token(token) => {
-                    // Apply spacing before the token as usual, except don't add space between operator and =
-                    let kind = token.kind();
-                    let text = token.text();
-
-                    // Only skip spacing for EQ when it follows directly after an operator
-                    let skip_spacing = kind == SyntaxKind::EQ
-                        && self
-                            .prev_token_kind
-                            .map_or(false, |prev| prev.is_compoundable_operator());
-
-                    if !skip_spacing {
-                        self.handle_spacing_before(kind);
-                    }
-
-                    if self.at_line_start && !kind.is_trivia() {
-                        self.add_indent();
-                        self.at_line_start = false;
-                    }
-
-                    self.output.push_str(text);
-                    self.prev_token_kind = Some(kind);
-                }
-            }
-        }
-    }
-
     fn format_subscription_expr(
         &mut self,
         node: &PerlNode,

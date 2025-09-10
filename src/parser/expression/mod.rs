@@ -114,7 +114,7 @@ impl Parser<'_> {
             let is_compound_assignment = current_kind.is_compoundable_operator() && {
                 // Look ahead to see if there's an '=' after the current operator
                 self.peek_non_trivia_token()
-                    .map_or(false, |(next_kind, _)| next_kind == SyntaxKind::EQ)
+                    .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::EQ)
             };
 
             let op_info = if is_compound_assignment {

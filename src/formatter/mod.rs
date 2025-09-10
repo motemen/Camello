@@ -173,10 +173,6 @@ impl Formatter {
                 self.format_deref_expr(node);
                 return;
             }
-            SyntaxKind::COMPOUND_ASSIGNMENT => {
-                self.format_compound_assignment(node);
-                return;
-            }
             SyntaxKind::DATA_SECTION => {
                 self.format_data_section(node);
                 return;
