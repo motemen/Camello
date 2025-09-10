@@ -510,7 +510,11 @@ impl Parser<'_> {
     }
 
     fn parse_optional_postfix_conditional(&mut self) {
-        if self.at(SyntaxKind::IF_KW) || self.at(SyntaxKind::UNLESS_KW) || self.at(SyntaxKind::FOR_KW) || self.at(SyntaxKind::FOREACH_KW) {
+        if self.at(SyntaxKind::IF_KW)
+            || self.at(SyntaxKind::UNLESS_KW)
+            || self.at(SyntaxKind::FOR_KW)
+            || self.at(SyntaxKind::FOREACH_KW)
+        {
             self.parse_postfix_conditional();
         }
     }
@@ -534,8 +538,12 @@ impl Parser<'_> {
 
         // Parse the expression (condition for if/unless, list for for/foreach)
         let error_message = match keyword_kind {
-            SyntaxKind::IF_KW | SyntaxKind::UNLESS_KW => "Expected condition after postfix if/unless",
-            SyntaxKind::FOR_KW | SyntaxKind::FOREACH_KW => "Expected list expression after postfix for/foreach",
+            SyntaxKind::IF_KW | SyntaxKind::UNLESS_KW => {
+                "Expected condition after postfix if/unless"
+            }
+            SyntaxKind::FOR_KW | SyntaxKind::FOREACH_KW => {
+                "Expected list expression after postfix for/foreach"
+            }
             _ => unreachable!(),
         };
 

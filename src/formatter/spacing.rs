@@ -320,7 +320,8 @@ fn handle_contextual_spacing(
     _current_spacing: &TokenSpacing,
 ) -> bool {
     use SyntaxKind::{
-        COMMA, FOR_KW, FOREACH_KW, IF_KW, L_BRACE, L_BRACKET, L_PAREN, R_BRACE, R_BRACKET, R_PAREN, UNLESS_KW,
+        COMMA, FOREACH_KW, FOR_KW, IF_KW, L_BRACE, L_BRACKET, L_PAREN, R_BRACE, R_BRACKET, R_PAREN,
+        UNLESS_KW,
     };
 
     match (prev, current) {

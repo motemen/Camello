@@ -235,10 +235,7 @@ fn test_postfix_for_modifier_formatting() {
             "my $temp = $value for @data;\n",
         ),
         // Simple expressions with postfix for
-        (
-            "$counter = 1 for @items;",
-            "$counter = 1 for @items;\n",
-        ),
+        ("$counter = 1 for @items;", "$counter = 1 for @items;\n"),
         // Test foreach as synonym
         ("print $x foreach @array;", "print $x foreach @array;\n"),
     ];
