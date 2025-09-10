@@ -146,6 +146,11 @@ pub enum SyntaxKind {
     LOGICAL_OR,  // ||
     LOGICAL_NOT, // !
 
+    // Bitwise operators
+    BITWISE_AND, // &
+    BITWISE_OR,  // |
+    BITWISE_XOR, // ^
+
     // Low-precedence logical operators
     NOT_KW, // not
     AND_KW, // and
@@ -347,6 +352,9 @@ impl SyntaxKind {
                 | SyntaxKind::DEFINED_OR
                 | SyntaxKind::DOT
                 | SyntaxKind::AMPERSAND
+                | SyntaxKind::BITWISE_AND
+                | SyntaxKind::BITWISE_OR
+                | SyntaxKind::BITWISE_XOR
                 | SyntaxKind::PLUS
                 | SyntaxKind::MINUS
                 | SyntaxKind::STAR

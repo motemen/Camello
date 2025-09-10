@@ -133,6 +133,11 @@ pub const fn get_token_spacing(kind: SyntaxKind) -> TokenSpacing {
         }
         SyntaxKind::DEFINED_OR => TokenSpacing::binary_op(),
 
+        // Bitwise operators
+        SyntaxKind::BITWISE_AND | SyntaxKind::BITWISE_OR | SyntaxKind::BITWISE_XOR => {
+            TokenSpacing::binary_op()
+        }
+
         SyntaxKind::FILE_TEST_OP => TokenSpacing::new(
             SpaceRule::Contextual,
             SpaceRule::Always,
@@ -295,7 +300,8 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
             DELIMITER,
             X | PLUS | MINUS | STAR | SLASH | MODULO | DOT | EQ | LT | GT | LE | GE | EQ_EQ | NE
             | STR_EQ | STR_NE | STR_GT | STR_LT | STR_GE | STR_LE | STR_CMP | SPACESHIP
-            | LOGICAL_AND | LOGICAL_OR | REGEX_MATCH | REGEX_NOT_MATCH | AND_KW | OR_KW | XOR_KW,
+            | LOGICAL_AND | LOGICAL_OR | REGEX_MATCH | REGEX_NOT_MATCH | AND_KW | OR_KW | XOR_KW
+            | BITWISE_AND | BITWISE_OR | BITWISE_XOR,
         ) => Some(true),
 
         // No space inside parentheses/brackets/braces
