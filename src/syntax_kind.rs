@@ -351,7 +351,6 @@ impl SyntaxKind {
                 | SyntaxKind::LOGICAL_OR
                 | SyntaxKind::DEFINED_OR
                 | SyntaxKind::DOT
-                | SyntaxKind::AMPERSAND
                 | SyntaxKind::BITWISE_AND
                 | SyntaxKind::BITWISE_OR
                 | SyntaxKind::BITWISE_XOR
