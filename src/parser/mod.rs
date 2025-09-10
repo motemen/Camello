@@ -160,6 +160,14 @@ impl<'a> Parser<'a> {
         self.current_token = self.lexer.next_token();
     }
 
+    fn bump_with_context(&mut self, ctx: LexerContext) {
+        if let Some((kind, text)) = self.current_token.take() {
+            self.builder.token(kind.into(), text);
+            self.current_pos += text.len();
+        }
+        self.current_token = self.lexer.bump_with_context(ctx);
+    }
+
     fn expect(&mut self, expected: SyntaxKind) {
         if self.at(expected) {
             self.bump();
@@ -212,11 +220,6 @@ impl<'a> Parser<'a> {
     /// Check if any of the given token kinds appears next (skipping trivia)
     fn lookahead_for_any(&self, target_kinds: &[SyntaxKind]) -> bool {
         self.lexer.peek_for_any(target_kinds).is_some()
-    }
-
-    /// Set lexer context explicitly (used after parsing certain constructs)
-    fn set_lexer_context(&mut self, context: LexerContext) {
-        self.lexer.set_context(context);
     }
 
     fn is_at_start_of_expression(&self) -> bool {

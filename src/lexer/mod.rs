@@ -459,6 +459,11 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    pub fn bump_with_context(&mut self, ctx: LexerContext) -> Option<(SyntaxKind, &'a str)> {
+        self.context = ctx;
+        self.next_token()
+    }
+
     /// Consume the entire remaining input as a data section after __END__ or __DATA__
     pub fn consume_data_section(&mut self) -> Option<(SyntaxKind, &'a str)> {
         let remainder = self.logos_lexer.remainder();

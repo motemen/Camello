@@ -34,16 +34,18 @@ impl Parser<'_> {
         }
 
         // Closing delimiter (should be DELIMITER token with matching text)
-        self.expect_delimiter(closing_delim);
+        if self.at_delimiter(closing_delim) {
+            self.bump_with_context(crate::lexer::LexerContext::ExpectingOperator);
+        } else {
+            let msg = format!(
+                "Expected delimiter '{}', found {:?}",
+                closing_delim,
+                self.current_kind()
+            );
+            self.error(&msg);
+        }
 
         self.builder.finish_node();
-
-        // Set lexer context to ExpectingOperator after completing the qw expression
-        // This allows proper parsing of operators like 'x' that follow qw expressions
-        self.set_lexer_context(crate::lexer::LexerContext::ExpectingOperator);
-
-        // Force a fresh token fetch to ensure the context change takes effect
-        // Skip any trivia and refresh the current token with the new context
         self.skip_trivia();
     }
 
@@ -150,17 +152,10 @@ impl Parser<'_> {
         if (expr_kind == SyntaxKind::M_EXPR && self.at(SyntaxKind::M_FLAGS))
             || (expr_kind == SyntaxKind::QR_EXPR && self.at(SyntaxKind::QR_FLAGS))
         {
-            self.bump();
+            self.bump_with_context(crate::lexer::LexerContext::ExpectingOperator);
         }
 
         self.builder.finish_node();
-
-        // Set lexer context to ExpectingOperator after completing the q-family expression
-        // This allows proper parsing of operators like 'x' that follow q expressions
-        self.set_lexer_context(crate::lexer::LexerContext::ExpectingOperator);
-
-        // Force a fresh token fetch to ensure the context change takes effect
-        // Skip any trivia and refresh the current token with the new context
         self.skip_trivia();
     }
 
@@ -210,17 +205,10 @@ impl Parser<'_> {
         // Optional flags - only skip trivia if we have flags to consume
         if self.at(flags_kind) {
             self.skip_trivia();
-            self.bump();
+            self.bump_with_context(crate::lexer::LexerContext::ExpectingOperator);
         }
 
         self.builder.finish_node();
-
-        // Set lexer context to ExpectingOperator after completing the two-part expression
-        // This allows proper parsing of operators like 'or' that follow s/tr/y expressions
-        self.set_lexer_context(crate::lexer::LexerContext::ExpectingOperator);
-
-        // Force a fresh token fetch to ensure the context change takes effect
-        // Skip any trivia and refresh the current token with the new context
         self.skip_trivia();
     }
 
