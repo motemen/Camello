@@ -1886,3 +1886,31 @@ fn test_expression_dereference_formatting() {
 
     check_formatting_cases(&cases);
 }
+
+#[test]
+fn test_compound_assignment_precedence() {
+    let cases = [
+        // Basic compound assignments
+        ("$x += 1;", "$x += 1;\n"),
+        ("$x -= 2;", "$x -= 2;\n"),
+        ("$x *= 3;", "$x *= 3;\n"),
+        ("$x /= 4;", "$x /= 4;\n"),
+        ("$x %= 5;", "$x %= 5;\n"),
+        ("$x .= 'text';", "$x .= 'text';\n"),
+        // Logical compound assignments
+        ("$x ||= 'default';", "$x ||= 'default';\n"),
+        ("$x &&= 'value';", "$x &&= 'value';\n"),
+        ("$x //= 'defined';", "$x //= 'defined';\n"),
+        // String repetition compound assignment
+        ("$x x= 3;", "$x x= 3;\n"),
+        // Test precedence: compound assignment should have assignment precedence
+        // This should be parsed as: $x += ($y + $z), not ($x += $y) + $z
+        ("$x += $y + $z;", "$x += $y + $z;\n"),
+        ("$result ||= $a + $b * $c;", "$result ||= $a + $b * $c;\n"),
+        // Complex expressions with compound assignment
+        ("$hash{key} += $value * 2;", "$hash{key} += $value * 2;\n"),
+        ("@array[0] .= ' suffix';", "@array[0] .= ' suffix';\n"),
+    ];
+
+    check_formatting_cases(&cases);
+}
