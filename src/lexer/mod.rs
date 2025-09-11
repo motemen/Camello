@@ -148,6 +148,12 @@ pub enum Token {
     #[token("=")]
     Eq,
 
+    #[token("++")]
+    Increment,
+
+    #[token("--")]
+    Decrement,
+
     #[token("+")]
     Plus,
 
@@ -229,6 +235,8 @@ impl Token {
             Token::QuestionMark => SyntaxKind::QUESTION_MARK,
             Token::Colon => SyntaxKind::COLON,
             Token::Eq => SyntaxKind::EQ,
+            Token::Increment => SyntaxKind::INCREMENT,
+            Token::Decrement => SyntaxKind::DECREMENT,
             Token::Plus => SyntaxKind::PLUS,
             Token::Minus => SyntaxKind::MINUS,
             Token::Dot => SyntaxKind::DOT,
