@@ -1410,43 +1410,7 @@ impl<'a> Lexer<'a> {
 
     // Removed: is_builtin_function (no longer used)
 
-    fn is_sigil(&self, kind: SyntaxKind) -> bool {
-        matches!(
-            kind,
-            SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT | SyntaxKind::ASTERISK
-        )
-    }
-
-    fn is_keyword(&self, kind: SyntaxKind) -> bool {
-        matches!(
-            kind,
-            SyntaxKind::SUB_KW
-                | SyntaxKind::MY_KW
-                | SyntaxKind::OUR_KW
-                | SyntaxKind::STATE_KW
-                | SyntaxKind::LOCAL_KW
-                | SyntaxKind::FOR_KW
-                | SyntaxKind::FOREACH_KW
-                | SyntaxKind::IF_KW
-                | SyntaxKind::UNLESS_KW
-                | SyntaxKind::WHILE_KW
-                | SyntaxKind::PACKAGE_KW
-                | SyntaxKind::USE_KW
-                | SyntaxKind::RETURN_KW
-                | SyntaxKind::QW_KW
-                | SyntaxKind::Q_KW
-                | SyntaxKind::QQ_KW
-                | SyntaxKind::QX_KW
-                | SyntaxKind::M_KW
-                | SyntaxKind::QR_KW
-                | SyntaxKind::S_KW
-                | SyntaxKind::TR_KW
-                | SyntaxKind::Y_KW
-                | SyntaxKind::END_KW
-                | SyntaxKind::DATA_KW
-                | SyntaxKind::BACKSLASH
-        )
-    }
+    // Removed unused is_sigil / is_keyword helpers
 
     fn is_operator(&self, kind: SyntaxKind) -> bool {
         matches!(
