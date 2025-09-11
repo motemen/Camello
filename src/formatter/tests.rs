@@ -1021,9 +1021,17 @@ fn test_y_operator_formatting() {
 #[test]
 fn test_tr_with_different_delimiters() {
     // Test tr with different delimiters
-    let formatted = format_and_assert("tr(a)(b);");
-    // The formatter adds a newline, which is expected behavior
-    assert_eq!(formatted, "tr(a)(b);\n");
+    let cases = [
+        ("$str =~ tr/abc/xyz/;", "$str =~ tr/abc/xyz/;"),
+        ("$str =~ tr(abc)(xyz);", "$str =~ tr(abc)(xyz);"),
+        ("$str =~ tr[abc][xyz];", "$str =~ tr[abc][xyz];"),
+        ("$str =~ tr{abc}{xyz};", "$str =~ tr{abc}{xyz};"),
+    ];
+
+    for (input, expected) in cases {
+        let formatted = format_and_assert(input);
+        assert_eq!(formatted.trim(), expected, "Failed for input: '{}'", input);
+    }
 }
 
 #[test]
