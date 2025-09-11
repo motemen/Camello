@@ -2,7 +2,7 @@ pub mod precedence;
 pub mod primary;
 pub mod quoted;
 
-use crate::lexer::LexMode;
+use crate::lexer::LexContext;
 use crate::SyntaxKind;
 use precedence::{get_operator_info, OperatorInfo, Precedence};
 
@@ -15,7 +15,7 @@ impl Parser<'_> {
     /// unless the next token is a fat comma (=>), in which case it's likely a bareword key.
     fn should_parse_quote_like(&self) -> bool {
         !self
-            .peek_second_non_trivia_with(LexMode::Value)
+            .peek_second_non_trivia_with(LexContext::Value)
             .is_some_and(|(k, _)| k == SyntaxKind::FAT_COMMA)
     }
 
@@ -141,7 +141,7 @@ impl Parser<'_> {
         loop {
             // Check if we have a binary operator or ternary operator
             let Some(current_kind) = self
-                .peek_non_trivia_token_with(LexMode::Operator)
+                .peek_non_trivia_token_with(LexContext::Operator)
                 .map(|(k, _)| k)
             else {
                 break;
@@ -190,7 +190,7 @@ impl Parser<'_> {
             // Check if this is a compound assignment operator (e.g., +=, ||=, etc.)
             let is_compound_assignment = current_kind.is_compoundable_operator() && {
                 // Look ahead to see if there's an '=' after the current operator
-                self.peek_second_non_trivia_with(LexMode::Operator)
+                self.peek_second_non_trivia_with(LexContext::Operator)
                     .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::EQ)
             };
 
@@ -544,7 +544,7 @@ impl Parser<'_> {
             SyntaxKind::ASTERISK => {
                 // Handle typeglob expressions specially
                 // Check if this is followed by a brace or identifier (typeglob syntax)
-                let next_token = self.peek_second_non_trivia_with(LexMode::Value);
+                let next_token = self.peek_second_non_trivia_with(LexContext::Value);
                 if matches!(
                     next_token,
                     Some((SyntaxKind::L_BRACE | SyntaxKind::IDENT, _))

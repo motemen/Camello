@@ -1,14 +1,12 @@
 //! Quote-like handling for the lexer (parser-driven begin).
 
-use super::{
-    DelimiterPhase, DelimiterType, Lexer, LexerContext, QuoteLikeMode, QuoteLikeState,
-};
+use super::{DelimiterPhase, DelimiterType, Lexer, LexerMode, QuoteLikeMode, QuoteLikeState};
 use crate::SyntaxKind;
 
 impl<'a> Lexer<'a> {
     /// Called by the parser after consuming q/qq/qx/qw/m/qr/s/tr/y.
     pub fn begin_quote_like(&mut self, prefix: SyntaxKind, mode: QuoteLikeMode) {
-        self.context = LexerContext::QuoteLike {
+        self.mode = LexerMode::QuoteLike {
             prefix,
             mode,
             state: QuoteLikeState::Delimiter {
@@ -20,78 +18,135 @@ impl<'a> Lexer<'a> {
     }
 
     pub(super) fn try_handle_quote_like_internal(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        let LexerContext::QuoteLike {
+        let LexerMode::QuoteLike {
             mode,
             state,
             delimiter,
             ..
-        } = self.context
+        } = self.mode
         else {
             return None;
         };
 
         match (mode, state) {
-            (QuoteLikeMode::Q, QuoteLikeState::Content { phase: DelimiterPhase::First }) => {
-                let LexerContext::QuoteLike { prefix, .. } = self.context else { return None };
+            (
+                QuoteLikeMode::Q,
+                QuoteLikeState::Content {
+                    phase: DelimiterPhase::First,
+                },
+            ) => {
+                let LexerMode::QuoteLike { prefix, .. } = self.mode else {
+                    return None;
+                };
                 let kind = self.get_q_mode_content_kind(prefix);
                 self.consume_quote_content(
                     kind,
                     delimiter,
-                    QuoteLikeState::Delimiter { phase: DelimiterPhase::First, kind: DelimiterType::Close },
+                    QuoteLikeState::Delimiter {
+                        phase: DelimiterPhase::First,
+                        kind: DelimiterType::Close,
+                    },
                 )
                 .or_else(|| self.try_handle_quote_like_delimiter_internal())
             }
-            (QuoteLikeMode::QW, QuoteLikeState::Content { phase: DelimiterPhase::First }) => {
-                self.handle_qw_content(delimiter)
-                    .or_else(|| self.try_handle_quote_like_delimiter_internal())
-            }
-            (QuoteLikeMode::M, QuoteLikeState::Content { phase: DelimiterPhase::First })
-            | (QuoteLikeMode::QR, QuoteLikeState::Content { phase: DelimiterPhase::First }) => {
-                self.consume_quote_content(
+            (
+                QuoteLikeMode::QW,
+                QuoteLikeState::Content {
+                    phase: DelimiterPhase::First,
+                },
+            ) => self
+                .handle_qw_content(delimiter)
+                .or_else(|| self.try_handle_quote_like_delimiter_internal()),
+            (
+                QuoteLikeMode::M,
+                QuoteLikeState::Content {
+                    phase: DelimiterPhase::First,
+                },
+            )
+            | (
+                QuoteLikeMode::QR,
+                QuoteLikeState::Content {
+                    phase: DelimiterPhase::First,
+                },
+            ) => self
+                .consume_quote_content(
                     SyntaxKind::REGEX_PATTERN,
                     delimiter,
-                    QuoteLikeState::Delimiter { phase: DelimiterPhase::First, kind: DelimiterType::Close },
+                    QuoteLikeState::Delimiter {
+                        phase: DelimiterPhase::First,
+                        kind: DelimiterType::Close,
+                    },
                 )
-                .or_else(|| self.try_handle_quote_like_delimiter_internal())
-            }
-            (QuoteLikeMode::S, QuoteLikeState::Content { phase: DelimiterPhase::First }) => {
-                self.consume_quote_content(
+                .or_else(|| self.try_handle_quote_like_delimiter_internal()),
+            (
+                QuoteLikeMode::S,
+                QuoteLikeState::Content {
+                    phase: DelimiterPhase::First,
+                },
+            ) => self
+                .consume_quote_content(
                     SyntaxKind::REGEX_PATTERN,
                     delimiter,
-                    QuoteLikeState::Delimiter { phase: DelimiterPhase::First, kind: DelimiterType::Close },
+                    QuoteLikeState::Delimiter {
+                        phase: DelimiterPhase::First,
+                        kind: DelimiterType::Close,
+                    },
                 )
-                .or_else(|| self.try_handle_quote_like_delimiter_internal())
-            }
-            (QuoteLikeMode::S, QuoteLikeState::Content { phase: DelimiterPhase::Second }) => {
-                self.consume_quote_content(
+                .or_else(|| self.try_handle_quote_like_delimiter_internal()),
+            (
+                QuoteLikeMode::S,
+                QuoteLikeState::Content {
+                    phase: DelimiterPhase::Second,
+                },
+            ) => self
+                .consume_quote_content(
                     SyntaxKind::INTERPOLATED_STRING,
                     delimiter,
-                    QuoteLikeState::Delimiter { phase: DelimiterPhase::Second, kind: DelimiterType::Close },
+                    QuoteLikeState::Delimiter {
+                        phase: DelimiterPhase::Second,
+                        kind: DelimiterType::Close,
+                    },
                 )
-                .or_else(|| self.try_handle_quote_like_delimiter_internal())
-            }
-            (QuoteLikeMode::TR, QuoteLikeState::Content { phase: DelimiterPhase::First }) => {
-                self.consume_quote_content(
+                .or_else(|| self.try_handle_quote_like_delimiter_internal()),
+            (
+                QuoteLikeMode::TR,
+                QuoteLikeState::Content {
+                    phase: DelimiterPhase::First,
+                },
+            ) => self
+                .consume_quote_content(
                     SyntaxKind::TR_SEARCH_LIST,
                     delimiter,
-                    QuoteLikeState::Delimiter { phase: DelimiterPhase::First, kind: DelimiterType::Close },
+                    QuoteLikeState::Delimiter {
+                        phase: DelimiterPhase::First,
+                        kind: DelimiterType::Close,
+                    },
                 )
-                .or_else(|| self.try_handle_quote_like_delimiter_internal())
-            }
-            (QuoteLikeMode::TR, QuoteLikeState::Content { phase: DelimiterPhase::Second }) => {
-                self.consume_quote_content(
+                .or_else(|| self.try_handle_quote_like_delimiter_internal()),
+            (
+                QuoteLikeMode::TR,
+                QuoteLikeState::Content {
+                    phase: DelimiterPhase::Second,
+                },
+            ) => self
+                .consume_quote_content(
                     SyntaxKind::TR_REPLACEMENT_LIST,
                     delimiter,
-                    QuoteLikeState::Delimiter { phase: DelimiterPhase::Second, kind: DelimiterType::Close },
+                    QuoteLikeState::Delimiter {
+                        phase: DelimiterPhase::Second,
+                        kind: DelimiterType::Close,
+                    },
                 )
-                .or_else(|| self.try_handle_quote_like_delimiter_internal())
-            }
+                .or_else(|| self.try_handle_quote_like_delimiter_internal()),
             // Delimiters only
-            (_, QuoteLikeState::Delimiter { .. }) => self.try_handle_quote_like_delimiter_internal(),
-            // Flags
-            (QuoteLikeMode::M | QuoteLikeMode::QR | QuoteLikeMode::S | QuoteLikeMode::TR, QuoteLikeState::Flags) => {
-                self.try_consume_quote_like_flags(&mode)
+            (_, QuoteLikeState::Delimiter { .. }) => {
+                self.try_handle_quote_like_delimiter_internal()
             }
+            // Flags
+            (
+                QuoteLikeMode::M | QuoteLikeMode::QR | QuoteLikeMode::S | QuoteLikeMode::TR,
+                QuoteLikeState::Flags,
+            ) => self.try_consume_quote_like_flags(&mode),
             _ => None,
         }
     }
@@ -99,14 +154,27 @@ impl<'a> Lexer<'a> {
     pub(super) fn try_handle_quote_like_delimiter_internal(
         &mut self,
     ) -> Option<(SyntaxKind, &'a str)> {
-        let LexerContext::QuoteLike { state, delimiter, .. } = self.context else { return None };
+        let LexerMode::QuoteLike {
+            state, delimiter, ..
+        } = self.mode
+        else {
+            return None;
+        };
         let remainder = self.logos_lexer.remainder();
-        if remainder.is_empty() { return None; }
+        if remainder.is_empty() {
+            return None;
+        }
         let first = remainder.chars().next().unwrap();
 
         let should_consume = match state {
-            QuoteLikeState::Delimiter { kind: DelimiterType::Open, .. } => self.is_quote_delimiter(first),
-            QuoteLikeState::Delimiter { kind: DelimiterType::Close, .. } => {
+            QuoteLikeState::Delimiter {
+                kind: DelimiterType::Open,
+                ..
+            } => self.is_quote_delimiter(first),
+            QuoteLikeState::Delimiter {
+                kind: DelimiterType::Close,
+                ..
+            } => {
                 let expected = Self::get_closing_delimiter(delimiter);
                 first == expected
             }
@@ -135,15 +203,27 @@ impl<'a> Lexer<'a> {
         let rem = self.logos_lexer.remainder();
         if let Some(first) = rem.chars().next() {
             if first == closing {
-                if let LexerContext::QuoteLike { prefix, mode, .. } = self.context {
-                    self.context = LexerContext::QuoteLike { prefix, mode, state: next_state, delimiter };
+                if let LexerMode::QuoteLike { prefix, mode, .. } = self.mode {
+                    self.mode = LexerMode::QuoteLike {
+                        prefix,
+                        mode,
+                        state: next_state,
+                        delimiter,
+                    };
                 }
                 return None;
             }
         }
-        if let Some(tok) = self.try_consume_quote_like_string_content(content_kind, delimiter, closing) {
-            if let LexerContext::QuoteLike { prefix, mode, .. } = self.context {
-                self.context = LexerContext::QuoteLike { prefix, mode, state: next_state, delimiter };
+        if let Some(tok) =
+            self.try_consume_quote_like_string_content(content_kind, delimiter, closing)
+        {
+            if let LexerMode::QuoteLike { prefix, mode, .. } = self.mode {
+                self.mode = LexerMode::QuoteLike {
+                    prefix,
+                    mode,
+                    state: next_state,
+                    delimiter,
+                };
             }
             Some(tok)
         } else {
@@ -164,11 +244,14 @@ impl<'a> Lexer<'a> {
         if !remainder.is_empty() {
             let ch = remainder.chars().next().unwrap();
             if ch == Self::get_closing_delimiter(delimiter) {
-                if let LexerContext::QuoteLike { prefix, mode, .. } = self.context {
-                    self.context = LexerContext::QuoteLike {
+                if let LexerMode::QuoteLike { prefix, mode, .. } = self.mode {
+                    self.mode = LexerMode::QuoteLike {
                         prefix,
                         mode,
-                        state: QuoteLikeState::Delimiter { phase: DelimiterPhase::First, kind: DelimiterType::Close },
+                        state: QuoteLikeState::Delimiter {
+                            phase: DelimiterPhase::First,
+                            kind: DelimiterType::Close,
+                        },
                         delimiter,
                     };
                 }
@@ -183,7 +266,11 @@ impl<'a> Lexer<'a> {
             if ch.is_whitespace() {
                 let mut i = 0usize;
                 for c in remainder.chars() {
-                    if c.is_whitespace() { i += c.len_utf8(); } else { break; }
+                    if c.is_whitespace() {
+                        i += c.len_utf8();
+                    } else {
+                        break;
+                    }
                 }
                 let text = &remainder[..i];
                 self.logos_lexer.bump(i);
@@ -220,7 +307,9 @@ impl<'a> Lexer<'a> {
         closing: char,
     ) -> Option<(SyntaxKind, &'a str)> {
         let remainder = self.logos_lexer.remainder();
-        if remainder.is_empty() { return None; }
+        if remainder.is_empty() {
+            return None;
+        }
 
         let mut chars = remainder.char_indices();
         let mut escaped = false;
@@ -230,13 +319,25 @@ impl<'a> Lexer<'a> {
         // consume until closing
         let mut end_idx: Option<usize> = None;
         for (i, c) in chars.by_ref() {
-            if escaped { escaped = false; continue; }
+            if escaped {
+                escaped = false;
+                continue;
+            }
             match c {
-                '\\' => { escaped = true; }
-                ch if ch == closing => {
-                    if nest == 0 { end_idx = Some(i); break; } else { nest -= 1; }
+                '\\' => {
+                    escaped = true;
                 }
-                ch if is_paired && ch == opening => { nest += 1; }
+                ch if ch == closing => {
+                    if nest == 0 {
+                        end_idx = Some(i);
+                        break;
+                    } else {
+                        nest -= 1;
+                    }
+                }
+                ch if is_paired && ch == opening => {
+                    nest += 1;
+                }
                 _ => {}
             }
         }
@@ -244,24 +345,38 @@ impl<'a> Lexer<'a> {
         let end = end_idx.unwrap_or(0);
         let text = &remainder[..end];
         self.logos_lexer.bump(text.len());
-        if text.is_empty() { None } else { Some((content_kind, text)) }
+        if text.is_empty() {
+            None
+        } else {
+            Some((content_kind, text))
+        }
     }
 
     fn try_consume_qw_content(&mut self, closing: char) -> Option<(SyntaxKind, &'a str)> {
         let remainder = self.logos_lexer.remainder();
-        if remainder.is_empty() { return None; }
+        if remainder.is_empty() {
+            return None;
+        }
         let mut i = 0usize;
         let bytes = remainder.as_bytes();
         // skip whitespace -> return as trivia via normal path; here only words
         while i < bytes.len() {
             let ch = remainder[i..].chars().next().unwrap();
-            if ch.is_whitespace() { i += ch.len_utf8(); } else { break; }
+            if ch.is_whitespace() {
+                i += ch.len_utf8();
+            } else {
+                break;
+            }
         }
-        if i >= bytes.len() { return None; }
+        if i >= bytes.len() {
+            return None;
+        }
         let start = i;
         while i < bytes.len() {
             let ch = remainder[i..].chars().next().unwrap();
-            if ch.is_whitespace() || ch == closing { break; }
+            if ch.is_whitespace() || ch == closing {
+                break;
+            }
             i += ch.len_utf8();
         }
         if i > start {
@@ -273,7 +388,10 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn try_consume_quote_like_flags(&mut self, mode: &QuoteLikeMode) -> Option<(SyntaxKind, &'a str)> {
+    fn try_consume_quote_like_flags(
+        &mut self,
+        mode: &QuoteLikeMode,
+    ) -> Option<(SyntaxKind, &'a str)> {
         let valid = match mode {
             QuoteLikeMode::TR => "cdsr",
             _ => "msixpodualngcer",
@@ -285,9 +403,13 @@ impl<'a> Lexer<'a> {
         for ch in remainder.chars() {
             if ch.is_alphabetic() {
                 any = true;
-                if !valid.contains(ch) { all_valid = false; }
+                if !valid.contains(ch) {
+                    all_valid = false;
+                }
                 i += ch.len_utf8();
-            } else { break; }
+            } else {
+                break;
+            }
         }
         if any {
             let kind = if all_valid {
@@ -304,76 +426,104 @@ impl<'a> Lexer<'a> {
             let text = &remainder[..i];
             self.logos_lexer.bump(i);
             // After flags, return to normal
-            self.context = LexerContext::Normal;
+            self.mode = LexerMode::Normal;
             return Some((kind, text));
         }
         // No flags -> back to normal
-        self.context = LexerContext::Normal;
+        self.mode = LexerMode::Normal;
         None
     }
 
     fn handle_quote_like_delimiter(&mut self, delimiter_text: &str) {
-        if let LexerContext::QuoteLike { mode, state, delimiter, prefix } = self.context {
+        if let LexerMode::QuoteLike {
+            mode,
+            state,
+            delimiter,
+            prefix,
+        } = self.mode
+        {
             let delim_ch = delimiter_text.chars().next().unwrap_or(delimiter);
             match state {
-                QuoteLikeState::Delimiter { phase: DelimiterPhase::First, kind: DelimiterType::Open } => {
-                    self.context = LexerContext::QuoteLike {
+                QuoteLikeState::Delimiter {
+                    phase: DelimiterPhase::First,
+                    kind: DelimiterType::Open,
+                } => {
+                    self.mode = LexerMode::QuoteLike {
                         prefix,
                         mode,
-                        state: QuoteLikeState::Content { phase: DelimiterPhase::First },
+                        state: QuoteLikeState::Content {
+                            phase: DelimiterPhase::First,
+                        },
                         delimiter: delim_ch,
                     };
                 }
-                QuoteLikeState::Delimiter { phase: DelimiterPhase::First, kind: DelimiterType::Close } => {
-                    match mode {
-                        QuoteLikeMode::S | QuoteLikeMode::TR => {
-                            if self.is_symmetric_delimiter(delimiter) {
-                                self.context = LexerContext::QuoteLike {
-                                    prefix,
-                                    mode,
-                                    state: QuoteLikeState::Content { phase: DelimiterPhase::Second },
-                                    delimiter,
-                                };
-                            } else {
-                                self.context = LexerContext::QuoteLike {
-                                    prefix,
-                                    mode,
-                                    state: QuoteLikeState::Delimiter { phase: DelimiterPhase::Second, kind: DelimiterType::Open },
-                                    delimiter,
-                                };
-                            }
-                        }
-                        QuoteLikeMode::M | QuoteLikeMode::QR => {
-                            self.context = LexerContext::QuoteLike {
+                QuoteLikeState::Delimiter {
+                    phase: DelimiterPhase::First,
+                    kind: DelimiterType::Close,
+                } => match mode {
+                    QuoteLikeMode::S | QuoteLikeMode::TR => {
+                        if self.is_symmetric_delimiter(delimiter) {
+                            self.mode = LexerMode::QuoteLike {
                                 prefix,
                                 mode,
-                                state: QuoteLikeState::Flags,
+                                state: QuoteLikeState::Content {
+                                    phase: DelimiterPhase::Second,
+                                },
+                                delimiter,
+                            };
+                        } else {
+                            self.mode = LexerMode::QuoteLike {
+                                prefix,
+                                mode,
+                                state: QuoteLikeState::Delimiter {
+                                    phase: DelimiterPhase::Second,
+                                    kind: DelimiterType::Open,
+                                },
                                 delimiter,
                             };
                         }
-                        _ => {
-                            self.context = LexerContext::Normal;
-                        }
                     }
-                }
-                QuoteLikeState::Delimiter { phase: DelimiterPhase::Second, kind: DelimiterType::Open } => {
-                    self.context = LexerContext::QuoteLike {
+                    QuoteLikeMode::M | QuoteLikeMode::QR => {
+                        self.mode = LexerMode::QuoteLike {
+                            prefix,
+                            mode,
+                            state: QuoteLikeState::Flags,
+                            delimiter,
+                        };
+                    }
+                    _ => {
+                        self.mode = LexerMode::Normal;
+                    }
+                },
+                QuoteLikeState::Delimiter {
+                    phase: DelimiterPhase::Second,
+                    kind: DelimiterType::Open,
+                } => {
+                    self.mode = LexerMode::QuoteLike {
                         prefix,
                         mode,
-                        state: QuoteLikeState::Content { phase: DelimiterPhase::Second },
+                        state: QuoteLikeState::Content {
+                            phase: DelimiterPhase::Second,
+                        },
                         delimiter: delim_ch,
                     };
                 }
-                QuoteLikeState::Delimiter { phase: DelimiterPhase::Second, kind: DelimiterType::Close } => {
-                    match mode {
-                        QuoteLikeMode::S | QuoteLikeMode::TR => {
-                            self.context = LexerContext::QuoteLike { prefix, mode, state: QuoteLikeState::Flags, delimiter };
-                        }
-                        _ => {
-                            self.context = LexerContext::Normal;
-                        }
+                QuoteLikeState::Delimiter {
+                    phase: DelimiterPhase::Second,
+                    kind: DelimiterType::Close,
+                } => match mode {
+                    QuoteLikeMode::S | QuoteLikeMode::TR => {
+                        self.mode = LexerMode::QuoteLike {
+                            prefix,
+                            mode,
+                            state: QuoteLikeState::Flags,
+                            delimiter,
+                        };
                     }
-                }
+                    _ => {
+                        self.mode = LexerMode::Normal;
+                    }
+                },
                 QuoteLikeState::Content { .. } | QuoteLikeState::Flags => {}
             }
         }

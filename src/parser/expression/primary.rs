@@ -191,7 +191,7 @@ impl Parser<'_> {
         // Use token-based lookahead to check if next non-trivia token is a dollar sigil or brace
         // Valid dereference patterns are of the form: @$ref, %$ref, $$ref, @{expr}, %{expr}, ${expr}
         matches!(
-            self.peek_second_non_trivia_with(crate::lexer::LexMode::Value),
+            self.peek_second_non_trivia_with(crate::lexer::LexContext::Value),
             Some((SyntaxKind::DOLLAR | SyntaxKind::L_BRACE, _))
         )
     }

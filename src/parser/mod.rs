@@ -1,5 +1,5 @@
 use crate::{
-    lexer::{LexMode, Lexer},
+    lexer::{LexContext, Lexer},
     SyntaxKind,
 };
 use miette::{Diagnostic, SourceSpan};
@@ -127,12 +127,12 @@ impl<'a> Parser<'a> {
 
     // Value-context peek helpers for expression starts (parser-driven lexing)
     fn current_kind_value(&self) -> Option<SyntaxKind> {
-        self.peek_non_trivia_token_with(LexMode::Value)
+        self.peek_non_trivia_token_with(LexContext::Value)
             .map(|(k, _)| k)
     }
 
     fn current_text_value(&self) -> Option<&'a str> {
-        self.peek_non_trivia_token_with(LexMode::Value)
+        self.peek_non_trivia_token_with(LexContext::Value)
             .map(|(_, t)| t)
     }
 
@@ -160,7 +160,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Consume current token and fetch next using an explicit lexical expectation
-    fn bump_with_expectation(&mut self, expect: LexMode) {
+    fn bump_with_expectation(&mut self, expect: LexContext) {
         if let Some((kind, text)) = self.lexer.next_token_with(expect) {
             self.builder.token(kind.into(), text);
             self.current_pos += text.len();
@@ -169,12 +169,12 @@ impl<'a> Parser<'a> {
 
     /// Convenience: after consuming current token, expect a Value next
     fn bump_value(&mut self) {
-        self.bump_with_expectation(LexMode::Value)
+        self.bump_with_expectation(LexContext::Value)
     }
 
     /// Convenience: after consuming current token, expect an Operator next
     fn bump_op(&mut self) {
-        self.bump_with_expectation(LexMode::Operator)
+        self.bump_with_expectation(LexContext::Operator)
     }
 
     fn bump_as(&mut self, syntax_kind: SyntaxKind) {
@@ -196,7 +196,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Expect a token and consume it, specifying the lexical expectation for the next token
-    fn expect_with(&mut self, expected: SyntaxKind, next_expect: LexMode) {
+    fn expect_with(&mut self, expected: SyntaxKind, next_expect: LexContext) {
         if self.at(expected) {
             self.bump_with_expectation(next_expect);
         } else {
@@ -207,12 +207,12 @@ impl<'a> Parser<'a> {
 
     /// Convenience: expect a token and treat the next lex as a Value
     fn expect_value(&mut self, expected: SyntaxKind) {
-        self.expect_with(expected, LexMode::Value)
+        self.expect_with(expected, LexContext::Value)
     }
 
     /// Convenience: expect a token and treat the next lex as an Operator
     fn expect_op(&mut self, expected: SyntaxKind) {
-        self.expect_with(expected, LexMode::Operator)
+        self.expect_with(expected, LexContext::Operator)
     }
 
     fn skip_trivia(&mut self) {
@@ -255,13 +255,13 @@ impl<'a> Parser<'a> {
 
     /// Peek at the next non-trivia token with an explicit lexical expectation
     /// This is used to disambiguate contexts like operator lookahead.
-    fn peek_non_trivia_token_with(&self, expect: LexMode) -> Option<(SyntaxKind, &'a str)> {
+    fn peek_non_trivia_token_with(&self, expect: LexContext) -> Option<(SyntaxKind, &'a str)> {
         self.lexer.peek_non_trivia_with(expect)
     }
 
     /// Peek the second non-trivia token (i.e., the token following the current one),
     /// using an explicit lexical expectation for the second token.
-    fn peek_second_non_trivia_with(&self, expect: LexMode) -> Option<(SyntaxKind, &'a str)> {
+    fn peek_second_non_trivia_with(&self, expect: LexContext) -> Option<(SyntaxKind, &'a str)> {
         let mut cloned = self.lexer.clone();
         // Consume the first non-trivia token (the current one) using the same expectation
         loop {
