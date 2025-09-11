@@ -601,30 +601,17 @@ impl Parser<'_> {
 
                 self.builder.finish_node();
             }
-            SyntaxKind::INCREMENT => {
-                // Increment prefix operator
+            SyntaxKind::INCREMENT | SyntaxKind::DECREMENT => {
+                // Prefix increment/decrement operator
+                let op_text = self.current_text_value().unwrap_or("").to_string();
                 self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
-                self.bump_value(); // consume ++
+                self.bump_value(); // consume ++ or --
                 self.skip_trivia();
 
                 if !self.parse_expression_with_precedence(
                     crate::parser::expression::precedence::Precedence::PREFIX,
                 ) {
-                    self.error("Expected expression after '++'");
-                }
-
-                self.builder.finish_node();
-            }
-            SyntaxKind::DECREMENT => {
-                // Decrement prefix operator
-                self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
-                self.bump_value(); // consume --
-                self.skip_trivia();
-
-                if !self.parse_expression_with_precedence(
-                    crate::parser::expression::precedence::Precedence::PREFIX,
-                ) {
-                    self.error("Expected expression after '--'");
+                    self.error(&format!("Expected expression after '{}'", op_text));
                 }
 
                 self.builder.finish_node();
