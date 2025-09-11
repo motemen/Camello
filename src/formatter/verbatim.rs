@@ -20,12 +20,8 @@ impl Formatter {
                     let text = token.text();
                     match token.kind() {
                         SyntaxKind::END_KW | SyntaxKind::DATA_KW => {
-                            // Output the keyword exactly as-is
+                            // Output the keyword exactly as-is; do not force a newline
                             self.output.push_str(text);
-                            // Add newline after the keyword if not present
-                            if !text.ends_with('\n') {
-                                self.output.push('\n');
-                            }
                         }
                         SyntaxKind::DATA_SECTION | SyntaxKind::RAW_STRING => {
                             // Output the data content exactly as-is, preserving all formatting

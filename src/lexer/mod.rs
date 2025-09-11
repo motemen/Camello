@@ -1728,6 +1728,20 @@ impl<'a> Lexer<'a> {
         cloned.find(|(kind, _)| !kind.is_trivia())
     }
 
+    /// Peek the next token (including trivia) using a given lexical expectation.
+    /// This does not mutate the original lexer state and does not skip trivia.
+    #[must_use]
+    pub fn peek_with(&self, expect: LexExpectation) -> Option<(SyntaxKind, &'a str)> {
+        let mut cloned = self.clone();
+        if matches!(
+            cloned.context,
+            LexerContext::ExpectingValue | LexerContext::ExpectingOperator
+        ) {
+            cloned.disambiguation_override = Some(expect.into());
+        }
+        cloned.next()
+    }
+
     /// Convenience: default expectation is Value
     #[must_use]
     pub fn peek_non_trivia(&self) -> Option<(SyntaxKind, &'a str)> {
