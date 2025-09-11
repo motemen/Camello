@@ -153,8 +153,8 @@ impl Parser<'_> {
 
         self.skip_trivia();
 
-        // Check for postfix conditionals (if/unless modifiers)
-        self.parse_optional_postfix_conditional();
+        // Check for postfix modifiers (if/unless/for)
+        self.parse_optional_postfix_modifier();
 
         if expect_semicolon {
             self.expect(SyntaxKind::SEMICOLON);
@@ -470,8 +470,8 @@ impl Parser<'_> {
 
         self.skip_trivia();
 
-        // Check for postfix conditionals (if/unless modifiers)
-        self.parse_optional_postfix_conditional();
+        // Check for postfix modifiers (if/unless/for)
+        self.parse_optional_postfix_modifier();
 
         // Check if semicolon is required
         // Semicolons are required except for the last statement in a block, end of file, or before data sections
@@ -511,9 +511,11 @@ impl Parser<'_> {
         self.builder.finish_node();
     }
 
-    fn parse_optional_postfix_conditional(&mut self) {
+    fn parse_optional_postfix_modifier(&mut self) {
         if self.at(SyntaxKind::IF_KW) || self.at(SyntaxKind::UNLESS_KW) {
             self.parse_postfix_conditional();
+        } else if self.at(SyntaxKind::FOR_KW) || self.at(SyntaxKind::FOREACH_KW) {
+            self.parse_postfix_for();
         }
     }
 
@@ -536,6 +538,20 @@ impl Parser<'_> {
         // Parse the condition expression
         if !self.expression() {
             self.error("Expected condition after postfix if/unless");
+        }
+
+        self.builder.finish_node();
+    }
+
+    fn parse_postfix_for(&mut self) {
+        self.builder.start_node(SyntaxKind::FOR_MODIFIER.into());
+
+        // Consume the for/foreach keyword; next should be a value (list expression)
+        self.bump_value();
+        self.skip_trivia();
+
+        if !self.expression_list() {
+            self.error("Expected expression list after postfix for");
         }
 
         self.builder.finish_node();
@@ -673,6 +689,19 @@ __END__",
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_postfix_for_modifier() {
+        let input = "print $_ for @values;";
+        let (green, errors) = parse(input);
+        assert!(
+            errors.is_empty(),
+            "Should parse postfix for modifier without errors, got: {:?}",
+            errors
+        );
+        let syntax = PerlNode::new_root(green);
+        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
     }
 
     #[test]
