@@ -9,6 +9,80 @@ use precedence::{get_operator_info, OperatorInfo, Precedence};
 use super::Parser;
 
 impl Parser<'_> {
+    /// Decide whether the current quote-like keyword should be parsed as a quote-like expression
+    /// or treated as an identifier. Returns true if the next non-trivia token is a DELIMITER
+    /// and not a fat comma (=>).
+    fn should_parse_quote_like(&self) -> bool {
+        if let Some((next_kind, _)) = self.peek_second_non_trivia_with(LexExpectation::Value) {
+            if next_kind == SyntaxKind::FAT_COMMA {
+                return false;
+            }
+            return next_kind == SyntaxKind::DELIMITER;
+        }
+        false
+    }
+
+    /// Parse an identifier-like expression (including cases where a keyword is coerced to IDENT)
+    /// and handle possible function calls (regular or block).
+    fn parse_ident_like_expr(&mut self, coerce_current_to_ident: bool) {
+        let start = self.builder.checkpoint();
+
+        // Capture name before consuming
+        let function_name = self.current_text_value().unwrap_or("").to_string();
+
+        if coerce_current_to_ident {
+            self.bump_with_kind(SyntaxKind::IDENT);
+        } else {
+            // Might be a qualified identifier, so use parse_identifier_or_qualified
+            self.parse_identifier_or_qualified();
+        }
+        self.skip_trivia();
+
+        // Block function call: e.g., map { ... } @list
+        if Self::is_block_function(&function_name) && self.at(SyntaxKind::L_BRACE) {
+            self.builder
+                .start_node_at(start, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());
+            self.parse_block_function_args();
+            self.builder.finish_node();
+            return;
+        }
+
+        if let Some(kind) = self.current_kind_value() {
+            // Check if we have regular function arguments following the identifier
+            if kind.is_variable()
+                || self.at_any(&[
+                    SyntaxKind::NUMBER,
+                    SyntaxKind::STRING,
+                    SyntaxKind::REGEX_LITERAL, // Regex literals like /pattern/
+                    SyntaxKind::SLASH,         // Slash can start regex literal
+                    SyntaxKind::L_BRACE,       // Hash reference: {}
+                    SyntaxKind::L_BRACKET,     // Array reference: []
+                    SyntaxKind::MY_KW,         // Variable declarations as arguments
+                    SyntaxKind::OUR_KW,
+                    SyntaxKind::STATE_KW,
+                    SyntaxKind::LOCAL_KW,
+                    // q-family keywords as valid function arguments
+                    SyntaxKind::Q_KW,
+                    SyntaxKind::QQ_KW,
+                    SyntaxKind::QX_KW,
+                    SyntaxKind::QW_KW,
+                    SyntaxKind::M_KW,
+                    SyntaxKind::QR_KW,
+                    SyntaxKind::S_KW,
+                    SyntaxKind::TR_KW,
+                    SyntaxKind::Y_KW,
+                ])
+                || kind.is_sigil()
+                || kind == SyntaxKind::IDENT
+            {
+                // We have a regular function call, wrap everything in FUNCTION_CALL_EXPR
+                self.builder
+                    .start_node_at(start, SyntaxKind::FUNCTION_CALL_EXPR.into());
+                self.expression_list();
+                self.builder.finish_node();
+            }
+        }
+    }
     // Parse block function arguments: block + optional additional arguments
     fn parse_block_function_args(&mut self) {
         // Parse the block (which should be at L_BRACE)
@@ -666,8 +740,12 @@ impl Parser<'_> {
                 self.array_ref();
             }
             SyntaxKind::QW_KW => {
-                // qw() expression
-                self.qw_expr();
+                // qw() expression or bareword 'qw'
+                if self.should_parse_quote_like() {
+                    self.qw_expr();
+                } else {
+                    self.parse_ident_like_expr(true);
+                }
             }
             SyntaxKind::RETURN_KW => {
                 // return statement (handled as a keyword)
@@ -681,36 +759,60 @@ impl Parser<'_> {
                 }
             }
             SyntaxKind::Q_KW => {
-                // q() expression
-                self.q_expr();
+                if self.should_parse_quote_like() {
+                    self.q_expr();
+                } else {
+                    self.parse_ident_like_expr(true);
+                }
             }
             SyntaxKind::QQ_KW => {
-                // qq() expression
-                self.qq_expr();
+                if self.should_parse_quote_like() {
+                    self.qq_expr();
+                } else {
+                    self.parse_ident_like_expr(true);
+                }
             }
             SyntaxKind::QX_KW => {
-                // qx() expression
-                self.qx_expr();
+                if self.should_parse_quote_like() {
+                    self.qx_expr();
+                } else {
+                    self.parse_ident_like_expr(true);
+                }
             }
             SyntaxKind::M_KW => {
-                // m() expression
-                self.m_expr();
+                if self.should_parse_quote_like() {
+                    self.m_expr();
+                } else {
+                    self.parse_ident_like_expr(true);
+                }
             }
             SyntaxKind::QR_KW => {
-                // qr() expression
-                self.qr_expr();
+                if self.should_parse_quote_like() {
+                    self.qr_expr();
+                } else {
+                    self.parse_ident_like_expr(true);
+                }
             }
             SyntaxKind::S_KW => {
-                // s() expression
-                self.s_expr();
+                if self.should_parse_quote_like() {
+                    self.s_expr();
+                } else {
+                    self.parse_ident_like_expr(true);
+                }
             }
             SyntaxKind::TR_KW => {
-                // tr() expression
-                self.tr_expr();
+                if self.should_parse_quote_like() {
+                    self.tr_expr();
+                } else {
+                    self.parse_ident_like_expr(true);
+                }
             }
             SyntaxKind::Y_KW => {
-                // y() expression (alias for tr)
-                self.y_expr();
+                if self.should_parse_quote_like() {
+                    self.y_expr();
+                } else {
+                    self.parse_ident_like_expr(true);
+                }
             }
             SyntaxKind::SUB_KW => {
                 // Anonymous subroutine expression: sub { ... }
