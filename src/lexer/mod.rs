@@ -353,19 +353,19 @@ impl<'a> Lexer<'a> {
     /// Handle special tokens when in Value context
     fn try_handle_expecting_value_context(&mut self) -> Option<(SyntaxKind, &'a str)> {
         // 1) File test operator like -f
-        if let Some(result) = Self::try_consume_file_test_op(self) {
+        if let Some(result) = self.try_consume_file_test_op() {
             let (k, t) = result;
             self.update_line_position(t);
             return Some((k, t));
         }
         // 2) Regex literal /.../
-        if let Some(result) = Self::try_consume_regex_literal(self) {
+        if let Some(result) = self.try_consume_regex_literal() {
             let (k, t) = result;
             self.update_line_position(t);
             return Some((k, t));
         }
         // 3) IO operator like <...>
-        if let Some(result) = Self::try_consume_io_operator(self) {
+        if let Some(result) = self.try_consume_io_operator() {
             let (k, t) = result;
             self.update_line_position(t);
             return Some((k, t));
@@ -697,16 +697,28 @@ impl<'a> Lexer<'a> {
 
     fn try_consume_file_test_op(&mut self) -> Option<(SyntaxKind, &'a str)> {
         let remainder = self.logos_lexer.remainder();
-        if remainder.starts_with('-') {
-            if let Some(c) = remainder.chars().nth(1) {
-                if c.is_alphabetic() {
-                    let text = &remainder[..2];
-                    self.logos_lexer.bump(2);
-                    return Some((SyntaxKind::FILE_TEST_OP, text));
-                }
-            }
+        if !remainder.starts_with('-') {
+            return None;
         }
-        None
+
+        let mut chars = remainder.chars();
+        if chars.next() != Some('-') {
+            return None;
+        }
+        let Some(op) = chars.next() else {
+            return None;
+        };
+        if !op.is_alphabetic() {
+            return None;
+        }
+        // If the third char exists and is alphanumeric, it's not a file test op (e.g., -abcde)
+        if remainder.chars().nth(2).is_some_and(char::is_alphanumeric) {
+            return None;
+        }
+
+        let text = &remainder[..2];
+        self.logos_lexer.bump(2);
+        Some((SyntaxKind::FILE_TEST_OP, text))
     }
 
     /// Try to consume postfix dereference operators (->@*, ->%*, ->$*)
