@@ -493,42 +493,6 @@ impl<'a> Lexer<'a> {
         Some((SyntaxKind::RAW_STRING, data_text))
     }
 
-    /// Classify quote-like identifiers as keywords unless followed by fat comma (=>)
-    fn classify_quote_like_keyword(&self, word: &str) -> SyntaxKind {
-        if self.fat_comma_ahead() {
-            return SyntaxKind::IDENT;
-        }
-        match word {
-            // Sorted: q, qq, qr, qx, qw, m, s, tr, y
-            "q" => SyntaxKind::Q_KW,
-            "qq" => SyntaxKind::QQ_KW,
-            "qr" => SyntaxKind::QR_KW,
-            "qx" => SyntaxKind::QX_KW,
-            "qw" => SyntaxKind::QW_KW,
-            "m" => SyntaxKind::M_KW,
-            "s" => SyntaxKind::S_KW,
-            "tr" => SyntaxKind::TR_KW,
-            "y" => SyntaxKind::Y_KW,
-            _ => SyntaxKind::IDENT,
-        }
-    }
-
-    /// Check if the next non-trivia is a fat comma (=>)
-    fn fat_comma_ahead(&self) -> bool {
-        let mut chars = self.logos_lexer.remainder().chars().peekable();
-        while matches!(chars.peek().copied(), Some(c) if c.is_whitespace()) {
-            chars.next();
-        }
-        if let (Some('='), Some('>')) = (chars.peek().copied(), {
-            let mut t = chars.clone();
-            t.next();
-            t.peek().copied()
-        }) {
-            return true;
-        }
-        false
-    }
-
     fn disambiguate(&self, token: &Token, text: &str, ctx: LexContext) -> SyntaxKind {
         match token {
             // Identifier words: operators, quote-like starters, or keywords
@@ -542,7 +506,8 @@ impl<'a> Lexer<'a> {
                         "lt" => SyntaxKind::STR_LT,
                         "ge" => SyntaxKind::STR_GE,
                         "le" => SyntaxKind::STR_LE,
-                        _ => SyntaxKind::STR_CMP,
+                        "cmp" => SyntaxKind::STR_CMP,
+                        _ => unreachable!(),
                     },
                     LexContext::Value => SyntaxKind::IDENT,
                 },
@@ -551,10 +516,6 @@ impl<'a> Lexer<'a> {
                     LexContext::Operator => SyntaxKind::X,
                     LexContext::Value => SyntaxKind::IDENT,
                 },
-                // Quote-like starters: treat as keywords unless followed by fat comma
-                "q" | "qq" | "qr" | "qx" | "qw" | "m" | "s" | "tr" | "y" => {
-                    self.classify_quote_like_keyword(text)
-                }
                 _ => Self::map_ident_keyword(text).unwrap_or(SyntaxKind::IDENT),
             },
             // Ambiguous symbol tokens depending on context
@@ -603,12 +564,15 @@ impl<'a> Lexer<'a> {
             "return" => SyntaxKind::RETURN_KW,
             "undef" => SyntaxKind::UNDEF_KW,
             // Quote-like starters (treated as keywords regardless of context)
-            "qw" => SyntaxKind::QW_KW,
             "q" => SyntaxKind::Q_KW,
             "qq" => SyntaxKind::QQ_KW,
-            "qx" => SyntaxKind::QX_KW,
-            "m" => SyntaxKind::M_KW,
             "qr" => SyntaxKind::QR_KW,
+            "qx" => SyntaxKind::QX_KW,
+            "qw" => SyntaxKind::QW_KW,
+            "m" => SyntaxKind::M_KW,
+            "s" => SyntaxKind::S_KW,
+            "tr" => SyntaxKind::TR_KW,
+            "y" => SyntaxKind::Y_KW,
             // Logical word operators as keywords
             "not" => SyntaxKind::NOT_KW,
             "and" => SyntaxKind::AND_KW,
@@ -906,23 +870,9 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// Peek the next token (including trivia) using a given lexical context.
-    /// This does not mutate the original lexer state and does not skip trivia.
-    #[must_use]
-    pub fn peek_with_context(&self, context: LexContext) -> Option<(SyntaxKind, &'a str)> {
-        let mut cloned = self.clone();
-        cloned.next_token_internal(Some(context))
-    }
-
-    /// Convenience: default context is Value
-    #[must_use]
-    pub fn peek_non_trivia(&self) -> Option<(SyntaxKind, &'a str)> {
-        self.peek_non_trivia_with_context(LexContext::Value)
-    }
-
     /// Convenience: default context is Value
     pub fn next_token_default(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        self.next_token_with_context(LexContext::Value)
+        self.next_token_with_context(Default::default())
     }
 }
 
