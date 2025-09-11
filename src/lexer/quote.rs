@@ -22,6 +22,7 @@ impl<'a> Lexer<'a> {
             mode,
             state,
             delimiter,
+            prefix,
             ..
         } = self.mode
         else {
@@ -35,9 +36,6 @@ impl<'a> Lexer<'a> {
                     phase: DelimiterPhase::First,
                 },
             ) => {
-                let LexerMode::QuoteLike { prefix, .. } = self.mode else {
-                    return None;
-                };
                 let kind = self.get_q_mode_content_kind(prefix);
                 self.consume_quote_content(
                     kind,
@@ -58,13 +56,7 @@ impl<'a> Lexer<'a> {
                 .handle_qw_content(delimiter)
                 .or_else(|| self.try_handle_quote_like_delimiter_internal()),
             (
-                QuoteLikeMode::M,
-                QuoteLikeState::Content {
-                    phase: DelimiterPhase::First,
-                },
-            )
-            | (
-                QuoteLikeMode::QR,
+                QuoteLikeMode::M | QuoteLikeMode::QR,
                 QuoteLikeState::Content {
                     phase: DelimiterPhase::First,
                 },
@@ -197,34 +189,37 @@ impl<'a> Lexer<'a> {
         delimiter: char,
         next_state: QuoteLikeState,
     ) -> Option<(SyntaxKind, &'a str)> {
+        let LexerMode::QuoteLike { prefix, mode, .. } = self.mode else {
+            panic!("Invalid state in consume_quote_content");
+        };
+
         let closing = Self::get_closing_delimiter(delimiter);
         // If the very next char is the closing delimiter, treat content as empty and
         // transition to the next delimiter state so the delimiter handler can consume it.
         let rem = self.logos_lexer.remainder();
         if let Some(first) = rem.chars().next() {
             if first == closing {
-                if let LexerMode::QuoteLike { prefix, mode, .. } = self.mode {
-                    self.mode = LexerMode::QuoteLike {
-                        prefix,
-                        mode,
-                        state: next_state,
-                        delimiter,
-                    };
-                }
-                return None;
-            }
-        }
-        if let Some(tok) =
-            self.try_consume_quote_like_string_content(content_kind, delimiter, closing)
-        {
-            if let LexerMode::QuoteLike { prefix, mode, .. } = self.mode {
                 self.mode = LexerMode::QuoteLike {
                     prefix,
                     mode,
                     state: next_state,
                     delimiter,
                 };
+
+                return None;
             }
+        }
+
+        if let Some(tok) =
+            self.try_consume_quote_like_string_content(content_kind, delimiter, closing)
+        {
+            self.mode = LexerMode::QuoteLike {
+                prefix,
+                mode,
+                state: next_state,
+                delimiter,
+            };
+
             Some(tok)
         } else {
             None

@@ -1,5 +1,5 @@
-use crate::SyntaxKind;
 use crate::lexer::QuoteLikeMode;
+use crate::SyntaxKind;
 
 use super::super::Parser;
 
@@ -10,7 +10,8 @@ impl Parser<'_> {
         // "qw"
         self.expect(SyntaxKind::QW_KW);
         // Begin quote-like lexing for qw BEFORE skipping trivia so '#' etc. are treated as delimiters
-        self.lexer.begin_quote_like(SyntaxKind::QW_KW, QuoteLikeMode::QW);
+        self.lexer
+            .begin_quote_like(SyntaxKind::QW_KW, QuoteLikeMode::QW);
         self.skip_trivia();
         // Opening delimiter
         if !self.at(SyntaxKind::DELIMITER) {
@@ -248,5 +249,4 @@ impl Parser<'_> {
             ch => ch,
         }
     }
-
 }

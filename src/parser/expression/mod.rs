@@ -14,9 +14,8 @@ impl Parser<'_> {
     /// auto-expand to DELIMITER at lookahead time, so we conservatively treat it as quote-like
     /// unless the next token is a fat comma (=>), in which case it's likely a bareword key.
     fn should_parse_quote_like(&self) -> bool {
-        !self
-            .peek_second_non_trivia_with(LexContext::Value)
-            .is_some_and(|(k, _)| k == SyntaxKind::FAT_COMMA)
+        self.peek_second_non_trivia_with(LexContext::Value)
+            .is_none_or(|(k, _)| k != SyntaxKind::FAT_COMMA)
     }
 
     /// Parse an identifier-like expression (including cases where a keyword is coerced to IDENT)
