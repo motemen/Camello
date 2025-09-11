@@ -247,11 +247,6 @@ impl Token {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum LexerContext {
-    /// Default (no value/operator flipping; parser provides expectations)
-    Default,
-}
 /// Context for token disambiguation in default parsing contexts
 /// This enum limits disambiguation to only the contexts where ambiguity resolution is needed
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -281,17 +276,10 @@ impl From<LexExpectation> for DisambiguationContext {
     }
 }
 
-impl From<LexerContext> for Option<DisambiguationContext> {
-    fn from(lexer_context: LexerContext) -> Self {
-        match lexer_context {
-            LexerContext::Default => None,
-        }
-    }
-}
+// No LexerContext: parser provides expectations and lexer remains stateless
 
 pub struct Lexer<'a> {
     logos_lexer: logos::Lexer<'a, Token>,
-    context: LexerContext,
     at_line_start: bool, // Track if we're at the start of a line for POD detection
     // Track the last non-trivia token kind to derive a default expectation for standalone lexing
     last_non_trivia_kind: Option<SyntaxKind>,
@@ -303,7 +291,6 @@ impl Clone for Lexer<'_> {
     fn clone(&self) -> Self {
         Self {
             logos_lexer: self.logos_lexer.clone(),
-            context: self.context,
             at_line_start: self.at_line_start,
             last_non_trivia_kind: self.last_non_trivia_kind,
             pending: self.pending.clone(),
@@ -326,7 +313,6 @@ impl<'a> Lexer<'a> {
 
         Self {
             logos_lexer,
-            context: LexerContext::Default,
             at_line_start: true,
             last_non_trivia_kind: None,
             pending: VecDeque::new(),
@@ -449,11 +435,7 @@ impl<'a> Lexer<'a> {
         }
 
         // Handle special tokens when expecting a value
-        // Respect per-call override when present; otherwise do nothing in default context
-        let is_value_context = match override_ctx.or_else(|| self.context.into()) {
-            Some(DisambiguationContext::ExpectingValue) => true,
-            _ => false,
-        };
+        let is_value_context = matches!(override_ctx, Some(DisambiguationContext::ExpectingValue));
         if is_value_context {
             if let Some(result) = self.try_handle_expecting_value_context() {
                 let (syntax_kind, text) = result;
@@ -491,32 +473,28 @@ impl<'a> Lexer<'a> {
                             match text {
                                 // Disambiguated word operators
                                 "eq" | "ne" | "gt" | "lt" | "ge" | "le" | "cmp" => {
-                                    let ctx = override_ctx
-                                        .or_else(|| Option::<DisambiguationContext>::from(self.context))
-                                        .expect("context required for word operator disambiguation");
+                                    let ctx = override_ctx.expect(
+                                        "context required for word operator disambiguation",
+                                    );
                                     Self::disambiguate_str_op(ctx, text)
                                 }
                                 "x" => {
                                     let ctx = override_ctx
-                                        .or_else(|| Option::<DisambiguationContext>::from(self.context))
                                         .expect("context required for 'x' disambiguation");
                                     Self::disambiguate_x(ctx)
                                 }
                                 "s" => {
                                     let ctx = override_ctx
-                                        .or_else(|| Option::<DisambiguationContext>::from(self.context))
                                         .expect("context required for 's' disambiguation");
                                     self.disambiguate_s(ctx)
                                 }
                                 "tr" => {
                                     let ctx = override_ctx
-                                        .or_else(|| Option::<DisambiguationContext>::from(self.context))
                                         .expect("context required for 'tr' disambiguation");
                                     self.disambiguate_tr(ctx)
                                 }
                                 "y" => {
                                     let ctx = override_ctx
-                                        .or_else(|| Option::<DisambiguationContext>::from(self.context))
                                         .expect("context required for 'y' disambiguation");
                                     self.disambiguate_y(ctx)
                                 }
@@ -557,7 +535,6 @@ impl<'a> Lexer<'a> {
                     }
                     Token::Percent | Token::Star | Token::Ampersand | Token::Caret => {
                         let disambiguation_context = override_ctx
-                            .or_else(|| Option::<DisambiguationContext>::from(self.context))
                             .expect("context required for ambiguous token disambiguation");
                         self.disambiguate_with(token, text, disambiguation_context)
                     }
@@ -1478,8 +1455,7 @@ impl<'a> Lexer<'a> {
     // Removed keyword/operator/identifier context handlers (parser-driven lexing)
 
     fn update_context(&mut self, _syntax_kind: SyntaxKind) {
-        // Lexer remains in Default context; parser drives expectations.
-        self.context = LexerContext::Default;
+        // No-op: lexer is stateless with respect to quote-like and operator/value flips
     }
 
     // Removed: external set_context; parser drives lexing via explicit expectations
