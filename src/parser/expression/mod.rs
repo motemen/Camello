@@ -276,7 +276,21 @@ impl Parser<'_> {
 
                             self.builder.finish_node();
                         }
-                        Some(SyntaxKind::IDENT) => {
+                        Some(kind)
+                            if kind == SyntaxKind::IDENT
+                                || SyntaxKind::is_keyword(kind)
+                                || matches!(
+                                    kind,
+                                    SyntaxKind::STR_EQ
+                                        | SyntaxKind::STR_NE
+                                        | SyntaxKind::STR_GT
+                                        | SyntaxKind::STR_LT
+                                        | SyntaxKind::STR_GE
+                                        | SyntaxKind::STR_LE
+                                        | SyntaxKind::STR_CMP
+                                        | SyntaxKind::X
+                                ) =>
+                        {
                             // Method call: expr->method()
                             self.builder.start_node_at(
                                 initial_checkpoint,

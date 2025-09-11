@@ -586,15 +586,45 @@ impl<'a> Lexer<'a> {
                 // Decide mapping strategy based on token kind and text
                 let syntax_kind = match token {
                     Token::Ident => {
-                        if Self::is_ambiguous_ident(text) {
-                            let disambiguation_context = override_ctx
-                                .or_else(|| Option::<DisambiguationContext>::from(self.context))
-                                .expect("context required for ambiguous token disambiguation");
-                            self.disambiguate_with(token, text, disambiguation_context)
-                        } else if let Some(kw) = Self::map_ident_keyword(text) {
-                            kw
-                        } else {
-                            SyntaxKind::IDENT
+                        match text {
+                            // Disambiguated word operators
+                            "eq" | "ne" | "gt" | "lt" | "ge" | "le" | "cmp" => {
+                                let ctx = override_ctx
+                                    .or_else(|| Option::<DisambiguationContext>::from(self.context))
+                                    .expect("context required for word operator disambiguation");
+                                Self::disambiguate_str_op(ctx, text)
+                            }
+                            "x" => {
+                                let ctx = override_ctx
+                                    .or_else(|| Option::<DisambiguationContext>::from(self.context))
+                                    .expect("context required for 'x' disambiguation");
+                                Self::disambiguate_x(ctx)
+                            }
+                            "s" => {
+                                let ctx = override_ctx
+                                    .or_else(|| Option::<DisambiguationContext>::from(self.context))
+                                    .expect("context required for 's' disambiguation");
+                                self.disambiguate_s(ctx)
+                            }
+                            "tr" => {
+                                let ctx = override_ctx
+                                    .or_else(|| Option::<DisambiguationContext>::from(self.context))
+                                    .expect("context required for 'tr' disambiguation");
+                                self.disambiguate_tr(ctx)
+                            }
+                            "y" => {
+                                let ctx = override_ctx
+                                    .or_else(|| Option::<DisambiguationContext>::from(self.context))
+                                    .expect("context required for 'y' disambiguation");
+                                self.disambiguate_y(ctx)
+                            }
+                            _ => {
+                                if let Some(kw) = Self::map_ident_keyword(text) {
+                                    kw
+                                } else {
+                                    SyntaxKind::IDENT
+                                }
+                            }
                         }
                     }
                     Token::Percent | Token::Star | Token::Ampersand | Token::Caret => {
@@ -736,29 +766,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// Identifiers that change meaning based on value/operator expectation
-    fn is_ambiguous_ident(text: &str) -> bool {
-        matches!(
-            text,
-            "x"
-                | "eq"
-                | "ne"
-                | "gt"
-                | "lt"
-                | "ge"
-                | "le"
-                | "cmp"
-                | "s"
-                | "tr"
-                | "y"
-                | "not"
-                | "and"
-                | "or"
-                | "xor"
-        )
-    }
-
-    /// Map known identifier keywords that do not require value/operator disambiguation
+    /// Map known identifier keywords and quote-like starters
     fn map_ident_keyword(text: &str) -> Option<SyntaxKind> {
         Some(match text {
             // Control/decl keywords
@@ -786,6 +794,11 @@ impl<'a> Lexer<'a> {
             "qx" => SyntaxKind::QX_KW,
             "m" => SyntaxKind::M_KW,
             "qr" => SyntaxKind::QR_KW,
+            // Logical word operators as keywords
+            "not" => SyntaxKind::NOT_KW,
+            "and" => SyntaxKind::AND_KW,
+            "or" => SyntaxKind::OR_KW,
+            "xor" => SyntaxKind::XOR_KW,
             _ => return None,
         })
     }

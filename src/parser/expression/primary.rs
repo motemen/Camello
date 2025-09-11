@@ -244,6 +244,24 @@ impl Parser<'_> {
             self.bump(); // First identifier
         } else if self.current_kind().is_some_and(SyntaxKind::is_keyword) {
             self.bump_with_kind(SyntaxKind::IDENT);
+        } else if self
+            .current_kind()
+            .is_some_and(|k|
+                matches!(
+                    k,
+                    SyntaxKind::STR_EQ
+                        | SyntaxKind::STR_NE
+                        | SyntaxKind::STR_GT
+                        | SyntaxKind::STR_LT
+                        | SyntaxKind::STR_GE
+                        | SyntaxKind::STR_LE
+                        | SyntaxKind::STR_CMP
+                        | SyntaxKind::X
+                )
+            )
+        {
+            // Allow word-operator tokens as identifiers in identifier-expected positions
+            self.bump_with_kind(SyntaxKind::IDENT);
         } else {
             self.error("Expected identifier");
             return;
@@ -259,10 +277,25 @@ impl Parser<'_> {
                 self.bump(); // ::
                 self.skip_trivia();
 
-                if self.at(SyntaxKind::IDENT) {
-                    self.bump(); // Next identifier
-                } else if self.current_kind().is_some_and(SyntaxKind::is_keyword) {
-                    // Coerce subsequent keyword segments as IDENT too
+                if self.at(SyntaxKind::IDENT)
+                    || self.current_kind().is_some_and(SyntaxKind::is_keyword)
+                    || self
+                        .current_kind()
+                        .is_some_and(|k|
+                            matches!(
+                                k,
+                                SyntaxKind::STR_EQ
+                                    | SyntaxKind::STR_NE
+                                    | SyntaxKind::STR_GT
+                                    | SyntaxKind::STR_LT
+                                    | SyntaxKind::STR_GE
+                                    | SyntaxKind::STR_LE
+                                    | SyntaxKind::STR_CMP
+                                    | SyntaxKind::X
+                            )
+                        )
+                {
+                    // Coerce subsequent segments to IDENT as needed
                     self.bump_with_kind(SyntaxKind::IDENT);
                 } else {
                     // A trailing `::` is valid, so we don't report an error, just stop parsing the qualified name.
@@ -295,14 +328,11 @@ impl Parser<'_> {
                 self.bump(); // consume &
                 self.skip_trivia();
 
-                if self.at(SyntaxKind::IDENT) {
-                    self.parse_identifier_or_qualified();
-                } else {
-                    self.error("Expected function name after \\&");
-                }
+                self.parse_identifier_or_qualified();
             }
-            Some(SyntaxKind::IDENT) => {
+            Some(kind) if kind == SyntaxKind::IDENT || SyntaxKind::is_keyword(kind) => {
                 // Reference to a bareword function: \func (shorthand for \&func)
+                // Allow keywords as identifiers
                 self.parse_identifier_or_qualified();
             }
             Some(SyntaxKind::L_PAREN) => {
@@ -357,8 +387,8 @@ impl Parser<'_> {
                     self.error("Expected '}' after typeglob expression");
                 }
             }
-            Some(SyntaxKind::IDENT) => {
-                // Handle *STDIN syntax (simple identifier)
+            Some(kind) if kind == SyntaxKind::IDENT || SyntaxKind::is_keyword(kind) => {
+                // Handle *STDIN syntax (simple identifier), allow keywords as names
                 self.parse_identifier_or_qualified();
             }
             _ => {
