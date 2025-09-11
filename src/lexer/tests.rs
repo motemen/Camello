@@ -258,10 +258,7 @@ fn test_substitution_with_flags() {
 
     // Now the lexer should parse flags as a single token
     let flags_token = lexer.next_token();
-    println!(
-        "Flags token: {:?}, Context: {:?}",
-        flags_token, lexer.context
-    );
+    println!("Flags token: {:?}", flags_token);
 
     // This should now correctly parse as S_FLAGS
     assert_eq!(flags_token, Some((SyntaxKind::S_FLAGS, "gi")));
@@ -288,10 +285,7 @@ fn test_tr_with_flags() {
 
     // Now the lexer should parse flags as a single token
     let flags_token = lexer.next_token();
-    println!(
-        "TR Flags token: {:?}, Context: {:?}",
-        flags_token, lexer.context
-    );
+    println!("TR Flags token: {:?}", flags_token);
 
     // This should now correctly parse as TR_FLAGS
     assert_eq!(flags_token, Some((SyntaxKind::TR_FLAGS, "d")));
@@ -691,10 +685,7 @@ fn test_q_basic_parsing() {
     let mut tokens = Vec::new();
 
     while let Some((kind, text)) = lexer.next_token() {
-        println!(
-            "Token: {:?}, Text: {:?}, Context: {:?}",
-            kind, text, lexer.context
-        );
+        println!("Token: {:?}, Text: {:?}", kind, text);
         tokens.push((kind, text));
     }
 
@@ -713,10 +704,7 @@ fn test_full_q_expression() {
     let mut tokens = Vec::new();
 
     while let Some((kind, text)) = lexer.next_token() {
-        println!(
-            "Full expression Token: {:?}, Text: {:?}, Context: {:?}",
-            kind, text, lexer.context
-        );
+        println!("Full expression Token: {:?}, Text: {:?}", kind, text);
         tokens.push((kind, text));
     }
 
@@ -739,10 +727,7 @@ fn test_debug_q_simple() {
     let mut tokens = Vec::new();
 
     while let Some((kind, text)) = lexer.next_token() {
-        println!(
-            "Token: {:?}, Text: {:?}, Context: {:?}",
-            kind, text, lexer.context
-        );
+        println!("Token: {:?}, Text: {:?}", kind, text);
         tokens.push((kind, text));
     }
 
@@ -759,10 +744,7 @@ fn test_debug_print_q_tokens() {
     let mut tokens = Vec::new();
 
     while let Some((kind, text)) = lexer.next_token() {
-        println!(
-            "Token: {:?}, Text: {:?}, Context: {:?}",
-            kind, text, lexer.context
-        );
+        println!("Token: {:?}, Text: {:?}", kind, text);
         tokens.push((kind, text));
     }
 
@@ -781,10 +763,7 @@ fn test_debug_parser_lexer_sync() {
 
     // Mimic parser.bump() for each token
     while let Some((kind, text)) = current_token {
-        println!(
-            "Parser processing token: {:?}, Text: {:?}, Lexer context: {:?}",
-            kind, text, lexer.context
-        );
+        println!("Parser processing token: {:?}, Text: {:?}", kind, text);
         current_token = lexer.next_token(); // This is what parser.bump() does
     }
 }
@@ -796,10 +775,7 @@ fn test_qw_context_debug() {
     let mut tokens = Vec::new();
 
     while let Some((kind, text)) = lexer.next_token() {
-        println!(
-            "Token: {:?}, Text: {:?}, Context: {:?}",
-            kind, text, lexer.context
-        );
+        println!("Token: {:?}, Text: {:?}", kind, text);
         tokens.push((kind, text));
     }
 
