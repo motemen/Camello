@@ -125,6 +125,17 @@ impl<'a> Parser<'a> {
         self.lexer.peek_token().map(|(_, t)| t)
     }
 
+    // Value-context peek helpers for expression starts (parser-driven lexing)
+    fn current_kind_value(&self) -> Option<SyntaxKind> {
+        self.peek_non_trivia_token_with(LexExpectation::Value)
+            .map(|(k, _)| k)
+    }
+
+    fn current_text_value(&self) -> Option<&'a str> {
+        self.peek_non_trivia_token_with(LexExpectation::Value)
+            .map(|(_, t)| t)
+    }
+
     fn at(&self, kind: SyntaxKind) -> bool {
         self.current_kind() == Some(kind)
     }

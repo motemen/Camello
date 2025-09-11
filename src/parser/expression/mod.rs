@@ -430,34 +430,33 @@ impl Parser<'_> {
     fn primary_expr(&mut self) -> bool {
         self.skip_trivia();
 
-        let at_start = self.is_at_start_of_expression();
-        if !at_start {
+        let Some(current_kind) = self.current_kind_value() else {
             return false;
-        }
+        };
 
-        match self.current_kind() {
-            Some(SyntaxKind::NUMBER | SyntaxKind::STRING | SyntaxKind::REGEX_LITERAL) => {
+        match current_kind {
+            SyntaxKind::NUMBER | SyntaxKind::STRING | SyntaxKind::REGEX_LITERAL => {
                 // Consume as a value; let operators be detected on the next step
                 self.bump_value();
                 self.skip_trivia();
             }
-            Some(SyntaxKind::IO_EXPR) => {
+            SyntaxKind::IO_EXPR => {
                 self.builder.start_node(SyntaxKind::IO_EXPR.into());
                 // Consume I/O expression as a value
                 self.bump_value();
                 self.builder.finish_node();
                 self.skip_trivia();
             }
-            Some(kind) if kind.is_variable() => {
+            kind if kind.is_variable() => {
                 // Consume variable as a value
                 self.bump_value();
                 self.skip_trivia();
             }
-            Some(SyntaxKind::BACKSLASH) => {
+            SyntaxKind::BACKSLASH => {
                 // Reference expression: \$scalar, \@array, \%hash, \&code
                 self.parse_reference_expr();
             }
-            Some(SyntaxKind::ASTERISK) => {
+            SyntaxKind::ASTERISK => {
                 // Handle typeglob expressions specially
                 // Check if this is followed by a brace or identifier (typeglob syntax)
                 let next_token = self.peek_second_non_trivia_with(LexExpectation::Value);
@@ -472,7 +471,7 @@ impl Parser<'_> {
                     self.parse_variable();
                 }
             }
-            Some(kind) if kind.is_sigil() => {
+            kind if kind.is_sigil() => {
                 // Check if this is a dereferencing pattern (sigil followed by another sigil)
                 if self.is_dereferencing_pattern() {
                     self.parse_dereferencing();
@@ -480,7 +479,7 @@ impl Parser<'_> {
                     self.parse_variable();
                 }
             }
-            Some(SyntaxKind::PLUS) => {
+            SyntaxKind::PLUS => {
                 // Unary plus prefix operator
                 self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
                 self.bump_with_kind(SyntaxKind::UNARY_PLUS);
@@ -495,7 +494,7 @@ impl Parser<'_> {
 
                 self.builder.finish_node();
             }
-            Some(SyntaxKind::MINUS) => {
+            SyntaxKind::MINUS => {
                 // Unary minus prefix operator
                 self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
                 self.bump_with_kind(SyntaxKind::UNARY_MINUS);
@@ -510,7 +509,7 @@ impl Parser<'_> {
 
                 self.builder.finish_node();
             }
-            Some(SyntaxKind::LOGICAL_NOT) => {
+            SyntaxKind::LOGICAL_NOT => {
                 // Logical NOT prefix operator
                 self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
                 // After '!', expect a value
@@ -526,7 +525,7 @@ impl Parser<'_> {
 
                 self.builder.finish_node();
             }
-            Some(SyntaxKind::NOT_KW) => {
+            SyntaxKind::NOT_KW => {
                 // NOT keyword prefix operator
                 self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
                 // After 'not', expect a value
@@ -542,26 +541,24 @@ impl Parser<'_> {
 
                 self.builder.finish_node();
             }
-            Some(
-                SyntaxKind::MY_KW
-                | SyntaxKind::OUR_KW
-                | SyntaxKind::STATE_KW
-                | SyntaxKind::LOCAL_KW,
-            ) => {
+            SyntaxKind::MY_KW
+            | SyntaxKind::OUR_KW
+            | SyntaxKind::STATE_KW
+            | SyntaxKind::LOCAL_KW => {
                 // Variable declaration as expression (e.g., my $x = 1)
                 self.var_decl_expr();
             }
-            Some(SyntaxKind::UNDEF_KW) => {
+            SyntaxKind::UNDEF_KW => {
                 // undef keyword as expression
                 // Consume 'undef' as a value
                 self.bump_value();
                 self.skip_trivia();
             }
-            Some(SyntaxKind::IDENT) => {
+            SyntaxKind::IDENT => {
                 let start = self.builder.checkpoint();
 
                 // Get the function name before parsing
-                let function_name = self.current_text().unwrap_or("").to_string();
+                let function_name = self.current_text_value().unwrap_or("").to_string();
 
                 // Might be a qualified identifier, so use parse_identifier_or_qualified
                 self.parse_identifier_or_qualified();
@@ -576,7 +573,7 @@ impl Parser<'_> {
                     self.parse_block_function_args();
 
                     self.builder.finish_node();
-                } else if let Some(kind) = self.current_kind() {
+                } else if let Some(kind) = self.current_kind_value() {
                     // Check if we have regular function arguments following the identifier
                     // Value-like objects
                     if kind.is_variable()
@@ -624,14 +621,14 @@ impl Parser<'_> {
                     }
                 }
             }
-            Some(SyntaxKind::X) => {
+            SyntaxKind::X => {
                 // Handle 'x' as an identifier when it appears at the start of expressions
                 // This allows expressions like "x => 1" in use statements
                 // Consume 'x' as a value in this context
                 self.bump_value();
                 self.skip_trivia();
             }
-            Some(SyntaxKind::L_PAREN) => {
+            SyntaxKind::L_PAREN => {
                 // Parenthesized expression
                 // Inside parens, expect a value
                 self.bump_value(); // (
@@ -646,19 +643,19 @@ impl Parser<'_> {
                     self.skip_trivia();
                 }
             }
-            Some(SyntaxKind::L_BRACE) => {
+            SyntaxKind::L_BRACE => {
                 // Hash reference (anonymous hash): {}
                 self.hash_ref();
             }
-            Some(SyntaxKind::L_BRACKET) => {
+            SyntaxKind::L_BRACKET => {
                 // Array reference (anonymous array): []
                 self.array_ref();
             }
-            Some(SyntaxKind::QW_KW) => {
+            SyntaxKind::QW_KW => {
                 // qw() expression
                 self.qw_expr();
             }
-            Some(SyntaxKind::RETURN_KW) => {
+            SyntaxKind::RETURN_KW => {
                 // return statement (handled as a keyword)
                 // After 'return', if an expression follows, it is a value
                 self.bump_value(); // consume return
@@ -669,43 +666,43 @@ impl Parser<'_> {
                     self.expression();
                 }
             }
-            Some(SyntaxKind::Q_KW) => {
+            SyntaxKind::Q_KW => {
                 // q() expression
                 self.q_expr();
             }
-            Some(SyntaxKind::QQ_KW) => {
+            SyntaxKind::QQ_KW => {
                 // qq() expression
                 self.qq_expr();
             }
-            Some(SyntaxKind::QX_KW) => {
+            SyntaxKind::QX_KW => {
                 // qx() expression
                 self.qx_expr();
             }
-            Some(SyntaxKind::M_KW) => {
+            SyntaxKind::M_KW => {
                 // m() expression
                 self.m_expr();
             }
-            Some(SyntaxKind::QR_KW) => {
+            SyntaxKind::QR_KW => {
                 // qr() expression
                 self.qr_expr();
             }
-            Some(SyntaxKind::S_KW) => {
+            SyntaxKind::S_KW => {
                 // s() expression
                 self.s_expr();
             }
-            Some(SyntaxKind::TR_KW) => {
+            SyntaxKind::TR_KW => {
                 // tr() expression
                 self.tr_expr();
             }
-            Some(SyntaxKind::Y_KW) => {
+            SyntaxKind::Y_KW => {
                 // y() expression (alias for tr)
                 self.y_expr();
             }
-            Some(SyntaxKind::SUB_KW) => {
+            SyntaxKind::SUB_KW => {
                 // Anonymous subroutine expression: sub { ... }
                 self.anon_sub_expr();
             }
-            Some(SyntaxKind::FILE_TEST_OP) => {
+            SyntaxKind::FILE_TEST_OP => {
                 self.builder.start_node(SyntaxKind::FILE_TEST_EXPR.into());
                 // File test operator is prefix; next should expect a value
                 self.bump_value(); // consume file test operator

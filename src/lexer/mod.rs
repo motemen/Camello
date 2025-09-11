@@ -597,13 +597,8 @@ impl<'a> Lexer<'a> {
                     return Some((syntax_kind, text));
                 }
 
-                // Update context based on the token we just processed
-                // Special case for built-in functions - they expect values as arguments
-                if syntax_kind == SyntaxKind::IDENT && self.is_builtin_function(text) {
-                    self.context = LexerContext::ExpectingValue;
-                } else {
-                    self.update_context(syntax_kind);
-                }
+                // Update context for special modes only; default Value/Operator is parser-driven
+                self.update_context(syntax_kind);
 
                 // Track line position for POD detection
                 self.update_line_position(text);
@@ -1452,16 +1447,17 @@ impl<'a> Lexer<'a> {
     }
 
     fn handle_operator_context(&self, _kind: SyntaxKind) -> LexerContext {
-        LexerContext::ExpectingValue
+        // Do not flip default context here; parser drives Value/Operator expectation.
+        // Keep VariableName/SubPrototype/QuoteLike/RawData intact.
+        self.context
     }
 
     fn handle_identifier_context(&self) -> LexerContext {
         match &self.context {
             LexerContext::SubPrototype => self.context, // Remain in prototype context
-            LexerContext::VariableName | LexerContext::ExpectingValue => {
-                LexerContext::ExpectingOperator
-            }
-            LexerContext::ExpectingOperator => LexerContext::ExpectingOperator,
+            LexerContext::VariableName => LexerContext::ExpectingOperator, // Exit variable-name mode
+            // Do not flip between Value/Operator in default flow
+            LexerContext::ExpectingValue | LexerContext::ExpectingOperator => self.context,
             LexerContext::QuoteLike { .. } | LexerContext::RawData => self.context,
         }
     }
@@ -1546,23 +1542,19 @@ impl<'a> Lexer<'a> {
             // Identifiers need context-dependent handling
             SyntaxKind::IDENT => self.handle_identifier_context(),
 
-            // Literals and closing delimiters expect operators
-            kind if self.is_literal(kind) || self.is_right_delimiter(kind) => {
-                LexerContext::ExpectingOperator
-            }
+            // Do not flip default context on literals/right delimiters; parser drives it
+            kind if self.is_literal(kind) || self.is_right_delimiter(kind) => self.context,
 
-            // Postfix dereference operators expect operators next
+            // Postfix dereference operators: keep default context unchanged
             SyntaxKind::POSTFIX_DEREF_ARRAY
             | SyntaxKind::POSTFIX_DEREF_HASH
-            | SyntaxKind::POSTFIX_DEREF_SCALAR => LexerContext::ExpectingOperator,
+            | SyntaxKind::POSTFIX_DEREF_SCALAR => self.context,
 
             // Data section keywords transition to raw data context
             SyntaxKind::END_KW | SyntaxKind::DATA_KW => LexerContext::RawData,
 
-            // Statement terminators and POD reset context
-            SyntaxKind::SEMICOLON | SyntaxKind::CUT_KW | SyntaxKind::POD_CONTENT => {
-                LexerContext::ExpectingValue
-            }
+            // Statement terminators and POD: keep default context unchanged
+            SyntaxKind::SEMICOLON | SyntaxKind::CUT_KW | SyntaxKind::POD_CONTENT => self.context,
 
             // Keep current context for other tokens
             _ => self.context,
