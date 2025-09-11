@@ -2,18 +2,90 @@ pub mod precedence;
 pub mod primary;
 pub mod quoted;
 
+use crate::lexer::LexContext;
 use crate::SyntaxKind;
 use precedence::{get_operator_info, OperatorInfo, Precedence};
 
 use super::Parser;
 
 impl Parser<'_> {
+    /// Decide whether the current quote-like keyword should be parsed as a quote-like expression
+    /// or treated as an identifier. In the parser-driven quote-like mode, the lexer does not
+    /// auto-expand to DELIMITER at lookahead time, so we conservatively treat it as quote-like
+    /// unless the next token is a fat comma (=>), in which case it's likely a bareword key.
+    fn should_parse_quote_like(&self) -> bool {
+        self.peek_second_non_trivia_with(LexContext::Value)
+            .is_none_or(|(k, _)| k != SyntaxKind::FAT_COMMA)
+    }
+
+    /// Parse an identifier-like expression (including cases where a keyword is coerced to IDENT)
+    /// and handle possible function calls (regular or block).
+    fn parse_ident_like_expr(&mut self, coerce_current_to_ident: bool) {
+        let start = self.builder.checkpoint();
+
+        // Capture name before consuming
+        let function_name = self.current_text_value().unwrap_or("").to_string();
+
+        if coerce_current_to_ident {
+            self.bump_as(SyntaxKind::IDENT);
+        } else {
+            // Might be a qualified identifier, so use parse_identifier_or_qualified
+            self.parse_identifier_or_qualified();
+        }
+        self.skip_trivia();
+
+        // Block function call: e.g., map { ... } @list
+        if Self::is_block_function(&function_name) && self.at(SyntaxKind::L_BRACE) {
+            self.builder
+                .start_node_at(start, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());
+            self.parse_block_function_args();
+            self.builder.finish_node();
+            return;
+        }
+
+        if let Some(kind) = self.current_kind_value() {
+            // Check if we have regular function arguments following the identifier
+            if kind.is_variable()
+                || self.at_any(&[
+                    SyntaxKind::NUMBER,
+                    SyntaxKind::STRING,
+                    SyntaxKind::REGEX_LITERAL, // Regex literals like /pattern/
+                    SyntaxKind::SLASH,         // Slash can start regex literal
+                    SyntaxKind::L_BRACE,       // Hash reference: {}
+                    SyntaxKind::L_BRACKET,     // Array reference: []
+                    SyntaxKind::MY_KW,         // Variable declarations as arguments
+                    SyntaxKind::OUR_KW,
+                    SyntaxKind::STATE_KW,
+                    SyntaxKind::LOCAL_KW,
+                    // q-family keywords as valid function arguments
+                    SyntaxKind::Q_KW,
+                    SyntaxKind::QQ_KW,
+                    SyntaxKind::QX_KW,
+                    SyntaxKind::QW_KW,
+                    SyntaxKind::M_KW,
+                    SyntaxKind::QR_KW,
+                    SyntaxKind::S_KW,
+                    SyntaxKind::TR_KW,
+                    SyntaxKind::Y_KW,
+                ])
+                || kind.is_sigil()
+                || kind == SyntaxKind::IDENT
+            {
+                // We have a regular function call, wrap everything in FUNCTION_CALL_EXPR
+                self.builder
+                    .start_node_at(start, SyntaxKind::FUNCTION_CALL_EXPR.into());
+                self.expression_list();
+                self.builder.finish_node();
+            }
+        }
+    }
     // Parse block function arguments: block + optional additional arguments
     fn parse_block_function_args(&mut self) {
         // Parse the block (which should be at L_BRACE)
         if self.at(SyntaxKind::L_BRACE) {
             self.builder.start_node(SyntaxKind::BLOCK_STMT.into());
-            self.bump(); // {
+            // Entering a block; next should expect a Value
+            self.bump_value(); // {
             self.skip_trivia();
 
             // Parse statements inside the block
@@ -67,7 +139,10 @@ impl Parser<'_> {
         // Parse binary operators with precedence climbing
         loop {
             // Check if we have a binary operator or ternary operator
-            let Some(current_kind) = self.current_kind() else {
+            let Some(current_kind) = self
+                .peek_non_trivia_token_with(LexContext::Operator)
+                .map(|(k, _)| k)
+            else {
                 break;
             };
 
@@ -84,8 +159,8 @@ impl Parser<'_> {
                 self.builder
                     .start_node_at(checkpoint, SyntaxKind::TERNARY_EXPR.into());
 
-                // Consume the ? operator
-                self.bump();
+                // Consume the ? operator as Operator; RHS will be Value
+                self.bump_op();
                 self.skip_trivia();
 
                 // Parse the true expression with ternary precedence (right associative)
@@ -95,7 +170,8 @@ impl Parser<'_> {
 
                 // Expect the : operator
                 if self.at(SyntaxKind::COLON) {
-                    self.bump(); // consume :
+                    // Consume ':' as Operator; next will be Value
+                    self.bump_op();
                     self.skip_trivia();
                 } else {
                     self.error("Expected ':' after true expression in ternary operator");
@@ -113,7 +189,7 @@ impl Parser<'_> {
             // Check if this is a compound assignment operator (e.g., +=, ||=, etc.)
             let is_compound_assignment = current_kind.is_compoundable_operator() && {
                 // Look ahead to see if there's an '=' after the current operator
-                self.peek_non_trivia_token()
+                self.peek_second_non_trivia_with(LexContext::Operator)
                     .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::EQ)
             };
 
@@ -143,14 +219,15 @@ impl Parser<'_> {
 
             let op_checkpoint = self.builder.checkpoint();
 
-            // Consume the operator
-            self.bump();
+            // Consume the operator in Operator context; RHS will be read as Value by default
+            self.bump_op();
 
             if is_compound_assignment {
                 // Handle compound assignment operators (e.g., +=, ||=, etc.)
                 self.builder
                     .start_node_at(op_checkpoint, SyntaxKind::COMPOUND_ASSIGNMENT.into());
-                self.bump(); // consume =
+                // Consume '=' as an operator; RHS will be read as Value by default
+                self.bump_op();
                 self.builder.finish_node();
             }
 
@@ -194,7 +271,8 @@ impl Parser<'_> {
         loop {
             match self.current_kind() {
                 Some(SyntaxKind::ARROW) => {
-                    self.bump(); // ->
+                    // After '->', the next token is a value (method name, '{', '(', etc.)
+                    self.bump_value(); // ->
                     self.skip_trivia();
 
                     match self.current_kind() {
@@ -204,7 +282,8 @@ impl Parser<'_> {
                                 initial_checkpoint,
                                 SyntaxKind::HASH_REF_ACCESS_EXPR.into(),
                             );
-                            self.bump(); // {
+                            // Opening '{' of ref access; inside expects a value
+                            self.bump_value(); // {
                             self.skip_trivia();
 
                             if !self.expression() {
@@ -212,7 +291,8 @@ impl Parser<'_> {
                             }
 
                             if self.at(SyntaxKind::R_BRACE) {
-                                self.bump(); // }
+                                // After '}', expect an operator
+                                self.bump_op(); // }
                                 self.skip_trivia();
                             } else {
                                 self.error("Expected '}' after hash key");
@@ -226,7 +306,8 @@ impl Parser<'_> {
                                 initial_checkpoint,
                                 SyntaxKind::ARRAY_REF_ACCESS_EXPR.into(),
                             );
-                            self.bump(); // [
+                            // Opening '[' of ref access; inside expects a value
+                            self.bump_value(); // [
                             self.skip_trivia();
 
                             if !self.expression() {
@@ -234,7 +315,8 @@ impl Parser<'_> {
                             }
 
                             if self.at(SyntaxKind::R_BRACKET) {
-                                self.bump(); // ]
+                                // After ']', expect an operator
+                                self.bump_op(); // ]
                                 self.skip_trivia();
                             } else {
                                 self.error("Expected ']' after array index");
@@ -248,13 +330,15 @@ impl Parser<'_> {
                                 initial_checkpoint,
                                 SyntaxKind::CODE_REF_CALL_EXPR.into(),
                             );
-                            self.bump(); // (
+                            // Opening '(' of code ref call; inside expects value args
+                            self.bump_value(); // (
                             self.skip_trivia();
 
                             self.expression_list();
 
                             if self.at(SyntaxKind::R_PAREN) {
-                                self.bump(); // )
+                                // After ')', expect an operator
+                                self.bump_op(); // )
                                 self.skip_trivia();
                             } else {
                                 self.error("Expected ')' after code reference arguments");
@@ -262,7 +346,21 @@ impl Parser<'_> {
 
                             self.builder.finish_node();
                         }
-                        Some(SyntaxKind::IDENT) => {
+                        Some(kind)
+                            if kind == SyntaxKind::IDENT
+                                || SyntaxKind::is_keyword(kind)
+                                || matches!(
+                                    kind,
+                                    SyntaxKind::STR_EQ
+                                        | SyntaxKind::STR_NE
+                                        | SyntaxKind::STR_GT
+                                        | SyntaxKind::STR_LT
+                                        | SyntaxKind::STR_GE
+                                        | SyntaxKind::STR_LE
+                                        | SyntaxKind::STR_CMP
+                                        | SyntaxKind::X
+                                ) =>
+                        {
                             // Method call: expr->method()
                             self.builder.start_node_at(
                                 initial_checkpoint,
@@ -302,13 +400,15 @@ impl Parser<'_> {
                     // Function call: expr(args)
                     self.builder
                         .start_node_at(initial_checkpoint, SyntaxKind::FUNCTION_CALL_EXPR.into());
-                    self.bump(); // (
+                    // Inside function args, expect values
+                    self.bump_value(); // (
                     self.skip_trivia();
 
                     self.expression_list();
 
                     if self.at(SyntaxKind::R_PAREN) {
-                        self.bump(); // )
+                        // After ')', expect an operator
+                        self.bump_op(); // )
                         self.skip_trivia();
                     } else {
                         self.error("Expected ')' after function arguments");
@@ -368,7 +468,8 @@ impl Parser<'_> {
                     // Postfix dereference: expr->@*, expr->%*, expr->$*
                     self.builder
                         .start_node_at(initial_checkpoint, SyntaxKind::POSTFIX_DEREF_EXPR.into());
-                    self.bump(); // ->@*, ->%*, or ->$*
+                    // Postfix deref is a value-ending token; expect operator next
+                    self.bump_op(); // ->@*, ->%*, or ->$*
                     self.skip_trivia();
                     self.builder.finish_node();
                 }
@@ -393,7 +494,8 @@ impl Parser<'_> {
                 .start_node_at(start, SyntaxKind::EXPR_LIST.into());
 
             while self.at_any(&[SyntaxKind::COMMA, SyntaxKind::FAT_COMMA]) {
-                self.bump(); // , or =>
+                // After a separator, next should be a value
+                self.bump_value(); // , or =>
                 self.skip_trivia();
 
                 // Check for trailing comma - if we're at the end of a list context, don't require another expression
@@ -412,34 +514,36 @@ impl Parser<'_> {
     fn primary_expr(&mut self) -> bool {
         self.skip_trivia();
 
-        let at_start = self.is_at_start_of_expression();
-        if !at_start {
+        let Some(current_kind) = self.current_kind_value() else {
             return false;
-        }
+        };
 
-        match self.current_kind() {
-            Some(SyntaxKind::NUMBER | SyntaxKind::STRING | SyntaxKind::REGEX_LITERAL) => {
-                self.bump();
+        match current_kind {
+            SyntaxKind::NUMBER | SyntaxKind::STRING | SyntaxKind::REGEX_LITERAL => {
+                // Consume as a value; let operators be detected on the next step
+                self.bump_value();
                 self.skip_trivia();
             }
-            Some(SyntaxKind::IO_EXPR) => {
+            SyntaxKind::IO_EXPR => {
                 self.builder.start_node(SyntaxKind::IO_EXPR.into());
-                self.bump();
+                // Consume I/O expression as a value
+                self.bump_value();
                 self.builder.finish_node();
                 self.skip_trivia();
             }
-            Some(kind) if kind.is_variable() => {
-                self.bump();
+            kind if kind.is_variable() => {
+                // Consume variable as a value
+                self.bump_value();
                 self.skip_trivia();
             }
-            Some(SyntaxKind::BACKSLASH) => {
+            SyntaxKind::BACKSLASH => {
                 // Reference expression: \$scalar, \@array, \%hash, \&code
                 self.parse_reference_expr();
             }
-            Some(SyntaxKind::ASTERISK) => {
+            SyntaxKind::ASTERISK => {
                 // Handle typeglob expressions specially
                 // Check if this is followed by a brace or identifier (typeglob syntax)
-                let next_token = self.peek_non_trivia_token();
+                let next_token = self.peek_second_non_trivia_with(LexContext::Value);
                 if matches!(
                     next_token,
                     Some((SyntaxKind::L_BRACE | SyntaxKind::IDENT, _))
@@ -451,7 +555,7 @@ impl Parser<'_> {
                     self.parse_variable();
                 }
             }
-            Some(kind) if kind.is_sigil() => {
+            kind if kind.is_sigil() => {
                 // Check if this is a dereferencing pattern (sigil followed by another sigil)
                 if self.is_dereferencing_pattern() {
                     self.parse_dereferencing();
@@ -459,10 +563,10 @@ impl Parser<'_> {
                     self.parse_variable();
                 }
             }
-            Some(SyntaxKind::PLUS) => {
+            SyntaxKind::PLUS => {
                 // Unary plus prefix operator
                 self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
-                self.bump_with_kind(SyntaxKind::UNARY_PLUS);
+                self.bump_as(SyntaxKind::UNARY_PLUS);
                 self.skip_trivia();
 
                 // Parse the operand with higher precedence
@@ -474,10 +578,10 @@ impl Parser<'_> {
 
                 self.builder.finish_node();
             }
-            Some(SyntaxKind::MINUS) => {
+            SyntaxKind::MINUS => {
                 // Unary minus prefix operator
                 self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
-                self.bump_with_kind(SyntaxKind::UNARY_MINUS);
+                self.bump_as(SyntaxKind::UNARY_MINUS);
                 self.skip_trivia();
 
                 // Parse the operand with higher precedence
@@ -489,10 +593,11 @@ impl Parser<'_> {
 
                 self.builder.finish_node();
             }
-            Some(SyntaxKind::LOGICAL_NOT) => {
+            SyntaxKind::LOGICAL_NOT => {
                 // Logical NOT prefix operator
                 self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
-                self.bump(); // consume !
+                // After '!', expect a value
+                self.bump_value(); // consume !
                 self.skip_trivia();
 
                 // Parse the operand with higher precedence
@@ -504,10 +609,11 @@ impl Parser<'_> {
 
                 self.builder.finish_node();
             }
-            Some(SyntaxKind::NOT_KW) => {
+            SyntaxKind::NOT_KW => {
                 // NOT keyword prefix operator
                 self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
-                self.bump(); // consume 'not'
+                // After 'not', expect a value
+                self.bump_value(); // consume 'not'
                 self.skip_trivia();
 
                 // Parse the operand with logical not keyword precedence
@@ -519,25 +625,24 @@ impl Parser<'_> {
 
                 self.builder.finish_node();
             }
-            Some(
-                SyntaxKind::MY_KW
-                | SyntaxKind::OUR_KW
-                | SyntaxKind::STATE_KW
-                | SyntaxKind::LOCAL_KW,
-            ) => {
+            SyntaxKind::MY_KW
+            | SyntaxKind::OUR_KW
+            | SyntaxKind::STATE_KW
+            | SyntaxKind::LOCAL_KW => {
                 // Variable declaration as expression (e.g., my $x = 1)
                 self.var_decl_expr();
             }
-            Some(SyntaxKind::UNDEF_KW) => {
+            SyntaxKind::UNDEF_KW => {
                 // undef keyword as expression
-                self.bump(); // consume undef
+                // Consume 'undef' as a value
+                self.bump_value();
                 self.skip_trivia();
             }
-            Some(SyntaxKind::IDENT) => {
+            SyntaxKind::IDENT => {
                 let start = self.builder.checkpoint();
 
                 // Get the function name before parsing
-                let function_name = self.current_text().unwrap_or("").to_string();
+                let function_name = self.current_text_value().unwrap_or("").to_string();
 
                 // Might be a qualified identifier, so use parse_identifier_or_qualified
                 self.parse_identifier_or_qualified();
@@ -552,7 +657,7 @@ impl Parser<'_> {
                     self.parse_block_function_args();
 
                     self.builder.finish_node();
-                } else if let Some(kind) = self.current_kind() {
+                } else if let Some(kind) = self.current_kind_value() {
                     // Check if we have regular function arguments following the identifier
                     // Value-like objects
                     if kind.is_variable()
@@ -600,40 +705,48 @@ impl Parser<'_> {
                     }
                 }
             }
-            Some(SyntaxKind::X) => {
+            SyntaxKind::X => {
                 // Handle 'x' as an identifier when it appears at the start of expressions
                 // This allows expressions like "x => 1" in use statements
-                self.bump(); // consume x
+                // Consume 'x' as a value in this context
+                self.bump_value();
                 self.skip_trivia();
             }
-            Some(SyntaxKind::L_PAREN) => {
+            SyntaxKind::L_PAREN => {
                 // Parenthesized expression
-                self.bump(); // (
+                // Inside parens, expect a value
+                self.bump_value(); // (
                 self.skip_trivia();
 
                 // List inside parentheses (e.g., array initialization)
                 self.parse_parenthesized_list();
 
                 if self.at(SyntaxKind::R_PAREN) {
-                    self.bump(); // )
+                    // After ')', expect an operator
+                    self.bump_op(); // )
                     self.skip_trivia();
                 }
             }
-            Some(SyntaxKind::L_BRACE) => {
+            SyntaxKind::L_BRACE => {
                 // Hash reference (anonymous hash): {}
                 self.hash_ref();
             }
-            Some(SyntaxKind::L_BRACKET) => {
+            SyntaxKind::L_BRACKET => {
                 // Array reference (anonymous array): []
                 self.array_ref();
             }
-            Some(SyntaxKind::QW_KW) => {
-                // qw() expression
-                self.qw_expr();
+            SyntaxKind::QW_KW => {
+                // qw() expression or bareword 'qw'
+                if self.should_parse_quote_like() {
+                    self.qw_expr();
+                } else {
+                    self.parse_ident_like_expr(true);
+                }
             }
-            Some(SyntaxKind::RETURN_KW) => {
+            SyntaxKind::RETURN_KW => {
                 // return statement (handled as a keyword)
-                self.bump(); // consume return
+                // After 'return', if an expression follows, it is a value
+                self.bump_value(); // consume return
                 self.skip_trivia();
 
                 // If there is an expression after return, process it
@@ -641,45 +754,70 @@ impl Parser<'_> {
                     self.expression();
                 }
             }
-            Some(SyntaxKind::Q_KW) => {
-                // q() expression
-                self.q_expr();
+            SyntaxKind::Q_KW => {
+                if self.should_parse_quote_like() {
+                    self.q_expr();
+                } else {
+                    self.parse_ident_like_expr(true);
+                }
             }
-            Some(SyntaxKind::QQ_KW) => {
-                // qq() expression
-                self.qq_expr();
+            SyntaxKind::QQ_KW => {
+                if self.should_parse_quote_like() {
+                    self.qq_expr();
+                } else {
+                    self.parse_ident_like_expr(true);
+                }
             }
-            Some(SyntaxKind::QX_KW) => {
-                // qx() expression
-                self.qx_expr();
+            SyntaxKind::QX_KW => {
+                if self.should_parse_quote_like() {
+                    self.qx_expr();
+                } else {
+                    self.parse_ident_like_expr(true);
+                }
             }
-            Some(SyntaxKind::M_KW) => {
-                // m() expression
-                self.m_expr();
+            SyntaxKind::M_KW => {
+                if self.should_parse_quote_like() {
+                    self.m_expr();
+                } else {
+                    self.parse_ident_like_expr(true);
+                }
             }
-            Some(SyntaxKind::QR_KW) => {
-                // qr() expression
-                self.qr_expr();
+            SyntaxKind::QR_KW => {
+                if self.should_parse_quote_like() {
+                    self.qr_expr();
+                } else {
+                    self.parse_ident_like_expr(true);
+                }
             }
-            Some(SyntaxKind::S_KW) => {
-                // s() expression
-                self.s_expr();
+            SyntaxKind::S_KW => {
+                if self.should_parse_quote_like() {
+                    self.s_expr();
+                } else {
+                    self.parse_ident_like_expr(true);
+                }
             }
-            Some(SyntaxKind::TR_KW) => {
-                // tr() expression
-                self.tr_expr();
+            SyntaxKind::TR_KW => {
+                if self.should_parse_quote_like() {
+                    self.tr_expr();
+                } else {
+                    self.parse_ident_like_expr(true);
+                }
             }
-            Some(SyntaxKind::Y_KW) => {
-                // y() expression (alias for tr)
-                self.y_expr();
+            SyntaxKind::Y_KW => {
+                if self.should_parse_quote_like() {
+                    self.y_expr();
+                } else {
+                    self.parse_ident_like_expr(true);
+                }
             }
-            Some(SyntaxKind::SUB_KW) => {
+            SyntaxKind::SUB_KW => {
                 // Anonymous subroutine expression: sub { ... }
                 self.anon_sub_expr();
             }
-            Some(SyntaxKind::FILE_TEST_OP) => {
+            SyntaxKind::FILE_TEST_OP => {
                 self.builder.start_node(SyntaxKind::FILE_TEST_EXPR.into());
-                self.bump(); // consume file test operator
+                // File test operator is prefix; next should expect a value
+                self.bump_value(); // consume file test operator
                 self.skip_trivia();
 
                 if !self.parse_expression_with_precedence(
@@ -715,13 +853,15 @@ impl Parser<'_> {
     /// Parse method arguments if parentheses are present
     fn parse_method_arguments(&mut self) {
         if self.at(SyntaxKind::L_PAREN) {
-            self.bump(); // (
+            // Inside method args, expect values
+            self.bump_value(); // (
             self.skip_trivia();
 
             self.expression_list();
 
             if self.at(SyntaxKind::R_PAREN) {
-                self.bump(); // )
+                // After ')', expect an operator
+                self.bump_op(); // )
                 self.skip_trivia();
             } else {
                 self.error("Expected ')' after method arguments");

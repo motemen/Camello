@@ -6,7 +6,8 @@ impl Parser<'_> {
     pub fn hash_ref(&mut self) {
         self.builder.start_node(SyntaxKind::HASH_REF.into());
 
-        self.expect(SyntaxKind::L_BRACE);
+        // Opening '{' of anonymous hash; inside expects values
+        self.expect_value(SyntaxKind::L_BRACE);
         self.skip_trivia();
 
         // Parse expressions inside braces - could be key => value pairs or a simple expression list
@@ -15,14 +16,16 @@ impl Parser<'_> {
         }
 
         self.skip_trivia();
-        self.expect(SyntaxKind::R_BRACE);
+        // After closing '}', expect an operator
+        self.expect_op(SyntaxKind::R_BRACE);
         self.builder.finish_node();
     }
 
     pub fn array_ref(&mut self) {
         self.builder.start_node(SyntaxKind::ARRAY_REF.into());
 
-        self.expect(SyntaxKind::L_BRACKET);
+        // Opening '[' of anonymous array; inside expects values
+        self.expect_value(SyntaxKind::L_BRACKET);
         self.skip_trivia();
 
         // Parse expression list inside brackets (supports trailing comma)
@@ -31,7 +34,8 @@ impl Parser<'_> {
         }
 
         self.skip_trivia();
-        self.expect(SyntaxKind::R_BRACKET);
+        // After closing ']', expect an operator
+        self.expect_op(SyntaxKind::R_BRACKET);
         self.builder.finish_node();
     }
 
@@ -137,13 +141,15 @@ impl Parser<'_> {
         // Expect an identifier (only simple identifiers, no qualified allowed)
         if self.at(SyntaxKind::IDENT) {
             self.bump();
-
-            // Check for :: after identifier - if found, it's a package-qualified name which is not allowed for my/state
-            if self.at(SyntaxKind::DOUBLE_COLON) {
-                self.error("Package-qualified variable names are not allowed with 'my' or 'state' declarations");
-            }
+        } else if self.current_kind().is_some_and(SyntaxKind::is_keyword) {
+            self.bump_as(SyntaxKind::IDENT);
         } else {
             self.error("Expected identifier after sigil");
+        }
+
+        // Check for :: after identifier - if found, it's a package-qualified name which is not allowed for my/state
+        if self.at(SyntaxKind::DOUBLE_COLON) {
+            self.error("Package-qualified variable names are not allowed with 'my' or 'state' declarations");
         }
 
         self.builder.finish_node();
@@ -187,7 +193,7 @@ impl Parser<'_> {
         // Use token-based lookahead to check if next non-trivia token is a dollar sigil or brace
         // Valid dereference patterns are of the form: @$ref, %$ref, $$ref, @{expr}, %{expr}, ${expr}
         matches!(
-            self.peek_non_trivia_token(),
+            self.peek_second_non_trivia_with(crate::lexer::LexContext::Value),
             Some((SyntaxKind::DOLLAR | SyntaxKind::L_BRACE, _))
         )
     }
@@ -230,17 +236,20 @@ impl Parser<'_> {
         self.builder.finish_node();
     }
 
-    /// Parses a regular identifier or qualified identifier
-    /// Examples: "Foo", "`Foo::Bar`", "`Foo::Bar::Baz`"
+    /// Parses a regular identifier or qualified identifier, accepting keywords as identifiers
+    /// in identifier-expected positions. Examples: Foo, Foo::Bar, Foo::Bar::Baz, and keywords
+    /// like `else` when grammar expects an identifier (e.g., `sub else {}` or `use if`).
     pub fn parse_identifier_or_qualified(&mut self) {
-        // Expect an identifier
-        if !self.at(SyntaxKind::IDENT) {
+        // Accept IDENT or coerce a keyword into IDENT at identifier positions
+        let checkpoint = self.builder.checkpoint();
+        if self.at(SyntaxKind::IDENT) {
+            self.bump(); // First identifier
+        } else if self.current_kind().is_some_and(SyntaxKind::is_keyword) {
+            self.bump_as(SyntaxKind::IDENT);
+        } else {
             self.error("Expected identifier");
             return;
         }
-
-        let checkpoint = self.builder.checkpoint();
-        self.bump(); // First identifier
         self.skip_trivia();
 
         // Check for package qualifiers (::)
@@ -252,9 +261,11 @@ impl Parser<'_> {
                 self.bump(); // ::
                 self.skip_trivia();
 
-                if self.at(SyntaxKind::IDENT) {
-                    self.bump(); // Next identifier
-                                 // Don't skip trivia here - let it remain outside QUALIFIED_IDENT
+                if self.at(SyntaxKind::IDENT)
+                    || self.current_kind().is_some_and(SyntaxKind::is_keyword)
+                {
+                    // Coerce subsequent segments to IDENT as needed
+                    self.bump_as(SyntaxKind::IDENT);
                 } else {
                     // A trailing `::` is valid, so we don't report an error, just stop parsing the qualified name.
                     break;
@@ -286,14 +297,11 @@ impl Parser<'_> {
                 self.bump(); // consume &
                 self.skip_trivia();
 
-                if self.at(SyntaxKind::IDENT) {
-                    self.parse_identifier_or_qualified();
-                } else {
-                    self.error("Expected function name after \\&");
-                }
+                self.parse_identifier_or_qualified();
             }
-            Some(SyntaxKind::IDENT) => {
+            Some(kind) if kind == SyntaxKind::IDENT || SyntaxKind::is_keyword(kind) => {
                 // Reference to a bareword function: \func (shorthand for \&func)
+                // Allow keywords as identifiers
                 self.parse_identifier_or_qualified();
             }
             Some(SyntaxKind::L_PAREN) => {
@@ -348,8 +356,8 @@ impl Parser<'_> {
                     self.error("Expected '}' after typeglob expression");
                 }
             }
-            Some(SyntaxKind::IDENT) => {
-                // Handle *STDIN syntax (simple identifier)
+            Some(kind) if kind == SyntaxKind::IDENT || SyntaxKind::is_keyword(kind) => {
+                // Handle *STDIN syntax (simple identifier), allow keywords as names
                 self.parse_identifier_or_qualified();
             }
             _ => {
