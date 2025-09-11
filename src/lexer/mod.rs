@@ -669,12 +669,12 @@ impl<'a> Lexer<'a> {
         if chars.next() != Some('-') {
             return None;
         }
-        let Some(op) = chars.next() else {
-            return None;
-        };
+
+        let op = chars.next()?;
         if !op.is_alphabetic() {
             return None;
         }
+
         // If the third char exists and is alphanumeric, it's not a file test op (e.g., -abcde)
         if remainder.chars().nth(2).is_some_and(char::is_alphanumeric) {
             return None;
