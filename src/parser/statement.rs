@@ -169,7 +169,7 @@ impl Parser<'_> {
         self.expect(SyntaxKind::SUB_KW);
         self.skip_trivia();
 
-        // Subroutine name (qualified identifier also allowed)
+        // Subroutine name (qualified identifier also allowed); keywords accepted as identifiers
         self.parse_identifier_or_qualified();
         self.skip_trivia();
 
@@ -191,7 +191,7 @@ impl Parser<'_> {
         self.expect(SyntaxKind::PACKAGE_KW);
         self.skip_trivia();
 
-        // Package name (qualified identifier)
+        // Package name (qualified identifier); allow keywords as identifiers
         self.parse_identifier_or_qualified();
         self.skip_trivia();
 
@@ -225,7 +225,7 @@ impl Parser<'_> {
             // Simple version number (e.g., use 5; or no 5;)
             self.bump();
         } else {
-            // Module name (qualified identifier)
+            // Module name (qualified identifier); allow keywords as identifiers
             self.parse_identifier_or_qualified();
         }
         self.skip_trivia();
@@ -262,6 +262,8 @@ impl Parser<'_> {
     fn no_stmt(&mut self) {
         self.use_or_no_stmt(false);
     }
+
+    // removed parse_module_name_or_qualified; logic centralized in parse_identifier_or_qualified
 
     fn for_stmt(&mut self) {
         self.builder.start_node(SyntaxKind::FOR_STMT.into());
