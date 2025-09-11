@@ -37,7 +37,15 @@ pub enum Token {
     Ident,
 
     // リテラル
-    #[regex(r"[0-9]+(\.[0-9]+)?")]
+    // Numeric literals with underscores and multiple bases
+    #[regex(
+        r"0x[0-9A-Fa-f_]+(?:[.][0-9A-Fa-f_]+)?(?:[pP][+-]?[0-9_]+)?",
+        priority = 2
+    )]
+    #[regex(r"0b[01_]+", priority = 2)]
+    #[regex(r"0o[0-7_]+", priority = 2)]
+    #[regex(r"[0-9_]+(?:[.][0-9_]+)?(?:[eE][+-]?[0-9_]+)?", priority = 1)]
+    #[regex(r"[.][0-9_]+(?:[eE][+-]?[0-9_]+)?", priority = 1)]
     Number,
 
     #[regex(r#""([^"\\]|\\.)*""#)]
@@ -48,9 +56,8 @@ pub enum Token {
     #[regex(r"v[0-9]+(\.[0-9_]+)*")]
     Version,
 
-    // Bare version number (5.24.1, 5.024_001, etc. - contextually determined)
-    // Matches numbers with either multiple dots OR underscores in version parts
-    #[regex(r"[0-9]+(\.[0-9]+){2,}|[0-9]+\.[0-9_]*_[0-9_]*")]
+    // Bare version number (e.g., 5.24.1) - contextually determined
+    #[regex(r"[0-9]+(\.[0-9]+){2,}")]
     BareVersion,
 
     // RegexLiteral - handled manually via context-sensitive disambiguation
