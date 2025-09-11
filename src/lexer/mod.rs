@@ -249,9 +249,9 @@ impl Token {
     }
 }
 
-// Disambiguation context is unified with LexExpectation
+// Disambiguation context is unified with LexContext
 
-/// External lexical expectation provided by the parser to disambiguate
+/// External lexical context hint provided by the parser to disambiguate
 /// only operator/value sensitive tokens in default contexts.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LexContext {
@@ -261,9 +261,9 @@ pub enum LexContext {
     Operator,
 }
 
-// No separate DisambiguationContext; use LexExpectation directly
+// No separate DisambiguationContext; use LexContext directly
 
-// No LexerContext: parser provides expectations and lexer remains stateless
+// No LexerContext: parser provides context and lexer remains stateless
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DelimiterPhase {
@@ -314,11 +314,11 @@ pub struct Lexer<'a> {
     logos_lexer: logos::Lexer<'a, Token>,
     at_line_start: bool, // Track if we're at the start of a line for POD detection
     mode: LexerMode,
-    // TODO(lexer): Remove last_non_trivia_kind and derive_default_expectation.
+    // TODO(lexer): Remove last_non_trivia_kind and derive_default_context.
     // - Goal: make lexing entirely parser-driven via LexMode without relying on
     //   previous token heuristics.
     // - Plan: ensure all lexer entry points (parser-side) pass an explicit LexMode,
-    //   restrict quote-like expansion to Operator mode, and eliminate default expectation.
+    //   restrict quote-like expansion to Operator mode, and eliminate default context fallback.
     //   Then delete last_non_trivia_kind and associated logic.
     // - Note: standalone lexer iteration (Iterator::next) may default to Value or be
     //   retired in favor of explicit-mode helpers used by tests.
@@ -342,7 +342,7 @@ impl Clone for Lexer<'_> {
 impl<'a> Iterator for Lexer<'a> {
     type Item = (SyntaxKind, &'a str);
     fn next(&mut self) -> Option<Self::Item> {
-        // Default to Value expectation for standalone lexer usage
+        // Default to Value context for standalone lexer usage
         self.next_token_default()
     }
 }
@@ -361,7 +361,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn derive_default_expectation(&self) -> LexContext {
+    fn derive_default_context(&self) -> LexContext {
         match self.last_non_trivia_kind {
             None => LexContext::Value,
             Some(k) => {
@@ -404,7 +404,7 @@ impl<'a> Lexer<'a> {
         )
     }
 
-    /// Handle special tokens when expecting a value
+    /// Handle special tokens when in Value context
     fn try_handle_expecting_value_context(&mut self) -> Option<(SyntaxKind, &'a str)> {
         // 1) File test operator like -f
         if let Some(result) = Self::try_consume_file_test_op(self) {
@@ -444,12 +444,12 @@ impl<'a> Lexer<'a> {
     }
 
     pub fn next_token(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        // Derive default expectation from last significant token for standalone usage
-        let expect = self.derive_default_expectation();
-        self.next_token_with(expect)
+        // Derive default context from last significant token for standalone usage
+        let context = self.derive_default_context();
+        self.next_token_with_context(context)
     }
 
-    /// Core tokenization step with an optional lexical expectation override.
+    /// Core tokenization step with an optional lexical context override.
     /// When `override_ctx` is provided, it influences only this single step.
     fn next_token_internal(
         &mut self,
@@ -478,12 +478,6 @@ impl<'a> Lexer<'a> {
     }
 
     // Raw data consumption is handled via consume_data_section from the parser
-
-    // Quote-like handling moved to stateless expansion; no separate handler needed
-
-    // Removed VariableName handling; variable names are parsed by the parser.
-
-    // Removed SubPrototype handling; parser reads prototype symbols with explicit expectations
 
     /// Handle default context (Value | Operator): 通常ケースを担当
     fn handle_default_context_with(
@@ -516,7 +510,7 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        // Handle special tokens when expecting a value
+        // Handle special tokens when in Value context
         let is_value_context = matches!(context, Some(LexContext::Value));
         let in_quote_like = matches!(self.mode, LexerMode::QuoteLike { .. });
         if is_value_context && !in_quote_like {
@@ -593,8 +587,6 @@ impl<'a> Lexer<'a> {
         self.logos_lexer.bump(remainder.len());
         Some((SyntaxKind::RAW_STRING, data_text))
     }
-
-    // Removed: pending clearing API (not needed with guarded expansion)
 
     /// Classify quote-like identifiers as keywords unless followed by fat comma (=>)
     fn classify_quote_like_keyword(&self, word: &str) -> SyntaxKind {
@@ -705,7 +697,7 @@ impl<'a> Lexer<'a> {
             "no" => SyntaxKind::NO_KW,
             "return" => SyntaxKind::RETURN_KW,
             "undef" => SyntaxKind::UNDEF_KW,
-            // Quote-like starters (treated as keywords regardless of expectation)
+            // Quote-like starters (treated as keywords regardless of context)
             "qw" => SyntaxKind::QW_KW,
             "q" => SyntaxKind::Q_KW,
             "qq" => SyntaxKind::QQ_KW,
@@ -720,8 +712,6 @@ impl<'a> Lexer<'a> {
             _ => return None,
         })
     }
-
-    // Removed function-specific disambiguators; unified in `disambiguate`
 
     fn try_consume_regex_literal(&mut self) -> Option<(SyntaxKind, &'a str)> {
         let remainder = self.logos_lexer.remainder();
@@ -840,24 +830,6 @@ impl<'a> Lexer<'a> {
         None
     }
 
-    // Removed: variable-name tokenizer (parser handles complex variable forms)
-
-    // Removed: per-token disambiguators for slash/ampersand/caret; handled in `disambiguate`
-
-    // Removed: is_builtin_function (no longer used)
-
-    // Removed unused is_sigil / is_keyword helpers
-
-    // Removed is_operator/is_literal; use SyntaxKind::is_operator/is_literal instead
-
-    // Removed left/right delimiter helpers (no longer used)
-
-    // Removed keyword/operator/identifier context handlers (parser-driven lexing)
-
-    // Removed update_context: lexer is stateless
-
-    // Removed: external set_context; parser drives lexing via explicit expectations
-
     /// Track line position for POD detection
     fn update_line_position(&mut self, text: &str) {
         // Check if this token contains a newline
@@ -934,9 +906,6 @@ impl<'a> Lexer<'a> {
         Some((SyntaxKind::POD_CONTENT, remainder))
     }
 
-    // Removed: variable name consumption helper, as VariableName context is removed and
-    // complex forms are handled by the parser.
-
     /// Try to consume standalone =cut at line start (error case)
     fn try_consume_standalone_cut(&mut self) -> Option<(SyntaxKind, &'a str)> {
         let remainder = self.logos_lexer.remainder();
@@ -978,7 +947,7 @@ impl<'a> Lexer<'a> {
     /// Peek at the next non-trivia token without consuming it or changing lexer state
     #[must_use]
     pub fn peek_non_trivia_token(&self) -> Option<(SyntaxKind, &'a str)> {
-        self.peek_non_trivia_with(LexContext::Value)
+        self.peek_non_trivia_with_context(LexContext::Value)
     }
 
     /// Peek ahead multiple tokens, skipping trivia, and return the first non-trivia token
@@ -990,22 +959,26 @@ impl<'a> Lexer<'a> {
             .filter(|(kind, _)| target_kinds.contains(kind))
     }
 
-    /// Get the next token using an explicit lexical expectation for ambiguous cases.
-    /// For non-default contexts (QuoteLike), this expectation is ignored.
-    pub fn next_token_with(&mut self, expect: LexContext) -> Option<(SyntaxKind, &'a str)> {
-        let override_ctx = Some(expect);
-        self.next_token_internal(override_ctx)
+    /// Get the next token using an explicit lexical context for ambiguous cases.
+    /// For non-default contexts (QuoteLike), this context hint is ignored.
+    pub fn next_token_with_context(
+        &mut self,
+        context: LexContext,
+    ) -> Option<(SyntaxKind, &'a str)> {
+        self.next_token_internal(Some(context))
     }
 
-    /// Peek the next non-trivia token using a given lexical expectation.
+    /// Peek the next non-trivia token using a given lexical context.
     /// This does not mutate the original lexer state.
     #[must_use]
-    pub fn peek_non_trivia_with(&self, expect: LexContext) -> Option<(SyntaxKind, &'a str)> {
+    pub fn peek_non_trivia_with_context(
+        &self,
+        context: LexContext,
+    ) -> Option<(SyntaxKind, &'a str)> {
         let mut cloned = self.clone();
-        let override_ctx = Some(expect);
         // Iterate tokens using the internal single-step with override until non-trivia
         loop {
-            match cloned.next_token_internal(override_ctx) {
+            match cloned.next_token_internal(Some(context)) {
                 Some((k, t)) if k.is_trivia() => {
                     // continue skipping trivia
                     let _ = t; // avoid unused
@@ -1016,24 +989,23 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// Peek the next token (including trivia) using a given lexical expectation.
+    /// Peek the next token (including trivia) using a given lexical context.
     /// This does not mutate the original lexer state and does not skip trivia.
     #[must_use]
-    pub fn peek_with(&self, expect: LexContext) -> Option<(SyntaxKind, &'a str)> {
+    pub fn peek_with_context(&self, context: LexContext) -> Option<(SyntaxKind, &'a str)> {
         let mut cloned = self.clone();
-        let override_ctx = Some(expect);
-        cloned.next_token_internal(override_ctx)
+        cloned.next_token_internal(Some(context))
     }
 
-    /// Convenience: default expectation is Value
+    /// Convenience: default context is Value
     #[must_use]
     pub fn peek_non_trivia(&self) -> Option<(SyntaxKind, &'a str)> {
-        self.peek_non_trivia_with(LexContext::Value)
+        self.peek_non_trivia_with_context(LexContext::Value)
     }
 
-    /// Convenience: default expectation is Value
+    /// Convenience: default context is Value
     pub fn next_token_default(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        self.next_token_with(LexContext::Value)
+        self.next_token_with_context(LexContext::Value)
     }
 }
 
