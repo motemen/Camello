@@ -234,17 +234,20 @@ impl Parser<'_> {
         self.builder.finish_node();
     }
 
-    /// Parses a regular identifier or qualified identifier
-    /// Examples: "Foo", "`Foo::Bar`", "`Foo::Bar::Baz`"
+    /// Parses a regular identifier or qualified identifier, accepting keywords as identifiers
+    /// in identifier-expected positions. Examples: Foo, Foo::Bar, Foo::Bar::Baz, and keywords
+    /// like `else` when grammar expects an identifier (e.g., `sub else {}` or `use if`).
     pub fn parse_identifier_or_qualified(&mut self) {
-        // Expect an identifier
-        if !self.at(SyntaxKind::IDENT) {
+        // Accept IDENT or coerce a keyword into IDENT at identifier positions
+        let checkpoint = self.builder.checkpoint();
+        if self.at(SyntaxKind::IDENT) {
+            self.bump(); // First identifier
+        } else if self.current_kind().is_some_and(SyntaxKind::is_keyword) {
+            self.bump_with_kind(SyntaxKind::IDENT);
+        } else {
             self.error("Expected identifier");
             return;
         }
-
-        let checkpoint = self.builder.checkpoint();
-        self.bump(); // First identifier
         self.skip_trivia();
 
         // Check for package qualifiers (::)
@@ -258,7 +261,9 @@ impl Parser<'_> {
 
                 if self.at(SyntaxKind::IDENT) {
                     self.bump(); // Next identifier
-                                 // Don't skip trivia here - let it remain outside QUALIFIED_IDENT
+                } else if self.current_kind().is_some_and(SyntaxKind::is_keyword) {
+                    // Coerce subsequent keyword segments as IDENT too
+                    self.bump_with_kind(SyntaxKind::IDENT);
                 } else {
                     // A trailing `::` is valid, so we don't report an error, just stop parsing the qualified name.
                     break;
