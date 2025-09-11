@@ -141,13 +141,15 @@ impl Parser<'_> {
         // Expect an identifier (only simple identifiers, no qualified allowed)
         if self.at(SyntaxKind::IDENT) {
             self.bump();
-
-            // Check for :: after identifier - if found, it's a package-qualified name which is not allowed for my/state
-            if self.at(SyntaxKind::DOUBLE_COLON) {
-                self.error("Package-qualified variable names are not allowed with 'my' or 'state' declarations");
-            }
+        } else if self.current_kind().is_some_and(SyntaxKind::is_keyword) {
+            self.bump_as(SyntaxKind::IDENT);
         } else {
             self.error("Expected identifier after sigil");
+        }
+
+        // Check for :: after identifier - if found, it's a package-qualified name which is not allowed for my/state
+        if self.at(SyntaxKind::DOUBLE_COLON) {
+            self.error("Package-qualified variable names are not allowed with 'my' or 'state' declarations");
         }
 
         self.builder.finish_node();
@@ -244,30 +246,6 @@ impl Parser<'_> {
             self.bump(); // First identifier
         } else if self.current_kind().is_some_and(SyntaxKind::is_keyword) {
             self.bump_as(SyntaxKind::IDENT);
-        } else if self.current_kind().is_some_and(|k| {
-            matches!(
-                k,
-                SyntaxKind::STR_EQ
-                    | SyntaxKind::STR_NE
-                    | SyntaxKind::STR_GT
-                    | SyntaxKind::STR_LT
-                    | SyntaxKind::STR_GE
-                    | SyntaxKind::STR_LE
-                    | SyntaxKind::STR_CMP
-                    | SyntaxKind::X
-                    | SyntaxKind::QW_KW
-                    | SyntaxKind::Q_KW
-                    | SyntaxKind::QQ_KW
-                    | SyntaxKind::QX_KW
-                    | SyntaxKind::M_KW
-                    | SyntaxKind::QR_KW
-                    | SyntaxKind::S_KW
-                    | SyntaxKind::TR_KW
-                    | SyntaxKind::Y_KW
-            )
-        }) {
-            // Allow word-operator tokens as identifiers in identifier-expected positions
-            self.bump_as(SyntaxKind::IDENT);
         } else {
             self.error("Expected identifier");
             return;
@@ -285,28 +263,6 @@ impl Parser<'_> {
 
                 if self.at(SyntaxKind::IDENT)
                     || self.current_kind().is_some_and(SyntaxKind::is_keyword)
-                    || self.current_kind().is_some_and(|k| {
-                        matches!(
-                            k,
-                            SyntaxKind::STR_EQ
-                                | SyntaxKind::STR_NE
-                                | SyntaxKind::STR_GT
-                                | SyntaxKind::STR_LT
-                                | SyntaxKind::STR_GE
-                                | SyntaxKind::STR_LE
-                                | SyntaxKind::STR_CMP
-                                | SyntaxKind::X
-                                | SyntaxKind::QW_KW
-                                | SyntaxKind::Q_KW
-                                | SyntaxKind::QQ_KW
-                                | SyntaxKind::QX_KW
-                                | SyntaxKind::M_KW
-                                | SyntaxKind::QR_KW
-                                | SyntaxKind::S_KW
-                                | SyntaxKind::TR_KW
-                                | SyntaxKind::Y_KW
-                        )
-                    })
                 {
                     // Coerce subsequent segments to IDENT as needed
                     self.bump_as(SyntaxKind::IDENT);

@@ -282,11 +282,20 @@ impl SyntaxKind {
                 | SyntaxKind::TR_KW
                 | SyntaxKind::Y_KW
                 | SyntaxKind::USE_KW
+                | SyntaxKind::NO_KW
                 | SyntaxKind::RETURN_KW
                 | SyntaxKind::NOT_KW
                 | SyntaxKind::AND_KW
                 | SyntaxKind::OR_KW
                 | SyntaxKind::XOR_KW
+                | SyntaxKind::STR_EQ
+                | SyntaxKind::STR_NE
+                | SyntaxKind::STR_GT
+                | SyntaxKind::STR_LT
+                | SyntaxKind::STR_GE
+                | SyntaxKind::STR_LE
+                | SyntaxKind::STR_CMP
+                | SyntaxKind::X
         )
     }
 

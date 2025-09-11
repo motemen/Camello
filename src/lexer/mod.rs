@@ -249,13 +249,12 @@ impl Token {
     }
 }
 
-// Disambiguation context is unified with LexContext
-
 /// External lexical context hint provided by the parser to disambiguate
 /// only operator/value sensitive tokens in default contexts.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum LexContext {
     /// Expecting a value, identifier, or sigil (after keywords, operators, sigils)
+    #[default]
     Value,
     /// Expecting an operator (after identifiers, numbers, variables)
     Operator,
@@ -299,8 +298,9 @@ pub enum QuoteLikeState {
     Flags,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 enum LexerMode {
+    #[default]
     Normal,
     QuoteLike {
         prefix: SyntaxKind,
@@ -314,15 +314,6 @@ pub struct Lexer<'a> {
     logos_lexer: logos::Lexer<'a, Token>,
     at_line_start: bool, // Track if we're at the start of a line for POD detection
     mode: LexerMode,
-    // TODO(lexer): Remove last_non_trivia_kind and derive_default_context.
-    // - Goal: make lexing entirely parser-driven via LexMode without relying on
-    //   previous token heuristics.
-    // - Plan: ensure all lexer entry points (parser-side) pass an explicit LexMode,
-    //   restrict quote-like expansion to Operator mode, and eliminate default context fallback.
-    //   Then delete last_non_trivia_kind and associated logic.
-    // - Note: standalone lexer iteration (Iterator::next) may default to Value or be
-    //   retired in favor of explicit-mode helpers used by tests.
-    last_non_trivia_kind: Option<SyntaxKind>,
     // Pending tokens produced by stateless expansions (e.g., quote-like operators)
     pending: VecDeque<(SyntaxKind, &'a str)>,
 }
@@ -333,7 +324,6 @@ impl Clone for Lexer<'_> {
             logos_lexer: self.logos_lexer.clone(),
             at_line_start: self.at_line_start,
             mode: self.mode,
-            last_non_trivia_kind: self.last_non_trivia_kind,
             pending: self.pending.clone(),
         }
     }
@@ -356,52 +346,8 @@ impl<'a> Lexer<'a> {
             logos_lexer,
             at_line_start: true,
             mode: LexerMode::Normal,
-            last_non_trivia_kind: None,
             pending: VecDeque::new(),
         }
-    }
-
-    fn derive_default_context(&self) -> LexContext {
-        match self.last_non_trivia_kind {
-            None => LexContext::Value,
-            Some(k) => {
-                // After literals, identifiers, postfix deref, expect operator
-                if k.is_literal()
-                    || matches!(
-                        k,
-                        SyntaxKind::IDENT
-                            | SyntaxKind::POSTFIX_DEREF_ARRAY
-                            | SyntaxKind::POSTFIX_DEREF_HASH
-                            | SyntaxKind::POSTFIX_DEREF_SCALAR
-                    )
-                {
-                    LexContext::Operator
-                } else if k.is_operator()
-                    || matches!(
-                        k,
-                        SyntaxKind::L_PAREN
-                            | SyntaxKind::L_BRACE
-                            | SyntaxKind::L_BRACKET
-                            | SyntaxKind::COMMA
-                            | SyntaxKind::FAT_COMMA
-                    )
-                    || k.is_keyword()
-                {
-                    // After operators, openings, commas, or keywords, expect a value
-                    LexContext::Value
-                } else {
-                    // Default to value for safety
-                    LexContext::Value
-                }
-            }
-        }
-    }
-
-    fn prev_is_sigil(&self) -> bool {
-        matches!(
-            self.last_non_trivia_kind,
-            Some(SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT | SyntaxKind::ASTERISK)
-        )
     }
 
     /// Handle special tokens when in Value context
@@ -412,27 +358,11 @@ impl<'a> Lexer<'a> {
             self.update_line_position(t);
             return Some((k, t));
         }
-        // 2) Regex literal /.../ only when not immediately after quote-like keywords
-        let after_quote_like_kw = matches!(
-            self.last_non_trivia_kind,
-            Some(
-                SyntaxKind::Q_KW
-                    | SyntaxKind::QQ_KW
-                    | SyntaxKind::QX_KW
-                    | SyntaxKind::QW_KW
-                    | SyntaxKind::M_KW
-                    | SyntaxKind::QR_KW
-                    | SyntaxKind::S_KW
-                    | SyntaxKind::TR_KW
-                    | SyntaxKind::Y_KW
-            )
-        );
-        if !after_quote_like_kw {
-            if let Some(result) = Self::try_consume_regex_literal(self) {
-                let (k, t) = result;
-                self.update_line_position(t);
-                return Some((k, t));
-            }
+        // 2) Regex literal /.../
+        if let Some(result) = Self::try_consume_regex_literal(self) {
+            let (k, t) = result;
+            self.update_line_position(t);
+            return Some((k, t));
         }
         // 3) IO operator like <...>
         if let Some(result) = Self::try_consume_io_operator(self) {
@@ -444,9 +374,7 @@ impl<'a> Lexer<'a> {
     }
 
     pub fn next_token(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        // Derive default context from last significant token for standalone usage
-        let context = self.derive_default_context();
-        self.next_token_with_context(context)
+        self.next_token_with_context(Default::default())
     }
 
     /// Core tokenization step with an optional lexical context override.
@@ -457,18 +385,12 @@ impl<'a> Lexer<'a> {
     ) -> Option<(SyntaxKind, &'a str)> {
         // Serve any pending expanded tokens first
         if let Some((k, t)) = self.pending.pop_front() {
-            if !k.is_trivia() {
-                self.last_non_trivia_kind = Some(k);
-            }
             self.update_line_position(t);
             return Some((k, t));
         }
         // Quote-like context handling (parser-driven)
         if let LexerMode::QuoteLike { .. } = self.mode {
             if let Some((k, t)) = self.try_handle_quote_like_internal() {
-                if !k.is_trivia() {
-                    self.last_non_trivia_kind = Some(k);
-                }
                 self.update_line_position(t);
                 return Some((k, t));
             }
@@ -488,9 +410,6 @@ impl<'a> Lexer<'a> {
         if let LexerMode::QuoteLike { .. } = self.mode {
             if let Some((k, t)) = self.try_handle_quote_like_internal() {
                 self.update_line_position(t);
-                if !k.is_trivia() {
-                    self.last_non_trivia_kind = Some(k);
-                }
                 return Some((k, t));
             }
         }
@@ -517,9 +436,6 @@ impl<'a> Lexer<'a> {
             if let Some(result) = self.try_handle_expecting_value_context() {
                 let (syntax_kind, text) = result;
                 self.update_line_position(text);
-                if !syntax_kind.is_trivia() {
-                    self.last_non_trivia_kind = Some(syntax_kind);
-                }
                 return Some((syntax_kind, text));
             }
         }
@@ -527,9 +443,6 @@ impl<'a> Lexer<'a> {
         // Handle postfix dereference operators (->@*, ->%*, ->$*)
         if let Some((syntax_kind, text)) = self.try_consume_postfix_deref() {
             self.update_line_position(text);
-            if !syntax_kind.is_trivia() {
-                self.last_non_trivia_kind = Some(syntax_kind);
-            }
             return Some((syntax_kind, text));
         }
 
@@ -539,9 +452,7 @@ impl<'a> Lexer<'a> {
                 // Decide mapping strategy based on token kind and text via a single disambiguator
                 let syntax_kind = {
                     // If previous token was a sigil, force IDENT for following identifier
-                    if matches!(token, Token::Ident) && self.prev_is_sigil() {
-                        SyntaxKind::IDENT
-                    } else if let Some(ctx) = context {
+                    if let Some(ctx) = context {
                         self.disambiguate(&token, text, ctx)
                     } else {
                         token.to_syntax_kind()
@@ -552,18 +463,12 @@ impl<'a> Lexer<'a> {
 
                 // Special handling for __END__ and __DATA__: consume everything remaining as data section
                 if matches!(syntax_kind, SyntaxKind::END_KW | SyntaxKind::DATA_KW) {
-                    if !syntax_kind.is_trivia() {
-                        self.last_non_trivia_kind = Some(syntax_kind);
-                    }
                     return Some((syntax_kind, text));
                 }
 
                 // Track line position for POD detection
                 self.update_line_position(text);
 
-                if !syntax_kind.is_trivia() {
-                    self.last_non_trivia_kind = Some(syntax_kind);
-                }
                 Some((syntax_kind, text))
             }
             Some(Err(())) => {
