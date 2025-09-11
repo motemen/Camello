@@ -40,7 +40,7 @@ pub struct Parser<'a> {
 impl<'a> Parser<'a> {
     #[must_use]
     pub fn new(input: &'a str) -> Self {
-        let mut lexer = Lexer::new(input);
+        let lexer = Lexer::new(input);
 
         Self {
             lexer,
@@ -240,11 +240,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Peek at the next non-trivia token without consuming it
-    fn peek_non_trivia_token(&self) -> Option<(SyntaxKind, &'a str)> {
-        self.lexer.peek_non_trivia()
-    }
-
     /// Peek at the next non-trivia token with an explicit lexical expectation
     /// This is used to disambiguate contexts like operator lookahead.
     fn peek_non_trivia_token_with(&self, expect: LexExpectation) -> Option<(SyntaxKind, &'a str)> {
@@ -261,19 +256,7 @@ impl<'a> Parser<'a> {
         cloned.peek_non_trivia_with(expect)
     }
 
-    /// Convenience: check upcoming token in Value context (does not skip trivia)
-    fn at_value(&self, kind: SyntaxKind) -> bool {
-        self.lexer
-            .peek_with(LexExpectation::Value)
-            .is_some_and(|(k, _)| k == kind)
-    }
-
-    /// Convenience: check upcoming token in Operator context (does not skip trivia)
-    fn at_op(&self, kind: SyntaxKind) -> bool {
-        self.lexer
-            .peek_with(LexExpectation::Operator)
-            .is_some_and(|(k, _)| k == kind)
-    }
+    // Intentionally no at_value/at_op helpers here to avoid implicit trivia skipping.
 
     /// Check if any of the given token kinds appears next (skipping trivia)
     fn lookahead_for_any(&self, target_kinds: &[SyntaxKind]) -> bool {
@@ -477,37 +460,7 @@ mod tests {
         assert_eq!(syntax.kind(), SyntaxKind::ROOT);
     }
 
-    #[test]
-    fn test_debug_parser_token_processing() {
-        let input = "print q(hello);";
-        println!("Testing input: {}", input);
-
-        let mut parser = Parser::new(input);
-
-        // Debug the parser's token processing step by step
-        println!(
-            "Initial next token (value): {:?}",
-            parser.peek_non_trivia_token()
-        );
-
-        // Simulate first few parser operations
-        parser.skip_trivia(); // This might advance tokens
-        println!(
-            "After skip_trivia: next token: {:?}",
-            parser.peek_non_trivia_token()
-        );
-
-        // Simulate parsing statement
-        if parser.is_at_start_of_expression() {
-            println!("Is at start of expression: true");
-            println!(
-                "About to parse expression, next token: {:?}",
-                parser.peek_non_trivia_token()
-            );
-        } else {
-            println!("Is at start of expression: false");
-        }
-    }
+    // Removed token-debugging test that depended on Parser::peek_non_trivia_token
 
     #[test]
     fn test_debug_qq_hash_parsing() {
