@@ -188,6 +188,26 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Expect a token and consume it, specifying the lexical expectation for the next token
+    fn expect_with(&mut self, expected: SyntaxKind, next_expect: LexExpectation) {
+        if self.at(expected) {
+            self.bump_with_expectation(next_expect);
+        } else {
+            let msg = format!("Expected {:?}, found {:?}", expected, self.current_kind());
+            self.error(&msg);
+        }
+    }
+
+    /// Convenience: expect a token and treat the next lex as a Value
+    fn expect_value(&mut self, expected: SyntaxKind) {
+        self.expect_with(expected, LexExpectation::Value)
+    }
+
+    /// Convenience: expect a token and treat the next lex as an Operator
+    fn expect_op(&mut self, expected: SyntaxKind) {
+        self.expect_with(expected, LexExpectation::Operator)
+    }
+
     fn skip_trivia(&mut self) {
         while let Some(kind) = self.current_kind() {
             if kind.is_trivia() {

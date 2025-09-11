@@ -6,7 +6,8 @@ impl Parser<'_> {
     pub fn hash_ref(&mut self) {
         self.builder.start_node(SyntaxKind::HASH_REF.into());
 
-        self.expect(SyntaxKind::L_BRACE);
+        // Opening '{' of anonymous hash; inside expects values
+        self.expect_value(SyntaxKind::L_BRACE);
         self.skip_trivia();
 
         // Parse expressions inside braces - could be key => value pairs or a simple expression list
@@ -15,14 +16,16 @@ impl Parser<'_> {
         }
 
         self.skip_trivia();
-        self.expect(SyntaxKind::R_BRACE);
+        // After closing '}', expect an operator
+        self.expect_op(SyntaxKind::R_BRACE);
         self.builder.finish_node();
     }
 
     pub fn array_ref(&mut self) {
         self.builder.start_node(SyntaxKind::ARRAY_REF.into());
 
-        self.expect(SyntaxKind::L_BRACKET);
+        // Opening '[' of anonymous array; inside expects values
+        self.expect_value(SyntaxKind::L_BRACKET);
         self.skip_trivia();
 
         // Parse expression list inside brackets (supports trailing comma)
@@ -31,7 +34,8 @@ impl Parser<'_> {
         }
 
         self.skip_trivia();
-        self.expect(SyntaxKind::R_BRACKET);
+        // After closing ']', expect an operator
+        self.expect_op(SyntaxKind::R_BRACKET);
         self.builder.finish_node();
     }
 
