@@ -219,7 +219,7 @@ impl Parser<'_> {
 
             let op_checkpoint = self.builder.checkpoint();
 
-            // Consume the operator with Operator expectation; RHS will be read as Value by default
+            // Consume the operator in Operator context; RHS will be read as Value by default
             self.bump_op();
 
             if is_compound_assignment {

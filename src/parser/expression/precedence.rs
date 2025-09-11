@@ -136,7 +136,7 @@ pub fn get_operator_info(kind: SyntaxKind) -> Option<OperatorInfo> {
             SyntaxKind::INFIX_EXPR,
         )),
 
-        // Low-precedence logical operators (NOT_KW removed - it's a prefix operator)
+        // Low-precedence logical operators (NOT_KW is handled as a prefix operator)
         SyntaxKind::AND_KW => Some(OperatorInfo::new(
             Precedence::LOGICAL_AND_KW,
             false,

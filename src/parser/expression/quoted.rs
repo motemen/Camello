@@ -39,7 +39,7 @@ impl Parser<'_> {
 
         self.builder.finish_node();
 
-        // Do not force lexer default context; parser drives expectations.
+        // Do not force lexer default context; parser drives context.
         self.skip_trivia();
     }
 
@@ -128,7 +128,7 @@ impl Parser<'_> {
             SyntaxKind::Q_KW | SyntaxKind::QQ_KW | SyntaxKind::QX_KW => QuoteLikeMode::Q,
             SyntaxKind::M_KW => QuoteLikeMode::M,
             SyntaxKind::QR_KW => QuoteLikeMode::QR,
-            _ => QuoteLikeMode::Q,
+            _ => unreachable!("Unexpected keyword: {:?}", kw_kind),
         };
         self.lexer.begin_quote_like(kw_kind, mode);
         self.skip_trivia();
@@ -159,7 +159,7 @@ impl Parser<'_> {
 
         self.builder.finish_node();
 
-        // Parser drives expectations; no lexer default flip.
+        // Parser drives context; no lexer default flip.
         self.skip_trivia();
     }
 
@@ -179,7 +179,7 @@ impl Parser<'_> {
         let mode = match kw_kind {
             SyntaxKind::S_KW => QuoteLikeMode::S,
             SyntaxKind::TR_KW | SyntaxKind::Y_KW => QuoteLikeMode::TR,
-            _ => QuoteLikeMode::S,
+            _ => unreachable!("Unexpected keyword: {:?}", kw_kind),
         };
         self.lexer.begin_quote_like(kw_kind, mode);
         self.skip_trivia();
@@ -234,7 +234,7 @@ impl Parser<'_> {
 
         self.builder.finish_node();
 
-        // Parser drives expectations; no lexer default flip.
+        // Parser drives context; no lexer default flip.
         self.skip_trivia();
     }
 

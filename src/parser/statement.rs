@@ -263,8 +263,6 @@ impl Parser<'_> {
         self.use_or_no_stmt(false);
     }
 
-    // removed parse_module_name_or_qualified; logic centralized in parse_identifier_or_qualified
-
     fn for_stmt(&mut self) {
         self.builder.start_node(SyntaxKind::FOR_STMT.into());
 
@@ -589,7 +587,7 @@ impl Parser<'_> {
                 | SyntaxKind::R_BRACKET
                 | SyntaxKind::L_PAREN
                 | SyntaxKind::R_PAREN => {
-                    self.bump_with_expectation(LexContext::Value);
+                    self.bump_with_context(LexContext::Value);
                     self.skip_trivia();
                 }
                 _ => {
