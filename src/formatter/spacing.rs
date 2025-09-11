@@ -320,7 +320,8 @@ fn handle_contextual_spacing(
     _current_spacing: &TokenSpacing,
 ) -> bool {
     use SyntaxKind::{
-        COMMA, IF_KW, L_BRACE, L_BRACKET, L_PAREN, R_BRACE, R_BRACKET, R_PAREN, UNLESS_KW,
+        COMMA, FOREACH_KW, FOR_KW, IF_KW, L_BRACE, L_BRACKET, L_PAREN, R_BRACE, R_BRACKET, R_PAREN,
+        UNLESS_KW,
     };
 
     match (prev, current) {
@@ -328,8 +329,8 @@ fn handle_contextual_spacing(
         (COMMA, _) => true,
         (_, COMMA) => false,
 
-        // Keywords in postfix position (if/unless)
-        (_, IF_KW | UNLESS_KW) => true,
+        // Keywords in postfix position (if/unless/for)
+        (_, IF_KW | UNLESS_KW | FOR_KW | FOREACH_KW) => true,
 
         // Generally no space inside delimiters
         (L_PAREN | L_BRACE | L_BRACKET, _) => false,
