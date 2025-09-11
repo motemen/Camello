@@ -107,14 +107,20 @@ pub enum SyntaxKind {
     TR_FLAGS, // Flags for transliteration operator (tr///cdsr)
 
     // Operators
-    EQ,          // =
-    PLUS,        // + (binary addition)
-    MINUS,       // - (binary subtraction)
-    UNARY_PLUS,  // + (unary plus)
-    UNARY_MINUS, // - (unary minus)
-    DOT,         // . (string concatenation)
-    ARROW,       // ->
-    FAT_COMMA,   // =>
+    EQ,                // =
+    PLUS,              // + (binary addition)
+    MINUS,             // - (binary subtraction)
+    UNARY_PLUS,        // + (unary plus)
+    UNARY_MINUS,       // - (unary minus)
+    INCREMENT,         // ++ (raw increment token)
+    DECREMENT,         // -- (raw decrement token)
+    PREFIX_INCREMENT,  // ++ (prefix increment)
+    PREFIX_DECREMENT,  // -- (prefix decrement)
+    POSTFIX_INCREMENT, // ++ (postfix increment)
+    POSTFIX_DECREMENT, // -- (postfix decrement)
+    DOT,               // . (string concatenation)
+    ARROW,             // ->
+    FAT_COMMA,         // =>
 
     // Multiplicative operators
     STAR,   // *
@@ -333,6 +339,12 @@ impl SyntaxKind {
                 | SyntaxKind::MINUS
                 | SyntaxKind::UNARY_PLUS
                 | SyntaxKind::UNARY_MINUS
+                | SyntaxKind::INCREMENT
+                | SyntaxKind::DECREMENT
+                | SyntaxKind::PREFIX_INCREMENT
+                | SyntaxKind::PREFIX_DECREMENT
+                | SyntaxKind::POSTFIX_INCREMENT
+                | SyntaxKind::POSTFIX_DECREMENT
                 | SyntaxKind::DOT
                 | SyntaxKind::ARROW
                 | SyntaxKind::FAT_COMMA
