@@ -79,6 +79,19 @@ fn test_postfix_dereference_formatting() {
 }
 
 #[test]
+fn test_increment_decrement_formatting() {
+    let cases = [
+        ("$i++;", "$i++;\n"),
+        ("++$i;", "++$i;\n"),
+        ("$i--;", "$i--;\n"),
+        ("--$i;", "--$i;\n"),
+        ("$i++ + $j--;", "$i++ + $j--;\n"),
+        ("++$i++;", "++$i++;\n"),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_for_stmt_formatting() {
     let input = "for my$var(@list){my$x=1;print$x;}";
     let formatted = format_and_assert(input);

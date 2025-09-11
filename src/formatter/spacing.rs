@@ -29,6 +29,7 @@ pub enum SpaceRule {
 pub enum TokenCategory {
     BinaryOperator,
     PrefixOperator,
+    PostfixOperator,
     Keyword,
     Delimiter,
     Identifier,
@@ -64,6 +65,14 @@ impl TokenSpacing {
             SpaceRule::Contextual,
             SpaceRule::Never,
             TokenCategory::PrefixOperator,
+        )
+    }
+
+    pub const fn postfix_op() -> Self {
+        Self::new(
+            SpaceRule::Never,
+            SpaceRule::Contextual,
+            TokenCategory::PostfixOperator,
         )
     }
 
@@ -103,8 +112,10 @@ pub const fn get_token_spacing(kind: SyntaxKind) -> TokenSpacing {
         | SyntaxKind::MODULO
         | SyntaxKind::X => TokenSpacing::binary_op(),
 
-        // Unary operators (prefix)
+        // Unary operators (prefix/postfix)
         SyntaxKind::UNARY_PLUS | SyntaxKind::UNARY_MINUS => TokenSpacing::prefix_op(),
+        SyntaxKind::PREFIX_INCREMENT | SyntaxKind::PREFIX_DECREMENT => TokenSpacing::prefix_op(),
+        SyntaxKind::POSTFIX_INCREMENT | SyntaxKind::POSTFIX_DECREMENT => TokenSpacing::postfix_op(),
 
         // Comparison operators
         SyntaxKind::GT
