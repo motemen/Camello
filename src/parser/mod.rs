@@ -1,5 +1,5 @@
 use crate::{
-    lexer::{Lexer, LexerContext},
+    lexer::{LexContext, Lexer},
     SyntaxKind,
 };
 use miette::{Diagnostic, SourceSpan};
@@ -33,7 +33,6 @@ pub struct Parser<'a> {
     lexer: Lexer<'a>,
     builder: GreenNodeBuilder<'static>,
     errors: Vec<ParseError>,
-    current_token: Option<(SyntaxKind, &'a str)>,
     current_pos: usize,
     source: &'a str,
 }
@@ -41,14 +40,12 @@ pub struct Parser<'a> {
 impl<'a> Parser<'a> {
     #[must_use]
     pub fn new(input: &'a str) -> Self {
-        let mut lexer = Lexer::new(input);
-        let current_token = lexer.next_token();
+        let lexer = Lexer::new(input);
 
         Self {
             lexer,
             builder: GreenNodeBuilder::new(),
             errors: Vec::new(),
-            current_token,
             current_pos: 0,
             source: input,
         }
@@ -121,11 +118,22 @@ impl<'a> Parser<'a> {
 
     // Helper methods
     fn current_kind(&self) -> Option<SyntaxKind> {
-        self.current_token.map(|(kind, _)| kind)
+        self.lexer.peek_token().map(|(k, _)| k)
     }
 
     fn current_text(&self) -> Option<&'a str> {
-        self.current_token.map(|(_, text)| text)
+        self.lexer.peek_token().map(|(_, t)| t)
+    }
+
+    // Value-context peek helpers for expression starts (parser-driven lexing)
+    fn current_kind_value(&self) -> Option<SyntaxKind> {
+        self.peek_non_trivia_token_with(LexContext::Value)
+            .map(|(k, _)| k)
+    }
+
+    fn current_text_value(&self) -> Option<&'a str> {
+        self.peek_non_trivia_token_with(LexContext::Value)
+            .map(|(_, t)| t)
     }
 
     fn at(&self, kind: SyntaxKind) -> bool {
@@ -141,23 +149,45 @@ impl<'a> Parser<'a> {
     }
 
     fn at_end(&self) -> bool {
-        self.current_token.is_none()
+        self.lexer.peek_token().is_none()
     }
 
     fn bump(&mut self) {
-        if let Some((kind, text)) = self.current_token.take() {
+        if let Some((kind, text)) = self.lexer.next_token_default() {
             self.builder.token(kind.into(), text);
             self.current_pos += text.len();
+        } else {
+            // No token to consume; possibly at end of input
+            self.error("Unexpected end of input");
         }
-        self.current_token = self.lexer.next_token();
     }
 
-    fn bump_with_kind(&mut self, syntax_kind: SyntaxKind) {
-        if let Some((_, text)) = self.current_token.take() {
+    /// Consume current token and fetch next using an explicit lexical context
+    fn bump_with_context(&mut self, context: LexContext) {
+        if let Some((kind, text)) = self.lexer.next_token_with_context(context) {
+            self.builder.token(kind.into(), text);
+            self.current_pos += text.len();
+        } else {
+            // No token to consume; possibly at end of input
+            self.error("Unexpected end of input");
+        }
+    }
+
+    /// Convenience: after consuming current token, expect a Value next
+    fn bump_value(&mut self) {
+        self.bump_with_context(LexContext::Value);
+    }
+
+    /// Convenience: after consuming current token, expect an Operator next
+    fn bump_op(&mut self) {
+        self.bump_with_context(LexContext::Operator);
+    }
+
+    fn bump_as(&mut self, syntax_kind: SyntaxKind) {
+        if let Some((_, text)) = self.lexer.next_token_default() {
             self.builder.token(syntax_kind.into(), text);
             self.current_pos += text.len();
         }
-        self.current_token = self.lexer.next_token();
     }
 
     fn expect(&mut self, expected: SyntaxKind) {
@@ -169,12 +199,36 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Expect a token and consume it, specifying the lexical context for the next token
+    fn expect_with_context(&mut self, expected: SyntaxKind, context: LexContext) {
+        if self.at(expected) {
+            self.bump_with_context(context);
+        } else {
+            let msg = format!("Expected {:?}, found {:?}", expected, self.current_kind());
+            self.error(&msg);
+        }
+    }
+
+    /// Convenience: expect a token and treat the next lex as a Value
+    fn expect_value(&mut self, expected: SyntaxKind) {
+        self.expect_with_context(expected, LexContext::Value);
+    }
+
+    /// Convenience: expect a token and treat the next lex as an Operator
+    fn expect_op(&mut self, expected: SyntaxKind) {
+        self.expect_with_context(expected, LexContext::Operator);
+    }
+
     fn skip_trivia(&mut self) {
-        while let Some(kind) = self.current_kind() {
-            if kind.is_trivia() {
-                self.bump();
-            } else {
-                break;
+        loop {
+            match self.lexer.peek_token() {
+                Some((kind, _)) if kind.is_trivia() => {
+                    if let Some((k, t)) = self.lexer.next_token_default() {
+                        self.builder.token(k.into(), t);
+                        self.current_pos += t.len();
+                    }
+                }
+                _ => break,
             }
         }
     }
@@ -189,12 +243,11 @@ impl<'a> Parser<'a> {
         self.errors
             .push(ParseError::new(message.to_string(), range, self.source));
 
-        // Create error token
-        if let Some((_, text)) = self.current_token.take() {
+        // Create error token by consuming one token (if any)
+        if let Some((_, text)) = self.lexer.next_token_default() {
             self.builder.token(SyntaxKind::ERROR.into(), text);
             self.current_pos += text.len();
         }
-        self.current_token = self.lexer.next_token();
     }
 
     /// 括弧内のカンマ区切り式をパースするヘルパー関数
@@ -204,19 +257,33 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Peek at the next non-trivia token without consuming it
-    fn peek_non_trivia_token(&self) -> Option<(SyntaxKind, &'a str)> {
-        self.lexer.peek_non_trivia_token()
+    /// Peek at the next non-trivia token with an explicit lexical context
+    /// This is used to disambiguate contexts like operator lookahead.
+    fn peek_non_trivia_token_with(&self, ctx: LexContext) -> Option<(SyntaxKind, &'a str)> {
+        self.lexer.peek_non_trivia_with_context(ctx)
     }
+
+    /// Peek the second non-trivia token (i.e., the token following the current one),
+    /// using an explicit lexical context for the second token.
+    fn peek_second_non_trivia_with(&self, ctx: LexContext) -> Option<(SyntaxKind, &'a str)> {
+        let mut cloned = self.lexer.clone();
+        // Consume the first non-trivia token (the current one) using the same context
+        loop {
+            match cloned.next_token_with_context(ctx) {
+                Some((k, _)) if k.is_trivia() => continue,
+                Some((_k, _t)) => break,
+                None => return None,
+            }
+        }
+        // Now peek the next non-trivia with the given context
+        cloned.peek_non_trivia_with_context(ctx)
+    }
+
+    // Intentionally no at_value/at_op helpers here to avoid implicit trivia skipping.
 
     /// Check if any of the given token kinds appears next (skipping trivia)
     fn lookahead_for_any(&self, target_kinds: &[SyntaxKind]) -> bool {
         self.lexer.peek_for_any(target_kinds).is_some()
-    }
-
-    /// Set lexer context explicitly (used after parsing certain constructs)
-    fn set_lexer_context(&mut self, context: LexerContext) {
-        self.lexer.set_context(context);
     }
 
     fn is_at_start_of_expression(&self) -> bool {
@@ -412,35 +479,6 @@ mod tests {
     }
 
     #[test]
-    fn test_debug_parser_token_processing() {
-        let input = "print q(hello);";
-        println!("Testing input: {}", input);
-
-        let mut parser = Parser::new(input);
-
-        // Debug the parser's token processing step by step
-        println!("Initial current_token: {:?}", parser.current_token);
-
-        // Simulate first few parser operations
-        parser.skip_trivia(); // This might advance tokens
-        println!(
-            "After skip_trivia: current_token: {:?}",
-            parser.current_token
-        );
-
-        // Simulate parsing statement
-        if parser.is_at_start_of_expression() {
-            println!("Is at start of expression: true");
-            println!(
-                "About to parse expression, current_token: {:?}",
-                parser.current_token
-            );
-        } else {
-            println!("Is at start of expression: false");
-        }
-    }
-
-    #[test]
     fn test_debug_qq_hash_parsing() {
         use crate::PerlNode;
 
@@ -519,3 +557,22 @@ mod tests {
 
 mod expression;
 mod statement;
+#[test]
+fn test_sub_with_quote_like_name() {
+    use crate::PerlNode;
+    let input = "sub tr {}";
+    let (green, errors) = parse(input);
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+    let syntax = PerlNode::new_root(green);
+    assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+}
+
+#[test]
+fn test_package_with_quote_like_name() {
+    use crate::PerlNode;
+    let input = "package tr;";
+    let (green, errors) = parse(input);
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+    let syntax = PerlNode::new_root(green);
+    assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+}

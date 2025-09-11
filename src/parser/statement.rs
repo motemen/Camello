@@ -1,4 +1,4 @@
-use crate::{lexer::LexerContext, SyntaxKind};
+use crate::SyntaxKind;
 
 use super::Parser;
 
@@ -169,7 +169,7 @@ impl Parser<'_> {
         self.expect(SyntaxKind::SUB_KW);
         self.skip_trivia();
 
-        // Subroutine name (qualified identifier also allowed)
+        // Subroutine name (qualified identifier also allowed); keywords accepted as identifiers
         self.parse_identifier_or_qualified();
         self.skip_trivia();
 
@@ -191,7 +191,7 @@ impl Parser<'_> {
         self.expect(SyntaxKind::PACKAGE_KW);
         self.skip_trivia();
 
-        // Package name (qualified identifier)
+        // Package name (qualified identifier); allow keywords as identifiers
         self.parse_identifier_or_qualified();
         self.skip_trivia();
 
@@ -225,7 +225,7 @@ impl Parser<'_> {
             // Simple version number (e.g., use 5; or no 5;)
             self.bump();
         } else {
-            // Module name (qualified identifier)
+            // Module name (qualified identifier); allow keywords as identifiers
             self.parse_identifier_or_qualified();
         }
         self.skip_trivia();
@@ -494,7 +494,8 @@ impl Parser<'_> {
     pub fn block(&mut self) {
         self.builder.start_node(SyntaxKind::BLOCK_STMT.into());
 
-        self.expect(SyntaxKind::L_BRACE);
+        // Entering a block; inside expects statements/values
+        self.expect_value(SyntaxKind::L_BRACE);
         self.skip_trivia();
 
         while !self.at(SyntaxKind::R_BRACE) && !self.at_end() {
@@ -504,7 +505,8 @@ impl Parser<'_> {
             self.skip_trivia();
         }
 
-        self.expect(SyntaxKind::R_BRACE);
+        // After closing '}', expect an operator/statement boundary
+        self.expect_op(SyntaxKind::R_BRACE);
 
         self.builder.finish_node();
     }
@@ -527,8 +529,8 @@ impl Parser<'_> {
 
         self.builder.start_node(modifier_kind.into());
 
-        // Consume the if/unless keyword
-        self.bump();
+        // Consume the if/unless keyword; next should be a value (condition)
+        self.bump_value();
         self.skip_trivia();
 
         // Parse the condition expression
@@ -542,7 +544,8 @@ impl Parser<'_> {
     /// Helper function to parse parenthesized conditions for if/unless/while/elsif statements
     fn parse_parenthesized_condition(&mut self, construct_name: &str) {
         if self.at(SyntaxKind::L_PAREN) {
-            self.bump(); // (
+            // Inside condition parens, expect values
+            self.bump_value(); // (
             self.skip_trivia();
 
             // Parse the condition
@@ -553,7 +556,8 @@ impl Parser<'_> {
             }
 
             self.skip_trivia();
-            self.expect(SyntaxKind::R_PAREN);
+            // After ')', expect operator/statement boundary
+            self.expect_op(SyntaxKind::R_PAREN);
         } else {
             self.error(&format!("Expected '(' after '{construct_name}'"));
         }
@@ -561,30 +565,30 @@ impl Parser<'_> {
 
     /// Parse subroutine prototype like (\@@), ($@), (\@$@), etc.
     fn parse_sub_prototype(&mut self) {
+        use crate::lexer::LexContext;
         self.builder.start_node(SyntaxKind::SUB_PROTOTYPE.into());
 
         self.expect(SyntaxKind::L_PAREN);
-        self.lexer.set_context(LexerContext::SubPrototype);
         self.skip_trivia();
 
-        // Parse prototype symbols until we hit the closing paren
-        while !self.at(SyntaxKind::R_PAREN) && !self.at_end() {
-            let kind = self
-                .current_kind()
-                .expect("Parser should not be at end of input here");
+        while let Some((kind, _)) = self.peek_non_trivia_token_with(LexContext::Value) {
+            if kind == SyntaxKind::R_PAREN {
+                break;
+            }
             match kind {
-                SyntaxKind::BACKSLASH    // \ for reference to arrays/hashes
-                | SyntaxKind::AT         // @ for arrays
-                | SyntaxKind::PERCENT    // % for hashes  
-                | SyntaxKind::DOLLAR     // $ for scalars
-                | SyntaxKind::AMPERSAND  // & for code blocks
-                | SyntaxKind::ASTERISK   // * for typeglobs
-                | SyntaxKind::SEMICOLON  // ; for optional parameters
-                | SyntaxKind::L_BRACKET  // [ for grouping alternatives
-                | SyntaxKind::R_BRACKET  // ] for grouping alternatives
-                => {
-                    self.bump(); // consume the prototype character
-                    self.skip_trivia(); // skip whitespace after each symbol
+                SyntaxKind::BACKSLASH
+                | SyntaxKind::AT
+                | SyntaxKind::PERCENT
+                | SyntaxKind::DOLLAR
+                | SyntaxKind::AMPERSAND
+                | SyntaxKind::ASTERISK
+                | SyntaxKind::SEMICOLON
+                | SyntaxKind::L_BRACKET
+                | SyntaxKind::R_BRACKET
+                | SyntaxKind::L_PAREN
+                | SyntaxKind::R_PAREN => {
+                    self.bump_with_context(LexContext::Value);
+                    self.skip_trivia();
                 }
                 _ => {
                     self.error("Invalid character in subroutine prototype");
@@ -594,7 +598,6 @@ impl Parser<'_> {
         }
 
         self.expect(SyntaxKind::R_PAREN);
-        self.lexer.set_context(LexerContext::ExpectingValue);
         self.builder.finish_node();
     }
 }
