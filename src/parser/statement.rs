@@ -566,7 +566,7 @@ impl Parser<'_> {
     }
 
     /// Parse subroutine prototype like (\@@), ($@), (\@$@), etc.
-fn parse_sub_prototype(&mut self) {
+    fn parse_sub_prototype(&mut self) {
         use crate::lexer::LexMode;
         self.builder.start_node(SyntaxKind::SUB_PROTOTYPE.into());
 
@@ -574,7 +574,9 @@ fn parse_sub_prototype(&mut self) {
         self.skip_trivia();
 
         while let Some((kind, _)) = self.peek_non_trivia_token_with(LexMode::Value) {
-            if kind == SyntaxKind::R_PAREN { break; }
+            if kind == SyntaxKind::R_PAREN {
+                break;
+            }
             match kind {
                 SyntaxKind::BACKSLASH
                 | SyntaxKind::AT

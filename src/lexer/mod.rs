@@ -329,7 +329,10 @@ impl<'a> Lexer<'a> {
                 } else if k.is_operator()
                     || matches!(
                         k,
-                        SyntaxKind::L_PAREN | SyntaxKind::L_BRACE | SyntaxKind::L_BRACKET | SyntaxKind::COMMA
+                        SyntaxKind::L_PAREN
+                            | SyntaxKind::L_BRACE
+                            | SyntaxKind::L_BRACKET
+                            | SyntaxKind::COMMA
                             | SyntaxKind::FAT_COMMA
                     )
                     || k.is_keyword()
@@ -504,17 +507,16 @@ impl<'a> Lexer<'a> {
                                                 | SyntaxKind::S_KW
                                                 | SyntaxKind::TR_KW
                                                 | SyntaxKind::Y_KW
-                                        ) {
-                                            if self.quote_delimiter_ahead() {
-                                                self.enqueue_quote_like_from(kw, text);
-                                                if let Some((k, t)) = self.pending.pop_front() {
-                                                    // Return the keyword token immediately
-                                                    self.update_line_position(t);
-                                                    if !k.is_trivia() {
-                                                        self.last_non_trivia_kind = Some(k);
-                                                    }
-                                                    return Some((k, t));
+                                        ) && self.quote_delimiter_ahead()
+                                        {
+                                            self.enqueue_quote_like_from(kw, text);
+                                            if let Some((k, t)) = self.pending.pop_front() {
+                                                // Return the keyword token immediately
+                                                self.update_line_position(t);
+                                                if !k.is_trivia() {
+                                                    self.last_non_trivia_kind = Some(k);
                                                 }
+                                                return Some((k, t));
                                             }
                                         }
                                         kw
@@ -653,8 +655,26 @@ impl<'a> Lexer<'a> {
         matches!(
             chars.peek().copied(),
             Some(
-                '(' | '[' | '{' | '<' | '/' | '|' | '#' | '!' | '~' | '@' | '$' | '%'
-                    | '^' | '&' | '*' | '+' | '=' | '?' | '`' | '\'' | '"'
+                '(' | '['
+                    | '{'
+                    | '<'
+                    | '/'
+                    | '|'
+                    | '#'
+                    | '!'
+                    | '~'
+                    | '@'
+                    | '$'
+                    | '%'
+                    | '^'
+                    | '&'
+                    | '*'
+                    | '+'
+                    | '='
+                    | '?'
+                    | '`'
+                    | '\''
+                    | '"'
             )
         )
     }
@@ -712,7 +732,7 @@ impl<'a> Lexer<'a> {
         }
 
         // Scan content until closing delimiter, with simple nesting for paired delimiters
-        fn scan_until<'a>(s: &'a str, mut idx: usize, open: char, close: char) -> (usize, &'a str) {
+        fn scan_until(s: &str, mut idx: usize, open: char, close: char) -> (usize, &str) {
             let mut escaped = false;
             let mut nest = 0i32;
             let bytes = s.as_bytes();
@@ -748,7 +768,12 @@ impl<'a> Lexer<'a> {
         }
 
         // QW: special processing of words
-        fn enqueue_qw<'a>(pending: &mut VecDeque<(SyntaxKind, &'a str)>, s: &'a str, mut idx: usize, close: char) -> usize {
+        fn enqueue_qw<'a>(
+            pending: &mut VecDeque<(SyntaxKind, &'a str)>,
+            s: &'a str,
+            mut idx: usize,
+            close: char,
+        ) -> usize {
             let bytes = s.as_bytes();
             while idx < bytes.len() {
                 let ch = s[idx..].chars().next().unwrap();
@@ -760,7 +785,9 @@ impl<'a> Lexer<'a> {
                     let mut j = idx;
                     while j < bytes.len() {
                         let c2 = s[j..].chars().next().unwrap();
-                        if !c2.is_whitespace() { break; }
+                        if !c2.is_whitespace() {
+                            break;
+                        }
                         j += c2.len_utf8();
                     }
                     pending.push_back((SyntaxKind::WHITESPACE, &s[start..j]));
@@ -770,7 +797,9 @@ impl<'a> Lexer<'a> {
                     let mut j = idx;
                     while j < bytes.len() {
                         let c2 = s[j..].chars().next().unwrap();
-                        if c2 == close || c2.is_whitespace() { break; }
+                        if c2 == close || c2.is_whitespace() {
+                            break;
+                        }
                         j += c2.len_utf8();
                     }
                     if j > start {
@@ -789,7 +818,7 @@ impl<'a> Lexer<'a> {
 
         match prefix {
             SyntaxKind::QW_KW => {
-                i = enqueue_qw(&mut self.pending, &input, i, close1);
+                i = enqueue_qw(&mut self.pending, input, i, close1);
                 // Closing delimiter of first part
                 if i < input.len() && input[i..].starts_with(close1) {
                     self.pending
@@ -797,7 +826,11 @@ impl<'a> Lexer<'a> {
                     i += close1.len_utf8();
                 }
             }
-            SyntaxKind::Q_KW | SyntaxKind::QQ_KW | SyntaxKind::QX_KW | SyntaxKind::M_KW | SyntaxKind::QR_KW => {
+            SyntaxKind::Q_KW
+            | SyntaxKind::QQ_KW
+            | SyntaxKind::QX_KW
+            | SyntaxKind::M_KW
+            | SyntaxKind::QR_KW => {
                 let (end_idx, content) = scan_until(&input[i..], 0, open, close1);
                 let content_kind = match prefix {
                     SyntaxKind::Q_KW => SyntaxKind::LITERAL_STRING,
@@ -825,14 +858,24 @@ impl<'a> Lexer<'a> {
                         let c = input[j..].chars().next().unwrap();
                         if c.is_alphabetic() {
                             any = true;
-                            if !valid.contains(c) { all_valid = false; }
+                            if !valid.contains(c) {
+                                all_valid = false;
+                            }
                             j += c.len_utf8();
-                        } else { break; }
+                        } else {
+                            break;
+                        }
                     }
                     if any {
                         let kind = if all_valid {
-                            if prefix == SyntaxKind::M_KW { SyntaxKind::M_FLAGS } else { SyntaxKind::QR_FLAGS }
-                        } else { SyntaxKind::ERROR };
+                            if prefix == SyntaxKind::M_KW {
+                                SyntaxKind::M_FLAGS
+                            } else {
+                                SyntaxKind::QR_FLAGS
+                            }
+                        } else {
+                            SyntaxKind::ERROR
+                        };
                         self.pending.push_back((kind, &input[i..j]));
                         i = j;
                     }
@@ -872,14 +915,16 @@ impl<'a> Lexer<'a> {
                     }
                     i += end_idx2;
                     if i < input.len() && input[i..].starts_with(close1) {
-                        self.pending.push_back((SyntaxKind::DELIMITER, &input[i..i + close1.len_utf8()]));
+                        self.pending
+                            .push_back((SyntaxKind::DELIMITER, &input[i..i + close1.len_utf8()]));
                         i += close1.len_utf8();
                     }
                 } else {
                     // Symmetric delimiter like '/'
                     if i < input.len() && input[i..].starts_with(close1) {
                         // Empty replacement: just the closing delimiter
-                        self.pending.push_back((SyntaxKind::DELIMITER, &input[i..i + close1.len_utf8()]));
+                        self.pending
+                            .push_back((SyntaxKind::DELIMITER, &input[i..i + close1.len_utf8()]));
                         i += close1.len_utf8();
                     } else {
                         let (end_idx2, c2) = scan_until(&input[i..], 0, open, close1);
@@ -892,13 +937,20 @@ impl<'a> Lexer<'a> {
                         }
                         i += end_idx2;
                         if i < input.len() && input[i..].starts_with(close1) {
-                            self.pending.push_back((SyntaxKind::DELIMITER, &input[i..i + close1.len_utf8()]));
+                            self.pending.push_back((
+                                SyntaxKind::DELIMITER,
+                                &input[i..i + close1.len_utf8()],
+                            ));
                             i += close1.len_utf8();
                         }
                     }
                 }
                 // Optional flags
-                let valid = if prefix == SyntaxKind::TR_KW || prefix == SyntaxKind::Y_KW { "cdsr" } else { "msixpodualngcer" };
+                let valid = if prefix == SyntaxKind::TR_KW || prefix == SyntaxKind::Y_KW {
+                    "cdsr"
+                } else {
+                    "msixpodualngcer"
+                };
                 let mut j = i;
                 let mut any = false;
                 let mut all_valid = true;
@@ -906,14 +958,24 @@ impl<'a> Lexer<'a> {
                     let c = input[j..].chars().next().unwrap();
                     if c.is_alphabetic() {
                         any = true;
-                        if !valid.contains(c) { all_valid = false; }
+                        if !valid.contains(c) {
+                            all_valid = false;
+                        }
                         j += c.len_utf8();
-                    } else { break; }
+                    } else {
+                        break;
+                    }
                 }
                 if any {
                     let kind = if all_valid {
-                        match prefix { SyntaxKind::S_KW => SyntaxKind::S_FLAGS, SyntaxKind::TR_KW | SyntaxKind::Y_KW => SyntaxKind::TR_FLAGS, _ => SyntaxKind::ERROR }
-                    } else { SyntaxKind::ERROR };
+                        match prefix {
+                            SyntaxKind::S_KW => SyntaxKind::S_FLAGS,
+                            SyntaxKind::TR_KW | SyntaxKind::Y_KW => SyntaxKind::TR_FLAGS,
+                            _ => SyntaxKind::ERROR,
+                        }
+                    } else {
+                        SyntaxKind::ERROR
+                    };
                     self.pending.push_back((kind, &input[i..j]));
                     i = j;
                 }
@@ -925,12 +987,7 @@ impl<'a> Lexer<'a> {
         self.logos_lexer.bump(i);
     }
 
-    fn disambiguate_with(
-        &self,
-        token: Token,
-        _text: &str,
-        expect: LexMode,
-    ) -> SyntaxKind {
+    fn disambiguate_with(&self, token: Token, _text: &str, expect: LexMode) -> SyntaxKind {
         match token {
             Token::Percent => Self::disambiguate_percent(expect),
             Token::Star => Self::disambiguate_star(expect),
@@ -1374,10 +1431,7 @@ impl<'a> Lexer<'a> {
 
     /// Get the next token using an explicit lexical expectation for ambiguous cases.
     /// For non-default contexts (QuoteLike), this expectation is ignored.
-    pub fn next_token_with(
-        &mut self,
-        expect: LexMode,
-    ) -> Option<(SyntaxKind, &'a str)> {
+    pub fn next_token_with(&mut self, expect: LexMode) -> Option<(SyntaxKind, &'a str)> {
         let override_ctx = Some(expect);
         self.next_token_internal(override_ctx)
     }
@@ -1385,10 +1439,7 @@ impl<'a> Lexer<'a> {
     /// Peek the next non-trivia token using a given lexical expectation.
     /// This does not mutate the original lexer state.
     #[must_use]
-    pub fn peek_non_trivia_with(
-        &self,
-        expect: LexMode,
-    ) -> Option<(SyntaxKind, &'a str)> {
+    pub fn peek_non_trivia_with(&self, expect: LexMode) -> Option<(SyntaxKind, &'a str)> {
         let mut cloned = self.clone();
         let override_ctx = Some(expect);
         // Iterate tokens using the internal single-step with override until non-trivia
