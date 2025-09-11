@@ -1,4 +1,4 @@
-use crate::{lexer::LexerContext, SyntaxKind};
+use crate::SyntaxKind;
 
 use super::Parser;
 
@@ -566,31 +566,29 @@ impl Parser<'_> {
     }
 
     /// Parse subroutine prototype like (\@@), ($@), (\@$@), etc.
-    fn parse_sub_prototype(&mut self) {
+fn parse_sub_prototype(&mut self) {
+        use crate::lexer::LexExpectation;
         self.builder.start_node(SyntaxKind::SUB_PROTOTYPE.into());
 
         self.expect(SyntaxKind::L_PAREN);
-        self.lexer.set_context(LexerContext::SubPrototype);
         self.skip_trivia();
 
-        // Parse prototype symbols until we hit the closing paren
-        while !self.at(SyntaxKind::R_PAREN) && !self.at_end() {
-            let kind = self
-                .current_kind()
-                .expect("Parser should not be at end of input here");
+        while let Some((kind, _)) = self.peek_non_trivia_token_with(LexExpectation::Value) {
+            if kind == SyntaxKind::R_PAREN { break; }
             match kind {
-                SyntaxKind::BACKSLASH    // \ for reference to arrays/hashes
-                | SyntaxKind::AT         // @ for arrays
-                | SyntaxKind::PERCENT    // % for hashes  
-                | SyntaxKind::DOLLAR     // $ for scalars
-                | SyntaxKind::AMPERSAND  // & for code blocks
-                | SyntaxKind::ASTERISK   // * for typeglobs
-                | SyntaxKind::SEMICOLON  // ; for optional parameters
-                | SyntaxKind::L_BRACKET  // [ for grouping alternatives
-                | SyntaxKind::R_BRACKET  // ] for grouping alternatives
-                => {
-                    self.bump(); // consume the prototype character
-                    self.skip_trivia(); // skip whitespace after each symbol
+                SyntaxKind::BACKSLASH
+                | SyntaxKind::AT
+                | SyntaxKind::PERCENT
+                | SyntaxKind::DOLLAR
+                | SyntaxKind::AMPERSAND
+                | SyntaxKind::ASTERISK
+                | SyntaxKind::SEMICOLON
+                | SyntaxKind::L_BRACKET
+                | SyntaxKind::R_BRACKET
+                | SyntaxKind::L_PAREN
+                | SyntaxKind::R_PAREN => {
+                    self.bump_with_expectation(LexExpectation::Value);
+                    self.skip_trivia();
                 }
                 _ => {
                     self.error("Invalid character in subroutine prototype");
@@ -600,7 +598,6 @@ impl Parser<'_> {
         }
 
         self.expect(SyntaxKind::R_PAREN);
-        self.lexer.set_context(LexerContext::Default);
         self.builder.finish_node();
     }
 }
