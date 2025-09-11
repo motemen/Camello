@@ -1944,3 +1944,20 @@ fn test_bitwise_operators_formatting() {
 
     check_formatting_cases(&cases);
 }
+
+#[test]
+fn test_numeric_literals_with_underscores_and_bases() {
+    let cases = [
+        ("my $x = 3.14_15_92;", "my $x = 3.14_15_92;\n"),
+        ("my $dec = .23E-10;", "my $dec = .23E-10;\n"),
+        ("my $bin = 0b110_100_100;", "my $bin = 0b110_100_100;\n"),
+        ("my $oct = 0o12_345;", "my $oct = 0o12_345;\n"),
+        ("my $hex = 0xdead_beef;", "my $hex = 0xdead_beef;\n"),
+        (
+            "my $hexfloat = 0x1.999ap-4;",
+            "my $hexfloat = 0x1.999ap-4;\n",
+        ),
+    ];
+
+    check_formatting_cases(&cases);
+}
