@@ -86,6 +86,8 @@ fn test_increment_decrement_formatting() {
         ("$i--;", "$i--;\n"),
         ("--$i;", "--$i;\n"),
         ("$i++ + $j--;", "$i++ + $j--;\n"),
+        // Note: ++$i++; is syntactically invalid in Perl (++$i produces an rvalue, not a valid lvalue for postfix ++)
+        // but the parser is intentionally lenient to handle malformed code gracefully
         ("++$i++;", "++$i++;\n"),
     ];
     check_formatting_cases(&cases);
