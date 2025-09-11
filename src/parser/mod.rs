@@ -1,7 +1,4 @@
-use crate::{
-    lexer::{LexExpectation, Lexer, LexerContext},
-    SyntaxKind,
-};
+use crate::{lexer::{LexExpectation, Lexer}, SyntaxKind};
 use miette::{Diagnostic, SourceSpan};
 use rowan::{GreenNode, GreenNodeBuilder, TextRange};
 
@@ -280,10 +277,7 @@ impl<'a> Parser<'a> {
         self.lexer.peek_for_any(target_kinds).is_some()
     }
 
-    /// Set lexer context explicitly (used after parsing certain constructs)
-    fn set_lexer_context(&mut self, context: LexerContext) {
-        self.lexer.set_context(context);
-    }
+    // Removed: explicit lexer context setter; parser now drives lexing via expectations
 
     fn is_at_start_of_expression(&self) -> bool {
         if let Some(kind) = self.current_kind() {
