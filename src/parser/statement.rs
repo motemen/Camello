@@ -494,7 +494,8 @@ impl Parser<'_> {
     pub fn block(&mut self) {
         self.builder.start_node(SyntaxKind::BLOCK_STMT.into());
 
-        self.expect(SyntaxKind::L_BRACE);
+        // Entering a block; inside expects statements/values
+        self.expect_value(SyntaxKind::L_BRACE);
         self.skip_trivia();
 
         while !self.at(SyntaxKind::R_BRACE) && !self.at_end() {
@@ -504,7 +505,8 @@ impl Parser<'_> {
             self.skip_trivia();
         }
 
-        self.expect(SyntaxKind::R_BRACE);
+        // After closing '}', expect an operator/statement boundary
+        self.expect_op(SyntaxKind::R_BRACE);
 
         self.builder.finish_node();
     }
@@ -527,8 +529,8 @@ impl Parser<'_> {
 
         self.builder.start_node(modifier_kind.into());
 
-        // Consume the if/unless keyword
-        self.bump();
+        // Consume the if/unless keyword; next should be a value (condition)
+        self.bump_value();
         self.skip_trivia();
 
         // Parse the condition expression
@@ -542,7 +544,8 @@ impl Parser<'_> {
     /// Helper function to parse parenthesized conditions for if/unless/while/elsif statements
     fn parse_parenthesized_condition(&mut self, construct_name: &str) {
         if self.at(SyntaxKind::L_PAREN) {
-            self.bump(); // (
+            // Inside condition parens, expect values
+            self.bump_value(); // (
             self.skip_trivia();
 
             // Parse the condition
@@ -553,7 +556,8 @@ impl Parser<'_> {
             }
 
             self.skip_trivia();
-            self.expect(SyntaxKind::R_PAREN);
+            // After ')', expect operator/statement boundary
+            self.expect_op(SyntaxKind::R_PAREN);
         } else {
             self.error(&format!("Expected '(' after '{construct_name}'"));
         }
