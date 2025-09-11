@@ -1269,7 +1269,7 @@ impl<'a> Lexer<'a> {
             SyntaxKind::MY_KW | SyntaxKind::OUR_KW | SyntaxKind::STATE_KW | SyntaxKind::LOCAL_KW => {
                 LexerContext::Default
             }
-            SyntaxKind::QW_KW => LexerContext::QuoteLike {
+            SyntaxKind::QW_KW if self.quote_delimiter_ahead() => LexerContext::QuoteLike {
                 prefix: SyntaxKind::QW_KW,
                 mode: QuoteLikeMode::QW,
                 state: QuoteLikeState::Delimiter {
@@ -1278,7 +1278,7 @@ impl<'a> Lexer<'a> {
                 },
                 delimiter: '\0', // Will be set when delimiter is found
             },
-            SyntaxKind::Q_KW => LexerContext::QuoteLike {
+            SyntaxKind::Q_KW if self.quote_delimiter_ahead() => LexerContext::QuoteLike {
                 prefix: SyntaxKind::Q_KW,
                 mode: QuoteLikeMode::Q,
                 state: QuoteLikeState::Delimiter {
@@ -1287,7 +1287,7 @@ impl<'a> Lexer<'a> {
                 },
                 delimiter: '\0',
             },
-            SyntaxKind::QQ_KW => LexerContext::QuoteLike {
+            SyntaxKind::QQ_KW if self.quote_delimiter_ahead() => LexerContext::QuoteLike {
                 prefix: SyntaxKind::QQ_KW,
                 mode: QuoteLikeMode::Q,
                 state: QuoteLikeState::Delimiter {
@@ -1296,7 +1296,7 @@ impl<'a> Lexer<'a> {
                 },
                 delimiter: '\0',
             },
-            SyntaxKind::QX_KW => LexerContext::QuoteLike {
+            SyntaxKind::QX_KW if self.quote_delimiter_ahead() => LexerContext::QuoteLike {
                 prefix: SyntaxKind::QX_KW,
                 mode: QuoteLikeMode::Q,
                 state: QuoteLikeState::Delimiter {
@@ -1305,7 +1305,7 @@ impl<'a> Lexer<'a> {
                 },
                 delimiter: '\0',
             },
-            SyntaxKind::M_KW => LexerContext::QuoteLike {
+            SyntaxKind::M_KW if self.quote_delimiter_ahead() => LexerContext::QuoteLike {
                 prefix: SyntaxKind::M_KW,
                 mode: QuoteLikeMode::M,
                 state: QuoteLikeState::Delimiter {
@@ -1314,7 +1314,7 @@ impl<'a> Lexer<'a> {
                 },
                 delimiter: '\0',
             },
-            SyntaxKind::QR_KW => LexerContext::QuoteLike {
+            SyntaxKind::QR_KW if self.quote_delimiter_ahead() => LexerContext::QuoteLike {
                 prefix: SyntaxKind::QR_KW,
                 mode: QuoteLikeMode::QR,
                 state: QuoteLikeState::Delimiter {
@@ -1323,7 +1323,7 @@ impl<'a> Lexer<'a> {
                 },
                 delimiter: '\0',
             },
-            SyntaxKind::S_KW => LexerContext::QuoteLike {
+            SyntaxKind::S_KW if self.quote_delimiter_ahead() => LexerContext::QuoteLike {
                 prefix: SyntaxKind::S_KW,
                 mode: QuoteLikeMode::S,
                 state: QuoteLikeState::Delimiter {
@@ -1332,7 +1332,7 @@ impl<'a> Lexer<'a> {
                 },
                 delimiter: '\0',
             },
-            SyntaxKind::TR_KW => LexerContext::QuoteLike {
+            SyntaxKind::TR_KW if self.quote_delimiter_ahead() => LexerContext::QuoteLike {
                 prefix: SyntaxKind::TR_KW,
                 mode: QuoteLikeMode::TR,
                 state: QuoteLikeState::Delimiter {
@@ -1341,7 +1341,7 @@ impl<'a> Lexer<'a> {
                 },
                 delimiter: '\0',
             },
-            SyntaxKind::Y_KW => LexerContext::QuoteLike {
+            SyntaxKind::Y_KW if self.quote_delimiter_ahead() => LexerContext::QuoteLike {
                 prefix: SyntaxKind::Y_KW,
                 mode: QuoteLikeMode::TR,
                 state: QuoteLikeState::Delimiter {
@@ -1350,8 +1350,24 @@ impl<'a> Lexer<'a> {
                 },
                 delimiter: '\0',
             },
-            _ => LexerContext::Default, // For other keywords
+            _ => LexerContext::Default, // For other keywords or no delimiter ahead
         }
+    }
+
+    /// Check if a quote-like delimiter appears next (skipping whitespace) and is not a fat comma (=>)
+    fn quote_delimiter_ahead(&self) -> bool {
+        let mut chars = self.logos_lexer.remainder().chars().peekable();
+        // Skip whitespace
+        while matches!(chars.peek().copied(), Some(c) if c.is_whitespace()) { chars.next(); }
+        // Reject fat comma '=>'
+        if let (Some('='), Some('>')) = (chars.peek().copied(), { let mut t = chars.clone(); t.next(); t.peek().copied() }) {
+            return false;
+        }
+        // Accept common delimiters
+        matches!(
+            chars.peek().copied(),
+            Some('(' | '[' | '{' | '<' | '/' | '|' | '#' | '!' | '~' | '@' | '$' | '%' | '^' | '&' | '*' | '+' | '=' | '?' | '`' | '\'' | '"')
+        )
     }
 
     fn handle_operator_context(&self, _kind: SyntaxKind) -> LexerContext {
