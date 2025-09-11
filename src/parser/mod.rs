@@ -118,11 +118,11 @@ impl<'a> Parser<'a> {
 
     // Helper methods
     fn current_kind(&self) -> Option<SyntaxKind> {
-        self.lexer.peek_non_trivia().map(|(k, _)| k)
+        self.lexer.peek_token().map(|(k, _)| k)
     }
 
     fn current_text(&self) -> Option<&'a str> {
-        self.lexer.peek_non_trivia().map(|(_, t)| t)
+        self.lexer.peek_token().map(|(_, t)| t)
     }
 
     fn at(&self, kind: SyntaxKind) -> bool {
@@ -261,15 +261,17 @@ impl<'a> Parser<'a> {
         cloned.peek_non_trivia_with(expect)
     }
 
-    /// Convenience: check upcoming token in Value context
+    /// Convenience: check upcoming token in Value context (does not skip trivia)
     fn at_value(&self, kind: SyntaxKind) -> bool {
-        self.peek_non_trivia_token_with(LexExpectation::Value)
+        self.lexer
+            .peek_with(LexExpectation::Value)
             .is_some_and(|(k, _)| k == kind)
     }
 
-    /// Convenience: check upcoming token in Operator context
+    /// Convenience: check upcoming token in Operator context (does not skip trivia)
     fn at_op(&self, kind: SyntaxKind) -> bool {
-        self.peek_non_trivia_token_with(LexExpectation::Operator)
+        self.lexer
+            .peek_with(LexExpectation::Operator)
             .is_some_and(|(k, _)| k == kind)
     }
 
