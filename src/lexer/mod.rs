@@ -38,14 +38,18 @@ pub enum Token {
 
     // リテラル
     // Numeric literals with underscores and multiple bases
+// Hex float (e.g., 0x1.999ap-4), must have '.' and 'p' exponent
     #[regex(
-        r"0x[0-9A-Fa-f_]+(?:[.][0-9A-Fa-f_]+)?(?:[pP][+-]?[0-9_]+)?",
-        priority = 2
+        r"0x[0-9A-Fa-f](?:_*[0-9A-Fa-f])*\.[0-9A-Fa-f](?:_*[0-9A-Fa-f])*[pP][+-]?[0-9](?:_*[0-9])*",
+        priority = 3
     )]
-    #[regex(r"0b[01_]+", priority = 2)]
-    #[regex(r"0o[0-7_]+", priority = 2)]
-    #[regex(r"[0-9_]+(?:[.][0-9_]+)?(?:[eE][+-]?[0-9_]+)?", priority = 1)]
-    #[regex(r"[.][0-9_]+(?:[eE][+-]?[0-9_]+)?", priority = 1)]
+    // Hex, binary, and octal integers
+    #[regex(r"0x[0-9A-Fa-f](?:_*[0-9A-Fa-f])*", priority = 2)]
+    #[regex(r"0b[01](?:_*[01])*", priority = 2)]
+    #[regex(r"0o[0-7](?:_*[0-7])*", priority = 2)]
+    // Decimal numbers (int, float, scientific)
+    #[regex(r"[0-9](?:_*[0-9])*(?:\.[0-9](?:_*[0-9])*)?(?:[eE][+-]?[0-9](?:_*[0-9])*)?", priority = 1)]
+    #[regex(r"\.[0-9](?:_*[0-9])*(?:[eE][+-]?[0-9](?:_*[0-9])*)?", priority = 1)]
     Number,
 
     #[regex(r#""([^"\\]|\\.)*""#)]
