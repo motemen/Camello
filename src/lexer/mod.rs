@@ -542,48 +542,16 @@ impl<'a> Lexer<'a> {
         match self.logos_lexer.next() {
             Some(Ok(token)) => {
                 let text = self.logos_lexer.slice();
-                // Decide mapping strategy based on token kind and text
-                let syntax_kind = match token {
-                    Token::Ident => {
-                        // If previous significant token was a sigil ($, @, %, *),
-                        // treat following identifier as a variable name (IDENT),
-                        // not as a keyword or operator word.
-                        if self.prev_is_sigil() {
-                            SyntaxKind::IDENT
-                        } else {
-                            match text {
-                                // Disambiguated word operators
-                                "eq" | "ne" | "gt" | "lt" | "ge" | "le" | "cmp" => {
-                                    let ctx = context.expect(
-                                        "context required for word operator disambiguation",
-                                    );
-                                    Self::disambiguate_str_op(ctx, text)
-                                }
-                                "x" => {
-                                    let ctx =
-                                        context.expect("context required for 'x' disambiguation");
-                                    Self::disambiguate_x(ctx)
-                                }
-                                // Quote-like starters: treat as keywords unless '=>' follows
-                                "q" | "qq" | "qr" | "qx" | "qw" | "m" | "s" | "tr" | "y" => {
-                                    self.classify_quote_like_keyword(text)
-                                }
-                                _ => {
-                                    if let Some(kw) = Self::map_ident_keyword(text) {
-                                        kw
-                                    } else {
-                                        SyntaxKind::IDENT
-                                    }
-                                }
-                            }
-                        }
+                // Decide mapping strategy based on token kind and text via a single disambiguator
+                let syntax_kind = {
+                    // If previous token was a sigil, force IDENT for following identifier
+                    if matches!(token, Token::Ident) && self.prev_is_sigil() {
+                        SyntaxKind::IDENT
+                    } else if let Some(ctx) = context {
+                        self.disambiguate(&token, text, ctx)
+                    } else {
+                        token.to_syntax_kind()
                     }
-                    Token::Percent | Token::Star | Token::Ampersand | Token::Caret => {
-                        let context =
-                            context.expect("context required for ambiguous token disambiguation");
-                        self.disambiguate_with(token, context)
-                    }
-                    _ => token.to_syntax_kind(),
                 };
 
                 // Quote-like auto-expansion disabled. Parser triggers begin_quote_like().
@@ -664,33 +632,54 @@ impl<'a> Lexer<'a> {
         false
     }
 
-    fn disambiguate_with(&self, token: Token, context: LexContext) -> SyntaxKind {
+    fn disambiguate(&self, token: &Token, text: &str, ctx: LexContext) -> SyntaxKind {
         match token {
-            Token::Percent => Self::disambiguate_percent(context),
-            Token::Star => Self::disambiguate_star(context),
-            Token::Slash => Self::disambiguate_slash(context),
-            Token::Ampersand => Self::disambiguate_ampersand(context),
-            Token::Caret => Self::disambiguate_caret(context),
+            // Identifier words: operators, quote-like starters, or keywords
+            Token::Ident => match text {
+                // Word operators in operator context; otherwise identifiers
+                "eq" | "ne" | "gt" | "lt" | "ge" | "le" | "cmp" => match ctx {
+                    LexContext::Operator => match text {
+                        "eq" => SyntaxKind::STR_EQ,
+                        "ne" => SyntaxKind::STR_NE,
+                        "gt" => SyntaxKind::STR_GT,
+                        "lt" => SyntaxKind::STR_LT,
+                        "ge" => SyntaxKind::STR_GE,
+                        "le" => SyntaxKind::STR_LE,
+                        _ => SyntaxKind::STR_CMP,
+                    },
+                    LexContext::Value => SyntaxKind::IDENT,
+                },
+                // Repetition operator vs identifier
+                "x" => match ctx {
+                    LexContext::Operator => SyntaxKind::X,
+                    LexContext::Value => SyntaxKind::IDENT,
+                },
+                // Quote-like starters: treat as keywords unless followed by fat comma
+                "q" | "qq" | "qr" | "qx" | "qw" | "m" | "s" | "tr" | "y" => {
+                    self.classify_quote_like_keyword(text)
+                }
+                _ => Self::map_ident_keyword(text).unwrap_or(SyntaxKind::IDENT),
+            },
+            // Ambiguous symbol tokens depending on context
+            Token::Percent => match ctx {
+                LexContext::Value => SyntaxKind::PERCENT,
+                LexContext::Operator => SyntaxKind::MODULO,
+            },
+            Token::Star => match ctx {
+                LexContext::Value => SyntaxKind::ASTERISK,
+                LexContext::Operator => SyntaxKind::STAR,
+            },
+            Token::Slash => SyntaxKind::SLASH, // regex literals handled elsewhere
+            Token::Ampersand => match ctx {
+                LexContext::Value => SyntaxKind::AMPERSAND,
+                LexContext::Operator => SyntaxKind::BITWISE_AND,
+            },
+            Token::Caret => match ctx {
+                LexContext::Value => SyntaxKind::CARET,
+                LexContext::Operator => SyntaxKind::BITWISE_XOR,
+            },
             Token::Pipe => SyntaxKind::BITWISE_OR,
-            // Delimiters and other simple tokens
-            Token::LParen
-            | Token::LBrace
-            | Token::LBracket
-            | Token::RParen
-            | Token::RBrace
-            | Token::RBracket
-            | Token::Greater
-            | Token::Less
-            | Token::Plus
-            | Token::Minus
-            | Token::Eq
-            | Token::At
-            | Token::Dollar
-            | Token::Colon
-            | Token::QuestionMark
-            | Token::Dot
-            | Token::Comma
-            | Token::Semicolon => token.to_syntax_kind(),
+            // Everything else: direct mapping
             _ => token.to_syntax_kind(),
         }
     }
@@ -732,79 +721,7 @@ impl<'a> Lexer<'a> {
         })
     }
 
-    /// Disambiguate % between hash sigil and modulo operator
-    fn disambiguate_percent(context: LexContext) -> SyntaxKind {
-        match context {
-            LexContext::Value => {
-                // When expecting a value, % is a sigil for a hash
-                // Examples: "my %hash", "{ key => %val }"
-                SyntaxKind::PERCENT
-            }
-            LexContext::Operator => {
-                // When expecting an operator, % is the modulo operator
-                // Examples: "@array % hash", "$var % other_var", "func() % 2"
-                SyntaxKind::MODULO
-            }
-        }
-    }
-
-    /// Disambiguate * between typeglob sigil and multiplication operator
-    fn disambiguate_star(context: LexContext) -> SyntaxKind {
-        match context {
-            LexContext::Value => {
-                // When expecting a value, * is a typeglob sigil
-                // Examples: "my *glob", "*{$name}", "*STDIN"
-                SyntaxKind::ASTERISK
-            }
-            LexContext::Operator => {
-                // When expecting an operator, * is the multiplication operator
-                // Examples: "$a * $b", "func() * 2"
-                SyntaxKind::STAR
-            }
-        }
-    }
-
-    fn disambiguate_str_op(context: LexContext, op: &str) -> SyntaxKind {
-        match context {
-            LexContext::Operator => {
-                // When expecting an operator, eq/ne are string comparison operators
-                match op {
-                    "eq" => SyntaxKind::STR_EQ,
-                    "ne" => SyntaxKind::STR_NE,
-                    "gt" => SyntaxKind::STR_GT,
-                    "lt" => SyntaxKind::STR_LT,
-                    "ge" => SyntaxKind::STR_GE,
-                    "le" => SyntaxKind::STR_LE,
-                    "cmp" => SyntaxKind::STR_CMP,
-                    _ => SyntaxKind::IDENT, // Handle unknown ops gracefully
-                }
-            }
-            LexContext::Value => {
-                // In ExpectingValue context, they are identifiers
-                // Examples: "sub eq", "my $ne"
-                SyntaxKind::IDENT
-            }
-        }
-    }
-
-    fn disambiguate_x(context: LexContext) -> SyntaxKind {
-        match context {
-            LexContext::Value => {
-                // When expecting a value, x is an identifier
-                // Examples: "sub x", "$x", "my $x"
-                SyntaxKind::IDENT
-            }
-            LexContext::Operator => {
-                // When expecting an operator, x is the repetition operator
-                // Examples: "$str x 3", "'hello' x 2"
-                SyntaxKind::X
-            }
-        }
-    }
-
-    // Removed: logical word operator disambiguation; mapping handled via keyword classification
-
-    // Removed s/tr/y disambiguators; quote-like classification uses fat-comma and delimiter lookahead
+    // Removed function-specific disambiguators; unified in `disambiguate`
 
     fn try_consume_regex_literal(&mut self) -> Option<(SyntaxKind, &'a str)> {
         let remainder = self.logos_lexer.remainder();
@@ -925,40 +842,7 @@ impl<'a> Lexer<'a> {
 
     // Removed: variable-name tokenizer (parser handles complex variable forms)
 
-    fn disambiguate_slash(_expect: LexContext) -> SyntaxKind {
-        // Slash is always division operator in disambiguate context
-        // because regex literals are handled in try_consume_regex_literal
-        SyntaxKind::SLASH
-    }
-
-    /// Disambiguate ampersand (&) based on context
-    fn disambiguate_ampersand(expect: LexContext) -> SyntaxKind {
-        match expect {
-            LexContext::Value => {
-                // In value context, & is reference/sigil
-                SyntaxKind::AMPERSAND
-            }
-            LexContext::Operator => {
-                // In operator context, it's bitwise AND
-                SyntaxKind::BITWISE_AND
-            }
-        }
-    }
-
-    /// Disambiguate caret (^) based on context
-    fn disambiguate_caret(expect: LexContext) -> SyntaxKind {
-        match expect {
-            LexContext::Value => {
-                // In expecting value context, ^ is likely a sigil
-                // (e.g., special variables like $^O, $^X)
-                SyntaxKind::CARET
-            }
-            LexContext::Operator => {
-                // In operator context, it's bitwise XOR
-                SyntaxKind::BITWISE_XOR
-            }
-        }
-    }
+    // Removed: per-token disambiguators for slash/ampersand/caret; handled in `disambiguate`
 
     // Removed: is_builtin_function (no longer used)
 

@@ -730,7 +730,10 @@ fn test_full_q_expression() {
     assert_eq!(lexer.next_token(), Some((SyntaxKind::Q_KW, "q")));
     lexer.begin_quote_like(SyntaxKind::Q_KW, crate::lexer::QuoteLikeMode::Q);
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "(")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::LITERAL_STRING, "hello")));
+    assert_eq!(
+        lexer.next_token(),
+        Some((SyntaxKind::LITERAL_STRING, "hello"))
+    );
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, ")")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::SEMICOLON, ";")));
 }
