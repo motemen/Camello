@@ -188,7 +188,7 @@ fn test_tr_as_function_name() {
     let mut lexer = Lexer::new("sub tr {}");
     assert_eq!(lexer.next_token(), Some((SyntaxKind::SUB_KW, "sub")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "tr")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::TR_KW, "tr")));
 }
 
 #[test]
@@ -217,7 +217,7 @@ fn test_y_as_function_name() {
     let mut lexer = Lexer::new("sub y {}");
     assert_eq!(lexer.next_token(), Some((SyntaxKind::SUB_KW, "sub")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "y")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::Y_KW, "y")));
 }
 
 #[test]
