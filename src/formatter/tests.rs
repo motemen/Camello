@@ -92,6 +92,12 @@ fn test_for_stmt_formatting() {
 }
 
 #[test]
+fn test_postfix_for_modifier_formatting() {
+    let cases = [("print $_ for@values;", "print $_ for @values;\n")];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_typeglob_formatting() {
     // Test simple typeglob reference
     let input = "my $fh = \\*STDIN;";
