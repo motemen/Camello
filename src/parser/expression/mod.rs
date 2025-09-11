@@ -10,16 +10,13 @@ use super::Parser;
 
 impl Parser<'_> {
     /// Decide whether the current quote-like keyword should be parsed as a quote-like expression
-    /// or treated as an identifier. Returns true if the next non-trivia token is a DELIMITER
-    /// and not a fat comma (=>).
+    /// or treated as an identifier. In the parser-driven quote-like mode, the lexer does not
+    /// auto-expand to DELIMITER at lookahead time, so we conservatively treat it as quote-like
+    /// unless the next token is a fat comma (=>), in which case it's likely a bareword key.
     fn should_parse_quote_like(&self) -> bool {
-        if let Some((next_kind, _)) = self.peek_second_non_trivia_with(LexMode::Value) {
-            if next_kind == SyntaxKind::FAT_COMMA {
-                return false;
-            }
-            return next_kind == SyntaxKind::DELIMITER;
-        }
-        false
+        !self
+            .peek_second_non_trivia_with(LexMode::Value)
+            .is_some_and(|(k, _)| k == SyntaxKind::FAT_COMMA)
     }
 
     /// Parse an identifier-like expression (including cases where a keyword is coerced to IDENT)

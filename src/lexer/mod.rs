@@ -2,6 +2,8 @@ use crate::SyntaxKind;
 use logos::Logos;
 use std::collections::VecDeque;
 
+mod quote;
+
 #[derive(Logos, Debug, PartialEq, Clone)]
 pub enum Token {
     // Sigils（変数の型を示すプレフィックス）
@@ -263,9 +265,55 @@ pub enum LexMode {
 
 // No LexerContext: parser provides expectations and lexer remains stateless
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DelimiterPhase {
+    First,
+    Second,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DelimiterType {
+    Open,
+    Close,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum QuoteLikeMode {
+    Q,  // q, qq, qx
+    QW, // qw
+    M,  // m
+    QR, // qr
+    S,  // s
+    TR, // tr, y
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum QuoteLikeState {
+    Delimiter {
+        phase: DelimiterPhase,
+        kind: DelimiterType,
+    },
+    Content {
+        phase: DelimiterPhase,
+    },
+    Flags,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum LexerContext {
+    Normal,
+    QuoteLike {
+        prefix: SyntaxKind,
+        mode: QuoteLikeMode,
+        state: QuoteLikeState,
+        delimiter: char,
+    },
+}
+
 pub struct Lexer<'a> {
     logos_lexer: logos::Lexer<'a, Token>,
     at_line_start: bool, // Track if we're at the start of a line for POD detection
+    context: LexerContext,
     // TODO(lexer): Remove last_non_trivia_kind and derive_default_expectation.
     // - Goal: make lexing entirely parser-driven via LexMode without relying on
     //   previous token heuristics.
@@ -284,6 +332,7 @@ impl Clone for Lexer<'_> {
         Self {
             logos_lexer: self.logos_lexer.clone(),
             at_line_start: self.at_line_start,
+            context: self.context,
             last_non_trivia_kind: self.last_non_trivia_kind,
             pending: self.pending.clone(),
         }
@@ -306,6 +355,7 @@ impl<'a> Lexer<'a> {
         Self {
             logos_lexer,
             at_line_start: true,
+            context: LexerContext::Normal,
             last_non_trivia_kind: None,
             pending: VecDeque::new(),
         }
@@ -356,21 +406,40 @@ impl<'a> Lexer<'a> {
 
     /// Handle special tokens when expecting a value
     fn try_handle_expecting_value_context(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        // Array of token consumers to try in order
-        let consumers = [
-            Self::try_consume_file_test_op,
-            Self::try_consume_regex_literal,
-            Self::try_consume_io_operator,
-        ];
-
-        for consumer in consumers {
-            if let Some(result) = consumer(self) {
-                let (syntax_kind, text) = result;
-                self.update_line_position(text);
-                return Some((syntax_kind, text));
+        // 1) File test operator like -f
+        if let Some(result) = Self::try_consume_file_test_op(self) {
+            let (k, t) = result;
+            self.update_line_position(t);
+            return Some((k, t));
+        }
+        // 2) Regex literal /.../ only when not immediately after quote-like keywords
+        let after_quote_like_kw = matches!(
+            self.last_non_trivia_kind,
+            Some(
+                SyntaxKind::Q_KW
+                    | SyntaxKind::QQ_KW
+                    | SyntaxKind::QX_KW
+                    | SyntaxKind::QW_KW
+                    | SyntaxKind::M_KW
+                    | SyntaxKind::QR_KW
+                    | SyntaxKind::S_KW
+                    | SyntaxKind::TR_KW
+                    | SyntaxKind::Y_KW
+            )
+        );
+        if !after_quote_like_kw {
+            if let Some(result) = Self::try_consume_regex_literal(self) {
+                let (k, t) = result;
+                self.update_line_position(t);
+                return Some((k, t));
             }
         }
-
+        // 3) IO operator like <...>
+        if let Some(result) = Self::try_consume_io_operator(self) {
+            let (k, t) = result;
+            self.update_line_position(t);
+            return Some((k, t));
+        }
         None
     }
 
@@ -394,7 +463,17 @@ impl<'a> Lexer<'a> {
             self.update_line_position(t);
             return Some((k, t));
         }
-        // Quote-like context is no longer used; always handle default context
+        // Quote-like context handling (parser-driven)
+        if let LexerContext::QuoteLike { .. } = self.context {
+            if let Some((k, t)) = self.try_handle_quote_like_internal() {
+                if !k.is_trivia() {
+                    self.last_non_trivia_kind = Some(k);
+                }
+                self.update_line_position(t);
+                return Some((k, t));
+            }
+        }
+        // Default context
         self.handle_default_context_with(override_ctx)
     }
 
@@ -411,6 +490,16 @@ impl<'a> Lexer<'a> {
         &mut self,
         override_ctx: Option<LexMode>,
     ) -> Option<(SyntaxKind, &'a str)> {
+        // If already in quote-like context, delegate immediately (pure state machine)
+        if let LexerContext::QuoteLike { .. } = self.context {
+            if let Some((k, t)) = self.try_handle_quote_like_internal() {
+                self.update_line_position(t);
+                if !k.is_trivia() {
+                    self.last_non_trivia_kind = Some(k);
+                }
+                return Some((k, t));
+            }
+        }
         // Handle POD content at line start first
         if self.at_line_start {
             // Check for standalone =cut first (error case)
@@ -429,7 +518,8 @@ impl<'a> Lexer<'a> {
 
         // Handle special tokens when expecting a value
         let is_value_context = matches!(override_ctx, Some(LexMode::Value));
-        if is_value_context {
+        let in_quote_like = matches!(self.context, LexerContext::QuoteLike { .. });
+        if is_value_context && !in_quote_like {
             if let Some(result) = self.try_handle_expecting_value_context() {
                 let (syntax_kind, text) = result;
                 self.update_line_position(text);
@@ -476,49 +566,10 @@ impl<'a> Lexer<'a> {
                                 }
                                 // Quote-like starters: treat as keywords unless '=>' follows
                                 "q" | "qq" | "qr" | "qx" | "qw" | "m" | "s" | "tr" | "y" => {
-                                    let kind = self.classify_quote_like_keyword(text, override_ctx);
-                                    // Only expand when a delimiter follows
-                                    if kind.is_keyword()
-                                        && self.quote_delimiter_ahead()
-                                        && matches!(override_ctx, Some(LexMode::Operator))
-                                    {
-                                        self.enqueue_quote_like_from(kind, text);
-                                        if let Some((k, t)) = self.pending.pop_front() {
-                                            self.update_line_position(t);
-                                            if !k.is_trivia() {
-                                                self.last_non_trivia_kind = Some(k);
-                                            }
-                                            return Some((k, t));
-                                        }
-                                    }
-                                    kind
+                                    self.classify_quote_like_keyword(text, override_ctx)
                                 }
                                 _ => {
                                     if let Some(kw) = Self::map_ident_keyword(text) {
-                                        // For quote-like keywords, expand into pending tokens
-                                        if matches!(
-                                            kw,
-                                            SyntaxKind::QW_KW
-                                                | SyntaxKind::Q_KW
-                                                | SyntaxKind::QQ_KW
-                                                | SyntaxKind::QX_KW
-                                                | SyntaxKind::M_KW
-                                                | SyntaxKind::QR_KW
-                                                | SyntaxKind::S_KW
-                                                | SyntaxKind::TR_KW
-                                                | SyntaxKind::Y_KW
-                                        ) && self.quote_delimiter_ahead()
-                                        {
-                                            self.enqueue_quote_like_from(kw, text);
-                                            if let Some((k, t)) = self.pending.pop_front() {
-                                                // Return the keyword token immediately
-                                                self.update_line_position(t);
-                                                if !k.is_trivia() {
-                                                    self.last_non_trivia_kind = Some(k);
-                                                }
-                                                return Some((k, t));
-                                            }
-                                        }
                                         kw
                                     } else {
                                         SyntaxKind::IDENT
@@ -535,40 +586,7 @@ impl<'a> Lexer<'a> {
                     _ => token.to_syntax_kind(),
                 };
 
-                // If we identified a quote-like keyword (e.g., from disambiguated 's', 'tr', 'y'),
-                // enqueue its expansion and return the keyword immediately, but only when a delimiter follows
-                // and we are in operator expectation (to avoid misclassifying identifiers like `sub tr {}`).
-                if matches!(
-                    syntax_kind,
-                    SyntaxKind::QW_KW
-                        | SyntaxKind::Q_KW
-                        | SyntaxKind::QQ_KW
-                        | SyntaxKind::QX_KW
-                        | SyntaxKind::M_KW
-                        | SyntaxKind::QR_KW
-                        | SyntaxKind::S_KW
-                        | SyntaxKind::TR_KW
-                        | SyntaxKind::Y_KW
-                ) && self.quote_delimiter_ahead()
-                    && !matches!(
-                        self.last_non_trivia_kind,
-                        Some(
-                            SyntaxKind::SUB_KW
-                                | SyntaxKind::PACKAGE_KW
-                                | SyntaxKind::USE_KW
-                                | SyntaxKind::NO_KW
-                        )
-                    )
-                {
-                    self.enqueue_quote_like_from(syntax_kind, text);
-                    if let Some((k, t)) = self.pending.pop_front() {
-                        self.update_line_position(t);
-                        if !k.is_trivia() {
-                            self.last_non_trivia_kind = Some(k);
-                        }
-                        return Some((k, t));
-                    }
-                }
+                // Quote-like auto-expansion disabled. Parser triggers begin_quote_like().
 
                 // Special handling for __END__ and __DATA__: consume everything remaining as data section
                 if matches!(syntax_kind, SyntaxKind::END_KW | SyntaxKind::DATA_KW) {
@@ -644,347 +662,6 @@ impl<'a> Lexer<'a> {
             return true;
         }
         false
-    }
-
-    /// Check if a quote-like delimiter appears next (skipping whitespace)
-    fn quote_delimiter_ahead(&self) -> bool {
-        let mut chars = self.logos_lexer.remainder().chars().peekable();
-        while matches!(chars.peek().copied(), Some(c) if c.is_whitespace()) {
-            chars.next();
-        }
-        matches!(
-            chars.peek().copied(),
-            Some(
-                '(' | '['
-                    | '{'
-                    | '<'
-                    | '/'
-                    | '|'
-                    | '#'
-                    | '!'
-                    | '~'
-                    | '@'
-                    | '$'
-                    | '%'
-                    | '^'
-                    | '&'
-                    | '*'
-                    | '+'
-                    | '='
-                    | '?'
-                    | '`'
-                    | '\''
-                    | '"'
-            )
-        )
-    }
-
-    /// Enqueue a complete quote-like token sequence starting at the current input position.
-    /// The first pending item is always the keyword itself with `prefix_text`.
-    fn enqueue_quote_like_from(&mut self, prefix: SyntaxKind, prefix_text: &'a str) {
-        // Always push the keyword token first
-        self.pending.push_back((prefix, prefix_text));
-
-        // Work on a snapshot of the remaining input after the keyword
-        let input = self.logos_lexer.remainder();
-        let bytes = input.as_bytes();
-        let mut i = 0usize;
-
-        // Optionally capture leading whitespace between keyword and delimiter
-        let ws_start = i;
-        while i < bytes.len() {
-            let ch = input[i..].chars().next().unwrap();
-            if ch.is_whitespace() {
-                i += ch.len_utf8();
-            } else {
-                break;
-            }
-        }
-        if i > ws_start {
-            self.pending
-                .push_back((SyntaxKind::WHITESPACE, &input[ws_start..i]));
-        }
-
-        // Opening delimiter
-        if i >= bytes.len() {
-            return;
-        }
-        let open = input[i..].chars().next().unwrap();
-        let open_len = open.len_utf8();
-        // Push opening delimiter token
-        self.pending
-            .push_back((SyntaxKind::DELIMITER, &input[i..i + open_len]));
-        i += open_len;
-
-        // Helper to get closing delimiter for an opening character
-        fn closing_for(c: char) -> char {
-            match c {
-                '(' => ')',
-                '[' => ']',
-                '{' => '}',
-                '<' => '>',
-                other => other,
-            }
-        }
-
-        fn is_paired(c: char) -> bool {
-            matches!(c, '(' | '[' | '{' | '<')
-        }
-
-        // Scan content until closing delimiter, with simple nesting for paired delimiters
-        fn scan_until(s: &str, mut idx: usize, open: char, close: char) -> (usize, &str) {
-            let mut escaped = false;
-            let mut nest = 0i32;
-            let bytes = s.as_bytes();
-            while idx < bytes.len() {
-                let ch = s[idx..].chars().next().unwrap();
-                let w = ch.len_utf8();
-                if escaped {
-                    escaped = false;
-                    idx += w;
-                    continue;
-                }
-                if ch == '\\' {
-                    escaped = true;
-                    idx += w;
-                    continue;
-                }
-                if ch == close {
-                    if nest == 0 {
-                        break;
-                    } else {
-                        nest -= 1;
-                        idx += w;
-                        continue;
-                    }
-                }
-                if ch == open && is_paired(open) {
-                    nest += 1;
-                }
-                idx += w;
-            }
-            let content = &s[..idx];
-            (idx, content)
-        }
-
-        // QW: special processing of words
-        fn enqueue_qw<'a>(
-            pending: &mut VecDeque<(SyntaxKind, &'a str)>,
-            s: &'a str,
-            mut idx: usize,
-            close: char,
-        ) -> usize {
-            let bytes = s.as_bytes();
-            while idx < bytes.len() {
-                let ch = s[idx..].chars().next().unwrap();
-                if ch == close {
-                    break;
-                }
-                if ch.is_whitespace() {
-                    let start = idx;
-                    let mut j = idx;
-                    while j < bytes.len() {
-                        let c2 = s[j..].chars().next().unwrap();
-                        if !c2.is_whitespace() {
-                            break;
-                        }
-                        j += c2.len_utf8();
-                    }
-                    pending.push_back((SyntaxKind::WHITESPACE, &s[start..j]));
-                    idx = j;
-                } else {
-                    let start = idx;
-                    let mut j = idx;
-                    while j < bytes.len() {
-                        let c2 = s[j..].chars().next().unwrap();
-                        if c2 == close || c2.is_whitespace() {
-                            break;
-                        }
-                        j += c2.len_utf8();
-                    }
-                    if j > start {
-                        pending.push_back((SyntaxKind::QW_STRING, &s[start..j]));
-                        idx = j;
-                    } else {
-                        break;
-                    }
-                }
-            }
-            idx
-        }
-
-        // Determine closing delimiter for first part
-        let close1 = closing_for(open);
-
-        match prefix {
-            SyntaxKind::QW_KW => {
-                i = enqueue_qw(&mut self.pending, input, i, close1);
-                // Closing delimiter of first part
-                if i < input.len() && input[i..].starts_with(close1) {
-                    self.pending
-                        .push_back((SyntaxKind::DELIMITER, &input[i..i + close1.len_utf8()]));
-                    i += close1.len_utf8();
-                }
-            }
-            SyntaxKind::Q_KW
-            | SyntaxKind::QQ_KW
-            | SyntaxKind::QX_KW
-            | SyntaxKind::M_KW
-            | SyntaxKind::QR_KW => {
-                let (end_idx, content) = scan_until(&input[i..], 0, open, close1);
-                let content_kind = match prefix {
-                    SyntaxKind::Q_KW => SyntaxKind::LITERAL_STRING,
-                    SyntaxKind::QQ_KW | SyntaxKind::QX_KW => SyntaxKind::INTERPOLATED_STRING,
-                    SyntaxKind::M_KW | SyntaxKind::QR_KW => SyntaxKind::REGEX_PATTERN,
-                    _ => SyntaxKind::LITERAL_STRING,
-                };
-                if !content.is_empty() {
-                    self.pending.push_back((content_kind, content));
-                }
-                i += end_idx;
-                // Closing delimiter
-                if i < input.len() && input[i..].starts_with(close1) {
-                    self.pending
-                        .push_back((SyntaxKind::DELIMITER, &input[i..i + close1.len_utf8()]));
-                    i += close1.len_utf8();
-                }
-                // Optional flags for m/qr
-                if matches!(prefix, SyntaxKind::M_KW | SyntaxKind::QR_KW) {
-                    let valid = "msixpodualngcer";
-                    let mut j = i;
-                    let mut any = false;
-                    let mut all_valid = true;
-                    while j < input.len() {
-                        let c = input[j..].chars().next().unwrap();
-                        if c.is_alphabetic() {
-                            any = true;
-                            if !valid.contains(c) {
-                                all_valid = false;
-                            }
-                            j += c.len_utf8();
-                        } else {
-                            break;
-                        }
-                    }
-                    if any {
-                        let kind = if all_valid {
-                            if prefix == SyntaxKind::M_KW {
-                                SyntaxKind::M_FLAGS
-                            } else {
-                                SyntaxKind::QR_FLAGS
-                            }
-                        } else {
-                            SyntaxKind::ERROR
-                        };
-                        self.pending.push_back((kind, &input[i..j]));
-                        i = j;
-                    }
-                }
-            }
-            SyntaxKind::S_KW | SyntaxKind::TR_KW | SyntaxKind::Y_KW => {
-                // First part
-                let (end_idx1, c1) = scan_until(&input[i..], 0, open, close1);
-                let first_kind = match prefix {
-                    SyntaxKind::S_KW => SyntaxKind::REGEX_PATTERN,
-                    _ => SyntaxKind::TR_SEARCH_LIST,
-                };
-                if !c1.is_empty() {
-                    self.pending.push_back((first_kind, c1));
-                }
-                i += end_idx1;
-                // Close first
-                if i < input.len() && input[i..].starts_with(close1) {
-                    self.pending
-                        .push_back((SyntaxKind::DELIMITER, &input[i..i + close1.len_utf8()]));
-                    i += close1.len_utf8();
-                }
-                // Second part (handle symmetric vs paired delimiters)
-                if is_paired(open) {
-                    if i < input.len() && input[i..].starts_with(open) {
-                        self.pending
-                            .push_back((SyntaxKind::DELIMITER, &input[i..i + open_len]));
-                        i += open_len;
-                    }
-                    let (end_idx2, c2) = scan_until(&input[i..], 0, open, close1);
-                    let second_kind = match prefix {
-                        SyntaxKind::S_KW => SyntaxKind::INTERPOLATED_STRING,
-                        _ => SyntaxKind::TR_REPLACEMENT_LIST,
-                    };
-                    if !c2.is_empty() {
-                        self.pending.push_back((second_kind, c2));
-                    }
-                    i += end_idx2;
-                    if i < input.len() && input[i..].starts_with(close1) {
-                        self.pending
-                            .push_back((SyntaxKind::DELIMITER, &input[i..i + close1.len_utf8()]));
-                        i += close1.len_utf8();
-                    }
-                } else {
-                    // Symmetric delimiter like '/'
-                    if i < input.len() && input[i..].starts_with(close1) {
-                        // Empty replacement: just the closing delimiter
-                        self.pending
-                            .push_back((SyntaxKind::DELIMITER, &input[i..i + close1.len_utf8()]));
-                        i += close1.len_utf8();
-                    } else {
-                        let (end_idx2, c2) = scan_until(&input[i..], 0, open, close1);
-                        let second_kind = match prefix {
-                            SyntaxKind::S_KW => SyntaxKind::INTERPOLATED_STRING,
-                            _ => SyntaxKind::TR_REPLACEMENT_LIST,
-                        };
-                        if !c2.is_empty() {
-                            self.pending.push_back((second_kind, c2));
-                        }
-                        i += end_idx2;
-                        if i < input.len() && input[i..].starts_with(close1) {
-                            self.pending.push_back((
-                                SyntaxKind::DELIMITER,
-                                &input[i..i + close1.len_utf8()],
-                            ));
-                            i += close1.len_utf8();
-                        }
-                    }
-                }
-                // Optional flags
-                let valid = if prefix == SyntaxKind::TR_KW || prefix == SyntaxKind::Y_KW {
-                    "cdsr"
-                } else {
-                    "msixpodualngcer"
-                };
-                let mut j = i;
-                let mut any = false;
-                let mut all_valid = true;
-                while j < input.len() {
-                    let c = input[j..].chars().next().unwrap();
-                    if c.is_alphabetic() {
-                        any = true;
-                        if !valid.contains(c) {
-                            all_valid = false;
-                        }
-                        j += c.len_utf8();
-                    } else {
-                        break;
-                    }
-                }
-                if any {
-                    let kind = if all_valid {
-                        match prefix {
-                            SyntaxKind::S_KW => SyntaxKind::S_FLAGS,
-                            SyntaxKind::TR_KW | SyntaxKind::Y_KW => SyntaxKind::TR_FLAGS,
-                            _ => SyntaxKind::ERROR,
-                        }
-                    } else {
-                        SyntaxKind::ERROR
-                    };
-                    self.pending.push_back((kind, &input[i..j]));
-                    i = j;
-                }
-            }
-            _ => {}
-        }
-
-        // Finally advance the underlying lexer by the total bytes we consumed after the keyword
-        self.logos_lexer.bump(i);
     }
 
     fn disambiguate_with(&self, token: Token, _text: &str, expect: LexMode) -> SyntaxKind {
