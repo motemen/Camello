@@ -168,6 +168,14 @@ impl Parser<'_> {
         self.expect(kw_kind);
         self.skip_trivia();
 
+        // Determine opening delimiter to decide if second part needs its own opener
+        let Some(opening_char) = self.current_delimiter() else {
+            self.error("Expected qw delimiter");
+            self.builder.finish_node();
+            return;
+        };
+        let closing_delim = Self::get_closing_delimiter(opening_char);
+
         // Opening delimiter
         self.expect(SyntaxKind::DELIMITER);
         self.skip_trivia();
@@ -183,7 +191,8 @@ impl Parser<'_> {
         self.skip_trivia();
 
         // For asymmetric delimiters, there might be another opening delimiter for second part
-        if self.at(SyntaxKind::DELIMITER) {
+        let second_is_paired = matches!(closing_delim, ')' | ']' | '}' | '>');
+        if second_is_paired && self.at(SyntaxKind::DELIMITER) {
             self.bump(); // Opening delimiter for second part
             self.skip_trivia();
         }
