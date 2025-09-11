@@ -33,7 +33,6 @@ pub struct Parser<'a> {
     lexer: Lexer<'a>,
     builder: GreenNodeBuilder<'static>,
     errors: Vec<ParseError>,
-    current_token: Option<(SyntaxKind, &'a str)>,
     current_pos: usize,
     source: &'a str,
 }
@@ -42,13 +41,11 @@ impl<'a> Parser<'a> {
     #[must_use]
     pub fn new(input: &'a str) -> Self {
         let mut lexer = Lexer::new(input);
-        let current_token = lexer.next_token();
 
         Self {
             lexer,
             builder: GreenNodeBuilder::new(),
             errors: Vec::new(),
-            current_token,
             current_pos: 0,
             source: input,
         }
@@ -121,11 +118,11 @@ impl<'a> Parser<'a> {
 
     // Helper methods
     fn current_kind(&self) -> Option<SyntaxKind> {
-        self.current_token.map(|(kind, _)| kind)
+        self.lexer.peek_non_trivia().map(|(k, _)| k)
     }
 
     fn current_text(&self) -> Option<&'a str> {
-        self.current_token.map(|(_, text)| text)
+        self.lexer.peek_non_trivia().map(|(_, t)| t)
     }
 
     fn at(&self, kind: SyntaxKind) -> bool {
@@ -141,24 +138,22 @@ impl<'a> Parser<'a> {
     }
 
     fn at_end(&self) -> bool {
-        self.current_token.is_none()
+        self.lexer.peek_token().is_none()
     }
 
     fn bump(&mut self) {
-        if let Some((kind, text)) = self.current_token.take() {
+        if let Some((kind, text)) = self.lexer.next_token_default() {
             self.builder.token(kind.into(), text);
             self.current_pos += text.len();
         }
-        self.current_token = self.lexer.next_token();
     }
 
     /// Consume current token and fetch next using an explicit lexical expectation
     fn bump_with_expectation(&mut self, expect: LexExpectation) {
-        if let Some((kind, text)) = self.current_token.take() {
+        if let Some((kind, text)) = self.lexer.next_token_with(expect) {
             self.builder.token(kind.into(), text);
             self.current_pos += text.len();
         }
-        self.current_token = self.lexer.next_token_with(expect);
     }
 
     /// Convenience: after consuming current token, expect a Value next
@@ -172,11 +167,10 @@ impl<'a> Parser<'a> {
     }
 
     fn bump_with_kind(&mut self, syntax_kind: SyntaxKind) {
-        if let Some((_, text)) = self.current_token.take() {
+        if let Some((_, text)) = self.lexer.next_token_default() {
             self.builder.token(syntax_kind.into(), text);
             self.current_pos += text.len();
         }
-        self.current_token = self.lexer.next_token();
     }
 
     fn expect(&mut self, expected: SyntaxKind) {
@@ -209,11 +203,15 @@ impl<'a> Parser<'a> {
     }
 
     fn skip_trivia(&mut self) {
-        while let Some(kind) = self.current_kind() {
-            if kind.is_trivia() {
-                self.bump();
-            } else {
-                break;
+        loop {
+            match self.lexer.peek_token() {
+                Some((kind, _)) if kind.is_trivia() => {
+                    if let Some((k, t)) = self.lexer.next_token_default() {
+                        self.builder.token(k.into(), t);
+                        self.current_pos += t.len();
+                    }
+                }
+                _ => break,
             }
         }
     }
@@ -228,12 +226,11 @@ impl<'a> Parser<'a> {
         self.errors
             .push(ParseError::new(message.to_string(), range, self.source));
 
-        // Create error token
-        if let Some((_, text)) = self.current_token.take() {
+        // Create error token by consuming one token (if any)
+        if let Some((_, text)) = self.lexer.next_token_default() {
             self.builder.token(SyntaxKind::ERROR.into(), text);
             self.current_pos += text.len();
         }
-        self.current_token = self.lexer.next_token();
     }
 
     /// 括弧内のカンマ区切り式をパースするヘルパー関数
@@ -245,16 +242,23 @@ impl<'a> Parser<'a> {
 
     /// Peek at the next non-trivia token without consuming it
     fn peek_non_trivia_token(&self) -> Option<(SyntaxKind, &'a str)> {
-        self.lexer.peek_non_trivia_token()
+        self.lexer.peek_non_trivia()
     }
 
     /// Peek at the next non-trivia token with an explicit lexical expectation
     /// This is used to disambiguate contexts like operator lookahead.
-    fn peek_non_trivia_token_with(
-        &self,
-        expect: LexExpectation,
-    ) -> Option<(SyntaxKind, &'a str)> {
+    fn peek_non_trivia_token_with(&self, expect: LexExpectation) -> Option<(SyntaxKind, &'a str)> {
         self.lexer.peek_non_trivia_with(expect)
+    }
+
+    /// Peek the second non-trivia token (i.e., the token following the current one),
+    /// using an explicit lexical expectation for the second token.
+    fn peek_second_non_trivia_with(&self, expect: LexExpectation) -> Option<(SyntaxKind, &'a str)> {
+        let mut cloned = self.lexer.clone();
+        // Consume the first non-trivia token (the current one)
+        let _ = cloned.find(|(k, _)| !k.is_trivia());
+        // Now peek the next non-trivia with the given expectation
+        cloned.peek_non_trivia_with(expect)
     }
 
     /// Convenience: check upcoming token in Value context
@@ -479,21 +483,24 @@ mod tests {
         let mut parser = Parser::new(input);
 
         // Debug the parser's token processing step by step
-        println!("Initial current_token: {:?}", parser.current_token);
+        println!(
+            "Initial next token (value): {:?}",
+            parser.peek_non_trivia_token()
+        );
 
         // Simulate first few parser operations
         parser.skip_trivia(); // This might advance tokens
         println!(
-            "After skip_trivia: current_token: {:?}",
-            parser.current_token
+            "After skip_trivia: next token: {:?}",
+            parser.peek_non_trivia_token()
         );
 
         // Simulate parsing statement
         if parser.is_at_start_of_expression() {
             println!("Is at start of expression: true");
             println!(
-                "About to parse expression, current_token: {:?}",
-                parser.current_token
+                "About to parse expression, next token: {:?}",
+                parser.peek_non_trivia_token()
             );
         } else {
             println!("Is at start of expression: false");
