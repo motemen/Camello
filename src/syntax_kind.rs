@@ -232,6 +232,7 @@ pub enum SyntaxKind {
     // Modifiers
     IF_MODIFIER,     // Postfix if modifier (e.g., print "hello" if $debug;)
     UNLESS_MODIFIER, // Postfix unless modifier (e.g., return $x unless $x > $y;)
+    FOR_MODIFIER,    // Postfix for modifier (e.g., say for @items;)
 
     // Other statements
     STMT, // General statement
