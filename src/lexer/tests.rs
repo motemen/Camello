@@ -170,6 +170,7 @@ fn test_s_operator_disambiguation() {
     assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "str")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::S_KW, "s")));
+    lexer.begin_quote_like(SyntaxKind::S_KW, crate::lexer::QuoteLikeMode::S);
 }
 
 #[test]
@@ -180,6 +181,11 @@ fn test_tr_operator_disambiguation() {
     assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "str")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::TR_KW, "tr")));
+    lexer.begin_quote_like(SyntaxKind::TR_KW, crate::lexer::QuoteLikeMode::TR);
+    lexer.begin_quote_like(SyntaxKind::TR_KW, crate::lexer::QuoteLikeMode::TR);
+    lexer.begin_quote_like(SyntaxKind::TR_KW, crate::lexer::QuoteLikeMode::TR);
+    lexer.begin_quote_like(SyntaxKind::TR_KW, crate::lexer::QuoteLikeMode::TR);
+    lexer.begin_quote_like(SyntaxKind::TR_KW, crate::lexer::QuoteLikeMode::TR);
 }
 
 #[test]
@@ -244,6 +250,8 @@ fn test_substitution_with_flags() {
 
     // Parse through the substitution operator
     assert_eq!(lexer.next_token(), Some((SyntaxKind::S_KW, "s")));
+    lexer.begin_quote_like(SyntaxKind::S_KW, crate::lexer::QuoteLikeMode::S);
+    lexer.begin_quote_like(SyntaxKind::S_KW, crate::lexer::QuoteLikeMode::S);
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
     assert_eq!(
         lexer.next_token(),
@@ -271,6 +279,7 @@ fn test_tr_with_flags() {
 
     // Parse through the transliteration operator
     assert_eq!(lexer.next_token(), Some((SyntaxKind::TR_KW, "tr")));
+    lexer.begin_quote_like(SyntaxKind::TR_KW, crate::lexer::QuoteLikeMode::TR);
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
     assert_eq!(
         lexer.next_token(),
@@ -323,6 +332,7 @@ fn test_substitution_various_flags() {
 
         // Skip to the flags token
         assert_eq!(lexer.next_token(), Some((SyntaxKind::S_KW, "s")));
+        lexer.begin_quote_like(SyntaxKind::S_KW, crate::lexer::QuoteLikeMode::S);
         assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::REGEX_PATTERN, "a")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
@@ -363,6 +373,7 @@ fn test_tr_various_flags() {
 
         // Skip to the flags token
         assert_eq!(lexer.next_token(), Some((SyntaxKind::TR_KW, "tr")));
+        lexer.begin_quote_like(SyntaxKind::TR_KW, crate::lexer::QuoteLikeMode::TR);
         assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::TR_SEARCH_LIST, "a")));
         assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
@@ -503,6 +514,7 @@ fn test_invalid_flags_rejected() {
 
     // Parse through the substitution operator
     assert_eq!(lexer.next_token(), Some((SyntaxKind::S_KW, "s")));
+    lexer.begin_quote_like(SyntaxKind::S_KW, crate::lexer::QuoteLikeMode::S);
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::REGEX_PATTERN, "a")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
@@ -531,6 +543,7 @@ fn test_mixed_valid_invalid_flags() {
 
     // Parse through the substitution operator
     assert_eq!(lexer.next_token(), Some((SyntaxKind::S_KW, "s")));
+    lexer.begin_quote_like(SyntaxKind::S_KW, crate::lexer::QuoteLikeMode::S);
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::REGEX_PATTERN, "a")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
@@ -560,6 +573,7 @@ fn test_qw_basic_parsing() {
     // Test basic qw() parsing with parentheses
     let mut lexer = Lexer::new("qw(hello world)");
     assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
+    lexer.begin_quote_like(SyntaxKind::QW_KW, crate::lexer::QuoteLikeMode::QW);
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "(")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "hello")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
@@ -573,6 +587,7 @@ fn test_qw_with_colon_content() {
     // Test the specific case that was broken: qw(:common)
     let mut lexer = Lexer::new("qw(:common)");
     assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
+    lexer.begin_quote_like(SyntaxKind::QW_KW, crate::lexer::QuoteLikeMode::QW);
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "(")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, ":common")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, ")")));
@@ -584,6 +599,7 @@ fn test_qw_with_multiple_words() {
     // Test qw with multiple words including special characters
     let mut lexer = Lexer::new("qw(a:b c:d e)");
     assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
+    lexer.begin_quote_like(SyntaxKind::QW_KW, crate::lexer::QuoteLikeMode::QW);
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "(")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "a:b")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
@@ -599,6 +615,7 @@ fn test_qw_with_different_delimiters() {
     // Test qw with slash delimiters
     let mut lexer = Lexer::new("qw/x:y z/");
     assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
+    lexer.begin_quote_like(SyntaxKind::QW_KW, crate::lexer::QuoteLikeMode::QW);
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "/")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "x:y")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
@@ -609,6 +626,7 @@ fn test_qw_with_different_delimiters() {
     // Test qw with bracket delimiters
     let mut lexer = Lexer::new("qw[foo bar]");
     assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
+    lexer.begin_quote_like(SyntaxKind::QW_KW, crate::lexer::QuoteLikeMode::QW);
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "[")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "foo")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
@@ -619,6 +637,7 @@ fn test_qw_with_different_delimiters() {
     // Test qw with brace delimiters
     let mut lexer = Lexer::new("qw{alpha beta}");
     assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
+    lexer.begin_quote_like(SyntaxKind::QW_KW, crate::lexer::QuoteLikeMode::QW);
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "{")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "alpha")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
@@ -632,6 +651,7 @@ fn test_qw_empty() {
     // Test empty qw()
     let mut lexer = Lexer::new("qw()");
     assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
+    lexer.begin_quote_like(SyntaxKind::QW_KW, crate::lexer::QuoteLikeMode::QW);
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "(")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, ")")));
     assert_eq!(lexer.next_token(), None);
@@ -642,6 +662,7 @@ fn test_qw_with_whitespace() {
     // Test qw with extra whitespace
     let mut lexer = Lexer::new("qw(  hello   world  )");
     assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_KW, "qw")));
+    lexer.begin_quote_like(SyntaxKind::QW_KW, crate::lexer::QuoteLikeMode::QW);
     assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "(")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, "  ")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::QW_STRING, "hello")));
@@ -682,6 +703,8 @@ fn test_tr_y_with_different_delimiters() {
 fn test_q_basic_parsing() {
     // Test basic q() parsing with parentheses
     let mut lexer = Lexer::new("q(hello)");
+    // Begin quote-like mode for lexer-only test
+    lexer.begin_quote_like(SyntaxKind::Q_KW, crate::lexer::QuoteLikeMode::Q);
     let mut tokens = Vec::new();
 
     while let Some((kind, text)) = lexer.next_token() {
@@ -701,29 +724,21 @@ fn test_q_basic_parsing() {
 fn test_full_q_expression() {
     // Test a complete q expression as would appear in a statement
     let mut lexer = Lexer::new("print q(hello);");
-    let mut tokens = Vec::new();
-
-    while let Some((kind, text)) = lexer.next_token() {
-        println!("Full expression Token: {:?}, Text: {:?}", kind, text);
-        tokens.push((kind, text));
-    }
-
-    // Should have: IDENT, WHITESPACE, Q_KW, DELIMITER, Q_STRING, DELIMITER, SEMICOLON
-    assert!(tokens.len() >= 5);
-    // Find the Q_KW token
-    let q_pos = tokens
-        .iter()
-        .position(|(kind, _)| *kind == SyntaxKind::Q_KW)
-        .unwrap();
-    assert_eq!(tokens[q_pos], (SyntaxKind::Q_KW, "q"));
-    assert_eq!(tokens[q_pos + 1], (SyntaxKind::DELIMITER, "("));
-    assert_eq!(tokens[q_pos + 2], (SyntaxKind::LITERAL_STRING, "hello"));
-    assert_eq!(tokens[q_pos + 3], (SyntaxKind::DELIMITER, ")"));
+    // Step like the parser: IDENT, WS, Q_KW then begin quote-like
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "print")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::Q_KW, "q")));
+    lexer.begin_quote_like(SyntaxKind::Q_KW, crate::lexer::QuoteLikeMode::Q);
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, "(")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::LITERAL_STRING, "hello")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::DELIMITER, ")")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::SEMICOLON, ";")));
 }
 
 #[test]
 fn test_debug_q_simple() {
     let mut lexer = Lexer::new("q(hello)");
+    lexer.begin_quote_like(SyntaxKind::Q_KW, crate::lexer::QuoteLikeMode::Q);
     let mut tokens = Vec::new();
 
     while let Some((kind, text)) = lexer.next_token() {
