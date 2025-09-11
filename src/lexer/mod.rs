@@ -583,13 +583,28 @@ impl<'a> Lexer<'a> {
         match self.logos_lexer.next() {
             Some(Ok(token)) => {
                 let text = self.logos_lexer.slice();
-                // Convert override/current context into a disambiguation context for this step
-                let disambiguation_context = override_ctx
-                    .or_else(|| Option::<DisambiguationContext>::from(self.context))
-                    .expect(
-                        "disambiguate should only be called from ExpectingValue/ExpectingOperator/ExpectingVariableName contexts",
-                    );
-                let syntax_kind = self.disambiguate_with(token, text, disambiguation_context);
+                // Decide mapping strategy based on token kind and text
+                let syntax_kind = match token {
+                    Token::Ident => {
+                        if Self::is_ambiguous_ident(text) {
+                            let disambiguation_context = override_ctx
+                                .or_else(|| Option::<DisambiguationContext>::from(self.context))
+                                .expect("context required for ambiguous token disambiguation");
+                            self.disambiguate_with(token, text, disambiguation_context)
+                        } else if let Some(kw) = Self::map_ident_keyword(text) {
+                            kw
+                        } else {
+                            SyntaxKind::IDENT
+                        }
+                    }
+                    Token::Percent | Token::Star | Token::Ampersand | Token::Caret => {
+                        let disambiguation_context = override_ctx
+                            .or_else(|| Option::<DisambiguationContext>::from(self.context))
+                            .expect("context required for ambiguous token disambiguation");
+                        self.disambiguate_with(token, text, disambiguation_context)
+                    }
+                    _ => token.to_syntax_kind(),
+                };
 
                 // Special handling for __END__ and __DATA__: consume everything remaining as data section
                 if matches!(syntax_kind, SyntaxKind::END_KW | SyntaxKind::DATA_KW) {
@@ -719,6 +734,60 @@ impl<'a> Lexer<'a> {
             | Token::Semicolon => token.to_syntax_kind(),
             _ => token.to_syntax_kind(),
         }
+    }
+
+    /// Identifiers that change meaning based on value/operator expectation
+    fn is_ambiguous_ident(text: &str) -> bool {
+        matches!(
+            text,
+            "x"
+                | "eq"
+                | "ne"
+                | "gt"
+                | "lt"
+                | "ge"
+                | "le"
+                | "cmp"
+                | "s"
+                | "tr"
+                | "y"
+                | "not"
+                | "and"
+                | "or"
+                | "xor"
+        )
+    }
+
+    /// Map known identifier keywords that do not require value/operator disambiguation
+    fn map_ident_keyword(text: &str) -> Option<SyntaxKind> {
+        Some(match text {
+            // Control/decl keywords
+            "sub" => SyntaxKind::SUB_KW,
+            "my" => SyntaxKind::MY_KW,
+            "our" => SyntaxKind::OUR_KW,
+            "state" => SyntaxKind::STATE_KW,
+            "local" => SyntaxKind::LOCAL_KW,
+            "if" => SyntaxKind::IF_KW,
+            "unless" => SyntaxKind::UNLESS_KW,
+            "elsif" => SyntaxKind::ELSIF_KW,
+            "else" => SyntaxKind::ELSE_KW,
+            "for" => SyntaxKind::FOR_KW,
+            "foreach" => SyntaxKind::FOREACH_KW,
+            "while" => SyntaxKind::WHILE_KW,
+            "package" => SyntaxKind::PACKAGE_KW,
+            "use" => SyntaxKind::USE_KW,
+            "no" => SyntaxKind::NO_KW,
+            "return" => SyntaxKind::RETURN_KW,
+            "undef" => SyntaxKind::UNDEF_KW,
+            // Quote-like starters (treated as keywords regardless of expectation)
+            "qw" => SyntaxKind::QW_KW,
+            "q" => SyntaxKind::Q_KW,
+            "qq" => SyntaxKind::QQ_KW,
+            "qx" => SyntaxKind::QX_KW,
+            "m" => SyntaxKind::M_KW,
+            "qr" => SyntaxKind::QR_KW,
+            _ => return None,
+        })
     }
 
     /// Disambiguate % between hash sigil and modulo operator
@@ -1447,17 +1516,16 @@ impl<'a> Lexer<'a> {
     }
 
     fn handle_operator_context(&self, _kind: SyntaxKind) -> LexerContext {
-        // Do not flip default context here; parser drives Value/Operator expectation.
-        // Keep VariableName/SubPrototype/QuoteLike/RawData intact.
-        self.context
+        LexerContext::ExpectingValue
     }
 
     fn handle_identifier_context(&self) -> LexerContext {
         match &self.context {
             LexerContext::SubPrototype => self.context, // Remain in prototype context
-            LexerContext::VariableName => LexerContext::ExpectingOperator, // Exit variable-name mode
-            // Do not flip between Value/Operator in default flow
-            LexerContext::ExpectingValue | LexerContext::ExpectingOperator => self.context,
+            LexerContext::VariableName | LexerContext::ExpectingValue => {
+                LexerContext::ExpectingOperator
+            }
+            LexerContext::ExpectingOperator => LexerContext::ExpectingOperator,
             LexerContext::QuoteLike { .. } | LexerContext::RawData => self.context,
         }
     }
@@ -1534,7 +1602,7 @@ impl<'a> Lexer<'a> {
                         }
                         _ => self.context,
                     }
-                } else {
+            } else {
                     LexerContext::ExpectingValue
                 }
             }
@@ -1542,19 +1610,23 @@ impl<'a> Lexer<'a> {
             // Identifiers need context-dependent handling
             SyntaxKind::IDENT => self.handle_identifier_context(),
 
-            // Do not flip default context on literals/right delimiters; parser drives it
-            kind if self.is_literal(kind) || self.is_right_delimiter(kind) => self.context,
+            // Literals and closing delimiters expect operators
+            kind if self.is_literal(kind) || self.is_right_delimiter(kind) => {
+                LexerContext::ExpectingOperator
+            }
 
-            // Postfix dereference operators: keep default context unchanged
+            // Postfix dereference operators expect operators next
             SyntaxKind::POSTFIX_DEREF_ARRAY
             | SyntaxKind::POSTFIX_DEREF_HASH
-            | SyntaxKind::POSTFIX_DEREF_SCALAR => self.context,
+            | SyntaxKind::POSTFIX_DEREF_SCALAR => LexerContext::ExpectingOperator,
 
             // Data section keywords transition to raw data context
             SyntaxKind::END_KW | SyntaxKind::DATA_KW => LexerContext::RawData,
 
-            // Statement terminators and POD: keep default context unchanged
-            SyntaxKind::SEMICOLON | SyntaxKind::CUT_KW | SyntaxKind::POD_CONTENT => self.context,
+            // Statement terminators and POD reset context
+            SyntaxKind::SEMICOLON | SyntaxKind::CUT_KW | SyntaxKind::POD_CONTENT => {
+                LexerContext::ExpectingValue
+            }
 
             // Keep current context for other tokens
             _ => self.context,
@@ -1676,13 +1748,14 @@ impl<'a> Lexer<'a> {
     /// Peek at the next token without consuming it or changing lexer state
     #[must_use]
     pub fn peek_token(&self) -> Option<(SyntaxKind, &'a str)> {
-        self.clone().next()
+        let mut cloned = self.clone();
+        cloned.next_token_default()
     }
 
     /// Peek at the next non-trivia token without consuming it or changing lexer state
     #[must_use]
     pub fn peek_non_trivia_token(&self) -> Option<(SyntaxKind, &'a str)> {
-        self.clone().find(|(kind, _)| !kind.is_trivia())
+        self.peek_non_trivia_with(LexExpectation::Value)
     }
 
     /// Peek ahead multiple tokens, skipping trivia, and return the first non-trivia token
