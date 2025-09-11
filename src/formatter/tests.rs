@@ -406,6 +406,8 @@ fn test_use_statement_with_expressions() {
         // Basic hash pair expressions
         ("use A::B x => 1;", "use A::B x => 1;\n"),
         ("use Module x=>1;", "use Module x => 1;\n"),
+        // Dash-prefixed import flag should be preserved
+        ("use A -abcde => 1;", "use A -abcde => 1;\n"),
         // Multiple hash pairs
         ("use A::B x => 1, y => 2;", "use A::B x => 1, y => 2;\n"),
         (
