@@ -567,13 +567,13 @@ impl Parser<'_> {
 
     /// Parse subroutine prototype like (\@@), ($@), (\@$@), etc.
     fn parse_sub_prototype(&mut self) {
-        use crate::lexer::LexMode;
+        use crate::lexer::LexContext;
         self.builder.start_node(SyntaxKind::SUB_PROTOTYPE.into());
 
         self.expect(SyntaxKind::L_PAREN);
         self.skip_trivia();
 
-        while let Some((kind, _)) = self.peek_non_trivia_token_with(LexMode::Value) {
+        while let Some((kind, _)) = self.peek_non_trivia_token_with(LexContext::Value) {
             if kind == SyntaxKind::R_PAREN {
                 break;
             }
@@ -589,7 +589,7 @@ impl Parser<'_> {
                 | SyntaxKind::R_BRACKET
                 | SyntaxKind::L_PAREN
                 | SyntaxKind::R_PAREN => {
-                    self.bump_with_expectation(LexMode::Value);
+                    self.bump_with_expectation(LexContext::Value);
                     self.skip_trivia();
                 }
                 _ => {

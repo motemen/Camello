@@ -254,7 +254,7 @@ impl Token {
 /// External lexical expectation provided by the parser to disambiguate
 /// only operator/value sensitive tokens in default contexts.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum LexMode {
+pub enum LexContext {
     /// Expecting a value, identifier, or sigil (after keywords, operators, sigils)
     Value,
     /// Expecting an operator (after identifiers, numbers, variables)
@@ -300,7 +300,7 @@ pub enum QuoteLikeState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum LexerContext {
+enum LexerMode {
     Normal,
     QuoteLike {
         prefix: SyntaxKind,
@@ -313,7 +313,7 @@ enum LexerContext {
 pub struct Lexer<'a> {
     logos_lexer: logos::Lexer<'a, Token>,
     at_line_start: bool, // Track if we're at the start of a line for POD detection
-    context: LexerContext,
+    mode: LexerMode,
     // TODO(lexer): Remove last_non_trivia_kind and derive_default_expectation.
     // - Goal: make lexing entirely parser-driven via LexMode without relying on
     //   previous token heuristics.
@@ -332,7 +332,7 @@ impl Clone for Lexer<'_> {
         Self {
             logos_lexer: self.logos_lexer.clone(),
             at_line_start: self.at_line_start,
-            context: self.context,
+            mode: self.mode,
             last_non_trivia_kind: self.last_non_trivia_kind,
             pending: self.pending.clone(),
         }
@@ -355,15 +355,15 @@ impl<'a> Lexer<'a> {
         Self {
             logos_lexer,
             at_line_start: true,
-            context: LexerContext::Normal,
+            mode: LexerMode::Normal,
             last_non_trivia_kind: None,
             pending: VecDeque::new(),
         }
     }
 
-    fn derive_default_expectation(&self) -> LexMode {
+    fn derive_default_expectation(&self) -> LexContext {
         match self.last_non_trivia_kind {
-            None => LexMode::Value,
+            None => LexContext::Value,
             Some(k) => {
                 // After literals, identifiers, postfix deref, expect operator
                 if k.is_literal()
@@ -375,7 +375,7 @@ impl<'a> Lexer<'a> {
                             | SyntaxKind::POSTFIX_DEREF_SCALAR
                     )
                 {
-                    LexMode::Operator
+                    LexContext::Operator
                 } else if k.is_operator()
                     || matches!(
                         k,
@@ -388,10 +388,10 @@ impl<'a> Lexer<'a> {
                     || k.is_keyword()
                 {
                     // After operators, openings, commas, or keywords, expect a value
-                    LexMode::Value
+                    LexContext::Value
                 } else {
                     // Default to value for safety
-                    LexMode::Value
+                    LexContext::Value
                 }
             }
         }
@@ -453,7 +453,7 @@ impl<'a> Lexer<'a> {
     /// When `override_ctx` is provided, it influences only this single step.
     fn next_token_internal(
         &mut self,
-        override_ctx: Option<LexMode>,
+        context: Option<LexContext>,
     ) -> Option<(SyntaxKind, &'a str)> {
         // Serve any pending expanded tokens first
         if let Some((k, t)) = self.pending.pop_front() {
@@ -464,7 +464,7 @@ impl<'a> Lexer<'a> {
             return Some((k, t));
         }
         // Quote-like context handling (parser-driven)
-        if let LexerContext::QuoteLike { .. } = self.context {
+        if let LexerMode::QuoteLike { .. } = self.mode {
             if let Some((k, t)) = self.try_handle_quote_like_internal() {
                 if !k.is_trivia() {
                     self.last_non_trivia_kind = Some(k);
@@ -474,7 +474,7 @@ impl<'a> Lexer<'a> {
             }
         }
         // Default context
-        self.handle_default_context_with(override_ctx)
+        self.handle_default_context_with(context)
     }
 
     // Raw data consumption is handled via consume_data_section from the parser
@@ -488,10 +488,10 @@ impl<'a> Lexer<'a> {
     /// Handle default context (Value | Operator): 通常ケースを担当
     fn handle_default_context_with(
         &mut self,
-        override_ctx: Option<LexMode>,
+        context: Option<LexContext>,
     ) -> Option<(SyntaxKind, &'a str)> {
         // If already in quote-like context, delegate immediately (pure state machine)
-        if let LexerContext::QuoteLike { .. } = self.context {
+        if let LexerMode::QuoteLike { .. } = self.mode {
             if let Some((k, t)) = self.try_handle_quote_like_internal() {
                 self.update_line_position(t);
                 if !k.is_trivia() {
@@ -517,8 +517,8 @@ impl<'a> Lexer<'a> {
         }
 
         // Handle special tokens when expecting a value
-        let is_value_context = matches!(override_ctx, Some(LexMode::Value));
-        let in_quote_like = matches!(self.context, LexerContext::QuoteLike { .. });
+        let is_value_context = matches!(context, Some(LexContext::Value));
+        let in_quote_like = matches!(self.mode, LexerMode::QuoteLike { .. });
         if is_value_context && !in_quote_like {
             if let Some(result) = self.try_handle_expecting_value_context() {
                 let (syntax_kind, text) = result;
@@ -554,19 +554,19 @@ impl<'a> Lexer<'a> {
                             match text {
                                 // Disambiguated word operators
                                 "eq" | "ne" | "gt" | "lt" | "ge" | "le" | "cmp" => {
-                                    let ctx = override_ctx.expect(
+                                    let ctx = context.expect(
                                         "context required for word operator disambiguation",
                                     );
                                     Self::disambiguate_str_op(ctx, text)
                                 }
                                 "x" => {
-                                    let ctx = override_ctx
-                                        .expect("context required for 'x' disambiguation");
+                                    let ctx =
+                                        context.expect("context required for 'x' disambiguation");
                                     Self::disambiguate_x(ctx)
                                 }
                                 // Quote-like starters: treat as keywords unless '=>' follows
                                 "q" | "qq" | "qr" | "qx" | "qw" | "m" | "s" | "tr" | "y" => {
-                                    self.classify_quote_like_keyword(text, override_ctx)
+                                    self.classify_quote_like_keyword(text)
                                 }
                                 _ => {
                                     if let Some(kw) = Self::map_ident_keyword(text) {
@@ -579,9 +579,9 @@ impl<'a> Lexer<'a> {
                         }
                     }
                     Token::Percent | Token::Star | Token::Ampersand | Token::Caret => {
-                        let expect = override_ctx
-                            .expect("context required for ambiguous token disambiguation");
-                        self.disambiguate_with(token, text, expect)
+                        let context =
+                            context.expect("context required for ambiguous token disambiguation");
+                        self.disambiguate_with(token, context)
                     }
                     _ => token.to_syntax_kind(),
                 };
@@ -629,7 +629,7 @@ impl<'a> Lexer<'a> {
     // Removed: pending clearing API (not needed with guarded expansion)
 
     /// Classify quote-like identifiers as keywords unless followed by fat comma (=>)
-    fn classify_quote_like_keyword(&self, word: &str, _expect: Option<LexMode>) -> SyntaxKind {
+    fn classify_quote_like_keyword(&self, word: &str) -> SyntaxKind {
         if self.fat_comma_ahead() {
             return SyntaxKind::IDENT;
         }
@@ -664,13 +664,13 @@ impl<'a> Lexer<'a> {
         false
     }
 
-    fn disambiguate_with(&self, token: Token, _text: &str, expect: LexMode) -> SyntaxKind {
+    fn disambiguate_with(&self, token: Token, context: LexContext) -> SyntaxKind {
         match token {
-            Token::Percent => Self::disambiguate_percent(expect),
-            Token::Star => Self::disambiguate_star(expect),
-            Token::Slash => Self::disambiguate_slash(expect),
-            Token::Ampersand => Self::disambiguate_ampersand(expect),
-            Token::Caret => Self::disambiguate_caret(expect),
+            Token::Percent => Self::disambiguate_percent(context),
+            Token::Star => Self::disambiguate_star(context),
+            Token::Slash => Self::disambiguate_slash(context),
+            Token::Ampersand => Self::disambiguate_ampersand(context),
+            Token::Caret => Self::disambiguate_caret(context),
             Token::Pipe => SyntaxKind::BITWISE_OR,
             // Delimiters and other simple tokens
             Token::LParen
@@ -733,14 +733,14 @@ impl<'a> Lexer<'a> {
     }
 
     /// Disambiguate % between hash sigil and modulo operator
-    fn disambiguate_percent(expect: LexMode) -> SyntaxKind {
-        match expect {
-            LexMode::Value => {
+    fn disambiguate_percent(context: LexContext) -> SyntaxKind {
+        match context {
+            LexContext::Value => {
                 // When expecting a value, % is a sigil for a hash
                 // Examples: "my %hash", "{ key => %val }"
                 SyntaxKind::PERCENT
             }
-            LexMode::Operator => {
+            LexContext::Operator => {
                 // When expecting an operator, % is the modulo operator
                 // Examples: "@array % hash", "$var % other_var", "func() % 2"
                 SyntaxKind::MODULO
@@ -748,15 +748,15 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// Disambiguate * between typeglob sigil and multiplication operator  
-    fn disambiguate_star(expect: LexMode) -> SyntaxKind {
-        match expect {
-            LexMode::Value => {
+    /// Disambiguate * between typeglob sigil and multiplication operator
+    fn disambiguate_star(context: LexContext) -> SyntaxKind {
+        match context {
+            LexContext::Value => {
                 // When expecting a value, * is a typeglob sigil
                 // Examples: "my *glob", "*{$name}", "*STDIN"
                 SyntaxKind::ASTERISK
             }
-            LexMode::Operator => {
+            LexContext::Operator => {
                 // When expecting an operator, * is the multiplication operator
                 // Examples: "$a * $b", "func() * 2"
                 SyntaxKind::STAR
@@ -764,9 +764,9 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn disambiguate_str_op(expect: LexMode, op: &str) -> SyntaxKind {
-        match expect {
-            LexMode::Operator => {
+    fn disambiguate_str_op(context: LexContext, op: &str) -> SyntaxKind {
+        match context {
+            LexContext::Operator => {
                 // When expecting an operator, eq/ne are string comparison operators
                 match op {
                     "eq" => SyntaxKind::STR_EQ,
@@ -779,7 +779,7 @@ impl<'a> Lexer<'a> {
                     _ => SyntaxKind::IDENT, // Handle unknown ops gracefully
                 }
             }
-            LexMode::Value => {
+            LexContext::Value => {
                 // In ExpectingValue context, they are identifiers
                 // Examples: "sub eq", "my $ne"
                 SyntaxKind::IDENT
@@ -787,14 +787,14 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn disambiguate_x(expect: LexMode) -> SyntaxKind {
-        match expect {
-            LexMode::Value => {
+    fn disambiguate_x(context: LexContext) -> SyntaxKind {
+        match context {
+            LexContext::Value => {
                 // When expecting a value, x is an identifier
                 // Examples: "sub x", "$x", "my $x"
                 SyntaxKind::IDENT
             }
-            LexMode::Operator => {
+            LexContext::Operator => {
                 // When expecting an operator, x is the repetition operator
                 // Examples: "$str x 3", "'hello' x 2"
                 SyntaxKind::X
@@ -925,20 +925,20 @@ impl<'a> Lexer<'a> {
 
     // Removed: variable-name tokenizer (parser handles complex variable forms)
 
-    fn disambiguate_slash(_expect: LexMode) -> SyntaxKind {
+    fn disambiguate_slash(_expect: LexContext) -> SyntaxKind {
         // Slash is always division operator in disambiguate context
         // because regex literals are handled in try_consume_regex_literal
         SyntaxKind::SLASH
     }
 
     /// Disambiguate ampersand (&) based on context
-    fn disambiguate_ampersand(expect: LexMode) -> SyntaxKind {
+    fn disambiguate_ampersand(expect: LexContext) -> SyntaxKind {
         match expect {
-            LexMode::Value => {
+            LexContext::Value => {
                 // In value context, & is reference/sigil
                 SyntaxKind::AMPERSAND
             }
-            LexMode::Operator => {
+            LexContext::Operator => {
                 // In operator context, it's bitwise AND
                 SyntaxKind::BITWISE_AND
             }
@@ -946,14 +946,14 @@ impl<'a> Lexer<'a> {
     }
 
     /// Disambiguate caret (^) based on context
-    fn disambiguate_caret(expect: LexMode) -> SyntaxKind {
+    fn disambiguate_caret(expect: LexContext) -> SyntaxKind {
         match expect {
-            LexMode::Value => {
+            LexContext::Value => {
                 // In expecting value context, ^ is likely a sigil
                 // (e.g., special variables like $^O, $^X)
                 SyntaxKind::CARET
             }
-            LexMode::Operator => {
+            LexContext::Operator => {
                 // In operator context, it's bitwise XOR
                 SyntaxKind::BITWISE_XOR
             }
@@ -1094,7 +1094,7 @@ impl<'a> Lexer<'a> {
     /// Peek at the next non-trivia token without consuming it or changing lexer state
     #[must_use]
     pub fn peek_non_trivia_token(&self) -> Option<(SyntaxKind, &'a str)> {
-        self.peek_non_trivia_with(LexMode::Value)
+        self.peek_non_trivia_with(LexContext::Value)
     }
 
     /// Peek ahead multiple tokens, skipping trivia, and return the first non-trivia token
@@ -1108,7 +1108,7 @@ impl<'a> Lexer<'a> {
 
     /// Get the next token using an explicit lexical expectation for ambiguous cases.
     /// For non-default contexts (QuoteLike), this expectation is ignored.
-    pub fn next_token_with(&mut self, expect: LexMode) -> Option<(SyntaxKind, &'a str)> {
+    pub fn next_token_with(&mut self, expect: LexContext) -> Option<(SyntaxKind, &'a str)> {
         let override_ctx = Some(expect);
         self.next_token_internal(override_ctx)
     }
@@ -1116,7 +1116,7 @@ impl<'a> Lexer<'a> {
     /// Peek the next non-trivia token using a given lexical expectation.
     /// This does not mutate the original lexer state.
     #[must_use]
-    pub fn peek_non_trivia_with(&self, expect: LexMode) -> Option<(SyntaxKind, &'a str)> {
+    pub fn peek_non_trivia_with(&self, expect: LexContext) -> Option<(SyntaxKind, &'a str)> {
         let mut cloned = self.clone();
         let override_ctx = Some(expect);
         // Iterate tokens using the internal single-step with override until non-trivia
@@ -1135,7 +1135,7 @@ impl<'a> Lexer<'a> {
     /// Peek the next token (including trivia) using a given lexical expectation.
     /// This does not mutate the original lexer state and does not skip trivia.
     #[must_use]
-    pub fn peek_with(&self, expect: LexMode) -> Option<(SyntaxKind, &'a str)> {
+    pub fn peek_with(&self, expect: LexContext) -> Option<(SyntaxKind, &'a str)> {
         let mut cloned = self.clone();
         let override_ctx = Some(expect);
         cloned.next_token_internal(override_ctx)
@@ -1144,12 +1144,12 @@ impl<'a> Lexer<'a> {
     /// Convenience: default expectation is Value
     #[must_use]
     pub fn peek_non_trivia(&self) -> Option<(SyntaxKind, &'a str)> {
-        self.peek_non_trivia_with(LexMode::Value)
+        self.peek_non_trivia_with(LexContext::Value)
     }
 
     /// Convenience: default expectation is Value
     pub fn next_token_default(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        self.next_token_with(LexMode::Value)
+        self.next_token_with(LexContext::Value)
     }
 }
 
