@@ -91,6 +91,76 @@ fn test_increment_decrement_formatting() {
 }
 
 #[test]
+fn test_increment_decrement_comprehensive() {
+    let cases = [
+        // Basic prefix and postfix
+        ("$x++;", "$x++;\n"),
+        ("++$x;", "++$x;\n"),
+        ("$x--;", "$x--;\n"),
+        ("--$x;", "--$x;\n"),
+        // With complex variables
+        ("$array[0]++;", "$array[0]++;\n"),
+        ("++$hash{key};", "++$hash{key};\n"),
+        ("$obj->method--;", "$obj->method --;\n"), // Current behavior (spacing issue)
+        ("--$ref->[0];", "--$ref->[0];\n"),
+        // In expressions
+        ("my $result = $i++ * 2;", "my $result = $i++ * 2;\n"),
+        ("my $result = ++$i * 2;", "my $result = ++$i * 2;\n"),
+        ("my $result = $i-- / 3;", "my $result = $i-- / 3;\n"),
+        ("my $result = --$i / 3;", "my $result = --$i / 3;\n"),
+        // Spacing around operators
+        ("$a+$b++;", "$a + $b++;\n"),
+        ("++$a+$b;", "++$a + $b;\n"),
+        ("$a-$b--;", "$a - $b--;\n"),
+        ("--$a-$b;", "--$a - $b;\n"),
+        // Combined with other postfix operations (but not chained after ++)
+        ("$obj->method()++;", "$obj->method()++;\n"),
+        ("++$array[$index];", "++$array[$index];\n"),
+        ("$hash{$key}--;", "$hash{$key} --;\n"), // Current behavior (spacing issue)
+        ("--$ref->{attr};", "--$ref->{attr};\n"),
+        // Parenthesized expressions
+        ("($x)++;", "($x)++;\n"),
+        ("++($x);", "++($x);\n"),
+        ("($x)--;", "($x)--;\n"),
+        ("--($x);", "--($x);\n"),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
+fn test_increment_decrement_no_chaining() {
+    // These should parse and format correctly because they're not chaining
+    let valid_cases = [
+        ("$i++; $j++;", "$i++;\n$j++;\n"),
+        ("++$i; --$j;", "++$i;\n--$j;\n"),
+        ("$obj->method(); $i++;", "$obj->method();\n$i++;\n"),
+    ];
+    check_formatting_cases(&valid_cases);
+
+    // Test that invalid chaining expressions fail to parse correctly
+    // These cases should NOT format as if they were valid chaining
+    use crate::parse_perl;
+
+    // Test that $i+++ parses as ($i++) + (empty), not as chained postfix
+    let (_syntax, errors) = parse_perl("$i+++");
+    // Should have parse errors because +++ is not valid
+    assert!(!errors.is_empty(), "Expected parse errors for '$i+++'");
+
+    // Test that $i++->method doesn't parse as method call on increment result
+    let (_syntax, errors) = parse_perl("$i++->method()");
+    // Should have parse errors because you can't call methods on increment result
+    assert!(
+        !errors.is_empty(),
+        "Expected parse errors for '$i++->method()'"
+    );
+
+    // Test that $i++[0] doesn't parse as array access on increment result
+    let (_syntax, errors) = parse_perl("$i++[0]");
+    // Should have parse errors because you can't index increment result
+    assert!(!errors.is_empty(), "Expected parse errors for '$i++[0]'");
+}
+
+#[test]
 fn test_for_stmt_formatting() {
     let input = "for my$var(@list){my$x=1;print$x;}";
     let formatted = format_and_assert(input);

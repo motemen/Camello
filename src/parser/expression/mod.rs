@@ -277,6 +277,7 @@ impl Parser<'_> {
                     self.bump_op(); // consume ++ or --
                     self.skip_trivia();
                     self.builder.finish_node();
+                    break;
                 }
                 Some(SyntaxKind::ARROW) => {
                     // After '->', the next token is a value (method name, '{', '(', etc.)
