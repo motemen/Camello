@@ -846,14 +846,14 @@ impl<'a> Lexer<'a> {
                 let remainder = self.logos_lexer.remainder();
 
                 // Check what follows 's' after optional whitespace
-                let chars = remainder.chars();
-                for c in chars {
+                let mut iter = remainder.chars().peekable();
+                while let Some(&c) = iter.peek() {
                     if c.is_whitespace() {
+                        iter.next();
                         continue;
                     }
-
                     // If first non-whitespace char is alphanumeric or sigil, it's likely a function call
-                    if c.is_alphanumeric() || c == '$' || c == '@' || c == '%' {
+                    if c.is_alphanumeric() || matches!(c, '$' | '@' | '%') {
                         return SyntaxKind::IDENT;
                     }
                     // Otherwise, it's likely substitution
@@ -864,9 +864,30 @@ impl<'a> Lexer<'a> {
                 SyntaxKind::IDENT
             }
             DisambiguationContext::ExpectingOperator => {
-                // When expecting an operator, s is the substitution operator
-                // Examples: "$str s/old/new/"
-                SyntaxKind::S_KW
+                // In operator context, prefer treating `s` as substitution if a delimiter can follow,
+                // except when immediately followed by fat comma (=>), where it should be an identifier.
+                let remainder = self.logos_lexer.remainder();
+                let mut iter = remainder.chars().peekable();
+                // Skip optional whitespace
+                while let Some(&c) = iter.peek() {
+                    if c.is_whitespace() { iter.next(); } else { break; }
+                }
+                // Check for fat comma '=>'
+                if let (Some('='), Some('>')) = (iter.peek().copied(), {
+                    let mut tmp = iter.clone();
+                    tmp.next();
+                    tmp.peek().copied()
+                }) {
+                    return SyntaxKind::IDENT;
+                }
+                // Check if next non-whitespace char could be a common delimiter
+                if let Some(next) = iter.peek().copied() {
+                    if matches!(next, '/' | '(' | '[' | '{' | '<' | '|' | '#') {
+                        return SyntaxKind::S_KW;
+                    }
+                }
+                // Fallback: treat as identifier
+                SyntaxKind::IDENT
             }
         }
     }
