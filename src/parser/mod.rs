@@ -156,6 +156,9 @@ impl<'a> Parser<'a> {
         if let Some((kind, text)) = self.lexer.next_token_default() {
             self.builder.token(kind.into(), text);
             self.current_pos += text.len();
+        } else {
+            // No token to consume; possibly at end of input
+            self.error("Unexpected end of input");
         }
     }
 
@@ -164,6 +167,9 @@ impl<'a> Parser<'a> {
         if let Some((kind, text)) = self.lexer.next_token_with_context(context) {
             self.builder.token(kind.into(), text);
             self.current_pos += text.len();
+        } else {
+            // No token to consume; possibly at end of input
+            self.error("Unexpected end of input");
         }
     }
 
