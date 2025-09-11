@@ -242,7 +242,8 @@ impl Parser<'_> {
     }
 
     fn current_delimiter(&self) -> Option<char> {
-        if let Some((SyntaxKind::DELIMITER, text)) = self.current_token {
+        // Do NOT skip trivia here; callers should handle trivia explicitly.
+        if let Some((SyntaxKind::DELIMITER, text)) = self.lexer.peek_token() {
             let mut chars = text.chars();
             if let (Some(delimiter), None) = (chars.next(), chars.next()) {
                 return Some(delimiter);
@@ -253,7 +254,10 @@ impl Parser<'_> {
 
     /// Expect a DELIMITER token with specific text
     fn expect_delimiter(&mut self, delimiter: char) {
+        // Ensure any trivia before the delimiter is consumed
+        self.skip_trivia();
         if self.at_delimiter(delimiter) {
+            // Consume the actual delimiter token
             self.bump();
         } else {
             let msg = format!(

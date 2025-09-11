@@ -2,9 +2,9 @@ pub mod precedence;
 pub mod primary;
 pub mod quoted;
 
+use crate::lexer::LexExpectation;
 use crate::SyntaxKind;
 use precedence::{get_operator_info, OperatorInfo, Precedence};
-use crate::lexer::LexExpectation;
 
 use super::Parser;
 
@@ -69,7 +69,10 @@ impl Parser<'_> {
         // Parse binary operators with precedence climbing
         loop {
             // Check if we have a binary operator or ternary operator
-            let Some(current_kind) = self.current_kind() else {
+            let Some(current_kind) = self
+                .peek_non_trivia_token_with(LexExpectation::Operator)
+                .map(|(k, _)| k)
+            else {
                 break;
             };
 
@@ -86,8 +89,8 @@ impl Parser<'_> {
                 self.builder
                     .start_node_at(checkpoint, SyntaxKind::TERNARY_EXPR.into());
 
-                // Consume the ? operator; next token should be a Value
-                self.bump_value();
+                // Consume the ? operator as Operator; RHS will be Value
+                self.bump_op();
                 self.skip_trivia();
 
                 // Parse the true expression with ternary precedence (right associative)
@@ -97,8 +100,8 @@ impl Parser<'_> {
 
                 // Expect the : operator
                 if self.at(SyntaxKind::COLON) {
-                    // Consume ':'; next token should be a Value
-                    self.bump_value();
+                    // Consume ':' as Operator; next will be Value
+                    self.bump_op();
                     self.skip_trivia();
                 } else {
                     self.error("Expected ':' after true expression in ternary operator");
@@ -116,7 +119,7 @@ impl Parser<'_> {
             // Check if this is a compound assignment operator (e.g., +=, ||=, etc.)
             let is_compound_assignment = current_kind.is_compoundable_operator() && {
                 // Look ahead to see if there's an '=' after the current operator
-                self.peek_non_trivia_token_with(LexExpectation::Operator)
+                self.peek_second_non_trivia_with(LexExpectation::Operator)
                     .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::EQ)
             };
 
@@ -146,17 +149,15 @@ impl Parser<'_> {
 
             let op_checkpoint = self.builder.checkpoint();
 
-            // Consume the operator; next token should be read as a Value (RHS)
-            self.bump_value();
+            // Consume the operator with Operator expectation; RHS will be read as Value by default
+            self.bump_op();
 
             if is_compound_assignment {
                 // Handle compound assignment operators (e.g., +=, ||=, etc.)
-                self.builder.start_node_at(
-                    op_checkpoint,
-                    SyntaxKind::COMPOUND_ASSIGNMENT.into(),
-                );
-                // Consume '='; next token should be a Value (RHS)
-                self.bump_value();
+                self.builder
+                    .start_node_at(op_checkpoint, SyntaxKind::COMPOUND_ASSIGNMENT.into());
+                // Consume '=' as an operator; RHS will be read as Value by default
+                self.bump_op();
                 self.builder.finish_node();
             }
 
@@ -407,8 +408,8 @@ impl Parser<'_> {
                 .start_node_at(start, SyntaxKind::EXPR_LIST.into());
 
             while self.at_any(&[SyntaxKind::COMMA, SyntaxKind::FAT_COMMA]) {
-                    // After a separator, next should be a value
-                    self.bump_value(); // , or =>
+                // After a separator, next should be a value
+                self.bump_value(); // , or =>
                 self.skip_trivia();
 
                 // Check for trailing comma - if we're at the end of a list context, don't require another expression
@@ -457,7 +458,7 @@ impl Parser<'_> {
             Some(SyntaxKind::ASTERISK) => {
                 // Handle typeglob expressions specially
                 // Check if this is followed by a brace or identifier (typeglob syntax)
-                let next_token = self.peek_non_trivia_token_with(LexExpectation::Value);
+                let next_token = self.peek_second_non_trivia_with(LexExpectation::Value);
                 if matches!(
                     next_token,
                     Some((SyntaxKind::L_BRACE | SyntaxKind::IDENT, _))
