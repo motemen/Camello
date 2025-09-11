@@ -1,5 +1,5 @@
 use crate::{
-    lexer::{Lexer, LexerContext},
+    lexer::{LexExpectation, Lexer, LexerContext},
     SyntaxKind,
 };
 use miette::{Diagnostic, SourceSpan};
@@ -152,6 +152,25 @@ impl<'a> Parser<'a> {
         self.current_token = self.lexer.next_token();
     }
 
+    /// Consume current token and fetch next using an explicit lexical expectation
+    fn bump_with_expectation(&mut self, expect: LexExpectation) {
+        if let Some((kind, text)) = self.current_token.take() {
+            self.builder.token(kind.into(), text);
+            self.current_pos += text.len();
+        }
+        self.current_token = self.lexer.next_token_with(expect);
+    }
+
+    /// Convenience: after consuming current token, expect a Value next
+    fn bump_value(&mut self) {
+        self.bump_with_expectation(LexExpectation::Value)
+    }
+
+    /// Convenience: after consuming current token, expect an Operator next
+    fn bump_op(&mut self) {
+        self.bump_with_expectation(LexExpectation::Operator)
+    }
+
     fn bump_with_kind(&mut self, syntax_kind: SyntaxKind) {
         if let Some((_, text)) = self.current_token.take() {
             self.builder.token(syntax_kind.into(), text);
@@ -207,6 +226,27 @@ impl<'a> Parser<'a> {
     /// Peek at the next non-trivia token without consuming it
     fn peek_non_trivia_token(&self) -> Option<(SyntaxKind, &'a str)> {
         self.lexer.peek_non_trivia_token()
+    }
+
+    /// Peek at the next non-trivia token with an explicit lexical expectation
+    /// This is used to disambiguate contexts like operator lookahead.
+    fn peek_non_trivia_token_with(
+        &self,
+        expect: LexExpectation,
+    ) -> Option<(SyntaxKind, &'a str)> {
+        self.lexer.peek_non_trivia_with(expect)
+    }
+
+    /// Convenience: check upcoming token in Value context
+    fn at_value(&self, kind: SyntaxKind) -> bool {
+        self.peek_non_trivia_token_with(LexExpectation::Value)
+            .is_some_and(|(k, _)| k == kind)
+    }
+
+    /// Convenience: check upcoming token in Operator context
+    fn at_op(&self, kind: SyntaxKind) -> bool {
+        self.peek_non_trivia_token_with(LexExpectation::Operator)
+            .is_some_and(|(k, _)| k == kind)
     }
 
     /// Check if any of the given token kinds appears next (skipping trivia)
