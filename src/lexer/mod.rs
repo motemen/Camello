@@ -118,6 +118,12 @@ pub enum Token {
     #[token("->")]
     Arrow,
 
+    #[token("<<")]
+    ShiftLeft,
+
+    #[token(">>")]
+    ShiftRight,
+
     #[token(">=")]
     GreaterEqual,
 
@@ -138,6 +144,9 @@ pub enum Token {
 
     #[token("!")]
     LogicalNot,
+
+    #[token("~")]
+    Tilde,
 
     #[token("//")]
     DefinedOr,
@@ -164,6 +173,9 @@ pub enum Token {
     Dot,
 
     // Multiplicative operators
+    #[token("**")]
+    Exponent,
+
     #[token("*")]
     Star,
 
@@ -242,11 +254,14 @@ impl Token {
             Token::Dot => SyntaxKind::DOT,
             Token::Arrow => SyntaxKind::ARROW,
             Token::FatComma => SyntaxKind::FAT_COMMA,
+            Token::Exponent => SyntaxKind::EXPONENT,
             Token::Star => SyntaxKind::STAR,
             Token::Slash => SyntaxKind::SLASH,
             Token::Percent => SyntaxKind::MODULO,
             Token::Greater => SyntaxKind::GT,
             Token::Less => SyntaxKind::LT,
+            Token::ShiftLeft => SyntaxKind::SHIFT_LEFT,
+            Token::ShiftRight => SyntaxKind::SHIFT_RIGHT,
             Token::Caret => SyntaxKind::CARET, // Will be disambiguated
             Token::Pipe => SyntaxKind::BITWISE_OR,
             Token::GreaterEqual => SyntaxKind::GE,
@@ -258,6 +273,7 @@ impl Token {
             Token::LogicalAnd => SyntaxKind::LOGICAL_AND,
             Token::LogicalOr => SyntaxKind::LOGICAL_OR,
             Token::LogicalNot => SyntaxKind::LOGICAL_NOT,
+            Token::Tilde => SyntaxKind::BITWISE_NOT,
             Token::DefinedOr => SyntaxKind::DEFINED_OR,
             Token::Spaceship => SyntaxKind::SPACESHIP,
             Token::Whitespace => SyntaxKind::WHITESPACE,

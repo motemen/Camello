@@ -18,8 +18,10 @@ impl Precedence {
     pub const COMPARISON: Precedence = Precedence(40); // ==, !=, <, >, <=, >=, eq, ne, lt, gt, le, ge, cmp, <=>
     pub const BITWISE_OR: Precedence = Precedence(45); // |, ^ (bitwise OR and XOR)
     pub const BITWISE_AND: Precedence = Precedence(47); // & (bitwise AND)
+    pub const BIT_SHIFT: Precedence = Precedence(48); // <<, >>
     pub const ADDITIVE: Precedence = Precedence(50); // +, -, .
     pub const MULTIPLICATIVE: Precedence = Precedence(60); // *, /, %, x
+    pub const EXPONENT: Precedence = Precedence(63); // ** (exponentiation)
     pub const PREFIX: Precedence = Precedence(65); // ! (logical not prefix)
     pub const REGEX_MATCH: Precedence = Precedence(70); // =~, !~
     pub const POSTFIX: Precedence = Precedence(80); // ->, [], {}, ()
@@ -112,10 +114,24 @@ pub fn get_operator_info(kind: SyntaxKind) -> Option<OperatorInfo> {
             SyntaxKind::INFIX_EXPR,
         )),
 
+        // Bit shift operators
+        SyntaxKind::SHIFT_LEFT | SyntaxKind::SHIFT_RIGHT => Some(OperatorInfo::new(
+            Precedence::BIT_SHIFT,
+            false,
+            SyntaxKind::INFIX_EXPR,
+        )),
+
         // Multiplicative operators
         SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::MODULO | SyntaxKind::X => Some(
             OperatorInfo::new(Precedence::MULTIPLICATIVE, false, SyntaxKind::INFIX_EXPR),
         ),
+
+        // Exponentiation operator (right associative)
+        SyntaxKind::EXPONENT => Some(OperatorInfo::new(
+            Precedence::EXPONENT,
+            true,
+            SyntaxKind::INFIX_EXPR,
+        )),
 
         // Bitwise operators
         SyntaxKind::BITWISE_AND => Some(OperatorInfo::new(

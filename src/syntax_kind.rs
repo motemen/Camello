@@ -122,11 +122,18 @@ pub enum SyntaxKind {
     ARROW,             // ->
     FAT_COMMA,         // =>
 
+    // Exponentiation operator
+    EXPONENT, // **
+
     // Multiplicative operators
     STAR,   // *
     SLASH,  // /
     MODULO, // % (modulo operator)
     X,      // x (repetition)
+
+    // Bit shift operators
+    SHIFT_LEFT,  // <<
+    SHIFT_RIGHT, // >>
 
     // Comparison operators
     GT,      // >
@@ -156,6 +163,7 @@ pub enum SyntaxKind {
     BITWISE_AND, // &
     BITWISE_OR,  // |
     BITWISE_XOR, // ^
+    BITWISE_NOT, // ~
 
     // Low-precedence logical operators
     NOT_KW, // not
@@ -348,10 +356,13 @@ impl SyntaxKind {
                 | SyntaxKind::DOT
                 | SyntaxKind::ARROW
                 | SyntaxKind::FAT_COMMA
+                | SyntaxKind::EXPONENT
                 | SyntaxKind::STAR
                 | SyntaxKind::SLASH
                 | SyntaxKind::MODULO
                 | SyntaxKind::X
+                | SyntaxKind::SHIFT_LEFT
+                | SyntaxKind::SHIFT_RIGHT
                 // Comparisons
                 | SyntaxKind::GT
                 | SyntaxKind::LT
@@ -375,6 +386,10 @@ impl SyntaxKind {
                 | SyntaxKind::XOR_KW
                 | SyntaxKind::DEFINED_OR
                 | SyntaxKind::SPACESHIP
+                | SyntaxKind::BITWISE_AND
+                | SyntaxKind::BITWISE_OR
+                | SyntaxKind::BITWISE_XOR
+                | SyntaxKind::BITWISE_NOT
                 // Regex and file-test
                 | SyntaxKind::FILE_TEST_OP
                 | SyntaxKind::REGEX_MATCH
@@ -419,6 +434,9 @@ impl SyntaxKind {
                 | SyntaxKind::BITWISE_AND
                 | SyntaxKind::BITWISE_OR
                 | SyntaxKind::BITWISE_XOR
+                | SyntaxKind::EXPONENT
+                | SyntaxKind::SHIFT_LEFT
+                | SyntaxKind::SHIFT_RIGHT
                 | SyntaxKind::PLUS
                 | SyntaxKind::MINUS
                 | SyntaxKind::STAR
