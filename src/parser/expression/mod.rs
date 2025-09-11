@@ -293,7 +293,12 @@ impl Parser<'_> {
         initial_checkpoint: rowan::Checkpoint,
     ) -> bool {
         loop {
-            match self.current_kind() {
+            // Always look ahead in Operator context for postfix continuations
+            let next_kind_op = self
+                .peek_non_trivia_token_with(LexContext::Operator)
+                .map(|(k, _)| k);
+
+            match next_kind_op {
                 Some(SyntaxKind::INCREMENT) => {
                     self.parse_postfix_op(initial_checkpoint, SyntaxKind::POSTFIX_INCREMENT);
                 }

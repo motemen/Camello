@@ -4,11 +4,11 @@ use crate::SyntaxKind;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TokenSpacing {
     /// Whether this token requires a space before it (in general)
-    pub space_before: SpaceRule,
+    space_before: SpaceRule,
     /// Whether this token requires a space after it (in general)
-    pub space_after: SpaceRule,
+    space_after: SpaceRule,
     /// Token category for contextual spacing rules
-    pub category: TokenCategory,
+    category: TokenCategory,
 }
 
 /// Rules for spacing around tokens
@@ -39,11 +39,7 @@ pub enum TokenCategory {
 }
 
 impl TokenSpacing {
-    pub const fn new(
-        space_before: SpaceRule,
-        space_after: SpaceRule,
-        category: TokenCategory,
-    ) -> Self {
+    const fn new(space_before: SpaceRule, space_after: SpaceRule, category: TokenCategory) -> Self {
         Self {
             space_before,
             space_after,
@@ -52,7 +48,7 @@ impl TokenSpacing {
     }
 
     /// Convenient constructors for common patterns
-    pub const fn binary_op() -> Self {
+    const fn binary_op() -> Self {
         Self::new(
             SpaceRule::Always,
             SpaceRule::Always,
@@ -60,7 +56,7 @@ impl TokenSpacing {
         )
     }
 
-    pub const fn prefix_op() -> Self {
+    const fn prefix_op() -> Self {
         Self::new(
             SpaceRule::Contextual,
             SpaceRule::Never,
@@ -68,7 +64,7 @@ impl TokenSpacing {
         )
     }
 
-    pub const fn postfix_op() -> Self {
+    const fn postfix_op() -> Self {
         Self::new(
             SpaceRule::Never,
             SpaceRule::Contextual,
@@ -76,7 +72,7 @@ impl TokenSpacing {
         )
     }
 
-    pub const fn keyword() -> Self {
+    const fn keyword() -> Self {
         Self::new(
             SpaceRule::Contextual,
             SpaceRule::Always,
