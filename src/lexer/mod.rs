@@ -928,79 +928,24 @@ impl<'a> Lexer<'a> {
     fn disambiguate_with(
         &self,
         token: Token,
-        text: &str,
+        _text: &str,
         expect: LexMode,
     ) -> SyntaxKind {
         match token {
-            Token::Ident => {
-                // Common keywords that need disambiguation regardless of context
-                match text {
-                    "s" => self.disambiguate_s(expect),
-                    "tr" => self.disambiguate_tr(expect),
-                    "y" => self.disambiguate_y(expect),
-                    "x" => Self::disambiguate_x(expect),
-                    "eq" | "ne" | "gt" | "lt" | "ge" | "le" | "cmp" => {
-                        Self::disambiguate_str_op(expect, text)
-                    }
-                    "not" | "and" | "or" | "xor" => {
-                        Self::disambiguate_logical_op(expect, text)
-                    }
-                    _ => {
-                        // Handle context-sensitive keywords
-                        // Normal context - all keywords are recognized
-                        match text {
-                            "sub" => SyntaxKind::SUB_KW,
-                            "my" => SyntaxKind::MY_KW,
-                            "our" => SyntaxKind::OUR_KW,
-                            "state" => SyntaxKind::STATE_KW,
-                            "local" => SyntaxKind::LOCAL_KW,
-                            "if" => SyntaxKind::IF_KW,
-                            "unless" => SyntaxKind::UNLESS_KW,
-                            "elsif" => SyntaxKind::ELSIF_KW,
-                            "else" => SyntaxKind::ELSE_KW,
-                            "for" => SyntaxKind::FOR_KW,
-                            "foreach" => SyntaxKind::FOREACH_KW,
-                            "while" => SyntaxKind::WHILE_KW,
-                            "package" => SyntaxKind::PACKAGE_KW,
-                            "qw" => SyntaxKind::QW_KW,
-                            "q" => SyntaxKind::Q_KW,
-                            "qq" => SyntaxKind::QQ_KW,
-                            "qx" => SyntaxKind::QX_KW,
-                            "m" => SyntaxKind::M_KW,
-                            "qr" => SyntaxKind::QR_KW,
-                            "use" => SyntaxKind::USE_KW,
-                            "no" => SyntaxKind::NO_KW,
-                            "return" => SyntaxKind::RETURN_KW,
-                            "undef" => SyntaxKind::UNDEF_KW,
-                            _ => SyntaxKind::IDENT,
-                        }
-                    }
-                }
-            }
-            Token::Percent => {
-                Self::disambiguate_percent(expect)
-            }
-            Token::Star => {
-                Self::disambiguate_star(expect)
-            }
-            Token::Slash => {
-                Self::disambiguate_slash(expect)
-            }
+            Token::Percent => Self::disambiguate_percent(expect),
+            Token::Star => Self::disambiguate_star(expect),
+            Token::Slash => Self::disambiguate_slash(expect),
             Token::Ampersand => Self::disambiguate_ampersand(expect),
             Token::Caret => Self::disambiguate_caret(expect),
-            Token::Pipe => {
-                // Pipe is always bitwise OR in current context
-                SyntaxKind::BITWISE_OR
-            }
-            // Bracket-like delimiters - simplified for default context only
+            Token::Pipe => SyntaxKind::BITWISE_OR,
+            // Delimiters and other simple tokens
             Token::LParen
             | Token::LBrace
             | Token::LBracket
             | Token::RParen
             | Token::RBrace
-            | Token::RBracket => token.to_syntax_kind(),
-            // Other tokens - no special handling needed for default context
-            Token::Greater
+            | Token::RBracket
+            | Token::Greater
             | Token::Less
             | Token::Plus
             | Token::Minus
@@ -1123,161 +1068,9 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn disambiguate_s(&self, expect: LexMode) -> SyntaxKind {
-        match expect {
-            LexMode::Value => {
-                // Look ahead to determine if this is s/// substitution or a bareword function call
-                let remainder = self.logos_lexer.remainder();
+    // Removed: logical word operator disambiguation; mapping handled via keyword classification
 
-                // Check what follows 's' after optional whitespace
-                let mut iter = remainder.chars().peekable();
-                while let Some(&c) = iter.peek() {
-                    if c.is_whitespace() {
-                        iter.next();
-                        continue;
-                    }
-                    // If first non-whitespace char is alphanumeric or sigil, it's likely a function call
-                    if c.is_alphanumeric() || matches!(c, '$' | '@' | '%') {
-                        return SyntaxKind::IDENT;
-                    }
-                    // Otherwise, it's likely substitution
-                    return SyntaxKind::S_KW;
-                }
-
-                // If we reach end of input after 's', assume function call
-                SyntaxKind::IDENT
-            }
-            LexMode::Operator => {
-                // In operator context, prefer treating `s` as substitution if a delimiter can follow,
-                // except when immediately followed by fat comma (=>), where it should be an identifier.
-                let remainder = self.logos_lexer.remainder();
-                let mut iter = remainder.chars().peekable();
-                // Skip optional whitespace
-                while let Some(&c) = iter.peek() {
-                    if c.is_whitespace() { iter.next(); } else { break; }
-                }
-                // Check for fat comma '=>'
-                if let (Some('='), Some('>')) = (iter.peek().copied(), {
-                    let mut tmp = iter.clone();
-                    tmp.next();
-                    tmp.peek().copied()
-                }) {
-                    return SyntaxKind::IDENT;
-                }
-                // Check if next non-whitespace char could be a common delimiter
-                if let Some(next) = iter.peek().copied() {
-                    if matches!(next, '/' | '(' | '[' | '{' | '<' | '|' | '#') {
-                        return SyntaxKind::S_KW;
-                    }
-                }
-                // Fallback: treat as identifier
-                SyntaxKind::IDENT
-            }
-        }
-    }
-
-    fn disambiguate_logical_op(expect: LexMode, op: &str) -> SyntaxKind {
-        match expect {
-            LexMode::Operator => {
-                // When expecting an operator, not/and/or/xor are logical operators
-                match op {
-                    "not" => SyntaxKind::NOT_KW,
-                    "and" => SyntaxKind::AND_KW,
-                    "or" => SyntaxKind::OR_KW,
-                    "xor" => SyntaxKind::XOR_KW,
-                    _ => SyntaxKind::IDENT, // Handle unknown ops gracefully
-                }
-            }
-            LexMode::Value => {
-                // In ExpectingValue context, they are identifiers
-                // Examples: "sub not", "my $and", "or die"
-                SyntaxKind::IDENT
-            }
-        }
-    }
-
-    fn disambiguate_tr(&self, expect: LexMode) -> SyntaxKind {
-        match expect {
-            LexMode::Value => {
-                // When expecting a value, check what follows tr
-                let remainder = self.logos_lexer.remainder();
-
-                // Skip whitespace to see what comes next
-                for c in remainder.chars() {
-                    if c.is_whitespace() {
-                        continue;
-                    }
-                    // If first non-whitespace char is alphanumeric or sigil, it's likely a function call
-                    if c.is_alphanumeric() || c == '$' || c == '@' || c == '%' {
-                        return SyntaxKind::IDENT;
-                    } else if matches!(c, '/' | '(' | '[') {
-                        // Definitely tr operator delimiters
-                        return SyntaxKind::TR_KW;
-                    } else if c == '{' {
-                        // Special case: { could be either a tr delimiter or a block start
-                        // Simple heuristic: if we can find pattern like {content}{content}, it's likely tr operator
-                        if remainder.matches('{').count() >= 2 {
-                            return SyntaxKind::TR_KW;
-                        }
-                        // Only one brace group, likely a function block
-                        return SyntaxKind::IDENT;
-                    }
-                    // For other non-alphanumeric characters, it's likely an identifier
-                    return SyntaxKind::IDENT;
-                }
-
-                // If we reach end of input after 'tr', assume identifier
-                SyntaxKind::IDENT
-            }
-            LexMode::Operator => {
-                // When expecting an operator, tr is the transliteration operator
-                // Examples: "$str tr/a-z/A-Z/"
-                SyntaxKind::TR_KW
-            }
-        }
-    }
-
-    fn disambiguate_y(&self, expect: LexMode) -> SyntaxKind {
-        // y is an alias for tr, so use the same logic but return Y_KW
-        match expect {
-            LexMode::Value => {
-                // When expecting a value, check what follows y
-                let remainder = self.logos_lexer.remainder();
-
-                // Skip whitespace to see what comes next
-                for c in remainder.chars() {
-                    if c.is_whitespace() {
-                        continue;
-                    }
-                    // If first non-whitespace char is alphanumeric or sigil, it's likely a function call
-                    if c.is_alphanumeric() || c == '$' || c == '@' || c == '%' {
-                        return SyntaxKind::IDENT;
-                    } else if matches!(c, '/' | '(' | '[') {
-                        // Definitely y operator delimiters
-                        return SyntaxKind::Y_KW;
-                    } else if c == '{' {
-                        // Special case: { could be either a y delimiter or a block start
-                        // Simple heuristic: if we can find pattern like {content}{content}, it's likely y operator
-                        if remainder.matches('{').count() >= 2 {
-                            return SyntaxKind::Y_KW;
-                        }
-                        // Only one brace group, likely a function block
-                        return SyntaxKind::IDENT;
-                    }
-                    // For other non-alphanumeric characters, it's likely an identifier
-                    return SyntaxKind::IDENT;
-                }
-
-                // If we reach end of input after 'y', assume identifier
-                SyntaxKind::IDENT
-            }
-            LexMode::Operator => {
-                // When expecting an operator, y is the transliteration operator
-                // Examples: "$str y/a-z/A-Z/"
-                SyntaxKind::Y_KW
-            }
-        }
-    }
+    // Removed s/tr/y disambiguators; quote-like classification uses fat-comma and delimiter lookahead
 
     fn try_consume_regex_literal(&mut self) -> Option<(SyntaxKind, &'a str)> {
         let remainder = self.logos_lexer.remainder();
