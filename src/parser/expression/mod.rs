@@ -2,7 +2,7 @@ pub mod precedence;
 pub mod primary;
 pub mod quoted;
 
-use crate::lexer::LexExpectation;
+use crate::lexer::LexMode;
 use crate::SyntaxKind;
 use precedence::{get_operator_info, OperatorInfo, Precedence};
 
@@ -13,7 +13,7 @@ impl Parser<'_> {
     /// or treated as an identifier. Returns true if the next non-trivia token is a DELIMITER
     /// and not a fat comma (=>).
     fn should_parse_quote_like(&self) -> bool {
-        if let Some((next_kind, _)) = self.peek_second_non_trivia_with(LexExpectation::Value) {
+        if let Some((next_kind, _)) = self.peek_second_non_trivia_with(LexMode::Value) {
             if next_kind == SyntaxKind::FAT_COMMA {
                 return false;
             }
@@ -31,7 +31,7 @@ impl Parser<'_> {
         let function_name = self.current_text_value().unwrap_or("").to_string();
 
         if coerce_current_to_ident {
-            self.bump_with_kind(SyntaxKind::IDENT);
+                self.bump_as(SyntaxKind::IDENT);
         } else {
             // Might be a qualified identifier, so use parse_identifier_or_qualified
             self.parse_identifier_or_qualified();
@@ -144,7 +144,7 @@ impl Parser<'_> {
         loop {
             // Check if we have a binary operator or ternary operator
             let Some(current_kind) = self
-                .peek_non_trivia_token_with(LexExpectation::Operator)
+                .peek_non_trivia_token_with(LexMode::Operator)
                 .map(|(k, _)| k)
             else {
                 break;
@@ -193,7 +193,7 @@ impl Parser<'_> {
             // Check if this is a compound assignment operator (e.g., +=, ||=, etc.)
             let is_compound_assignment = current_kind.is_compoundable_operator() && {
                 // Look ahead to see if there's an '=' after the current operator
-                self.peek_second_non_trivia_with(LexExpectation::Operator)
+                self.peek_second_non_trivia_with(LexMode::Operator)
                     .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::EQ)
             };
 
@@ -547,7 +547,7 @@ impl Parser<'_> {
             SyntaxKind::ASTERISK => {
                 // Handle typeglob expressions specially
                 // Check if this is followed by a brace or identifier (typeglob syntax)
-                let next_token = self.peek_second_non_trivia_with(LexExpectation::Value);
+                let next_token = self.peek_second_non_trivia_with(LexMode::Value);
                 if matches!(
                     next_token,
                     Some((SyntaxKind::L_BRACE | SyntaxKind::IDENT, _))
@@ -570,7 +570,7 @@ impl Parser<'_> {
             SyntaxKind::PLUS => {
                 // Unary plus prefix operator
                 self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
-                self.bump_with_kind(SyntaxKind::UNARY_PLUS);
+                self.bump_as(SyntaxKind::UNARY_PLUS);
                 self.skip_trivia();
 
                 // Parse the operand with higher precedence
@@ -585,7 +585,7 @@ impl Parser<'_> {
             SyntaxKind::MINUS => {
                 // Unary minus prefix operator
                 self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
-                self.bump_with_kind(SyntaxKind::UNARY_MINUS);
+                self.bump_as(SyntaxKind::UNARY_MINUS);
                 self.skip_trivia();
 
                 // Parse the operand with higher precedence

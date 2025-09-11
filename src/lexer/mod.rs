@@ -252,7 +252,7 @@ impl Token {
 /// External lexical expectation provided by the parser to disambiguate
 /// only operator/value sensitive tokens in default contexts.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum LexExpectation {
+pub enum LexMode {
     /// Expecting a value, identifier, or sigil (after keywords, operators, sigils)
     Value,
     /// Expecting an operator (after identifiers, numbers, variables)
@@ -304,9 +304,9 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn derive_default_expectation(&self) -> LexExpectation {
+    fn derive_default_expectation(&self) -> LexMode {
         match self.last_non_trivia_kind {
-            None => LexExpectation::Value,
+            None => LexMode::Value,
             Some(k) => {
                 // After literals, identifiers, postfix deref, expect operator
                 if self.is_literal(k)
@@ -318,7 +318,7 @@ impl<'a> Lexer<'a> {
                             | SyntaxKind::POSTFIX_DEREF_SCALAR
                     )
                 {
-                    LexExpectation::Operator
+                    LexMode::Operator
                 } else if self.is_operator(k)
                     || matches!(
                         k,
@@ -328,10 +328,10 @@ impl<'a> Lexer<'a> {
                     || k.is_keyword()
                 {
                     // After operators, openings, commas, or keywords, expect a value
-                    LexExpectation::Value
+                    LexMode::Value
                 } else {
                     // Default to value for safety
-                    LexExpectation::Value
+                    LexMode::Value
                 }
             }
         }
@@ -374,7 +374,7 @@ impl<'a> Lexer<'a> {
     /// When `override_ctx` is provided, it influences only this single step.
     fn next_token_internal(
         &mut self,
-        override_ctx: Option<LexExpectation>,
+        override_ctx: Option<LexMode>,
     ) -> Option<(SyntaxKind, &'a str)> {
         // Serve any pending expanded tokens first
         if let Some((k, t)) = self.pending.pop_front() {
@@ -399,7 +399,7 @@ impl<'a> Lexer<'a> {
     /// Handle default context (Value | Operator): 通常ケースを担当
     fn handle_default_context_with(
         &mut self,
-        override_ctx: Option<LexExpectation>,
+        override_ctx: Option<LexMode>,
     ) -> Option<(SyntaxKind, &'a str)> {
         // Handle POD content at line start first
         if self.at_line_start {
@@ -418,7 +418,7 @@ impl<'a> Lexer<'a> {
         }
 
         // Handle special tokens when expecting a value
-        let is_value_context = matches!(override_ctx, Some(LexExpectation::Value));
+        let is_value_context = matches!(override_ctx, Some(LexMode::Value));
         if is_value_context {
             if let Some(result) = self.try_handle_expecting_value_context() {
                 let (syntax_kind, text) = result;
@@ -852,7 +852,7 @@ impl<'a> Lexer<'a> {
         &self,
         token: Token,
         text: &str,
-        expect: LexExpectation,
+        expect: LexMode,
     ) -> SyntaxKind {
         match token {
             Token::Ident => {
@@ -977,14 +977,14 @@ impl<'a> Lexer<'a> {
     }
 
     /// Disambiguate % between hash sigil and modulo operator
-    fn disambiguate_percent(expect: LexExpectation) -> SyntaxKind {
+    fn disambiguate_percent(expect: LexMode) -> SyntaxKind {
         match expect {
-            LexExpectation::Value => {
+            LexMode::Value => {
                 // When expecting a value, % is a sigil for a hash
                 // Examples: "my %hash", "{ key => %val }"
                 SyntaxKind::PERCENT
             }
-            LexExpectation::Operator => {
+            LexMode::Operator => {
                 // When expecting an operator, % is the modulo operator
                 // Examples: "@array % hash", "$var % other_var", "func() % 2"
                 SyntaxKind::MODULO
@@ -993,14 +993,14 @@ impl<'a> Lexer<'a> {
     }
 
     /// Disambiguate * between typeglob sigil and multiplication operator  
-    fn disambiguate_star(expect: LexExpectation) -> SyntaxKind {
+    fn disambiguate_star(expect: LexMode) -> SyntaxKind {
         match expect {
-            LexExpectation::Value => {
+            LexMode::Value => {
                 // When expecting a value, * is a typeglob sigil
                 // Examples: "my *glob", "*{$name}", "*STDIN"
                 SyntaxKind::ASTERISK
             }
-            LexExpectation::Operator => {
+            LexMode::Operator => {
                 // When expecting an operator, * is the multiplication operator
                 // Examples: "$a * $b", "func() * 2"
                 SyntaxKind::STAR
@@ -1008,9 +1008,9 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn disambiguate_str_op(expect: LexExpectation, op: &str) -> SyntaxKind {
+    fn disambiguate_str_op(expect: LexMode, op: &str) -> SyntaxKind {
         match expect {
-            LexExpectation::Operator => {
+            LexMode::Operator => {
                 // When expecting an operator, eq/ne are string comparison operators
                 match op {
                     "eq" => SyntaxKind::STR_EQ,
@@ -1023,7 +1023,7 @@ impl<'a> Lexer<'a> {
                     _ => SyntaxKind::IDENT, // Handle unknown ops gracefully
                 }
             }
-            LexExpectation::Value => {
+            LexMode::Value => {
                 // In ExpectingValue context, they are identifiers
                 // Examples: "sub eq", "my $ne"
                 SyntaxKind::IDENT
@@ -1031,14 +1031,14 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn disambiguate_x(expect: LexExpectation) -> SyntaxKind {
+    fn disambiguate_x(expect: LexMode) -> SyntaxKind {
         match expect {
-            LexExpectation::Value => {
+            LexMode::Value => {
                 // When expecting a value, x is an identifier
                 // Examples: "sub x", "$x", "my $x"
                 SyntaxKind::IDENT
             }
-            LexExpectation::Operator => {
+            LexMode::Operator => {
                 // When expecting an operator, x is the repetition operator
                 // Examples: "$str x 3", "'hello' x 2"
                 SyntaxKind::X
@@ -1046,9 +1046,9 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn disambiguate_s(&self, expect: LexExpectation) -> SyntaxKind {
+    fn disambiguate_s(&self, expect: LexMode) -> SyntaxKind {
         match expect {
-            LexExpectation::Value => {
+            LexMode::Value => {
                 // Look ahead to determine if this is s/// substitution or a bareword function call
                 let remainder = self.logos_lexer.remainder();
 
@@ -1070,7 +1070,7 @@ impl<'a> Lexer<'a> {
                 // If we reach end of input after 's', assume function call
                 SyntaxKind::IDENT
             }
-            LexExpectation::Operator => {
+            LexMode::Operator => {
                 // In operator context, prefer treating `s` as substitution if a delimiter can follow,
                 // except when immediately followed by fat comma (=>), where it should be an identifier.
                 let remainder = self.logos_lexer.remainder();
@@ -1099,9 +1099,9 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn disambiguate_logical_op(expect: LexExpectation, op: &str) -> SyntaxKind {
+    fn disambiguate_logical_op(expect: LexMode, op: &str) -> SyntaxKind {
         match expect {
-            LexExpectation::Operator => {
+            LexMode::Operator => {
                 // When expecting an operator, not/and/or/xor are logical operators
                 match op {
                     "not" => SyntaxKind::NOT_KW,
@@ -1111,7 +1111,7 @@ impl<'a> Lexer<'a> {
                     _ => SyntaxKind::IDENT, // Handle unknown ops gracefully
                 }
             }
-            LexExpectation::Value => {
+            LexMode::Value => {
                 // In ExpectingValue context, they are identifiers
                 // Examples: "sub not", "my $and", "or die"
                 SyntaxKind::IDENT
@@ -1119,9 +1119,9 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn disambiguate_tr(&self, expect: LexExpectation) -> SyntaxKind {
+    fn disambiguate_tr(&self, expect: LexMode) -> SyntaxKind {
         match expect {
-            LexExpectation::Value => {
+            LexMode::Value => {
                 // When expecting a value, check what follows tr
                 let remainder = self.logos_lexer.remainder();
 
@@ -1152,7 +1152,7 @@ impl<'a> Lexer<'a> {
                 // If we reach end of input after 'tr', assume identifier
                 SyntaxKind::IDENT
             }
-            LexExpectation::Operator => {
+            LexMode::Operator => {
                 // When expecting an operator, tr is the transliteration operator
                 // Examples: "$str tr/a-z/A-Z/"
                 SyntaxKind::TR_KW
@@ -1160,10 +1160,10 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn disambiguate_y(&self, expect: LexExpectation) -> SyntaxKind {
+    fn disambiguate_y(&self, expect: LexMode) -> SyntaxKind {
         // y is an alias for tr, so use the same logic but return Y_KW
         match expect {
-            LexExpectation::Value => {
+            LexMode::Value => {
                 // When expecting a value, check what follows y
                 let remainder = self.logos_lexer.remainder();
 
@@ -1194,7 +1194,7 @@ impl<'a> Lexer<'a> {
                 // If we reach end of input after 'y', assume identifier
                 SyntaxKind::IDENT
             }
-            LexExpectation::Operator => {
+            LexMode::Operator => {
                 // When expecting an operator, y is the transliteration operator
                 // Examples: "$str y/a-z/A-Z/"
                 SyntaxKind::Y_KW
@@ -1321,20 +1321,20 @@ impl<'a> Lexer<'a> {
 
     // Removed: variable-name tokenizer (parser handles complex variable forms)
 
-    fn disambiguate_slash(_expect: LexExpectation) -> SyntaxKind {
+    fn disambiguate_slash(_expect: LexMode) -> SyntaxKind {
         // Slash is always division operator in disambiguate context
         // because regex literals are handled in try_consume_regex_literal
         SyntaxKind::SLASH
     }
 
     /// Disambiguate ampersand (&) based on context
-    fn disambiguate_ampersand(expect: LexExpectation) -> SyntaxKind {
+    fn disambiguate_ampersand(expect: LexMode) -> SyntaxKind {
         match expect {
-            LexExpectation::Value => {
+            LexMode::Value => {
                 // In value context, & is reference/sigil
                 SyntaxKind::AMPERSAND
             }
-            LexExpectation::Operator => {
+            LexMode::Operator => {
                 // In operator context, it's bitwise AND
                 SyntaxKind::BITWISE_AND
             }
@@ -1342,14 +1342,14 @@ impl<'a> Lexer<'a> {
     }
 
     /// Disambiguate caret (^) based on context
-    fn disambiguate_caret(expect: LexExpectation) -> SyntaxKind {
+    fn disambiguate_caret(expect: LexMode) -> SyntaxKind {
         match expect {
-            LexExpectation::Value => {
+            LexMode::Value => {
                 // In expecting value context, ^ is likely a sigil
                 // (e.g., special variables like $^O, $^X)
                 SyntaxKind::CARET
             }
-            LexExpectation::Operator => {
+            LexMode::Operator => {
                 // In operator context, it's bitwise XOR
                 SyntaxKind::BITWISE_XOR
             }
@@ -1549,7 +1549,7 @@ impl<'a> Lexer<'a> {
     /// Peek at the next non-trivia token without consuming it or changing lexer state
     #[must_use]
     pub fn peek_non_trivia_token(&self) -> Option<(SyntaxKind, &'a str)> {
-        self.peek_non_trivia_with(LexExpectation::Value)
+        self.peek_non_trivia_with(LexMode::Value)
     }
 
     /// Peek ahead multiple tokens, skipping trivia, and return the first non-trivia token
@@ -1565,7 +1565,7 @@ impl<'a> Lexer<'a> {
     /// For non-default contexts (QuoteLike), this expectation is ignored.
     pub fn next_token_with(
         &mut self,
-        expect: LexExpectation,
+        expect: LexMode,
     ) -> Option<(SyntaxKind, &'a str)> {
         let override_ctx = Some(expect);
         self.next_token_internal(override_ctx)
@@ -1576,7 +1576,7 @@ impl<'a> Lexer<'a> {
     #[must_use]
     pub fn peek_non_trivia_with(
         &self,
-        expect: LexExpectation,
+        expect: LexMode,
     ) -> Option<(SyntaxKind, &'a str)> {
         let mut cloned = self.clone();
         let override_ctx = Some(expect);
@@ -1596,7 +1596,7 @@ impl<'a> Lexer<'a> {
     /// Peek the next token (including trivia) using a given lexical expectation.
     /// This does not mutate the original lexer state and does not skip trivia.
     #[must_use]
-    pub fn peek_with(&self, expect: LexExpectation) -> Option<(SyntaxKind, &'a str)> {
+    pub fn peek_with(&self, expect: LexMode) -> Option<(SyntaxKind, &'a str)> {
         let mut cloned = self.clone();
         let override_ctx = Some(expect);
         cloned.next_token_internal(override_ctx)
@@ -1605,12 +1605,12 @@ impl<'a> Lexer<'a> {
     /// Convenience: default expectation is Value
     #[must_use]
     pub fn peek_non_trivia(&self) -> Option<(SyntaxKind, &'a str)> {
-        self.peek_non_trivia_with(LexExpectation::Value)
+        self.peek_non_trivia_with(LexMode::Value)
     }
 
     /// Convenience: default expectation is Value
     pub fn next_token_default(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        self.next_token_with(LexExpectation::Value)
+        self.next_token_with(LexMode::Value)
     }
 }
 
