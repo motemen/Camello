@@ -542,7 +542,7 @@ impl<'a> Lexer<'a> {
                 self.logos_lexer = Token::lexer(remaining_input);
 
                 // Reset state
-                self.context = LexerContext::ExpectingOperator;
+                self.context = LexerContext::Default;
 
                 return Some((SyntaxKind::ERROR, flags_slice));
             } else if has_valid_flags {
@@ -564,14 +564,14 @@ impl<'a> Lexer<'a> {
                 self.logos_lexer = Token::lexer(remaining_input);
 
                 // Reset state
-                self.context = LexerContext::ExpectingOperator;
+                self.context = LexerContext::Default;
 
                 return Some((syntax_kind, flags_slice));
             }
         }
 
         // No flags found, transition back to normal parsing
-        self.context = LexerContext::ExpectingOperator;
+        self.context = LexerContext::Default;
         None
     }
 
@@ -649,7 +649,7 @@ impl<'a> Lexer<'a> {
                         }
                         _ => {
                             // Other single delimiter modes (q, qw) are done
-                            self.context = LexerContext::ExpectingOperator;
+                            self.context = LexerContext::Default;
                         }
                     }
                 }
@@ -682,7 +682,7 @@ impl<'a> Lexer<'a> {
                             };
                         }
                         _ => {
-                            self.context = LexerContext::ExpectingOperator;
+                            self.context = LexerContext::Default;
                         }
                     }
                 }

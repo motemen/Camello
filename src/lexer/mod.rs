@@ -250,10 +250,8 @@ impl Token {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LexerContext {
-    /// Expecting a value, identifier, or sigil (after keywords, operators, sigils)
-    ExpectingValue,
-    /// Expecting an operator (after identifiers, numbers, variables)
-    ExpectingOperator,
+    /// Default (no value/operator flipping; parser provides expectations)
+    Default,
     /// After a sigil, expecting a variable name
     VariableName,
     /// In a subroutine prototype
@@ -300,8 +298,7 @@ impl From<LexExpectation> for DisambiguationContext {
 impl From<LexerContext> for Option<DisambiguationContext> {
     fn from(lexer_context: LexerContext) -> Self {
         match lexer_context {
-            LexerContext::ExpectingValue => Some(DisambiguationContext::ExpectingValue),
-            LexerContext::ExpectingOperator => Some(DisambiguationContext::ExpectingOperator),
+            LexerContext::Default => None,
             // Other contexts (SubPrototype, RawData, QuoteLike, ExpectingVariableName)
             // don't use disambiguation - they have dedicated handlers
             _ => None,
@@ -347,6 +344,8 @@ pub struct Lexer<'a> {
     logos_lexer: logos::Lexer<'a, Token>,
     context: LexerContext,
     at_line_start: bool, // Track if we're at the start of a line for POD detection
+    // Track the last non-trivia token kind to derive a default expectation for standalone lexing
+    last_non_trivia_kind: Option<SyntaxKind>,
 }
 
 impl Clone for Lexer<'_> {
@@ -355,6 +354,7 @@ impl Clone for Lexer<'_> {
             logos_lexer: self.logos_lexer.clone(),
             context: self.context,
             at_line_start: self.at_line_start,
+            last_non_trivia_kind: self.last_non_trivia_kind,
         }
     }
 }
@@ -362,7 +362,8 @@ impl Clone for Lexer<'_> {
 impl<'a> Iterator for Lexer<'a> {
     type Item = (SyntaxKind, &'a str);
     fn next(&mut self) -> Option<Self::Item> {
-        self.next_token()
+        // Default to Value expectation for standalone lexer usage
+        self.next_token_default()
     }
 }
 
@@ -373,8 +374,43 @@ impl<'a> Lexer<'a> {
 
         Self {
             logos_lexer,
-            context: LexerContext::ExpectingValue, // Start expecting a value
-            at_line_start: true,                   // Start at beginning of input (line start)
+            context: LexerContext::Default,
+            at_line_start: true,
+            last_non_trivia_kind: None,
+        }
+    }
+
+    fn derive_default_expectation(&self) -> LexExpectation {
+        match self.last_non_trivia_kind {
+            None => LexExpectation::Value,
+            Some(k) => {
+                // After literals, identifiers, right delimiters, postfix deref, expect operator
+                if self.is_literal(k)
+                    || self.is_right_delimiter(k)
+                    || matches!(
+                        k,
+                        SyntaxKind::IDENT
+                            | SyntaxKind::POSTFIX_DEREF_ARRAY
+                            | SyntaxKind::POSTFIX_DEREF_HASH
+                            | SyntaxKind::POSTFIX_DEREF_SCALAR
+                    )
+                {
+                    LexExpectation::Operator
+                } else if self.is_operator(k)
+                    || matches!(
+                        k,
+                        SyntaxKind::L_PAREN | SyntaxKind::L_BRACE | SyntaxKind::L_BRACKET | SyntaxKind::COMMA
+                            | SyntaxKind::FAT_COMMA
+                    )
+                    || k.is_keyword()
+                {
+                    // After operators, openings, commas, or keywords, expect a value
+                    LexExpectation::Value
+                } else {
+                    // Default to value for safety
+                    LexExpectation::Value
+                }
+            }
         }
     }
 
@@ -400,7 +436,9 @@ impl<'a> Lexer<'a> {
     }
 
     pub fn next_token(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        self.next_token_internal(None)
+        // Derive default expectation from last significant token for standalone usage
+        let expect = self.derive_default_expectation();
+        self.next_token_with(expect)
     }
 
     /// Core tokenization step with an optional disambiguation context override.
@@ -415,9 +453,7 @@ impl<'a> Lexer<'a> {
             LexerContext::QuoteLike { .. } => self.handle_quote_like(),
             LexerContext::VariableName => self.handle_variable_name(),
             LexerContext::SubPrototype => self.handle_sub_prototype(),
-            LexerContext::ExpectingValue | LexerContext::ExpectingOperator => {
-                self.handle_default_context_with(override_ctx)
-            }
+            LexerContext::Default => self.handle_default_context_with(override_ctx),
         }
     }
 
@@ -464,9 +500,7 @@ impl<'a> Lexer<'a> {
                 _ => {
                     // Context changed, delegate to new context handler
                     match self.context {
-                        LexerContext::ExpectingValue | LexerContext::ExpectingOperator => {
-                            self.handle_default_context_with(None)
-                        }
+                        LexerContext::Default => self.handle_default_context_with(None),
                         LexerContext::VariableName => self.handle_variable_name(),
                         LexerContext::SubPrototype => self.handle_sub_prototype(),
                         LexerContext::RawData => self.handle_raw_data(),
@@ -482,10 +516,13 @@ impl<'a> Lexer<'a> {
         if let Some((syntax_kind, text)) = self.try_consume_variable_name() {
             self.update_context(syntax_kind);
             self.update_line_position(text);
+            if !syntax_kind.is_trivia() {
+                self.last_non_trivia_kind = Some(syntax_kind);
+            }
             Some((syntax_kind, text))
         } else {
             // Fall back to default context handling if no variable name found
-            self.set_context(LexerContext::ExpectingValue);
+            self.set_context(LexerContext::Default);
             self.handle_default_context_with(None)
         }
     }
@@ -559,7 +596,7 @@ impl<'a> Lexer<'a> {
         }
 
         // Handle special tokens when expecting a value
-        // Respect per-call override when present; otherwise use current lexer context
+        // Respect per-call override when present; otherwise do nothing in default context
         let is_value_context = match override_ctx.or_else(|| self.context.into()) {
             Some(DisambiguationContext::ExpectingValue) => true,
             _ => false,
@@ -569,6 +606,9 @@ impl<'a> Lexer<'a> {
                 let (syntax_kind, text) = result;
                 self.update_context(syntax_kind);
                 self.update_line_position(text);
+                if !syntax_kind.is_trivia() {
+                    self.last_non_trivia_kind = Some(syntax_kind);
+                }
                 return Some((syntax_kind, text));
             }
         }
@@ -577,6 +617,9 @@ impl<'a> Lexer<'a> {
         if let Some((syntax_kind, text)) = self.try_consume_postfix_deref() {
             self.update_context(syntax_kind);
             self.update_line_position(text);
+            if !syntax_kind.is_trivia() {
+                self.last_non_trivia_kind = Some(syntax_kind);
+            }
             return Some((syntax_kind, text));
         }
 
@@ -639,6 +682,9 @@ impl<'a> Lexer<'a> {
                 // Special handling for __END__ and __DATA__: consume everything remaining as data section
                 if matches!(syntax_kind, SyntaxKind::END_KW | SyntaxKind::DATA_KW) {
                     self.update_context(syntax_kind);
+                    if !syntax_kind.is_trivia() {
+                        self.last_non_trivia_kind = Some(syntax_kind);
+                    }
                     return Some((syntax_kind, text));
                 }
 
@@ -648,6 +694,9 @@ impl<'a> Lexer<'a> {
                 // Track line position for POD detection
                 self.update_line_position(text);
 
+                if !syntax_kind.is_trivia() {
+                    self.last_non_trivia_kind = Some(syntax_kind);
+                }
                 Some((syntax_kind, text))
             }
             Some(Err(())) => {
@@ -1439,10 +1488,9 @@ impl<'a> Lexer<'a> {
 
     fn handle_keyword_context(&self, kind: SyntaxKind) -> LexerContext {
         match kind {
-            SyntaxKind::MY_KW
-            | SyntaxKind::OUR_KW
-            | SyntaxKind::STATE_KW
-            | SyntaxKind::LOCAL_KW => LexerContext::ExpectingValue,
+            SyntaxKind::MY_KW | SyntaxKind::OUR_KW | SyntaxKind::STATE_KW | SyntaxKind::LOCAL_KW => {
+                LexerContext::Default
+            }
             SyntaxKind::QW_KW => LexerContext::QuoteLike {
                 prefix: SyntaxKind::QW_KW,
                 mode: QuoteLikeMode::QW,
@@ -1524,22 +1572,21 @@ impl<'a> Lexer<'a> {
                 },
                 delimiter: '\0',
             },
-            _ => LexerContext::ExpectingValue, // For other keywords
+            _ => LexerContext::Default, // For other keywords
         }
     }
 
     fn handle_operator_context(&self, _kind: SyntaxKind) -> LexerContext {
-        LexerContext::ExpectingValue
+        // Do not flip default context; parser provides expectation for ambiguity.
+        self.context
     }
 
     fn handle_identifier_context(&self) -> LexerContext {
         match &self.context {
             LexerContext::SubPrototype => self.context, // Remain in prototype context
-            LexerContext::VariableName | LexerContext::ExpectingValue => {
-                LexerContext::ExpectingOperator
-            }
-            LexerContext::ExpectingOperator => LexerContext::ExpectingOperator,
+            LexerContext::VariableName => LexerContext::Default, // Exit variable-name mode
             LexerContext::QuoteLike { .. } | LexerContext::RawData => self.context,
+            LexerContext::Default => self.context,
         }
     }
 
@@ -1616,30 +1663,26 @@ impl<'a> Lexer<'a> {
                         _ => self.context,
                     }
             } else {
-                    LexerContext::ExpectingValue
+                    LexerContext::Default
                 }
             }
 
             // Identifiers need context-dependent handling
             SyntaxKind::IDENT => self.handle_identifier_context(),
 
-            // Literals and closing delimiters expect operators
-            kind if self.is_literal(kind) || self.is_right_delimiter(kind) => {
-                LexerContext::ExpectingOperator
-            }
+            // Do not flip default context on literals/right delimiters
+            kind if self.is_literal(kind) || self.is_right_delimiter(kind) => self.context,
 
-            // Postfix dereference operators expect operators next
+            // Postfix dereference operators: keep default context unchanged
             SyntaxKind::POSTFIX_DEREF_ARRAY
             | SyntaxKind::POSTFIX_DEREF_HASH
-            | SyntaxKind::POSTFIX_DEREF_SCALAR => LexerContext::ExpectingOperator,
+            | SyntaxKind::POSTFIX_DEREF_SCALAR => self.context,
 
             // Data section keywords transition to raw data context
             SyntaxKind::END_KW | SyntaxKind::DATA_KW => LexerContext::RawData,
 
-            // Statement terminators and POD reset context
-            SyntaxKind::SEMICOLON | SyntaxKind::CUT_KW | SyntaxKind::POD_CONTENT => {
-                LexerContext::ExpectingValue
-            }
+            // Statement terminators and POD: keep default context unchanged
+            SyntaxKind::SEMICOLON | SyntaxKind::CUT_KW | SyntaxKind::POD_CONTENT => self.context,
 
             // Keep current context for other tokens
             _ => self.context,
@@ -1725,6 +1768,12 @@ impl<'a> Lexer<'a> {
         // No =cut found, consume all remaining content as POD
         self.logos_lexer.bump(remainder.len());
         Some((SyntaxKind::POD_CONTENT, remainder))
+    }
+
+    /// Public helper: consume a variable name after a sigil without relying on internal context.
+    /// Returns an IDENT-like token text covering special forms like $^X, ${^NAME}, $#, etc.
+    pub fn consume_variable_name_token(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        self.try_consume_variable_name()
     }
 
     /// Try to consume standalone =cut at line start (error case)
