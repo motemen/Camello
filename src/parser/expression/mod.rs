@@ -626,6 +626,18 @@ impl Parser<'_> {
 
                 self.builder.finish_node();
             }
+            SyntaxKind::BITWISE_NOT => {
+                // Bitwise NOT prefix operator
+                self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
+                self.bump_value(); // consume '~'
+                self.skip_trivia();
+                if !self.parse_expression_with_precedence(
+                    crate::parser::expression::precedence::Precedence::PREFIX,
+                ) {
+                    self.error("Expected expression after '~'");
+                }
+                self.builder.finish_node();
+            }
             SyntaxKind::NOT_KW => {
                 // NOT keyword prefix operator
                 self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());

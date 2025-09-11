@@ -106,7 +106,10 @@ pub const fn get_token_spacing(kind: SyntaxKind) -> TokenSpacing {
         | SyntaxKind::STAR
         | SyntaxKind::SLASH
         | SyntaxKind::MODULO
-        | SyntaxKind::X => TokenSpacing::binary_op(),
+        | SyntaxKind::X
+        | SyntaxKind::EXPONENT
+        | SyntaxKind::SHIFT_LEFT
+        | SyntaxKind::SHIFT_RIGHT => TokenSpacing::binary_op(),
 
         // Unary operators (prefix/postfix)
         SyntaxKind::UNARY_PLUS | SyntaxKind::UNARY_MINUS => TokenSpacing::prefix_op(),
@@ -134,7 +137,7 @@ pub const fn get_token_spacing(kind: SyntaxKind) -> TokenSpacing {
 
         // Logical operators
         SyntaxKind::LOGICAL_AND | SyntaxKind::LOGICAL_OR => TokenSpacing::binary_op(),
-        SyntaxKind::LOGICAL_NOT => TokenSpacing::prefix_op(),
+        SyntaxKind::LOGICAL_NOT | SyntaxKind::BITWISE_NOT => TokenSpacing::prefix_op(),
         SyntaxKind::NOT_KW | SyntaxKind::AND_KW | SyntaxKind::OR_KW | SyntaxKind::XOR_KW => {
             TokenSpacing::binary_op()
         }
@@ -277,6 +280,9 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
         (L_PAREN, LOGICAL_NOT) => Some(false), // No space after (
         (_, LOGICAL_NOT) => Some(true),        // Space before ! in other cases
         (LOGICAL_NOT, _) => Some(false),       // No space after !
+        (L_PAREN, BITWISE_NOT) => Some(false),
+        (_, BITWISE_NOT) => Some(true),
+        (BITWISE_NOT, _) => Some(false),
 
         // RETURN_KW: no space before semicolon, but space before other tokens
         (RETURN_KW, SEMICOLON) => Some(false),
@@ -308,7 +314,7 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
             X | PLUS | MINUS | STAR | SLASH | MODULO | DOT | EQ | LT | GT | LE | GE | EQ_EQ | NE
             | STR_EQ | STR_NE | STR_GT | STR_LT | STR_GE | STR_LE | STR_CMP | SPACESHIP
             | LOGICAL_AND | LOGICAL_OR | REGEX_MATCH | REGEX_NOT_MATCH | AND_KW | OR_KW | XOR_KW
-            | BITWISE_AND | BITWISE_OR | BITWISE_XOR,
+            | BITWISE_AND | BITWISE_OR | BITWISE_XOR | EXPONENT | SHIFT_LEFT | SHIFT_RIGHT,
         ) => Some(true),
 
         // No space inside parentheses/brackets/braces
