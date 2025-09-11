@@ -181,6 +181,8 @@ impl<'a> Parser<'a> {
         }
     }
 
+    // Removed bump_ident: lexer expansion is guarded by expectation and last token context
+
     fn expect(&mut self, expected: SyntaxKind) {
         if self.at(expected) {
             self.bump();
@@ -326,9 +328,9 @@ pub fn parse(input: &str) -> (GreenNode, Vec<ParseError>) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::PerlNode;
+    mod tests {
+        use super::*;
+        use crate::PerlNode;
 
     #[test]
     fn test_error_recovery_no_infinite_loop() {
@@ -552,3 +554,22 @@ mod tests {
 
 mod expression;
 mod statement;
+    #[test]
+    fn test_sub_with_quote_like_name() {
+        use crate::PerlNode;
+        let input = "sub tr {}";
+        let (green, errors) = parse(input);
+        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+        let syntax = PerlNode::new_root(green);
+        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+    }
+
+    #[test]
+    fn test_package_with_quote_like_name() {
+        use crate::PerlNode;
+        let input = "package tr;";
+        let (green, errors) = parse(input);
+        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+        let syntax = PerlNode::new_root(green);
+        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+    }

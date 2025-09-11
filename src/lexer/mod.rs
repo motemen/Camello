@@ -266,7 +266,14 @@ pub enum LexMode {
 pub struct Lexer<'a> {
     logos_lexer: logos::Lexer<'a, Token>,
     at_line_start: bool, // Track if we're at the start of a line for POD detection
-    // Track the last non-trivia token kind to derive a default expectation for standalone lexing
+    // TODO(lexer): Remove last_non_trivia_kind and derive_default_expectation.
+    // - Goal: make lexing entirely parser-driven via LexMode without relying on
+    //   previous token heuristics.
+    // - Plan: ensure all lexer entry points (parser-side) pass an explicit LexMode,
+    //   restrict quote-like expansion to Operator mode, and eliminate default expectation.
+    //   Then delete last_non_trivia_kind and associated logic.
+    // - Note: standalone lexer iteration (Iterator::next) may default to Value or be
+    //   retired in favor of explicit-mode helpers used by tests.
     last_non_trivia_kind: Option<SyntaxKind>,
     // Pending tokens produced by stateless expansions (e.g., quote-like operators)
     pending: VecDeque<(SyntaxKind, &'a str)>,
@@ -464,20 +471,24 @@ impl<'a> Lexer<'a> {
                                         .expect("context required for 'x' disambiguation");
                                     Self::disambiguate_x(ctx)
                                 }
-                                "s" => {
-                                    let ctx = override_ctx
-                                        .expect("context required for 's' disambiguation");
-                                    self.disambiguate_s(ctx)
-                                }
-                                "tr" => {
-                                    let ctx = override_ctx
-                                        .expect("context required for 'tr' disambiguation");
-                                    self.disambiguate_tr(ctx)
-                                }
-                                "y" => {
-                                    let ctx = override_ctx
-                                        .expect("context required for 'y' disambiguation");
-                                    self.disambiguate_y(ctx)
+                                // Quote-like starters: treat as keywords unless '=>' follows
+                                "q" | "qq" | "qr" | "qx" | "qw" | "m" | "s" | "tr" | "y" => {
+                                    let kind = self.classify_quote_like_keyword(text, override_ctx);
+                                    // Only expand when a delimiter follows
+                                    if kind.is_keyword()
+                                        && self.quote_delimiter_ahead()
+                                        && matches!(override_ctx, Some(LexMode::Operator))
+                                    {
+                                        self.enqueue_quote_like_from(kind, text);
+                                        if let Some((k, t)) = self.pending.pop_front() {
+                                            self.update_line_position(t);
+                                            if !k.is_trivia() {
+                                                self.last_non_trivia_kind = Some(k);
+                                            }
+                                            return Some((k, t));
+                                        }
+                                    }
+                                    kind
                                 }
                                 _ => {
                                     if let Some(kw) = Self::map_ident_keyword(text) {
@@ -494,14 +505,16 @@ impl<'a> Lexer<'a> {
                                                 | SyntaxKind::TR_KW
                                                 | SyntaxKind::Y_KW
                                         ) {
-                                            self.enqueue_quote_like_from(kw, text);
-                                            if let Some((k, t)) = self.pending.pop_front() {
-                                                // Return the keyword token immediately
-                                                self.update_line_position(t);
-                                                if !k.is_trivia() {
-                                                    self.last_non_trivia_kind = Some(k);
+                                            if self.quote_delimiter_ahead() {
+                                                self.enqueue_quote_like_from(kw, text);
+                                                if let Some((k, t)) = self.pending.pop_front() {
+                                                    // Return the keyword token immediately
+                                                    self.update_line_position(t);
+                                                    if !k.is_trivia() {
+                                                        self.last_non_trivia_kind = Some(k);
+                                                    }
+                                                    return Some((k, t));
                                                 }
-                                                return Some((k, t));
                                             }
                                         }
                                         kw
@@ -521,7 +534,8 @@ impl<'a> Lexer<'a> {
                 };
 
                 // If we identified a quote-like keyword (e.g., from disambiguated 's', 'tr', 'y'),
-                // enqueue its expansion and return the keyword immediately.
+                // enqueue its expansion and return the keyword immediately, but only when a delimiter follows
+                // and we are in operator expectation (to avoid misclassifying identifiers like `sub tr {}`).
                 if matches!(
                     syntax_kind,
                     SyntaxKind::QW_KW
@@ -533,7 +547,17 @@ impl<'a> Lexer<'a> {
                         | SyntaxKind::S_KW
                         | SyntaxKind::TR_KW
                         | SyntaxKind::Y_KW
-                ) {
+                ) && self.quote_delimiter_ahead()
+                    && !matches!(
+                        self.last_non_trivia_kind,
+                        Some(
+                            SyntaxKind::SUB_KW
+                                | SyntaxKind::PACKAGE_KW
+                                | SyntaxKind::USE_KW
+                                | SyntaxKind::NO_KW
+                        )
+                    )
+                {
                     self.enqueue_quote_like_from(syntax_kind, text);
                     if let Some((k, t)) = self.pending.pop_front() {
                         self.update_line_position(t);
@@ -580,6 +604,59 @@ impl<'a> Lexer<'a> {
         let data_text = remainder;
         self.logos_lexer.bump(remainder.len());
         Some((SyntaxKind::RAW_STRING, data_text))
+    }
+
+    // Removed: pending clearing API (not needed with guarded expansion)
+
+    /// Classify quote-like identifiers as keywords unless followed by fat comma (=>)
+    fn classify_quote_like_keyword(&self, word: &str, _expect: Option<LexMode>) -> SyntaxKind {
+        if self.fat_comma_ahead() {
+            return SyntaxKind::IDENT;
+        }
+        match word {
+            // Sorted: q, qq, qr, qx, qw, m, s, tr, y
+            "q" => SyntaxKind::Q_KW,
+            "qq" => SyntaxKind::QQ_KW,
+            "qr" => SyntaxKind::QR_KW,
+            "qx" => SyntaxKind::QX_KW,
+            "qw" => SyntaxKind::QW_KW,
+            "m" => SyntaxKind::M_KW,
+            "s" => SyntaxKind::S_KW,
+            "tr" => SyntaxKind::TR_KW,
+            "y" => SyntaxKind::Y_KW,
+            _ => SyntaxKind::IDENT,
+        }
+    }
+
+    /// Check if the next non-trivia is a fat comma (=>)
+    fn fat_comma_ahead(&self) -> bool {
+        let mut chars = self.logos_lexer.remainder().chars().peekable();
+        while matches!(chars.peek().copied(), Some(c) if c.is_whitespace()) {
+            chars.next();
+        }
+        if let (Some('='), Some('>')) = (chars.peek().copied(), {
+            let mut t = chars.clone();
+            t.next();
+            t.peek().copied()
+        }) {
+            return true;
+        }
+        false
+    }
+
+    /// Check if a quote-like delimiter appears next (skipping whitespace)
+    fn quote_delimiter_ahead(&self) -> bool {
+        let mut chars = self.logos_lexer.remainder().chars().peekable();
+        while matches!(chars.peek().copied(), Some(c) if c.is_whitespace()) {
+            chars.next();
+        }
+        matches!(
+            chars.peek().copied(),
+            Some(
+                '(' | '[' | '{' | '<' | '/' | '|' | '#' | '!' | '~' | '@' | '$' | '%'
+                    | '^' | '&' | '*' | '+' | '=' | '?' | '`' | '\'' | '"'
+            )
+        )
     }
 
     /// Enqueue a complete quote-like token sequence starting at the current input position.

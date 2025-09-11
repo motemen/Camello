@@ -257,6 +257,15 @@ impl Parser<'_> {
                         | SyntaxKind::STR_LE
                         | SyntaxKind::STR_CMP
                         | SyntaxKind::X
+                        | SyntaxKind::QW_KW
+                        | SyntaxKind::Q_KW
+                        | SyntaxKind::QQ_KW
+                        | SyntaxKind::QX_KW
+                        | SyntaxKind::M_KW
+                        | SyntaxKind::QR_KW
+                        | SyntaxKind::S_KW
+                        | SyntaxKind::TR_KW
+                        | SyntaxKind::Y_KW
                 )
             )
         {
@@ -292,6 +301,15 @@ impl Parser<'_> {
                                     | SyntaxKind::STR_LE
                                     | SyntaxKind::STR_CMP
                                     | SyntaxKind::X
+                                    | SyntaxKind::QW_KW
+                                    | SyntaxKind::Q_KW
+                                    | SyntaxKind::QQ_KW
+                                    | SyntaxKind::QX_KW
+                                    | SyntaxKind::M_KW
+                                    | SyntaxKind::QR_KW
+                                    | SyntaxKind::S_KW
+                                    | SyntaxKind::TR_KW
+                                    | SyntaxKind::Y_KW
                             )
                         )
                 {
