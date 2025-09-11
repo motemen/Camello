@@ -590,10 +590,11 @@ impl<'a> Lexer<'a> {
     }
 
     fn disambiguate(&self, token: Token, text: &str) -> SyntaxKind {
-        // Convert current lexer context to disambiguation context
-        // Handle ExpectingVariableName as a special case that also needs disambiguation
+        // Convert current lexer context to disambiguation context.
+        // Disambiguation is only performed in ExpectingValue or ExpectingOperator contexts,
+        // as other contexts have dedicated handlers.
         let disambiguation_context = Option::<DisambiguationContext>::from(self.context)
-        .expect("disambiguate should only be called from ExpectingValue/ExpectingOperator/ExpectingVariableName contexts");
+        .expect("disambiguate should only be called from ExpectingValue or ExpectingOperator contexts");
 
         match token {
             Token::Ident => {
