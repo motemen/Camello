@@ -112,6 +112,8 @@ pub enum SyntaxKind {
     MINUS,       // - (binary subtraction)
     UNARY_PLUS,  // + (unary plus)
     UNARY_MINUS, // - (unary minus)
+    INCREMENT,   // ++ (increment)
+    DECREMENT,   // -- (decrement)
     DOT,         // . (string concatenation)
     ARROW,       // ->
     FAT_COMMA,   // =>
@@ -333,6 +335,8 @@ impl SyntaxKind {
                 | SyntaxKind::MINUS
                 | SyntaxKind::UNARY_PLUS
                 | SyntaxKind::UNARY_MINUS
+                | SyntaxKind::INCREMENT
+                | SyntaxKind::DECREMENT
                 | SyntaxKind::DOT
                 | SyntaxKind::ARROW
                 | SyntaxKind::FAT_COMMA

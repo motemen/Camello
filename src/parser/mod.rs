@@ -315,6 +315,8 @@ impl<'a> Parser<'a> {
                 SyntaxKind::SUB_KW,    // anonymous subroutines in expression context
                 SyntaxKind::PLUS,      // unary plus operator
                 SyntaxKind::MINUS,     // unary minus operator
+                SyntaxKind::INCREMENT, // prefix increment operator
+                SyntaxKind::DECREMENT, // prefix decrement operator
                 SyntaxKind::LOGICAL_NOT, // prefix logical NOT operator
                 SyntaxKind::NOT_KW,    // prefix NOT keyword operator
                 SyntaxKind::FILE_TEST_OP, // file test operators

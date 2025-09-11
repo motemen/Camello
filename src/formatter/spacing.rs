@@ -105,6 +105,9 @@ pub const fn get_token_spacing(kind: SyntaxKind) -> TokenSpacing {
 
         // Unary operators (prefix)
         SyntaxKind::UNARY_PLUS | SyntaxKind::UNARY_MINUS => TokenSpacing::prefix_op(),
+        SyntaxKind::INCREMENT | SyntaxKind::DECREMENT => {
+            TokenSpacing::new(SpaceRule::Contextual, SpaceRule::Contextual, PrefixOperator)
+        }
 
         // Comparison operators
         SyntaxKind::GT
