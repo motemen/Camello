@@ -190,6 +190,13 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn bump_op_as(&mut self, syntax_kind: SyntaxKind) {
+        if let Some((_, text)) = self.lexer.next_token_with_context(LexContext::Operator) {
+            self.builder.token(syntax_kind.into(), text);
+            self.current_pos += text.len();
+        }
+    }
+
     fn expect(&mut self, expected: SyntaxKind) {
         if self.at(expected) {
             self.bump();
@@ -315,6 +322,8 @@ impl<'a> Parser<'a> {
                 SyntaxKind::SUB_KW,    // anonymous subroutines in expression context
                 SyntaxKind::PLUS,      // unary plus operator
                 SyntaxKind::MINUS,     // unary minus operator
+                SyntaxKind::INCREMENT, // prefix increment operator
+                SyntaxKind::DECREMENT, // prefix decrement operator
                 SyntaxKind::LOGICAL_NOT, // prefix logical NOT operator
                 SyntaxKind::NOT_KW,    // prefix NOT keyword operator
                 SyntaxKind::FILE_TEST_OP, // file test operators
