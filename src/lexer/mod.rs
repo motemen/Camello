@@ -2,8 +2,6 @@ use crate::SyntaxKind;
 use logos::Logos;
 use std::collections::VecDeque;
 
-mod quote;
-
 #[derive(Logos, Debug, PartialEq, Clone)]
 pub enum Token {
     // Sigils（変数の型を示すプレフィックス）
@@ -253,13 +251,6 @@ impl Token {
 pub enum LexerContext {
     /// Default (no value/operator flipping; parser provides expectations)
     Default,
-    /// In a quote-like operator context
-    QuoteLike {
-        prefix: SyntaxKind,    // S_KW, Q_KW, QQ_KW, QW_KW, TR_KW, Y_KW, M_KW, QR_KW
-        mode: QuoteLikeMode,   // Q (q/qq/qx), QW (qw), M (m/qr), S (s), TR (tr/y)
-        state: QuoteLikeState, // Parsing state
-        delimiter: char,       // Current delimiter: '{', '(', '/', etc.
-    },
 }
 /// Context for token disambiguation in default parsing contexts
 /// This enum limits disambiguation to only the contexts where ambiguity resolution is needed
@@ -294,44 +285,8 @@ impl From<LexerContext> for Option<DisambiguationContext> {
     fn from(lexer_context: LexerContext) -> Self {
         match lexer_context {
             LexerContext::Default => None,
-            // Non-default context (QuoteLike) doesn't use this disambiguation; it has dedicated handlers
-            _ => None,
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum QuoteLikeMode {
-    Q,  // q, qq, qx (single delimiter)
-    QW, // qw (single delimiter, whitespace-separated words)
-    M,  // m (single delimiter, regex)
-    QR, // qr (single delimiter, compiled regex)
-    S,  // s (double delimiter)
-    TR, // tr, y (double delimiter)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum DelimiterPhase {
-    First,
-    Second,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum DelimiterType {
-    Open,
-    Close,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum QuoteLikeState {
-    Delimiter {
-        phase: DelimiterPhase,
-        kind: DelimiterType,
-    },
-    Content {
-        phase: DelimiterPhase,
-    },
-    Flags,
 }
 
 pub struct Lexer<'a> {
@@ -382,9 +337,8 @@ impl<'a> Lexer<'a> {
         match self.last_non_trivia_kind {
             None => LexExpectation::Value,
             Some(k) => {
-                // After literals, identifiers, right delimiters, postfix deref, expect operator
+                // After literals, identifiers, postfix deref, expect operator
                 if self.is_literal(k)
-                    || self.is_right_delimiter(k)
                     || matches!(
                         k,
                         SyntaxKind::IDENT
@@ -467,29 +421,7 @@ impl<'a> Lexer<'a> {
 
     // Raw data consumption is handled via consume_data_section from the parser
 
-    /// Handle QuoteLike context: q{...} や s/.../.../などのクオート風演算子の処理を担当
-    fn handle_quote_like(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        if let Some(result) = self.try_handle_quote_like_internal() {
-            let (syntax_kind, text) = result;
-            // Quote-like internal already handles context transitions
-            // Only update line position here
-            self.update_line_position(text);
-            Some((syntax_kind, text))
-        } else {
-            // Check if context changed during quote-like processing
-            // If so, fall back to appropriate handler
-            match self.context {
-            LexerContext::QuoteLike { .. } => None, // Still in quote-like, no token available
-                _ => {
-                    // Context changed, delegate to new context handler
-                    match self.context {
-                        LexerContext::Default => self.handle_default_context_with(None),
-                        LexerContext::QuoteLike { .. } => unreachable!(), // Already handled above
-                    }
-                }
-            }
-        }
-    }
+    // Quote-like handling moved to stateless expansion; no separate handler needed
 
     // Removed VariableName handling; variable names are parsed by the parser.
 
@@ -1577,131 +1509,13 @@ impl<'a> Lexer<'a> {
         )
     }
 
-    fn is_left_delimiter(&self, kind: SyntaxKind) -> bool {
-        matches!(
-            kind,
-            SyntaxKind::L_PAREN | SyntaxKind::L_BRACE | SyntaxKind::L_BRACKET
-        )
-    }
+    // Removed left/right delimiter helpers (no longer used)
 
-    fn is_right_delimiter(&self, kind: SyntaxKind) -> bool {
-        matches!(
-            kind,
-            SyntaxKind::R_PAREN | SyntaxKind::R_BRACE | SyntaxKind::R_BRACKET
-        )
-    }
+    // Removed keyword/operator/identifier context handlers (parser-driven lexing)
 
-    fn handle_keyword_context(&self, _kind: SyntaxKind) -> LexerContext {
-        // Keep lexer context Default; parser drives quote-like via lookahead and we expand statelessly
-        LexerContext::Default
-    }
-
-    fn handle_operator_context(&self, _kind: SyntaxKind) -> LexerContext {
-        // Do not flip default context; parser provides expectation for ambiguity.
-        self.context
-    }
-
-    fn handle_identifier_context(&self) -> LexerContext {
-        match &self.context {
-            LexerContext::QuoteLike { .. } => self.context,
-            LexerContext::Default => self.context,
-        }
-    }
-
-    fn update_context(&mut self, syntax_kind: SyntaxKind) {
-        // No special handling; only QuoteLike is stateful
-
-        self.context = match syntax_kind {
-            kind if self.is_sigil(kind) => self.context,
-
-            // Keywords
-            kind if self.is_keyword(kind) => self.handle_keyword_context(kind),
-
-            // Operators
-            kind if self.is_operator(kind) => self.handle_operator_context(kind),
-
-            // DELIMITER tokens in quote-like contexts are handled by handle_quote_like_delimiter
-            // Don't override the context here, let handle_quote_like_delimiter manage it
-            SyntaxKind::DELIMITER => {
-                // Keep current context - handle_quote_like_delimiter has already processed this
-                self.context
-            }
-
-            // Left delimiters in quote-like context (fallback for non-DELIMITER tokens)
-            kind if self.is_left_delimiter(kind) => {
-                if let LexerContext::QuoteLike {
-                    prefix,
-                    mode,
-                    state,
-                    ..
-                } = self.context
-                {
-                    match state {
-                        QuoteLikeState::Delimiter {
-                            phase: DelimiterPhase::First,
-                            kind: DelimiterType::Open,
-                        } => {
-                            let delimiter = match kind {
-                                SyntaxKind::L_PAREN => ')',
-                                SyntaxKind::L_BRACE => '}',
-                                SyntaxKind::L_BRACKET => ']',
-                                _ => '\0',
-                            };
-                            LexerContext::QuoteLike {
-                                prefix,
-                                mode,
-                                state: QuoteLikeState::Content {
-                                    phase: DelimiterPhase::First,
-                                },
-                                delimiter,
-                            }
-                        }
-                        QuoteLikeState::Delimiter {
-                            phase: DelimiterPhase::Second,
-                            kind: DelimiterType::Open,
-                        } => {
-                            let delimiter = match kind {
-                                SyntaxKind::L_PAREN => ')',
-                                SyntaxKind::L_BRACE => '}',
-                                SyntaxKind::L_BRACKET => ']',
-                                _ => '\0',
-                            };
-                            LexerContext::QuoteLike {
-                                prefix,
-                                mode,
-                                state: QuoteLikeState::Content {
-                                    phase: DelimiterPhase::Second,
-                                },
-                                delimiter,
-                            }
-                        }
-                        _ => self.context,
-                    }
-            } else {
-                    LexerContext::Default
-                }
-            }
-
-            // Identifiers need context-dependent handling
-            SyntaxKind::IDENT => self.handle_identifier_context(),
-
-            // Do not flip default context on literals/right delimiters
-            kind if self.is_literal(kind) || self.is_right_delimiter(kind) => self.context,
-
-            // Postfix dereference operators: keep default context unchanged
-            SyntaxKind::POSTFIX_DEREF_ARRAY
-            | SyntaxKind::POSTFIX_DEREF_HASH
-            | SyntaxKind::POSTFIX_DEREF_SCALAR => self.context,
-
-            // Data section keywords: parser consumes the remainder
-            SyntaxKind::END_KW | SyntaxKind::DATA_KW => self.context,
-
-            // Statement terminators and POD: keep default context unchanged
-            SyntaxKind::SEMICOLON | SyntaxKind::CUT_KW | SyntaxKind::POD_CONTENT => self.context,
-
-            // Keep current context for other tokens
-            _ => self.context,
-        };
+    fn update_context(&mut self, _syntax_kind: SyntaxKind) {
+        // Lexer remains in Default context; parser drives expectations.
+        self.context = LexerContext::Default;
     }
 
     // Removed: external set_context; parser drives lexing via explicit expectations
