@@ -36,20 +36,6 @@ fn test_postfix_dereference_lexing() {
 }
 
 #[test]
-#[ignore]
-fn test_percent_modulo_vs_sigil() {
-    // Test the critical case mentioned by Gemini: $var % other_var should be modulo
-    let mut lexer = Lexer::new("$var % other_var");
-
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "var")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::MODULO, "%"))); // Should be MODULO, not PERCENT
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "other_var")));
-}
-
-#[test]
 fn test_x_after_sub_keyword() {
     // Test the case mentioned by Gemini: sub x { ... } where x should be IDENT
     let mut lexer = Lexer::new("sub x {");
@@ -62,20 +48,6 @@ fn test_x_after_sub_keyword() {
 }
 
 #[test]
-#[ignore]
-fn test_array_modulo_expression() {
-    // Test that "@array % hash" correctly identifies % as modulo operator
-    let mut lexer = Lexer::new("@array % hash");
-
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::AT, "@")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "array")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::MODULO, "%"))); // Should be MODULO (operator)
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "hash")));
-}
-
-#[test]
 fn test_hash_declaration() {
     // Test that "my %hash" correctly identifies % as sigil
     let mut lexer = Lexer::new("my %hash");
@@ -84,168 +56,6 @@ fn test_hash_declaration() {
     assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
     assert_eq!(lexer.next_token(), Some((SyntaxKind::PERCENT, "%"))); // Should be PERCENT (sigil)
     assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "hash")));
-}
-
-#[test]
-#[ignore]
-fn test_string_comparison_operators() {
-    // Test that 'eq' is an operator when expecting an operator
-    let mut lexer = Lexer::new(r#"$a eq "b""#);
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "a")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::STR_EQ, "eq")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::STRING, r#""b""#)));
-
-    // Test that 'ne' is an operator when expecting an operator
-    let mut lexer = Lexer::new(r#"$a ne "b""#);
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "a")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::STR_NE, "ne")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::STRING, r#""b""#)));
-
-    // Test that 'gt' is an operator
-    let mut lexer = Lexer::new(r#"$a gt "b""#);
-    lexer.next_token(); // $
-    lexer.next_token(); // a
-    lexer.next_token(); // whitespace
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::STR_GT, "gt")));
-
-    // Test that 'lt' is an operator
-    let mut lexer = Lexer::new(r#"$a lt "b""#);
-    lexer.next_token();
-    lexer.next_token();
-    lexer.next_token();
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::STR_LT, "lt")));
-
-    // Test that 'ge' is an operator
-    let mut lexer = Lexer::new(r#"$a ge "b""#);
-    lexer.next_token();
-    lexer.next_token();
-    lexer.next_token();
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::STR_GE, "ge")));
-
-    // Test that 'le' is an operator
-    let mut lexer = Lexer::new(r#"$a le "b""#);
-    lexer.next_token();
-    lexer.next_token();
-    lexer.next_token();
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::STR_LE, "le")));
-
-    // Test that 'cmp' is an operator
-    let mut lexer = Lexer::new(r#"$a cmp "b""#);
-    lexer.next_token();
-    lexer.next_token();
-    lexer.next_token();
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::STR_CMP, "cmp")));
-
-    // Test that 'eq' is an identifier when expecting a value
-    let mut lexer = Lexer::new("sub eq { }");
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::SUB_KW, "sub")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "eq")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::L_BRACE, "{")));
-
-    // Test that 'ne' is an identifier when expecting a value
-    let mut lexer = Lexer::new("my $ne;");
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::MY_KW, "my")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "ne")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::SEMICOLON, ";")));
-
-    // Test that 'gt' is an identifier
-    let mut lexer = Lexer::new("sub gt {}");
-    lexer.next_token(); // sub
-    lexer.next_token(); // whitespace
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "gt")));
-}
-
-#[test]
-fn test_s_operator_disambiguation() {
-    // Test that 's' is recognized as an operator when followed by delimiters (baseline for tr/y)
-    let mut lexer = Lexer::new("$str s/abc/xyz/");
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "str")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::S_KW, "s")));
-    lexer.begin_quote_like(SyntaxKind::S_KW, crate::lexer::QuoteLikeMode::S);
-}
-
-#[test]
-fn test_tr_operator_disambiguation() {
-    // Test that 'tr' is recognized as an operator when followed by delimiters
-    let mut lexer = Lexer::new("$str tr/abc/xyz/");
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "str")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::TR_KW, "tr")));
-    lexer.begin_quote_like(SyntaxKind::TR_KW, crate::lexer::QuoteLikeMode::TR);
-    lexer.begin_quote_like(SyntaxKind::TR_KW, crate::lexer::QuoteLikeMode::TR);
-    lexer.begin_quote_like(SyntaxKind::TR_KW, crate::lexer::QuoteLikeMode::TR);
-    lexer.begin_quote_like(SyntaxKind::TR_KW, crate::lexer::QuoteLikeMode::TR);
-    lexer.begin_quote_like(SyntaxKind::TR_KW, crate::lexer::QuoteLikeMode::TR);
-}
-
-#[test]
-fn test_tr_as_function_name() {
-    // Test that 'tr' is an identifier when used as function name
-    let mut lexer = Lexer::new("sub tr {}");
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::SUB_KW, "sub")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::TR_KW, "tr")));
-}
-
-#[test]
-#[ignore]
-fn test_tr_as_variable_name() {
-    // Test that 'tr' is an identifier when used as variable name
-    let mut lexer = Lexer::new("my $tr = 1;");
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::MY_KW, "my")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "tr")));
-}
-
-#[test]
-fn test_y_operator_disambiguation() {
-    // Test that 'y' is recognized as an operator when followed by delimiters
-    let mut lexer = Lexer::new("$str y/abc/xyz/");
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "str")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::Y_KW, "y")));
-}
-
-#[test]
-fn test_y_as_function_name() {
-    // Test that 'y' is an identifier when used as function name
-    let mut lexer = Lexer::new("sub y {}");
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::SUB_KW, "sub")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::Y_KW, "y")));
-}
-
-#[test]
-#[ignore]
-fn test_y_as_variable_name() {
-    // Test that 'y' is an identifier when used as variable name
-    let mut lexer = Lexer::new("my $y = 1;");
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::MY_KW, "my")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "y")));
-}
-
-// TODO: Update this test for the new unified QuoteLike API
-// #[test]
-fn _disabled_test_substitution_lexing() {
-    // This test needs to be updated for the new unified QuoteLike API
-    // TODO: Reimplement using the new LexerContext::QuoteLike variant
 }
 
 #[test]
@@ -400,29 +210,6 @@ fn test_tr_various_flags() {
 }
 
 #[test]
-#[ignore]
-fn test_keyword_variable_names() {
-    // Test that keywords can be used as variable names when following sigils
-    let mut lexer = Lexer::new("my $package = 1;");
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::MY_KW, "my")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "package")));
-
-    let mut lexer = Lexer::new("my @if = (1, 2);");
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::MY_KW, "my")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::AT, "@")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "if")));
-
-    let mut lexer = Lexer::new("my %while = ();");
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::MY_KW, "my")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::PERCENT, "%")));
-    assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "while")));
-}
-
-#[test]
 fn test_keywords_still_work_in_normal_context() {
     // Test that keywords are still recognized as keywords in normal contexts
     let mut lexer = Lexer::new("if ($condition) { package Foo; }");
@@ -439,79 +226,6 @@ fn test_keywords_still_work_in_normal_context() {
         lexer.next_token(),
         Some((SyntaxKind::PACKAGE_KW, "package"))
     );
-}
-
-#[test]
-#[ignore]
-fn test_various_keyword_variable_names() {
-    let test_cases = vec![
-        ("our $sub", SyntaxKind::IDENT),
-        ("local $else", SyntaxKind::IDENT),
-        ("state $for", SyntaxKind::IDENT),
-        ("my $unless", SyntaxKind::IDENT),
-        ("my $return", SyntaxKind::IDENT),
-        ("my $use", SyntaxKind::IDENT),
-        ("my $no", SyntaxKind::IDENT),
-    ];
-
-    for (input, expected_kind) in test_cases {
-        let mut lexer = Lexer::new(input);
-
-        // Skip the declaration keyword and whitespace
-        lexer.next_token(); // declaration keyword
-        lexer.next_token(); // whitespace
-        lexer.next_token(); // sigil
-
-        // The next token should be the identifier, not a keyword
-        let token = lexer.next_token();
-        assert!(token.is_some(), "Expected token for input: {}", input);
-        let (kind, _) = token.unwrap();
-        assert_eq!(kind, expected_kind, "Failed for input: {}", input);
-    }
-}
-
-#[test]
-#[ignore]
-fn test_declaration_keywords_as_variable_names() {
-    // Test that declaration keywords can be used as variable names after sigils
-    let test_cases = vec![
-        ("my $my", SyntaxKind::IDENT),
-        ("my $our", SyntaxKind::IDENT),
-        ("my $state", SyntaxKind::IDENT),
-        ("my $local", SyntaxKind::IDENT),
-        ("our $my", SyntaxKind::IDENT),
-        ("state $our", SyntaxKind::IDENT),
-        ("local $state", SyntaxKind::IDENT),
-    ];
-
-    for (input, expected_kind) in test_cases {
-        let mut lexer = Lexer::new(input);
-
-        // Skip the declaration keyword and whitespace
-        lexer.next_token(); // declaration keyword
-        lexer.next_token(); // whitespace
-        lexer.next_token(); // sigil
-
-        // The next token should be the identifier, not a keyword
-        let token = lexer.next_token();
-        assert!(token.is_some(), "Expected token for input: {}", input);
-        let (kind, text) = token.unwrap();
-        assert_eq!(kind, expected_kind, "Failed for input: {}", input);
-        // Verify that the text is the expected variable name
-        let expected_var_name = input.split('$').nth(1).unwrap();
-        assert_eq!(
-            text, expected_var_name,
-            "Variable name mismatch for input: {}",
-            input
-        );
-    }
-}
-
-// TODO: Update this test for the new unified QuoteLike API
-// #[test]
-fn _disabled_test_no_flags_handling() {
-    // This test needs to be updated for the new unified QuoteLike API
-    // TODO: Reimplement using the new LexerContext::QuoteLike variant
 }
 
 #[test]
