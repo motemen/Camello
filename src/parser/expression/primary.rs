@@ -191,7 +191,7 @@ impl Parser<'_> {
         // Use token-based lookahead to check if next non-trivia token is a dollar sigil or brace
         // Valid dereference patterns are of the form: @$ref, %$ref, $$ref, @{expr}, %{expr}, ${expr}
         matches!(
-            self.peek_second_non_trivia_with(crate::lexer::LexExpectation::Value),
+            self.peek_second_non_trivia_with(crate::lexer::LexMode::Value),
             Some((SyntaxKind::DOLLAR | SyntaxKind::L_BRACE, _))
         )
     }
@@ -243,7 +243,7 @@ impl Parser<'_> {
         if self.at(SyntaxKind::IDENT) {
             self.bump(); // First identifier
         } else if self.current_kind().is_some_and(SyntaxKind::is_keyword) {
-            self.bump_with_kind(SyntaxKind::IDENT);
+            self.bump_as(SyntaxKind::IDENT);
         } else if self
             .current_kind()
             .is_some_and(|k|
@@ -261,7 +261,7 @@ impl Parser<'_> {
             )
         {
             // Allow word-operator tokens as identifiers in identifier-expected positions
-            self.bump_with_kind(SyntaxKind::IDENT);
+            self.bump_as(SyntaxKind::IDENT);
         } else {
             self.error("Expected identifier");
             return;
@@ -296,7 +296,7 @@ impl Parser<'_> {
                         )
                 {
                     // Coerce subsequent segments to IDENT as needed
-                    self.bump_with_kind(SyntaxKind::IDENT);
+                    self.bump_as(SyntaxKind::IDENT);
                 } else {
                     // A trailing `::` is valid, so we don't report an error, just stop parsing the qualified name.
                     break;
