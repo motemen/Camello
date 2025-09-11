@@ -4,6 +4,7 @@ pub mod quoted;
 
 use crate::SyntaxKind;
 use precedence::{get_operator_info, OperatorInfo, Precedence};
+use crate::lexer::LexExpectation;
 
 use super::Parser;
 
@@ -84,8 +85,8 @@ impl Parser<'_> {
                 self.builder
                     .start_node_at(checkpoint, SyntaxKind::TERNARY_EXPR.into());
 
-                // Consume the ? operator
-                self.bump();
+                // Consume the ? operator; next token should be a Value
+                self.bump_value();
                 self.skip_trivia();
 
                 // Parse the true expression with ternary precedence (right associative)
@@ -95,7 +96,8 @@ impl Parser<'_> {
 
                 // Expect the : operator
                 if self.at(SyntaxKind::COLON) {
-                    self.bump(); // consume :
+                    // Consume ':'; next token should be a Value
+                    self.bump_value();
                     self.skip_trivia();
                 } else {
                     self.error("Expected ':' after true expression in ternary operator");
@@ -113,7 +115,7 @@ impl Parser<'_> {
             // Check if this is a compound assignment operator (e.g., +=, ||=, etc.)
             let is_compound_assignment = current_kind.is_compoundable_operator() && {
                 // Look ahead to see if there's an '=' after the current operator
-                self.peek_non_trivia_token()
+                self.peek_non_trivia_token_with(LexExpectation::Operator)
                     .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::EQ)
             };
 
@@ -143,14 +145,17 @@ impl Parser<'_> {
 
             let op_checkpoint = self.builder.checkpoint();
 
-            // Consume the operator
-            self.bump();
+            // Consume the operator; next token should be read as a Value (RHS)
+            self.bump_value();
 
             if is_compound_assignment {
                 // Handle compound assignment operators (e.g., +=, ||=, etc.)
-                self.builder
-                    .start_node_at(op_checkpoint, SyntaxKind::COMPOUND_ASSIGNMENT.into());
-                self.bump(); // consume =
+                self.builder.start_node_at(
+                    op_checkpoint,
+                    SyntaxKind::COMPOUND_ASSIGNMENT.into(),
+                );
+                // Consume '='; next token should be a Value (RHS)
+                self.bump_value();
                 self.builder.finish_node();
             }
 
@@ -439,7 +444,7 @@ impl Parser<'_> {
             Some(SyntaxKind::ASTERISK) => {
                 // Handle typeglob expressions specially
                 // Check if this is followed by a brace or identifier (typeglob syntax)
-                let next_token = self.peek_non_trivia_token();
+                let next_token = self.peek_non_trivia_token_with(LexExpectation::Value);
                 if matches!(
                     next_token,
                     Some((SyntaxKind::L_BRACE | SyntaxKind::IDENT, _))

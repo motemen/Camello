@@ -278,6 +278,25 @@ enum DisambiguationContext {
     ExpectingOperator,
 }
 
+/// External lexical expectation provided by the parser to disambiguate
+/// only operator/value sensitive tokens in default contexts.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LexExpectation {
+    /// Expecting a value, identifier, or sigil (after keywords, operators, sigils)
+    Value,
+    /// Expecting an operator (after identifiers, numbers, variables)
+    Operator,
+}
+
+impl From<LexExpectation> for DisambiguationContext {
+    fn from(expect: LexExpectation) -> Self {
+        match expect {
+            LexExpectation::Value => DisambiguationContext::ExpectingValue,
+            LexExpectation::Operator => DisambiguationContext::ExpectingOperator,
+        }
+    }
+}
+
 impl From<LexerContext> for Option<DisambiguationContext> {
     fn from(lexer_context: LexerContext) -> Self {
         match lexer_context {
@@ -328,6 +347,8 @@ pub struct Lexer<'a> {
     logos_lexer: logos::Lexer<'a, Token>,
     context: LexerContext,
     at_line_start: bool, // Track if we're at the start of a line for POD detection
+    // Optional one-shot override for disambiguation context used by next_token_with/peek_*_with
+    disambiguation_override: Option<DisambiguationContext>,
 }
 
 impl Clone for Lexer<'_> {
@@ -336,6 +357,7 @@ impl Clone for Lexer<'_> {
             logos_lexer: self.logos_lexer.clone(),
             context: self.context,
             at_line_start: self.at_line_start,
+            disambiguation_override: self.disambiguation_override,
         }
     }
 }
@@ -356,6 +378,7 @@ impl<'a> Lexer<'a> {
             logos_lexer,
             context: LexerContext::ExpectingValue, // Start expecting a value
             at_line_start: true,                   // Start at beginning of input (line start)
+            disambiguation_override: None,
         }
     }
 
@@ -381,7 +404,7 @@ impl<'a> Lexer<'a> {
     }
 
     pub fn next_token(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        match self.context {
+        let result = match self.context {
             LexerContext::RawData => self.handle_raw_data(),
             LexerContext::QuoteLike { .. } => self.handle_quote_like(),
             LexerContext::VariableName => self.handle_variable_name(),
@@ -389,7 +412,10 @@ impl<'a> Lexer<'a> {
             LexerContext::ExpectingValue | LexerContext::ExpectingOperator => {
                 self.handle_default_context()
             }
-        }
+        };
+        // One-shot expectation override should be cleared after producing a token
+        self.disambiguation_override = None;
+        result
     }
 
     /// Handle RawData context: __DATA__ や POD の処理を担当
@@ -592,8 +618,12 @@ impl<'a> Lexer<'a> {
     fn disambiguate(&self, token: Token, text: &str) -> SyntaxKind {
         // Convert current lexer context to disambiguation context
         // Handle ExpectingVariableName as a special case that also needs disambiguation
-        let disambiguation_context = Option::<DisambiguationContext>::from(self.context)
-        .expect("disambiguate should only be called from ExpectingValue/ExpectingOperator/ExpectingVariableName contexts");
+        let disambiguation_context = self
+            .disambiguation_override
+            .or_else(|| Option::<DisambiguationContext>::from(self.context))
+            .expect(
+                "disambiguate should only be called from ExpectingValue/ExpectingOperator/ExpectingVariableName contexts",
+            );
 
         match token {
             Token::Ident => {
@@ -1657,6 +1687,56 @@ impl<'a> Lexer<'a> {
         self.clone()
             .find(|(kind, _)| !kind.is_trivia())
             .filter(|(kind, _)| target_kinds.contains(kind))
+    }
+
+    /// Get the next token using an explicit lexical expectation for ambiguous cases.
+    /// For non-default contexts (QuoteLike/SubPrototype/RawData/VariableName), this expectation is ignored.
+    pub fn next_token_with(
+        &mut self,
+        expect: LexExpectation,
+    ) -> Option<(SyntaxKind, &'a str)> {
+        // Only override in default contexts where disambiguation is used
+        let should_override = matches!(
+            self.context,
+            LexerContext::ExpectingValue | LexerContext::ExpectingOperator
+        );
+        let prev_override = self.disambiguation_override;
+        if should_override {
+            self.disambiguation_override = Some(expect.into());
+        }
+        let result = self.next_token();
+        // Clear the override to make it one-shot
+        self.disambiguation_override = prev_override;
+        result
+    }
+
+    /// Peek the next non-trivia token using a given lexical expectation.
+    /// This does not mutate the original lexer state.
+    #[must_use]
+    pub fn peek_non_trivia_with(
+        &self,
+        expect: LexExpectation,
+    ) -> Option<(SyntaxKind, &'a str)> {
+        let mut cloned = self.clone();
+        // Set override on the clone if in default contexts
+        if matches!(
+            cloned.context,
+            LexerContext::ExpectingValue | LexerContext::ExpectingOperator
+        ) {
+            cloned.disambiguation_override = Some(expect.into());
+        }
+        cloned.find(|(kind, _)| !kind.is_trivia())
+    }
+
+    /// Convenience: default expectation is Value
+    #[must_use]
+    pub fn peek_non_trivia(&self) -> Option<(SyntaxKind, &'a str)> {
+        self.peek_non_trivia_with(LexExpectation::Value)
+    }
+
+    /// Convenience: default expectation is Value
+    pub fn next_token_default(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        self.next_token_with(LexExpectation::Value)
     }
 }
 
