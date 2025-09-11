@@ -316,7 +316,7 @@ impl<'a> Lexer<'a> {
             None => LexMode::Value,
             Some(k) => {
                 // After literals, identifiers, postfix deref, expect operator
-                if self.is_literal(k)
+                if k.is_literal()
                     || matches!(
                         k,
                         SyntaxKind::IDENT
@@ -326,7 +326,7 @@ impl<'a> Lexer<'a> {
                     )
                 {
                     LexMode::Operator
-                } else if self.is_operator(k)
+                } else if k.is_operator()
                     || matches!(
                         k,
                         SyntaxKind::L_PAREN | SyntaxKind::L_BRACE | SyntaxKind::L_BRACKET | SyntaxKind::COMMA
@@ -1437,66 +1437,7 @@ impl<'a> Lexer<'a> {
 
     // Removed unused is_sigil / is_keyword helpers
 
-    fn is_operator(&self, kind: SyntaxKind) -> bool {
-        matches!(
-            kind,
-            SyntaxKind::EQ
-                | SyntaxKind::PLUS
-                | SyntaxKind::MINUS
-                | SyntaxKind::DOT
-                | SyntaxKind::ARROW
-                | SyntaxKind::STAR
-                | SyntaxKind::MODULO
-                | SyntaxKind::X
-                | SyntaxKind::SLASH
-                | SyntaxKind::GT
-                | SyntaxKind::LT
-                | SyntaxKind::GE
-                | SyntaxKind::LE
-                | SyntaxKind::EQ_EQ
-                | SyntaxKind::NE
-                | SyntaxKind::STR_EQ
-                | SyntaxKind::STR_NE
-                | SyntaxKind::STR_GT
-                | SyntaxKind::STR_LT
-                | SyntaxKind::STR_GE
-                | SyntaxKind::STR_LE
-                | SyntaxKind::STR_CMP
-                | SyntaxKind::LOGICAL_AND
-                | SyntaxKind::LOGICAL_OR
-                | SyntaxKind::LOGICAL_NOT
-                | SyntaxKind::NOT_KW
-                | SyntaxKind::AND_KW
-                | SyntaxKind::OR_KW
-                | SyntaxKind::XOR_KW
-                | SyntaxKind::DEFINED_OR
-                | SyntaxKind::SPACESHIP
-                | SyntaxKind::FILE_TEST_OP
-                | SyntaxKind::REGEX_MATCH
-                | SyntaxKind::REGEX_NOT_MATCH
-                | SyntaxKind::COMMA
-                | SyntaxKind::POSTFIX_DEREF_ARRAY
-                | SyntaxKind::POSTFIX_DEREF_HASH
-                | SyntaxKind::POSTFIX_DEREF_SCALAR
-                | SyntaxKind::BACKSLASH
-        )
-    }
-
-    fn is_literal(&self, kind: SyntaxKind) -> bool {
-        matches!(
-            kind,
-            SyntaxKind::NUMBER
-                | SyntaxKind::STRING
-                | SyntaxKind::VERSION
-                | SyntaxKind::BARE_VERSION
-                | SyntaxKind::REGEX_LITERAL
-                | SyntaxKind::IO_EXPR
-                | SyntaxKind::LITERAL_STRING
-                | SyntaxKind::INTERPOLATED_STRING
-                | SyntaxKind::REGEX_PATTERN
-                | SyntaxKind::QW_STRING
-        )
-    }
+    // Removed is_operator/is_literal; use SyntaxKind::is_operator/is_literal instead
 
     // Removed left/right delimiter helpers (no longer used)
 
