@@ -316,13 +316,15 @@ impl Parser<'_> {
                     // Function call: expr(args)
                     self.builder
                         .start_node_at(initial_checkpoint, SyntaxKind::FUNCTION_CALL_EXPR.into());
-                    self.bump(); // (
+                    // Inside function args, expect values
+                    self.bump_value(); // (
                     self.skip_trivia();
 
                     self.expression_list();
 
                     if self.at(SyntaxKind::R_PAREN) {
-                        self.bump(); // )
+                        // After ')', expect an operator
+                        self.bump_op(); // )
                         self.skip_trivia();
                     } else {
                         self.error("Expected ')' after function arguments");
@@ -435,20 +437,20 @@ impl Parser<'_> {
 
         match self.current_kind() {
             Some(SyntaxKind::NUMBER | SyntaxKind::STRING | SyntaxKind::REGEX_LITERAL) => {
-                // Consuming a value; next lex should expect an operator
-                self.bump_op();
+                // Consume as a value; let operators be detected on the next step
+                self.bump_value();
                 self.skip_trivia();
             }
             Some(SyntaxKind::IO_EXPR) => {
                 self.builder.start_node(SyntaxKind::IO_EXPR.into());
-                // Consuming a value; next lex should expect an operator
-                self.bump_op();
+                // Consume I/O expression as a value
+                self.bump_value();
                 self.builder.finish_node();
                 self.skip_trivia();
             }
             Some(kind) if kind.is_variable() => {
-                // Consuming a value; next lex should expect an operator
-                self.bump_op();
+                // Consume variable as a value
+                self.bump_value();
                 self.skip_trivia();
             }
             Some(SyntaxKind::BACKSLASH) => {
@@ -551,8 +553,8 @@ impl Parser<'_> {
             }
             Some(SyntaxKind::UNDEF_KW) => {
                 // undef keyword as expression
-                // 'undef' is a value; next expect an operator
-                self.bump_op(); // consume undef
+                // Consume 'undef' as a value
+                self.bump_value();
                 self.skip_trivia();
             }
             Some(SyntaxKind::IDENT) => {
@@ -625,8 +627,8 @@ impl Parser<'_> {
             Some(SyntaxKind::X) => {
                 // Handle 'x' as an identifier when it appears at the start of expressions
                 // This allows expressions like "x => 1" in use statements
-                // 'x' treated as value; next should expect an operator
-                self.bump_op(); // consume x
+                // Consume 'x' as a value in this context
+                self.bump_value();
                 self.skip_trivia();
             }
             Some(SyntaxKind::L_PAREN) => {
