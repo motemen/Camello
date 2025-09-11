@@ -261,8 +261,14 @@ impl<'a> Parser<'a> {
     /// using an explicit lexical expectation for the second token.
     fn peek_second_non_trivia_with(&self, expect: LexExpectation) -> Option<(SyntaxKind, &'a str)> {
         let mut cloned = self.lexer.clone();
-        // Consume the first non-trivia token (the current one)
-        let _ = cloned.find(|(k, _)| !k.is_trivia());
+        // Consume the first non-trivia token (the current one) using the same expectation
+        loop {
+            match cloned.next_token_with(expect) {
+                Some((k, _)) if k.is_trivia() => continue,
+                Some((_k, _t)) => break,
+                None => return None,
+            }
+        }
         // Now peek the next non-trivia with the given expectation
         cloned.peek_non_trivia_with(expect)
     }

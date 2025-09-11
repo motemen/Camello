@@ -600,7 +600,7 @@ impl Parser<'_> {
         }
 
         self.expect(SyntaxKind::R_PAREN);
-        self.lexer.set_context(LexerContext::ExpectingValue);
+        self.lexer.set_context(LexerContext::Default);
         self.builder.finish_node();
     }
 }

@@ -100,7 +100,7 @@ cargo fmt
 cargo clippy
 
 # Run all tests
-cargo test
+cargo test -q
 ```
 
 ### Building and Testing
@@ -110,18 +110,18 @@ cargo test
 cargo check
 
 # Run all tests (unit tests, integration tests, doc tests)
-cargo test
+cargo test -q
 
 # Run with optimizations
 cargo build --release
 
 # Run a single test module
-cargo test lexer::tests
-cargo test parser::tests
-cargo test formatter::tests
+cargo test -q lexer::tests
+cargo test -q parser::tests
+cargo test -q formatter::tests
 
 # Run specific test
-cargo test test_var_decl_formatting
+cargo test -q test_var_decl_formatting
 ```
 
 ### CLI Usage
