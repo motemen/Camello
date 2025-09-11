@@ -263,6 +263,30 @@ impl Parser<'_> {
         self.parse_postfix_operations_with_checkpoint(checkpoint)
     }
 
+    /// Parse a postfix increment or decrement operator
+    fn parse_postfix_op(&mut self, initial_checkpoint: rowan::Checkpoint, op_kind: SyntaxKind) {
+        self.builder
+            .start_node_at(initial_checkpoint, SyntaxKind::POSTFIX_EXPR.into());
+        self.bump_op_as(op_kind);
+        self.skip_trivia();
+        self.builder.finish_node();
+    }
+
+    /// Parse a prefix operator expression
+    fn parse_prefix_expr(&mut self, op_kind: SyntaxKind, op_str: &str) {
+        self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
+        self.bump_as(op_kind);
+        self.skip_trivia();
+
+        if !self.parse_expression_with_precedence(
+            crate::parser::expression::precedence::Precedence::PREFIX,
+        ) {
+            self.error(&format!("Expected expression after '{}'", op_str));
+        }
+
+        self.builder.finish_node();
+    }
+
     /// Parse all postfix operations (method calls, subscripts, etc.)
     fn parse_postfix_operations_with_checkpoint(
         &mut self,
@@ -271,20 +295,10 @@ impl Parser<'_> {
         loop {
             match self.current_kind() {
                 Some(SyntaxKind::INCREMENT) => {
-                    // Postfix increment
-                    self.builder
-                        .start_node_at(initial_checkpoint, SyntaxKind::POSTFIX_EXPR.into());
-                    self.bump_op_as(SyntaxKind::POSTFIX_INCREMENT);
-                    self.skip_trivia();
-                    self.builder.finish_node();
+                    self.parse_postfix_op(initial_checkpoint, SyntaxKind::POSTFIX_INCREMENT);
                 }
                 Some(SyntaxKind::DECREMENT) => {
-                    // Postfix decrement
-                    self.builder
-                        .start_node_at(initial_checkpoint, SyntaxKind::POSTFIX_EXPR.into());
-                    self.bump_op_as(SyntaxKind::POSTFIX_DECREMENT);
-                    self.skip_trivia();
-                    self.builder.finish_node();
+                    self.parse_postfix_op(initial_checkpoint, SyntaxKind::POSTFIX_DECREMENT);
                 }
                 Some(SyntaxKind::ARROW) => {
                     // After '->', the next token is a value (method name, '{', '(', etc.)
@@ -580,62 +594,16 @@ impl Parser<'_> {
                 }
             }
             SyntaxKind::PLUS => {
-                // Unary plus prefix operator
-                self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
-                self.bump_as(SyntaxKind::UNARY_PLUS);
-                self.skip_trivia();
-
-                // Parse the operand with higher precedence
-                if !self.parse_expression_with_precedence(
-                    crate::parser::expression::precedence::Precedence::PREFIX,
-                ) {
-                    self.error("Expected expression after unary '+'");
-                }
-
-                self.builder.finish_node();
+                self.parse_prefix_expr(SyntaxKind::UNARY_PLUS, "+");
             }
             SyntaxKind::MINUS => {
-                // Unary minus prefix operator
-                self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
-                self.bump_as(SyntaxKind::UNARY_MINUS);
-                self.skip_trivia();
-
-                // Parse the operand with higher precedence
-                if !self.parse_expression_with_precedence(
-                    crate::parser::expression::precedence::Precedence::PREFIX,
-                ) {
-                    self.error("Expected expression after unary '-'");
-                }
-
-                self.builder.finish_node();
+                self.parse_prefix_expr(SyntaxKind::UNARY_MINUS, "-");
             }
             SyntaxKind::INCREMENT => {
-                // Increment prefix operator
-                self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
-                self.bump_as(SyntaxKind::PREFIX_INCREMENT);
-                self.skip_trivia();
-
-                if !self.parse_expression_with_precedence(
-                    crate::parser::expression::precedence::Precedence::PREFIX,
-                ) {
-                    self.error("Expected expression after '++'");
-                }
-
-                self.builder.finish_node();
+                self.parse_prefix_expr(SyntaxKind::PREFIX_INCREMENT, "++");
             }
             SyntaxKind::DECREMENT => {
-                // Decrement prefix operator
-                self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
-                self.bump_as(SyntaxKind::PREFIX_DECREMENT);
-                self.skip_trivia();
-
-                if !self.parse_expression_with_precedence(
-                    crate::parser::expression::precedence::Precedence::PREFIX,
-                ) {
-                    self.error("Expected expression after '--'");
-                }
-
-                self.builder.finish_node();
+                self.parse_prefix_expr(SyntaxKind::PREFIX_DECREMENT, "--");
             }
             SyntaxKind::LOGICAL_NOT => {
                 // Logical NOT prefix operator
