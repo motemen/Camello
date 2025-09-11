@@ -31,7 +31,7 @@ impl Parser<'_> {
         let function_name = self.current_text_value().unwrap_or("").to_string();
 
         if coerce_current_to_ident {
-                self.bump_as(SyntaxKind::IDENT);
+            self.bump_as(SyntaxKind::IDENT);
         } else {
             // Might be a qualified identifier, so use parse_identifier_or_qualified
             self.parse_identifier_or_qualified();
