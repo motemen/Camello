@@ -66,8 +66,8 @@ impl Parser<'_> {
                 // End of block, notify the caller.
                 false
             }
-            Some(SyntaxKind::YADA_YADA) => {
-                self.yada_yada_stmt();
+            Some(SyntaxKind::ELLIPSIS) => {
+                self.ellipsis_stmt();
                 true
             }
             Some(_) => {
@@ -515,8 +515,8 @@ impl Parser<'_> {
         self.builder.finish_node();
     }
 
-    fn yada_yada_stmt(&mut self) {
-        self.builder.start_node(SyntaxKind::YADA_YADA_STMT.into());
+    fn ellipsis_stmt(&mut self) {
+        self.builder.start_node(SyntaxKind::ELLIPSIS_STMT.into());
         self.bump(); // consume '...'
         self.skip_trivia();
 

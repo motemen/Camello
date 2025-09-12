@@ -200,11 +200,11 @@ fn test_range_operator_lexing() {
 }
 
 #[test]
-fn test_yada_yada_statement_lexing() {
+fn test_ellipsis_statement_lexing() {
     let mut lexer = Lexer::new("...");
     assert_eq!(
         lexer.next_token_with_context(LexContext::Value),
-        Some((SyntaxKind::YADA_YADA, "..."))
+        Some((SyntaxKind::ELLIPSIS, "..."))
     );
 }
 
