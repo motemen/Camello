@@ -16,8 +16,10 @@ impl Precedence {
     pub const LOGICAL_OR: Precedence = Precedence(20); // ||
     pub const LOGICAL_AND: Precedence = Precedence(30); // &&
     pub const COMPARISON: Precedence = Precedence(40); // ==, !=, <, >, <=, >=, eq, ne, lt, gt, le, ge, cmp, <=>
-    pub const BITWISE_OR: Precedence = Precedence(45); // |, ^ (bitwise OR and XOR)
-    pub const BITWISE_AND: Precedence = Precedence(47); // & (bitwise AND)
+                                                       // Bitwise operators must bind less tightly than comparisons and more tightly than logical &&/||
+    pub const BITWISE_AND: Precedence = Precedence(39); // & (bitwise AND)
+    pub const BITWISE_XOR: Precedence = Precedence(38); // ^ (bitwise XOR)
+    pub const BITWISE_OR: Precedence = Precedence(37); // | (bitwise OR)
     pub const BIT_SHIFT: Precedence = Precedence(48); // <<, >>
     pub const ADDITIVE: Precedence = Precedence(50); // +, -, .
     pub const MULTIPLICATIVE: Precedence = Precedence(60); // *, /, %, x
@@ -133,13 +135,18 @@ pub fn get_operator_info(kind: SyntaxKind) -> Option<OperatorInfo> {
             SyntaxKind::INFIX_EXPR,
         )),
 
-        // Bitwise operators
+        // Bitwise operators (ordered by precedence: &: highest, ^: middle, |: lowest)
         SyntaxKind::BITWISE_AND => Some(OperatorInfo::new(
             Precedence::BITWISE_AND,
             false,
             SyntaxKind::INFIX_EXPR,
         )),
-        SyntaxKind::BITWISE_OR | SyntaxKind::BITWISE_XOR => Some(OperatorInfo::new(
+        SyntaxKind::BITWISE_XOR => Some(OperatorInfo::new(
+            Precedence::BITWISE_XOR,
+            false,
+            SyntaxKind::INFIX_EXPR,
+        )),
+        SyntaxKind::BITWISE_OR => Some(OperatorInfo::new(
             Precedence::BITWISE_OR,
             false,
             SyntaxKind::INFIX_EXPR,
