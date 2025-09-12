@@ -325,6 +325,7 @@ impl<'a> Parser<'a> {
                 SyntaxKind::INCREMENT, // prefix increment operator
                 SyntaxKind::DECREMENT, // prefix decrement operator
                 SyntaxKind::LOGICAL_NOT, // prefix logical NOT operator
+                SyntaxKind::BITWISE_NOT, // prefix bitwise NOT operator
                 SyntaxKind::NOT_KW,    // prefix NOT keyword operator
                 SyntaxKind::FILE_TEST_OP, // file test operators
                 SyntaxKind::X,         // x can start expressions like "x => 1" in use statements

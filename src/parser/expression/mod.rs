@@ -272,21 +272,6 @@ impl Parser<'_> {
         self.builder.finish_node();
     }
 
-    /// Parse a prefix operator expression
-    fn parse_prefix_expr(&mut self, op_kind: SyntaxKind, op_str: &str) {
-        self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
-        self.bump_as(op_kind);
-        self.skip_trivia();
-
-        if !self.parse_expression_with_precedence(
-            crate::parser::expression::precedence::Precedence::PREFIX,
-        ) {
-            self.error(&format!("Expected expression after '{}'", op_str));
-        }
-
-        self.builder.finish_node();
-    }
-
     /// Parse all postfix operations (method calls, subscripts, etc.)
     fn parse_postfix_operations_with_checkpoint(
         &mut self,
@@ -599,48 +584,48 @@ impl Parser<'_> {
                 }
             }
             SyntaxKind::PLUS => {
-                self.parse_prefix_expr(SyntaxKind::UNARY_PLUS, "+");
+                // Unary plus prefix operator
+                self.parse_standard_prefix_expr(
+                    "+",
+                    Precedence::PREFIX,
+                    Some(SyntaxKind::UNARY_PLUS),
+                );
             }
             SyntaxKind::MINUS => {
-                self.parse_prefix_expr(SyntaxKind::UNARY_MINUS, "-");
+                // Unary minus prefix operator
+                self.parse_standard_prefix_expr(
+                    "-",
+                    Precedence::PREFIX,
+                    Some(SyntaxKind::UNARY_MINUS),
+                );
             }
             SyntaxKind::INCREMENT => {
-                self.parse_prefix_expr(SyntaxKind::PREFIX_INCREMENT, "++");
+                // Prefix increment operator
+                self.parse_standard_prefix_expr(
+                    "++",
+                    Precedence::PREFIX,
+                    Some(SyntaxKind::PREFIX_INCREMENT),
+                );
             }
             SyntaxKind::DECREMENT => {
-                self.parse_prefix_expr(SyntaxKind::PREFIX_DECREMENT, "--");
+                // Prefix decrement operator
+                self.parse_standard_prefix_expr(
+                    "--",
+                    Precedence::PREFIX,
+                    Some(SyntaxKind::PREFIX_DECREMENT),
+                );
             }
             SyntaxKind::LOGICAL_NOT => {
                 // Logical NOT prefix operator
-                self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
-                // After '!', expect a value
-                self.bump_value(); // consume !
-                self.skip_trivia();
-
-                // Parse the operand with higher precedence
-                if !self.parse_expression_with_precedence(
-                    crate::parser::expression::precedence::Precedence::PREFIX,
-                ) {
-                    self.error("Expected expression after '!'");
-                }
-
-                self.builder.finish_node();
+                self.parse_standard_prefix_expr("!", Precedence::PREFIX, None);
+            }
+            SyntaxKind::BITWISE_NOT => {
+                // Bitwise NOT prefix operator
+                self.parse_standard_prefix_expr("~", Precedence::PREFIX, None);
             }
             SyntaxKind::NOT_KW => {
                 // NOT keyword prefix operator
-                self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
-                // After 'not', expect a value
-                self.bump_value(); // consume 'not'
-                self.skip_trivia();
-
-                // Parse the operand with logical not keyword precedence
-                if !self.parse_expression_with_precedence(
-                    crate::parser::expression::precedence::Precedence::LOGICAL_NOT_KW,
-                ) {
-                    self.error("Expected expression after 'not'");
-                }
-
-                self.builder.finish_node();
+                self.parse_standard_prefix_expr("not", Precedence::LOGICAL_NOT_KW, None);
             }
             SyntaxKind::MY_KW
             | SyntaxKind::OUR_KW
@@ -884,5 +869,30 @@ impl Parser<'_> {
                 self.error("Expected ')' after method arguments");
             }
         }
+    }
+
+    /// Helper function to parse a standard prefix expression, reducing code duplication
+    fn parse_standard_prefix_expr(
+        &mut self,
+        op_char: &str,
+        precedence: Precedence,
+        use_bump_as: Option<SyntaxKind>,
+    ) {
+        self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
+
+        if let Some(as_kind) = use_bump_as {
+            self.bump_as(as_kind);
+        } else {
+            self.bump_value(); // consume operator
+        }
+
+        self.skip_trivia();
+
+        if !self.parse_expression_with_precedence(precedence) {
+            let message = format!("Expected expression after '{}'", op_char);
+            self.error(&message);
+        }
+
+        self.builder.finish_node();
     }
 }

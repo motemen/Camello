@@ -221,6 +221,20 @@ fn test_unless_stmt_formatting() {
 }
 
 #[test]
+fn test_shift_exponent_and_bitwise_not_formatting() {
+    let cases = [
+        ("$a<<2;", "$a << 2;\n"),
+        ("$a>>$b;", "$a >> $b;\n"),
+        ("$x**$y;", "$x ** $y;\n"),
+        ("~$mask;", "~$mask;\n"),
+        ("$a<<=$b;", "$a <<= $b;\n"),
+        ("$b>>=2;", "$b >>= 2;\n"),
+        ("$c**=$d;", "$c **= $d;\n"),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_postfix_conditional_formatting() {
     let cases = [
         // Postfix if tests
