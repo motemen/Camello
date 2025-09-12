@@ -109,7 +109,9 @@ pub const fn get_token_spacing(kind: SyntaxKind) -> TokenSpacing {
         | SyntaxKind::X
         | SyntaxKind::EXPONENT
         | SyntaxKind::SHIFT_LEFT
-        | SyntaxKind::SHIFT_RIGHT => TokenSpacing::binary_op(),
+        | SyntaxKind::SHIFT_RIGHT
+        | SyntaxKind::RANGE
+        | SyntaxKind::RANGE_EXCLUSIVE => TokenSpacing::binary_op(),
 
         // Unary operators (prefix/postfix)
         SyntaxKind::UNARY_PLUS | SyntaxKind::UNARY_MINUS => TokenSpacing::prefix_op(),

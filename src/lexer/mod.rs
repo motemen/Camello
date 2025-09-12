@@ -169,6 +169,12 @@ pub enum Token {
     #[token("-")]
     Minus,
 
+    #[token("...")]
+    DotDotDot,
+
+    #[token("..")]
+    DotDot,
+
     #[token(".")]
     Dot,
 
@@ -251,6 +257,8 @@ impl Token {
             Token::Decrement => SyntaxKind::DECREMENT,
             Token::Plus => SyntaxKind::PLUS,
             Token::Minus => SyntaxKind::MINUS,
+            Token::DotDotDot => SyntaxKind::RANGE_EXCLUSIVE,
+            Token::DotDot => SyntaxKind::RANGE,
             Token::Dot => SyntaxKind::DOT,
             Token::Arrow => SyntaxKind::ARROW,
             Token::FatComma => SyntaxKind::FAT_COMMA,
