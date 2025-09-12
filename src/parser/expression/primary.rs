@@ -100,18 +100,34 @@ impl Parser<'_> {
                     self.error("Expected '}' to close variable name");
                 }
             }
+            Some(SyntaxKind::DOUBLE_COLON) => {
+                // Allow variables like $::foo (root-qualified names)
+                self.bump(); // consume ::
+                self.skip_trivia();
+                self.parse_identifier_or_qualified();
+            }
             _ => {
-                // Check for other punctuation characters that might be tokenized differently
-                let text = self.current_text().unwrap_or("");
-                if matches!(
-                    text,
-                    "!" | "?" | "|" | "&" | "`" | "'" | "\"" | "~" | ":" | "\\" | "$"
-                ) {
-                    // These are punctuation characters like $!, $?, $$, etc. - treat as regular variable names
-                    self.bump();
+                // Accept any ASCII punctuation as a valid special variable name by
+                // consuming exactly one character, regardless of the lexer's tokenization.
+                if let Some(text) = self.current_text() {
+                    if text
+                        .chars()
+                        .next()
+                        .is_some_and(|ch| ch.is_ascii_punctuation())
+                    {
+                        // Manually consume one character from the lexer and emit it as IDENT.
+                        if let Some((k, t)) = self.lexer.consume_one_char_as_ident() {
+                            self.builder.token(k.into(), t);
+                            self.current_pos += t.len();
+                        } else {
+                            self.error("Unexpected end while reading special variable name");
+                        }
+                    } else {
+                        // Expect an identifier (including qualified identifiers)
+                        self.parse_identifier_or_qualified();
+                    }
                 } else {
-                    // Expect an identifier (including qualified identifiers)
-                    self.parse_identifier_or_qualified();
+                    self.error("Expected variable name after sigil");
                 }
             }
         }
@@ -189,13 +205,28 @@ impl Parser<'_> {
         } else {
             return false;
         }
-
         // Use token-based lookahead to check if next non-trivia token is a dollar sigil or brace
         // Valid dereference patterns are of the form: @$ref, %$ref, $$ref, @{expr}, %{expr}, ${expr}
-        matches!(
-            self.peek_second_non_trivia_with(crate::lexer::LexContext::Value),
-            Some((SyntaxKind::DOLLAR | SyntaxKind::L_BRACE, _))
-        )
+        match self.peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 1) {
+            Some((SyntaxKind::L_BRACE, _)) => true,
+            Some((SyntaxKind::DOLLAR, _)) => {
+                // Peek the third token to ensure a valid variable name follows; avoid misclassifying
+                // special variables like "$$;" as dereferencing.
+                let third =
+                    self.peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 2);
+                matches!(
+                    third.map(|(k, _)| k),
+                    Some(
+                        SyntaxKind::IDENT
+                            | SyntaxKind::NUMBER
+                            | SyntaxKind::AT
+                            | SyntaxKind::CARET
+                            | SyntaxKind::L_BRACE
+                    )
+                )
+            }
+            _ => false,
+        }
     }
 
     /// Parses a dereferencing expression (e.g., @$var, %$var, $$var, @{expr}, %{expr}, ${expr}).

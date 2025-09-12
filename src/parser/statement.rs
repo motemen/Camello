@@ -628,7 +628,7 @@ impl Parser<'_> {
         self.expect(SyntaxKind::L_PAREN);
         self.skip_trivia();
 
-        while let Some((kind, _)) = self.peek_non_trivia_token_with(LexContext::Value) {
+        while let Some((kind, _)) = self.peek_non_trivia_token_with_context(LexContext::Value) {
             if kind == SyntaxKind::R_PAREN {
                 break;
             }

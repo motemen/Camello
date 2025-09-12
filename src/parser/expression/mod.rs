@@ -14,7 +14,7 @@ impl Parser<'_> {
     /// auto-expand to DELIMITER at lookahead time, so we conservatively treat it as quote-like
     /// unless the next token is a fat comma (=>), in which case it's likely a bareword key.
     fn should_parse_quote_like(&self) -> bool {
-        self.peek_second_non_trivia_with(LexContext::Value)
+        self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
             .is_none_or(|(k, _)| k != SyntaxKind::FAT_COMMA)
     }
 
@@ -140,7 +140,7 @@ impl Parser<'_> {
         loop {
             // Check if we have a binary operator or ternary operator
             let Some(current_kind) = self
-                .peek_non_trivia_token_with(LexContext::Operator)
+                .peek_non_trivia_token_with_context(LexContext::Operator)
                 .map(|(k, _)| k)
             else {
                 break;
@@ -189,7 +189,7 @@ impl Parser<'_> {
             // Check if this is a compound assignment operator (e.g., +=, ||=, etc.)
             let is_compound_assignment = current_kind.is_compoundable_operator() && {
                 // Look ahead to see if there's an '=' after the current operator
-                self.peek_second_non_trivia_with(LexContext::Operator)
+                self.peek_nth_non_trivia_token_with_context(LexContext::Operator, 1)
                     .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::EQ)
             };
 
@@ -280,7 +280,7 @@ impl Parser<'_> {
         loop {
             // Always look ahead in Operator context for postfix continuations
             let next_kind_op = self
-                .peek_non_trivia_token_with(LexContext::Operator)
+                .peek_non_trivia_token_with_context(LexContext::Operator)
                 .map(|(k, _)| k);
 
             match next_kind_op {
@@ -572,7 +572,7 @@ impl Parser<'_> {
             SyntaxKind::ASTERISK => {
                 // Handle typeglob expressions specially
                 // Check if this is followed by a brace or identifier (typeglob syntax)
-                let next_token = self.peek_second_non_trivia_with(LexContext::Value);
+                let next_token = self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1);
                 if matches!(
                     next_token,
                     Some((SyntaxKind::L_BRACE | SyntaxKind::IDENT, _))

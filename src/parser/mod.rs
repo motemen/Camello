@@ -127,12 +127,12 @@ impl<'a> Parser<'a> {
 
     // Value-context peek helpers for expression starts (parser-driven lexing)
     fn current_kind_value(&self) -> Option<SyntaxKind> {
-        self.peek_non_trivia_token_with(LexContext::Value)
+        self.peek_non_trivia_token_with_context(LexContext::Value)
             .map(|(k, _)| k)
     }
 
     fn current_text_value(&self) -> Option<&'a str> {
-        self.peek_non_trivia_token_with(LexContext::Value)
+        self.peek_non_trivia_token_with_context(LexContext::Value)
             .map(|(_, t)| t)
     }
 
@@ -153,7 +153,7 @@ impl<'a> Parser<'a> {
     }
 
     fn bump(&mut self) {
-        if let Some((kind, text)) = self.lexer.next_token_default() {
+        if let Some((kind, text)) = self.lexer.next_token() {
             self.builder.token(kind.into(), text);
             self.current_pos += text.len();
         } else {
@@ -184,7 +184,7 @@ impl<'a> Parser<'a> {
     }
 
     fn bump_as(&mut self, syntax_kind: SyntaxKind) {
-        if let Some((_, text)) = self.lexer.next_token_default() {
+        if let Some((_, text)) = self.lexer.next_token() {
             self.builder.token(syntax_kind.into(), text);
             self.current_pos += text.len();
         }
@@ -230,7 +230,7 @@ impl<'a> Parser<'a> {
         loop {
             match self.lexer.peek_token() {
                 Some((kind, _)) if kind.is_trivia() => {
-                    if let Some((k, t)) = self.lexer.next_token_default() {
+                    if let Some((k, t)) = self.lexer.next_token() {
                         self.builder.token(k.into(), t);
                         self.current_pos += t.len();
                     }
@@ -251,7 +251,7 @@ impl<'a> Parser<'a> {
             .push(ParseError::new(message.to_string(), range, self.source));
 
         // Create error token by consuming one token (if any)
-        if let Some((_, text)) = self.lexer.next_token_default() {
+        if let Some((_, text)) = self.lexer.next_token() {
             self.builder.token(SyntaxKind::ERROR.into(), text);
             self.current_pos += text.len();
         }
@@ -266,27 +266,17 @@ impl<'a> Parser<'a> {
 
     /// Peek at the next non-trivia token with an explicit lexical context
     /// This is used to disambiguate contexts like operator lookahead.
-    fn peek_non_trivia_token_with(&self, ctx: LexContext) -> Option<(SyntaxKind, &'a str)> {
+    fn peek_non_trivia_token_with_context(&self, ctx: LexContext) -> Option<(SyntaxKind, &'a str)> {
         self.lexer.peek_non_trivia_with_context(ctx)
     }
 
-    /// Peek the second non-trivia token (i.e., the token following the current one),
-    /// using an explicit lexical context for the second token.
-    fn peek_second_non_trivia_with(&self, ctx: LexContext) -> Option<(SyntaxKind, &'a str)> {
-        let mut cloned = self.lexer.clone();
-        // Consume the first non-trivia token (the current one) using the same context
-        loop {
-            match cloned.next_token_with_context(ctx) {
-                Some((k, _)) if k.is_trivia() => continue,
-                Some((_k, _t)) => break,
-                None => return None,
-            }
-        }
-        // Now peek the next non-trivia with the given context
-        cloned.peek_non_trivia_with_context(ctx)
+    fn peek_nth_non_trivia_token_with_context(
+        &self,
+        ctx: LexContext,
+        n: usize,
+    ) -> Option<(SyntaxKind, &'a str)> {
+        self.lexer.peek_nth_non_trivia_with_context(ctx, n)
     }
-
-    // Intentionally no at_value/at_op helpers here to avoid implicit trivia skipping.
 
     /// Check if any of the given token kinds appears next (skipping trivia)
     fn lookahead_for_any(&self, target_kinds: &[SyntaxKind]) -> bool {
