@@ -356,6 +356,9 @@ impl Parser<'_> {
 
                             self.expression_list();
 
+                            // Allow newlines or other trivia before closing ')'
+                            self.skip_trivia();
+
                             if self.at(SyntaxKind::R_PAREN) {
                                 // After ')', expect an operator
                                 self.bump_op(); // )
@@ -425,6 +428,9 @@ impl Parser<'_> {
                     self.skip_trivia();
 
                     self.expression_list();
+
+                    // Allow newlines or other trivia before closing ')'
+                    self.skip_trivia();
 
                     if self.at(SyntaxKind::R_PAREN) {
                         // After ')', expect an operator
@@ -863,6 +869,9 @@ impl Parser<'_> {
             self.skip_trivia();
 
             self.expression_list();
+
+            // Allow newlines or other trivia before closing ')'
+            self.skip_trivia();
 
             if self.at(SyntaxKind::R_PAREN) {
                 // After ')', expect an operator
