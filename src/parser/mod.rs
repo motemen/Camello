@@ -601,3 +601,22 @@ fn test_package_with_quote_like_name() {
     let syntax = PerlNode::new_root(green);
     assert_eq!(syntax.kind(), SyntaxKind::ROOT);
 }
+
+#[test]
+fn test_package_with_block() {
+    use crate::PerlNode;
+    let input = "package Foo::Bar { my $x = 1; }";
+    let (green, errors) = parse(input);
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+    let syntax = PerlNode::new_root(green);
+    let package = syntax
+        .children()
+        .find(|n| n.kind() == SyntaxKind::PACKAGE_STMT)
+        .expect("missing package statement");
+    assert!(
+        package
+            .children()
+            .any(|n| n.kind() == SyntaxKind::BLOCK_STMT),
+        "package statement should contain block"
+    );
+}

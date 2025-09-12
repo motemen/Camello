@@ -199,8 +199,17 @@ impl Parser<'_> {
         self.parse_identifier_or_qualified();
         self.skip_trivia();
 
-        // Semicolon
-        self.expect(SyntaxKind::SEMICOLON);
+        // After the package name, allow either a terminating semicolon
+        // or a block to introduce a scoped package
+        if self.at(SyntaxKind::SEMICOLON) {
+            self.bump();
+        } else if self.at(SyntaxKind::L_BRACE) {
+            // package Foo::Bar { ... }
+            self.block();
+        } else {
+            // Neither a semicolon nor a block – report an error but continue
+            self.error("Expected ';' or block after package declaration");
+        }
 
         self.builder.finish_node();
     }
