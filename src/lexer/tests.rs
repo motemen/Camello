@@ -100,6 +100,47 @@ fn test_simple_heredoc_lexing() {
 }
 
 #[test]
+fn test_heredoc_terminator_requires_own_line() {
+    let src = "print <<EOF;\nHello\nEOF not term\nEOF\n";
+    let mut lexer = Lexer::new(src);
+    let mut tokens = Vec::new();
+    while let Some((k, t)) = lexer.next_token() {
+        tokens.push((k, t));
+    }
+
+    let ends: Vec<_> = tokens
+        .iter()
+        .filter(|(k, _)| *k == SyntaxKind::HEREDOC_END)
+        .collect();
+    assert_eq!(ends.len(), 1);
+    assert_eq!(ends[0].1, "EOF\n");
+}
+
+#[test]
+fn test_unterminated_heredoc_does_not_consume_following_code() {
+    let src = "print <<EOF;\nline1\nprint 1;\n";
+    let mut lexer = Lexer::new(src);
+    let mut tokens = Vec::new();
+    while let Some((k, t)) = lexer.next_token() {
+        tokens.push((k, t));
+    }
+
+    assert!(tokens.iter().any(|(k, _)| *k == SyntaxKind::HEREDOC_START));
+    assert!(tokens
+        .iter()
+        .any(|(k, _)| *k == SyntaxKind::HEREDOC_CONTENT));
+    assert!(!tokens.iter().any(|(k, _)| *k == SyntaxKind::HEREDOC_END));
+
+    let content_idx = tokens
+        .iter()
+        .position(|(k, _)| *k == SyntaxKind::HEREDOC_CONTENT)
+        .unwrap();
+    assert!(tokens[content_idx + 1..]
+        .iter()
+        .any(|(k, t)| *k == SyntaxKind::IDENT && *t == "print"));
+}
+
+#[test]
 fn test_tr_with_flags() {
     // Test tr/searchlist/replacementlist/flags lexing
     let mut lexer = Lexer::new("tr/abc/XYZ/d");

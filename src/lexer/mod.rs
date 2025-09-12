@@ -823,34 +823,56 @@ impl<'a> Lexer<'a> {
         let pending = self.pending_heredocs.pop_front()?;
         let remainder = self.logos_lexer.remainder();
         let term = pending.terminator;
-        let pattern = format!("\n{}", term);
-        if let Some(pos) = remainder.find(&pattern) {
-            let content = &remainder[..pos + 1];
-            let term_start = pos + 1;
-            let mut end_pos = term_start + term.len();
-            if remainder[end_pos..].starts_with('\n') {
-                end_pos += 1;
+
+        let mut search_start = 0;
+        let bytes = remainder.as_bytes();
+
+        // Scan line by line looking for a line that matches the terminator exactly
+        while search_start < bytes.len() {
+            let rest = &remainder[search_start..];
+            match rest.find('\n') {
+                Some(nl_pos) => {
+                    let line = &rest[..nl_pos];
+                    if line == term {
+                        let content = &remainder[..search_start];
+                        let end_pos = search_start + nl_pos + 1; // include the newline
+                        let term_slice = &remainder[search_start..end_pos];
+                        self.logos_lexer.bump(end_pos);
+                        self.pending
+                            .push_back((SyntaxKind::HEREDOC_END, term_slice));
+                        return Some((SyntaxKind::HEREDOC_CONTENT, content));
+                    }
+                    search_start += nl_pos + 1;
+                }
+                None => {
+                    let line = rest;
+                    if line == term {
+                        let content = &remainder[..search_start];
+                        let end_pos = remainder.len();
+                        let term_slice = &remainder[search_start..end_pos];
+                        self.logos_lexer.bump(end_pos);
+                        self.pending
+                            .push_back((SyntaxKind::HEREDOC_END, term_slice));
+                        return Some((SyntaxKind::HEREDOC_CONTENT, content));
+                    }
+
+                    // Unterminated heredoc: consume only the first line so the parser
+                    // can report a missing terminator without losing the rest of the input
+                    if let Some(first_nl) = remainder.find('\n') {
+                        let content = &remainder[..first_nl + 1];
+                        self.logos_lexer.bump(first_nl + 1);
+                        return Some((SyntaxKind::HEREDOC_CONTENT, content));
+                    } else {
+                        let text = remainder;
+                        self.logos_lexer.bump(text.len());
+                        return Some((SyntaxKind::HEREDOC_CONTENT, text));
+                    }
+                }
             }
-            let term_slice = &remainder[term_start..end_pos];
-            self.logos_lexer.bump(end_pos);
-            self.pending
-                .push_back((SyntaxKind::HEREDOC_END, term_slice));
-            Some((SyntaxKind::HEREDOC_CONTENT, content))
-        } else if remainder.starts_with(&term) {
-            let mut end_pos = term.len();
-            if remainder[end_pos..].starts_with('\n') {
-                end_pos += 1;
-            }
-            let term_slice = &remainder[..end_pos];
-            self.logos_lexer.bump(end_pos);
-            self.pending
-                .push_back((SyntaxKind::HEREDOC_END, term_slice));
-            Some((SyntaxKind::HEREDOC_CONTENT, ""))
-        } else {
-            let text = remainder;
-            self.logos_lexer.bump(text.len());
-            Some((SyntaxKind::HEREDOC_CONTENT, text))
         }
+
+        // Should not reach here, but return an empty content token if we do
+        Some((SyntaxKind::HEREDOC_CONTENT, ""))
     }
 
     /// Track line position for POD detection
