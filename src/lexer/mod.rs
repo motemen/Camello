@@ -169,6 +169,12 @@ pub enum Token {
     #[token("-")]
     Minus,
 
+    #[token("...")]
+    DotDotDot,
+
+    #[token("..")]
+    DotDot,
+
     #[token(".")]
     Dot,
 
@@ -251,6 +257,8 @@ impl Token {
             Token::Decrement => SyntaxKind::DECREMENT,
             Token::Plus => SyntaxKind::PLUS,
             Token::Minus => SyntaxKind::MINUS,
+            Token::DotDotDot => SyntaxKind::RANGE_EXCLUSIVE,
+            Token::DotDot => SyntaxKind::RANGE,
             Token::Dot => SyntaxKind::DOT,
             Token::Arrow => SyntaxKind::ARROW,
             Token::FatComma => SyntaxKind::FAT_COMMA,
@@ -564,6 +572,10 @@ impl<'a> Lexer<'a> {
             Token::Star => match ctx {
                 LexContext::Value => SyntaxKind::ASTERISK,
                 LexContext::Operator => SyntaxKind::STAR,
+            },
+            Token::DotDotDot => match ctx {
+                LexContext::Operator => SyntaxKind::RANGE_EXCLUSIVE,
+                LexContext::Value => SyntaxKind::ELLIPSIS,
             },
             Token::Slash => SyntaxKind::SLASH, // regex literals handled elsewhere
             Token::Ampersand => match ctx {
