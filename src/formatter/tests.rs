@@ -131,6 +131,67 @@ fn test_postfix_for_modifier_formatting() {
 }
 
 #[test]
+fn test_package_block_formatting() {
+    let input = "package Foo::Bar{my $x=1;}";
+    let formatted = format_and_assert(input);
+    insta::assert_snapshot!(formatted, @r"
+        package Foo::Bar {
+            my $x = 1;
+        }
+        ");
+}
+
+#[test]
+fn test_package_with_version_basic() {
+    let cases = [
+        // Package with version number and semicolon
+        ("package Foo::Bar 1.23;", "package Foo::Bar 1.23;\n"),
+        ("package My::Module 0.01;", "package My::Module 0.01;\n"),
+        ("package Test  2.5;", "package Test 2.5;\n"),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
+fn test_package_with_version_and_block() {
+    let cases = [
+        // Package with version and block
+        (
+            "package Foo::Bar 1.23{my $x=1;}",
+            "package Foo::Bar 1.23 {\n    my $x = 1;\n}\n",
+        ),
+        (
+            "package My::Module 0.01{print \"hello\";}",
+            "package My::Module 0.01 {\n    print \"hello\";\n}\n",
+        ),
+        // Package with version literal (v-prefix)
+        (
+            "package Test::Module v2.0.0{my $var=42;}",
+            "package Test::Module v2.0.0 {\n    my $var = 42;\n}\n",
+        ),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
+fn test_package_with_bare_version() {
+    let cases = [
+        // Package with bare version (no 'v' prefix)
+        ("package Foo 5.024.001;", "package Foo 5.024.001;\n"),
+        ("package Foo::Bar v1.2.3;", "package Foo::Bar v1.2.3;\n"),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
+fn test_package_with_version_empty_block() {
+    // Test empty block separately to understand formatting
+    let input = "package Bar 5.024.001{}";
+    let formatted = format_and_assert(input);
+    insta::assert_snapshot!(formatted, @"package Bar 5.024.001 {}");
+}
+
+#[test]
 fn test_typeglob_formatting() {
     // Test simple typeglob reference
     let input = "my $fh = \\*STDIN;";
