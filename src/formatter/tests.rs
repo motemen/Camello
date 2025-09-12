@@ -106,6 +106,12 @@ fn test_ellipsis_statement_formatting() {
 }
 
 #[test]
+fn test_function_call_with_newline_in_args_formatting() {
+    let cases = [("func({}\n);", "func({}\n);\n")];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_for_stmt_formatting() {
     let input = "for my$var(@list){my$x=1;print$x;}";
     let formatted = format_and_assert(input);
