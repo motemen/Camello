@@ -7,6 +7,7 @@ pub struct Precedence(pub u8);
 impl Precedence {
     pub const LOWEST: Precedence = Precedence(0);
     pub const COMMA: Precedence = Precedence(1); // , => (comma and fat comma)
+    pub const LIST_ITEM: Precedence = Precedence(Precedence::COMMA.0 + 1); // expressions in lists
     pub const LOGICAL_OR_XOR: Precedence = Precedence(5); // or, xor (lowest precedence)
     pub const LOGICAL_AND_KW: Precedence = Precedence(6); // and
     pub const LOGICAL_NOT_KW: Precedence = Precedence(7); // not
