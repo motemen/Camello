@@ -23,7 +23,7 @@ impl Precedence {
     pub const BIT_SHIFT: Precedence = Precedence(48); // <<, >>
     pub const ADDITIVE: Precedence = Precedence(50); // +, -, .
     pub const MULTIPLICATIVE: Precedence = Precedence(60); // *, /, %, x
-    pub const EXPONENT: Precedence = Precedence(63); // ** (exponentiation)
+    pub const EXPONENT: Precedence = Precedence(75); // ** (exponentiation)
     pub const PREFIX: Precedence = Precedence(65); // ! (logical not prefix)
     pub const REGEX_MATCH: Precedence = Precedence(70); // =~, !~
     pub const POSTFIX: Precedence = Precedence(80); // ->, [], {}, ()
