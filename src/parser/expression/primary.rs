@@ -100,8 +100,14 @@ impl Parser<'_> {
                     self.error("Expected '}' to close variable name");
                 }
             }
+            Some(SyntaxKind::DOUBLE_COLON) => {
+                // Allow variables like $::foo (root-qualified names)
+                self.bump(); // consume ::
+                self.skip_trivia();
+                self.parse_identifier_or_qualified();
+            }
             _ => {
-                // Accept any single ASCII punctuation as a valid special variable name by
+                // Accept any ASCII punctuation as a valid special variable name by
                 // consuming exactly one character, regardless of the lexer's tokenization.
                 if let Some(text) = self.current_text() {
                     if text
@@ -206,19 +212,8 @@ impl Parser<'_> {
             Some((SyntaxKind::DOLLAR, _)) => {
                 // Peek the third token to ensure a valid variable name follows; avoid misclassifying
                 // special variables like "$$;" as dereferencing.
-                let mut cloned = self.lexer.clone();
-                // consume current
-                let _ = cloned.next_token_with_context(crate::lexer::LexContext::Value);
-                // consume second (the '$')
-                loop {
-                    match cloned.next_token_with_context(crate::lexer::LexContext::Value) {
-                        Some((k, _)) if k.is_trivia() => continue,
-                        Some((_k, _t)) => break,
-                        None => return false,
-                    }
-                }
-                // third token
-                let third = cloned.peek_non_trivia_with_context(crate::lexer::LexContext::Value);
+                let third =
+                    self.peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 2);
                 matches!(
                     third.map(|(k, _)| k),
                     Some(
