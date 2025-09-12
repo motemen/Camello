@@ -169,6 +169,46 @@ fn test_substitution_various_flags() {
 }
 
 #[test]
+fn test_range_operator_lexing() {
+    let mut lexer = Lexer::new("1..2 3...4");
+
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::NUMBER, "1")));
+    assert_eq!(
+        lexer.next_token_with_context(LexContext::Operator),
+        Some((SyntaxKind::RANGE, ".."))
+    );
+    assert_eq!(
+        lexer.next_token_with_context(LexContext::Value),
+        Some((SyntaxKind::NUMBER, "2"))
+    );
+    assert_eq!(
+        lexer.next_token_with_context(LexContext::Value),
+        Some((SyntaxKind::WHITESPACE, " "))
+    );
+    assert_eq!(
+        lexer.next_token_with_context(LexContext::Value),
+        Some((SyntaxKind::NUMBER, "3"))
+    );
+    assert_eq!(
+        lexer.next_token_with_context(LexContext::Operator),
+        Some((SyntaxKind::RANGE_EXCLUSIVE, "..."))
+    );
+    assert_eq!(
+        lexer.next_token_with_context(LexContext::Value),
+        Some((SyntaxKind::NUMBER, "4"))
+    );
+}
+
+#[test]
+fn test_ellipsis_statement_lexing() {
+    let mut lexer = Lexer::new("...");
+    assert_eq!(
+        lexer.next_token_with_context(LexContext::Value),
+        Some((SyntaxKind::ELLIPSIS, "..."))
+    );
+}
+
+#[test]
 fn test_tr_various_flags() {
     // Test tr/// with different flag combinations
 

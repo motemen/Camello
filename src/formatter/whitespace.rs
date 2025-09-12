@@ -59,7 +59,9 @@ impl Formatter {
                 SyntaxKind::SUB_DEF => true,
                 // For regular statements, don't add automatic empty lines
                 // They should only get empty lines if they were in the source
-                SyntaxKind::STMT | SyntaxKind::DECLARATION_STMT => false,
+                SyntaxKind::STMT | SyntaxKind::DECLARATION_STMT | SyntaxKind::ELLIPSIS_STMT => {
+                    false
+                }
                 // For other node types, use the original logic
                 _ => {
                     prev.kind() != node.kind()

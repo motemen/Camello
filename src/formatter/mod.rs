@@ -44,6 +44,7 @@ impl Formatter {
                 | SyntaxKind::NO_STMT
                 | SyntaxKind::STMT
                 | SyntaxKind::DECLARATION_STMT
+                | SyntaxKind::ELLIPSIS_STMT
         ) {
             self.add_empty_line_before_if_needed(node);
         }

@@ -177,6 +177,11 @@ pub enum SyntaxKind {
     // Three-way comparison (spaceship) operator
     SPACESHIP, // <=>
 
+    // Range operators
+    RANGE,           // ..
+    RANGE_EXCLUSIVE, // ...
+    ELLIPSIS,        // ... (statement placeholder)
+
     // File test operators
     FILE_TEST_OP, // -f, -d, etc.
 
@@ -249,7 +254,8 @@ pub enum SyntaxKind {
     FOR_MODIFIER,    // Postfix for modifier (e.g., say for @items;)
 
     // Other statements
-    STMT, // General statement
+    ELLIPSIS_STMT, // Ellipsis statement placeholder
+    STMT,          // General statement
 
     EXPR_LIST,           // Expression list (e.g., $a, $b, $c)
     COMPOUND_ASSIGNMENT, // Compound assignment (e.g., +=, ||=
@@ -363,6 +369,8 @@ impl SyntaxKind {
                 | SyntaxKind::X
                 | SyntaxKind::SHIFT_LEFT
                 | SyntaxKind::SHIFT_RIGHT
+                | SyntaxKind::RANGE
+                | SyntaxKind::RANGE_EXCLUSIVE
                 // Comparisons
                 | SyntaxKind::GT
                 | SyntaxKind::LT
