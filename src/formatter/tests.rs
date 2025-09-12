@@ -131,6 +131,17 @@ fn test_postfix_for_modifier_formatting() {
 }
 
 #[test]
+fn test_package_block_formatting() {
+    let input = "package Foo::Bar{my $x=1;}";
+    let formatted = format_and_assert(input);
+    insta::assert_snapshot!(formatted, @r"
+        package Foo::Bar {
+            my $x = 1;
+        }
+        ");
+}
+
+#[test]
 fn test_typeglob_formatting() {
     // Test simple typeglob reference
     let input = "my $fh = \\*STDIN;";
