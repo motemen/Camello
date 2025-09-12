@@ -491,6 +491,11 @@ impl Parser<'_> {
             self.error("Expected ';' after expression statement");
         }
 
+        if !self.pending_heredocs.is_empty() {
+            self.skip_trivia();
+            self.finish_pending_heredocs();
+        }
+
         self.builder.finish_node();
         true
     }

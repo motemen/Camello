@@ -40,26 +40,10 @@ impl Parser<'_> {
     }
 
     pub fn heredoc_expr(&mut self) {
-        self.builder.start_node(SyntaxKind::HEREDOC_EXPR.into());
-
+        let checkpoint = self.builder.checkpoint();
         self.expect_value(SyntaxKind::HEREDOC_START);
+        self.pending_heredocs.push_back(checkpoint);
         self.skip_trivia();
-
-        if self.at(SyntaxKind::HEREDOC_CONTENT) {
-            self.bump_value();
-            self.skip_trivia();
-        } else {
-            self.error("Expected heredoc content");
-        }
-
-        if self.at(SyntaxKind::HEREDOC_END) {
-            self.bump_value();
-            self.skip_trivia();
-        } else {
-            self.error("Expected heredoc terminator");
-        }
-
-        self.builder.finish_node();
     }
 
     pub fn parse_variable(&mut self) {

@@ -141,6 +141,22 @@ fn test_unterminated_heredoc_does_not_consume_following_code() {
 }
 
 #[test]
+fn test_heredoc_crlf_line_endings() {
+    let src = "print <<EOF;\r\nHello\r\nEOF\r\n";
+    let mut lexer = Lexer::new(src);
+    let mut kinds = Vec::new();
+    let mut end = None;
+    while let Some((k, t)) = lexer.next_token() {
+        if k == SyntaxKind::HEREDOC_END {
+            end = Some(t);
+        }
+        kinds.push(k);
+    }
+    assert!(kinds.contains(&SyntaxKind::HEREDOC_CONTENT));
+    assert_eq!(end, Some("EOF\r\n"));
+}
+
+#[test]
 fn test_tr_with_flags() {
     // Test tr/searchlist/replacementlist/flags lexing
     let mut lexer = Lexer::new("tr/abc/XYZ/d");

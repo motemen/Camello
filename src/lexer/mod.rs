@@ -833,7 +833,7 @@ impl<'a> Lexer<'a> {
             match rest.find('\n') {
                 Some(nl_pos) => {
                     let line = &rest[..nl_pos];
-                    if line == term {
+                    if line.trim_end_matches('\r') == term {
                         let content = &remainder[..search_start];
                         let end_pos = search_start + nl_pos + 1; // include the newline
                         let term_slice = &remainder[search_start..end_pos];
@@ -846,7 +846,7 @@ impl<'a> Lexer<'a> {
                 }
                 None => {
                     let line = rest;
-                    if line == term {
+                    if line.trim_end_matches('\r') == term {
                         let content = &remainder[..search_start];
                         let end_pos = remainder.len();
                         let term_slice = &remainder[search_start..end_pos];

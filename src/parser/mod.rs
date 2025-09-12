@@ -3,7 +3,8 @@ use crate::{
     SyntaxKind,
 };
 use miette::{Diagnostic, SourceSpan};
-use rowan::{GreenNode, GreenNodeBuilder, TextRange};
+use rowan::{Checkpoint, GreenNode, GreenNodeBuilder, TextRange};
+use std::collections::VecDeque;
 
 #[derive(Debug, Clone, thiserror::Error, Diagnostic)]
 #[error("Parse error: {message}")]
@@ -35,6 +36,7 @@ pub struct Parser<'a> {
     errors: Vec<ParseError>,
     current_pos: usize,
     source: &'a str,
+    pending_heredocs: VecDeque<Checkpoint>,
 }
 
 impl<'a> Parser<'a> {
@@ -48,6 +50,7 @@ impl<'a> Parser<'a> {
             errors: Vec::new(),
             current_pos: 0,
             source: input,
+            pending_heredocs: VecDeque::new(),
         }
     }
 
@@ -114,6 +117,29 @@ impl<'a> Parser<'a> {
         self.bump();
 
         self.builder.finish_node();
+    }
+
+    fn finish_pending_heredocs(&mut self) {
+        while let Some(cp) = self.pending_heredocs.pop_front() {
+            self.builder
+                .start_node_at(cp, SyntaxKind::HEREDOC_EXPR.into());
+
+            if self.at(SyntaxKind::HEREDOC_CONTENT) {
+                self.bump_value();
+            } else {
+                self.error("Expected heredoc content");
+            }
+            self.skip_trivia();
+
+            if self.at(SyntaxKind::HEREDOC_END) {
+                self.bump_value();
+            } else {
+                self.error("Expected heredoc terminator");
+            }
+            self.skip_trivia();
+
+            self.builder.finish_node();
+        }
     }
 
     // Helper methods
