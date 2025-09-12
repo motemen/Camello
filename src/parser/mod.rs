@@ -228,6 +228,19 @@ impl<'a> Parser<'a> {
 
     fn skip_trivia(&mut self) {
         loop {
+            if self.lexer.has_pending_heredoc() {
+                // Consume the newline separating the heredoc start from its content
+                // but don't include it in the syntax tree to avoid duplicate blank lines.
+                match self.lexer.peek_token() {
+                    Some((kind, _)) if kind.is_trivia() => {
+                        if let Some((_, t)) = self.lexer.next_token_default() {
+                            self.current_pos += t.len();
+                        }
+                    }
+                    _ => {}
+                }
+                break;
+            }
             match self.lexer.peek_token() {
                 Some((kind, _)) if kind.is_trivia() => {
                     if let Some((k, t)) = self.lexer.next_token_default() {

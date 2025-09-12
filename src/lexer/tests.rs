@@ -568,3 +568,16 @@ fn test_qw_context_debug() {
         println!("Last 3 tokens: {:?}", &tokens[len - 3..]);
     }
 }
+
+#[test]
+fn test_simple_heredoc() {
+    let src = "<<EOF\nhello\nEOF\n";
+    let mut lexer = Lexer::new(src);
+    let mut tokens = Vec::new();
+    while let Some((kind, text)) = lexer.next_token() {
+        tokens.push((kind, text));
+    }
+    assert!(tokens.contains(&(SyntaxKind::HEREDOC_START, "<<EOF")));
+    assert!(tokens.contains(&(SyntaxKind::HEREDOC_CONTENT, "hello\n")));
+    assert!(tokens.contains(&(SyntaxKind::HEREDOC_END, "EOF\n")));
+}

@@ -4,6 +4,11 @@ use std::collections::VecDeque;
 
 mod quote;
 
+#[derive(Debug, Clone)]
+struct HeredocMarker<'a> {
+    marker: &'a str,
+}
+
 #[derive(Logos, Debug, PartialEq, Clone)]
 pub enum Token {
     // Sigils（変数の型を示すプレフィックス）
@@ -362,6 +367,7 @@ pub struct Lexer<'a> {
     mode: LexerMode,
     // Pending tokens produced by stateless expansions (e.g., quote-like operators)
     pending: VecDeque<(SyntaxKind, &'a str)>,
+    heredoc_queue: VecDeque<HeredocMarker<'a>>,
 }
 
 impl Clone for Lexer<'_> {
@@ -371,6 +377,7 @@ impl Clone for Lexer<'_> {
             at_line_start: self.at_line_start,
             mode: self.mode,
             pending: self.pending.clone(),
+            heredoc_queue: self.heredoc_queue.clone(),
         }
     }
 }
@@ -393,6 +400,7 @@ impl<'a> Lexer<'a> {
             at_line_start: true,
             mode: LexerMode::Normal,
             pending: VecDeque::new(),
+            heredoc_queue: VecDeque::new(),
         }
     }
 
@@ -475,9 +483,18 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        // Handle special tokens when in Value context
-        let is_value_context = matches!(context, Some(LexContext::Value));
+        // Handle heredoc start regardless of context
         let in_quote_like = matches!(self.mode, LexerMode::QuoteLike { .. });
+        if !in_quote_like {
+            if let Some(result) = self.try_consume_heredoc_start() {
+                let (syntax_kind, text) = result;
+                self.update_line_position(text);
+                return Some((syntax_kind, text));
+            }
+        }
+
+        // Handle other special tokens only in Value context
+        let is_value_context = matches!(context, Some(LexContext::Value));
         if is_value_context && !in_quote_like {
             if let Some(result) = self.try_handle_expecting_value_context() {
                 let (syntax_kind, text) = result;
@@ -709,6 +726,35 @@ impl<'a> Lexer<'a> {
         None
     }
 
+    fn try_consume_heredoc_start(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        let remainder = self.logos_lexer.remainder();
+        if !remainder.starts_with("<<") {
+            return None;
+        }
+
+        let after = &remainder[2..];
+        let mut chars = after.char_indices();
+        let (idx0, first_ch) = chars.next()?;
+        if !(first_ch.is_ascii_alphabetic() || first_ch == '_') {
+            return None;
+        }
+        let mut end = idx0 + first_ch.len_utf8();
+        for (idx, ch) in chars {
+            if ch.is_alphanumeric() || ch == '_' {
+                end = idx + ch.len_utf8();
+            } else {
+                break;
+            }
+        }
+
+        let marker = &after[..end];
+        let total_len = 2 + end;
+        let text = &remainder[..total_len];
+        self.logos_lexer.bump(total_len);
+        self.heredoc_queue.push_back(HeredocMarker { marker });
+        Some((SyntaxKind::HEREDOC_START, text))
+    }
+
     fn try_consume_file_test_op(&mut self) -> Option<(SyntaxKind, &'a str)> {
         let remainder = self.logos_lexer.remainder();
         if !remainder.starts_with('-') {
@@ -766,9 +812,43 @@ impl<'a> Lexer<'a> {
         // Check if this token contains a newline
         if text.contains('\n') {
             self.at_line_start = true;
+            if !self.heredoc_queue.is_empty() {
+                self.bump_until_marker();
+            }
         } else if text.chars().any(|c| !c.is_whitespace()) {
             // Non-whitespace content means we're no longer at line start
             self.at_line_start = false;
+        }
+    }
+
+    fn bump_until_marker(&mut self) {
+        if let Some(marker) = self.heredoc_queue.pop_front() {
+            let mut remainder = self.logos_lexer.remainder();
+            if remainder.starts_with('\n') {
+                self.logos_lexer.bump(1);
+                remainder = self.logos_lexer.remainder();
+            }
+            let pattern = format!("\n{}", marker.marker);
+            if let Some(pos) = remainder.find(&pattern) {
+                let content_end = pos + 1; // include newline before marker
+                let end_start = content_end;
+                let mut end_end = end_start + marker.marker.len();
+                if remainder[end_end..].starts_with('\n') {
+                    end_end += 1; // include trailing newline after marker
+                }
+                let content = &remainder[..content_end];
+                self.logos_lexer.bump(content_end);
+                self.pending
+                    .push_back((SyntaxKind::HEREDOC_CONTENT, content));
+                let end_slice = &remainder[end_start..end_end];
+                self.logos_lexer.bump(end_end - end_start);
+                self.pending.push_back((SyntaxKind::HEREDOC_END, end_slice));
+            } else {
+                let content = remainder;
+                self.logos_lexer.bump(remainder.len());
+                self.pending
+                    .push_back((SyntaxKind::HEREDOC_CONTENT, content));
+            }
         }
     }
 
@@ -866,6 +946,11 @@ impl<'a> Lexer<'a> {
     #[must_use]
     pub fn span(&self) -> std::ops::Range<usize> {
         self.logos_lexer.span()
+    }
+
+    #[must_use]
+    pub fn has_pending_heredoc(&self) -> bool {
+        !self.heredoc_queue.is_empty()
     }
 
     /// Peek at the next token without consuming it or changing lexer state

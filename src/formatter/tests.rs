@@ -2008,3 +2008,19 @@ fn test_numeric_literals_with_underscores_and_bases() {
 
     check_formatting_cases(&cases);
 }
+
+#[test]
+fn test_heredoc_formatting() {
+    let input = r#"my $str = <<EOF;
+hello
+EOF
+"#;
+    let (syntax, _) = parse_perl(input);
+    let formatted = format(&syntax);
+
+    insta::assert_snapshot!(formatted, @r###"
+my $str = <<EOF;
+hello
+EOF
+"###);
+}

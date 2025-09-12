@@ -106,6 +106,11 @@ pub enum SyntaxKind {
     S_FLAGS,  // Flags for substitution operator (s///msixpodualngcer)
     TR_FLAGS, // Flags for transliteration operator (tr///cdsr)
 
+    // Heredoc tokens
+    HEREDOC_START,   // <<EOF
+    HEREDOC_END,     // EOF
+    HEREDOC_CONTENT, // content inside heredoc
+
     // Operators
     EQ,                // =
     PLUS,              // + (binary addition)
