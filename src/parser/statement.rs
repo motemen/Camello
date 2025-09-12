@@ -66,6 +66,10 @@ impl Parser<'_> {
                 // End of block, notify the caller.
                 false
             }
+            Some(SyntaxKind::YADA_YADA) => {
+                self.yada_yada_stmt();
+                true
+            }
             Some(_) => {
                 // Try to parse as an expression statement
                 self.expression_stmt()
@@ -507,6 +511,24 @@ impl Parser<'_> {
 
         // After closing '}', expect an operator/statement boundary
         self.expect_op(SyntaxKind::R_BRACE);
+
+        self.builder.finish_node();
+    }
+
+    fn yada_yada_stmt(&mut self) {
+        self.builder.start_node(SyntaxKind::YADA_YADA_STMT.into());
+        self.bump(); // consume '...'
+        self.skip_trivia();
+
+        if self.at(SyntaxKind::SEMICOLON) {
+            self.bump();
+        } else if self.at_end()
+            || self.at_any(&[SyntaxKind::R_BRACE, SyntaxKind::END_KW, SyntaxKind::DATA_KW])
+        {
+            // semicolon optional
+        } else {
+            self.error("Expected ';' after ellipsis statement");
+        }
 
         self.builder.finish_node();
     }
