@@ -178,7 +178,6 @@ fn test_comprehensive_typeglob_formatting() {
     check_formatting_cases(&cases);
 }
 
-
 #[test]
 fn test_nested_loop_with_complex_conditions() {
     let input = "while($a+$b*$c){for(@array){print;}}";
@@ -211,6 +210,22 @@ sub test {
             my $y = 2;
         }
         ");
+}
+
+#[test]
+fn test_heredoc_crlf_line_endings() {
+    let input = r#"print <<EOF;
+Hello
+EOF
+"#
+    .replace('\n', "\r\n");
+    let formatted = format_and_assert(&input);
+
+    insta::assert_snapshot!(formatted, @r"
+print << EOF;
+Hello
+EOF
+");
 }
 
 #[test]

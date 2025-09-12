@@ -142,8 +142,12 @@ fn test_unterminated_heredoc_does_not_consume_following_code() {
 
 #[test]
 fn test_heredoc_crlf_line_endings() {
-    let src = "print <<EOF;\r\nHello\r\nEOF\r\n";
-    let mut lexer = Lexer::new(src);
+    let src = r#"print <<EOF;
+Hello
+EOF
+"#
+    .replace('\n', "\r\n");
+    let mut lexer = Lexer::new(&src);
     let mut kinds = Vec::new();
     let mut end = None;
     while let Some((k, t)) = lexer.next_token() {
