@@ -573,6 +573,10 @@ impl<'a> Lexer<'a> {
                 LexContext::Value => SyntaxKind::ASTERISK,
                 LexContext::Operator => SyntaxKind::STAR,
             },
+            Token::DotDotDot => match ctx {
+                LexContext::Operator => SyntaxKind::RANGE_EXCLUSIVE,
+                LexContext::Value => SyntaxKind::YADA_YADA,
+            },
             Token::Slash => SyntaxKind::SLASH, // regex literals handled elsewhere
             Token::Ampersand => match ctx {
                 LexContext::Value => SyntaxKind::AMPERSAND,

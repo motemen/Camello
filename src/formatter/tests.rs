@@ -100,6 +100,12 @@ fn test_range_operator_formatting() {
 }
 
 #[test]
+fn test_yada_yada_statement_formatting() {
+    let cases = [("...;", "...;\n"), ("sub foo{...}", "sub foo { ... }")];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_for_stmt_formatting() {
     let input = "for my$var(@list){my$x=1;print$x;}";
     let formatted = format_and_assert(input);

@@ -180,6 +180,7 @@ pub enum SyntaxKind {
     // Range operators
     RANGE,           // ..
     RANGE_EXCLUSIVE, // ...
+    YADA_YADA,       // ... (statement placeholder)
 
     // File test operators
     FILE_TEST_OP, // -f, -d, etc.
@@ -253,7 +254,8 @@ pub enum SyntaxKind {
     FOR_MODIFIER,    // Postfix for modifier (e.g., say for @items;)
 
     // Other statements
-    STMT, // General statement
+    YADA_YADA_STMT, // Ellipsis statement placeholder
+    STMT,           // General statement
 
     EXPR_LIST,           // Expression list (e.g., $a, $b, $c)
     COMPOUND_ASSIGNMENT, // Compound assignment (e.g., +=, ||=
