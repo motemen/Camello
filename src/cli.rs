@@ -226,12 +226,15 @@ fn dump_file(
         for error in errors {
             eprintln!("{:?}", Report::new(error));
         }
+        // Still dump the parsed AST for debugging, but exit with code 2.
+        println!("Parsed AST for '{source_name}':");
+        println!("{syntax:#?}");
+        std::process::exit(2);
+    } else {
+        println!("Parsed AST for '{source_name}':");
+        println!("{syntax:#?}");
+        Ok(())
     }
-
-    println!("Parsed AST for '{source_name}':");
-    println!("{syntax:#?}");
-
-    Ok(())
 }
 
 #[test]
