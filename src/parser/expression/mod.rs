@@ -272,21 +272,6 @@ impl Parser<'_> {
         self.builder.finish_node();
     }
 
-    /// Parse a prefix operator expression
-    fn parse_prefix_expr(&mut self, op_kind: SyntaxKind, op_str: &str) {
-        self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
-        self.bump_as(op_kind);
-        self.skip_trivia();
-
-        if !self.parse_expression_with_precedence(
-            crate::parser::expression::precedence::Precedence::PREFIX,
-        ) {
-            self.error(&format!("Expected expression after '{}'", op_str));
-        }
-
-        self.builder.finish_node();
-    }
-
     /// Parse all postfix operations (method calls, subscripts, etc.)
     fn parse_postfix_operations_with_checkpoint(
         &mut self,
@@ -600,19 +585,35 @@ impl Parser<'_> {
             }
             SyntaxKind::PLUS => {
                 // Unary plus prefix operator
-                self.parse_standard_prefix_expr("+", Precedence::PREFIX, Some(SyntaxKind::UNARY_PLUS));
+                self.parse_standard_prefix_expr(
+                    "+",
+                    Precedence::PREFIX,
+                    Some(SyntaxKind::UNARY_PLUS),
+                );
             }
             SyntaxKind::MINUS => {
                 // Unary minus prefix operator
-                self.parse_standard_prefix_expr("-", Precedence::PREFIX, Some(SyntaxKind::UNARY_MINUS));
+                self.parse_standard_prefix_expr(
+                    "-",
+                    Precedence::PREFIX,
+                    Some(SyntaxKind::UNARY_MINUS),
+                );
             }
             SyntaxKind::INCREMENT => {
                 // Prefix increment operator
-                self.parse_standard_prefix_expr("++", Precedence::PREFIX, Some(SyntaxKind::PREFIX_INCREMENT));
+                self.parse_standard_prefix_expr(
+                    "++",
+                    Precedence::PREFIX,
+                    Some(SyntaxKind::PREFIX_INCREMENT),
+                );
             }
             SyntaxKind::DECREMENT => {
                 // Prefix decrement operator
-                self.parse_standard_prefix_expr("--", Precedence::PREFIX, Some(SyntaxKind::PREFIX_DECREMENT));
+                self.parse_standard_prefix_expr(
+                    "--",
+                    Precedence::PREFIX,
+                    Some(SyntaxKind::PREFIX_DECREMENT),
+                );
             }
             SyntaxKind::LOGICAL_NOT => {
                 // Logical NOT prefix operator
@@ -871,22 +872,27 @@ impl Parser<'_> {
     }
 
     /// Helper function to parse a standard prefix expression, reducing code duplication
-    fn parse_standard_prefix_expr(&mut self, op_char: &str, precedence: Precedence, use_bump_as: Option<SyntaxKind>) {
+    fn parse_standard_prefix_expr(
+        &mut self,
+        op_char: &str,
+        precedence: Precedence,
+        use_bump_as: Option<SyntaxKind>,
+    ) {
         self.builder.start_node(SyntaxKind::PREFIX_EXPR.into());
-        
+
         if let Some(as_kind) = use_bump_as {
             self.bump_as(as_kind);
         } else {
             self.bump_value(); // consume operator
         }
-        
+
         self.skip_trivia();
-        
+
         if !self.parse_expression_with_precedence(precedence) {
             let message = format!("Expected expression after '{}'", op_char);
             self.error(&message);
         }
-        
+
         self.builder.finish_node();
     }
 }
