@@ -94,6 +94,12 @@ fn test_increment_decrement_formatting() {
 }
 
 #[test]
+fn test_range_operator_formatting() {
+    let cases = [("1..10;", "1 .. 10;\n"), ("1...10;", "1 ... 10;\n")];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_for_stmt_formatting() {
     let input = "for my$var(@list){my$x=1;print$x;}";
     let formatted = format_and_assert(input);

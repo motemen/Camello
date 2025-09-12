@@ -12,6 +12,7 @@ impl Precedence {
     pub const LOGICAL_NOT_KW: Precedence = Precedence(7); // not
     pub const ASSIGNMENT: Precedence = Precedence(10); // =
     pub const TERNARY: Precedence = Precedence(15); // ?: (ternary conditional)
+    pub const RANGE: Precedence = Precedence(17); // .. and ... range operators
     pub const DEFINED_OR: Precedence = Precedence(20); // // (same as ||)
     pub const LOGICAL_OR: Precedence = Precedence(20); // ||
     pub const LOGICAL_AND: Precedence = Precedence(30); // &&
@@ -155,6 +156,13 @@ pub fn get_operator_info(kind: SyntaxKind) -> Option<OperatorInfo> {
         // Defined-or operator
         SyntaxKind::DEFINED_OR => Some(OperatorInfo::new(
             Precedence::DEFINED_OR,
+            false,
+            SyntaxKind::INFIX_EXPR,
+        )),
+
+        // Range operators
+        SyntaxKind::RANGE | SyntaxKind::RANGE_EXCLUSIVE => Some(OperatorInfo::new(
+            Precedence::RANGE,
             false,
             SyntaxKind::INFIX_EXPR,
         )),

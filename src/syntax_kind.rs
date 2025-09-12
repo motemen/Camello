@@ -177,6 +177,10 @@ pub enum SyntaxKind {
     // Three-way comparison (spaceship) operator
     SPACESHIP, // <=>
 
+    // Range operators
+    RANGE,           // ..
+    RANGE_EXCLUSIVE, // ...
+
     // File test operators
     FILE_TEST_OP, // -f, -d, etc.
 
@@ -363,6 +367,8 @@ impl SyntaxKind {
                 | SyntaxKind::X
                 | SyntaxKind::SHIFT_LEFT
                 | SyntaxKind::SHIFT_RIGHT
+                | SyntaxKind::RANGE
+                | SyntaxKind::RANGE_EXCLUSIVE
                 // Comparisons
                 | SyntaxKind::GT
                 | SyntaxKind::LT
