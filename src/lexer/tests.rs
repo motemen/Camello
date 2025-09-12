@@ -117,7 +117,7 @@ fn test_heredoc_terminator_requires_own_line() {
 }
 
 #[test]
-fn test_unterminated_heredoc_does_not_consume_following_code() {
+fn test_unterminated_heredoc_consumes_rest_of_input() {
     let src = "print <<EOF;\nline1\nprint 1;\n";
     let mut lexer = Lexer::new(src);
     let mut tokens = Vec::new();
@@ -126,18 +126,12 @@ fn test_unterminated_heredoc_does_not_consume_following_code() {
     }
 
     assert!(tokens.iter().any(|(k, _)| *k == SyntaxKind::HEREDOC_START));
-    assert!(tokens
-        .iter()
-        .any(|(k, _)| *k == SyntaxKind::HEREDOC_CONTENT));
-    assert!(!tokens.iter().any(|(k, _)| *k == SyntaxKind::HEREDOC_END));
-
     let content_idx = tokens
         .iter()
         .position(|(k, _)| *k == SyntaxKind::HEREDOC_CONTENT)
         .unwrap();
-    assert!(tokens[content_idx + 1..]
-        .iter()
-        .any(|(k, t)| *k == SyntaxKind::IDENT && *t == "print"));
+    assert!(!tokens.iter().any(|(k, _)| *k == SyntaxKind::HEREDOC_END));
+    assert_eq!(tokens.len(), content_idx + 1);
 }
 
 #[test]
