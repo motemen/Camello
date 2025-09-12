@@ -215,6 +215,24 @@ fn test_typeglob_brace_formatting() {
 }
 
 #[test]
+fn test_punctuation_named_special_variables_parse() {
+    // Enumerate special variables whose names are punctuation characters.
+    // This includes scalars, arrays, and hashes commonly used in modern Perl.
+    // Note: We intentionally exclude legacy or caret-alphanum vars here.
+    let input = r#"$_; @_; $!; $@; $?; $/; $\; $:; $;; $"; $'; $`; $&; $.; $0; $$; $<; $>; $(; $);
+$[; $]; $+; $-; $=; $%; $|; $~; $*;
+@+; @-; %+; %-; %!;"#;
+
+    // Ensure it parses without errors and formatting preserves tokens
+    let formatted = format_and_assert(input);
+    assert_eq!(
+        formatted,
+        "$_;\n@_;\n$!;\n$@;\n$?;\n$/;\n$\\;\n$:;\n$;;\n$\";\n$';\n$`;\n$&;\n$.;\n$0;\n$$;\n$<;\n$>;\n$(;\n$);\n$[;\n$];\n$+;\n$-;\n$=;\n$%;\n$|;\n$~;\n$*;\n@+;\n@-;\n%+;\n%-;\n%!;\n",
+        "Punctuation-named special variables should parse and format"
+    );
+}
+
+#[test]
 fn test_comprehensive_typeglob_formatting() {
     let cases = [
         // Symbolic reference assignment
