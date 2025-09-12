@@ -100,7 +100,7 @@ fn test_range_operator_formatting() {
 }
 
 #[test]
-fn test_yada_yada_statement_formatting() {
+fn test_ellipsis_statement_formatting() {
     let cases = [("...;", "...;\n"), ("sub foo{...}", "sub foo { ... }")];
     check_formatting_cases(&cases);
 }

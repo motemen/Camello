@@ -575,7 +575,7 @@ impl<'a> Lexer<'a> {
             },
             Token::DotDotDot => match ctx {
                 LexContext::Operator => SyntaxKind::RANGE_EXCLUSIVE,
-                LexContext::Value => SyntaxKind::YADA_YADA,
+                LexContext::Value => SyntaxKind::ELLIPSIS,
             },
             Token::Slash => SyntaxKind::SLASH, // regex literals handled elsewhere
             Token::Ampersand => match ctx {
