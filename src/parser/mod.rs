@@ -563,6 +563,21 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_fat_comma_chain_expr_list() {
+        let input = "(a=>b=>1)";
+        let (green, errors) = parse(input);
+        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+        let root = PerlNode::new_root(green);
+        let stmt = root.children().next().expect("missing stmt");
+        assert_eq!(stmt.kind(), SyntaxKind::STMT);
+        assert!(
+            stmt.children()
+                .any(|child| child.kind() == SyntaxKind::EXPR_LIST),
+            "Expected EXPR_LIST node inside parentheses"
+        );
+    }
 }
 
 mod expression;

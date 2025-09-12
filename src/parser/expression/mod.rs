@@ -504,7 +504,8 @@ impl Parser<'_> {
 
     pub fn expression_list(&mut self) -> bool {
         let start = self.builder.checkpoint();
-        if !self.expression() {
+        // Parse the first expression but stop before comma-level operators like =>
+        if !self.parse_expression_with_precedence(Precedence(Precedence::COMMA.0 + 1)) {
             return false;
         }
 
@@ -519,7 +520,9 @@ impl Parser<'_> {
                 self.skip_trivia();
 
                 // Check for trailing comma - if we're at the end of a list context, don't require another expression
-                if self.is_at_start_of_expression() && !self.expression() {
+                if self.is_at_start_of_expression()
+                    && !self.parse_expression_with_precedence(Precedence(Precedence::COMMA.0 + 1))
+                {
                     self.error("Expected expression after comma in list");
                 }
                 // If no expression follows, it's a trailing comma - that's OK
