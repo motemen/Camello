@@ -378,8 +378,7 @@ impl Clone for Lexer<'_> {
 impl<'a> Iterator for Lexer<'a> {
     type Item = (SyntaxKind, &'a str);
     fn next(&mut self) -> Option<Self::Item> {
-        // Default to Value context for standalone lexer usage
-        self.next_token_default()
+        self.next_token()
     }
 }
 
@@ -417,6 +416,20 @@ impl<'a> Lexer<'a> {
             return Some((k, t));
         }
         None
+    }
+
+    /// Consume exactly one character from the underlying stream and return it as an IDENT token.
+    /// This is used by the parser to accept punctuation-named special variables like $", $', $`, etc.
+    pub fn consume_one_char_as_ident(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        let remainder = self.logos_lexer.remainder();
+        if remainder.is_empty() {
+            return None;
+        }
+        let ch = remainder.chars().next()?;
+        let len = ch.len_utf8();
+        let text = &remainder[..len];
+        self.logos_lexer.bump(len);
+        Some((SyntaxKind::IDENT, text))
     }
 
     pub fn next_token(&mut self) -> Option<(SyntaxKind, &'a str)> {
@@ -514,7 +527,6 @@ impl<'a> Lexer<'a> {
 
                 // Track line position for POD detection
                 self.update_line_position(text);
-
                 Some((syntax_kind, text))
             }
             Some(Err(())) => {
@@ -872,13 +884,13 @@ impl<'a> Lexer<'a> {
     #[must_use]
     pub fn peek_token(&self) -> Option<(SyntaxKind, &'a str)> {
         let mut cloned = self.clone();
-        cloned.next_token_default()
+        cloned.next_token()
     }
 
     /// Peek at the next non-trivia token without consuming it or changing lexer state
     #[must_use]
     pub fn peek_non_trivia_token(&self) -> Option<(SyntaxKind, &'a str)> {
-        self.peek_non_trivia_with_context(LexContext::Value)
+        self.peek_non_trivia_with_context(Default::default())
     }
 
     /// Peek ahead multiple tokens, skipping trivia, and return the first non-trivia token
@@ -899,6 +911,32 @@ impl<'a> Lexer<'a> {
         self.next_token_internal(Some(context))
     }
 
+    /// Peek the nth non-trivia token using a given lexical context.
+    /// This does not mutate the original lexer state.
+    #[must_use]
+    pub fn peek_nth_non_trivia_with_context(
+        &self,
+        context: LexContext,
+        n: usize,
+    ) -> Option<(SyntaxKind, &'a str)> {
+        let mut cloned = self.clone();
+        let mut count = 0;
+        loop {
+            match cloned.next_token_internal(Some(context)) {
+                Some((k, _)) if k.is_trivia() => {
+                    // skip trivia
+                }
+                Some((k, t)) => {
+                    if count == n {
+                        return Some((k, t));
+                    }
+                    count += 1;
+                }
+                None => return None,
+            }
+        }
+    }
+
     /// Peek the next non-trivia token using a given lexical context.
     /// This does not mutate the original lexer state.
     #[must_use]
@@ -906,23 +944,7 @@ impl<'a> Lexer<'a> {
         &self,
         context: LexContext,
     ) -> Option<(SyntaxKind, &'a str)> {
-        let mut cloned = self.clone();
-        // Iterate tokens using the internal single-step with override until non-trivia
-        loop {
-            match cloned.next_token_internal(Some(context)) {
-                Some((k, t)) if k.is_trivia() => {
-                    // continue skipping trivia
-                    let _ = t; // avoid unused
-                }
-                Some((k, t)) => return Some((k, t)),
-                None => return None,
-            }
-        }
-    }
-
-    /// Convenience: default context is Value
-    pub fn next_token_default(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        self.next_token_with_context(Default::default())
+        self.peek_nth_non_trivia_with_context(context, 0)
     }
 }
 
