@@ -88,6 +88,18 @@ fn test_substitution_with_flags() {
 }
 
 #[test]
+fn test_simple_heredoc_lexing() {
+    let mut lexer = Lexer::new("print <<EOF;\nHello\nEOF\n");
+    let mut kinds = Vec::new();
+    while let Some((k, _)) = lexer.next_token() {
+        kinds.push(k);
+    }
+    assert!(kinds.contains(&SyntaxKind::HEREDOC_START));
+    assert!(kinds.contains(&SyntaxKind::HEREDOC_CONTENT));
+    assert!(kinds.contains(&SyntaxKind::HEREDOC_END));
+}
+
+#[test]
 fn test_tr_with_flags() {
     // Test tr/searchlist/replacementlist/flags lexing
     let mut lexer = Lexer::new("tr/abc/XYZ/d");

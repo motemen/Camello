@@ -98,6 +98,10 @@ impl Formatter {
                 self.format_array_ref(node);
                 return;
             }
+            SyntaxKind::HEREDOC_EXPR => {
+                self.format_heredoc_expr(node);
+                return;
+            }
             SyntaxKind::QW_EXPR => {
                 self.format_qw_expr(node);
                 return;

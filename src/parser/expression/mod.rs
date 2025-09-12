@@ -716,6 +716,9 @@ impl Parser<'_> {
                     }
                 }
             }
+            SyntaxKind::HEREDOC_START => {
+                self.heredoc_expr();
+            }
             SyntaxKind::X => {
                 // Handle 'x' as an identifier when it appears at the start of expressions
                 // This allows expressions like "x => 1" in use statements

@@ -39,6 +39,29 @@ impl Parser<'_> {
         self.builder.finish_node();
     }
 
+    pub fn heredoc_expr(&mut self) {
+        self.builder.start_node(SyntaxKind::HEREDOC_EXPR.into());
+
+        self.expect_value(SyntaxKind::HEREDOC_START);
+        self.skip_trivia();
+
+        if self.at(SyntaxKind::HEREDOC_CONTENT) {
+            self.bump_value();
+            self.skip_trivia();
+        } else {
+            self.error("Expected heredoc content");
+        }
+
+        if self.at(SyntaxKind::HEREDOC_END) {
+            self.bump_value();
+            self.skip_trivia();
+        } else {
+            self.error("Expected heredoc terminator");
+        }
+
+        self.builder.finish_node();
+    }
+
     pub fn parse_variable(&mut self) {
         let sigil = self.current_kind().unwrap();
         let var_kind = match sigil {

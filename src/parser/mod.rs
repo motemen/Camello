@@ -329,6 +329,7 @@ impl<'a> Parser<'a> {
                 SyntaxKind::NOT_KW,    // prefix NOT keyword operator
                 SyntaxKind::FILE_TEST_OP, // file test operators
                 SyntaxKind::X,         // x can start expressions like "x => 1" in use statements
+                SyntaxKind::HEREDOC_START, // heredoc start
             ]) || kind.is_variable()
                 || kind.is_sigil()
         } else {

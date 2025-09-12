@@ -13,6 +13,33 @@ impl Formatter {
         self.format_delimited_literal(node, SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET);
     }
 
+    pub fn format_heredoc_expr(&mut self, node: &PerlNode) {
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(n) => self.format_node(&n),
+                NodeOrToken::Token(token) => {
+                    let kind = token.kind();
+                    let text = token.text();
+                    match kind {
+                        SyntaxKind::HEREDOC_START => {
+                            self.format_token(&token);
+                        }
+                        SyntaxKind::HEREDOC_CONTENT | SyntaxKind::HEREDOC_END => {
+                            self.output.push_str(text);
+                            if text.ends_with('\n') {
+                                self.handle_newline();
+                            } else {
+                                self.prev_token_kind = Some(kind);
+                                self.at_line_start = false;
+                            }
+                        }
+                        _ => self.format_token(&token),
+                    }
+                }
+            }
+        }
+    }
+
     fn format_single_line_delimited_literal(
         &mut self,
         node: &PerlNode,

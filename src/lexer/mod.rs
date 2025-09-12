@@ -356,12 +356,18 @@ enum LexerMode {
     },
 }
 
+#[derive(Clone)]
+struct PendingHereDoc {
+    terminator: String,
+}
+
 pub struct Lexer<'a> {
     logos_lexer: logos::Lexer<'a, Token>,
     at_line_start: bool, // Track if we're at the start of a line for POD detection
     mode: LexerMode,
     // Pending tokens produced by stateless expansions (e.g., quote-like operators)
     pending: VecDeque<(SyntaxKind, &'a str)>,
+    pending_heredocs: VecDeque<PendingHereDoc>,
 }
 
 impl Clone for Lexer<'_> {
@@ -371,6 +377,7 @@ impl Clone for Lexer<'_> {
             at_line_start: self.at_line_start,
             mode: self.mode,
             pending: self.pending.clone(),
+            pending_heredocs: self.pending_heredocs.clone(),
         }
     }
 }
@@ -393,11 +400,18 @@ impl<'a> Lexer<'a> {
             at_line_start: true,
             mode: LexerMode::Normal,
             pending: VecDeque::new(),
+            pending_heredocs: VecDeque::new(),
         }
     }
 
     /// Handle special tokens when in Value context
     fn try_handle_expecting_value_context(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        // 0) Heredoc start
+        if let Some(result) = self.try_consume_heredoc_start() {
+            let (k, t) = result;
+            self.update_line_position(t);
+            return Some((k, t));
+        }
         // 1) File test operator like -f
         if let Some(result) = self.try_consume_file_test_op() {
             let (k, t) = result;
@@ -433,6 +447,13 @@ impl<'a> Lexer<'a> {
         if let Some((k, t)) = self.pending.pop_front() {
             self.update_line_position(t);
             return Some((k, t));
+        }
+        // Handle pending heredocs at line start
+        if self.at_line_start {
+            if let Some((k, t)) = self.try_consume_pending_heredoc() {
+                self.update_line_position(t);
+                return Some((k, t));
+            }
         }
         // Quote-like context handling (parser-driven)
         if let LexerMode::QuoteLike { .. } = self.mode {
@@ -759,6 +780,77 @@ impl<'a> Lexer<'a> {
             }
         }
         None
+    }
+
+    fn try_consume_heredoc_start(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        let remainder = self.logos_lexer.remainder();
+        if !remainder.starts_with("<<") {
+            return None;
+        }
+        let rest = &remainder[2..];
+        let mut len = 0;
+        let term: String;
+        if rest.starts_with("\"") || rest.starts_with("'") {
+            let quote = rest.chars().next().unwrap();
+            if let Some(end) = rest[1..].find(quote) {
+                term = rest[1..1 + end].to_string();
+                len = 2 + 1 + end + 1;
+            } else {
+                return None;
+            }
+        } else {
+            for c in rest.chars() {
+                if c.is_alphanumeric() || c == '_' {
+                    len += c.len_utf8();
+                } else {
+                    break;
+                }
+            }
+            if len == 0 {
+                return None;
+            }
+            term = rest[..len].to_string();
+            len += 2;
+        }
+        let text = &remainder[..len];
+        self.logos_lexer.bump(len);
+        self.pending_heredocs
+            .push_back(PendingHereDoc { terminator: term });
+        Some((SyntaxKind::HEREDOC_START, text))
+    }
+
+    fn try_consume_pending_heredoc(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        let pending = self.pending_heredocs.pop_front()?;
+        let remainder = self.logos_lexer.remainder();
+        let term = pending.terminator;
+        let pattern = format!("\n{}", term);
+        if let Some(pos) = remainder.find(&pattern) {
+            let content = &remainder[..pos + 1];
+            let term_start = pos + 1;
+            let mut end_pos = term_start + term.len();
+            if remainder[end_pos..].starts_with('\n') {
+                end_pos += 1;
+            }
+            let term_slice = &remainder[term_start..end_pos];
+            self.logos_lexer.bump(end_pos);
+            self.pending
+                .push_back((SyntaxKind::HEREDOC_END, term_slice));
+            Some((SyntaxKind::HEREDOC_CONTENT, content))
+        } else if remainder.starts_with(&term) {
+            let mut end_pos = term.len();
+            if remainder[end_pos..].starts_with('\n') {
+                end_pos += 1;
+            }
+            let term_slice = &remainder[..end_pos];
+            self.logos_lexer.bump(end_pos);
+            self.pending
+                .push_back((SyntaxKind::HEREDOC_END, term_slice));
+            Some((SyntaxKind::HEREDOC_CONTENT, ""))
+        } else {
+            let text = remainder;
+            self.logos_lexer.bump(text.len());
+            Some((SyntaxKind::HEREDOC_CONTENT, text))
+        }
     }
 
     /// Track line position for POD detection

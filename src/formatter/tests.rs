@@ -178,6 +178,7 @@ fn test_comprehensive_typeglob_formatting() {
     check_formatting_cases(&cases);
 }
 
+
 #[test]
 fn test_nested_loop_with_complex_conditions() {
     let input = "while($a+$b*$c){for(@array){print;}}";

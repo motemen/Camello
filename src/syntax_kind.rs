@@ -106,6 +106,11 @@ pub enum SyntaxKind {
     S_FLAGS,  // Flags for substitution operator (s///msixpodualngcer)
     TR_FLAGS, // Flags for transliteration operator (tr///cdsr)
 
+    // Heredoc tokens
+    HEREDOC_START,   // <<EOF
+    HEREDOC_CONTENT, // Heredoc body
+    HEREDOC_END,     // EOF marker line
+
     // Operators
     EQ,                // =
     PLUS,              // + (binary addition)
@@ -235,6 +240,7 @@ pub enum SyntaxKind {
     QR_EXPR,                  // qr() expression (compiled regex literal)
     S_EXPR,                   // s() expression (substitution literal)
     TR_EXPR,                  // tr() expression (transliteration literal)
+    HEREDOC_EXPR,             // heredoc expression
     DEREF_EXPR,               // Dereference expression (e.g., @$var, %$var, $$var)
     REGEX_EXPR,               // Regex expression (e.g., $str =~ "pattern")
     REFERENCE_EXPR,           // Reference expression (e.g., \$scalar, \@array, \%hash, \&code)
