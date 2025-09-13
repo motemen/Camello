@@ -127,6 +127,15 @@ fn test_labeled_loop_formatting() {
 }
 
 #[test]
+fn test_label_with_whitespace_before_colon() {
+    let input = "LOOP : while($i<2){}";
+    let formatted = format_and_assert(input);
+    insta::assert_snapshot!(formatted, @r"
+        LOOP: while ($i < 2) {}
+        ");
+}
+
+#[test]
 fn test_ellipsis_statement_formatting() {
     let cases = [("...;", "...;\n"), ("sub foo{...}", "sub foo { ... }")];
     check_formatting_cases(&cases);
