@@ -197,6 +197,8 @@ pub enum SyntaxKind {
     ROOT,          // File root
     SUB_DEF,       // Subroutine definition
     SUB_PROTOTYPE, // Subroutine prototype (e.g., (\@@), ($@), etc.)
+    ATTR,          // Attribute (e.g., :method)
+    ATTR_ARGS,     // Attribute arguments (e.g., (1, 2))
     BLOCK_STMT,    // Block statement
     LABELED_STMT,  // Labeled statement
     LABEL,         // Statement label
