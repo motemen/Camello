@@ -53,6 +53,9 @@ impl Formatter {
         // Special case: if a SUB_DEF is immediately preceded by a comment, skip adding
         // an empty line between the comment and the subroutine declaration. This preserves
         // user intent where a comment is documenting the following subroutine.
+        //
+        // Note: This implementation may not be perfect for edge cases where comments are
+        // attached to preceding code, but it handles the common case well.
         if node.kind() == SyntaxKind::SUB_DEF {
             if let Some(first_token) = node.first_token() {
                 let mut prev = first_token.prev_token();
