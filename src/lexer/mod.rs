@@ -822,38 +822,48 @@ impl<'a> Lexer<'a> {
     }
 
     fn bump_until_marker(&mut self) {
-        if let Some(marker) = self.heredoc_queue.pop_front() {
+        if let Some(marker_info) = self.heredoc_queue.pop_front() {
             let remainder = self.logos_lexer.remainder();
-            let search_text = format!("\n{}", remainder);
-            let pattern = format!("\n{}", marker.marker);
-            let mut search_pos = 0;
-            let mut found_pos = None;
+            let marker = marker_info.marker;
+            let mut search_offset = 0;
+            let mut found_marker_start = None;
 
-            while let Some(pos) = search_text[search_pos..].find(&pattern) {
-                let abs_pos = search_pos + pos;
-                let after = abs_pos + pattern.len();
-                if after == search_text.len() || search_text.as_bytes()[after] == b'\n' {
-                    found_pos = Some(abs_pos);
-                    break;
+            while let Some(relative_pos) = remainder[search_offset..].find(marker) {
+                let marker_start = search_offset + relative_pos;
+                let at_line_start =
+                    marker_start == 0 || remainder.as_bytes()[marker_start - 1] == b'\n';
+
+                if at_line_start {
+                    let after_marker = marker_start + marker.len();
+                    if after_marker == remainder.len()
+                        || remainder.as_bytes()[after_marker] == b'\n'
+                    {
+                        found_marker_start = Some(marker_start);
+                        break;
+                    }
                 }
-                search_pos = after;
+
+                search_offset = marker_start + 1;
             }
 
-            if let Some(pos) = found_pos {
-                let content_end = pos;
-                let end_start = content_end;
-                let mut end_end = end_start + marker.marker.len();
+            if let Some(marker_start) = found_marker_start {
+                let content_end = marker_start;
+                let content = &remainder[..content_end];
+
+                let end_start = marker_start;
+                let mut end_end = end_start + marker.len();
                 if remainder.len() > end_end && remainder.as_bytes()[end_end] == b'\n' {
                     end_end += 1; // include trailing newline after marker
                 }
-                let content = &remainder[..content_end];
-                self.logos_lexer.bump(content_end);
+                let end_slice = &remainder[end_start..end_end];
+
                 self.pending
                     .push_back((SyntaxKind::HEREDOC_CONTENT, content));
-                let end_slice = &remainder[end_start..end_end];
-                self.logos_lexer.bump(end_end - end_start);
                 self.pending.push_back((SyntaxKind::HEREDOC_END, end_slice));
+
+                self.logos_lexer.bump(end_end);
             } else {
+                // Unclosed heredoc: consume the rest of the input as content.
                 let content = remainder;
                 self.logos_lexer.bump(remainder.len());
                 self.pending
