@@ -620,6 +620,7 @@ impl<'a> Lexer<'a> {
             "for" => SyntaxKind::FOR_KW,
             "foreach" => SyntaxKind::FOREACH_KW,
             "while" => SyntaxKind::WHILE_KW,
+            "until" => SyntaxKind::UNTIL_KW,
             "package" => SyntaxKind::PACKAGE_KW,
             "use" => SyntaxKind::USE_KW,
             "no" => SyntaxKind::NO_KW,

@@ -167,6 +167,7 @@ pub const fn get_token_spacing(kind: SyntaxKind) -> TokenSpacing {
         | SyntaxKind::FOR_KW
         | SyntaxKind::FOREACH_KW
         | SyntaxKind::WHILE_KW
+        | SyntaxKind::UNTIL_KW
         | SyntaxKind::IF_KW
         | SyntaxKind::UNLESS_KW
         | SyntaxKind::ELSIF_KW
@@ -299,8 +300,8 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
         // L_PAREN after certain tokens
         (SCALAR_VAR | ARRAY_VAR | HASH_VAR | TYPEGLOB_VAR, L_PAREN) => Some(true),
         (
-            MY_KW | OUR_KW | STATE_KW | LOCAL_KW | FOR_KW | FOREACH_KW | WHILE_KW | IF_KW
-            | UNLESS_KW | ELSIF_KW,
+            MY_KW | OUR_KW | STATE_KW | LOCAL_KW | FOR_KW | FOREACH_KW | WHILE_KW | UNTIL_KW
+            | IF_KW | UNLESS_KW | ELSIF_KW,
             L_PAREN,
         ) => Some(true),
 
