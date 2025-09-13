@@ -233,7 +233,7 @@ impl<'a> Parser<'a> {
                 // but don't include it in the syntax tree to avoid duplicate blank lines.
                 match self.lexer.peek_token() {
                     Some((kind, _)) if kind.is_trivia() => {
-                        if let Some((_, t)) = self.lexer.next_token_default() {
+                        if let Some((_, t)) = self.lexer.next_token() {
                             self.current_pos += t.len();
                         }
                     }
