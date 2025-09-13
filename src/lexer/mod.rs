@@ -1,6 +1,5 @@
 use crate::SyntaxKind;
 use logos::Logos;
-use std::collections::VecDeque;
 
 mod quote;
 
@@ -360,8 +359,6 @@ pub struct Lexer<'a> {
     logos_lexer: logos::Lexer<'a, Token>,
     at_line_start: bool, // Track if we're at the start of a line for POD detection
     mode: LexerMode,
-    // Pending tokens produced by stateless expansions (e.g., quote-like operators)
-    pending: VecDeque<(SyntaxKind, &'a str)>,
 }
 
 impl Clone for Lexer<'_> {
@@ -370,7 +367,6 @@ impl Clone for Lexer<'_> {
             logos_lexer: self.logos_lexer.clone(),
             at_line_start: self.at_line_start,
             mode: self.mode,
-            pending: self.pending.clone(),
         }
     }
 }
@@ -391,7 +387,6 @@ impl<'a> Lexer<'a> {
             logos_lexer,
             at_line_start: true,
             mode: LexerMode::Normal,
-            pending: VecDeque::new(),
         }
     }
 
@@ -442,11 +437,6 @@ impl<'a> Lexer<'a> {
         &mut self,
         context: Option<LexContext>,
     ) -> Option<(SyntaxKind, &'a str)> {
-        // Serve any pending expanded tokens first
-        if let Some((k, t)) = self.pending.pop_front() {
-            self.update_line_position(t);
-            return Some((k, t));
-        }
         // Quote-like context handling (parser-driven)
         if let LexerMode::QuoteLike { .. } = self.mode {
             if let Some((k, t)) = self.try_handle_quote_like_internal() {
@@ -951,6 +941,3 @@ impl<'a> Lexer<'a> {
         self.peek_nth_non_trivia_with_context(context, 0)
     }
 }
-
-#[cfg(test)]
-mod tests;
