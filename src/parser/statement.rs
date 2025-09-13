@@ -634,7 +634,7 @@ impl Parser<'_> {
             self.skip_trivia();
         }
 
-        self.expect(SyntaxKind::R_PAREN);
+        self.expect_op(SyntaxKind::R_PAREN);
 
         self.builder.finish_node();
     }
