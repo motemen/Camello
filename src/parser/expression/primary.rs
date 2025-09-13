@@ -307,60 +307,6 @@ impl Parser<'_> {
         }
     }
 
-    /// Parses a reference expression (e.g., \$scalar, \@array, \%hash, \&code)
-    pub fn parse_reference_expr(&mut self) {
-        self.builder.start_node(SyntaxKind::REFERENCE_EXPR.into());
-
-        // Consume the backslash
-        self.bump(); // \
-        self.skip_trivia();
-
-        // Parse what comes after the backslash
-        match self.current_kind() {
-            Some(
-                SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT | SyntaxKind::ASTERISK,
-            ) => {
-                // Reference to a variable: \$scalar, \@array, \%hash, \*typeglob
-                self.parse_variable();
-            }
-            Some(SyntaxKind::AMPERSAND) => {
-                // Reference to a function: \&func
-                self.bump(); // consume &
-                self.skip_trivia();
-
-                self.parse_identifier_or_qualified();
-            }
-            Some(kind) if kind == SyntaxKind::IDENT || SyntaxKind::is_keyword(kind) => {
-                // Reference to a bareword function: \func (shorthand for \&func)
-                // Allow keywords as identifiers
-                self.parse_identifier_or_qualified();
-            }
-            Some(SyntaxKind::L_PAREN) => {
-                // Reference to parenthesized expression: \(expr)
-                self.bump(); // (
-                self.skip_trivia();
-
-                if !self.expression() {
-                    self.error("Expected expression in reference");
-                }
-
-                if self.at(SyntaxKind::R_PAREN) {
-                    self.bump(); // )
-                    self.skip_trivia();
-                } else {
-                    self.error("Expected ')' after reference expression");
-                }
-            }
-            _ => {
-                self.error(
-                    "Expected variable, function name, or parenthesized expression after '\\'",
-                );
-            }
-        }
-
-        self.builder.finish_node();
-    }
-
     /// Parses a typeglob expression (e.g., *{$name}, *STDIN)
     pub fn parse_typeglob_expr(&mut self) {
         self.builder.start_node(SyntaxKind::TYPEGLOB_EXPR.into());
