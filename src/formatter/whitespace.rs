@@ -66,18 +66,16 @@ impl Formatter {
                         SyntaxKind::WHITESPACE => {
                             newline_count += token.text().matches('\n').count();
                             if newline_count > 1 {
-                                break; // there's already a blank line before the comment
+                                // There's already a blank line, so we don't need to add another.
+                                // Return to prevent fall-through to the default line-adding logic.
+                                return;
                             }
                             prev = token.prev_token();
                         }
                         SyntaxKind::COMMENT => {
-                            if newline_count <= 1 {
-                                // Comment directly before subroutine; rely on previous node
-                                // to insert any necessary spacing
-                                return;
-                            } else {
-                                break;
-                            }
+                            // A comment was found with at most one newline before it.
+                            // This means it's attached to the sub, so we prevent adding a blank line.
+                            return;
                         }
                         _ => break,
                     }
