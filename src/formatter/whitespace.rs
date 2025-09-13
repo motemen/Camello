@@ -10,24 +10,31 @@ impl Formatter {
         if text.contains('\n') {
             // Count the number of newlines to preserve empty lines
             let newline_count = text.matches('\n').count();
-            if newline_count > 1 {
-                // Multiple newlines = one empty line to preserve (collapse duplicates)
-                self.pending_empty_lines = 1;
+            if self.at_line_start && self.current_line.is_empty() {
+                // A previous token already produced a newline; skip the first
+                if newline_count > 1 {
+                    // Multiple newlines = one empty line to preserve (collapse duplicates)
+                    self.pending_empty_lines = 1;
+                }
+            } else {
+                if newline_count > 1 {
+                    // Multiple newlines = one empty line to preserve (collapse duplicates)
+                    self.pending_empty_lines = 1;
+                }
+                self.handle_newline();
             }
-            self.handle_newline();
         }
     }
 
     pub(super) fn handle_newline(&mut self) {
-        if !self.output.ends_with('\n') {
-            self.output.push('\n');
-        }
+        let line = std::mem::take(&mut self.current_line);
+        self.lines.push(line);
         self.at_line_start = true;
     }
 
     pub(super) fn add_indent(&mut self) {
         for _ in 0..self.indent_level {
-            self.output.push_str(&self.indent_string);
+            self.current_line.push_str(&self.indent_string);
         }
     }
 
@@ -39,7 +46,7 @@ impl Formatter {
         };
 
         if spacing::needs_space_before(&context) {
-            self.output.push(' ');
+            self.write_char(' ');
         }
     }
 
@@ -125,24 +132,23 @@ impl Formatter {
 
     pub(super) fn add_empty_line_before(&mut self) {
         // Only add empty line if this is not the first node and we don't already have one
-        if !self.output.is_empty() && !self.output.ends_with("\n\n") {
-            if !self.output.ends_with('\n') {
+        if !self.is_output_empty() && !self.ends_with_double_newline() {
+            if !self.ends_with_newline() {
                 self.handle_newline();
             }
-            // Add one more newline to create an empty line
-            self.output.push('\n');
+            self.lines.push(String::new());
             self.at_line_start = true;
         }
     }
 
     pub(super) fn add_empty_line_after(&mut self) {
         // Force at least one empty line after the node
-        if !self.output.ends_with('\n') {
+        if !self.ends_with_newline() {
             self.handle_newline();
         }
         // Add one more newline to create an empty line
-        if !self.output.ends_with("\n\n") {
-            self.output.push('\n');
+        if !self.ends_with_double_newline() {
+            self.lines.push(String::new());
         }
     }
 
@@ -150,12 +156,12 @@ impl Formatter {
     pub(super) fn output_pending_empty_lines(&mut self) {
         if self.pending_empty_lines > 0 {
             // Ensure we're on a new line first
-            if !self.output.ends_with('\n') {
-                self.output.push('\n');
+            if !self.ends_with_newline() {
+                self.handle_newline();
             }
             // Add empty lines
             for _ in 0..self.pending_empty_lines {
-                self.output.push('\n');
+                self.lines.push(String::new());
             }
             self.pending_empty_lines = 0;
             self.at_line_start = true;
