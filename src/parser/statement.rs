@@ -183,6 +183,12 @@ impl Parser<'_> {
             self.skip_trivia();
         }
 
+        // Parse optional attributes
+        while self.at(SyntaxKind::COLON) {
+            self.parse_sub_attribute();
+            self.skip_trivia();
+        }
+
         self.block();
 
         self.builder.finish_node();
@@ -594,6 +600,39 @@ impl Parser<'_> {
         if !self.expression_list() {
             self.error("Expected expression list after postfix for");
         }
+
+        self.builder.finish_node();
+    }
+
+    fn parse_sub_attribute(&mut self) {
+        self.builder.start_node(SyntaxKind::ATTR.into());
+
+        self.expect(SyntaxKind::COLON);
+        self.skip_trivia();
+
+        // Attribute name (qualified identifier allowed); keywords accepted as identifiers
+        self.parse_identifier_or_qualified();
+        self.skip_trivia();
+
+        if self.at(SyntaxKind::L_PAREN) {
+            self.parse_attr_args();
+        }
+
+        self.builder.finish_node();
+    }
+
+    fn parse_attr_args(&mut self) {
+        self.builder.start_node(SyntaxKind::ATTR_ARGS.into());
+
+        self.expect(SyntaxKind::L_PAREN);
+        self.skip_trivia();
+
+        if !self.at(SyntaxKind::R_PAREN) {
+            self.expression_list();
+            self.skip_trivia();
+        }
+
+        self.expect(SyntaxKind::R_PAREN);
 
         self.builder.finish_node();
     }
