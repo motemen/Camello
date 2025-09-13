@@ -100,6 +100,42 @@ fn test_range_operator_formatting() {
 }
 
 #[test]
+fn test_loop_control_statements_formatting() {
+    let cases = [
+        ("next;", "next;\n"),
+        ("next LABEL;", "next LABEL;\n"),
+        ("last;", "last;\n"),
+        ("last LOOP;", "last LOOP;\n"),
+        ("redo;", "redo;\n"),
+        ("redo LOOP;", "redo LOOP;\n"),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
+fn test_labeled_loop_formatting() {
+    let input = "LOOP: while($i<10){next LOOP if $i==5;last if $i==8;redo LOOP if $flag;$i++;}";
+    let formatted = format_and_assert(input);
+    insta::assert_snapshot!(formatted, @r"
+        LOOP: while ($i < 10) {
+            next LOOP if $i == 5;
+            last if $i == 8;
+            redo LOOP if $flag;
+            $i++;
+        }
+        ");
+}
+
+#[test]
+fn test_label_with_whitespace_before_colon() {
+    let input = "LOOP : while($i<2){}";
+    let formatted = format_and_assert(input);
+    insta::assert_snapshot!(formatted, @r"
+        LOOP: while ($i < 2) {}
+        ");
+}
+
+#[test]
 fn test_ellipsis_statement_formatting() {
     let cases = [("...;", "...;\n"), ("sub foo{...}", "sub foo { ... }")];
     check_formatting_cases(&cases);

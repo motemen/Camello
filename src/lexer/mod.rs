@@ -625,6 +625,9 @@ impl<'a> Lexer<'a> {
             "no" => SyntaxKind::NO_KW,
             "return" => SyntaxKind::RETURN_KW,
             "undef" => SyntaxKind::UNDEF_KW,
+            "next" => SyntaxKind::NEXT_KW,
+            "last" => SyntaxKind::LAST_KW,
+            "redo" => SyntaxKind::REDO_KW,
             // Quote-like starters (treated as keywords regardless of context)
             "q" => SyntaxKind::Q_KW,
             "qq" => SyntaxKind::QQ_KW,
