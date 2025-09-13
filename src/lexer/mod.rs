@@ -835,8 +835,9 @@ impl<'a> Lexer<'a> {
 
                 if at_line_start {
                     let after_marker = marker_start + marker.len();
-                    if after_marker == remainder.len()
-                        || remainder.as_bytes()[after_marker] == b'\n'
+                    if after_marker >= remainder.len()
+                        || remainder[after_marker..].starts_with('\n')
+                        || remainder[after_marker..].starts_with('\r')
                     {
                         found_marker_start = Some(marker_start);
                         break;
@@ -852,8 +853,10 @@ impl<'a> Lexer<'a> {
 
                 let end_start = marker_start;
                 let mut end_end = end_start + marker.len();
-                if remainder.len() > end_end && remainder.as_bytes()[end_end] == b'\n' {
-                    end_end += 1; // include trailing newline after marker
+                if remainder[end_end..].starts_with("\r\n") {
+                    end_end += 2; // include trailing \r\n after marker
+                } else if remainder[end_end..].starts_with('\n') {
+                    end_end += 1; // include trailing \n after marker
                 }
                 let end_slice = &remainder[end_start..end_end];
 
