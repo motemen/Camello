@@ -1663,6 +1663,20 @@ fn test_empty_lines_before_after_subs() {
 }
 
 #[test]
+fn test_comment_before_subroutine() {
+    let input = "my$x=1;\n# before foo\nsub foo{my$y=2;}";
+    let formatted = format_and_assert(input);
+
+    insta::assert_snapshot!(formatted, @r"
+        my $x = 1;
+        # before foo
+        sub foo {
+            my $y = 2;
+        }
+        ");
+}
+
+#[test]
 fn test_anonymous_subroutine_formatting() {
     // Test anonymous subroutines with our new implementation
     let input = "my $code = sub {\n   print \"Hello\\n\";\n};\n$code->();";

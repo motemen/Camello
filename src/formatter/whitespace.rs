@@ -50,6 +50,38 @@ impl Formatter {
             return;
         }
 
+        // Special case: if a SUB_DEF is immediately preceded by a comment, skip adding
+        // an empty line between the comment and the subroutine declaration. This preserves
+        // user intent where a comment is documenting the following subroutine.
+        if node.kind() == SyntaxKind::SUB_DEF {
+            if let Some(first_token) = node.first_token() {
+                let mut prev = first_token.prev_token();
+                let mut newline_count = 0;
+
+                while let Some(token) = prev {
+                    match token.kind() {
+                        SyntaxKind::WHITESPACE => {
+                            newline_count += token.text().matches('\n').count();
+                            if newline_count > 1 {
+                                break; // there's already a blank line before the comment
+                            }
+                            prev = token.prev_token();
+                        }
+                        SyntaxKind::COMMENT => {
+                            if newline_count <= 1 {
+                                // Comment directly before subroutine; rely on previous node
+                                // to insert any necessary spacing
+                                return;
+                            } else {
+                                break;
+                            }
+                        }
+                        _ => break,
+                    }
+                }
+            }
+        }
+
         // Add an empty line if the previous sibling is of a different type,
         // or if this is a SUB_DEF with any preceding sibling (to separate all subs)
         // Exception: Don't add empty line between PACKAGE_STMT and USE_STMT/NO_STMT
