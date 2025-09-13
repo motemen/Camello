@@ -566,8 +566,12 @@ impl Parser<'_> {
                 self.skip_trivia();
             }
             SyntaxKind::BACKSLASH => {
-                // Reference expression: \$scalar, \@array, \%hash, \&code
-                self.parse_reference_expr();
+                // Reference operator as prefix: \expr
+                self.parse_standard_prefix_expr("\\", Precedence::PREFIX, None);
+            }
+            SyntaxKind::AMPERSAND => {
+                // Function reference: &function
+                self.parse_function_ref();
             }
             SyntaxKind::ASTERISK => {
                 // Handle typeglob expressions specially
@@ -915,6 +919,20 @@ impl Parser<'_> {
             let message = format!("Expected expression after '{}'", op_char);
             self.error(&message);
         }
+
+        self.builder.finish_node();
+    }
+
+    /// Parse function reference: &function
+    fn parse_function_ref(&mut self) {
+        self.builder.start_node(SyntaxKind::FUNCTION_REF.into());
+
+        // Consume the &
+        self.bump();
+        self.skip_trivia();
+
+        // Parse the function name (identifier or qualified identifier)
+        self.parse_identifier_or_qualified();
 
         self.builder.finish_node();
     }
