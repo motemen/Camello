@@ -272,6 +272,17 @@ fn test_typeglob_brace_formatting() {
 }
 
 #[test]
+fn test_reference_to_string_literal() {
+    let input = format!("my $ref = \\\"foo\";");
+    let formatted = format_and_assert(&input);
+    assert_eq!(formatted, format!("{}\\n", input));
+
+    let input = format!("my $ref = \\\'bar';");
+    let formatted = format_and_assert(&input);
+    assert_eq!(formatted, format!("{}\\n", input));
+}
+
+#[test]
 fn test_punctuation_named_special_variables_parse() {
     // Enumerate special variables whose names are punctuation characters.
     // This includes scalars, arrays, and hashes commonly used in modern Perl.

@@ -335,6 +335,20 @@ impl Parser<'_> {
                 // Allow keywords as identifiers
                 self.parse_identifier_or_qualified();
             }
+            Some(SyntaxKind::STRING) => {
+                // Reference to a string literal: \"literal"
+                self.bump_value();
+                self.skip_trivia();
+            }
+            Some(SyntaxKind::Q_KW) => self.q_expr(),
+            Some(SyntaxKind::QQ_KW) => self.qq_expr(),
+            Some(SyntaxKind::QX_KW) => self.qx_expr(),
+            Some(SyntaxKind::QW_KW) => self.qw_expr(),
+            Some(SyntaxKind::M_KW) => self.m_expr(),
+            Some(SyntaxKind::QR_KW) => self.qr_expr(),
+            Some(SyntaxKind::S_KW) => self.s_expr(),
+            Some(SyntaxKind::TR_KW) => self.tr_expr(),
+            Some(SyntaxKind::Y_KW) => self.y_expr(),
             Some(SyntaxKind::L_PAREN) => {
                 // Reference to parenthesized expression: \(expr)
                 self.bump(); // (
@@ -353,7 +367,7 @@ impl Parser<'_> {
             }
             _ => {
                 self.error(
-                    "Expected variable, function name, or parenthesized expression after '\\'",
+                    "Expected variable, function name, string literal, or parenthesized expression after '\\'",
                 );
             }
         }
