@@ -91,7 +91,7 @@ impl<'a> Parser<'a> {
         self.builder.finish_node();
     }
 
-    /// __END__ または __DATA__ のデータセクションをパースする
+    /// Parse data section after __END__ or __DATA__
     fn data_section(&mut self) {
         self.builder.start_node(SyntaxKind::DATA_SECTION.into());
 
@@ -270,7 +270,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// 括弧内のカンマ区切り式をパースするヘルパー関数
+    /// Helper function to parse comma-separated expressions within parentheses
     fn parse_parenthesized_list(&mut self) {
         if !self.at(SyntaxKind::R_PAREN) {
             self.expression_list();

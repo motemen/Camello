@@ -17,13 +17,13 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Perlコードを整形する
+    /// Format Perl code
     Format {
-        /// 整形するPerlファイルのパス（指定しない場合は標準入力）
+        /// Path to Perl file to format (stdin if not specified)
         #[arg(help = "Path to the Perl file (reads from stdin if not provided)")]
         path: Option<PathBuf>,
 
-        /// 整形するPerlコード
+        /// Perl code to format
         #[arg(
             short,
             long = "eval",
@@ -32,7 +32,7 @@ pub enum Commands {
         )]
         eval: Option<String>,
 
-        /// 整形するPerlコード（エスケープシーケンス解釈付き）
+        /// Perl code to format (with escape sequence interpretation)
         #[arg(
             short = 'E',
             long = "eval-escape",
@@ -41,21 +41,21 @@ pub enum Commands {
         )]
         eval_escape: Option<String>,
 
-        /// ファイルがすでに整形済みかどうかを確認し、変更は行わない
+        /// Check if file is already formatted without making changes
         #[arg(long, help = "Check if file is already formatted")]
         check: bool,
 
-        /// 標準出力の代わりにファイルへ出力する
+        /// Output to file instead of stdout
         #[arg(short, long, help = "Output file path")]
         output: Option<PathBuf>,
     },
-    /// パースしたAST構造をダンプする
+    /// Dump parsed AST structure
     Dump {
-        /// パース・ダンプするPerlファイルのパス（指定しない場合は標準入力）
+        /// Path to Perl file to parse and dump (stdin if not specified)
         #[arg(help = "Path to the Perl file (reads from stdin if not provided)")]
         path: Option<PathBuf>,
 
-        /// パース・ダンプするPerlコード
+        /// Perl code to parse and dump
         #[arg(
             short,
             long = "eval",
@@ -64,7 +64,7 @@ pub enum Commands {
         )]
         eval: Option<String>,
 
-        /// パース・ダンプするPerlコード（エスケープシーケンス解釈付き）
+        /// Perl code to parse and dump (with escape sequence interpretation)
         #[arg(
             short = 'E',
             long = "eval-escape",
@@ -74,7 +74,7 @@ pub enum Commands {
         eval_escape: Option<String>,
     },
 }
-/// エスケープシーケンスを解釈する関数
+/// Function to interpret escape sequences
 fn interpret_escape_sequences(input: &str) -> String {
     let mut result = String::new();
     let mut chars = input.chars().peekable();
@@ -217,7 +217,7 @@ fn dump_file(
     eval: Option<String>,
     eval_escape: Option<String>,
 ) -> Result<()> {
-    // ファイルまたは標準入力から読み込む
+    // Read from file or stdin
     let (input, source_name) = read_source(path, eval, eval_escape)?;
     let (syntax, errors) = parse_perl(&input);
 

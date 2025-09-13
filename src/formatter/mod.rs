@@ -444,7 +444,7 @@ impl Formatter {
                             self.handle_multiline_closing_delimiter(&token);
                         }
                         _ => {
-                            // その他のトークンは通常通り処理
+                            // Process other tokens normally
                             self.format_token(&token);
                         }
                     }
@@ -469,7 +469,7 @@ impl Formatter {
                             self.handle_newline();
                         }
                         _ => {
-                            // その他のトークンは通常通り処理
+                            // Process other tokens normally
                             self.format_token(&token);
                         }
                     }
@@ -543,7 +543,7 @@ impl Formatter {
                 self.handle_whitespace(token);
             }
             SyntaxKind::COMMENT => {
-                // コメントは保持するが、適切な位置に配置
+                // Preserve comments but place them appropriately
                 if self.at_line_start {
                     self.add_indent();
                     self.at_line_start = false;
@@ -555,7 +555,7 @@ impl Formatter {
                 self.handle_newline();
             }
             SyntaxKind::R_BRACE => {
-                // 閉じブレースは特別処理：先にインデントを下げる
+                // Special handling for closing braces: decrease indent first
                 if self.indent_level > 0 {
                     self.indent_level -= 1;
                 }
@@ -596,7 +596,7 @@ impl Formatter {
                     self.output_pending_empty_lines();
                 }
 
-                // 通常のトークンの処理
+                // Process normal tokens
                 self.handle_spacing_before(kind);
 
                 if self.at_line_start && !kind.is_trivia() {

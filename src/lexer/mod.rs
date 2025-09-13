@@ -11,7 +11,7 @@ struct HeredocMarker<'a> {
 
 #[derive(Logos, Debug, PartialEq, Clone)]
 pub enum Token {
-    // Sigils（変数の型を示すプレフィックス）
+    // Sigils (prefixes indicating variable type)
     #[token("$")]
     Dollar,
 
@@ -26,7 +26,7 @@ pub enum Token {
     #[token("&")]
     Ampersand,
 
-    // データセクションキーワード (must come before Ident to take precedence)
+    // Data section keywords (must come before Ident to take precedence)
     #[token("__END__")]
     EndKw,
 
@@ -37,11 +37,11 @@ pub enum Token {
     // Note: POD detection is handled manually in lexer due to line-start requirement
     PodCommand,
 
-    // 識別子（サブルーチン名など）
+    // Identifiers (subroutine names, etc.)
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*")]
     Ident,
 
-    // リテラル
+    // Literals
     // Numeric literals with underscores and multiple bases
     // Hex float (e.g., 0x1.999ap-4), must have '.' and 'p' exponent
     #[regex(
@@ -212,15 +212,15 @@ pub enum Token {
     #[regex(r"[ \t\f]+")]
     Whitespace,
 
-    // 改行（重要なので個別にトークン化）
+    // Newlines (tokenized separately as they are significant)
     #[regex(r"\r\n|\r|\n")]
     Newline,
 
-    // コメント
+    // Comments
     #[regex(r"#[^\r\n]*")]
     Comment,
 
-    // データセクション（__END__ / __DATA__ 以降のすべてのテキスト）
+    // Data section (all text after __END__ / __DATA__)
     DataSection,
 
     // Postfix dereference operators (handled manually due to context sensitivity)
@@ -455,7 +455,7 @@ impl<'a> Lexer<'a> {
 
     // Raw data consumption is handled via consume_data_section from the parser
 
-    /// Handle default context (Value | Operator): 通常ケースを担当
+    /// Handle default context (Value | Operator): handles normal cases
     fn handle_default_context_with(
         &mut self,
         context: Option<LexContext>,
@@ -535,7 +535,7 @@ impl<'a> Lexer<'a> {
                 Some((syntax_kind, text))
             }
             Some(Err(())) => {
-                // エラートークンとして処理
+                // Process as error token
                 let text = self.logos_lexer.slice();
                 Some((SyntaxKind::ERROR, text))
             }
