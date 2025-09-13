@@ -247,6 +247,7 @@ pub enum SyntaxKind {
     DEREF_EXPR,               // Dereference expression (e.g., @$var, %$var, $$var)
     REGEX_EXPR,               // Regex expression (e.g., $str =~ "pattern")
     REFERENCE_EXPR,           // Reference expression (e.g., \$scalar, \@array, \%hash, \&code)
+    FUNCTION_REF,             // Function reference (e.g., &function)
     IO_EXPR,                  // I/O expression (e.g., <STDIN>, <>, <$fh>)
     ANON_SUB_EXPR,            // Anonymous subroutine expression (e.g., sub { ... })
     TYPEGLOB_EXPR,            // Typeglob expression (e.g., *{$name}, *STDIN)
