@@ -823,17 +823,27 @@ impl<'a> Lexer<'a> {
 
     fn bump_until_marker(&mut self) {
         if let Some(marker) = self.heredoc_queue.pop_front() {
-            let mut remainder = self.logos_lexer.remainder();
-            if remainder.starts_with('\n') {
-                self.logos_lexer.bump(1);
-                remainder = self.logos_lexer.remainder();
-            }
+            let remainder = self.logos_lexer.remainder();
+            let search_text = format!("\n{}", remainder);
             let pattern = format!("\n{}", marker.marker);
-            if let Some(pos) = remainder.find(&pattern) {
-                let content_end = pos + 1; // include newline before marker
+            let mut search_pos = 0;
+            let mut found_pos = None;
+
+            while let Some(pos) = search_text[search_pos..].find(&pattern) {
+                let abs_pos = search_pos + pos;
+                let after = abs_pos + pattern.len();
+                if after == search_text.len() || search_text.as_bytes()[after] == b'\n' {
+                    found_pos = Some(abs_pos);
+                    break;
+                }
+                search_pos = after;
+            }
+
+            if let Some(pos) = found_pos {
+                let content_end = pos;
                 let end_start = content_end;
                 let mut end_end = end_start + marker.marker.len();
-                if remainder[end_end..].starts_with('\n') {
+                if remainder.len() > end_end && remainder.as_bytes()[end_end] == b'\n' {
                     end_end += 1; // include trailing newline after marker
                 }
                 let content = &remainder[..content_end];

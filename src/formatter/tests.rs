@@ -2024,3 +2024,17 @@ hello
 EOF
 "###);
 }
+
+#[test]
+fn test_empty_heredoc_formatting() {
+    let input = r#"my $str = <<EOF;
+EOF
+"#;
+    let (syntax, _) = parse_perl(input);
+    let formatted = format(&syntax);
+
+    insta::assert_snapshot!(formatted, @r###"
+my $str = <<EOF;
+EOF
+"###);
+}

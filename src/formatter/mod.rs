@@ -582,15 +582,7 @@ impl Formatter {
 
                 self.prev_token_kind = Some(kind);
             }
-            SyntaxKind::HEREDOC_CONTENT => {
-                if self.at_line_start {
-                    self.at_line_start = false;
-                }
-                self.output.push_str(text);
-                self.handle_newline();
-                self.prev_token_kind = Some(kind);
-            }
-            SyntaxKind::HEREDOC_END => {
+            SyntaxKind::HEREDOC_CONTENT | SyntaxKind::HEREDOC_END => {
                 if self.at_line_start {
                     self.at_line_start = false;
                 }
@@ -714,16 +706,6 @@ impl Formatter {
                             // If there are multiple newlines across tokens, preserve as one empty line
                             if total_newlines > 1 {
                                 self.pending_empty_lines = 1;
-                            }
-
-                            // If the previous token was a semicolon and the next significant token
-                            // is a heredoc, the semicolon already emitted the newline.
-                            if self.prev_token_kind == Some(SyntaxKind::SEMICOLON) {
-                                if let Some(NodeOrToken::Token(peeked_token)) = children.peek() {
-                                    if peeked_token.kind() == SyntaxKind::HEREDOC_CONTENT {
-                                        continue;
-                                    }
-                                }
                             }
 
                             self.handle_newline();

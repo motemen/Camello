@@ -581,3 +581,29 @@ fn test_simple_heredoc() {
     assert!(tokens.contains(&(SyntaxKind::HEREDOC_CONTENT, "hello\n")));
     assert!(tokens.contains(&(SyntaxKind::HEREDOC_END, "EOF\n")));
 }
+
+#[test]
+fn test_empty_heredoc() {
+    let src = "<<EOF\nEOF\n";
+    let mut lexer = Lexer::new(src);
+    let mut tokens = Vec::new();
+    while let Some((kind, text)) = lexer.next_token() {
+        tokens.push((kind, text));
+    }
+    assert!(tokens.contains(&(SyntaxKind::HEREDOC_START, "<<EOF")));
+    assert!(tokens.contains(&(SyntaxKind::HEREDOC_CONTENT, "")));
+    assert!(tokens.contains(&(SyntaxKind::HEREDOC_END, "EOF\n")));
+}
+
+#[test]
+fn test_heredoc_marker_prefix_is_content() {
+    let src = "<<EOF\nEOFsomething\nEOF\n";
+    let mut lexer = Lexer::new(src);
+    let mut tokens = Vec::new();
+    while let Some((kind, text)) = lexer.next_token() {
+        tokens.push((kind, text));
+    }
+    assert!(tokens.contains(&(SyntaxKind::HEREDOC_START, "<<EOF")));
+    assert!(tokens.contains(&(SyntaxKind::HEREDOC_CONTENT, "EOFsomething\n")));
+    assert!(tokens.contains(&(SyntaxKind::HEREDOC_END, "EOF\n")));
+}
