@@ -717,15 +717,17 @@ impl Formatter {
             self.at_line_start = false;
         }
 
-        let mut children = node.children_with_tokens();
-        if let Some(NodeOrToken::Token(ident)) = children.next() {
-            self.output.push_str(ident.text());
-        }
-        if let Some(NodeOrToken::Token(colon)) = children.next() {
-            self.output.push_str(colon.text());
+        let mut last_token_kind = None;
+        for child in node.children_with_tokens() {
+            if let NodeOrToken::Token(token) = child {
+                if !token.kind().is_trivia() {
+                    self.output.push_str(token.text());
+                    last_token_kind = Some(token.kind());
+                }
+            }
         }
 
-        self.prev_token_kind = Some(SyntaxKind::COLON);
+        self.prev_token_kind = last_token_kind;
     }
 
     fn format_labeled_stmt(&mut self, node: &PerlNode) {
