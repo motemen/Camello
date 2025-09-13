@@ -48,6 +48,10 @@ impl Parser<'_> {
                 self.while_stmt();
                 true
             }
+            Some(SyntaxKind::UNTIL_KW) => {
+                self.until_stmt();
+                true
+            }
             Some(SyntaxKind::PACKAGE_KW) => {
                 self.package_stmt();
                 true
@@ -433,6 +437,24 @@ impl Parser<'_> {
         self.builder.finish_node();
     }
 
+    fn until_stmt(&mut self) {
+        self.builder.start_node(SyntaxKind::UNTIL_STMT.into());
+
+        // "until"
+        self.expect(SyntaxKind::UNTIL_KW);
+        self.skip_trivia();
+
+        // Parse parenthesized condition
+        self.parse_parenthesized_condition("until");
+
+        self.skip_trivia();
+
+        // Block
+        self.block();
+
+        self.builder.finish_node();
+    }
+
     fn if_stmt(&mut self) {
         self.builder.start_node(SyntaxKind::IF_STMT.into());
 
@@ -670,7 +692,7 @@ impl Parser<'_> {
         self.builder.finish_node();
     }
 
-    /// Helper function to parse parenthesized conditions for if/unless/while/elsif statements
+    /// Helper function to parse parenthesized conditions for if/unless/while/until/elsif statements
     fn parse_parenthesized_condition(&mut self, construct_name: &str) {
         if self.at(SyntaxKind::L_PAREN) {
             // Inside condition parens, expect values

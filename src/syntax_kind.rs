@@ -47,6 +47,7 @@ pub enum SyntaxKind {
     FOR_KW,     // for keyword
     FOREACH_KW, // foreach keyword (synonym for for)
     WHILE_KW,   // while keyword
+    UNTIL_KW,   // until keyword
     PACKAGE_KW,
     QW_KW,     // qw keyword
     Q_KW,      // q keyword (single-quoted string literal)
@@ -210,6 +211,7 @@ pub enum SyntaxKind {
     NO_STMT,          // no statement (no warnings qw(all);)
     FOR_STMT,         // for statement
     WHILE_STMT,       // while statement
+    UNTIL_STMT,       // until statement
     IF_STMT,          // if statement
     UNLESS_STMT,      // unless statement
 
