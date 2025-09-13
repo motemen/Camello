@@ -731,17 +731,17 @@ impl Formatter {
     }
 
     fn format_labeled_stmt(&mut self, node: &PerlNode) {
-        let mut children = node.children_with_tokens();
+        let mut children = node.children_with_tokens().peekable();
 
-        if let Some(first) = children.next() {
-            match first {
+        if let Some(child) = children.next() {
+            match child {
                 NodeOrToken::Node(n) => self.format_node(&n),
                 NodeOrToken::Token(t) => self.format_token(&t),
             }
         }
 
-        if let Some(second) = children.next() {
-            match second {
+        if let Some(child) = children.peek() {
+            match child {
                 NodeOrToken::Token(t) if t.kind() == SyntaxKind::WHITESPACE => {
                     if t.text().contains('\n') {
                         self.handle_newline();
@@ -749,18 +749,15 @@ impl Formatter {
                         self.output.push(' ');
                         self.at_line_start = false;
                     }
+                    children.next();
                 }
-                NodeOrToken::Node(n) => {
+                NodeOrToken::Token(_) | NodeOrToken::Node(_) => {
                     self.output.push(' ');
                     self.at_line_start = false;
-                    self.prev_token_kind = None;
-                    self.format_node(&n);
-                    return;
                 }
-                NodeOrToken::Token(t) => self.format_token(&t),
             }
-            self.prev_token_kind = None;
         }
+        self.prev_token_kind = None;
 
         for child in children {
             match child {
