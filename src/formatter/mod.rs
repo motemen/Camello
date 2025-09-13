@@ -43,6 +43,7 @@ impl Formatter {
                 | SyntaxKind::USE_STMT
                 | SyntaxKind::NO_STMT
                 | SyntaxKind::STMT
+                | SyntaxKind::LABELED_STMT
                 | SyntaxKind::DECLARATION_STMT
                 | SyntaxKind::ELLIPSIS_STMT
         ) {
@@ -176,6 +177,14 @@ impl Formatter {
             }
             SyntaxKind::DATA_SECTION => {
                 self.format_data_section(node);
+                return;
+            }
+            SyntaxKind::LABELED_STMT => {
+                self.format_labeled_stmt(node);
+                return;
+            }
+            SyntaxKind::LABEL => {
+                self.format_label(node);
                 return;
             }
             SyntaxKind::POD_BLOCK => {
@@ -698,6 +707,63 @@ impl Formatter {
                         self.format_token(&token);
                     }
                 }
+            }
+        }
+    }
+
+    fn format_label(&mut self, node: &PerlNode) {
+        if self.at_line_start {
+            self.add_indent();
+            self.at_line_start = false;
+        }
+
+        let mut children = node.children_with_tokens();
+        if let Some(NodeOrToken::Token(ident)) = children.next() {
+            self.output.push_str(ident.text());
+        }
+        if let Some(NodeOrToken::Token(colon)) = children.next() {
+            self.output.push_str(colon.text());
+        }
+
+        self.prev_token_kind = Some(SyntaxKind::COLON);
+    }
+
+    fn format_labeled_stmt(&mut self, node: &PerlNode) {
+        let mut children = node.children_with_tokens();
+
+        if let Some(first) = children.next() {
+            match first {
+                NodeOrToken::Node(n) => self.format_node(&n),
+                NodeOrToken::Token(t) => self.format_token(&t),
+            }
+        }
+
+        if let Some(second) = children.next() {
+            match second {
+                NodeOrToken::Token(t) if t.kind() == SyntaxKind::WHITESPACE => {
+                    if t.text().contains('\n') {
+                        self.handle_newline();
+                    } else {
+                        self.output.push(' ');
+                        self.at_line_start = false;
+                    }
+                }
+                NodeOrToken::Node(n) => {
+                    self.output.push(' ');
+                    self.at_line_start = false;
+                    self.prev_token_kind = None;
+                    self.format_node(&n);
+                    return;
+                }
+                NodeOrToken::Token(t) => self.format_token(&t),
+            }
+            self.prev_token_kind = None;
+        }
+
+        for child in children {
+            match child {
+                NodeOrToken::Node(n) => self.format_node(&n),
+                NodeOrToken::Token(t) => self.format_token(&t),
             }
         }
     }

@@ -309,6 +309,9 @@ impl<'a> Parser<'a> {
                 SyntaxKind::LOCAL_KW,
                 SyntaxKind::UNDEF_KW,  // undef can appear in expression context
                 SyntaxKind::RETURN_KW, // return statements can start expressions
+                SyntaxKind::NEXT_KW,   // next can start expressions
+                SyntaxKind::LAST_KW,   // last can start expressions
+                SyntaxKind::REDO_KW,   // redo can start expressions
                 SyntaxKind::SUB_KW,    // anonymous subroutines in expression context
                 SyntaxKind::PLUS,      // unary plus operator
                 SyntaxKind::MINUS,     // unary minus operator
