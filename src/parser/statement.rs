@@ -1,10 +1,22 @@
-use crate::SyntaxKind;
+use crate::{lexer::LexContext, SyntaxKind};
 
 use super::Parser;
 
 impl Parser<'_> {
     pub fn statement(&mut self) -> bool {
         self.skip_trivia();
+
+        // Check for labeled statement: IDENT followed by ':'
+        if self.at(SyntaxKind::IDENT) {
+            if let Some((next_kind, _)) =
+                self.peek_nth_non_trivia_token_with_context(LexContext::Operator, 1)
+            {
+                if next_kind == SyntaxKind::COLON {
+                    self.labeled_stmt();
+                    return true;
+                }
+            }
+        }
 
         match self.current_kind() {
             Some(
@@ -76,6 +88,25 @@ impl Parser<'_> {
             }
             None => false, // EOF
         }
+    }
+
+    fn labeled_stmt(&mut self) {
+        self.builder.start_node(SyntaxKind::LABELED_STMT.into());
+
+        // Label node: IDENT ':'
+        self.builder.start_node(SyntaxKind::LABEL.into());
+        self.expect(SyntaxKind::IDENT);
+        self.skip_trivia();
+        self.expect(SyntaxKind::COLON);
+        self.builder.finish_node();
+
+        self.skip_trivia();
+
+        if !self.statement() {
+            self.error("Expected statement after label");
+        }
+
+        self.builder.finish_node();
     }
 
     fn var_decl(&mut self) {

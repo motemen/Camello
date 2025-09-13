@@ -176,8 +176,10 @@ pub const fn get_token_spacing(kind: SyntaxKind) -> TokenSpacing {
         | SyntaxKind::NO_KW
         | SyntaxKind::SUB_KW => TokenSpacing::keyword(),
 
-        // RETURN_KW: contextual spacing (no space before semicolon)
-        SyntaxKind::RETURN_KW => TokenSpacing::new(Contextual, Contextual, Keyword),
+        // RETURN_KW and loop control keywords: contextual spacing (no space before semicolon)
+        SyntaxKind::RETURN_KW | SyntaxKind::NEXT_KW | SyntaxKind::LAST_KW | SyntaxKind::REDO_KW => {
+            TokenSpacing::new(Contextual, Contextual, Keyword)
+        }
 
         // Delimiters
         SyntaxKind::L_BRACE => TokenSpacing::new(Always, Never, Delimiter),
@@ -286,9 +288,9 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
         (_, BITWISE_NOT) => Some(true),
         (BITWISE_NOT, _) => Some(false),
 
-        // RETURN_KW: no space before semicolon, but space before other tokens
-        (RETURN_KW, SEMICOLON) => Some(false),
-        (RETURN_KW, _) => Some(true),
+        // RETURN_KW and loop control keywords: no space before semicolon, but space before other tokens
+        (RETURN_KW | NEXT_KW | LAST_KW | REDO_KW, SEMICOLON) => Some(false),
+        (RETURN_KW | NEXT_KW | LAST_KW | REDO_KW, _) => Some(true),
 
         // R_BRACE: space before expressions but not semicolons or closing parentheses
         (R_BRACE, kind) if kind != SEMICOLON && kind != R_PAREN => Some(true),

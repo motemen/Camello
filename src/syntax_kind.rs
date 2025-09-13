@@ -61,6 +61,9 @@ pub enum SyntaxKind {
     NO_KW,     // no keyword (for no warnings qw(...) syntax)
     RETURN_KW, // return keyword
     UNDEF_KW,  // undef keyword
+    NEXT_KW,   // next keyword
+    LAST_KW,   // last keyword
+    REDO_KW,   // redo keyword
 
     // Data section
     END_KW,  // __END__
@@ -195,6 +198,8 @@ pub enum SyntaxKind {
     SUB_DEF,       // Subroutine definition
     SUB_PROTOTYPE, // Subroutine prototype (e.g., (\@@), ($@), etc.)
     BLOCK_STMT,    // Block statement
+    LABELED_STMT,  // Labeled statement
+    LABEL,         // Statement label
 
     // Declarations
     DECLARATION_STMT, // Variable declaration (my, our, state, etc.)
@@ -305,6 +310,9 @@ impl SyntaxKind {
                 | SyntaxKind::USE_KW
                 | SyntaxKind::NO_KW
                 | SyntaxKind::RETURN_KW
+                | SyntaxKind::NEXT_KW
+                | SyntaxKind::LAST_KW
+                | SyntaxKind::REDO_KW
                 | SyntaxKind::NOT_KW
                 | SyntaxKind::AND_KW
                 | SyntaxKind::OR_KW
