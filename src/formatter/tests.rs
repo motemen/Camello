@@ -79,6 +79,16 @@ fn test_postfix_dereference_formatting() {
 }
 
 #[test]
+fn test_sub_attribute_formatting() {
+    let cases = [
+        ("sub foo:bar {}", "sub foo : bar {}"),
+        ("sub foo :bar:baz {}", "sub foo : bar : baz {}"),
+        ("sub foo:bar(1,2) {}", "sub foo : bar(1, 2) {}"),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_increment_decrement_formatting() {
     let cases = [
         ("$i++;", "$i++;\n"),
