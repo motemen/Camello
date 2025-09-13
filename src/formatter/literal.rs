@@ -33,11 +33,11 @@ impl Formatter {
                                 self.add_indent();
                                 self.at_line_start = false;
                             }
-                            self.output.push_str(text);
+                            self.write(text);
                             self.prev_token_kind = Some(kind);
                         }
                         k if k == closing => {
-                            self.output.push_str(text);
+                            self.write(text);
                             self.prev_token_kind = Some(kind);
                         }
                         _ => {
@@ -87,9 +87,9 @@ impl Formatter {
                         SyntaxKind::QW_STRING => {
                             // Add spaces between QW_STRING tokens
                             if !first_word {
-                                self.output.push(' ');
+                                self.write_char(' ');
                             }
-                            self.output.push_str(text);
+                            self.write(text);
                             first_word = false;
                             self.prev_token_kind = Some(kind);
                         }
@@ -126,7 +126,7 @@ impl Formatter {
                                 self.add_indent();
                                 self.at_line_start = false;
                             }
-                            self.output.push_str(text);
+                            self.write(text);
                             self.handle_newline();
                             self.prev_token_kind = Some(kind);
                         }
@@ -183,10 +183,10 @@ impl Formatter {
                         }
                         SyntaxKind::WHITESPACE => {
                             // Preserve whitespace inside these expressions
-                            self.output.push_str(text);
+                            self.write(text);
                         }
                         _ => {
-                            self.output.push_str(text);
+                            self.write(text);
                             self.prev_token_kind = Some(kind);
                         }
                     }
@@ -216,24 +216,24 @@ impl Formatter {
                         | SyntaxKind::L_BRACKET
                         | SyntaxKind::SLASH
                         | SyntaxKind::DELIMITER => {
-                            self.output.push_str(text);
+                            self.write(text);
                             self.prev_token_kind = Some(kind);
                         }
                         k if k == string_kind => {
-                            self.output.push_str(text);
+                            self.write(text);
                             self.prev_token_kind = Some(kind);
                         }
                         SyntaxKind::R_PAREN | SyntaxKind::R_BRACKET | SyntaxKind::R_BRACE => {
-                            self.output.push_str(text);
+                            self.write(text);
                             self.prev_token_kind = Some(kind);
                         }
                         SyntaxKind::WHITESPACE => {
                             // Special handling: preserve whitespace inside q-family strings
-                            self.output.push_str(text);
+                            self.write(text);
                         }
                         _ => {
                             // Handle any remaining tokens (including closing slash) directly
-                            self.output.push_str(text);
+                            self.write(text);
                             self.prev_token_kind = Some(kind);
                         }
                     }
