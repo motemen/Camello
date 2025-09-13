@@ -272,6 +272,17 @@ fn test_typeglob_brace_formatting() {
 }
 
 #[test]
+fn test_reference_to_string_literal() {
+    let cases = [
+        (r#"my $ref = \"foo";"#, "my $ref = \\\"foo\";\n"),
+        (r#"my $ref = \'bar';"#, "my $ref = \\'bar';\n"),
+        (r#"my $ref = \q{baz};"#, "my $ref = \\q{baz};\n"),
+        (r#"my $ref = \qq{qux};"#, "my $ref = \\qq{qux};\n"),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_punctuation_named_special_variables_parse() {
     // Enumerate special variables whose names are punctuation characters.
     // This includes scalars, arrays, and hashes commonly used in modern Perl.
