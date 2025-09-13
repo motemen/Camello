@@ -2,7 +2,8 @@ use crate::{PerlLanguage, PerlNode, SyntaxKind};
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
 
 pub struct Formatter {
-    output: String,
+    current_line: String,
+    lines: Vec<String>,
     indent_level: usize,
     indent_string: String,
     prev_token_kind: Option<SyntaxKind>,
@@ -20,7 +21,8 @@ impl Formatter {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            output: String::new(),
+            current_line: String::new(),
+            lines: Vec::new(),
             indent_level: 0,
             indent_string: "    ".to_string(), // 4 spaces
             prev_token_kind: None,
@@ -31,7 +33,39 @@ impl Formatter {
 
     pub fn format(&mut self, node: &PerlNode) -> String {
         self.format_node(node);
-        std::mem::take(&mut self.output)
+        self.lines.push(std::mem::take(&mut self.current_line));
+        std::mem::take(&mut self.lines).join("\n")
+    }
+
+    pub(super) fn write(&mut self, text: &str) {
+        let mut parts = text.split('\n');
+        if let Some(first) = parts.next() {
+            self.current_line.push_str(first);
+            for part in parts {
+                self.handle_newline();
+                self.current_line.push_str(part);
+            }
+        }
+    }
+
+    pub(super) fn write_char(&mut self, ch: char) {
+        if ch == '\n' {
+            self.handle_newline();
+        } else {
+            self.current_line.push(ch);
+        }
+    }
+
+    pub(super) fn is_output_empty(&self) -> bool {
+        self.lines.is_empty() && self.current_line.is_empty()
+    }
+
+    pub(super) fn ends_with_newline(&self) -> bool {
+        self.current_line.is_empty()
+    }
+
+    pub(super) fn ends_with_double_newline(&self) -> bool {
+        self.current_line.is_empty() && self.lines.last().map(|l| l.is_empty()).unwrap_or(false)
     }
 
     fn format_node(&mut self, node: &PerlNode) {
@@ -83,7 +117,7 @@ impl Formatter {
                         if let Some(last_token) = last_token {
                             if let Some(next_token) = Self::next_significant_token(&last_token) {
                                 if next_token.kind() == SyntaxKind::L_PAREN {
-                                    self.output.push(' ');
+                                    self.write_char(' ');
                                 }
                             }
                         }
@@ -377,17 +411,17 @@ impl Formatter {
                                 self.add_indent();
                                 self.at_line_start = false;
                             }
-                            self.output.push_str(token.text());
+                            self.write(token.text());
                             if has_content {
-                                self.output.push(' '); // Add space after opening brace only if there's content
+                                self.write_char(' '); // Add space after opening brace only if there's content
                             }
                             self.prev_token_kind = Some(token.kind());
                         }
                         SyntaxKind::R_BRACE => {
                             if has_content && self.prev_token_kind != Some(SyntaxKind::L_BRACE) {
-                                self.output.push(' '); // Add space before closing brace only if there's content
+                                self.write_char(' '); // Add space before closing brace only if there's content
                             }
-                            self.output.push_str(token.text());
+                            self.write(token.text());
                             self.prev_token_kind = Some(token.kind());
                         }
                         SyntaxKind::WHITESPACE => {
@@ -491,7 +525,7 @@ impl Formatter {
         let text = token.text();
         let kind = token.kind();
 
-        self.output.push_str(text);
+        self.write(text);
         self.indent_level += 1;
         self.handle_newline();
         self.prev_token_kind = Some(kind);
@@ -504,9 +538,11 @@ impl Formatter {
         if self.indent_level > 0 {
             self.indent_level -= 1;
         }
-        self.handle_newline();
+        if !self.at_line_start || !self.current_line.is_empty() {
+            self.handle_newline();
+        }
         self.add_indent();
-        self.output.push_str(text);
+        self.write(text);
         self.at_line_start = false;
         self.prev_token_kind = Some(kind);
     }
@@ -558,9 +594,9 @@ impl Formatter {
                     self.at_line_start = false;
                 } else {
                     // This is an inline comment - add a space before it
-                    self.output.push(' ');
+                    self.write_char(' ');
                 }
-                self.output.push_str(text.trim());
+                self.write(text.trim());
                 self.handle_newline();
             }
             SyntaxKind::R_BRACE => {
@@ -574,7 +610,7 @@ impl Formatter {
                     self.at_line_start = false;
                 }
 
-                self.output.push_str(text);
+                self.write(text);
 
                 let next_kind = Self::next_significant_token(token).map(|t| t.kind());
                 if !matches!(
@@ -605,7 +641,7 @@ impl Formatter {
                     self.at_line_start = false;
                 }
 
-                self.output.push_str(text);
+                self.write(text);
                 self.handle_spacing_after_with_token(kind, token);
                 self.prev_token_kind = Some(kind);
             }
@@ -661,13 +697,15 @@ impl Formatter {
                             // We're transitioning from USE_STMT/NO_STMT to a different node type
                             // Check if there are already empty lines from source or pending
                             let has_existing_empty_line =
-                                self.pending_empty_lines > 0 || self.output.ends_with("\n\n");
+                                self.pending_empty_lines > 0 || self.ends_with_double_newline();
 
                             if !has_existing_empty_line {
                                 // Add empty line after use/no block
-                                if !self.output.is_empty() {
-                                    self.handle_newline();
-                                    self.output.push('\n');
+                                if !self.is_output_empty() {
+                                    if !self.ends_with_newline() {
+                                        self.handle_newline();
+                                    }
+                                    self.lines.push(String::new());
                                 }
                             }
                         }
@@ -696,11 +734,19 @@ impl Formatter {
                         }
 
                         if total_newlines > 0 {
-                            // If there are multiple newlines across tokens, preserve as one empty line
-                            if total_newlines > 1 {
-                                self.pending_empty_lines = 1;
+                            if self.at_line_start && self.current_line.is_empty() {
+                                // Previous token already handled the first newline
+                                if total_newlines > 1 {
+                                    // Preserve at most one empty line
+                                    self.pending_empty_lines = 1;
+                                }
+                            } else {
+                                // If there are multiple newlines across tokens, preserve as one empty line
+                                if total_newlines > 1 {
+                                    self.pending_empty_lines = 1;
+                                }
+                                self.handle_newline();
                             }
-                            self.handle_newline();
                         }
                     } else {
                         self.output_pending_empty_lines();
@@ -721,7 +767,7 @@ impl Formatter {
         for child in node.children_with_tokens() {
             if let NodeOrToken::Token(token) = child {
                 if !token.kind().is_trivia() {
-                    self.output.push_str(token.text());
+                    self.write(token.text());
                     last_token_kind = Some(token.kind());
                 }
             }
@@ -746,13 +792,13 @@ impl Formatter {
                     if t.text().contains('\n') {
                         self.handle_newline();
                     } else {
-                        self.output.push(' ');
+                        self.write_char(' ');
                         self.at_line_start = false;
                     }
                     children.next();
                 }
                 NodeOrToken::Token(_) | NodeOrToken::Node(_) => {
-                    self.output.push(' ');
+                    self.write_char(' ');
                     self.at_line_start = false;
                 }
             }
