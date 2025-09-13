@@ -420,32 +420,28 @@ impl Parser<'_> {
     }
 
     fn while_stmt(&mut self) {
-        self.builder.start_node(SyntaxKind::WHILE_STMT.into());
-
-        // "while"
-        self.expect(SyntaxKind::WHILE_KW);
-        self.skip_trivia();
-
-        // Parse parenthesized condition
-        self.parse_parenthesized_condition("while");
-
-        self.skip_trivia();
-
-        // Block
-        self.block();
-
-        self.builder.finish_node();
+        self.parse_loop_statement(SyntaxKind::WHILE_STMT, SyntaxKind::WHILE_KW, "while");
     }
 
     fn until_stmt(&mut self) {
-        self.builder.start_node(SyntaxKind::UNTIL_STMT.into());
+        self.parse_loop_statement(SyntaxKind::UNTIL_STMT, SyntaxKind::UNTIL_KW, "until");
+    }
 
-        // "until"
-        self.expect(SyntaxKind::UNTIL_KW);
+    /// Helper function to parse loop statements like while/until
+    fn parse_loop_statement(
+        &mut self,
+        stmt_kind: SyntaxKind,
+        kw_kind: SyntaxKind,
+        construct_name: &str,
+    ) {
+        self.builder.start_node(stmt_kind.into());
+
+        // "while" or "until"
+        self.expect(kw_kind);
         self.skip_trivia();
 
         // Parse parenthesized condition
-        self.parse_parenthesized_condition("until");
+        self.parse_parenthesized_condition(construct_name);
 
         self.skip_trivia();
 
