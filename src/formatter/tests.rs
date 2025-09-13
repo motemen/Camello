@@ -146,6 +146,17 @@ fn test_label_with_whitespace_before_colon() {
 }
 
 #[test]
+fn test_until_loop_formatting() {
+    let input = "until($i>10){$i--;}";
+    let formatted = format_and_assert(input);
+    insta::assert_snapshot!(formatted, @r"
+        until ($i > 10) {
+            $i--;
+        }
+        ");
+}
+
+#[test]
 fn test_ellipsis_statement_formatting() {
     let cases = [("...;", "...;\n"), ("sub foo{...}", "sub foo { ... }")];
     check_formatting_cases(&cases);
