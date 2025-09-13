@@ -1,9 +1,36 @@
 use crate::{PerlLanguage, PerlNode, SyntaxKind};
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
 
+#[allow(dead_code)]
+struct TokenSpan {
+    kind: SyntaxKind,
+    start_col: usize,
+    end_col: usize,
+}
+
+#[derive(Default)]
+struct Line {
+    text: String,
+    tokens: Vec<TokenSpan>,
+}
+
+impl Line {
+    fn push_str(&mut self, s: &str) {
+        self.text.push_str(s);
+    }
+
+    fn push(&mut self, ch: char) {
+        self.text.push(ch);
+    }
+
+    fn is_empty(&self) -> bool {
+        self.text.is_empty()
+    }
+}
+
 pub struct Formatter {
-    current_line: String,
-    lines: Vec<String>,
+    current_line: Line,
+    lines: Vec<Line>,
     indent_level: usize,
     indent_string: String,
     prev_token_kind: Option<SyntaxKind>,
@@ -21,7 +48,7 @@ impl Formatter {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            current_line: String::new(),
+            current_line: Line::default(),
             lines: Vec::new(),
             indent_level: 0,
             indent_string: "    ".to_string(), // 4 spaces
@@ -34,16 +61,31 @@ impl Formatter {
     pub fn format(&mut self, node: &PerlNode) -> String {
         self.format_node(node);
         self.lines.push(std::mem::take(&mut self.current_line));
-        std::mem::take(&mut self.lines).join("\n")
+        std::mem::take(&mut self.lines)
+            .into_iter()
+            .map(|line| line.text)
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
-    pub(super) fn write(&mut self, text: &str) {
+    pub(super) fn write(&mut self, text: &str, kind: Option<SyntaxKind>) {
+        let start_col = self.current_line.text.len();
         let mut parts = text.split('\n');
         if let Some(first) = parts.next() {
             self.current_line.push_str(first);
             for part in parts {
                 self.handle_newline();
                 self.current_line.push_str(part);
+            }
+        }
+        if let Some(kind) = kind {
+            if !text.contains('\n') {
+                let end_col = self.current_line.text.len();
+                self.current_line.tokens.push(TokenSpan {
+                    kind,
+                    start_col,
+                    end_col,
+                });
             }
         }
     }
@@ -411,7 +453,7 @@ impl Formatter {
                                 self.add_indent();
                                 self.at_line_start = false;
                             }
-                            self.write(token.text());
+                            self.write(token.text(), Some(token.kind()));
                             if has_content {
                                 self.write_char(' '); // Add space after opening brace only if there's content
                             }
@@ -421,7 +463,7 @@ impl Formatter {
                             if has_content && self.prev_token_kind != Some(SyntaxKind::L_BRACE) {
                                 self.write_char(' '); // Add space before closing brace only if there's content
                             }
-                            self.write(token.text());
+                            self.write(token.text(), Some(token.kind()));
                             self.prev_token_kind = Some(token.kind());
                         }
                         SyntaxKind::WHITESPACE => {
@@ -525,7 +567,7 @@ impl Formatter {
         let text = token.text();
         let kind = token.kind();
 
-        self.write(text);
+        self.write(text, Some(kind));
         self.indent_level += 1;
         self.handle_newline();
         self.prev_token_kind = Some(kind);
@@ -542,7 +584,7 @@ impl Formatter {
             self.handle_newline();
         }
         self.add_indent();
-        self.write(text);
+        self.write(text, Some(kind));
         self.at_line_start = false;
         self.prev_token_kind = Some(kind);
     }
@@ -596,7 +638,7 @@ impl Formatter {
                     // This is an inline comment - add a space before it
                     self.write_char(' ');
                 }
-                self.write(text.trim());
+                self.write(text.trim(), Some(kind));
                 self.handle_newline();
             }
             SyntaxKind::R_BRACE => {
@@ -610,7 +652,7 @@ impl Formatter {
                     self.at_line_start = false;
                 }
 
-                self.write(text);
+                self.write(text, Some(kind));
 
                 let next_kind = Self::next_significant_token(token).map(|t| t.kind());
                 if !matches!(
@@ -641,7 +683,7 @@ impl Formatter {
                     self.at_line_start = false;
                 }
 
-                self.write(text);
+                self.write(text, Some(kind));
                 self.handle_spacing_after_with_token(kind, token);
                 self.prev_token_kind = Some(kind);
             }
@@ -705,7 +747,7 @@ impl Formatter {
                                     if !self.ends_with_newline() {
                                         self.handle_newline();
                                     }
-                                    self.lines.push(String::new());
+                                    self.lines.push(Line::default());
                                 }
                             }
                         }
@@ -767,7 +809,7 @@ impl Formatter {
         for child in node.children_with_tokens() {
             if let NodeOrToken::Token(token) = child {
                 if !token.kind().is_trivia() {
-                    self.write(token.text());
+                    self.write(token.text(), Some(token.kind()));
                     last_token_kind = Some(token.kind());
                 }
             }

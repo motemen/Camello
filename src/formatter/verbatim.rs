@@ -17,18 +17,19 @@ impl Formatter {
             match child {
                 NodeOrToken::Token(token) => {
                     let text = token.text();
-                    match token.kind() {
+                    let kind = token.kind();
+                    match kind {
                         SyntaxKind::END_KW | SyntaxKind::DATA_KW => {
                             // Output the keyword exactly as-is; do not force a newline
-                            self.write(text);
+                            self.write(text, Some(kind));
                         }
                         SyntaxKind::DATA_SECTION | SyntaxKind::RAW_STRING => {
                             // Output the data content exactly as-is, preserving all formatting
-                            self.write(text);
+                            self.write(text, Some(kind));
                         }
                         _ => {
                             // Handle any other tokens (whitespace, etc.) as-is
-                            self.write(text);
+                            self.write(text, Some(kind));
                         }
                     }
                 }
@@ -52,7 +53,7 @@ impl Formatter {
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Token(token) => {
-                    self.write(token.text());
+                    self.write(token.text(), Some(token.kind()));
                 }
                 NodeOrToken::Node(_) => {
                     unreachable!("POD blocks should not contain nested nodes");

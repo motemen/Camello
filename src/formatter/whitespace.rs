@@ -2,7 +2,7 @@ use crate::{PerlNode, SyntaxKind};
 use rowan::SyntaxToken;
 
 use super::spacing;
-use super::Formatter;
+use super::{Formatter, Line};
 
 impl Formatter {
     pub(super) fn handle_whitespace(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
@@ -136,7 +136,7 @@ impl Formatter {
             if !self.ends_with_newline() {
                 self.handle_newline();
             }
-            self.lines.push(String::new());
+            self.lines.push(Line::default());
             self.at_line_start = true;
         }
     }
@@ -148,7 +148,7 @@ impl Formatter {
         }
         // Add one more newline to create an empty line
         if !self.ends_with_double_newline() {
-            self.lines.push(String::new());
+            self.lines.push(Line::default());
         }
     }
 
@@ -161,7 +161,7 @@ impl Formatter {
             }
             // Add empty lines
             for _ in 0..self.pending_empty_lines {
-                self.lines.push(String::new());
+                self.lines.push(Line::default());
             }
             self.pending_empty_lines = 0;
             self.at_line_start = true;
