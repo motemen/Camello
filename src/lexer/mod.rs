@@ -732,25 +732,60 @@ impl<'a> Lexer<'a> {
             return None;
         }
 
-        let after = &remainder[2..];
-        let mut chars = after.char_indices();
-        let (idx0, first_ch) = chars.next()?;
-        if !(first_ch.is_ascii_alphabetic() || first_ch == '_') {
-            return None;
-        }
-        let mut end = idx0 + first_ch.len_utf8();
-        for (idx, ch) in chars {
-            if ch.is_alphanumeric() || ch == '_' {
-                end = idx + ch.len_utf8();
-            } else {
-                break;
-            }
+        let mut after = &remainder[2..];
+        let mut total_consumed = 2;
+
+        // Skip optional whitespace after <<
+        while after.starts_with(char::is_whitespace) {
+            let ch = after.chars().next()?;
+            after = &after[ch.len_utf8()..];
+            total_consumed += ch.len_utf8();
         }
 
-        let marker = &after[..end];
-        let total_len = 2 + end;
-        let text = &remainder[..total_len];
-        self.logos_lexer.bump(total_len);
+        if after.is_empty() {
+            return None;
+        }
+
+        let first_char = after.chars().next()?;
+        let (marker, marker_len) = match first_char {
+            // Single-quoted heredoc marker
+            '\'' => {
+                let quote_end = after[1..].find('\'')?;
+                let marker = &after[1..1 + quote_end]; // Extract marker without quotes
+                (marker, quote_end + 2) // +2 for both quotes
+            }
+            // Double-quoted heredoc marker
+            '"' => {
+                let quote_end = after[1..].find('"')?;
+                let marker = &after[1..1 + quote_end]; // Extract marker without quotes
+                (marker, quote_end + 2) // +2 for both quotes
+            }
+            // Backtick-quoted heredoc marker
+            '`' => {
+                let quote_end = after[1..].find('`')?;
+                let marker = &after[1..1 + quote_end]; // Extract marker without quotes
+                (marker, quote_end + 2) // +2 for both quotes
+            }
+            // Unquoted bareword marker
+            _ => {
+                if !(first_char.is_ascii_alphabetic() || first_char == '_') {
+                    return None;
+                }
+                let mut end = first_char.len_utf8();
+                for ch in after[end..].chars() {
+                    if ch.is_alphanumeric() || ch == '_' {
+                        end += ch.len_utf8();
+                    } else {
+                        break;
+                    }
+                }
+                (&after[..end], end)
+            }
+        };
+
+        total_consumed += marker_len;
+        let text = &remainder[..total_consumed];
+        self.logos_lexer.bump(total_consumed);
         self.heredoc_queue.push_back(HeredocMarker { marker });
         Some((SyntaxKind::HEREDOC_START, text))
     }
@@ -853,10 +888,12 @@ impl<'a> Lexer<'a> {
 
                 let end_start = marker_start;
                 let mut end_end = end_start + marker.len();
-                if remainder[end_end..].starts_with("\r\n") {
-                    end_end += 2; // include trailing \r\n after marker
-                } else if remainder[end_end..].starts_with('\n') {
-                    end_end += 1; // include trailing \n after marker
+                if end_end < remainder.len() {
+                    if remainder[end_end..].starts_with("\r\n") {
+                        end_end += 2; // include trailing \r\n after marker
+                    } else if remainder[end_end..].starts_with('\n') {
+                        end_end += 1; // include trailing \n after marker
+                    }
                 }
                 let end_slice = &remainder[end_start..end_end];
 
