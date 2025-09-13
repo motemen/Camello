@@ -628,7 +628,9 @@ impl Parser<'_> {
         self.skip_trivia();
 
         if !self.at(SyntaxKind::R_PAREN) {
-            self.expression_list();
+            if !self.expression_list() {
+                self.error("Expected expression list in attribute arguments");
+            }
             self.skip_trivia();
         }
 
