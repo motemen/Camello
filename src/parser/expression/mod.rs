@@ -765,6 +765,17 @@ impl Parser<'_> {
                     self.expression();
                 }
             }
+            SyntaxKind::NEXT_KW | SyntaxKind::LAST_KW | SyntaxKind::REDO_KW => {
+                // loop control statements with optional label
+                self.bump_value(); // consume keyword
+                self.skip_trivia();
+
+                // Optional label
+                if self.at(SyntaxKind::IDENT) {
+                    self.bump_value();
+                    self.skip_trivia();
+                }
+            }
             SyntaxKind::Q_KW => {
                 if self.should_parse_quote_like() {
                     self.q_expr();
