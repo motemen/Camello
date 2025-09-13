@@ -273,33 +273,13 @@ fn test_typeglob_brace_formatting() {
 
 #[test]
 fn test_reference_to_string_literal() {
-    let cases = vec![
-        {
-            let input = r#"my $ref = \"foo";"#.to_string();
-            let expected = format!("{}\n", input);
-            (input, expected)
-        },
-        {
-            let input = r#"my $ref = \'bar';"#.to_string();
-            let expected = format!("{}\n", input);
-            (input, expected)
-        },
-        {
-            let input = r#"my $ref = \q{baz};"#.to_string();
-            let expected = format!("{}\n", input);
-            (input, expected)
-        },
-        {
-            let input = r#"my $ref = \qq{qux};"#.to_string();
-            let expected = format!("{}\n", input);
-            (input, expected)
-        },
+    let cases = [
+        (r#"my $ref = \"foo";"#, "my $ref = \\\"foo\";\n"),
+        (r#"my $ref = \'bar';"#, "my $ref = \\'bar';\n"),
+        (r#"my $ref = \q{baz};"#, "my $ref = \\q{baz};\n"),
+        (r#"my $ref = \qq{qux};"#, "my $ref = \\qq{qux};\n"),
     ];
-    let cases_ref: Vec<(&str, &str)> = cases
-        .iter()
-        .map(|(i, e)| (i.as_str(), e.as_str()))
-        .collect();
-    check_formatting_cases(&cases_ref);
+    check_formatting_cases(&cases);
 }
 
 #[test]

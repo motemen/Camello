@@ -330,11 +330,6 @@ impl Parser<'_> {
 
                 self.parse_identifier_or_qualified();
             }
-            Some(kind) if kind == SyntaxKind::IDENT || SyntaxKind::is_keyword(kind) => {
-                // Reference to a bareword function: \func (shorthand for \&func)
-                // Allow keywords as identifiers
-                self.parse_identifier_or_qualified();
-            }
             Some(SyntaxKind::STRING) => {
                 // Reference to a string literal: \"literal"
                 self.bump_value();
@@ -349,6 +344,11 @@ impl Parser<'_> {
             Some(SyntaxKind::S_KW) => self.s_expr(),
             Some(SyntaxKind::TR_KW) => self.tr_expr(),
             Some(SyntaxKind::Y_KW) => self.y_expr(),
+            Some(kind) if kind == SyntaxKind::IDENT || SyntaxKind::is_keyword(kind) => {
+                // Reference to a bareword function: \func (shorthand for \&func)
+                // Allow keywords as identifiers
+                self.parse_identifier_or_qualified();
+            }
             Some(SyntaxKind::L_PAREN) => {
                 // Reference to parenthesized expression: \(expr)
                 self.bump(); // (
@@ -367,7 +367,7 @@ impl Parser<'_> {
             }
             _ => {
                 self.error(
-                    "Expected variable, function name, string literal, or parenthesized expression after '\\'",
+                    "Expected variable, function name, string literal, quote-like expression, or parenthesized expression after '\\'",
                 );
             }
         }
