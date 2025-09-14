@@ -535,6 +535,36 @@ fn test_multi_line_subroutine_doc_comments() {
 }
 
 #[test]
+fn test_trailing_comment_not_misclassified_as_subroutine_doc() {
+    // Test the edge case where a trailing comment appears before a subroutine
+    // It should NOT be classified as subroutine documentation
+    let src = "if (1) {} # comment\nsub foo {}\n";
+    let (syntax, err) = parse_perl(src);
+    assert!(err.is_empty());
+    let analyzer = CommentAnalyzer::analyze(&syntax);
+
+    let comment_token = syntax
+        .descendants_with_tokens()
+        .find_map(|el| match el {
+            NodeOrToken::Token(t) if t.kind() == SyntaxKind::COMMENT => Some(t),
+            _ => None,
+        })
+        .expect("comment token");
+
+    // The comment should NOT be classified as SubroutineDoc
+    // It should either be unclassified or classified as something else
+    match analyzer.ownership.get(&comment_token) {
+        Some(CommentType::SubroutineDoc { .. }) => {
+            panic!("trailing comment incorrectly classified as subroutine doc");
+        }
+        _ => {
+            // This is expected - the comment should not be classified as subroutine doc
+            // It may be unclassified or classified as something else, both are acceptable
+        }
+    }
+}
+
+#[test]
 fn test_nested_eval_in_sub() {
     let input = "sub f{eval{print$x;};return 1;}";
     let formatted = format_and_assert(input);

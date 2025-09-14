@@ -86,6 +86,18 @@ impl CommentAnalyzer {
     }
 
     fn find_subroutine_doc_owner(&self, comment: &SyntaxToken<PerlLanguage>) -> Option<PerlNode> {
+        // A doc comment must be at the start of a line (preceded only by whitespace).
+        let mut prev_opt = comment.prev_token();
+        while let Some(prev) = prev_opt {
+            if prev.text().contains('\n') {
+                break;
+            }
+            if prev.kind() != SyntaxKind::WHITESPACE {
+                return None; // It's a trailing comment.
+            }
+            prev_opt = prev.prev_token();
+        }
+
         // Find comments that appear immediately before a SUB_DEF
         // We need to check if the next non-whitespace node after this comment is a SUB_DEF
 
