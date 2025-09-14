@@ -4,13 +4,10 @@ use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
 /// Represents a token's span within a single formatted line.
 struct TokenSpan {
     /// The kind of the token.
-    #[allow(dead_code)]
     kind: SyntaxKind,
     /// The starting byte offset of the token in the line's text.
-    #[allow(dead_code)]
     start_byte: usize,
     /// The ending byte offset of the token in the line's text.
-    #[allow(dead_code)]
     end_byte: usize,
 }
 
@@ -81,7 +78,11 @@ impl Formatter {
         })
     }
 
-    pub(super) fn write(&mut self, text: &str, kind: Option<SyntaxKind>) {
+    pub(super) fn write(&mut self, token: &SyntaxToken<PerlLanguage>) {
+        self.write_str(token.text(), Some(token.kind()));
+    }
+
+    pub(super) fn write_str(&mut self, text: &str, kind: Option<SyntaxKind>) {
         let mut parts = text.split('\n').peekable();
         while let Some(part) = parts.next() {
             if !part.is_empty() {
@@ -465,7 +466,7 @@ impl Formatter {
                                 self.add_indent();
                                 self.at_line_start = false;
                             }
-                            self.write(token.text(), Some(token.kind()));
+                            self.write(&token);
                             if has_content {
                                 self.write_char(' '); // Add space after opening brace only if there's content
                             }
@@ -475,7 +476,7 @@ impl Formatter {
                             if has_content && self.prev_token_kind != Some(SyntaxKind::L_BRACE) {
                                 self.write_char(' '); // Add space before closing brace only if there's content
                             }
-                            self.write(token.text(), Some(token.kind()));
+                            self.write(&token);
                             self.prev_token_kind = Some(token.kind());
                         }
                         SyntaxKind::WHITESPACE => {
@@ -576,19 +577,13 @@ impl Formatter {
     }
 
     fn handle_multiline_opening_delimiter(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
-        let text = token.text();
-        let kind = token.kind();
-
-        self.write(text, Some(kind));
+        self.write(token);
         self.indent_level += 1;
         self.handle_newline();
-        self.prev_token_kind = Some(kind);
+        self.prev_token_kind = Some(token.kind());
     }
 
     fn handle_multiline_closing_delimiter(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
-        let text = token.text();
-        let kind = token.kind();
-
         if self.indent_level > 0 {
             self.indent_level -= 1;
         }
@@ -596,9 +591,9 @@ impl Formatter {
             self.handle_newline();
         }
         self.add_indent();
-        self.write(text, Some(kind));
+        self.write(token);
         self.at_line_start = false;
-        self.prev_token_kind = Some(kind);
+        self.prev_token_kind = Some(token.kind());
     }
 
     fn should_format_parentheses_multiline(&self, node: &PerlNode) -> bool {
@@ -650,7 +645,7 @@ impl Formatter {
                     // This is an inline comment - add a space before it
                     self.write_char(' ');
                 }
-                self.write(text.trim(), Some(kind));
+                self.write_str(text.trim(), Some(kind));
                 self.handle_newline();
             }
             SyntaxKind::R_BRACE => {
@@ -664,7 +659,7 @@ impl Formatter {
                     self.at_line_start = false;
                 }
 
-                self.write(text, Some(kind));
+                self.write(token);
 
                 let next_kind = Self::next_significant_token(token).map(|t| t.kind());
                 if !matches!(
@@ -695,7 +690,7 @@ impl Formatter {
                     self.at_line_start = false;
                 }
 
-                self.write(text, Some(kind));
+                self.write(token);
                 self.handle_spacing_after_with_token(kind, token);
                 self.prev_token_kind = Some(kind);
             }
@@ -821,7 +816,7 @@ impl Formatter {
         for child in node.children_with_tokens() {
             if let NodeOrToken::Token(token) = child {
                 if !token.kind().is_trivia() {
-                    self.write(token.text(), Some(token.kind()));
+                    self.write(&token);
                     last_token_kind = Some(token.kind());
                 }
             }

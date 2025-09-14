@@ -132,11 +132,10 @@ impl Formatter {
                     NodeOrToken::Node(node) => self.format_node(&node),
                     NodeOrToken::Token(token) => {
                         let kind = token.kind();
-                        let text = token.text();
 
                         match kind {
                             _ if kind == opening || kind == closing => {
-                                self.write(text, Some(kind));
+                                self.write(&token);
                                 self.prev_token_kind = Some(kind);
                             }
                             _ => {
@@ -187,7 +186,7 @@ impl Formatter {
                         }
                         SyntaxKind::L_BRACE | SyntaxKind::R_BRACE => {
                             // Format braces without extra spacing or newlines
-                            self.write(token.text(), Some(token.kind()));
+                            self.write(&token);
                             self.prev_token_kind = Some(token.kind());
                         }
                         _ => {
@@ -233,7 +232,7 @@ impl Formatter {
                         }
                         SyntaxKind::L_BRACE | SyntaxKind::R_BRACE => {
                             // Handle braces directly without spacing - keep typeglobs compact
-                            self.write(text, Some(kind));
+                            self.write_str(text, Some(kind));
                             self.prev_token_kind = Some(kind);
                         }
                         _ => {
@@ -267,12 +266,12 @@ impl Formatter {
 
                             // Subroutine prototypes always get a space before opening paren
                             self.write_char(' ');
-                            self.write(token.text(), Some(token.kind()));
+                            self.write(&token);
                             self.prev_token_kind = Some(token.kind());
                         }
                         _ => {
                             // R_PAREN and prototype symbols: no spacing, just output them directly
-                            self.write(token.text(), Some(token.kind()));
+                            self.write(&token);
                             self.prev_token_kind = Some(token.kind());
                         }
                     }
