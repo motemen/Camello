@@ -736,11 +736,10 @@ impl<'a> Lexer<'a> {
         let mut total_consumed = 2;
 
         // Skip optional whitespace after <<
-        while after.starts_with(char::is_whitespace) {
-            let ch = after.chars().next()?;
-            after = &after[ch.len_utf8()..];
-            total_consumed += ch.len_utf8();
-        }
+        let trimmed_after = after.trim_start();
+        let whitespace_len = after.len() - trimmed_after.len();
+        after = trimmed_after;
+        total_consumed += whitespace_len;
 
         if after.is_empty() {
             return None;
@@ -891,8 +890,10 @@ impl<'a> Lexer<'a> {
                 if end_end < remainder.len() {
                     if remainder[end_end..].starts_with("\r\n") {
                         end_end += 2; // include trailing \r\n after marker
-                    } else if remainder[end_end..].starts_with('\n') {
-                        end_end += 1; // include trailing \n after marker
+                    } else if remainder[end_end..].starts_with('\n')
+                        || remainder[end_end..].starts_with('\r')
+                    {
+                        end_end += 1; // include trailing \n or \r after marker
                     }
                 }
                 let end_slice = &remainder[end_start..end_end];

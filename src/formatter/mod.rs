@@ -583,11 +583,10 @@ impl Formatter {
                 self.prev_token_kind = Some(kind);
             }
             SyntaxKind::HEREDOC_CONTENT | SyntaxKind::HEREDOC_END => {
-                if self.at_line_start {
-                    self.at_line_start = false;
-                }
+                // Heredoc content and end markers are not indented and are output as-is.
+                // The lexer provides them with correct newlines.
                 self.output.push_str(text);
-                self.handle_newline();
+                self.at_line_start = text.ends_with('\n');
                 self.prev_token_kind = Some(kind);
             }
             _ => {
