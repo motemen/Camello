@@ -63,7 +63,9 @@ impl Formatter {
     }
 
     pub fn format_qw_expr(&mut self, node: &PerlNode) {
-        let should_multiline = self.has_newline_before_first_value(node);
+        let should_multiline = node
+            .children_with_tokens()
+            .any(|child| child.as_token().is_some_and(|t| t.text().contains('\n')));
 
         if should_multiline {
             self.format_multiline_qw_expr(node);
