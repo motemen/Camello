@@ -95,6 +95,11 @@ pub enum SyntaxKind {
     // For qw() only
     QW_STRING, // Any text inside qw()
 
+    // Heredoc tokens
+    HEREDOC_START,   // <<EOF, <<'EOF', etc.
+    HEREDOC_CONTENT, // The content between start and end
+    HEREDOC_END,     // The termination marker line
+
     // Unified string and regex content types
     LITERAL_STRING,      // Content inside q() (non-interpolated string)
     INTERPOLATED_STRING, // Content inside qq(), qx(), and s() replacement (interpolated string)

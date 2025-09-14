@@ -200,6 +200,68 @@ fn test_range_operator_lexing() {
 }
 
 #[test]
+fn test_basic_heredoc_tokenization() {
+    let mut lexer = Lexer::new("my $str = <<EOF;\nhello world\nEOF\n");
+    let mut tokens = Vec::new();
+    while let Some((kind, text)) = lexer.next_token() {
+        tokens.push((kind, text));
+    }
+    assert!(tokens.iter().any(|(k, _)| *k == SyntaxKind::HEREDOC_START));
+    assert!(tokens
+        .iter()
+        .any(|(k, _)| *k == SyntaxKind::HEREDOC_CONTENT));
+    assert!(tokens.iter().any(|(k, _)| *k == SyntaxKind::HEREDOC_END));
+}
+
+#[test]
+fn test_empty_heredoc_tokenization() {
+    let mut lexer = Lexer::new("my $str = <<EOF;\nEOF\n");
+    let mut tokens = Vec::new();
+    while let Some((kind, text)) = lexer.next_token() {
+        tokens.push((kind, text));
+    }
+    assert!(tokens
+        .iter()
+        .any(|(k, _)| *k == SyntaxKind::HEREDOC_CONTENT));
+    let content = tokens
+        .iter()
+        .find(|(k, _)| *k == SyntaxKind::HEREDOC_CONTENT)
+        .map(|(_, t)| *t)
+        .unwrap();
+    assert!(content.is_empty());
+}
+
+#[test]
+fn test_heredoc_marker_prefix() {
+    let mut lexer = Lexer::new("my $str = <<EOF;\nEOF_NOT\nEOF\n");
+    let mut tokens = Vec::new();
+    while let Some((kind, text)) = lexer.next_token() {
+        tokens.push((kind, text));
+    }
+    let content = tokens
+        .iter()
+        .find(|(k, _)| *k == SyntaxKind::HEREDOC_CONTENT)
+        .map(|(_, t)| *t)
+        .unwrap();
+    assert_eq!(content, "EOF_NOT\n");
+}
+
+#[test]
+fn test_heredoc_quote_styles() {
+    let cases = [
+        ("<<'EOF'\nEOF\n", "<<'EOF'"),
+        ("<<\"EOF\"\nEOF\n", "<<\"EOF\""),
+        ("<<`EOF`\nEOF\n", "<<`EOF`"),
+        ("<< EOF\nEOF\n", "<< EOF"),
+    ];
+    for (input, start_text) in cases {
+        let mut lexer = Lexer::new(input);
+        let start = lexer.next_token().unwrap();
+        assert_eq!(start, (SyntaxKind::HEREDOC_START, start_text));
+    }
+}
+
+#[test]
 fn test_ellipsis_statement_lexing() {
     let mut lexer = Lexer::new("...");
     assert_eq!(
