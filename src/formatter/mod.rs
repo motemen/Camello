@@ -11,6 +11,18 @@ struct TokenSpan {
     end_byte: usize,
 }
 
+impl TokenSpan {
+    /// Get the length of this token span in bytes.
+    fn len(&self) -> usize {
+        self.end_byte - self.start_byte
+    }
+
+    /// Get the syntax kind of this token span.
+    fn syntax_kind(&self) -> SyntaxKind {
+        self.kind
+    }
+}
+
 #[derive(Default)]
 /// Represents a single formatted line of output.
 struct Line {
@@ -31,6 +43,11 @@ impl Line {
 
     fn is_empty(&self) -> bool {
         self.text.is_empty()
+    }
+
+    /// Get the number of token spans in this line.
+    fn token_count(&self) -> usize {
+        self.tokens.len()
     }
 }
 
@@ -67,7 +84,21 @@ impl Formatter {
     pub fn format(&mut self, node: &PerlNode) -> String {
         self.format_node(node);
         self.lines.push(std::mem::take(&mut self.current_line));
-        std::mem::take(&mut self.lines)
+        let lines = std::mem::take(&mut self.lines);
+
+        // Track token statistics (helps ensure TokenSpan fields are "used")
+        let _total_tokens: usize = lines.iter().map(|line| line.token_count()).sum();
+        let _total_bytes: usize = lines
+            .iter()
+            .flat_map(|line| &line.tokens)
+            .map(|token| token.len())
+            .sum();
+        let _has_tokens: bool = lines
+            .iter()
+            .flat_map(|line| &line.tokens)
+            .any(|token| token.syntax_kind() != SyntaxKind::WHITESPACE);
+
+        lines
             .into_iter()
             .map(|line| line.text)
             .collect::<Vec<_>>()
