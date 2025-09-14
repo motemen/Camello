@@ -69,38 +69,22 @@ impl Formatter {
     }
 
     pub(super) fn write(&mut self, text: &str, kind: Option<SyntaxKind>) {
-        let mut parts = text.split('\n');
-
-        // Handle the first part of the text, which is appended to the current line.
-        if let Some(first) = parts.next() {
-            let start_col = self.current_line.text.len();
-            self.current_line.push_str(first);
-            if !first.is_empty() {
+        let mut parts = text.split('\n').peekable();
+        while let Some(part) = parts.next() {
+            if !part.is_empty() {
+                let start_col = self.current_line.text.len();
+                self.current_line.push_str(part);
                 if let Some(kind) = kind {
-                    let end_col = self.current_line.text.len();
                     self.current_line.tokens.push(TokenSpan {
                         kind,
                         start_col,
-                        end_col,
+                        end_col: self.current_line.text.len(),
                     });
                 }
             }
-        }
 
-        // Handle any subsequent parts, which each start on a new line.
-        for part in parts {
-            self.handle_newline();
-            let start_col = 0; // New line starts at column 0
-            self.current_line.push_str(part);
-            if !part.is_empty() {
-                if let Some(kind) = kind {
-                    let end_col = self.current_line.text.len();
-                    self.current_line.tokens.push(TokenSpan {
-                        kind,
-                        start_col,
-                        end_col,
-                    });
-                }
+            if parts.peek().is_some() {
+                self.handle_newline();
             }
         }
     }
