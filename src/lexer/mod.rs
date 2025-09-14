@@ -878,7 +878,13 @@ impl<'a> Lexer<'a> {
                     }
                 }
 
-                search_offset = marker_start + 1;
+                // Safely advance to the next character position to continue search
+                if let Some((offset, _)) = remainder[marker_start..].char_indices().nth(1) {
+                    search_offset = marker_start + offset;
+                } else {
+                    // No more characters to search
+                    break;
+                }
             }
 
             if let Some(marker_start) = found_marker_start {
