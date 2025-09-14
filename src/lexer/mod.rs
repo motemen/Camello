@@ -290,7 +290,7 @@ impl Token {
             Token::DefinedOr => SyntaxKind::DEFINED_OR,
             Token::Spaceship => SyntaxKind::SPACESHIP,
             Token::Whitespace => SyntaxKind::WHITESPACE,
-            Token::Newline => SyntaxKind::WHITESPACE,
+            Token::Newline => SyntaxKind::NEWLINE,
             Token::Comment => SyntaxKind::COMMENT,
             Token::DataSection => SyntaxKind::DATA_SECTION,
             Token::PostfixDerefArray => SyntaxKind::POSTFIX_DEREF_ARRAY,

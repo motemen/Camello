@@ -12,7 +12,7 @@ impl Parser<'_> {
         // Begin quote-like lexing for qw BEFORE skipping trivia so '#' etc. are treated as delimiters
         self.lexer
             .begin_quote_like(SyntaxKind::QW_KW, QuoteLikeMode::QW);
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
         // Opening delimiter
         if !self.at(SyntaxKind::DELIMITER) {
             self.error("Expected delimiter");
@@ -23,7 +23,7 @@ impl Parser<'_> {
 
         // Parse words inside qw() - lexer provides QW_STRING tokens directly
         while !self.at(SyntaxKind::DELIMITER) && !self.at_end() {
-            self.skip_trivia();
+            self.skip_whitespace_and_newlines();
 
             // Expect QW_STRING tokens from the lexer
             if self.at(SyntaxKind::QW_STRING) {
@@ -40,7 +40,7 @@ impl Parser<'_> {
         self.builder.finish_node();
 
         // Do not force lexer default context; parser drives context.
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
     }
 
     pub fn q_expr(&mut self) {
@@ -131,7 +131,7 @@ impl Parser<'_> {
             _ => unreachable!("Unexpected keyword: {:?}", kw_kind),
         };
         self.lexer.begin_quote_like(kw_kind, mode);
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Opening delimiter
         if !self.at(SyntaxKind::DELIMITER) {
@@ -160,7 +160,7 @@ impl Parser<'_> {
         self.builder.finish_node();
 
         // Parser drives context; no lexer default flip.
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
     }
 
     fn parse_two_part_expr(
@@ -182,7 +182,7 @@ impl Parser<'_> {
             _ => unreachable!("Unexpected keyword: {:?}", kw_kind),
         };
         self.lexer.begin_quote_like(kw_kind, mode);
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Opening delimiter: capture the opening char to decide paired vs symmetric
         let open_ch = match self.current_text() {
@@ -197,30 +197,30 @@ impl Parser<'_> {
             }
         };
         self.bump();
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // First content part (pattern/search list)
         if self.at(first_part_kind) {
             self.bump();
-            self.skip_trivia();
+            self.skip_whitespace_and_newlines();
         }
 
         // Middle delimiter (closing first part delimiter)
         self.expect(SyntaxKind::DELIMITER);
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Second part may have its own opening delimiter (for paired delimiters)
         let closing_delim = Self::get_closing_delimiter(open_ch);
         let second_is_paired = matches!(closing_delim, ')' | ']' | '}' | '>');
         if second_is_paired && self.at(SyntaxKind::DELIMITER) {
             self.bump(); // Opening delimiter for second part
-            self.skip_trivia();
+            self.skip_whitespace_and_newlines();
         }
 
         // Second content part (replacement/replacement list)
         if self.at(second_part_kind) {
             self.bump();
-            self.skip_trivia();
+            self.skip_whitespace_and_newlines();
         }
 
         // Closing delimiter (for second part)
@@ -228,14 +228,14 @@ impl Parser<'_> {
 
         // Optional flags - only skip trivia if we have flags to consume
         if self.at(flags_kind) {
-            self.skip_trivia();
+            self.skip_whitespace_and_newlines();
             self.bump();
         }
 
         self.builder.finish_node();
 
         // Parser drives context; no lexer default flip.
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
     }
 
     /// Get the matching closing delimiter for an opening delimiter

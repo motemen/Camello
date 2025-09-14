@@ -63,7 +63,7 @@ impl<'a> Parser<'a> {
         self.builder
             .start_node(rowan::SyntaxKind(SyntaxKind::ROOT as u16));
 
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
         while !self.at_end() {
             // Check if we've encountered a data section keyword
             if matches!(
@@ -85,7 +85,7 @@ impl<'a> Parser<'a> {
             } else if !self.statement() {
                 self.error("Expected a statement, but found an unexpected token.");
             }
-            self.skip_trivia();
+            self.skip_whitespace_and_newlines();
         }
 
         self.builder.finish_node();
@@ -226,31 +226,43 @@ impl<'a> Parser<'a> {
         self.expect_with_context(expected, LexContext::Operator);
     }
 
-    fn skip_trivia(&mut self) {
-        while let Some((kind, text)) = self.lexer.peek_token() {
+    fn skip_whitespace(&mut self) {
+        while let Some((kind, _)) = self.lexer.peek_token() {
             match kind {
                 SyntaxKind::WHITESPACE
-                    if self.lexer.has_pending_heredoc()
-                        && (text.contains('\n') || text.contains('\r')) =>
-                {
-                    if let Some((k, t)) = self.lexer.next_token() {
-                        self.builder.token(k.into(), t);
-                        self.current_pos += t.len();
-                    }
-                }
-                SyntaxKind::HEREDOC_CONTENT | SyntaxKind::HEREDOC_END => {
-                    if let Some((k, t)) = self.lexer.next_token() {
-                        self.builder.token(k.into(), t);
-                        self.current_pos += t.len();
-                    }
-                }
-                k if k.is_trivia() => {
+                | SyntaxKind::COMMENT
+                | SyntaxKind::HEREDOC_CONTENT
+                | SyntaxKind::HEREDOC_END => {
                     if let Some((k, t)) = self.lexer.next_token() {
                         self.builder.token(k.into(), t);
                         self.current_pos += t.len();
                     }
                 }
                 _ => break,
+            }
+        }
+    }
+
+    fn skip_newlines(&mut self) {
+        while let Some((kind, _)) = self.lexer.peek_token() {
+            if kind == SyntaxKind::NEWLINE {
+                if let Some((k, t)) = self.lexer.next_token() {
+                    self.builder.token(k.into(), t);
+                    self.current_pos += t.len();
+                }
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn skip_whitespace_and_newlines(&mut self) {
+        loop {
+            let before = self.current_pos;
+            self.skip_whitespace();
+            self.skip_newlines();
+            if self.current_pos == before {
+                break;
             }
         }
     }
@@ -439,7 +451,7 @@ mod tests {
     #[test]
     fn test_lexer_lookahead_functionality() {
         // Test the lexer's new lookahead methods
-        let mut lexer = crate::lexer::Lexer::new("$var @array");
+        let mut lexer = crate::lexer::Lexer::new("$var\n@array");
 
         // Test peek_non_trivia_token
         assert_eq!(
@@ -457,8 +469,8 @@ mod tests {
         // Consume identifier
         assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "var")));
 
-        // Skip whitespace and test peek again
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+        // Skip newline and test peek again
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::NEWLINE, "\n")));
         assert_eq!(lexer.peek_non_trivia_token(), Some((SyntaxKind::AT, "@")));
     }
 
@@ -529,7 +541,7 @@ mod tests {
 
         for (input, expected) in test_cases {
             let mut parser = crate::parser::Parser::new(input);
-            parser.skip_trivia();
+            parser.skip_whitespace_and_newlines();
             assert_eq!(
                 parser.is_dereferencing_pattern(),
                 expected,
@@ -548,7 +560,7 @@ mod tests {
         ];
         for (input, expected) in expr_deref_cases {
             let mut parser = crate::parser::Parser::new(input);
-            parser.skip_trivia();
+            parser.skip_whitespace_and_newlines();
             assert_eq!(
                 parser.is_dereferencing_pattern(),
                 expected,
@@ -562,7 +574,7 @@ mod tests {
 
         for (input, expected) in non_deref_cases {
             let mut parser = crate::parser::Parser::new(input);
-            parser.skip_trivia();
+            parser.skip_whitespace_and_newlines();
             assert_eq!(
                 parser.is_dereferencing_pattern(),
                 expected,

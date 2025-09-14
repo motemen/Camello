@@ -4,7 +4,7 @@ use super::Parser;
 
 impl Parser<'_> {
     pub fn statement(&mut self) -> bool {
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Check for labeled statement: IDENT followed by ':'
         if self.at(SyntaxKind::IDENT) {
@@ -100,11 +100,11 @@ impl Parser<'_> {
         // Label node: IDENT ':'
         self.builder.start_node(SyntaxKind::LABEL.into());
         self.expect(SyntaxKind::IDENT);
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
         self.expect(SyntaxKind::COLON);
         self.builder.finish_node();
 
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         if !self.statement() {
             self.error("Expected statement after label");
@@ -138,12 +138,12 @@ impl Parser<'_> {
         // Variable declaration keyword (my, our, state, local)
         let decl_kind = self.current_kind().unwrap();
         self.bump(); // consume the keyword
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // my $var or my ($var, ...)
         if self.at(SyntaxKind::L_PAREN) {
             self.bump(); // (
-            self.skip_trivia();
+            self.skip_whitespace_and_newlines();
 
             while !self.at(SyntaxKind::R_PAREN) && !self.at_end() {
                 if self
@@ -158,11 +158,11 @@ impl Parser<'_> {
                     break; // Break loop when error occurs
                 }
 
-                self.skip_trivia();
+                self.skip_whitespace_and_newlines();
 
                 if self.at(SyntaxKind::COMMA) {
                     self.bump();
-                    self.skip_trivia();
+                    self.skip_whitespace_and_newlines();
                 } else if !self.at(SyntaxKind::R_PAREN) {
                     self.error("Expected ',' or ')' in variable list");
                     break; // Break loop when error occurs
@@ -179,18 +179,18 @@ impl Parser<'_> {
             self.error("Expected variable or parenthesized list of variables after variable declaration keyword");
         }
 
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Process initializer if present
         if self.at(SyntaxKind::EQ) {
             self.bump(); // =
-            self.skip_trivia();
+            self.skip_whitespace_and_newlines();
             if !self.expression() {
                 self.error("Invalid expression in variable assignment");
             }
         }
 
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Check for postfix modifiers (if/unless/for)
         self.parse_optional_postfix_modifier();
@@ -206,22 +206,22 @@ impl Parser<'_> {
         self.builder.start_node(SyntaxKind::SUB_DEF.into());
 
         self.expect(SyntaxKind::SUB_KW);
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Subroutine name (qualified identifier also allowed); keywords accepted as identifiers
         self.parse_identifier_or_qualified();
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Parse optional prototype
         if self.at(SyntaxKind::L_PAREN) {
             self.parse_sub_prototype();
-            self.skip_trivia();
+            self.skip_whitespace_and_newlines();
         }
 
         // Parse optional attributes
         while self.at(SyntaxKind::COLON) {
             self.parse_sub_attribute();
-            self.skip_trivia();
+            self.skip_whitespace_and_newlines();
         }
 
         self.block();
@@ -234,11 +234,11 @@ impl Parser<'_> {
 
         // "package"
         self.expect(SyntaxKind::PACKAGE_KW);
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Package name (qualified identifier); allow keywords as identifiers
         self.parse_identifier_or_qualified();
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // After the package name, parse an optional version
         if self.at_any(&[
@@ -247,7 +247,7 @@ impl Parser<'_> {
             SyntaxKind::NUMBER,
         ]) {
             self.bump();
-            self.skip_trivia();
+            self.skip_whitespace_and_newlines();
         }
 
         // After the package name and optional version, allow either a terminating semicolon
@@ -276,7 +276,7 @@ impl Parser<'_> {
 
         // "use" or "no"
         self.expect(keyword_kind);
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // VERSION literal or module name (qualified identifier)
         if self.at(SyntaxKind::VERSION) {
@@ -292,7 +292,7 @@ impl Parser<'_> {
             // Module name (qualified identifier); allow keywords as identifiers
             self.parse_identifier_or_qualified();
         }
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Option: import list (e.g., qw()) or comma-separated expressions (x => 1, y => 2)
         if self.is_at_start_of_expression() {
@@ -302,7 +302,7 @@ impl Parser<'_> {
             // Handle additional comma-separated expressions
             while self.at(SyntaxKind::COMMA) {
                 self.bump(); // consume comma
-                self.skip_trivia();
+                self.skip_whitespace_and_newlines();
 
                 if self.is_at_start_of_expression() {
                     self.expression();
@@ -332,7 +332,7 @@ impl Parser<'_> {
 
         // "for" or "foreach" - already validated by statement()
         self.bump();
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Check what comes next to determine the for loop style:
         // 1. Perl-style: for VAR (LIST) BLOCK - VAR starts with sigil or "my"
@@ -341,39 +341,39 @@ impl Parser<'_> {
         if self.at(SyntaxKind::L_PAREN) {
             // C-style for loop: for (EXPR) BLOCK
             self.bump(); // (
-            self.skip_trivia();
+            self.skip_whitespace_and_newlines();
 
             // Parse the condition/iterator expression
             if !self.expression() {
                 self.error("Expected expression in for condition");
             }
 
-            self.skip_trivia();
+            self.skip_whitespace_and_newlines();
             self.expect(SyntaxKind::R_PAREN);
         } else {
             // Perl-style for loop: for VAR (LIST) BLOCK
             // Parse the iterator variable (VAR part): my $var, $var, @var, etc.
             self.parse_for_variable();
-            self.skip_trivia();
+            self.skip_whitespace_and_newlines();
 
             // List expression in parentheses: (LIST)
             if self.at(SyntaxKind::L_PAREN) {
                 self.bump(); // (
-                self.skip_trivia();
+                self.skip_whitespace_and_newlines();
 
                 // Parse the list expression
                 if !self.expression() {
                     self.error("Expected expression in for list");
                 }
 
-                self.skip_trivia();
+                self.skip_whitespace_and_newlines();
                 self.expect(SyntaxKind::R_PAREN);
             } else {
                 self.error("Expected '(' after for variable");
             }
         }
 
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Block
         self.block();
@@ -394,7 +394,7 @@ impl Parser<'_> {
 
             let decl_kind = self.current_kind().unwrap();
             self.bump(); // consume the keyword
-            self.skip_trivia();
+            self.skip_whitespace_and_newlines();
 
             // Parse the variable - must be a scalar
             if self.at(SyntaxKind::DOLLAR) {
@@ -438,12 +438,12 @@ impl Parser<'_> {
 
         // "while" or "until"
         self.expect(kw_kind);
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Parse parenthesized condition
         self.parse_parenthesized_condition(construct_name);
 
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Block
         self.block();
@@ -456,12 +456,12 @@ impl Parser<'_> {
 
         // "if"
         self.expect(SyntaxKind::IF_KW);
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Parse parenthesized condition
         self.parse_parenthesized_condition("if");
 
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // If block
         self.block();
@@ -472,30 +472,30 @@ impl Parser<'_> {
         // 1. Implement a proper multi-lookahead mechanism in the lexer.
         // 2. Implement a lexer with pushback capability.
         if self.lookahead_for_elsif_or_else() {
-            self.skip_trivia();
+            self.skip_whitespace_and_newlines();
         }
 
         while self.at(SyntaxKind::ELSIF_KW) {
             self.bump(); // elsif
-            self.skip_trivia();
+            self.skip_whitespace_and_newlines();
 
             // Parse parenthesized condition
             self.parse_parenthesized_condition("elsif");
 
-            self.skip_trivia();
+            self.skip_whitespace_and_newlines();
 
             self.block();
 
             // Skip trivia only if more elsif/else ahead
             if self.lookahead_for_elsif_or_else() {
-                self.skip_trivia();
+                self.skip_whitespace_and_newlines();
             }
         }
 
         // "else"
         if self.at(SyntaxKind::ELSE_KW) {
             self.bump(); // else
-            self.skip_trivia();
+            self.skip_whitespace_and_newlines();
 
             // Else block
             self.block();
@@ -515,12 +515,12 @@ impl Parser<'_> {
 
         // "unless"
         self.expect(SyntaxKind::UNLESS_KW);
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Parse parenthesized condition
         self.parse_parenthesized_condition("unless");
 
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Unless block
         self.block();
@@ -546,7 +546,7 @@ impl Parser<'_> {
             return true; // Consumed as an error, so return true.
         }
 
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Check for postfix modifiers (if/unless/for)
         self.parse_optional_postfix_modifier();
@@ -574,13 +574,13 @@ impl Parser<'_> {
 
         // Entering a block; inside expects statements/values
         self.expect_value(SyntaxKind::L_BRACE);
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         while !self.at(SyntaxKind::R_BRACE) && !self.at_end() {
             if !self.statement() {
                 self.error("Expected a statement in block, but found an unexpected token.");
             }
-            self.skip_trivia();
+            self.skip_whitespace_and_newlines();
         }
 
         // After closing '}', expect an operator/statement boundary
@@ -592,7 +592,7 @@ impl Parser<'_> {
     fn ellipsis_stmt(&mut self) {
         self.builder.start_node(SyntaxKind::ELLIPSIS_STMT.into());
         self.bump(); // consume '...'
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         if self.at(SyntaxKind::SEMICOLON) {
             self.bump();
@@ -629,7 +629,7 @@ impl Parser<'_> {
 
         // Consume the if/unless keyword; next should be a value (condition)
         self.bump_value();
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Parse the condition expression
         if !self.expression() {
@@ -644,7 +644,7 @@ impl Parser<'_> {
 
         // Consume the for/foreach keyword; next should be a value (list expression)
         self.bump_value();
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         if !self.expression_list() {
             self.error("Expected expression list after postfix for");
@@ -657,11 +657,11 @@ impl Parser<'_> {
         self.builder.start_node(SyntaxKind::ATTR.into());
 
         self.expect(SyntaxKind::COLON);
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Attribute name (qualified identifier allowed); keywords accepted as identifiers
         self.parse_identifier_or_qualified();
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         if self.at(SyntaxKind::L_PAREN) {
             self.parse_attr_args();
@@ -674,13 +674,13 @@ impl Parser<'_> {
         self.builder.start_node(SyntaxKind::ATTR_ARGS.into());
 
         self.expect(SyntaxKind::L_PAREN);
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         if !self.at(SyntaxKind::R_PAREN) {
             if !self.expression_list() {
                 self.error("Expected expression list in attribute arguments");
             }
-            self.skip_trivia();
+            self.skip_whitespace_and_newlines();
         }
 
         self.expect_op(SyntaxKind::R_PAREN);
@@ -693,7 +693,7 @@ impl Parser<'_> {
         if self.at(SyntaxKind::L_PAREN) {
             // Inside condition parens, expect values
             self.bump_value(); // (
-            self.skip_trivia();
+            self.skip_whitespace_and_newlines();
 
             // Parse the condition
             if !self.expression() {
@@ -702,7 +702,7 @@ impl Parser<'_> {
                 ));
             }
 
-            self.skip_trivia();
+            self.skip_whitespace_and_newlines();
             // After ')', expect operator/statement boundary
             self.expect_op(SyntaxKind::R_PAREN);
         } else {
@@ -716,7 +716,7 @@ impl Parser<'_> {
         self.builder.start_node(SyntaxKind::SUB_PROTOTYPE.into());
 
         self.expect(SyntaxKind::L_PAREN);
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         while let Some((kind, _)) = self.peek_non_trivia_token_with_context(LexContext::Value) {
             if kind == SyntaxKind::R_PAREN {
@@ -735,7 +735,7 @@ impl Parser<'_> {
                 | SyntaxKind::L_PAREN
                 | SyntaxKind::R_PAREN => {
                     self.bump_with_context(LexContext::Value);
-                    self.skip_trivia();
+                    self.skip_whitespace_and_newlines();
                 }
                 _ => {
                     self.error("Invalid character in subroutine prototype");
