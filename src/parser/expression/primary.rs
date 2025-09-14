@@ -8,14 +8,14 @@ impl Parser<'_> {
 
         // Opening '{' of anonymous hash; inside expects values
         self.expect_value(SyntaxKind::L_BRACE);
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Parse expressions inside braces - could be key => value pairs or a simple expression list
         if !self.at(SyntaxKind::R_BRACE) {
             self.expression_list();
         }
 
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
         // After closing '}', expect an operator
         self.expect_op(SyntaxKind::R_BRACE);
         self.builder.finish_node();
@@ -26,14 +26,14 @@ impl Parser<'_> {
 
         // Opening '[' of anonymous array; inside expects values
         self.expect_value(SyntaxKind::L_BRACKET);
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Parse expression list inside brackets (supports trailing comma)
         if !self.at(SyntaxKind::R_BRACKET) {
             self.expression_list();
         }
 
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
         // After closing ']', expect an operator
         self.expect_op(SyntaxKind::R_BRACKET);
         self.builder.finish_node();
@@ -53,7 +53,7 @@ impl Parser<'_> {
 
         // Consume the sigil
         self.bump();
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Check what comes after the sigil
         match self.current_kind() {
@@ -103,7 +103,7 @@ impl Parser<'_> {
             Some(SyntaxKind::DOUBLE_COLON) => {
                 // Allow variables like $::foo (root-qualified names)
                 self.bump(); // consume ::
-                self.skip_trivia();
+                self.skip_whitespace_and_newlines();
                 self.parse_identifier_or_qualified();
             }
             _ => {
@@ -134,7 +134,7 @@ impl Parser<'_> {
 
         self.builder.finish_node();
 
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
     }
 
     /// Parses a variable for 'my'/'state' declarations (qualified identifiers are not allowed).  
@@ -152,7 +152,7 @@ impl Parser<'_> {
 
         // Consume the sigil
         self.bump();
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Expect an identifier (only simple identifiers, no qualified allowed)
         if self.at(SyntaxKind::IDENT) {
@@ -186,7 +186,7 @@ impl Parser<'_> {
 
         // Consume the sigil
         self.bump();
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Expect an identifier (qualified identifiers allowed)
         self.parse_identifier_or_qualified();
@@ -235,7 +235,7 @@ impl Parser<'_> {
 
         // Consume the first sigil (dereference operator)
         self.bump();
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Parse what comes after the dereference sigil
         match self.current_kind() {
@@ -246,7 +246,7 @@ impl Parser<'_> {
             Some(SyntaxKind::L_BRACE) => {
                 // Expression dereferencing: @{expr}, %{expr}, ${expr}
                 self.bump(); // consume {
-                self.skip_trivia();
+                self.skip_whitespace_and_newlines();
 
                 if !self.expression() {
                     self.error("Expected expression in dereferencing braces");
@@ -254,7 +254,7 @@ impl Parser<'_> {
 
                 if self.at(SyntaxKind::R_BRACE) {
                     self.bump(); // consume }
-                    self.skip_trivia();
+                    self.skip_whitespace_and_newlines();
                 } else {
                     self.error("Expected '}' after dereferencing expression");
                 }
@@ -281,7 +281,7 @@ impl Parser<'_> {
             self.error("Expected identifier");
             return;
         }
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Check for package qualifiers (::)
         if self.at(SyntaxKind::DOUBLE_COLON) {
@@ -290,7 +290,7 @@ impl Parser<'_> {
 
             while self.at(SyntaxKind::DOUBLE_COLON) {
                 self.bump(); // ::
-                self.skip_trivia();
+                self.skip_whitespace_and_newlines();
 
                 if self.at(SyntaxKind::IDENT)
                     || self.current_kind().is_some_and(SyntaxKind::is_keyword)
@@ -303,7 +303,7 @@ impl Parser<'_> {
                 }
             }
             self.builder.finish_node();
-            self.skip_trivia(); // Skip trivia after QUALIFIED_IDENT is complete
+            self.skip_whitespace_and_newlines(); // Skip trivia after QUALIFIED_IDENT is complete
         }
     }
 
@@ -313,14 +313,14 @@ impl Parser<'_> {
 
         // Consume the asterisk
         self.expect(SyntaxKind::ASTERISK);
-        self.skip_trivia();
+        self.skip_whitespace_and_newlines();
 
         // Check what comes after the asterisk
         match self.current_kind() {
             Some(SyntaxKind::L_BRACE) => {
                 // Handle *{expression} syntax
                 self.bump(); // consume {
-                self.skip_trivia();
+                self.skip_whitespace_and_newlines();
 
                 if !self.expression() {
                     self.error("Expected expression in typeglob braces");
@@ -328,7 +328,7 @@ impl Parser<'_> {
 
                 if self.at(SyntaxKind::R_BRACE) {
                     self.bump(); // }
-                    self.skip_trivia();
+                    self.skip_whitespace_and_newlines();
                 } else {
                     self.error("Expected '}' after typeglob expression");
                 }

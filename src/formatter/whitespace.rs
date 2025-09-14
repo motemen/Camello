@@ -1,31 +1,8 @@
-use crate::{PerlNode, SyntaxKind};
-use rowan::SyntaxToken;
-
 use super::spacing;
 use super::Formatter;
+use crate::{PerlNode, SyntaxKind};
 
 impl Formatter {
-    pub(super) fn handle_whitespace(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
-        let text = token.text();
-        if text.contains('\n') {
-            // Count the number of newlines to preserve empty lines
-            let newline_count = text.matches('\n').count();
-            if self.at_line_start && self.current_line.is_empty() {
-                // A previous token already produced a newline; skip the first
-                if newline_count > 1 {
-                    // Multiple newlines = one empty line to preserve (collapse duplicates)
-                    self.pending_empty_lines = 1;
-                }
-            } else {
-                if newline_count > 1 {
-                    // Multiple newlines = one empty line to preserve (collapse duplicates)
-                    self.pending_empty_lines = 1;
-                }
-                self.handle_newline();
-            }
-        }
-    }
-
     pub(super) fn handle_newline(&mut self) {
         let line = std::mem::take(&mut self.current_line);
         self.lines.push(line);
@@ -94,18 +71,17 @@ impl Formatter {
                 let mut current = last_token.next_token();
                 let mut total_newlines = 0;
 
-                // Count newlines across all consecutive whitespace tokens
+                // Count newlines across consecutive trivia tokens
                 while let Some(token) = current {
-                    if token.kind() == SyntaxKind::WHITESPACE {
-                        let text = token.text();
-                        total_newlines += text.matches('\n').count();
-                        current = token.next_token();
-                    } else if token.kind().is_trivia() {
-                        // Skip other trivia tokens like comments
-                        current = token.next_token();
-                    } else {
-                        // Stop if we reach a non-trivia token
-                        break;
+                    match token.kind() {
+                        SyntaxKind::NEWLINE => {
+                            total_newlines += 1;
+                            current = token.next_token();
+                        }
+                        SyntaxKind::WHITESPACE | SyntaxKind::COMMENT => {
+                            current = token.next_token();
+                        }
+                        _ => break,
                     }
                 }
 

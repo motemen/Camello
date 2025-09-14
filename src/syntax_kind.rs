@@ -4,8 +4,9 @@
 pub enum SyntaxKind {
     // ===== Token Level =====
 
-    // Trivia (whitespace, comments)
+    // Trivia (whitespace, newlines, comments)
     WHITESPACE,
+    NEWLINE,
     COMMENT,
 
     // Identifiers / Variables
@@ -283,12 +284,20 @@ pub enum SyntaxKind {
 impl SyntaxKind {
     #[must_use]
     pub fn is_trivia(self) -> bool {
-        matches!(self, SyntaxKind::WHITESPACE | SyntaxKind::COMMENT)
+        matches!(
+            self,
+            SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE | SyntaxKind::COMMENT
+        )
     }
 
     #[must_use]
     pub fn is_whitespace(self) -> bool {
         self == SyntaxKind::WHITESPACE
+    }
+
+    #[must_use]
+    pub fn is_newline(self) -> bool {
+        self == SyntaxKind::NEWLINE
     }
 
     #[must_use]
