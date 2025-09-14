@@ -1,11 +1,10 @@
 use crate::{PerlLanguage, PerlNode, SyntaxKind};
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
 
-#[allow(dead_code)]
 struct TokenSpan {
     kind: SyntaxKind,
-    start_col: usize,
-    end_col: usize,
+    start_byte: usize,
+    end_byte: usize,
 }
 
 #[derive(Default)]
@@ -72,13 +71,13 @@ impl Formatter {
         let mut parts = text.split('\n').peekable();
         while let Some(part) = parts.next() {
             if !part.is_empty() {
-                let start_col = self.current_line.text.len();
+                let start_byte = self.current_line.text.len();
                 self.current_line.push_str(part);
                 if let Some(kind) = kind {
                     self.current_line.tokens.push(TokenSpan {
                         kind,
-                        start_col,
-                        end_col: self.current_line.text.len(),
+                        start_byte,
+                        end_byte: self.current_line.text.len(),
                     });
                 }
             }
