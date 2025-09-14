@@ -2,6 +2,7 @@ use crate::{PerlLanguage, PerlNode, SyntaxKind};
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
 
 /// Represents a token's span within a single formatted line.
+#[allow(dead_code)]
 struct TokenSpan {
     /// The kind of the token.
     kind: SyntaxKind,
@@ -9,18 +10,6 @@ struct TokenSpan {
     start_byte: usize,
     /// The ending byte offset of the token in the line's text.
     end_byte: usize,
-}
-
-impl TokenSpan {
-    /// Get the length of this token span in bytes.
-    fn len(&self) -> usize {
-        self.end_byte - self.start_byte
-    }
-
-    /// Get the syntax kind of this token span.
-    fn syntax_kind(&self) -> SyntaxKind {
-        self.kind
-    }
 }
 
 #[derive(Default)]
@@ -43,11 +32,6 @@ impl Line {
 
     fn is_empty(&self) -> bool {
         self.text.is_empty()
-    }
-
-    /// Get the number of token spans in this line.
-    fn token_count(&self) -> usize {
-        self.tokens.len()
     }
 }
 
