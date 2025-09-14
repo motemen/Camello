@@ -1,4 +1,4 @@
-use crate::comment_ownership::CommentAnalyzer;
+use crate::comment_ownership::{CommentAnalyzer, CommentType};
 use crate::{PerlLanguage, PerlNode, SyntaxKind};
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
 
@@ -35,9 +35,10 @@ impl Formatter {
     }
 
     pub fn new_with_comment_analysis(root: &PerlNode) -> Self {
-        let mut fmt = Self::new();
-        fmt.comment_ownership = CommentAnalyzer::analyze(root);
-        fmt
+        Self {
+            comment_ownership: CommentAnalyzer::analyze(root),
+            ..Self::default()
+        }
     }
 
     pub fn format(&mut self, node: &PerlNode) -> String {
@@ -597,16 +598,27 @@ impl Formatter {
                 self.handle_whitespace(token);
             }
             SyntaxKind::COMMENT => {
-                // コメントは保持するが、適切な位置に配置
-                if self.at_line_start {
-                    self.add_indent();
-                    self.at_line_start = false;
-                } else {
-                    // This is an inline comment - add a space before it
-                    self.write_char(' ');
+                // Use comment ownership analysis to determine formatting
+                match self.comment_ownership.ownership.get(token) {
+                    Some(CommentType::Trailing { .. }) => {
+                        // This is a trailing comment after a variable declaration - format it inline
+                        self.write_char(' ');
+                        self.write(text.trim());
+                        self.handle_newline();
+                    }
+                    None => {
+                        // No analysis available - use original logic for compatibility
+                        if self.at_line_start {
+                            self.add_indent();
+                            self.at_line_start = false;
+                        } else {
+                            // This is an inline comment - add a space before it
+                            self.write_char(' ');
+                        }
+                        self.write(text.trim());
+                        self.handle_newline();
+                    }
                 }
-                self.write(text.trim());
-                self.handle_newline();
             }
             SyntaxKind::R_BRACE => {
                 // 閉じブレースは特別処理：先にインデントを下げる

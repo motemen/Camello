@@ -8,8 +8,6 @@ use crate::{PerlLanguage, PerlNode, SyntaxKind};
 pub(crate) enum CommentType {
     /// Comment appears after a construct on the same line
     Trailing { owner: PerlNode },
-    /// Comment not associated with nearby code
-    Standalone,
 }
 
 #[derive(Debug, Default)]
@@ -30,8 +28,9 @@ impl CommentAnalyzer {
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Token(t) if t.kind() == SyntaxKind::COMMENT => {
-                    let ownership = self.determine_comment_ownership(&t);
-                    self.ownership.insert(t, ownership);
+                    if let Some(ownership) = self.determine_comment_ownership(&t) {
+                        self.ownership.insert(t, ownership);
+                    }
                 }
                 NodeOrToken::Node(n) => self.analyze_node(&n),
                 _ => {}
@@ -39,12 +38,14 @@ impl CommentAnalyzer {
         }
     }
 
-    fn determine_comment_ownership(&self, comment: &SyntaxToken<PerlLanguage>) -> CommentType {
-        if let Some(owner) = self.find_trailing_var_decl_owner(comment) {
-            CommentType::Trailing { owner }
-        } else {
-            CommentType::Standalone
-        }
+    fn determine_comment_ownership(
+        &self,
+        comment: &SyntaxToken<PerlLanguage>,
+    ) -> Option<CommentType> {
+        // For now, we only analyze trailing comments after variable declarations
+        // Other comment types could be added here in the future
+        self.find_trailing_var_decl_owner(comment)
+            .map(|owner| CommentType::Trailing { owner })
     }
 
     fn find_trailing_var_decl_owner(
@@ -67,16 +68,10 @@ impl CommentAnalyzer {
         }
 
         if prev.kind() == SyntaxKind::SEMICOLON {
-            let mut ancestor = prev.parent()?;
-            loop {
-                if ancestor.kind() == SyntaxKind::DECLARATION_STMT {
-                    return Some(ancestor);
-                }
-                match ancestor.parent() {
-                    Some(p) => ancestor = p,
-                    None => break,
-                }
-            }
+            let ancestor = prev.parent()?;
+            return ancestor
+                .ancestors()
+                .find(|n| n.kind() == SyntaxKind::DECLARATION_STMT);
         }
         None
     }
