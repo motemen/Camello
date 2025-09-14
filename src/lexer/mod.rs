@@ -4,6 +4,11 @@ use std::collections::VecDeque;
 
 mod quote;
 
+#[derive(Debug, Clone)]
+struct HeredocMarker<'a> {
+    marker: &'a str,
+}
+
 #[derive(Logos, Debug, PartialEq, Clone)]
 pub enum Token {
     // Sigils（変数の型を示すプレフィックス）
@@ -362,6 +367,7 @@ pub struct Lexer<'a> {
     mode: LexerMode,
     // Pending tokens produced by stateless expansions (e.g., quote-like operators)
     pending: VecDeque<(SyntaxKind, &'a str)>,
+    heredoc_queue: VecDeque<HeredocMarker<'a>>,
 }
 
 impl Clone for Lexer<'_> {
@@ -371,6 +377,7 @@ impl Clone for Lexer<'_> {
             at_line_start: self.at_line_start,
             mode: self.mode,
             pending: self.pending.clone(),
+            heredoc_queue: self.heredoc_queue.clone(),
         }
     }
 }
@@ -392,24 +399,36 @@ impl<'a> Lexer<'a> {
             at_line_start: true,
             mode: LexerMode::Normal,
             pending: VecDeque::new(),
+            heredoc_queue: VecDeque::new(),
         }
+    }
+
+    #[must_use]
+    pub fn has_pending_heredoc(&self) -> bool {
+        !self.heredoc_queue.is_empty()
     }
 
     /// Handle special tokens when in Value context
     fn try_handle_expecting_value_context(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        // 1) File test operator like -f
+        // 1) Heredoc start
+        if let Some(result) = self.try_consume_heredoc_start() {
+            let (k, t) = result;
+            self.update_line_position(t);
+            return Some((k, t));
+        }
+        // 2) File test operator like -f
         if let Some(result) = self.try_consume_file_test_op() {
             let (k, t) = result;
             self.update_line_position(t);
             return Some((k, t));
         }
-        // 2) Regex literal /.../
+        // 3) Regex literal /.../
         if let Some(result) = self.try_consume_regex_literal() {
             let (k, t) = result;
             self.update_line_position(t);
             return Some((k, t));
         }
-        // 3) IO operator like <...>
+        // 4) IO operator like <...>
         if let Some(result) = self.try_consume_io_operator() {
             let (k, t) = result;
             self.update_line_position(t);
@@ -447,6 +466,14 @@ impl<'a> Lexer<'a> {
             self.update_line_position(t);
             return Some((k, t));
         }
+
+        if !self.heredoc_queue.is_empty() && self.at_line_start {
+            if let Some((k, t)) = self.bump_until_marker() {
+                self.update_line_position(t);
+                return Some((k, t));
+            }
+        }
+
         // Quote-like context handling (parser-driven)
         if let LexerMode::QuoteLike { .. } = self.mode {
             if let Some((k, t)) = self.try_handle_quote_like_internal() {
@@ -695,6 +722,85 @@ impl<'a> Lexer<'a> {
         None
     }
 
+    fn try_consume_heredoc_start(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        let remainder = self.logos_lexer.remainder();
+        if !remainder.starts_with("<<") {
+            return None;
+        }
+
+        let bytes = remainder.as_bytes();
+        let mut idx = 2;
+        while idx < bytes.len() && (bytes[idx] == b' ' || bytes[idx] == b'\t') {
+            idx += 1;
+        }
+        if idx >= bytes.len() {
+            return None;
+        }
+
+        let marker_start = idx;
+        let marker: &str;
+        let is_quoted;
+
+        match bytes[idx] {
+            b'\'' | b'"' | b'`' => {
+                is_quoted = true;
+                let quote = bytes[idx];
+                idx += 1;
+                let content_start = idx;
+                while idx < bytes.len() {
+                    if bytes[idx] == quote {
+                        break;
+                    }
+                    idx += 1;
+                }
+                if idx >= bytes.len() {
+                    return None;
+                }
+                marker = &remainder[content_start..idx];
+                idx += 1;
+            }
+            _ => {
+                is_quoted = false;
+                if !(bytes[idx].is_ascii_alphabetic() || bytes[idx] == b'_') {
+                    return None;
+                }
+                idx += 1;
+                while idx < bytes.len() {
+                    let ch = bytes[idx];
+                    if ch.is_ascii_alphanumeric() || ch == b'_' {
+                        idx += 1;
+                    } else {
+                        break;
+                    }
+                }
+                marker = &remainder[marker_start..idx];
+            }
+        }
+
+        // Only validate marker characters for unquoted markers
+        // Quoted markers can contain any characters
+        if marker.is_empty() {
+            return None;
+        }
+
+        if !is_quoted
+            && (!marker
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                || !marker
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_'))
+        {
+            return None;
+        }
+
+        let text = &remainder[..idx];
+        self.logos_lexer.bump(idx);
+        self.heredoc_queue.push_back(HeredocMarker { marker });
+        Some((SyntaxKind::HEREDOC_START, text))
+    }
+
     fn try_consume_io_operator(&mut self) -> Option<(SyntaxKind, &'a str)> {
         let remainder = self.logos_lexer.remainder();
 
@@ -876,6 +982,58 @@ impl<'a> Lexer<'a> {
             }
         }
 
+        None
+    }
+
+    fn bump_until_marker(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        let HeredocMarker { marker } = self.heredoc_queue.pop_front()?;
+        let remainder = self.logos_lexer.remainder();
+        let bytes = remainder.as_bytes();
+        let mut search_pos = 0;
+
+        while search_pos <= bytes.len() {
+            // Find end of current line
+            let mut line_end = search_pos;
+            let mut newline_len = 0;
+            while line_end < bytes.len() {
+                match bytes[line_end] {
+                    b'\n' => {
+                        newline_len = 1;
+                        break;
+                    }
+                    b'\r' => {
+                        newline_len = if line_end + 1 < bytes.len() && bytes[line_end + 1] == b'\n'
+                        {
+                            2
+                        } else {
+                            1
+                        };
+                        break;
+                    }
+                    _ => line_end += 1,
+                }
+            }
+
+            let line = &remainder[search_pos..line_end];
+            if line == marker && (line_end == bytes.len() || newline_len > 0) {
+                // Found terminator
+                let content = &remainder[..search_pos];
+                let end = &remainder[search_pos..line_end + newline_len];
+                self.logos_lexer.bump(line_end + newline_len);
+                if !end.is_empty() {
+                    self.pending.push_back((SyntaxKind::HEREDOC_END, end));
+                }
+                return Some((SyntaxKind::HEREDOC_CONTENT, content));
+            }
+
+            if newline_len == 0 {
+                // EOF without marker
+                self.logos_lexer.bump(remainder.len());
+                return Some((SyntaxKind::HEREDOC_CONTENT, remainder));
+            }
+
+            search_pos = line_end + newline_len;
+        }
         None
     }
 
