@@ -55,10 +55,10 @@ impl Formatter {
         opening: SyntaxKind,
         closing: SyntaxKind,
     ) {
-        let should_multiline = node.descendants_with_tokens().any(|element| {
-            element.kind() == SyntaxKind::NEWLINE
-        });
-        
+        let should_multiline = node
+            .descendants_with_tokens()
+            .any(|element| element.kind() == SyntaxKind::NEWLINE);
+
         if should_multiline {
             self.format_multiline_delimited(node, opening, closing);
         } else {
