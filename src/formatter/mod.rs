@@ -1,4 +1,5 @@
 use crate::{PerlLanguage, PerlNode, SyntaxKind};
+use comment_ownership::CommentAnalyzer;
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
 
 pub struct Formatter {
@@ -9,6 +10,7 @@ pub struct Formatter {
     prev_token_kind: Option<SyntaxKind>,
     at_line_start: bool,
     pending_empty_lines: usize, // Number of empty lines waiting to be output
+    comment_ownership: CommentAnalyzer,
 }
 
 impl Default for Formatter {
@@ -28,7 +30,14 @@ impl Formatter {
             prev_token_kind: None,
             at_line_start: true,
             pending_empty_lines: 0,
+            comment_ownership: CommentAnalyzer::default(),
         }
+    }
+
+    pub fn new_with_comment_analysis(root: &PerlNode) -> Self {
+        let mut fmt = Self::new();
+        fmt.comment_ownership = CommentAnalyzer::analyze(root);
+        fmt
     }
 
     pub fn format(&mut self, node: &PerlNode) -> String {
@@ -816,10 +825,11 @@ impl Formatter {
 
 #[must_use]
 pub fn format(node: &PerlNode) -> String {
-    let mut formatter = Formatter::new();
+    let mut formatter = Formatter::new_with_comment_analysis(node);
     formatter.format(node)
 }
 
+pub(crate) mod comment_ownership;
 mod expression;
 mod literal;
 mod spacing;

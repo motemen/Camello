@@ -1,7 +1,9 @@
 use crate::format;
+use crate::formatter::comment_ownership::{CommentAnalyzer, CommentType};
 use crate::formatter::spacing::{self, SpacingContext};
 use crate::parse_perl;
 use crate::SyntaxKind;
+use rowan::NodeOrToken;
 
 /// Helper to parse, format, and assert no parse errors.
 fn format_and_assert(input: &str) -> String {
@@ -443,6 +445,27 @@ fn test_inline_comment_preservation() {
         ),
     ];
     check_formatting_cases(&cases);
+}
+
+#[test]
+fn test_comment_analyzer_trailing_var_decl() {
+    let src = "my $x = 1; # comment\nsub foo {}\n";
+    let (syntax, err) = parse_perl(src);
+    assert!(err.is_empty());
+    let analyzer = CommentAnalyzer::analyze(&syntax);
+    let comment_token = syntax
+        .descendants_with_tokens()
+        .find_map(|el| match el {
+            NodeOrToken::Token(t) if t.kind() == SyntaxKind::COMMENT => Some(t),
+            _ => None,
+        })
+        .expect("comment token");
+    match analyzer.ownership.get(&comment_token) {
+        Some(CommentType::Trailing { owner }) => {
+            assert_eq!(owner.kind(), SyntaxKind::DECLARATION_STMT);
+        }
+        other => panic!("expected trailing comment, got {:?}", other),
+    }
 }
 
 #[test]
