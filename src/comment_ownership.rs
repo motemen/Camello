@@ -8,6 +8,8 @@ use crate::{PerlLanguage, PerlNode, SyntaxKind};
 pub(crate) enum CommentType {
     /// Comment appears after a construct on the same line
     Trailing { owner: PerlNode },
+    /// Comment appears before a subroutine definition (documentation)
+    SubroutineDoc { owner: PerlNode },
 }
 
 #[derive(Debug, Default)]
@@ -42,10 +44,17 @@ impl CommentAnalyzer {
         &self,
         comment: &SyntaxToken<PerlLanguage>,
     ) -> Option<CommentType> {
-        // For now, we only analyze trailing comments after variable declarations
-        // Other comment types could be added here in the future
-        self.find_trailing_var_decl_owner(comment)
-            .map(|owner| CommentType::Trailing { owner })
+        // Check for trailing comments after variable declarations
+        if let Some(owner) = self.find_trailing_var_decl_owner(comment) {
+            return Some(CommentType::Trailing { owner });
+        }
+
+        // Check for subroutine documentation comments
+        if let Some(owner) = self.find_subroutine_doc_owner(comment) {
+            return Some(CommentType::SubroutineDoc { owner });
+        }
+
+        None
     }
 
     fn find_trailing_var_decl_owner(
@@ -73,6 +82,44 @@ impl CommentAnalyzer {
                 .ancestors()
                 .find(|n| n.kind() == SyntaxKind::DECLARATION_STMT);
         }
+        None
+    }
+
+    fn find_subroutine_doc_owner(&self, comment: &SyntaxToken<PerlLanguage>) -> Option<PerlNode> {
+        // Find comments that appear immediately before a SUB_DEF
+        // We need to check if the next non-whitespace node after this comment is a SUB_DEF
+
+        let mut next = comment.next_token();
+        let mut saw_newline = false;
+
+        // Skip whitespace tokens, but track if we see newlines
+        while let Some(token) = &next {
+            if token.kind() == SyntaxKind::WHITESPACE {
+                if token.text().contains('\n') {
+                    saw_newline = true;
+                }
+                next = token.next_token();
+            } else {
+                break;
+            }
+        }
+
+        // If we found a token after whitespace, check if its parent is a SUB_DEF
+        if let Some(next_token) = next {
+            // Look for a parent that is a SUB_DEF
+            let mut parent = next_token.parent();
+            while let Some(node) = parent {
+                if node.kind() == SyntaxKind::SUB_DEF {
+                    // Make sure this comment appears on a line before the sub
+                    // (not inline with the sub keyword)
+                    if saw_newline {
+                        return Some(node);
+                    }
+                }
+                parent = node.parent();
+            }
+        }
+
         None
     }
 }

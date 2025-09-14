@@ -469,6 +469,38 @@ fn test_comment_analyzer_trailing_var_decl() {
 }
 
 #[test]
+fn test_comment_analyzer_subroutine_doc() {
+    let src = "# This subroutine calculates something\nsub calculate {\n    return 42;\n}\n";
+    let (syntax, err) = parse_perl(src);
+    assert!(err.is_empty());
+    let analyzer = CommentAnalyzer::analyze(&syntax);
+    let comment_token = syntax
+        .descendants_with_tokens()
+        .find_map(|el| match el {
+            NodeOrToken::Token(t) if t.kind() == SyntaxKind::COMMENT => Some(t),
+            _ => None,
+        })
+        .expect("comment token");
+    match analyzer.ownership.get(&comment_token) {
+        Some(CommentType::SubroutineDoc { owner }) => {
+            assert_eq!(owner.kind(), SyntaxKind::SUB_DEF);
+        }
+        other => panic!("expected subroutine doc comment, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_subroutine_doc_comment_formatting() {
+    let input = "# This function calculates the answer\nsub answer {\n    return 42;\n}";
+    let (syntax, _) = parse_perl(input);
+    let output = format(&syntax);
+    assert_eq!(
+        output,
+        "# This function calculates the answer\nsub answer {\n    return 42;\n}\n"
+    );
+}
+
+#[test]
 fn test_nested_eval_in_sub() {
     let input = "sub f{eval{print$x;};return 1;}";
     let formatted = format_and_assert(input);

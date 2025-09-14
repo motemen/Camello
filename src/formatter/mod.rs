@@ -606,6 +606,15 @@ impl Formatter {
                         self.write(text.trim());
                         self.handle_newline();
                     }
+                    Some(CommentType::SubroutineDoc { .. }) => {
+                        // This is a documentation comment before a subroutine - format at start of line
+                        if self.at_line_start {
+                            self.add_indent();
+                            self.at_line_start = false;
+                        }
+                        self.write(text.trim());
+                        self.handle_newline();
+                    }
                     None => {
                         // No analysis available - use original logic for compatibility
                         if self.at_line_start {
