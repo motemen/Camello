@@ -86,18 +86,6 @@ impl Formatter {
         self.lines.push(std::mem::take(&mut self.current_line));
         let lines = std::mem::take(&mut self.lines);
 
-        // Track token statistics (helps ensure TokenSpan fields are "used")
-        let _total_tokens: usize = lines.iter().map(|line| line.token_count()).sum();
-        let _total_bytes: usize = lines
-            .iter()
-            .flat_map(|line| &line.tokens)
-            .map(|token| token.len())
-            .sum();
-        let _has_tokens: bool = lines
-            .iter()
-            .flat_map(|line| &line.tokens)
-            .any(|token| token.syntax_kind() != SyntaxKind::WHITESPACE);
-
         lines
             .into_iter()
             .map(|line| line.text)
