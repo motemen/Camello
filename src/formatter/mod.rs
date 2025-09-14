@@ -300,7 +300,7 @@ impl Formatter {
         for child in children {
             match child {
                 NodeOrToken::Token(token) => {
-                    if token.kind() == SyntaxKind::WHITESPACE && token.text().contains('\n') {
+                    if token.kind() == SyntaxKind::NEWLINE {
                         return true;
                     }
                     if !token.kind().is_trivia() {
@@ -330,7 +330,9 @@ impl Formatter {
                     ) {
                         continue;
                     }
-                    if token.kind() == SyntaxKind::WHITESPACE && token.text().contains('\n') {
+                    if token.kind() == SyntaxKind::NEWLINE
+                        || (token.kind() == SyntaxKind::QW_STRING && token.text().starts_with('\n'))
+                    {
                         return true;
                     }
                     if !token.kind().is_trivia() {
@@ -386,7 +388,10 @@ impl Formatter {
                 }
                 NodeOrToken::Token(token) => {
                     match token.kind() {
-                        SyntaxKind::L_BRACE | SyntaxKind::R_BRACE | SyntaxKind::WHITESPACE => {
+                        SyntaxKind::L_BRACE
+                        | SyntaxKind::R_BRACE
+                        | SyntaxKind::WHITESPACE
+                        | SyntaxKind::NEWLINE => {
                             // These don't count as content
                         }
                         _ => {
@@ -424,8 +429,8 @@ impl Formatter {
                             self.write(token.text());
                             self.prev_token_kind = Some(token.kind());
                         }
-                        SyntaxKind::WHITESPACE => {
-                            // Skip whitespace in simple blocks
+                        SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE => {
+                            // Skip trivia in simple blocks
                         }
                         _ => {
                             self.format_token(&token);
@@ -472,8 +477,8 @@ impl Formatter {
                     let kind = token.kind();
 
                     match kind {
-                        SyntaxKind::WHITESPACE => {
-                            // Skip whitespace here - we'll handle newlines in the delimiter handlers
+                        SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE => {
+                            // Skip trivia here - newlines handled in delimiter handlers
                         }
                         k if k == open_delimiter => {
                             self.handle_spacing_before(kind);
@@ -504,8 +509,8 @@ impl Formatter {
                     let kind = token.kind();
 
                     match kind {
-                        SyntaxKind::WHITESPACE => {
-                            // Skip whitespace here - we'll handle newlines in the delimiter handlers
+                        SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE => {
+                            // Skip trivia here - newlines handled in the delimiter handlers
                         }
                         SyntaxKind::COMMA => {
                             self.format_token(&token);
@@ -584,8 +589,15 @@ impl Formatter {
         let text = token.text();
 
         match kind {
-            SyntaxKind::WHITESPACE => {
-                self.handle_whitespace(token);
+            SyntaxKind::WHITESPACE => {}
+            SyntaxKind::NEWLINE => {
+                if self.at_line_start && self.current_line.is_empty() {
+                    if self.pending_empty_lines == 0 {
+                        self.pending_empty_lines = 1;
+                    }
+                } else {
+                    self.handle_newline();
+                }
             }
             SyntaxKind::COMMENT => {
                 // コメントは保持するが、適切な位置に配置
@@ -730,42 +742,48 @@ impl Formatter {
 
                     prev_node_kind = Some(current_kind);
                 }
-                NodeOrToken::Token(token) => {
-                    if token.kind() == SyntaxKind::WHITESPACE {
-                        let mut total_newlines = token.text().matches('\n').count();
+                NodeOrToken::Token(token) => match token.kind() {
+                    SyntaxKind::NEWLINE => {
+                        let mut total_newlines = 1;
 
-                        // Look ahead to merge consecutive WHITESPACE tokens
-                        while let Some(NodeOrToken::Token(peeked_token)) = children.peek() {
-                            if peeked_token.kind() == SyntaxKind::WHITESPACE {
-                                // It's a whitespace token, so we consume it and add its newlines
-                                let consumed_token = children.next().unwrap().into_token().unwrap();
-                                total_newlines += consumed_token.text().matches('\n').count();
+                        while let Some(NodeOrToken::Token(peeked)) = children.peek() {
+                            match peeked.kind() {
+                                SyntaxKind::NEWLINE => {
+                                    children.next();
+                                    total_newlines += 1;
+                                }
+                                SyntaxKind::WHITESPACE => {
+                                    children.next();
+                                }
+                                _ => break,
+                            }
+                        }
+
+                        if self.at_line_start && self.current_line.is_empty() {
+                            if total_newlines > 1 {
+                                self.pending_empty_lines = 1;
+                            }
+                        } else {
+                            if total_newlines > 1 {
+                                self.pending_empty_lines = 1;
+                            }
+                            self.handle_newline();
+                        }
+                    }
+                    SyntaxKind::WHITESPACE => {
+                        while let Some(NodeOrToken::Token(peeked)) = children.peek() {
+                            if peeked.kind() == SyntaxKind::WHITESPACE {
+                                children.next();
                             } else {
-                                // Not a whitespace token, so we stop looking ahead
                                 break;
                             }
                         }
-
-                        if total_newlines > 0 {
-                            if self.at_line_start && self.current_line.is_empty() {
-                                // Previous token already handled the first newline
-                                if total_newlines > 1 {
-                                    // Preserve at most one empty line
-                                    self.pending_empty_lines = 1;
-                                }
-                            } else {
-                                // If there are multiple newlines across tokens, preserve as one empty line
-                                if total_newlines > 1 {
-                                    self.pending_empty_lines = 1;
-                                }
-                                self.handle_newline();
-                            }
-                        }
-                    } else {
+                    }
+                    _ => {
                         self.output_pending_empty_lines();
                         self.format_token(&token);
                     }
-                }
+                },
             }
         }
     }
@@ -801,13 +819,13 @@ impl Formatter {
 
         if let Some(child) = children.peek() {
             match child {
+                NodeOrToken::Token(t) if t.kind() == SyntaxKind::NEWLINE => {
+                    self.handle_newline();
+                    children.next();
+                }
                 NodeOrToken::Token(t) if t.kind() == SyntaxKind::WHITESPACE => {
-                    if t.text().contains('\n') {
-                        self.handle_newline();
-                    } else {
-                        self.write_char(' ');
-                        self.at_line_start = false;
-                    }
+                    self.write_char(' ');
+                    self.at_line_start = false;
                     children.next();
                 }
                 NodeOrToken::Token(_) | NodeOrToken::Node(_) => {

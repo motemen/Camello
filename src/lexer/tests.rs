@@ -48,6 +48,23 @@ fn test_x_after_sub_keyword() {
 }
 
 #[test]
+fn test_newline_token() {
+    let mut lexer = Lexer::new("my $x = 1;\n$y");
+
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::MY_KW, "my")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "x")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::EQ, "=")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::WHITESPACE, " ")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::NUMBER, "1")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::SEMICOLON, ";")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::NEWLINE, "\n")));
+    assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
+}
+
+#[test]
 fn test_hash_declaration() {
     // Test that "my %hash" correctly identifies % as sigil
     let mut lexer = Lexer::new("my %hash");
