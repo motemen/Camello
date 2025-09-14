@@ -1,4 +1,5 @@
 pub mod cli;
+pub(crate) mod comment_ownership;
 pub mod formatter;
 pub mod lexer;
 pub mod parser;

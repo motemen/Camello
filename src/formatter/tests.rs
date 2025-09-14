@@ -1,5 +1,5 @@
+use crate::comment_ownership::{CommentAnalyzer, CommentType};
 use crate::format;
-use crate::formatter::comment_ownership::{CommentAnalyzer, CommentType};
 use crate::formatter::spacing::{self, SpacingContext};
 use crate::parse_perl;
 use crate::SyntaxKind;

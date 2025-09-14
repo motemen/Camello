@@ -1,5 +1,5 @@
+use crate::comment_ownership::CommentAnalyzer;
 use crate::{PerlLanguage, PerlNode, SyntaxKind};
-use comment_ownership::CommentAnalyzer;
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
 
 pub struct Formatter {
@@ -829,7 +829,6 @@ pub fn format(node: &PerlNode) -> String {
     formatter.format(node)
 }
 
-pub(crate) mod comment_ownership;
 mod expression;
 mod literal;
 mod spacing;
