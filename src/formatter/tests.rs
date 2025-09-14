@@ -188,6 +188,27 @@ fn test_postfix_for_modifier_formatting() {
 }
 
 #[test]
+fn test_basic_heredoc_formatting() {
+    let input = "my $str = <<EOF;\nhello\nEOF\n";
+    let formatted = format_and_assert(input);
+    insta::assert_snapshot!(formatted, @r"
+        my $str = <<EOF;
+        hello
+        EOF
+        ");
+}
+
+#[test]
+fn test_empty_heredoc_formatting() {
+    let input = "my $str = <<EOF;\nEOF\n";
+    let formatted = format_and_assert(input);
+    insta::assert_snapshot!(formatted, @r"
+        my $str = <<EOF;
+        EOF
+        ");
+}
+
+#[test]
 fn test_package_block_formatting() {
     let input = "package Foo::Bar{my $x=1;}";
     let formatted = format_and_assert(input);

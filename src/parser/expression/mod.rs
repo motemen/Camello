@@ -560,6 +560,10 @@ impl Parser<'_> {
                 self.builder.finish_node();
                 self.skip_trivia();
             }
+            SyntaxKind::HEREDOC_START => {
+                self.bump_value();
+                self.skip_trivia();
+            }
             kind if kind.is_variable() => {
                 // Consume variable as a value
                 self.bump_value();

@@ -227,9 +227,24 @@ impl<'a> Parser<'a> {
     }
 
     fn skip_trivia(&mut self) {
-        loop {
-            match self.lexer.peek_token() {
-                Some((kind, _)) if kind.is_trivia() => {
+        while let Some((kind, text)) = self.lexer.peek_token() {
+            match kind {
+                SyntaxKind::WHITESPACE
+                    if self.lexer.has_pending_heredoc()
+                        && (text.contains('\n') || text.contains('\r')) =>
+                {
+                    if let Some((k, t)) = self.lexer.next_token() {
+                        self.builder.token(k.into(), t);
+                        self.current_pos += t.len();
+                    }
+                }
+                SyntaxKind::HEREDOC_CONTENT | SyntaxKind::HEREDOC_END => {
+                    if let Some((k, t)) = self.lexer.next_token() {
+                        self.builder.token(k.into(), t);
+                        self.current_pos += t.len();
+                    }
+                }
+                k if k.is_trivia() => {
                     if let Some((k, t)) = self.lexer.next_token() {
                         self.builder.token(k.into(), t);
                         self.current_pos += t.len();

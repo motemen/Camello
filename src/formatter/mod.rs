@@ -599,6 +599,19 @@ impl Formatter {
                 self.write(text.trim());
                 self.handle_newline();
             }
+            SyntaxKind::HEREDOC_CONTENT | SyntaxKind::HEREDOC_END => {
+                for part in text.split_inclusive('\n') {
+                    if let Some(without_newline) = part.strip_suffix('\n') {
+                        self.current_line.push_str(without_newline);
+                        self.lines.push(std::mem::take(&mut self.current_line));
+                        self.at_line_start = true;
+                    } else {
+                        self.current_line.push_str(part);
+                        self.at_line_start = false;
+                    }
+                }
+                self.prev_token_kind = Some(kind);
+            }
             SyntaxKind::R_BRACE => {
                 // 閉じブレースは特別処理：先にインデントを下げる
                 if self.indent_level > 0 {
