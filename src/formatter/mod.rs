@@ -1,9 +1,31 @@
 use crate::{PerlLanguage, PerlNode, SyntaxKind};
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
 
+#[derive(Debug, Clone)]
+pub(super) struct TokenSpan {
+    kind: SyntaxKind,
+    start_byte: usize,
+    end_byte: usize,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(super) struct Line {
+    text: String,
+    tokens: Vec<TokenSpan>,
+}
+
+impl Line {
+    fn new() -> Self {
+        Self {
+            text: String::new(),
+            tokens: Vec::new(),
+        }
+    }
+}
+
 pub struct Formatter {
-    current_line: String,
-    lines: Vec<String>,
+    current_line: Line,
+    lines: Vec<Line>,
     indent_level: usize,
     indent_string: String,
     prev_token_kind: Option<SyntaxKind>,
@@ -21,7 +43,7 @@ impl Formatter {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            current_line: String::new(),
+            current_line: Line::new(),
             lines: Vec::new(),
             indent_level: 0,
             indent_string: "    ".to_string(), // 4 spaces
@@ -34,16 +56,53 @@ impl Formatter {
     pub fn format(&mut self, node: &PerlNode) -> String {
         self.format_node(node);
         self.lines.push(std::mem::take(&mut self.current_line));
-        std::mem::take(&mut self.lines).join("\n")
+        std::mem::take(&mut self.lines)
+            .into_iter()
+            .map(|l| l.text)
+            .fold(String::new(), |mut acc, line| {
+                if !acc.is_empty() {
+                    acc.push('\n');
+                }
+                acc.push_str(&line);
+                acc
+            })
     }
 
-    pub(super) fn write(&mut self, text: &str) {
+    pub(super) fn write(&mut self, token: &SyntaxToken<PerlLanguage>) {
+        self.write_str(token.text(), Some(token.kind()));
+    }
+
+    pub(super) fn write_str(&mut self, text: &str, kind: Option<SyntaxKind>) {
         let mut parts = text.split('\n');
         if let Some(first) = parts.next() {
-            self.current_line.push_str(first);
+            let start = self.current_line.text.len();
+            self.current_line.text.push_str(first);
+            if !first.is_empty() {
+                self.at_line_start = false;
+                if let Some(kind) = kind {
+                    let end = self.current_line.text.len();
+                    self.current_line.tokens.push(TokenSpan {
+                        kind,
+                        start_byte: start,
+                        end_byte: end,
+                    });
+                }
+            }
             for part in parts {
                 self.handle_newline();
-                self.current_line.push_str(part);
+                if !part.is_empty() {
+                    let start = self.current_line.text.len();
+                    self.current_line.text.push_str(part);
+                    self.at_line_start = false;
+                    if let Some(kind) = kind {
+                        let end = self.current_line.text.len();
+                        self.current_line.tokens.push(TokenSpan {
+                            kind,
+                            start_byte: start,
+                            end_byte: end,
+                        });
+                    }
+                }
             }
         }
     }
@@ -52,20 +111,25 @@ impl Formatter {
         if ch == '\n' {
             self.handle_newline();
         } else {
-            self.current_line.push(ch);
+            self.current_line.text.push(ch);
         }
     }
 
     pub(super) fn is_output_empty(&self) -> bool {
-        self.lines.is_empty() && self.current_line.is_empty()
+        self.lines.is_empty() && self.current_line.text.is_empty()
     }
 
     pub(super) fn ends_with_newline(&self) -> bool {
-        self.current_line.is_empty()
+        self.current_line.text.is_empty()
     }
 
     pub(super) fn ends_with_double_newline(&self) -> bool {
-        self.current_line.is_empty() && self.lines.last().map(|l| l.is_empty()).unwrap_or(false)
+        self.current_line.text.is_empty()
+            && self
+                .lines
+                .last()
+                .map(|l| l.text.is_empty())
+                .unwrap_or(false)
     }
 
     fn format_node(&mut self, node: &PerlNode) {
@@ -416,7 +480,7 @@ impl Formatter {
                                 self.add_indent();
                                 self.at_line_start = false;
                             }
-                            self.write(token.text());
+                            self.write(&token);
                             if has_content {
                                 self.write_char(' '); // Add space after opening brace only if there's content
                             }
@@ -426,7 +490,7 @@ impl Formatter {
                             if has_content && self.prev_token_kind != Some(SyntaxKind::L_BRACE) {
                                 self.write_char(' '); // Add space before closing brace only if there's content
                             }
-                            self.write(token.text());
+                            self.write(&token);
                             self.prev_token_kind = Some(token.kind());
                         }
                         SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE => {
@@ -527,27 +591,25 @@ impl Formatter {
     }
 
     fn handle_multiline_opening_delimiter(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
-        let text = token.text();
         let kind = token.kind();
 
-        self.write(text);
+        self.write(token);
         self.indent_level += 1;
         self.handle_newline();
         self.prev_token_kind = Some(kind);
     }
 
     fn handle_multiline_closing_delimiter(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
-        let text = token.text();
         let kind = token.kind();
 
         if self.indent_level > 0 {
             self.indent_level -= 1;
         }
-        if !self.at_line_start || !self.current_line.is_empty() {
+        if !self.at_line_start || !self.current_line.text.is_empty() {
             self.handle_newline();
         }
         self.add_indent();
-        self.write(text);
+        self.write(token);
         self.at_line_start = false;
         self.prev_token_kind = Some(kind);
     }
@@ -591,7 +653,7 @@ impl Formatter {
         match kind {
             SyntaxKind::WHITESPACE => {}
             SyntaxKind::NEWLINE => {
-                if self.at_line_start && self.current_line.is_empty() {
+                if self.at_line_start && self.current_line.text.is_empty() {
                     if self.pending_empty_lines == 0 {
                         self.pending_empty_lines = 1;
                     }
@@ -608,20 +670,11 @@ impl Formatter {
                     // This is an inline comment - add a space before it
                     self.write_char(' ');
                 }
-                self.write(text.trim());
+                self.write_str(text.trim(), Some(kind));
                 self.handle_newline();
             }
             SyntaxKind::HEREDOC_CONTENT | SyntaxKind::HEREDOC_END => {
-                for part in text.split_inclusive('\n') {
-                    if let Some(without_newline) = part.strip_suffix('\n') {
-                        self.current_line.push_str(without_newline);
-                        self.lines.push(std::mem::take(&mut self.current_line));
-                        self.at_line_start = true;
-                    } else {
-                        self.current_line.push_str(part);
-                        self.at_line_start = false;
-                    }
-                }
+                self.write_str(text, Some(kind));
                 self.prev_token_kind = Some(kind);
             }
             SyntaxKind::R_BRACE => {
@@ -635,7 +688,7 @@ impl Formatter {
                     self.at_line_start = false;
                 }
 
-                self.write(text);
+                self.write(token);
 
                 let next_kind = Self::next_significant_token(token).map(|t| t.kind());
                 if !matches!(
@@ -666,7 +719,7 @@ impl Formatter {
                     self.at_line_start = false;
                 }
 
-                self.write(text);
+                self.write(token);
                 self.handle_spacing_after_with_token(kind, token);
                 self.prev_token_kind = Some(kind);
             }
@@ -730,7 +783,7 @@ impl Formatter {
                                     if !self.ends_with_newline() {
                                         self.handle_newline();
                                     }
-                                    self.lines.push(String::new());
+                                    self.lines.push(Line::new());
                                 }
                             }
                         }
@@ -759,7 +812,7 @@ impl Formatter {
                             }
                         }
 
-                        if self.at_line_start && self.current_line.is_empty() {
+                        if self.at_line_start && self.current_line.text.is_empty() {
                             if total_newlines > 1 {
                                 self.pending_empty_lines = 1;
                             }
@@ -798,7 +851,7 @@ impl Formatter {
         for child in node.children_with_tokens() {
             if let NodeOrToken::Token(token) = child {
                 if !token.kind().is_trivia() {
-                    self.write(token.text());
+                    self.write(&token);
                     last_token_kind = Some(token.kind());
                 }
             }
