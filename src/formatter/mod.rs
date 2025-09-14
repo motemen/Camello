@@ -1,15 +1,22 @@
 use crate::{PerlLanguage, PerlNode, SyntaxKind};
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
 
+/// Represents a token's span within a single formatted line.
 struct TokenSpan {
+    /// The kind of the token.
     kind: SyntaxKind,
+    /// The starting byte offset of the token in the line's text.
     start_byte: usize,
+    /// The ending byte offset of the token in the line's text.
     end_byte: usize,
 }
 
 #[derive(Default)]
+/// Represents a single formatted line of output.
 struct Line {
+    /// The formatted text of the line.
     text: String,
+    /// A list of token spans within this line.
     tokens: Vec<TokenSpan>,
 }
 
