@@ -747,21 +747,9 @@ impl<'a> Lexer<'a> {
 
         let first_char = after.chars().next()?;
         let (marker, marker_len) = match first_char {
-            // Single-quoted heredoc marker
-            '\'' => {
-                let quote_end = after[1..].find('\'')?;
-                let marker = &after[1..1 + quote_end]; // Extract marker without quotes
-                (marker, quote_end + 2) // +2 for both quotes
-            }
-            // Double-quoted heredoc marker
-            '"' => {
-                let quote_end = after[1..].find('"')?;
-                let marker = &after[1..1 + quote_end]; // Extract marker without quotes
-                (marker, quote_end + 2) // +2 for both quotes
-            }
-            // Backtick-quoted heredoc marker
-            '`' => {
-                let quote_end = after[1..].find('`')?;
+            // Quoted heredoc markers (single, double, backtick)
+            q @ ('\'' | '"' | '`') => {
+                let quote_end = after[1..].find(q)?;
                 let marker = &after[1..1 + quote_end]; // Extract marker without quotes
                 (marker, quote_end + 2) // +2 for both quotes
             }
