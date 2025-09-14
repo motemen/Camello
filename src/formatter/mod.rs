@@ -598,36 +598,29 @@ impl Formatter {
                 self.handle_whitespace(token);
             }
             SyntaxKind::COMMENT => {
-                // Use comment ownership analysis to determine formatting
-                match self.comment_ownership.ownership.get(token) {
-                    Some(CommentType::Trailing { .. }) => {
-                        // This is a trailing comment after a variable declaration - format it inline
-                        self.write_char(' ');
-                        self.write(text.trim());
+                // A trailing comment is always inline.
+                // A subroutine doc comment is never inline.
+                // An unclassified comment is inline if not at the start of a line.
+                let is_inline = match self.comment_ownership.ownership.get(token) {
+                    Some(CommentType::Trailing { .. }) => true,
+                    Some(CommentType::SubroutineDoc { .. }) => false,
+                    None => !self.at_line_start,
+                };
+
+                if is_inline {
+                    self.write_char(' ');
+                } else {
+                    // This is a block comment. It should be on its own line.
+                    if !self.at_line_start {
+                        // Force a newline if there's content on the current line.
                         self.handle_newline();
                     }
-                    Some(CommentType::SubroutineDoc { .. }) => {
-                        // This is a documentation comment before a subroutine - format at start of line
-                        if self.at_line_start {
-                            self.add_indent();
-                            self.at_line_start = false;
-                        }
-                        self.write(text.trim());
-                        self.handle_newline();
-                    }
-                    None => {
-                        // No analysis available - use original logic for compatibility
-                        if self.at_line_start {
-                            self.add_indent();
-                            self.at_line_start = false;
-                        } else {
-                            // This is an inline comment - add a space before it
-                            self.write_char(' ');
-                        }
-                        self.write(text.trim());
-                        self.handle_newline();
-                    }
+                    self.add_indent();
+                    self.at_line_start = false;
                 }
+
+                self.write(text.trim());
+                self.handle_newline();
             }
             SyntaxKind::R_BRACE => {
                 // 閉じブレースは特別処理：先にインデントを下げる

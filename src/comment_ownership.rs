@@ -27,15 +27,13 @@ impl CommentAnalyzer {
     }
 
     fn analyze_node(&mut self, node: &SyntaxNode<PerlLanguage>) {
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Token(t) if t.kind() == SyntaxKind::COMMENT => {
+        for element in node.descendants_with_tokens() {
+            if let NodeOrToken::Token(t) = element {
+                if t.kind() == SyntaxKind::COMMENT {
                     if let Some(ownership) = self.determine_comment_ownership(&t) {
                         self.ownership.insert(t, ownership);
                     }
                 }
-                NodeOrToken::Node(n) => self.analyze_node(&n),
-                _ => {}
             }
         }
     }
