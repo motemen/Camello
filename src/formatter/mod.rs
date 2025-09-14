@@ -2,7 +2,6 @@ use crate::{PerlLanguage, PerlNode, SyntaxKind};
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
 
 /// Represents a token's span within a single formatted line.
-#[allow(dead_code)]
 struct TokenSpan {
     /// The kind of the token.
     kind: SyntaxKind,
@@ -70,11 +69,13 @@ impl Formatter {
         self.lines.push(std::mem::take(&mut self.current_line));
         let lines = std::mem::take(&mut self.lines);
 
-        lines
-            .into_iter()
-            .map(|line| line.text)
-            .collect::<Vec<_>>()
-            .join("\n")
+        lines.into_iter().fold(String::new(), |mut acc, line| {
+            if !acc.is_empty() {
+                acc.push('\n');
+            }
+            acc.push_str(&line.text);
+            acc
+        })
     }
 
     pub(super) fn write(&mut self, text: &str, kind: Option<SyntaxKind>) {
