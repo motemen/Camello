@@ -501,6 +501,40 @@ fn test_subroutine_doc_comment_formatting() {
 }
 
 #[test]
+fn test_multi_line_subroutine_doc_comments() {
+    // Test that all comments in a multi-line comment block before a subroutine
+    // are properly identified as subroutine documentation
+    let src = "# First line of documentation\n# Second line\n# Third line\nsub calculate {\n    return 42;\n}\n";
+    let (syntax, err) = parse_perl(src);
+    assert!(err.is_empty());
+    let analyzer = CommentAnalyzer::analyze(&syntax);
+
+    // All three comment tokens should be identified as SubroutineDoc
+    let comment_tokens: Vec<_> = syntax
+        .descendants_with_tokens()
+        .filter_map(|el| match el {
+            NodeOrToken::Token(t) if t.kind() == SyntaxKind::COMMENT => Some(t),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(comment_tokens.len(), 3, "Should have 3 comment tokens");
+
+    for comment_token in comment_tokens {
+        match analyzer.ownership.get(&comment_token) {
+            Some(CommentType::SubroutineDoc { owner }) => {
+                assert_eq!(owner.kind(), SyntaxKind::SUB_DEF);
+            }
+            other => panic!(
+                "expected subroutine doc comment for '{}', got {:?}",
+                comment_token.text(),
+                other
+            ),
+        }
+    }
+}
+
+#[test]
 fn test_nested_eval_in_sub() {
     let input = "sub f{eval{print$x;};return 1;}";
     let formatted = format_and_assert(input);

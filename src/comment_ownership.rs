@@ -92,12 +92,14 @@ impl CommentAnalyzer {
         let mut next = comment.next_token();
         let mut saw_newline = false;
 
-        // Skip whitespace tokens, but track if we see newlines
+        // Skip whitespace and comment tokens, but track if we see newlines
         while let Some(token) = &next {
             if token.kind() == SyntaxKind::WHITESPACE {
                 if token.text().contains('\n') {
                     saw_newline = true;
                 }
+                next = token.next_token();
+            } else if token.kind() == SyntaxKind::COMMENT {
                 next = token.next_token();
             } else {
                 break;
