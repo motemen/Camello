@@ -4,10 +4,13 @@ use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
 /// Represents a token's span within a single formatted line.
 struct TokenSpan {
     /// The kind of the token.
+    #[allow(dead_code)]
     kind: SyntaxKind,
     /// The starting byte offset of the token in the line's text.
+    #[allow(dead_code)]
     start_byte: usize,
     /// The ending byte offset of the token in the line's text.
+    #[allow(dead_code)]
     end_byte: usize,
 }
 
