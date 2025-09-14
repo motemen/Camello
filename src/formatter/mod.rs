@@ -300,9 +300,7 @@ impl Formatter {
         for child in children {
             match child {
                 NodeOrToken::Token(token) => {
-                    if token.kind() == SyntaxKind::NEWLINE
-                        || (token.kind() == SyntaxKind::QW_STRING && token.text().starts_with('\n'))
-                    {
+                    if token.kind() == SyntaxKind::NEWLINE {
                         return true;
                     }
                     if !token.kind().is_trivia() {
