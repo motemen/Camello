@@ -75,13 +75,15 @@ impl Formatter {
         if let Some(first) = parts.next() {
             let start_col = self.current_line.text.len();
             self.current_line.push_str(first);
-            if let Some(kind) = kind {
-                let end_col = self.current_line.text.len();
-                self.current_line.tokens.push(TokenSpan {
-                    kind,
-                    start_col,
-                    end_col,
-                });
+            if !first.is_empty() {
+                if let Some(kind) = kind {
+                    let end_col = self.current_line.text.len();
+                    self.current_line.tokens.push(TokenSpan {
+                        kind,
+                        start_col,
+                        end_col,
+                    });
+                }
             }
         }
 
@@ -90,13 +92,15 @@ impl Formatter {
             self.handle_newline();
             let start_col = 0; // New line starts at column 0
             self.current_line.push_str(part);
-            if let Some(kind) = kind {
-                let end_col = self.current_line.text.len();
-                self.current_line.tokens.push(TokenSpan {
-                    kind,
-                    start_col,
-                    end_col,
-                });
+            if !part.is_empty() {
+                if let Some(kind) = kind {
+                    let end_col = self.current_line.text.len();
+                    self.current_line.tokens.push(TokenSpan {
+                        kind,
+                        start_col,
+                        end_col,
+                    });
+                }
             }
         }
     }
