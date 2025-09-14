@@ -233,8 +233,10 @@ impl<'a> Parser<'a> {
                     if self.lexer.has_pending_heredoc()
                         && (text.contains('\n') || text.contains('\r')) =>
                 {
-                    self.lexer.next_token();
-                    self.current_pos += text.len();
+                    if let Some((k, t)) = self.lexer.next_token() {
+                        self.builder.token(k.into(), t);
+                        self.current_pos += t.len();
+                    }
                 }
                 SyntaxKind::HEREDOC_CONTENT | SyntaxKind::HEREDOC_END => {
                     if let Some((k, t)) = self.lexer.next_token() {
