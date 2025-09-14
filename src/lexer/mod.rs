@@ -739,9 +739,11 @@ impl<'a> Lexer<'a> {
 
         let marker_start = idx;
         let marker: &str;
+        let is_quoted;
 
         match bytes[idx] {
             b'\'' | b'"' | b'`' => {
+                is_quoted = true;
                 let quote = bytes[idx];
                 idx += 1;
                 let content_start = idx;
@@ -758,6 +760,7 @@ impl<'a> Lexer<'a> {
                 idx += 1;
             }
             _ => {
+                is_quoted = false;
                 if !(bytes[idx].is_ascii_alphabetic() || bytes[idx] == b'_') {
                     return None;
                 }
@@ -774,14 +777,20 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        if marker.is_empty()
-            || !marker
+        // Only validate marker characters for unquoted markers
+        // Quoted markers can contain any characters
+        if marker.is_empty() {
+            return None;
+        }
+
+        if !is_quoted
+            && (!marker
                 .chars()
                 .next()
                 .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-            || !marker
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+                || !marker
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_'))
         {
             return None;
         }
