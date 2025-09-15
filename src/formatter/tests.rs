@@ -38,6 +38,47 @@ fn test_all_var_decl_types_formatting() {
 }
 
 #[test]
+fn test_continuation_indent_postfix_if() {
+    let input = "warn 1\nif $err;";
+    let formatted = format_and_assert(input);
+    assert_eq!(formatted, "warn 1\n    if $err;\n");
+}
+
+#[test]
+fn test_continuation_indent_infix_operator() {
+    let input = "my $x = 1\n+ 2;";
+    let formatted = format_and_assert(input);
+    assert_eq!(formatted, "my $x = 1\n    + 2;\n");
+}
+
+#[test]
+fn test_continuation_indent_comma() {
+    let input = "my $result = func($a,\n$b);";
+    let formatted = format_and_assert(input);
+    assert_eq!(formatted, "my $result = func($a,\n    $b);\n");
+}
+
+#[test]
+fn test_continuation_indent_comma_in_block() {
+    let input = "sub foo {\n    my $result = func($a,\n$b);\n}";
+    let formatted = format_and_assert(input);
+    assert_eq!(
+        formatted,
+        "sub foo {\n    my $result = func($a,\n        $b);\n}\n"
+    );
+}
+
+#[test]
+fn test_continuation_indent_fat_comma() {
+    let input = "my %hash = (key1 => 'value1',\nkey2 => 'value2');";
+    let formatted = format_and_assert(input);
+    assert_eq!(
+        formatted,
+        "my %hash = (key1 => 'value1',\n    key2 => 'value2');\n"
+    );
+}
+
+#[test]
 fn test_undef_in_variable_declaration_formatting() {
     let cases = [
         ("my(undef,$x)=@_;", "my (undef, $x) = @_;\n"),
