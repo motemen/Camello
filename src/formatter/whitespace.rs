@@ -68,13 +68,17 @@ impl Formatter {
             // Look for whitespace tokens between this node and the next
             if let Some(last_token) = node.last_token() {
                 let mut current = last_token.next_token();
-                let mut total_newlines = 0;
+                let mut saw_newline = false;
 
-                // Count newlines across consecutive trivia tokens
+                // Look for more than one newline across consecutive trivia tokens
                 while let Some(token) = current {
                     match token.kind() {
                         SyntaxKind::NEWLINE => {
-                            total_newlines += 1;
+                            if saw_newline {
+                                // Already have an empty line, so skip insertion
+                                return;
+                            }
+                            saw_newline = true;
                             current = token.next_token();
                         }
                         SyntaxKind::WHITESPACE | SyntaxKind::COMMENT => {
@@ -82,11 +86,6 @@ impl Formatter {
                         }
                         _ => break,
                     }
-                }
-
-                // If there are already multiple newlines (indicating empty lines), don't add more
-                if total_newlines > 1 {
-                    return;
                 }
             }
         }
