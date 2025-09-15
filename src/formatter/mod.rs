@@ -793,13 +793,13 @@ impl Formatter {
                 }
                 NodeOrToken::Token(token) => match token.kind() {
                     SyntaxKind::NEWLINE => {
-                        let mut total_newlines = 1;
+                        let mut saw_extra_newline = false;
 
                         while let Some(NodeOrToken::Token(peeked)) = children.peek() {
                             match peeked.kind() {
                                 SyntaxKind::NEWLINE => {
                                     children.next();
-                                    total_newlines += 1;
+                                    saw_extra_newline = true;
                                 }
                                 SyntaxKind::WHITESPACE => {
                                     children.next();
@@ -808,15 +808,12 @@ impl Formatter {
                             }
                         }
 
-                        if self.at_line_start && self.current_line.text.is_empty() {
-                            if total_newlines > 1 {
-                                self.pending_empty_lines = 1;
-                            }
-                        } else {
-                            if total_newlines > 1 {
-                                self.pending_empty_lines = 1;
-                            }
+                        if !self.at_line_start || !self.current_line.text.is_empty() {
                             self.handle_newline();
+                        }
+
+                        if saw_extra_newline {
+                            self.pending_empty_lines = 1;
                         }
                     }
                     SyntaxKind::WHITESPACE => {
