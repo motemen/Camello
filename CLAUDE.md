@@ -32,11 +32,11 @@ The parser implements multiple error recovery strategies:
 
 ### Core API Functions
 
-- **`pub fn format_code(source: &str) -> String`** (`src/lib.rs`): The primary public API. It takes a string of Perl code, orchestrates the lexing, parsing, and formatting process, and returns the formatted code as a string.
+- **`pub fn format_perl(input: &str) -> (String, Vec<ParseError>)`** (`src/lib.rs`): The primary public API. It takes a string of Perl code, orchestrates the lexing, parsing, and formatting process, and returns the formatted code along with any parse errors.
 
-- **`pub fn parse_file(source: &str) -> Parse<CstNode>`** (`src/lib.rs`): The main entry point for parsing. It takes a string of Perl code and returns a `Parse` result, which contains the Concrete Syntax Tree (CST) and a list of any syntax errors encountered.
+- **`pub fn parse_perl(input: &str) -> (PerlNode, Vec<ParseError>)`** (`src/lib.rs`): Parses Perl source into a `PerlNode` CST and returns any syntax errors encountered during parsing.
 
-- **`Parser::root(&mut self)`** (`src/parser/mod.rs`): The top-level parsing function that starts the recursive descent process for an entire file. It's the internal entry point called by `parse_file`.
+- **`Parser::root(&mut self)`** (`src/parser/mod.rs`): The top-level parsing function that starts the recursive descent process for an entire file. It's the internal entry point called by `parse_perl`.
 
 - **`format_node(node: &SyntaxNode, builder: &mut Builder)`** (in `src/formatter/mod.rs`): The heart of the formatter. This function recursively traverses the CST, applying formatting rules (indentation, spacing, newlines) for each `SyntaxNode` and appending the result to a string builder.
 
@@ -44,7 +44,7 @@ The parser implements multiple error recovery strategies:
 
 **SyntaxKind** (`src/syntax_kind.rs`): Central enum defining all Perl syntax elements. Uses `#[repr(u16)]` for efficient Rowan integration.
 
-**Lexer** (`src/lexer/mod.rs`): Logos-based tokenizer that handles Perl-specific tokens. It performs contextual disambiguation for operators like `/` (division vs. regex), `%` (modulo vs. hash sigil), and keywords like `tr`, `y`, `s`. It correctly tokenizes quote-like operators (`q`, `qq`, `qw`, `s`, `tr`, `y`), POD blocks, and `__DATA__` sections.
+**Lexer** (`src/lexer/mod.rs`): Logos-based tokenizer that handles Perl-specific tokens. It performs contextual disambiguation for operators like `/` (division vs. regex), `%` (modulo vs. hash sigil), and keywords like `tr`, `y`, `s` via a dedicated `disambiguate` method that uses parser-provided `LexContext` hints. It correctly tokenizes quote-like operators (`q`, `qq`, `qw`, `s`, `tr`, `y`), POD blocks, and `__DATA__` sections.
 
 **Parser** (`src/parser/mod.rs`): Recursive descent Pratt parser using Rowan's GreenNodeBuilder.
 
@@ -54,7 +54,7 @@ The parser implements multiple error recovery strategies:
 - `sub_def()`: Parses subroutine definitions, including prototypes.
 - `expression()`: Parses complex expressions with correct operator precedence, including infix, prefix, and postfix operators, ternary expressions (`?:`), anonymous subroutines (`sub { ... }`), and typeglobs (`*FOO`, `*{...}`).
 
-**Formatter** (`src/formatter/mod.rs`): Traverses the CST to apply formatting rules.
+- **Formatter** (`src/formatter/mod.rs`): Traverses the CST to apply formatting rules.
 
 - Indentation: 4-space indentation for blocks.
 - Spacing: Adds spaces around operators (e.g., `$a = $b + $c`), but keeps others compact (e.g., `$obj->method`).
@@ -62,12 +62,13 @@ The parser implements multiple error recovery strategies:
 - Comments & Whitespace: Preserves comments, newlines, and user-added empty lines between statements.
 - Multiline Formatting: Intelligently formats multiline array/hash references and `qw` expressions based on whether they contain newlines in the original source.
 - Verbatim Sections: Preserves `__DATA__` and POD sections exactly as they are.
+- Token Spans: Tracks the original token span for each line, enabling source mapping and diff generation features.
 
-**CLI** (`src/cli.rs`): Clap-based interface supporting `format`, `check`, `dump` subcommands, and input from files, strings (`-e`), or stdin.
+**CLI** (`src/cli.rs`): Clap-based interface with `format` and `dump` subcommands. The `format` command also supports a `--check` flag to verify that code is already formatted. Input can come from files, strings (`-e`/`-E`), or stdin.
 
 **Crate Structure** (`src/main.rs`, `src/lib.rs`): The project is a mixed binary/library crate.
 
-- `src/lib.rs`: The library root, containing the core parsing and formatting logic and exposing public APIs like `format_code`.
+- `src/lib.rs`: The library root, containing the core parsing and formatting logic and exposing public APIs like `format_perl`.
 - `src/main.rs`: The binary entry point, which parses command-line arguments via `src/cli.rs` and calls the library functions.
 
 ### Module Structure
@@ -116,7 +117,6 @@ cargo test -q
 cargo build --release
 
 # Run a single test module
-cargo test -q lexer::tests
 cargo test -q parser::tests
 cargo test -q formatter::tests
 
@@ -151,11 +151,11 @@ Our testing strategy prioritizes end-to-end formatting correctness and maintaina
   - They verify the formatter's output against stored snapshots using `insta`.
   - The goal is to have a comprehensive suite of snapshot tests that cover a wide range of valid Perl syntax and formatting edge cases.
 
-- **Secondary: Lexer and Parser Unit Tests (`src/lexer/tests.rs`, `src/parser/mod.rs`)**
+- **Secondary: Parser Unit Tests (`src/parser/mod.rs`)**
 
-  - These tests should be limited to cases that are difficult or impossible to cover through formatter tests.
-  - Their primary role is to validate specific **error handling** and **context-sensitive ambiguity resolution** (e.g., distinguishing `/` as division vs. a regex delimiter).
-  - Avoid adding unit tests for simple tokenization or parsing of basic syntax that is already implicitly covered by the formatter snapshot tests. This reduces redundancy and maintenance overhead.
+  - Dedicated lexer tests have been removed as the lexer now contains little custom logic.
+  - Any tricky lexical edge cases should be covered through parser tests or formatter snapshots.
+  - Keep parser unit tests focused on scenarios that are difficult to express as formatter snapshots.
 
 - **Integration Tests (`tests/` directory)**: Verifies CLI behavior, file I/O, and end-to-end functionality using real-world or complex examples.
 
@@ -164,7 +164,7 @@ This approach ensures that our tests are both effective and efficient, focusing 
 ### Adding New Syntax Support
 
 1. Add new variants to the `SyntaxKind` enum in `src/syntax_kind.rs`.
-2. Update the lexer in `src/lexer/mod.rs`. This may involve adding a new `Token` variant, updating regexes, or adding contextual disambiguation logic in `disambiguate()` or `next_token()`.
+2. Update the lexer in `src/lexer/mod.rs`. This may involve adding a new `Token` variant, updating regexes, or extending `Lexer::disambiguate` with new contextual rules.
 3. Add parsing logic to the appropriate parser function in `src/parser/`. For expressions, this may involve adding a new `OperatorInfo` in `src/parser/expression/precedence.rs`.
 4. Update the formatter in `src/formatter/` by adding a new `format_...` function to handle the new syntax node.
 5. Add comprehensive snapshot tests in `src/formatter/tests.rs` to cover various use cases of the new syntax.
