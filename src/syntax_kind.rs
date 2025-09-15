@@ -489,7 +489,7 @@ impl SyntaxKind {
             self,
             SyntaxKind::HEREDOC_CONTENT
                 | SyntaxKind::STRING
-                | SyntaxKind::LITERAL_STRING  
+                | SyntaxKind::LITERAL_STRING
                 | SyntaxKind::INTERPOLATED_STRING
         )
     }
