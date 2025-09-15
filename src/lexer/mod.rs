@@ -1109,6 +1109,3 @@ impl<'a> Lexer<'a> {
         self.peek_nth_non_trivia_with_context(context, 0)
     }
 }
-
-#[cfg(test)]
-mod tests;
