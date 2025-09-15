@@ -2210,3 +2210,23 @@ fn test_numeric_literals_with_underscores_and_bases() {
 
     check_formatting_cases(&cases);
 }
+
+#[test]
+fn test_multiline_token_indentation() {
+    // Test that write_str correctly adds indentation for multiline tokens
+    let input = r#"if ($condition) {
+say "first line
+second line
+third line";
+}"#;
+    let formatted = format_and_assert(input);
+
+    // Should preserve indentation for multiline string content
+    insta::assert_snapshot!(formatted, @r#"
+        if ($condition) {
+            say "first line
+            second line
+            third line";
+        }
+        "#);
+}
