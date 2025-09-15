@@ -642,6 +642,51 @@ impl Formatter {
         None
     }
 
+    fn needs_continuation_indent(&self, current: SyntaxKind) -> bool {
+        if !self.at_line_start || self.prev_token_kind.is_none() {
+            return false;
+        }
+
+        use SyntaxKind::*;
+
+        if matches!(
+            current,
+            IF_KW | UNLESS_KW | WHILE_KW | UNTIL_KW | FOR_KW | FOREACH_KW
+        ) {
+            if let Some(prev) = self.prev_token_kind {
+                if !matches!(prev, L_BRACE | R_BRACE | SEMICOLON) {
+                    return true;
+                }
+            }
+        }
+
+        if current.is_operator()
+            && !matches!(
+                current,
+                UNARY_PLUS
+                    | UNARY_MINUS
+                    | PREFIX_INCREMENT
+                    | PREFIX_DECREMENT
+                    | POSTFIX_INCREMENT
+                    | POSTFIX_DECREMENT
+                    | LOGICAL_NOT
+                    | BITWISE_NOT
+            )
+        {
+            return true;
+        }
+
+        if self.indent_level == 0 {
+            if let Some(prev) = self.prev_token_kind {
+                if matches!(prev, COMMA | FAT_COMMA) {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
     fn format_token(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
         let kind = token.kind();
         let text = token.text();
@@ -712,6 +757,9 @@ impl Formatter {
 
                 if self.at_line_start && !kind.is_trivia() {
                     self.add_indent();
+                    if self.needs_continuation_indent(kind) {
+                        self.current_line.text.push_str(&self.indent_string);
+                    }
                     self.at_line_start = false;
                 }
 
