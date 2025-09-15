@@ -130,7 +130,9 @@ impl Formatter {
                                 self.at_line_start = false;
                             }
                             self.write(&token);
-                            self.handle_newline();
+                            if !self.ends_with_newline() {
+                                self.handle_newline();
+                            }
                             self.prev_token_kind = Some(kind);
                         }
                         SyntaxKind::WHITESPACE => {

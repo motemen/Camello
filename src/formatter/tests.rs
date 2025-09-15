@@ -1053,6 +1053,40 @@ test
 }
 
 #[test]
+fn test_qw_string_with_trailing_newline() {
+    // Test that QW_STRING tokens ending with newlines don't get extra newlines
+    let input = r#"my @words = qw(
+foo
+bar
+);"#;
+    let formatted = format_and_assert(input);
+
+    // Should not have extra blank lines between words
+    insta::assert_snapshot!(formatted, @r"
+        my @words = qw(
+            foo
+            bar
+        );
+        ");
+}
+
+#[test]
+fn test_write_str_handles_embedded_newlines() {
+    // Test that write_str correctly handles strings with embedded newlines
+    let input = r#"say "line1
+line2
+line3";"#;
+    let formatted = format_and_assert(input);
+
+    // Should preserve the embedded newlines without adding extra ones
+    insta::assert_snapshot!(formatted, @r#"
+        say "line1
+        line2
+        line3";
+        "#);
+}
+
+#[test]
 fn test_mixed_single_and_multiline() {
     let input = r#"my $mixed = {
 simple => { a => 1, b => 2 },
