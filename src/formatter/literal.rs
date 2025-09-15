@@ -24,7 +24,6 @@ impl Formatter {
                 NodeOrToken::Node(node) => self.format_node(&node),
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
-                    let text = token.text();
 
                     match kind {
                         k if k == opening => {
@@ -33,11 +32,11 @@ impl Formatter {
                                 self.add_indent();
                                 self.at_line_start = false;
                             }
-                            self.write(text);
+                            self.write(&token);
                             self.prev_token_kind = Some(kind);
                         }
                         k if k == closing => {
-                            self.write(text);
+                            self.write(&token);
                             self.prev_token_kind = Some(kind);
                         }
                         _ => {
@@ -87,7 +86,6 @@ impl Formatter {
                 NodeOrToken::Node(node) => self.format_node(&node),
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
-                    let text = token.text();
 
                     match kind {
                         SyntaxKind::QW_STRING => {
@@ -95,7 +93,7 @@ impl Formatter {
                             if !first_word {
                                 self.write_char(' ');
                             }
-                            self.write(text);
+                            self.write(&token);
                             first_word = false;
                             self.prev_token_kind = Some(kind);
                         }
@@ -116,7 +114,6 @@ impl Formatter {
                 NodeOrToken::Node(node) => self.format_node(&node),
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
-                    let text = token.text();
 
                     match kind {
                         SyntaxKind::DELIMITER => {
@@ -132,8 +129,10 @@ impl Formatter {
                                 self.add_indent();
                                 self.at_line_start = false;
                             }
-                            self.write(text);
-                            self.handle_newline();
+                            self.write(&token);
+                            if !self.ends_with_newline() {
+                                self.handle_newline();
+                            }
                             self.prev_token_kind = Some(kind);
                         }
                         SyntaxKind::WHITESPACE => {
@@ -182,17 +181,16 @@ impl Formatter {
                 NodeOrToken::Node(node) => self.format_node(&node),
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
-                    let text = token.text();
                     match kind {
                         k if kw_kinds.contains(&k) => {
                             self.format_token(&token);
                         }
                         SyntaxKind::WHITESPACE => {
                             // Preserve whitespace inside these expressions
-                            self.write(text);
+                            self.write(&token);
                         }
                         _ => {
-                            self.write(text);
+                            self.write(&token);
                             self.prev_token_kind = Some(kind);
                         }
                     }
@@ -213,7 +211,6 @@ impl Formatter {
                 NodeOrToken::Node(node) => self.format_node(&node),
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
-                    let text = token.text();
                     match kind {
                         k if k == kw_kind => {
                             self.format_token(&token);
@@ -222,24 +219,24 @@ impl Formatter {
                         | SyntaxKind::L_BRACKET
                         | SyntaxKind::SLASH
                         | SyntaxKind::DELIMITER => {
-                            self.write(text);
+                            self.write(&token);
                             self.prev_token_kind = Some(kind);
                         }
                         k if k == string_kind => {
-                            self.write(text);
+                            self.write(&token);
                             self.prev_token_kind = Some(kind);
                         }
                         SyntaxKind::R_PAREN | SyntaxKind::R_BRACKET | SyntaxKind::R_BRACE => {
-                            self.write(text);
+                            self.write(&token);
                             self.prev_token_kind = Some(kind);
                         }
                         SyntaxKind::WHITESPACE => {
                             // Special handling: preserve whitespace inside q-family strings
-                            self.write(text);
+                            self.write(&token);
                         }
                         _ => {
                             // Handle any remaining tokens (including closing slash) directly
-                            self.write(text);
+                            self.write(&token);
                             self.prev_token_kind = Some(kind);
                         }
                     }
