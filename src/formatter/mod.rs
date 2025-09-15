@@ -2,6 +2,7 @@ use crate::{PerlLanguage, PerlNode, SyntaxKind};
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub(super) struct TokenSpan {
     kind: SyntaxKind,
     start_byte: usize,
@@ -73,11 +74,17 @@ impl Formatter {
     }
 
     pub(super) fn write_str(&mut self, text: &str, kind: Option<SyntaxKind>) {
-        let mut parts = text.split('\n');
-        if let Some(first) = parts.next() {
-            let start = self.current_line.text.len();
-            self.current_line.text.push_str(first);
-            if !first.is_empty() {
+        let mut is_first_part = true;
+        for part in text.split('\n') {
+            if is_first_part {
+                is_first_part = false;
+            } else {
+                self.handle_newline();
+            }
+
+            if !part.is_empty() {
+                let start = self.current_line.text.len();
+                self.current_line.text.push_str(part);
                 self.at_line_start = false;
                 if let Some(kind) = kind {
                     let end = self.current_line.text.len();
@@ -86,22 +93,6 @@ impl Formatter {
                         start_byte: start,
                         end_byte: end,
                     });
-                }
-            }
-            for part in parts {
-                self.handle_newline();
-                if !part.is_empty() {
-                    let start = self.current_line.text.len();
-                    self.current_line.text.push_str(part);
-                    self.at_line_start = false;
-                    if let Some(kind) = kind {
-                        let end = self.current_line.text.len();
-                        self.current_line.tokens.push(TokenSpan {
-                            kind,
-                            start_byte: start,
-                            end_byte: end,
-                        });
-                    }
                 }
             }
         }
