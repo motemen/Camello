@@ -32,6 +32,7 @@ pub struct Formatter {
     prev_token_kind: Option<SyntaxKind>,
     at_line_start: bool,
     pending_empty_lines: usize, // Number of empty lines waiting to be output
+    in_multiline_context: bool, // Track when we're in structured multiline formatting
 }
 
 impl Default for Formatter {
@@ -51,6 +52,7 @@ impl Formatter {
             prev_token_kind: None,
             at_line_start: true,
             pending_empty_lines: 0,
+            in_multiline_context: false,
         }
     }
 
@@ -520,6 +522,8 @@ impl Formatter {
         open_delimiter: SyntaxKind,
         close_delimiter: SyntaxKind,
     ) {
+        let old_multiline_context = self.in_multiline_context;
+        self.in_multiline_context = true;
         for child in iter {
             match child {
                 NodeOrToken::Node(node) => {
@@ -559,9 +563,12 @@ impl Formatter {
                 }
             }
         }
+        self.in_multiline_context = old_multiline_context;
     }
 
     fn format_expr_list_multiline_iter(&mut self, iter: SyntaxElementChildren<PerlLanguage>) {
+        let old_multiline_context = self.in_multiline_context;
+        self.in_multiline_context = true;
         for child in iter {
             match child {
                 NodeOrToken::Node(node) => self.format_node(&node),
@@ -584,6 +591,7 @@ impl Formatter {
                 }
             }
         }
+        self.in_multiline_context = old_multiline_context;
     }
 
     fn handle_multiline_opening_delimiter(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
@@ -640,6 +648,51 @@ impl Formatter {
             current = t.next_token();
         }
         None
+    }
+
+    fn needs_continuation_indent(&self, current: SyntaxKind) -> bool {
+        if !self.at_line_start || self.prev_token_kind.is_none() {
+            return false;
+        }
+
+        use SyntaxKind::*;
+
+        if matches!(
+            current,
+            IF_KW | UNLESS_KW | WHILE_KW | UNTIL_KW | FOR_KW | FOREACH_KW
+        ) {
+            if let Some(prev) = self.prev_token_kind {
+                if !matches!(prev, L_BRACE | R_BRACE | SEMICOLON) {
+                    return true;
+                }
+            }
+        }
+
+        if current.is_operator()
+            && !matches!(
+                current,
+                UNARY_PLUS
+                    | UNARY_MINUS
+                    | PREFIX_INCREMENT
+                    | PREFIX_DECREMENT
+                    | POSTFIX_INCREMENT
+                    | POSTFIX_DECREMENT
+                    | LOGICAL_NOT
+                    | BITWISE_NOT
+            )
+        {
+            return true;
+        }
+
+        if !self.in_multiline_context {
+            if let Some(prev) = self.prev_token_kind {
+                if matches!(prev, COMMA | FAT_COMMA) {
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 
     fn format_token(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
@@ -712,6 +765,9 @@ impl Formatter {
 
                 if self.at_line_start && !kind.is_trivia() {
                     self.add_indent();
+                    if self.needs_continuation_indent(kind) {
+                        self.current_line.text.push_str(&self.indent_string);
+                    }
                     self.at_line_start = false;
                 }
 
