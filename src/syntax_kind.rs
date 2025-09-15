@@ -480,6 +480,19 @@ impl SyntaxKind {
                 | SyntaxKind::X
         )
     }
+
+    /// Returns true if this token kind contains content that should be indented
+    /// when spanning multiple lines (heredocs, strings, etc.)
+    #[must_use]
+    pub fn is_content_token(self) -> bool {
+        matches!(
+            self,
+            SyntaxKind::HEREDOC_CONTENT
+                | SyntaxKind::STRING
+                | SyntaxKind::LITERAL_STRING
+                | SyntaxKind::INTERPOLATED_STRING
+        )
+    }
 }
 
 impl From<SyntaxKind> for rowan::SyntaxKind {

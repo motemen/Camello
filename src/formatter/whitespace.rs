@@ -1,5 +1,4 @@
-use super::spacing;
-use super::Formatter;
+use super::{spacing, Formatter, Line};
 use crate::{PerlNode, SyntaxKind};
 
 impl Formatter {
@@ -11,7 +10,7 @@ impl Formatter {
 
     pub(super) fn add_indent(&mut self) {
         for _ in 0..self.indent_level {
-            self.current_line.push_str(&self.indent_string);
+            self.current_line.text.push_str(&self.indent_string);
         }
     }
 
@@ -112,7 +111,7 @@ impl Formatter {
             if !self.ends_with_newline() {
                 self.handle_newline();
             }
-            self.lines.push(String::new());
+            self.lines.push(Line::new());
             self.at_line_start = true;
         }
     }
@@ -124,7 +123,7 @@ impl Formatter {
         }
         // Add one more newline to create an empty line
         if !self.ends_with_double_newline() {
-            self.lines.push(String::new());
+            self.lines.push(Line::new());
         }
     }
 
@@ -137,7 +136,7 @@ impl Formatter {
             }
             // Add empty lines
             for _ in 0..self.pending_empty_lines {
-                self.lines.push(String::new());
+                self.lines.push(Line::new());
             }
             self.pending_empty_lines = 0;
             self.at_line_start = true;
