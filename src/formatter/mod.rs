@@ -32,6 +32,7 @@ pub struct Formatter {
     prev_token_kind: Option<SyntaxKind>,
     at_line_start: bool,
     pending_empty_lines: usize, // Number of empty lines waiting to be output
+    in_multiline_context: bool, // Track when we're in structured multiline formatting
 }
 
 impl Default for Formatter {
@@ -51,6 +52,7 @@ impl Formatter {
             prev_token_kind: None,
             at_line_start: true,
             pending_empty_lines: 0,
+            in_multiline_context: false,
         }
     }
 
@@ -520,6 +522,8 @@ impl Formatter {
         open_delimiter: SyntaxKind,
         close_delimiter: SyntaxKind,
     ) {
+        let old_multiline_context = self.in_multiline_context;
+        self.in_multiline_context = true;
         for child in iter {
             match child {
                 NodeOrToken::Node(node) => {
@@ -559,9 +563,12 @@ impl Formatter {
                 }
             }
         }
+        self.in_multiline_context = old_multiline_context;
     }
 
     fn format_expr_list_multiline_iter(&mut self, iter: SyntaxElementChildren<PerlLanguage>) {
+        let old_multiline_context = self.in_multiline_context;
+        self.in_multiline_context = true;
         for child in iter {
             match child {
                 NodeOrToken::Node(node) => self.format_node(&node),
@@ -584,6 +591,7 @@ impl Formatter {
                 }
             }
         }
+        self.in_multiline_context = old_multiline_context;
     }
 
     fn handle_multiline_opening_delimiter(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
@@ -676,7 +684,7 @@ impl Formatter {
             return true;
         }
 
-        if self.indent_level == 0 {
+        if !self.in_multiline_context {
             if let Some(prev) = self.prev_token_kind {
                 if matches!(prev, COMMA | FAT_COMMA) {
                     return true;
