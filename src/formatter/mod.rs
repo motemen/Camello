@@ -85,7 +85,7 @@ impl Formatter {
             if !part.is_empty() {
                 // Only add indentation for content tokens like heredocs and strings
                 // when at line start and not for structural tokens
-                if self.at_line_start && kind.map_or(false, |k| k.is_content_token()) {
+                if self.at_line_start && kind.is_some_and(|k| k.is_content_token()) {
                     self.add_indent();
                 }
                 let start = self.current_line.text.len();
