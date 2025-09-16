@@ -142,6 +142,7 @@ impl Formatter {
                 | SyntaxKind::LABELED_STMT
                 | SyntaxKind::DECLARATION_STMT
                 | SyntaxKind::ELLIPSIS_STMT
+                | SyntaxKind::EMPTY_STMT
         ) {
             self.add_empty_line_before_if_needed(node);
         }
@@ -186,6 +187,14 @@ impl Formatter {
                     }
                 }
                 return;
+            }
+            SyntaxKind::EMPTY_STMT => {
+                // Empty statements are just a semicolon, format with default handling
+                // but output pending empty lines first
+                if self.pending_empty_lines > 0 {
+                    self.output_pending_empty_lines();
+                }
+                // Default child iteration will handle the semicolon token
             }
             SyntaxKind::HASH_REF => {
                 self.format_hash_ref(node);

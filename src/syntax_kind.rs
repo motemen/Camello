@@ -275,6 +275,7 @@ pub enum SyntaxKind {
 
     // Other statements
     ELLIPSIS_STMT, // Ellipsis statement placeholder
+    EMPTY_STMT,    // Empty statement (bare semicolon)
     STMT,          // General statement
 
     EXPR_LIST,           // Expression list (e.g., $a, $b, $c)

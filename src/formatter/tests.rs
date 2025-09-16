@@ -360,6 +360,20 @@ fn test_ellipsis_statement_formatting() {
 }
 
 #[test]
+fn test_empty_statement_formatting() {
+    let cases = [
+        (";", ";\n"),
+        (";;", ";\n;\n"),
+        (";;;", ";\n;\n;\n"),
+        ("$x = 1; ;", "$x = 1;\n\n;\n"),
+        ("sub foo { ; }", "sub foo {\n    ;\n}\n"),
+        ("sub foo {\n    ;\n}", "sub foo {\n    ;\n}\n"),
+        ("if ($x) { ; } else { ; }", "if ($x) {\n    ;\n} else {\n    ;\n}\n"), // Added trailing newline
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_function_call_with_newline_in_args_formatting() {
     let cases = [("func({}\n);", "func({}\n);\n")];
     check_formatting_cases(&cases);
