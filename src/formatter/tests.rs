@@ -683,6 +683,28 @@ fn test_require_formatting() {
 }
 
 #[test]
+fn test_keyword_module_names() {
+    check_formatting_cases(&[
+        // Method calls on keyword module names
+        ("local::lib->new;", "local::lib->new;\n"),
+        ("local::lib->import;", "local::lib->import;\n"),
+        ("use::ok->new;", "use::ok->new;\n"),
+        ("if::then->call;", "if::then->call;\n"),
+        // Keyword:: followed by ->
+        ("local::->new;", "local::->new;\n"),
+        ("use::->import;", "use::->import;\n"),
+        // Multiple levels
+        ("local::lib::more->new;", "local::lib::more->new;\n"),
+        // In expressions
+        ("my $obj = local::lib->new;", "my $obj = local::lib->new;\n"),
+        ("my $result = use::ok->call($arg);", "my $result = use::ok->call($arg);\n"),
+        // With parentheses
+        ("local::lib->new();", "local::lib->new();\n"),
+        ("local::lib->import('feature');", "local::lib->import('feature');\n"),
+    ]);
+}
+
+#[test]
 fn test_use_statement_with_parentheses_formatting() {
     check_formatting_cases(&[
         // Use statement with empty parentheses (import list)

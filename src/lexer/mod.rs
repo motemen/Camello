@@ -606,7 +606,23 @@ impl<'a> Lexer<'a> {
                     LexContext::Operator => SyntaxKind::X,
                     LexContext::Value => SyntaxKind::IDENT,
                 },
-                _ => Self::map_ident_keyword(text).unwrap_or(SyntaxKind::IDENT),
+                _ => {
+                    // Check if this might be a keyword followed by ::
+                    // If so, treat it as an identifier to allow qualified names like local::lib
+                    if let Some(keyword_kind) = Self::map_ident_keyword(text) {
+                        // Look ahead to see if :: follows
+                        let remainder = self.logos_lexer.remainder();
+                        if remainder.starts_with("::") {
+                            // This is part of a qualified identifier like local::lib
+                            SyntaxKind::IDENT
+                        } else {
+                            // This is a standalone keyword
+                            keyword_kind
+                        }
+                    } else {
+                        SyntaxKind::IDENT
+                    }
+                }
             },
             // Ambiguous symbol tokens depending on context
             Token::Percent => match ctx {
