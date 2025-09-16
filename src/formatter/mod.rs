@@ -663,7 +663,7 @@ impl Formatter {
                     if token_span.start_byte > 0 {
                         let content_before = last_line.text[..token_span.start_byte].trim();
                         has_content_before_comment = !content_before.is_empty();
-                        has_semicolon_before_comment = content_before.ends_with(';');
+                        has_semicolon_before_comment = content_before.ends_with(';') || content_before.ends_with('}');
                     }
                     break;
                 }
@@ -671,7 +671,7 @@ impl Formatter {
 
             // Only allow continuation if:
             // 1. There's content before the comment (it's inline)
-            // 2. The content doesn't end with semicolon (not a complete statement)
+            // 2. The content doesn't end with a statement terminator (like ';' or '}') (not a complete statement)
             return has_content_before_comment && !has_semicolon_before_comment;
         }
         // If we can't determine, be conservative and don't allow continuation
