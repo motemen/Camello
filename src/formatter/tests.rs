@@ -1123,38 +1123,71 @@ fn test_print_function_calls_as_expressions() {
 
 #[test]
 fn test_print_complex_scalar_expressions() {
-    // These are complex scalar expressions that currently don't parse correctly
-    // due to limitations in the print filehandle parsing logic
-
-    // This specific case was mentioned in the PR comment
-    let input = "print $code->(), \"x\";";
-    let result = crate::format_perl(input);
-
-    // The current parser treats $code as filehandle and fails to parse ->()
-    // This documents the current limitation
-    if !result.1.is_empty() {
-        // Parse errors are expected with current implementation
-        println!(
-            "Expected parse errors for complex expressions: {:?}",
-            result.1
-        );
-    }
+    // Test cases for complex scalar expressions that should be parsed as expressions,
+    // not filehandles, with the improved lookahead logic
+    let cases = [
+        // Method calls on scalars - should be parsed as expressions
+        ("print $code->(), \"x\";", "print $code->(), \"x\";\n"),
+        (
+            "print $obj->method(), $data;",
+            "print $obj->method(), $data;\n",
+        ),
+        (
+            "printf $formatter->get(), \"%s\", $str;",
+            "printf $formatter->get(), \"%s\", $str;\n",
+        ),
+        // Array/hash access on scalars - should be parsed as expressions
+        ("print $array[0], \"x\";", "print $array[0], \"x\";\n"),
+        ("print $hash{key}, $value;", "print $hash{key}, $value;\n"),
+        // Function calls on scalars - should be parsed as expressions
+        // Note: formatter adds space before parentheses in this context
+        ("print $func(), \"result\";", "print $func (), \"result\";\n"),
+    ];
+    check_formatting_cases(&cases);
 }
 
 #[test]
-fn test_print_scalar_expressions_current_behavior() {
-    // These test what the current parser actually does with scalar expressions
-    // The current implementation treats $var as filehandle in print statements
-    // This may not be ideal for complex expressions, but documents current behavior
-
+fn test_print_simple_filehandle_behavior() {
+    // Test that simple filehandle syntax still works correctly
     let cases = [
-        // Simple variables are treated as filehandles currently
+        // Simple scalar variables as filehandles (no postfix operations)
         ("print $fh \"data\";", "print $fh \"data\";\n"),
         ("printf $fh \"%s\", $msg;", "printf $fh \"%s\", $msg;\n"),
         ("say $fh $message;", "say $fh$message;\n"),
-        // With explicit comma
+        // With explicit comma (traditional filehandle syntax)
         ("print $fh, \"data\";", "print $fh, \"data\";\n"),
         ("printf $fh, \"%s\", $msg;", "printf $fh, \"%s\", $msg;\n"),
+        // Bareword filehandles
+        ("print STDERR \"error\";", "print STDERR \"error\";\n"),
+        ("print STDOUT $output;", "print STDOUT $output;\n"),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
+fn test_print_function_vs_filehandle_disambiguation() {
+    // Test that the lookahead logic correctly distinguishes between
+    // function calls and filehandle syntax
+    let cases = [
+        // Function calls - should NOT be treated as filehandles
+        ("print foo(), \"x\";", "print foo(), \"x\";\n"),
+        ("print get_handle(), $data;", "print get_handle(), $data;\n"),
+        // Simple scalars followed by expressions - should be treated as filehandles
+        ("print $fh \"data\";", "print $fh \"data\";\n"),
+        ("print $handle $message;", "print $handle$message;\n"),
+        // Complex expressions - should NOT be treated as filehandles
+        (
+            "print $obj->method(), \"result\";",
+            "print $obj->method(), \"result\";\n",
+        ),
+        (
+            "print $array[0], \"value\";",
+            "print $array[0], \"value\";\n",
+        ),
+        (
+            "print $hash{key}, \"data\";",
+            "print $hash{key}, \"data\";\n",
+        ),
     ];
     check_formatting_cases(&cases);
 }
