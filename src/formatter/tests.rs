@@ -1096,6 +1096,16 @@ fn test_function_call_formatting() {
 }
 
 #[test]
+fn test_print_like_filehandles() {
+    let cases = [
+        ("print$fh 1,2,3;", "print $fh 1, 2, 3;\n"),
+        ("printf$fh\"%s\",$msg;", "printf $fh \"%s\", $msg;\n"),
+        ("say{get_fh()}$value;", "say { get_fh() } $value;\n"),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_function_call_in_sub() {
     let input = "sub test{push@array,$value;return$result;}";
     let formatted = format_and_assert(input);

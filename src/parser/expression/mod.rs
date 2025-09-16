@@ -35,7 +35,10 @@ impl Parser<'_> {
         self.skip_whitespace_and_newlines();
 
         // Block function call: e.g., map { ... } @list
-        if Self::is_block_function(&function_name) && self.at(SyntaxKind::L_BRACE) {
+        if self.at(SyntaxKind::L_BRACE)
+            && (Self::is_block_function(&function_name)
+                || Self::is_print_like_function(&function_name))
+        {
             self.builder
                 .start_node_at(start, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());
             self.parse_block_function_args();
@@ -55,6 +58,19 @@ impl Parser<'_> {
                 // Parenthesized calls are handled by postfix parsing logic
                 return;
             }
+        }
+
+        if Self::is_print_like_function(&function_name) {
+            if self.is_at_start_of_expression() {
+                self.builder
+                    .start_node_at(start, SyntaxKind::FUNCTION_CALL_EXPR.into());
+                self.parse_print_like_args();
+                self.builder.finish_node();
+            }
+            return;
+        }
+
+        if let Some(kind) = next_kind {
             if Self::can_start_expression(kind) {
                 // We have a regular function call, wrap everything in FUNCTION_CALL_EXPR
                 self.builder
@@ -106,6 +122,32 @@ impl Parser<'_> {
             "eval" | "map" | "grep" | "sort" | "do" // Note: User-defined functions with & prototypes should also be detected
                                                     // but that requires tracking function definitions across the parse
         )
+    }
+
+    fn parse_print_like_args(&mut self) {
+        let mut consumed_filehandle = false;
+
+        if self.at(SyntaxKind::IDENT) {
+            self.bump_value();
+            consumed_filehandle = true;
+            self.skip_whitespace_and_newlines();
+        } else if self.at(SyntaxKind::DOLLAR) {
+            self.parse_variable();
+            consumed_filehandle = true;
+        }
+
+        if consumed_filehandle && self.at_any(&[SyntaxKind::COMMA, SyntaxKind::FAT_COMMA]) {
+            self.bump_value();
+            self.skip_whitespace_and_newlines();
+        }
+
+        if self.is_at_start_of_expression() {
+            self.expression_list();
+        }
+    }
+
+    fn is_print_like_function(function_name: &str) -> bool {
+        matches!(function_name, "print" | "printf" | "say")
     }
 
     pub fn expression(&mut self) -> bool {

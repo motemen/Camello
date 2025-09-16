@@ -335,13 +335,29 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
 fn handle_contextual_spacing(
     prev: SyntaxKind,
     current: SyntaxKind,
-    _prev_spacing: &TokenSpacing,
-    _current_spacing: &TokenSpacing,
+    prev_spacing: &TokenSpacing,
+    current_spacing: &TokenSpacing,
 ) -> bool {
     use SyntaxKind::{
-        COMMA, FOREACH_KW, FOR_KW, IF_KW, L_BRACE, L_BRACKET, L_PAREN, R_BRACE, R_BRACKET, R_PAREN,
-        UNLESS_KW,
+        COMMA, FOREACH_KW, FOR_KW, IF_KW, L_BRACE, L_BRACKET, L_PAREN, POSTFIX_DEREF_ARRAY,
+        POSTFIX_DEREF_HASH, POSTFIX_DEREF_SCALAR, R_BRACE, R_BRACKET, R_PAREN, UNLESS_KW,
     };
+
+    if prev_spacing.category == TokenCategory::Variable
+        && !matches!(
+            current,
+            POSTFIX_DEREF_ARRAY | POSTFIX_DEREF_HASH | POSTFIX_DEREF_SCALAR
+        )
+        && matches!(
+            current_spacing.category,
+            TokenCategory::Identifier
+                | TokenCategory::Literal
+                | TokenCategory::Variable
+                | TokenCategory::Keyword
+        )
+    {
+        return true;
+    }
 
     match (prev, current) {
         // Comma: always space after
