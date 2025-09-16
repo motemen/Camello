@@ -325,6 +325,7 @@ impl<'a> Parser<'a> {
             kind,
             SyntaxKind::NUMBER
                 | SyntaxKind::STRING
+                | SyntaxKind::BACKTICK_STRING
                 | SyntaxKind::REGEX_LITERAL
                 | SyntaxKind::SLASH
                 | SyntaxKind::IO_EXPR

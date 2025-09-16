@@ -211,6 +211,16 @@ impl Formatter {
                 self.format_qx_expr(node);
                 return;
             }
+            SyntaxKind::BACKTICK_EXPR => {
+                // Backtick command substitution: just format children (the backtick string literal)
+                for child in node.children_with_tokens() {
+                    match child {
+                        NodeOrToken::Node(child_node) => self.format_node(&child_node),
+                        NodeOrToken::Token(token) => self.format_token(&token),
+                    }
+                }
+                return;
+            }
             SyntaxKind::M_EXPR => {
                 self.format_m_expr(node);
                 return;
