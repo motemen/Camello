@@ -311,8 +311,13 @@ impl<'a> Parser<'a> {
     }
 
     fn is_at_start_of_expression(&self) -> bool {
-        self.current_kind()
-            .is_some_and(|kind| Self::can_start_expression(kind))
+        self.current_kind().is_some_and(|kind| {
+            Self::can_start_expression(kind)
+                || (kind.is_keyword()
+                    && self
+                        .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
+                        .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::FAT_COMMA))
+        })
     }
 
     fn can_start_expression(kind: SyntaxKind) -> bool {
@@ -342,6 +347,7 @@ impl<'a> Parser<'a> {
                 | SyntaxKind::STATE_KW
                 | SyntaxKind::LOCAL_KW
                 | SyntaxKind::UNDEF_KW
+                | SyntaxKind::REQUIRE_KW
                 | SyntaxKind::RETURN_KW
                 | SyntaxKind::NEXT_KW
                 | SyntaxKind::LAST_KW
@@ -692,6 +698,34 @@ mod tests {
             stmt.descendants().any(|node| node.kind() == SyntaxKind::HASH_REF),
             "expected hash ref inside declaration"
         );
+    }
+
+    #[test]
+    fn test_hashref_keywords_as_keys() {
+        let input = "my $hash = +{ package => 1, and => 2 };";
+        let (green, errors) = parse(input);
+        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+
+        let root = PerlNode::new_root(green);
+        let stmt = root.children().next().expect("missing statement");
+        assert_eq!(stmt.kind(), SyntaxKind::DECLARATION_STMT);
+
+        let mut saw_package = false;
+        let mut saw_and = false;
+        for element in stmt.descendants_with_tokens() {
+            if let rowan::NodeOrToken::Token(token) = element {
+                if token.kind() == SyntaxKind::IDENT {
+                    match token.text() {
+                        "package" => saw_package = true,
+                        "and" => saw_and = true,
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        assert!(saw_package, "expected to see 'package' coerced to IDENT inside hash");
+        assert!(saw_and, "expected to see 'and' coerced to IDENT inside hash");
     }
 }
 

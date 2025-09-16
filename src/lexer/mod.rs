@@ -33,6 +33,10 @@ pub enum Token {
     #[token("__DATA__")]
     DataKw,
 
+    // Keywords (must come before Ident to take precedence)
+    #[token("require")]
+    RequireKw,
+
     // POD commands (must be at line start)
     // Note: POD detection is handled manually in lexer due to line-start requirement
     PodCommand,
@@ -237,6 +241,7 @@ impl Token {
             Token::At => SyntaxKind::AT,
             Token::Backslash => SyntaxKind::BACKSLASH,
             Token::Ampersand => SyntaxKind::AMPERSAND, // Will be disambiguated
+            Token::RequireKw => SyntaxKind::REQUIRE_KW,
             Token::Ident => SyntaxKind::IDENT,
             Token::Number => SyntaxKind::NUMBER,
             Token::String => SyntaxKind::STRING,
@@ -651,6 +656,7 @@ impl<'a> Lexer<'a> {
             "package" => SyntaxKind::PACKAGE_KW,
             "use" => SyntaxKind::USE_KW,
             "no" => SyntaxKind::NO_KW,
+            "require" => SyntaxKind::REQUIRE_KW,
             "return" => SyntaxKind::RETURN_KW,
             "undef" => SyntaxKind::UNDEF_KW,
             "next" => SyntaxKind::NEXT_KW,

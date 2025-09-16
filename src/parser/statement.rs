@@ -334,6 +334,7 @@ impl Parser<'_> {
         self.use_or_no_stmt(false);
     }
 
+
     fn for_stmt(&mut self) {
         self.builder.start_node(SyntaxKind::FOR_STMT.into());
 

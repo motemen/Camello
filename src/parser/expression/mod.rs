@@ -532,6 +532,16 @@ impl Parser<'_> {
             return false;
         };
 
+        // Treat bare keywords as identifiers when they appear before fat comma (=>)
+        if current_kind.is_keyword()
+            && self
+                .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
+                .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::FAT_COMMA)
+        {
+            self.parse_ident_like_expr(true);
+            return true;
+        }
+
         match current_kind {
             SyntaxKind::NUMBER | SyntaxKind::STRING | SyntaxKind::REGEX_LITERAL => {
                 // Consume as a value; let operators be detected on the next step
@@ -641,6 +651,10 @@ impl Parser<'_> {
                 // Consume 'undef' as a value
                 self.bump_value();
                 self.skip_whitespace_and_newlines();
+            }
+            SyntaxKind::REQUIRE_KW => {
+                // require expression (e.g., require v5.14, require local::lib)
+                self.require_expr();
             }
             SyntaxKind::IDENT => {
                 self.parse_ident_like_expr(false);
@@ -797,6 +811,36 @@ impl Parser<'_> {
 
         // Parse the block
         self.block();
+
+        self.builder.finish_node();
+    }
+
+    fn require_expr(&mut self) {
+        self.builder.start_node(SyntaxKind::REQUIRE_EXPR.into());
+
+        // "require"
+        self.expect(SyntaxKind::REQUIRE_KW);
+        self.skip_whitespace_and_newlines();
+
+        // VERSION literal or module name (qualified identifier)
+        if self.at(SyntaxKind::VERSION) {
+            // Version literal (e.g., require v5.42)
+            self.bump();
+        } else if self.at(SyntaxKind::BARE_VERSION) {
+            // Bare version literal (e.g., require 5.24.1)
+            self.bump();
+        } else if self.at(SyntaxKind::NUMBER) {
+            // Simple version number (e.g., require 5)
+            self.bump();
+        } else {
+            // Module name (qualified identifier); allow keywords as identifiers
+            self.parse_identifier_or_qualified();
+        }
+        self.skip_whitespace_and_newlines();
+
+        // Option: import list (e.g., qw()) or comma-separated expressions (x => 1, y => 2)
+        // Note: Unlike require statement, we don't consume additional expressions here
+        // as they would be handled by the expression parser at a higher level
 
         self.builder.finish_node();
     }
