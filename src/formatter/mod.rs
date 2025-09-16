@@ -123,6 +123,11 @@ impl Formatter {
         }
     }
 
+    fn handle_user_newline_from_token(&mut self) {
+        self.handle_newline(LineBreakSource::User);
+        self.user_newlines_to_skip -= 1;
+    }
+
     pub(super) fn is_output_empty(&self) -> bool {
         self.lines.is_empty() && self.current_line.text.is_empty()
     }
@@ -599,6 +604,7 @@ impl Formatter {
             None => return false,
             Some(SyntaxKind::L_BRACE) => return false,
             Some(SyntaxKind::SEMICOLON) => return false,
+            Some(SyntaxKind::COMMENT) => return false,
             Some(SyntaxKind::R_BRACE)
                 if matches!(current, SyntaxKind::ELSE_KW | SyntaxKind::ELSIF_KW) =>
             {
@@ -607,6 +613,7 @@ impl Formatter {
             _ => {}
         }
 
+        // Never apply continuation indent to closing delimiters
         if matches!(
             current,
             SyntaxKind::R_PAREN | SyntaxKind::R_BRACKET | SyntaxKind::R_BRACE
@@ -631,10 +638,7 @@ impl Formatter {
                         self.pending_empty_lines = 1;
                     }
                 } else {
-                    self.handle_newline(LineBreakSource::User);
-                    if self.user_newlines_to_skip > 0 {
-                        self.user_newlines_to_skip -= 1;
-                    }
+                    self.handle_user_newline_from_token();
                 }
             }
             SyntaxKind::COMMENT => {
@@ -805,10 +809,7 @@ impl Formatter {
                         }
 
                         if !self.at_line_start || !self.current_line.text.is_empty() {
-                            self.handle_newline(LineBreakSource::User);
-                            if self.user_newlines_to_skip > 0 {
-                                self.user_newlines_to_skip -= 1;
-                            }
+                            self.handle_user_newline_from_token();
                         }
 
                         if saw_extra_newline {

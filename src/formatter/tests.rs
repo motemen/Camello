@@ -164,7 +164,7 @@ fn test_continuation_indent_postfix_modifiers_after_block() {
     let input = "do {\n    warn;\n}\nif $condition;";
     let formatted = format_and_assert(input);
     assert_eq!(formatted, "do {\n    warn;\n}\n    if $condition;\n");
-    
+
     // Test other postfix modifiers to ensure they work too
     let input2 = "do {\n    warn;\n}\nunless $skip;";
     let formatted2 = format_and_assert(input2);
@@ -1541,11 +1541,11 @@ if ($string =~ m|pattern|i) { }"#;
     insta::assert_snapshot!(formatted, @r"
     # Test m// with various delimiters
     if ($string =~ m(pattern)i) {}
-    if ($string =~ m/pattern/i) {}
-    if ($string =~ m{pattern}i) {}
-    if ($string =~ m[pattern]i) {}
-    if ($string =~ m<pattern>i) {}
-    if ($string =~ m|pattern|i) {}
+        if ($string =~ m/pattern/i) {}
+        if ($string =~ m{pattern}i) {}
+        if ($string =~ m[pattern]i) {}
+        if ($string =~ m<pattern>i) {}
+        if ($string =~ m|pattern|i) {}
     ");
 }
 
@@ -2584,4 +2584,40 @@ fn test_hash_keyword_keys() {
         ("$h{use};", "$h{use};\n"),
     ];
     check_formatting_cases(&cases);
+}
+
+#[test]
+fn test_standalone_comment_no_continuation_indent() {
+    // Test that standalone comments don't trigger continuation indent
+    let formatted = format_and_assert("# This is a comment\nmy $x = 1;\n");
+    insta::assert_snapshot!(formatted, @r#"
+        # This is a comment
+        my $x = 1;
+        "#);
+}
+
+#[test]
+fn test_no_duplicate_newline_handling() {
+    // Test that user newlines in multiline strings are handled cleanly
+    let formatted = format_and_assert(
+        r#"my $str = "line1
+line2";
+my $other = 1;
+"#,
+    );
+    insta::assert_snapshot!(formatted, @r#"
+        my $str = "line1
+        line2";
+        my $other = 1;
+        "#);
+}
+
+#[test]
+fn test_inline_comment_continuation_behavior() {
+    // Test that inline comments don't affect continuation indent on next line
+    let formatted = format_and_assert("my $x = 1; # inline comment\nmy $y = 2;\n");
+    insta::assert_snapshot!(formatted, @r#"
+        my $x = 1; # inline comment
+        my $y = 2;
+        "#);
 }
