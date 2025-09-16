@@ -381,8 +381,8 @@ impl Parser<'_> {
             self.bump(); // (
             self.skip_whitespace_and_newlines();
 
-            // Parse the condition/iterator expression
-            if !self.expression() {
+            // Parse the condition/iterator expression list
+            if !self.expression_list() {
                 self.error("Expected expression in for condition");
             }
 
@@ -399,8 +399,8 @@ impl Parser<'_> {
                 self.bump(); // (
                 self.skip_whitespace_and_newlines();
 
-                // Parse the list expression
-                if !self.expression() {
+                // Parse the list expression - can be multiple expressions separated by commas
+                if !self.expression_list() {
                     self.error("Expected expression in for list");
                 }
 
