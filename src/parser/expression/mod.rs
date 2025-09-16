@@ -43,36 +43,19 @@ impl Parser<'_> {
             return;
         }
 
-        if let Some(kind) = self.current_kind_value() {
-            // Check if we have regular function arguments following the identifier
-            if kind.is_variable()
-                || self.at_any(&[
-                    SyntaxKind::NUMBER,
-                    SyntaxKind::STRING,
-                    SyntaxKind::REGEX_LITERAL, // Regex literals like /pattern/
-                    SyntaxKind::SLASH,         // Slash can start regex literal
-                    SyntaxKind::L_BRACE,       // Hash reference: {}
-                    SyntaxKind::L_BRACKET,     // Array reference: []
-                    SyntaxKind::MY_KW,         // Variable declarations as arguments
-                    SyntaxKind::OUR_KW,
-                    SyntaxKind::STATE_KW,
-                    SyntaxKind::LOCAL_KW,
-                    // q-family keywords as valid function arguments
-                    SyntaxKind::Q_KW,
-                    SyntaxKind::QQ_KW,
-                    SyntaxKind::QX_KW,
-                    SyntaxKind::QW_KW,
-                    SyntaxKind::M_KW,
-                    SyntaxKind::QR_KW,
-                    SyntaxKind::S_KW,
-                    SyntaxKind::TR_KW,
-                    SyntaxKind::Y_KW,
-                    // heredoc as a value argument (e.g., die <<EOF)
-                    SyntaxKind::HEREDOC_START,
-                ])
-                || kind.is_sigil()
-                || kind == SyntaxKind::IDENT
-            {
+        let mut next_kind = self.current_kind_value();
+        if next_kind.is_none() {
+            next_kind = self
+                .peek_non_trivia_token_with_context(LexContext::Operator)
+                .map(|(kind, _)| kind);
+        }
+
+        if let Some(kind) = next_kind {
+            if kind == SyntaxKind::L_PAREN {
+                // Parenthesized calls are handled by postfix parsing logic
+                return;
+            }
+            if Self::can_start_expression(kind) {
                 // We have a regular function call, wrap everything in FUNCTION_CALL_EXPR
                 self.builder
                     .start_node_at(start, SyntaxKind::FUNCTION_CALL_EXPR.into());
@@ -660,73 +643,7 @@ impl Parser<'_> {
                 self.skip_whitespace_and_newlines();
             }
             SyntaxKind::IDENT => {
-                let start = self.builder.checkpoint();
-
-                // Get the function name before parsing
-                let function_name = self.current_text_value().unwrap_or("").to_string();
-
-                // Might be a qualified identifier, so use parse_identifier_or_qualified
-                self.parse_identifier_or_qualified();
-                self.skip_whitespace_and_newlines();
-
-                // Check for block functions first
-                if Self::is_block_function(&function_name) && self.at(SyntaxKind::L_BRACE) {
-                    // This is a block function call
-                    self.builder
-                        .start_node_at(start, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());
-
-                    self.parse_block_function_args();
-
-                    self.builder.finish_node();
-                } else if let Some(kind) = self.current_kind_value() {
-                    // Check if we have regular function arguments following the identifier
-                    // Value-like objects
-                    if kind.is_variable()
-                        || self.at_any(&[
-                            SyntaxKind::NUMBER,
-                            SyntaxKind::STRING,
-                            SyntaxKind::REGEX_LITERAL, // Regex literals like /pattern/
-                            SyntaxKind::SLASH,         // Slash can start regex literal
-                            SyntaxKind::L_BRACE,       // Hash reference: {}
-                            SyntaxKind::L_BRACKET,     // Array reference: []
-                            SyntaxKind::MY_KW,         // Variable declarations as arguments
-                            SyntaxKind::OUR_KW,
-                            SyntaxKind::STATE_KW,
-                            SyntaxKind::LOCAL_KW,
-                            // Add q-family keywords as valid function arguments
-                            SyntaxKind::Q_KW,
-                            SyntaxKind::QQ_KW,
-                            SyntaxKind::QX_KW,
-                            SyntaxKind::QW_KW,
-                            SyntaxKind::M_KW,
-                            SyntaxKind::QR_KW,
-                            SyntaxKind::S_KW,
-                            SyntaxKind::TR_KW,
-                            SyntaxKind::Y_KW,
-                            // Heredoc start is a valid value argument (e.g., die <<EOF)
-                            SyntaxKind::HEREDOC_START,
-                        ])
-                        || kind.is_sigil()
-                    {
-                        // We have a regular function call, wrap everything in FUNCTION_CALL_EXPR
-                        self.builder
-                            .start_node_at(start, SyntaxKind::FUNCTION_CALL_EXPR.into());
-
-                        // Parse arguments as an expression list
-                        self.expression_list();
-
-                        self.builder.finish_node();
-                    } else if kind == SyntaxKind::IDENT {
-                        // Might be a nested function call eg. `foo bar(1)`
-                        self.builder
-                            .start_node_at(start, SyntaxKind::FUNCTION_CALL_EXPR.into());
-
-                        // Parse arguments as an expression list
-                        self.expression_list();
-
-                        self.builder.finish_node();
-                    }
-                }
+                self.parse_ident_like_expr(false);
             }
             SyntaxKind::X => {
                 // Handle 'x' as an identifier when it appears at the start of expressions

@@ -771,7 +771,20 @@ impl Formatter {
                     self.at_line_start = false;
                 }
 
+                let prev_token_kind_before = self.prev_token_kind;
                 self.write(token);
+                if matches!(kind, SyntaxKind::UNARY_PLUS | SyntaxKind::UNARY_MINUS)
+                    && matches!(
+                        prev_token_kind_before,
+                        Some(SyntaxKind::IDENT | SyntaxKind::QUALIFIED_IDENT)
+                    )
+                {
+                    if let Some(next_token) = Self::next_significant_token(token) {
+                        if next_token.kind() == SyntaxKind::L_BRACE {
+                            self.write_char(' ');
+                        }
+                    }
+                }
                 self.handle_spacing_after_with_token(kind, token);
                 self.prev_token_kind = Some(kind);
             }
