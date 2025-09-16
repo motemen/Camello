@@ -1,8 +1,12 @@
-use super::{spacing, Formatter, Line};
+use super::{spacing, Formatter, Line, LineBreakSource};
 use crate::{PerlNode, SyntaxKind};
 
 impl Formatter {
-    pub(super) fn handle_newline(&mut self) {
+    pub(super) fn handle_newline(&mut self, source: LineBreakSource) {
+        self.last_line_break_was_user = matches!(source, LineBreakSource::User);
+        if self.last_line_break_was_user {
+            self.user_newlines_to_skip += 1;
+        }
         let line = std::mem::take(&mut self.current_line);
         self.lines.push(line);
         self.at_line_start = true;
@@ -108,7 +112,7 @@ impl Formatter {
         // Only add empty line if this is not the first node and we don't already have one
         if !self.is_output_empty() && !self.ends_with_double_newline() {
             if !self.ends_with_newline() {
-                self.handle_newline();
+                self.handle_newline(LineBreakSource::Formatter);
             }
             self.lines.push(Line::new());
             self.at_line_start = true;
@@ -118,7 +122,7 @@ impl Formatter {
     pub(super) fn add_empty_line_after(&mut self) {
         // Force at least one empty line after the node
         if !self.ends_with_newline() {
-            self.handle_newline();
+            self.handle_newline(LineBreakSource::Formatter);
         }
         // Add one more newline to create an empty line
         if !self.ends_with_double_newline() {
@@ -131,7 +135,7 @@ impl Formatter {
         if self.pending_empty_lines > 0 {
             // Ensure we're on a new line first
             if !self.ends_with_newline() {
-                self.handle_newline();
+                self.handle_newline(LineBreakSource::Formatter);
             }
             // Add empty lines
             for _ in 0..self.pending_empty_lines {

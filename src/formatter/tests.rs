@@ -123,6 +123,41 @@ fn test_continuation_indent_fat_comma() {
 }
 
 #[test]
+fn test_continuation_indent_after_comment() {
+    let input = "my $x = 1 # comment\n+ 2;";
+    let formatted = format_and_assert(input);
+    assert_eq!(formatted, "my $x = 1 # comment\n    + 2;\n");
+}
+
+#[test]
+fn test_no_extra_indent_after_comment_line() {
+    let input = "# comment\nmy $x = 1;";
+    let formatted = format_and_assert(input);
+    assert_eq!(formatted, "# comment\nmy $x = 1;\n");
+}
+
+#[test]
+fn test_continuation_indent_after_block_chain() {
+    let input = "my $x = do {\n    $foo;\n}\n->method;";
+    let formatted = format_and_assert(input);
+    assert_eq!(formatted, "my $x = do {\n    $foo;\n}\n    ->method;\n");
+}
+
+#[test]
+fn test_continuation_indent_after_package_keyword() {
+    let input = "package\nFoo::Bar;";
+    let formatted = format_and_assert(input);
+    assert_eq!(formatted, "package\n    Foo::Bar;\n");
+}
+
+#[test]
+fn test_continuation_indent_string_concatenation() {
+    let input = "my $str = \"foo\"\n. \"bar\";";
+    let formatted = format_and_assert(input);
+    assert_eq!(formatted, "my $str = \"foo\"\n    . \"bar\";\n");
+}
+
+#[test]
 fn test_undef_in_variable_declaration_formatting() {
     let cases = [
         ("my(undef,$x)=@_;", "my (undef, $x) = @_;\n"),

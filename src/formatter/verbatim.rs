@@ -1,7 +1,7 @@
 use crate::{PerlNode, SyntaxKind};
 use rowan::NodeOrToken;
 
-use super::Formatter;
+use super::{Formatter, LineBreakSource};
 
 impl Formatter {
     /// Format a data section (__END__ or __DATA__)
@@ -9,7 +9,7 @@ impl Formatter {
     pub fn format_data_section(&mut self, node: &PerlNode) {
         // Ensure we're on a new line before the data section
         if !self.at_line_start {
-            self.handle_newline();
+            self.handle_newline(LineBreakSource::Formatter);
         }
 
         // Process all children (keyword + data content) without any modifications
@@ -44,7 +44,7 @@ impl Formatter {
     pub fn format_pod_block(&mut self, node: &PerlNode) {
         // Ensure we're on a new line before the POD block
         if !self.at_line_start {
-            self.handle_newline();
+            self.handle_newline(LineBreakSource::Formatter);
         }
 
         // Process all children (POD command + content + =cut) without any modifications

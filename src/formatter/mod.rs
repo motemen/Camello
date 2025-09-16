@@ -24,6 +24,12 @@ impl Line {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LineBreakSource {
+    User,
+    Formatter,
+}
+
 pub struct Formatter {
     current_line: Line,
     lines: Vec<Line>,
@@ -33,6 +39,8 @@ pub struct Formatter {
     at_line_start: bool,
     pending_empty_lines: usize, // Number of empty lines waiting to be output
     in_multiline_context: bool, // Track when we're in structured multiline formatting
+    last_line_break_was_user: bool,
+    user_newlines_to_skip: usize,
 }
 
 impl Default for Formatter {
@@ -53,6 +61,8 @@ impl Formatter {
             at_line_start: true,
             pending_empty_lines: 0,
             in_multiline_context: false,
+            last_line_break_was_user: false,
+            user_newlines_to_skip: 0,
         }
     }
 
@@ -81,7 +91,7 @@ impl Formatter {
             if is_first_part {
                 is_first_part = false;
             } else {
-                self.handle_newline();
+                self.handle_newline(LineBreakSource::Formatter);
             }
 
             if !part.is_empty() {
@@ -107,7 +117,7 @@ impl Formatter {
 
     pub(super) fn write_char(&mut self, ch: char) {
         if ch == '\n' {
-            self.handle_newline();
+            self.handle_newline(LineBreakSource::Formatter);
         } else {
             self.current_line.text.push(ch);
         }
@@ -511,7 +521,7 @@ impl Formatter {
                         }
                         SyntaxKind::COMMA => {
                             self.format_token(&token);
-                            self.handle_newline();
+                            self.handle_newline(LineBreakSource::Formatter);
                         }
                         _ => {
                             // その他のトークンは通常通り処理
@@ -529,7 +539,7 @@ impl Formatter {
 
         self.write(token);
         self.indent_level += 1;
-        self.handle_newline();
+        self.handle_newline(LineBreakSource::Formatter);
         self.prev_token_kind = Some(kind);
     }
 
@@ -540,7 +550,7 @@ impl Formatter {
             self.indent_level -= 1;
         }
         if !self.at_line_start || !self.current_line.text.is_empty() {
-            self.handle_newline();
+            self.handle_newline(LineBreakSource::Formatter);
         }
         self.add_indent();
         self.write(token);
@@ -581,48 +591,40 @@ impl Formatter {
     }
 
     fn needs_continuation_indent(&self, current: SyntaxKind) -> bool {
-        if !self.at_line_start || self.prev_token_kind.is_none() {
+        if !self.at_line_start || !self.last_line_break_was_user {
             return false;
         }
 
-        use SyntaxKind::*;
+        match self.prev_token_kind {
+            None => return false,
+            Some(SyntaxKind::L_BRACE) => return false,
+            Some(SyntaxKind::SEMICOLON) => return false,
+            Some(SyntaxKind::R_BRACE)
+                if matches!(
+                    current,
+                    SyntaxKind::ELSE_KW
+                        | SyntaxKind::ELSIF_KW
+                        | SyntaxKind::IF_KW
+                        | SyntaxKind::UNLESS_KW
+                        | SyntaxKind::WHILE_KW
+                        | SyntaxKind::UNTIL_KW
+                        | SyntaxKind::FOR_KW
+                        | SyntaxKind::FOREACH_KW
+                ) =>
+            {
+                return false;
+            }
+            _ => {}
+        }
 
         if matches!(
             current,
-            IF_KW | UNLESS_KW | WHILE_KW | UNTIL_KW | FOR_KW | FOREACH_KW
+            SyntaxKind::R_PAREN | SyntaxKind::R_BRACKET | SyntaxKind::R_BRACE
         ) {
-            if let Some(prev) = self.prev_token_kind {
-                if !matches!(prev, L_BRACE | R_BRACE | SEMICOLON) {
-                    return true;
-                }
-            }
+            return false;
         }
 
-        if current.is_operator()
-            && !matches!(
-                current,
-                UNARY_PLUS
-                    | UNARY_MINUS
-                    | PREFIX_INCREMENT
-                    | PREFIX_DECREMENT
-                    | POSTFIX_INCREMENT
-                    | POSTFIX_DECREMENT
-                    | LOGICAL_NOT
-                    | BITWISE_NOT
-            )
-        {
-            return true;
-        }
-
-        if !self.in_multiline_context {
-            if let Some(prev) = self.prev_token_kind {
-                if matches!(prev, COMMA | FAT_COMMA) {
-                    return true;
-                }
-            }
-        }
-
-        false
+        true
     }
 
     fn format_token(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
@@ -633,11 +635,16 @@ impl Formatter {
             SyntaxKind::WHITESPACE => {}
             SyntaxKind::NEWLINE => {
                 if self.at_line_start && self.current_line.text.is_empty() {
-                    if self.pending_empty_lines == 0 {
+                    if self.user_newlines_to_skip > 0 {
+                        self.user_newlines_to_skip -= 1;
+                    } else if self.pending_empty_lines == 0 {
                         self.pending_empty_lines = 1;
                     }
                 } else {
-                    self.handle_newline();
+                    self.handle_newline(LineBreakSource::User);
+                    if self.user_newlines_to_skip > 0 {
+                        self.user_newlines_to_skip -= 1;
+                    }
                 }
             }
             SyntaxKind::COMMENT => {
@@ -650,7 +657,7 @@ impl Formatter {
                     self.write_char(' ');
                 }
                 self.write_str(text.trim(), Some(kind));
-                self.handle_newline();
+                self.handle_newline(LineBreakSource::User);
             }
             SyntaxKind::HEREDOC_CONTENT | SyntaxKind::HEREDOC_END => {
                 self.write_str(text, Some(kind));
@@ -679,7 +686,7 @@ impl Formatter {
                             | SyntaxKind::L_PAREN
                     )
                 ) {
-                    self.handle_newline();
+                    self.handle_newline(LineBreakSource::Formatter);
                 }
 
                 self.prev_token_kind = Some(kind);
@@ -735,11 +742,11 @@ impl Formatter {
                         return;
                     }
                 }
-                self.handle_newline();
+                self.handle_newline(LineBreakSource::Formatter);
             }
             SyntaxKind::L_BRACE => {
                 self.indent_level += 1;
-                self.handle_newline();
+                self.handle_newline(LineBreakSource::Formatter);
             }
             _ => {}
         }
@@ -776,7 +783,7 @@ impl Formatter {
                                 // Add empty line after use/no block
                                 if !self.is_output_empty() {
                                     if !self.ends_with_newline() {
-                                        self.handle_newline();
+                                        self.handle_newline(LineBreakSource::Formatter);
                                     }
                                     self.lines.push(Line::new());
                                 }
@@ -808,7 +815,10 @@ impl Formatter {
                         }
 
                         if !self.at_line_start || !self.current_line.text.is_empty() {
-                            self.handle_newline();
+                            self.handle_newline(LineBreakSource::User);
+                            if self.user_newlines_to_skip > 0 {
+                                self.user_newlines_to_skip -= 1;
+                            }
                         }
 
                         if saw_extra_newline {
@@ -865,7 +875,7 @@ impl Formatter {
         if let Some(child) = children.peek() {
             match child {
                 NodeOrToken::Token(t) if t.kind() == SyntaxKind::NEWLINE => {
-                    self.handle_newline();
+                    self.handle_newline(LineBreakSource::Formatter);
                     children.next();
                 }
                 NodeOrToken::Token(t) if t.kind() == SyntaxKind::WHITESPACE => {

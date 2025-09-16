@@ -2,7 +2,7 @@ use rowan::NodeOrToken;
 
 use crate::{PerlNode, SyntaxKind};
 
-use super::Formatter;
+use super::{Formatter, LineBreakSource};
 
 impl Formatter {
     pub(super) fn format_hash_ref(&mut self, node: &PerlNode) {
@@ -131,7 +131,7 @@ impl Formatter {
                             }
                             self.write(&token);
                             if !self.ends_with_newline() {
-                                self.handle_newline();
+                                self.handle_newline(LineBreakSource::Formatter);
                             }
                             self.prev_token_kind = Some(kind);
                         }
