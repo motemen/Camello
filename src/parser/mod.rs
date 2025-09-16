@@ -599,6 +599,21 @@ mod tests {
             "Expected EXPR_LIST node inside parentheses"
         );
     }
+
+    #[test]
+    fn test_return_multiple_values_expression_list() {
+        let input = "return 1, 2;";
+        let (green, errors) = parse(input);
+        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+
+        let root = PerlNode::new_root(green);
+        let stmt = root.children().next().expect("missing stmt");
+        assert_eq!(stmt.kind(), SyntaxKind::STMT);
+        assert!(
+            stmt.descendants().any(|node| node.kind() == SyntaxKind::EXPR_LIST),
+            "Expected EXPR_LIST node for return value list"
+        );
+    }
 }
 
 mod expression;

@@ -774,7 +774,7 @@ impl Parser<'_> {
 
                 // If there is an expression after return, process it
                 if self.is_at_start_of_expression() {
-                    self.expression();
+                    self.expression_list();
                 }
             }
             SyntaxKind::NEXT_KW | SyntaxKind::LAST_KW | SyntaxKind::REDO_KW => {

@@ -164,6 +164,15 @@ fn test_loop_control_statements_formatting() {
 }
 
 #[test]
+fn test_return_multiple_values_formatting() {
+    let cases = [
+        ("return 1,2;", "return 1, 2;\n"),
+        ("return $foo,@bar;", "return $foo, @bar;\n"),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_labeled_loop_formatting() {
     let input = "LOOP: while($i<10){next LOOP if $i==5;last if $i==8;redo LOOP if $flag;$i++;}";
     let formatted = format_and_assert(input);
