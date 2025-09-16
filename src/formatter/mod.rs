@@ -693,20 +693,6 @@ impl Formatter {
                     // We found the same keyword recently - likely consecutive statements
                     return true;
                 }
-                // Only if we see the same type of statement keyword recently should we consider it consecutive
-                // Different keywords don't necessarily indicate consecutive statements - they could be different constructs
-                if matches!(
-                    token.kind,
-                    SyntaxKind::IF_KW
-                        | SyntaxKind::UNLESS_KW
-                        | SyntaxKind::WHILE_KW
-                        | SyntaxKind::UNTIL_KW
-                        | SyntaxKind::FOR_KW
-                        | SyntaxKind::FOREACH_KW
-                ) && token.kind == current
-                {
-                    return true; // Same statement type seen recently
-                }
             }
         }
 
