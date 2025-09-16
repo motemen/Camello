@@ -1584,18 +1584,77 @@ else { print "not y or z"; }"#;
 if ($x) {
     print "x";
 }
-    else {
+else {
     print "not x";
 }
 if ($y) {
     print "y";
 }
-    elsif ($z) {
+elsif ($z) {
     print "z";
 }
-    else {
+else {
     print "not y or z";
 }
+"###);
+}
+
+#[test]
+fn test_standalone_comments_no_continuation_indent() {
+    let input = r#"# This is a comment
+my $x = 1;
+# Another comment
+my $y = 2;"#;
+    let formatted = format_and_assert(input);
+    insta::assert_snapshot!(formatted, @r###"
+# This is a comment
+my $x = 1;
+# Another comment
+my $y = 2;
+"###);
+}
+
+#[test]
+fn test_inline_comments_with_continuation() {
+    let input = r#"my $x = 1 + # inline comment
+    2;"#;
+    let formatted = format_and_assert(input);
+    insta::assert_snapshot!(formatted, @r###"
+my $x = 1 + # inline comment
+    2;
+"###);
+}
+
+#[test]
+fn test_postfix_modifier_continuation_indent() {
+    let input = r#"do {
+    my $x = 1;
+}
+if $condition;"#;
+    let formatted = format_and_assert(input);
+    insta::assert_snapshot!(formatted, @r###"
+do {
+    my $x = 1;
+}
+    if $condition;
+"###);
+}
+
+#[test]
+fn test_method_chaining_continuation_indent() {
+    let input = r#"$obj->method1()
+->method2();
+$obj->{
+    key
+}
+->method();"#;
+    let formatted = format_and_assert(input);
+    insta::assert_snapshot!(formatted, @r###"
+$obj->method1()
+    ->method2();
+$obj->{
+    key
+}->method();
 "###);
 }
 

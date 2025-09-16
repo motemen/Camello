@@ -124,7 +124,8 @@ impl Formatter {
     }
 
     fn handle_user_newline_from_token(&mut self) {
-        // Handle a user-supplied newline without affecting the skip counter
+        // Handle a user-supplied newline directly without affecting the skip counter
+        // This is equivalent to handle_newline(User) but without incrementing user_newlines_to_skip
         self.last_line_break_was_user = true;
         let line = std::mem::take(&mut self.current_line);
         self.lines.push(line);
@@ -612,12 +613,9 @@ impl Formatter {
                 return self.is_prev_comment_inline();
             }
             Some(SyntaxKind::R_BRACE) => {
-                // Allow continuation indent after R_BRACE for:
-                // - else/elsif keywords (which align with their preceding block)
-                // - method calls and operators (for chaining)
-                // - postfix modifiers, but try to detect and prevent consecutive statements
+                // Suppress continuation indent for else/elsif keywords so they align with their if
                 if matches!(current, SyntaxKind::ELSE_KW | SyntaxKind::ELSIF_KW) {
-                    return true; // These should get continuation indent
+                    return false; // These should align with the if, not be indented
                 }
                 if matches!(current, SyntaxKind::ARROW | SyntaxKind::DOT) {
                     return true; // Method chaining
@@ -695,7 +693,8 @@ impl Formatter {
                     // We found the same keyword recently - likely consecutive statements
                     return true;
                 }
-                // If we see a different statement keyword, it's less likely to be consecutive
+                // Only if we see the same type of statement keyword recently should we consider it consecutive
+                // Different keywords don't necessarily indicate consecutive statements - they could be different constructs
                 if matches!(
                     token.kind,
                     SyntaxKind::IF_KW
@@ -704,12 +703,9 @@ impl Formatter {
                         | SyntaxKind::UNTIL_KW
                         | SyntaxKind::FOR_KW
                         | SyntaxKind::FOREACH_KW
-                        | SyntaxKind::SUB_KW
-                        | SyntaxKind::MY_KW
-                        | SyntaxKind::OUR_KW
-                ) && token.kind != current
+                ) && token.kind == current
                 {
-                    return false; // Different statement type - more likely postfix
+                    return true; // Same statement type seen recently
                 }
             }
         }
