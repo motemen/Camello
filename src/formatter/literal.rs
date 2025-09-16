@@ -5,11 +5,11 @@ use crate::{PerlNode, SyntaxKind};
 use super::Formatter;
 
 impl Formatter {
-    pub fn format_hash_ref(&mut self, node: &PerlNode) {
+    pub(super) fn format_hash_ref(&mut self, node: &PerlNode) {
         self.format_delimited_literal(node, SyntaxKind::L_BRACE, SyntaxKind::R_BRACE);
     }
 
-    pub fn format_array_ref(&mut self, node: &PerlNode) {
+    pub(super) fn format_array_ref(&mut self, node: &PerlNode) {
         self.format_delimited_literal(node, SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET);
     }
 
@@ -65,7 +65,7 @@ impl Formatter {
         }
     }
 
-    pub fn format_qw_expr(&mut self, node: &PerlNode) {
+    pub(super) fn format_qw_expr(&mut self, node: &PerlNode) {
         let should_multiline = node
             .children_with_tokens()
             .any(|child| child.as_token().is_some_and(|t| t.text().contains('\n')));
@@ -147,31 +147,31 @@ impl Formatter {
         }
     }
 
-    pub fn format_q_expr(&mut self, node: &PerlNode) {
+    pub(super) fn format_q_expr(&mut self, node: &PerlNode) {
         self.format_q_family_expr(node, SyntaxKind::Q_KW, SyntaxKind::LITERAL_STRING);
     }
 
-    pub fn format_qq_expr(&mut self, node: &PerlNode) {
+    pub(super) fn format_qq_expr(&mut self, node: &PerlNode) {
         self.format_q_family_expr(node, SyntaxKind::QQ_KW, SyntaxKind::INTERPOLATED_STRING);
     }
 
-    pub fn format_qx_expr(&mut self, node: &PerlNode) {
+    pub(super) fn format_qx_expr(&mut self, node: &PerlNode) {
         self.format_q_family_expr(node, SyntaxKind::QX_KW, SyntaxKind::INTERPOLATED_STRING);
     }
 
-    pub fn format_m_expr(&mut self, node: &PerlNode) {
+    pub(super) fn format_m_expr(&mut self, node: &PerlNode) {
         self.format_q_family_expr(node, SyntaxKind::M_KW, SyntaxKind::REGEX_PATTERN);
     }
 
-    pub fn format_qr_expr(&mut self, node: &PerlNode) {
+    pub(super) fn format_qr_expr(&mut self, node: &PerlNode) {
         self.format_q_family_expr(node, SyntaxKind::QR_KW, SyntaxKind::REGEX_PATTERN);
     }
 
-    pub fn format_s_expr(&mut self, node: &PerlNode) {
+    pub(super) fn format_s_expr(&mut self, node: &PerlNode) {
         self.format_regex_like_expr(node, &[SyntaxKind::S_KW]);
     }
 
-    pub fn format_tr_expr(&mut self, node: &PerlNode) {
+    pub(super) fn format_tr_expr(&mut self, node: &PerlNode) {
         self.format_regex_like_expr(node, &[SyntaxKind::TR_KW, SyntaxKind::Y_KW]);
     }
 

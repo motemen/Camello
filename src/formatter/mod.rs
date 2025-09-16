@@ -155,37 +155,7 @@ impl Formatter {
                 return;
             }
             SyntaxKind::USE_STMT | SyntaxKind::NO_STMT => {
-                // Output pending empty lines before processing use/no statement
-                if self.pending_empty_lines > 0 {
-                    self.output_pending_empty_lines();
-                }
-
-                // Special handling for use/no statements: add space between identifier and parentheses
-                for child in node.children_with_tokens() {
-                    let is_module_name = match &child {
-                        NodeOrToken::Node(n) => n.kind() == SyntaxKind::QUALIFIED_IDENT,
-                        NodeOrToken::Token(t) => t.kind() == SyntaxKind::IDENT,
-                    };
-
-                    match &child {
-                        NodeOrToken::Node(n) => self.format_node(n),
-                        NodeOrToken::Token(t) => self.format_token(t),
-                    }
-
-                    if is_module_name {
-                        let last_token = match &child {
-                            NodeOrToken::Node(n) => n.last_token(),
-                            NodeOrToken::Token(t) => Some(t.clone()),
-                        };
-                        if let Some(last_token) = last_token {
-                            if let Some(next_token) = Self::next_significant_token(&last_token) {
-                                if next_token.kind() == SyntaxKind::L_PAREN {
-                                    self.write_char(' ');
-                                }
-                            }
-                        }
-                    }
-                }
+                self.format_use_no_stmt(node);
                 return;
             }
             SyntaxKind::EMPTY_STMT => {
@@ -204,92 +174,18 @@ impl Formatter {
                 self.format_array_ref(node);
                 return;
             }
-            SyntaxKind::QW_EXPR => {
-                self.format_qw_expr(node);
+            SyntaxKind::QW_EXPR
+            | SyntaxKind::Q_EXPR
+            | SyntaxKind::QQ_EXPR
+            | SyntaxKind::QX_EXPR
+            | SyntaxKind::M_EXPR
+            | SyntaxKind::QR_EXPR
+            | SyntaxKind::S_EXPR
+            | SyntaxKind::TR_EXPR => {
+                self.format_quote_like(node);
                 return;
             }
-            SyntaxKind::Q_EXPR => {
-                self.format_q_expr(node);
-                return;
-            }
-            SyntaxKind::QQ_EXPR => {
-                self.format_qq_expr(node);
-                return;
-            }
-            SyntaxKind::QX_EXPR => {
-                self.format_qx_expr(node);
-                return;
-            }
-            SyntaxKind::BACKTICK_EXPR => {
-                // Backtick command substitution: just format children (the backtick string literal)
-                for child in node.children_with_tokens() {
-                    match child {
-                        NodeOrToken::Node(child_node) => self.format_node(&child_node),
-                        NodeOrToken::Token(token) => self.format_token(&token),
-                    }
-                }
-                return;
-            }
-            SyntaxKind::M_EXPR => {
-                self.format_m_expr(node);
-                return;
-            }
-            SyntaxKind::QR_EXPR => {
-                self.format_qr_expr(node);
-                return;
-            }
-            SyntaxKind::S_EXPR => {
-                self.format_s_expr(node);
-                return;
-            }
-            SyntaxKind::TR_EXPR => {
-                self.format_tr_expr(node);
-                return;
-            }
-            SyntaxKind::ANON_SUB_EXPR => {
-                self.format_anon_sub_expr(node);
-                return;
-            }
-            SyntaxKind::TYPEGLOB_EXPR => {
-                self.format_typeglob_expr(node);
-                return;
-            }
-            SyntaxKind::BLOCK_FUNCTION_CALL_EXPR => {
-                self.format_block_function_call(node);
-                return;
-            }
-            SyntaxKind::SUB_PROTOTYPE => {
-                self.format_sub_prototype(node);
-                return;
-            }
-            SyntaxKind::METHOD_CALL_EXPR => {
-                self.format_method_call(node);
-                return;
-            }
-            SyntaxKind::HASH_REF_ACCESS_EXPR => {
-                self.format_hash_ref_access(node);
-                return;
-            }
-            SyntaxKind::ARRAY_REF_ACCESS_EXPR => {
-                self.format_array_ref_access(node);
-                return;
-            }
-            SyntaxKind::CODE_REF_CALL_EXPR => {
-                self.format_code_ref_call(node);
-                return;
-            }
-            SyntaxKind::HASH_SUBSCRIPTION_EXPR => {
-                self.format_hash_subscription(node);
-                return;
-            }
-            SyntaxKind::ARRAY_SUBSCRIPTION_EXPR => {
-                self.format_array_subscription(node);
-                return;
-            }
-            SyntaxKind::DEREF_EXPR => {
-                self.format_deref_expr(node);
-                return;
-            }
+
             SyntaxKind::DATA_SECTION => {
                 self.format_data_section(node);
                 return;
@@ -306,9 +202,24 @@ impl Formatter {
                 self.format_pod_block(node);
                 return;
             }
-            SyntaxKind::REGEX_EXPR => {
-                // Default handling for regex expressions - just format children
-                // The spacing around regex operators is handled in format_token
+            SyntaxKind::SUB_PROTOTYPE => {
+                self.format_sub_prototype(node);
+                return;
+            }
+            SyntaxKind::ANON_SUB_EXPR
+            | SyntaxKind::TYPEGLOB_EXPR
+            | SyntaxKind::BLOCK_FUNCTION_CALL_EXPR
+            | SyntaxKind::METHOD_CALL_EXPR
+            | SyntaxKind::HASH_REF_ACCESS_EXPR
+            | SyntaxKind::ARRAY_REF_ACCESS_EXPR
+            | SyntaxKind::CODE_REF_CALL_EXPR
+            | SyntaxKind::HASH_SUBSCRIPTION_EXPR
+            | SyntaxKind::ARRAY_SUBSCRIPTION_EXPR
+            | SyntaxKind::DEREF_EXPR
+            | SyntaxKind::REGEX_EXPR
+            | SyntaxKind::BACKTICK_EXPR => {
+                self.format_expr(node);
+                return;
             }
             SyntaxKind::BLOCK_STMT => {
                 // Special handling for BLOCK_STMT: detect empty lines between statements
@@ -987,7 +898,9 @@ pub fn format(node: &PerlNode) -> String {
 
 mod expression;
 mod literal;
+mod quote;
 mod spacing;
+mod statement;
 mod verbatim;
 mod whitespace;
 
