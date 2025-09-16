@@ -127,13 +127,22 @@ impl Parser<'_> {
     fn parse_print_like_args(&mut self) {
         let mut consumed_filehandle = false;
 
+        // Use lookahead to determine if this is a filehandle pattern:
+        // Only treat IDENT/SCALAR as filehandle if followed by whitespace or end of statement
+        // Otherwise treat as normal function call
         if self.at(SyntaxKind::IDENT) {
-            self.bump_value();
-            consumed_filehandle = true;
-            self.skip_whitespace_and_newlines();
+            // Check if this bareword should be treated as a filehandle
+            if self.should_treat_as_filehandle() {
+                self.bump_value();
+                consumed_filehandle = true;
+                self.skip_whitespace_and_newlines();
+            }
         } else if self.at(SyntaxKind::DOLLAR) {
-            self.parse_variable();
-            consumed_filehandle = true;
+            // Check if this scalar should be treated as a filehandle
+            if self.should_treat_scalar_as_filehandle() {
+                self.parse_variable();
+                consumed_filehandle = true;
+            }
         }
 
         if consumed_filehandle && self.at_any(&[SyntaxKind::COMMA, SyntaxKind::FAT_COMMA]) {
@@ -143,6 +152,59 @@ impl Parser<'_> {
 
         if self.is_at_start_of_expression() {
             self.expression_list();
+        }
+    }
+
+    /// Check if a bareword (IDENT) should be treated as a filehandle.
+    /// Only treat as filehandle if followed by whitespace or end of statement.
+    fn should_treat_as_filehandle(&self) -> bool {
+        // Look ahead to see what follows the IDENT
+        let next_token = self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1);
+
+        match next_token {
+            // If followed by parentheses, it's a function call
+            Some((SyntaxKind::L_PAREN, _)) => false,
+            // If followed by something that can start an expression or end of file, treat as filehandle
+            Some((kind, _)) if Self::can_start_expression(kind) => true,
+            // End of file or other contexts - treat as filehandle
+            None => true,
+            // Other tokens (operators, semicolon, etc.) - treat as filehandle
+            _ => true,
+        }
+    }
+
+    /// Check if a scalar variable should be treated as a filehandle.
+    /// Only treat as filehandle if it's a simple variable followed by whitespace or end of statement.
+    fn should_treat_scalar_as_filehandle(&self) -> bool {
+        // Look ahead past the $IDENT to see what follows
+        // First, check if we have $IDENT pattern
+        if !self.at(SyntaxKind::DOLLAR) {
+            return false;
+        }
+
+        let next_after_dollar = self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1);
+        if !matches!(next_after_dollar, Some((SyntaxKind::IDENT, _))) {
+            return false;
+        }
+
+        // Now check what follows the $IDENT pattern
+        let token_after_var = self.peek_nth_non_trivia_token_with_context(LexContext::Operator, 2);
+
+        match token_after_var {
+            // If followed by postfix operations (arrow, brackets, etc.), it's not a simple filehandle
+            Some((
+                SyntaxKind::ARROW
+                | SyntaxKind::L_BRACKET
+                | SyntaxKind::L_BRACE
+                | SyntaxKind::L_PAREN,
+                _,
+            )) => false,
+            // If followed by something that can start an expression or end of file, treat as filehandle
+            Some((kind, _)) if Self::can_start_expression(kind) => true,
+            // End of file or other contexts - treat as filehandle
+            None => true,
+            // Other tokens (operators, semicolon, etc.) - treat as filehandle
+            _ => true,
         }
     }
 
