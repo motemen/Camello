@@ -86,6 +86,10 @@ impl Parser<'_> {
                 self.ellipsis_stmt();
                 true
             }
+            Some(SyntaxKind::SEMICOLON) => {
+                self.empty_stmt();
+                true
+            }
             Some(SyntaxKind::L_BRACE) => {
                 // Bare block statement (e.g., { ... }) used for scoping or flow control
                 self.builder.start_node(SyntaxKind::STMT.into());
@@ -642,6 +646,12 @@ impl Parser<'_> {
             self.error("Expected ';' after ellipsis statement");
         }
 
+        self.builder.finish_node();
+    }
+
+    fn empty_stmt(&mut self) {
+        self.builder.start_node(SyntaxKind::EMPTY_STMT.into());
+        self.bump(); // consume ';'
         self.builder.finish_node();
     }
 
