@@ -1163,6 +1163,13 @@ fn test_ternary_in_data_structures_formatting() {
 }
 
 #[test]
+fn test_ternary_with_array_hash_references() {
+    let input = "$a ? [] : {}";
+    let output = format_and_assert(input);
+    insta::assert_snapshot!(output, @"$a ? [] : {}");
+}
+
+#[test]
 fn test_io_operator_formatting() {
     let cases = [
         // Basic I/O operators
@@ -2489,4 +2496,26 @@ third line";
             third line";
         }
         "#);
+}
+
+#[test]
+fn test_hash_keyword_keys() {
+    let cases = [
+        // Bareword hash keys that are keywords should be treated as identifiers
+        ("$h->{package};", "$h->{package};\n"),
+        ("$h->{use};", "$h->{use};\n"),
+        ("$h->{sub};", "$h->{sub};\n"),
+        ("$h->{if};", "$h->{if};\n"),
+        ("$h->{for};", "$h->{for};\n"),
+        ("$h->{while};", "$h->{while};\n"),
+        ("$h->{my};", "$h->{my};\n"),
+        ("$h->{local};", "$h->{local};\n"),
+        ("$h->{return};", "$h->{return};\n"),
+        // Multiple keyword hash accesses
+        ("$h->{package}->{use};", "$h->{package}->{use};\n"),
+        // Direct hash access (without arrow operator)
+        ("$h{package};", "$h{package};\n"),
+        ("$h{use};", "$h{use};\n"),
+    ];
+    check_formatting_cases(&cases);
 }
