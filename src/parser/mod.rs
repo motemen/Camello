@@ -317,6 +317,7 @@ impl<'a> Parser<'a> {
                 SyntaxKind::STRING,
                 SyntaxKind::REGEX_LITERAL,
                 SyntaxKind::IO_EXPR,
+                SyntaxKind::HEREDOC_START,
                 SyntaxKind::IDENT,
                 SyntaxKind::L_PAREN,
                 SyntaxKind::L_BRACE,

@@ -67,6 +67,8 @@ impl Parser<'_> {
                     SyntaxKind::S_KW,
                     SyntaxKind::TR_KW,
                     SyntaxKind::Y_KW,
+                    // heredoc as a value argument (e.g., die <<EOF)
+                    SyntaxKind::HEREDOC_START,
                 ])
                 || kind.is_sigil()
                 || kind == SyntaxKind::IDENT
@@ -701,6 +703,8 @@ impl Parser<'_> {
                             SyntaxKind::S_KW,
                             SyntaxKind::TR_KW,
                             SyntaxKind::Y_KW,
+                            // Heredoc start is a valid value argument (e.g., die <<EOF)
+                            SyntaxKind::HEREDOC_START,
                         ])
                         || kind.is_sigil()
                     {
