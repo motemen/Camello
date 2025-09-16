@@ -229,6 +229,19 @@ impl Parser<'_> {
         }
     }
 
+    /// Checks if we are currently inside hash braces (for treating keywords as identifiers).
+    #[must_use]
+    pub fn is_inside_hash_braces(&self) -> bool {
+        // For now, we check if the next non-whitespace token is a closing brace
+        // This is a simple heuristic that covers the common case of $h->{keyword}
+        // where 'keyword' should be treated as IDENT
+
+        // Check if we have closing brace next (possibly after whitespace/newlines)
+        // This suggests we're a single token inside braces, which is typically a hash key
+        self.peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 1)
+            .is_some_and(|(kind, _)| kind == SyntaxKind::R_BRACE)
+    }
+
     /// Parses a dereferencing expression (e.g., @$var, %$var, $$var, @{expr}, %{expr}, ${expr}).
     pub fn parse_dereferencing(&mut self) {
         self.builder.start_node(SyntaxKind::DEREF_EXPR.into());

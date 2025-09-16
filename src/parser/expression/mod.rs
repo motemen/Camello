@@ -153,8 +153,15 @@ impl Parser<'_> {
                     self.error("Expected expression after '?'");
                 }
 
-                // Expect the : operator
-                if self.at(SyntaxKind::COLON) {
+                // Look for the : operator - need to check both contexts
+                self.skip_whitespace_and_newlines();
+                let colon_found = self
+                    .peek_non_trivia_token_with_context(LexContext::Operator)
+                    .map(|(k, _)| k)
+                    == Some(SyntaxKind::COLON)
+                    || self.current_kind() == Some(SyntaxKind::COLON);
+
+                if colon_found {
                     // Consume ':' as Operator; next will be Value
                     self.bump_op();
                     self.skip_whitespace_and_newlines();
@@ -533,10 +540,12 @@ impl Parser<'_> {
         };
 
         // Treat bare keywords as identifiers when they appear before fat comma (=>)
+        // or when they are inside hash braces (for hash keys like $h->{package})
         if current_kind.is_keyword()
-            && self
+            && (self
                 .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
                 .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::FAT_COMMA)
+                || self.is_inside_hash_braces())
         {
             self.parse_ident_like_expr(true);
             return true;
