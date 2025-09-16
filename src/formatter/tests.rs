@@ -152,6 +152,31 @@ fn test_undef_in_variable_declaration_formatting() {
 }
 
 #[test]
+fn test_undef_function_call_formatting() {
+    let cases = [
+        // undef as a function call
+        ("undef $x;", "undef $x;\n"),
+        ("undef($var);", "undef($var);\n"),
+        ("undef @array;", "undef @array;\n"),
+        ("undef %hash;", "undef %hash;\n"),
+        ("undef $hash{key};", "undef $hash{key};\n"),
+        ("undef $array[0];", "undef $array[0];\n"),
+        ("undef$x;", "undef $x;\n"),
+        ("undef\t$y;", "undef $y;\n"),
+        // undef with multiple arguments
+        ("undef $x,$y;", "undef $x, $y;\n"),
+        ("undef($a,$b,$c);", "undef($a, $b, $c);\n"),
+        // undef as literal (should remain unchanged)
+        ("my $x = undef;", "my $x = undef;\n"),
+        ("$y = undef;", "$y = undef;\n"),
+        ("return undef;", "return undef;\n"),
+        // Mixed cases
+        ("undef $x; my $y = undef;", "undef $x;\nmy $y = undef;\n"),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_postfix_dereference_formatting() {
     let cases = [
         ("$ref->@*;", "$ref->@*;\n"),

@@ -624,7 +624,8 @@ mod tests {
         let stmt = root.children().next().expect("missing stmt");
         assert_eq!(stmt.kind(), SyntaxKind::STMT);
         assert!(
-            stmt.descendants().any(|node| node.kind() == SyntaxKind::EXPR_LIST),
+            stmt.descendants()
+                .any(|node| node.kind() == SyntaxKind::EXPR_LIST),
             "Expected EXPR_LIST node for return value list"
         );
     }
@@ -695,7 +696,8 @@ mod tests {
         let stmt = root.children().next().expect("missing statement");
         assert_eq!(stmt.kind(), SyntaxKind::DECLARATION_STMT);
         assert!(
-            stmt.descendants().any(|node| node.kind() == SyntaxKind::HASH_REF),
+            stmt.descendants()
+                .any(|node| node.kind() == SyntaxKind::HASH_REF),
             "expected hash ref inside declaration"
         );
     }
@@ -724,8 +726,14 @@ mod tests {
             }
         }
 
-        assert!(saw_package, "expected to see 'package' coerced to IDENT inside hash");
-        assert!(saw_and, "expected to see 'and' coerced to IDENT inside hash");
+        assert!(
+            saw_package,
+            "expected to see 'package' coerced to IDENT inside hash"
+        );
+        assert!(
+            saw_and,
+            "expected to see 'and' coerced to IDENT inside hash"
+        );
     }
 }
 
