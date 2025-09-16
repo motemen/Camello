@@ -600,17 +600,7 @@ impl Formatter {
             Some(SyntaxKind::L_BRACE) => return false,
             Some(SyntaxKind::SEMICOLON) => return false,
             Some(SyntaxKind::R_BRACE)
-                if matches!(
-                    current,
-                    SyntaxKind::ELSE_KW
-                        | SyntaxKind::ELSIF_KW
-                        | SyntaxKind::IF_KW
-                        | SyntaxKind::UNLESS_KW
-                        | SyntaxKind::WHILE_KW
-                        | SyntaxKind::UNTIL_KW
-                        | SyntaxKind::FOR_KW
-                        | SyntaxKind::FOREACH_KW
-                ) =>
+                if matches!(current, SyntaxKind::ELSE_KW | SyntaxKind::ELSIF_KW) =>
             {
                 return false;
             }

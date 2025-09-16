@@ -158,6 +158,20 @@ fn test_continuation_indent_string_concatenation() {
 }
 
 #[test]
+fn test_continuation_indent_postfix_modifiers_after_block() {
+    // Test that postfix modifiers after a block receive continuation indent
+    // This is the specific case identified by Gemini's review
+    let input = "do {\n    warn;\n}\nif $condition;";
+    let formatted = format_and_assert(input);
+    assert_eq!(formatted, "do {\n    warn;\n}\n    if $condition;\n");
+    
+    // Test other postfix modifiers to ensure they work too
+    let input2 = "do {\n    warn;\n}\nunless $skip;";
+    let formatted2 = format_and_assert(input2);
+    assert_eq!(formatted2, "do {\n    warn;\n}\n    unless $skip;\n");
+}
+
+#[test]
 fn test_undef_in_variable_declaration_formatting() {
     let cases = [
         ("my(undef,$x)=@_;", "my (undef, $x) = @_;\n"),
