@@ -86,6 +86,13 @@ impl Parser<'_> {
                 self.ellipsis_stmt();
                 true
             }
+            Some(SyntaxKind::L_BRACE) => {
+                // Bare block statement (e.g., { ... }) used for scoping or flow control
+                self.builder.start_node(SyntaxKind::STMT.into());
+                self.block();
+                self.builder.finish_node();
+                true
+            }
             Some(_) => {
                 // Try to parse as an expression statement
                 self.expression_stmt()

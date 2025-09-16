@@ -653,6 +653,46 @@ mod tests {
 
         assert!(found_call, "expected to find function call for grep");
     }
+
+    #[test]
+    fn test_bare_block_statement() {
+        let input = "warn 1; { warn 2 } warn 3;";
+        let (green, errors) = parse(input);
+        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+
+        let root = PerlNode::new_root(green);
+        let mut stmts = root.children();
+
+        let first = stmts.next().expect("missing first statement");
+        assert_eq!(first.kind(), SyntaxKind::STMT);
+
+        let block_stmt = stmts.next().expect("missing block statement");
+        assert_eq!(block_stmt.kind(), SyntaxKind::STMT);
+        assert!(
+            block_stmt
+                .children()
+                .any(|child| child.kind() == SyntaxKind::BLOCK_STMT),
+            "expected block stmt inside bare block"
+        );
+
+        let third = stmts.next().expect("missing trailing statement");
+        assert_eq!(third.kind(), SyntaxKind::STMT);
+    }
+
+    #[test]
+    fn test_hashref_expression_after_unary_plus() {
+        let input = "my $hash = +{a => 1};";
+        let (green, errors) = parse(input);
+        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+
+        let root = PerlNode::new_root(green);
+        let stmt = root.children().next().expect("missing statement");
+        assert_eq!(stmt.kind(), SyntaxKind::DECLARATION_STMT);
+        assert!(
+            stmt.descendants().any(|node| node.kind() == SyntaxKind::HASH_REF),
+            "expected hash ref inside declaration"
+        );
+    }
 }
 
 mod expression;
