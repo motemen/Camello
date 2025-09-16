@@ -124,8 +124,11 @@ impl Formatter {
     }
 
     fn handle_user_newline_from_token(&mut self) {
-        self.handle_newline(LineBreakSource::User);
-        self.user_newlines_to_skip -= 1;
+        // Handle a user-supplied newline without affecting the skip counter
+        self.last_line_break_was_user = true;
+        let line = std::mem::take(&mut self.current_line);
+        self.lines.push(line);
+        self.at_line_start = true;
     }
 
     pub(super) fn is_output_empty(&self) -> bool {
@@ -604,11 +607,36 @@ impl Formatter {
             None => return false,
             Some(SyntaxKind::L_BRACE) => return false,
             Some(SyntaxKind::SEMICOLON) => return false,
-            Some(SyntaxKind::COMMENT) => return false,
-            Some(SyntaxKind::R_BRACE)
-                if matches!(current, SyntaxKind::ELSE_KW | SyntaxKind::ELSIF_KW) =>
-            {
-                return false;
+            Some(SyntaxKind::COMMENT) => {
+                // Allow continuation indent for inline comments, prevent for standalone comments
+                return self.is_prev_comment_inline();
+            }
+            Some(SyntaxKind::R_BRACE) => {
+                // Allow continuation indent after R_BRACE for:
+                // - else/elsif keywords (which align with their preceding block)
+                // - method calls and operators (for chaining)
+                // - postfix modifiers, but try to detect and prevent consecutive statements
+                if matches!(current, SyntaxKind::ELSE_KW | SyntaxKind::ELSIF_KW) {
+                    return true; // These should get continuation indent
+                }
+                if matches!(current, SyntaxKind::ARROW | SyntaxKind::DOT) {
+                    return true; // Method chaining
+                }
+                // For postfix modifier keywords, check if this might be a consecutive statement
+                if matches!(
+                    current,
+                    SyntaxKind::IF_KW
+                        | SyntaxKind::UNLESS_KW
+                        | SyntaxKind::WHILE_KW
+                        | SyntaxKind::UNTIL_KW
+                        | SyntaxKind::FOR_KW
+                        | SyntaxKind::FOREACH_KW
+                ) {
+                    // Simple heuristic: if we recently saw the same keyword, it's likely
+                    // consecutive statements rather than a postfix modifier
+                    return !self.recently_saw_same_statement_keyword(current);
+                }
+                return false; // Default: no continuation
             }
             _ => {}
         }
@@ -622,6 +650,71 @@ impl Formatter {
         }
 
         true
+    }
+
+    fn is_prev_comment_inline(&self) -> bool {
+        // Check if the previous comment was inline AND if it's in a continuation context
+        // Comments after complete statements (ending with semicolon) should not allow continuation
+        if let Some(last_line) = self.lines.last() {
+            let mut has_content_before_comment = false;
+            let mut has_semicolon_before_comment = false;
+
+            // Look for content before any comment token
+            for token_span in &last_line.tokens {
+                if token_span.kind == SyntaxKind::COMMENT {
+                    if token_span.start_byte > 0 {
+                        let content_before = last_line.text[..token_span.start_byte].trim();
+                        has_content_before_comment = !content_before.is_empty();
+                        has_semicolon_before_comment = content_before.ends_with(';');
+                    }
+                    break;
+                }
+            }
+
+            // Only allow continuation if:
+            // 1. There's content before the comment (it's inline)
+            // 2. The content doesn't end with semicolon (not a complete statement)
+            return has_content_before_comment && !has_semicolon_before_comment;
+        }
+        // If we can't determine, be conservative and don't allow continuation
+        false
+    }
+
+    fn recently_saw_same_statement_keyword(&self, current: SyntaxKind) -> bool {
+        // Look at recent lines to see if we had the same statement keyword
+        // If so, this is likely consecutive statements rather than a postfix modifier
+        let recent_lines = if self.lines.len() >= 2 {
+            &self.lines[self.lines.len() - 2..]
+        } else {
+            &self.lines
+        };
+
+        for line in recent_lines.iter() {
+            for token in &line.tokens {
+                if token.kind == current {
+                    // We found the same keyword recently - likely consecutive statements
+                    return true;
+                }
+                // If we see a different statement keyword, it's less likely to be consecutive
+                if matches!(
+                    token.kind,
+                    SyntaxKind::IF_KW
+                        | SyntaxKind::UNLESS_KW
+                        | SyntaxKind::WHILE_KW
+                        | SyntaxKind::UNTIL_KW
+                        | SyntaxKind::FOR_KW
+                        | SyntaxKind::FOREACH_KW
+                        | SyntaxKind::SUB_KW
+                        | SyntaxKind::MY_KW
+                        | SyntaxKind::OUR_KW
+                ) && token.kind != current
+                {
+                    return false; // Different statement type - more likely postfix
+                }
+            }
+        }
+
+        false // Didn't find the same keyword recently
     }
 
     fn format_token(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
@@ -652,6 +745,7 @@ impl Formatter {
                 }
                 self.write_str(text.trim(), Some(kind));
                 self.handle_newline(LineBreakSource::User);
+                self.prev_token_kind = Some(kind);
             }
             SyntaxKind::HEREDOC_CONTENT | SyntaxKind::HEREDOC_END => {
                 self.write_str(text, Some(kind));

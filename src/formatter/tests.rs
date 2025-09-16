@@ -1541,12 +1541,77 @@ if ($string =~ m|pattern|i) { }"#;
     insta::assert_snapshot!(formatted, @r"
     # Test m// with various delimiters
     if ($string =~ m(pattern)i) {}
-        if ($string =~ m/pattern/i) {}
-        if ($string =~ m{pattern}i) {}
-        if ($string =~ m[pattern]i) {}
-        if ($string =~ m<pattern>i) {}
-        if ($string =~ m|pattern|i) {}
+    if ($string =~ m/pattern/i) {}
+    if ($string =~ m{pattern}i) {}
+    if ($string =~ m[pattern]i) {}
+    if ($string =~ m<pattern>i) {}
+    if ($string =~ m|pattern|i) {}
     ");
+}
+
+#[test]
+fn test_consecutive_statements_after_blocks() {
+    let input = r#"if ($x) { print "hello"; }
+if ($y) { print "world"; }
+while ($z) { print "loop"; }
+for my $i (1..10) { print $i; }"#;
+    let formatted = format_and_assert(input);
+    insta::assert_snapshot!(formatted, @r###"
+if ($x) {
+    print "hello";
+}
+if ($y) {
+    print "world";
+}
+while ($z) {
+    print "loop";
+}
+for my $i (1 .. 10) {
+    print $i;
+}
+"###);
+}
+
+#[test]
+fn test_else_elsif_continuation_indent() {
+    let input = r#"if ($x) { print "x"; }
+else { print "not x"; }
+if ($y) { print "y"; }
+elsif ($z) { print "z"; }
+else { print "not y or z"; }"#;
+    let formatted = format_and_assert(input);
+    insta::assert_snapshot!(formatted, @r###"
+if ($x) {
+    print "x";
+}
+    else {
+    print "not x";
+}
+if ($y) {
+    print "y";
+}
+    elsif ($z) {
+    print "z";
+}
+    else {
+    print "not y or z";
+}
+"###);
+}
+
+#[test]
+fn test_comment_continuation_indent() {
+    let input = r#"# This is a comment
+my $x = 1;
+print $x; # inline comment
+my $y = 2;"#;
+    let formatted = format_and_assert(input);
+    insta::assert_snapshot!(formatted, @r###"
+# This is a comment
+my $x = 1;
+print $x; # inline comment
+my $y = 2;
+"###);
 }
 
 #[test]
