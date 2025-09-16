@@ -147,22 +147,45 @@ impl Parser<'_> {
         self.bump(); // consume the keyword
         self.skip_whitespace_and_newlines();
 
-        // my $var or my ($var, ...)
+        // For local, we need to allow more complex lvalue expressions
+        let is_local = matches!(decl_kind, SyntaxKind::LOCAL_KW);
+
+        // my $var or my ($var, ...) or local $hash{key} or local ($a, $b)
         if self.at(SyntaxKind::L_PAREN) {
             self.bump(); // (
             self.skip_whitespace_and_newlines();
 
             while !self.at(SyntaxKind::R_PAREN) && !self.at_end() {
-                if self
-                    .current_kind()
-                    .is_some_and(super::super::syntax_kind::SyntaxKind::is_sigil)
-                {
-                    self.parse_variable_by_decl_kind(decl_kind);
-                } else if self.at(SyntaxKind::UNDEF_KW) {
-                    self.bump(); // consume 'undef'
+                if is_local {
+                    // For local, allow any lvalue expression
+                    if self
+                        .current_kind()
+                        .is_some_and(super::super::syntax_kind::SyntaxKind::is_sigil)
+                    {
+                        // Parse as lvalue expression to handle subscriptions
+                        if !self.expression() {
+                            self.error("Expected lvalue expression in local statement");
+                            break;
+                        }
+                    } else if self.at(SyntaxKind::UNDEF_KW) {
+                        self.bump(); // consume 'undef'
+                    } else {
+                        self.error("Expected lvalue expression or undef in local statement");
+                        break;
+                    }
                 } else {
-                    self.error("Expected variable in parenthesized list");
-                    break; // Break loop when error occurs
+                    // For my/our/state, only allow simple variables or undef
+                    if self
+                        .current_kind()
+                        .is_some_and(super::super::syntax_kind::SyntaxKind::is_sigil)
+                    {
+                        self.parse_variable_by_decl_kind(decl_kind);
+                    } else if self.at(SyntaxKind::UNDEF_KW) {
+                        self.bump(); // consume 'undef'
+                    } else {
+                        self.error("Expected variable in parenthesized list");
+                        break; // Break loop when error occurs
+                    }
                 }
 
                 self.skip_whitespace_and_newlines();
@@ -181,7 +204,15 @@ impl Parser<'_> {
             .current_kind()
             .is_some_and(super::super::syntax_kind::SyntaxKind::is_sigil)
         {
-            self.parse_variable_by_decl_kind(decl_kind);
+            if is_local {
+                // For local, parse as expression to handle subscriptions
+                if !self.expression() {
+                    self.error("Expected lvalue expression after local");
+                }
+            } else {
+                // For my/our/state, parse as simple variable
+                self.parse_variable_by_decl_kind(decl_kind);
+            }
         } else {
             self.error("Expected variable or parenthesized list of variables after variable declaration keyword");
         }
@@ -333,7 +364,6 @@ impl Parser<'_> {
     fn no_stmt(&mut self) {
         self.use_or_no_stmt(false);
     }
-
 
     fn for_stmt(&mut self) {
         self.builder.start_node(SyntaxKind::FOR_STMT.into());
