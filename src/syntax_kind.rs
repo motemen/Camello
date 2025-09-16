@@ -31,9 +31,10 @@ pub enum SyntaxKind {
     // Literals
     NUMBER,
     STRING,
-    VERSION,       // v1.23, v5.008_001
-    BARE_VERSION,  // 5.24.1, 5.024_001 (contextually determined)
-    REGEX_LITERAL, // /pattern/flags
+    BACKTICK_STRING, // `command` (command execution literal)
+    VERSION,         // v1.23, v5.008_001
+    BARE_VERSION,    // 5.24.1, 5.024_001 (contextually determined)
+    REGEX_LITERAL,   // /pattern/flags
 
     // Keywords
     SUB_KW,
@@ -247,6 +248,7 @@ pub enum SyntaxKind {
     Q_EXPR,                   // q() expression (single-quoted string literal)
     QQ_EXPR,                  // qq() expression (double-quoted string literal)
     QX_EXPR,                  // qx() expression (command execution)
+    BACKTICK_EXPR,            // `command` expression (command execution literal)
     M_EXPR,                   // m() expression (match regex literal)
     QR_EXPR,                  // qr() expression (compiled regex literal)
     S_EXPR,                   // s() expression (substitution literal)

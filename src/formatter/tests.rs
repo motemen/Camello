@@ -177,6 +177,46 @@ fn test_undef_function_call_formatting() {
 }
 
 #[test]
+fn test_backtick_command_substitution_formatting() {
+    let cases = [
+        // Basic backtick command substitution
+        ("`ls`;", "`ls`;\n"),
+        ("`pwd`;", "`pwd`;\n"),
+        ("`date`;", "`date`;\n"),
+        // Commands with arguments
+        ("`ls -la`;", "`ls -la`;\n"),
+        ("`grep 'pattern' file.txt`;", "`grep 'pattern' file.txt`;\n"),
+        ("`find . -name '*.pl'`;", "`find . -name '*.pl'`;\n"),
+        // Assignment from command substitution
+        ("my $output = `ls`;", "my $output = `ls`;\n"),
+        ("$result = `pwd`;", "$result = `pwd`;\n"),
+        ("my @files = `ls`;", "my @files = `ls`;\n"),
+        // In expressions
+        ("print `date`;", "print `date`;\n"),
+        ("chomp(my $dir = `pwd`);", "chomp(my $dir = `pwd`);\n"),
+        // Multiline commands (should preserve content)
+        (
+            "`echo 'line1'\necho 'line2'`;",
+            "`echo 'line1'\necho 'line2'`;\n",
+        ),
+        // Commands with escapes
+        ("`echo 'It\\'s working'`;", "`echo 'It\\'s working'`;\n"),
+        (
+            "`echo \"Hello \\\"world\\\"\"`;",
+            "`echo \"Hello \\\"world\\\"\"`;\n",
+        ),
+        // Empty command
+        ("``;", "``;\n"),
+        // Commands in context
+        (
+            "if (`which perl`) { print 'found'; }",
+            "if (`which perl`) {\n    print 'found';\n}\n",
+        ),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_postfix_dereference_formatting() {
     let cases = [
         ("$ref->@*;", "$ref->@*;\n"),

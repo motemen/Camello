@@ -548,6 +548,13 @@ impl Parser<'_> {
                 self.bump_value();
                 self.skip_whitespace_and_newlines();
             }
+            SyntaxKind::BACKTICK_STRING => {
+                // Backtick command substitution: `command`
+                self.builder.start_node(SyntaxKind::BACKTICK_EXPR.into());
+                self.bump_value();
+                self.builder.finish_node();
+                self.skip_whitespace_and_newlines();
+            }
             SyntaxKind::IO_EXPR => {
                 self.builder.start_node(SyntaxKind::IO_EXPR.into());
                 // Consume I/O expression as a value

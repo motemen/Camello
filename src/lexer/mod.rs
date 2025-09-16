@@ -67,6 +67,8 @@ pub enum Token {
     #[regex(r#""([^"\\]|\\.)*""#)]
     #[regex(r"'([^'\\]|\\.)*'")]
     String,
+    // Backtick command substitution (handled manually like RegexLiteral due to complexity)
+    BacktickString,
 
     // Version literal (v1.23, v5.008_001, etc.)
     #[regex(r"v[0-9]+(\.[0-9_]+)*")]
@@ -245,6 +247,7 @@ impl Token {
             Token::Ident => SyntaxKind::IDENT,
             Token::Number => SyntaxKind::NUMBER,
             Token::String => SyntaxKind::STRING,
+            Token::BacktickString => SyntaxKind::BACKTICK_STRING,
             Token::Version => SyntaxKind::VERSION,
             Token::BareVersion => SyntaxKind::BARE_VERSION,
             Token::RegexLiteral => SyntaxKind::REGEX_LITERAL,
@@ -433,7 +436,13 @@ impl<'a> Lexer<'a> {
             self.update_line_position(t);
             return Some((k, t));
         }
-        // 4) IO operator like <...>
+        // 4) Backtick command substitution `...`
+        if let Some(result) = self.try_consume_backtick_literal() {
+            let (k, t) = result;
+            self.update_line_position(t);
+            return Some((k, t));
+        }
+        // 5) IO operator like <...>
         if let Some(result) = self.try_consume_io_operator() {
             let (k, t) = result;
             self.update_line_position(t);
@@ -739,6 +748,45 @@ impl<'a> Lexer<'a> {
             let text = &remainder[..end_pos];
             self.logos_lexer.bump(end_pos);
             return Some((SyntaxKind::REGEX_LITERAL, text));
+        }
+
+        None
+    }
+
+    fn try_consume_backtick_literal(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        let remainder = self.logos_lexer.remainder();
+
+        if !remainder.starts_with('`') {
+            return None;
+        }
+
+        let mut closing_backtick_pos: Option<usize> = None;
+        let mut escaped = false;
+
+        for (i, c) in remainder.char_indices().skip(1) {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            match c {
+                '`' => {
+                    closing_backtick_pos = Some(i);
+                    break;
+                }
+                '\\' => {
+                    escaped = true;
+                }
+                '\n' => {
+                    // Backticks can span lines unlike regex literals
+                }
+                _ => {}
+            }
+        }
+
+        if let Some(pos) = closing_backtick_pos {
+            let text = &remainder[..=pos];
+            self.logos_lexer.bump(text.len());
+            return Some((SyntaxKind::BACKTICK_STRING, text));
         }
 
         None
