@@ -647,10 +647,23 @@ impl Parser<'_> {
                 self.var_decl_expr();
             }
             SyntaxKind::UNDEF_KW => {
-                // undef keyword as expression
-                // Consume 'undef' as a value
-                self.bump_value();
-                self.skip_whitespace_and_newlines();
+                // undef can be used both as a literal and as a function call
+                // Check if it's followed by an expression (function call) or not (literal)
+                let next_token = self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1);
+                if let Some((kind, _)) = next_token {
+                    if Self::can_start_expression(kind) {
+                        // This is a function call: undef $x
+                        self.parse_ident_like_expr(true);
+                    } else {
+                        // This is a literal: undef by itself
+                        self.bump_value();
+                        self.skip_whitespace_and_newlines();
+                    }
+                } else {
+                    // No next token, treat as literal
+                    self.bump_value();
+                    self.skip_whitespace_and_newlines();
+                }
             }
             SyntaxKind::REQUIRE_KW => {
                 // require expression (e.g., require v5.14, require local::lib)
