@@ -38,6 +38,50 @@ fn test_all_var_decl_types_formatting() {
 }
 
 #[test]
+fn test_local_complex_lvalue_formatting() {
+    let cases = [
+        // Hash subscriptions
+        (
+            "local $SIG{__WARN__} = \\&CORE::die;",
+            "local $SIG{__WARN__} = \\&CORE::die;\n",
+        ),
+        (
+            "local $ENV{PATH} = '/usr/bin';",
+            "local $ENV{PATH} = '/usr/bin';\n",
+        ),
+        ("local $hash{key} = $value;", "local $hash{key} = $value;\n"),
+        // Array subscriptions
+        ("local $array[0] = 'first';", "local $array[0] = 'first';\n"),
+        ("local $list[1] = $item;", "local $list[1] = $item;\n"),
+        // Parenthesized lists with variables
+        ("local ($a, $b) = (1, 2);", "local ($a, $b) = (1, 2);\n"),
+        (
+            "local ($x, $y, $z) = @values;",
+            "local ($x, $y, $z) = @values;\n",
+        ),
+        // Mixed parenthesized lists with complex lvalues
+        (
+            "local ($SIG{__WARN__}, $a) = (\\&handler, $old_a);",
+            "local ($SIG{__WARN__}, $a) = (\\&handler, $old_a);\n",
+        ),
+        (
+            "local ($array[0], $hash{key}) = ($new_first, $new_value);",
+            "local ($array[0], $hash{key}) = ($new_first, $new_value);\n",
+        ),
+        // With undef in lists
+        (
+            "local (undef, $SIG{__DIE__}) = (undef, \\&my_die);",
+            "local (undef, $SIG{__DIE__}) = (undef, \\&my_die);\n",
+        ),
+        (
+            "local ($a, undef, $hash{key}) = @list;",
+            "local ($a, undef, $hash{key}) = @list;\n",
+        ),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_continuation_indent_postfix_if() {
     let input = "warn 1\nif $err;";
     let formatted = format_and_assert(input);
@@ -678,7 +722,10 @@ fn test_require_formatting() {
         ("require 5.24.1;", "require 5.24.1;\n"),
         ("require 5;", "require 5;\n"),
         ("my $v = require v5.14;", "my $v = require v5.14;\n"),
-        ("my $result = require local::lib;", "my $result = require local::lib;\n"),
+        (
+            "my $result = require local::lib;",
+            "my $result = require local::lib;\n",
+        ),
     ]);
 }
 
@@ -697,10 +744,16 @@ fn test_keyword_module_names() {
         ("local::lib::more->new;", "local::lib::more->new;\n"),
         // In expressions
         ("my $obj = local::lib->new;", "my $obj = local::lib->new;\n"),
-        ("my $result = use::ok->call($arg);", "my $result = use::ok->call($arg);\n"),
+        (
+            "my $result = use::ok->call($arg);",
+            "my $result = use::ok->call($arg);\n",
+        ),
         // With parentheses
         ("local::lib->new();", "local::lib->new();\n"),
-        ("local::lib->import('feature');", "local::lib->import('feature');\n"),
+        (
+            "local::lib->import('feature');",
+            "local::lib->import('feature');\n",
+        ),
     ]);
 }
 
