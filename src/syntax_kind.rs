@@ -50,22 +50,23 @@ pub enum SyntaxKind {
     WHILE_KW,   // while keyword
     UNTIL_KW,   // until keyword
     PACKAGE_KW,
-    QW_KW,     // qw keyword
-    Q_KW,      // q keyword (single-quoted string literal)
-    QQ_KW,     // qq keyword (double-quoted string literal)
-    QX_KW,     // qx keyword (command execution)
-    M_KW,      // m keyword (match operator)
-    QR_KW,     // qr keyword (compiled regex)
-    S_KW,      // s keyword (substitution operator)
-    TR_KW,     // tr keyword (transliteration operator)
-    Y_KW,      // y keyword (transliteration operator, alias for tr)
-    USE_KW,    // use keyword (for use warnings qw(...) syntax)
-    NO_KW,     // no keyword (for no warnings qw(...) syntax)
-    RETURN_KW, // return keyword
-    UNDEF_KW,  // undef keyword
-    NEXT_KW,   // next keyword
-    LAST_KW,   // last keyword
-    REDO_KW,   // redo keyword
+    QW_KW,      // qw keyword
+    Q_KW,       // q keyword (single-quoted string literal)
+    QQ_KW,      // qq keyword (double-quoted string literal)
+    QX_KW,      // qx keyword (command execution)
+    M_KW,       // m keyword (match operator)
+    QR_KW,      // qr keyword (compiled regex)
+    S_KW,       // s keyword (substitution operator)
+    TR_KW,      // tr keyword (transliteration operator)
+    Y_KW,       // y keyword (transliteration operator, alias for tr)
+    USE_KW,     // use keyword (for use warnings qw(...) syntax)
+    NO_KW,      // no keyword (for no warnings qw(...) syntax)
+    REQUIRE_KW, // require keyword (for require local::lib syntax)
+    RETURN_KW,  // return keyword
+    UNDEF_KW,   // undef keyword
+    NEXT_KW,    // next keyword
+    LAST_KW,    // last keyword
+    REDO_KW,    // redo keyword
 
     // Data section
     END_KW,  // __END__
@@ -203,7 +204,7 @@ pub enum SyntaxKind {
     // ===== Node Level (composite structures) =====
     ROOT,          // File root
     SUB_DEF,       // Subroutine definition
-    SUB_PROTOTYPE, // Subroutine prototype (e.g., (\@@), ($@), etc.)
+    SUB_PROTOTYPE, // Subroutine prototype (e.g., (\\@@), ($@), etc.)
     ATTR,          // Attribute (e.g., :method)
     ATTR_ARGS,     // Attribute arguments (e.g., (1, 2))
     BLOCK_STMT,    // Block statement
@@ -259,6 +260,7 @@ pub enum SyntaxKind {
     TYPEGLOB_EXPR,            // Typeglob expression (e.g., *{$name}, *STDIN)
     FILE_TEST_EXPR,           // File test expression (e.g., -f $file)
     POSTFIX_DEREF_EXPR,       // Postfix dereference expression (e.g., $ref->@*, $ref->%*, $ref->$*)
+    REQUIRE_EXPR,             // Require expression (e.g., require local::lib)
 
     // Literal references
     HASH_REF,  // Hash reference (anonymous hash)
@@ -328,6 +330,7 @@ impl SyntaxKind {
                 | SyntaxKind::Y_KW
                 | SyntaxKind::USE_KW
                 | SyntaxKind::NO_KW
+                | SyntaxKind::REQUIRE_KW
                 | SyntaxKind::RETURN_KW
                 | SyntaxKind::NEXT_KW
                 | SyntaxKind::LAST_KW

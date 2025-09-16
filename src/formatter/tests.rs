@@ -671,6 +671,18 @@ fn test_no_statement_with_expressions() {
 }
 
 #[test]
+fn test_require_formatting() {
+    check_formatting_cases(&[
+        ("require local::lib;", "require local::lib;\n"),
+        ("require v5.14;", "require v5.14;\n"),
+        ("require 5.24.1;", "require 5.24.1;\n"),
+        ("require 5;", "require 5;\n"),
+        ("my $v = require v5.14;", "my $v = require v5.14;\n"),
+        ("my $result = require local::lib;", "my $result = require local::lib;\n"),
+    ]);
+}
+
+#[test]
 fn test_use_statement_with_parentheses_formatting() {
     check_formatting_cases(&[
         // Use statement with empty parentheses (import list)

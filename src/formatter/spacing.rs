@@ -175,6 +175,7 @@ pub const fn get_token_spacing(kind: SyntaxKind) -> TokenSpacing {
         | SyntaxKind::PACKAGE_KW
         | SyntaxKind::USE_KW
         | SyntaxKind::NO_KW
+        | SyntaxKind::REQUIRE_KW
         | SyntaxKind::SUB_KW => TokenSpacing::keyword(),
 
         // RETURN_KW and loop control keywords: contextual spacing (no space before semicolon)
