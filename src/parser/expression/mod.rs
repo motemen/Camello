@@ -801,15 +801,15 @@ impl Parser<'_> {
             }
             SyntaxKind::FILE_TEST_OP => {
                 self.builder.start_node(SyntaxKind::FILE_TEST_EXPR.into());
-                // File test operator is prefix; next should expect a value
+                // File test operator is prefix; argument is optional
                 self.bump_value(); // consume file test operator
                 self.skip_whitespace_and_newlines();
 
-                if !self.parse_expression_with_precedence(
+                // Try to parse an expression argument, but don't require it
+                // File test operators like -f can be used without arguments (they operate on $_)
+                self.parse_expression_with_precedence(
                     crate::parser::expression::precedence::Precedence::PREFIX,
-                ) {
-                    self.error("Expected expression after file test operator");
-                }
+                );
 
                 self.builder.finish_node();
             }

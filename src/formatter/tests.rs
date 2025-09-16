@@ -217,6 +217,44 @@ fn test_backtick_command_substitution_formatting() {
 }
 
 #[test]
+fn test_for_loop_with_expression_lists_formatting() {
+    let cases = [
+        // Basic for loop with multiple arrays
+        (
+            "for my $x (@a1, @a2) { print $x; }",
+            "for my $x (@a1, @a2) {\n    print $x;\n}\n",
+        ),
+        (
+            "foreach my $item (@array1, @array2, @array3) { say $item; }",
+            "foreach my $item (@array1, @array2, @array3) {\n    say $item;\n}\n",
+        ),
+        // For loop with mixed expressions
+        (
+            "for my $x (@arr, qw(a b c), 1..10) { print $x; }",
+            "for my $x (@arr, qw(a b c), 1 .. 10) {\n    print $x;\n}\n",
+        ),
+        // For loop with complex expressions
+        (
+            "for my $val (@{$hash{key}}, split(/,/, $str)) { process($val); }",
+            "for my $val (@{$hash{key}}, split(/,/, $str)) {\n    process($val);\n}\n",
+        ),
+        // For loop with function calls
+        (
+            "for my $file (glob('*.txt'), @ARGV) { open my $fh, '<', $file; }",
+            "for my $file (glob('*.txt'), @ARGV) {\n    open my $fh, '<', $file;\n}\n",
+        ),
+        // Nested structures
+        (
+            "for my $x (@a,@b,@c) { for my $y (@d) { print \"$x:$y\"; } }",
+            "for my $x (@a, @b, @c) {\n    for my $y (@d) {\n        print \"$x:$y\";\n    }\n}\n",
+        ),
+        // C-style for with expression lists (though less common)
+        ("for (@a, @b) { print; }", "for (@a, @b) {\n    print;\n}\n"),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_postfix_dereference_formatting() {
     let cases = [
         ("$ref->@*;", "$ref->@*;\n"),
@@ -2087,7 +2125,12 @@ fn test_complex_subroutine_prototype() {
 
 #[test]
 fn test_file_test_operator_formatting() {
-    let cases = [("-f $file;", "-f $file;\n")];
+    let cases = [
+        ("-f $file;", "-f $file;\n"),
+        ("-f;", "-f;\n"), // argumentless file test operator
+        ("-d;", "-d;\n"), // argumentless directory test operator
+        ("-e;", "-e;\n"), // argumentless existence test operator
+    ];
     check_formatting_cases(&cases);
 }
 
