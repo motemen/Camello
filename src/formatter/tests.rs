@@ -250,6 +250,21 @@ fn test_empty_heredoc_formatting() {
 }
 
 #[test]
+fn test_bareword_call_with_heredoc() {
+    let input = "die <<DIE;\n\nThis is\n  dying message!\n\nDIE\n";
+    let formatted = format_and_assert(input);
+    // Should preserve heredoc structure and not misparse as shift-left
+    insta::assert_snapshot!(formatted, @r"
+        die <<DIE;
+
+        This is
+          dying message!
+
+        DIE
+        ");
+}
+
+#[test]
 fn test_package_block_formatting() {
     let input = "package Foo::Bar{my $x=1;}";
     let formatted = format_and_assert(input);
