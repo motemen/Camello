@@ -368,7 +368,10 @@ fn test_empty_statement_formatting() {
         ("$x = 1; ;", "$x = 1;\n\n;\n"),
         ("sub foo { ; }", "sub foo {\n    ;\n}\n"),
         ("sub foo {\n    ;\n}", "sub foo {\n    ;\n}\n"),
-        ("if ($x) { ; } else { ; }", "if ($x) {\n    ;\n} else {\n    ;\n}\n"), // Added trailing newline
+        (
+            "if ($x) { ; } else { ; }",
+            "if ($x) {\n    ;\n} else {\n    ;\n}\n",
+        ), // Added trailing newline
     ];
     check_formatting_cases(&cases);
 }

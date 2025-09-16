@@ -5,7 +5,59 @@ use crate::{PerlLanguage, PerlNode, SyntaxKind};
 use super::Formatter;
 
 impl Formatter {
-    pub fn format_anon_sub_expr(&mut self, node: &PerlNode) {
+    pub(super) fn format_expr(&mut self, node: &PerlNode) {
+        match node.kind() {
+            SyntaxKind::ANON_SUB_EXPR => {
+                self.format_anon_sub_expr(node);
+            }
+            SyntaxKind::TYPEGLOB_EXPR => {
+                self.format_typeglob_expr(node);
+            }
+            SyntaxKind::BLOCK_FUNCTION_CALL_EXPR => {
+                self.format_block_function_call(node);
+            }
+            SyntaxKind::METHOD_CALL_EXPR => {
+                self.format_method_call(node);
+            }
+            SyntaxKind::HASH_REF_ACCESS_EXPR => {
+                self.format_hash_ref_access(node);
+            }
+            SyntaxKind::ARRAY_REF_ACCESS_EXPR => {
+                self.format_array_ref_access(node);
+            }
+            SyntaxKind::CODE_REF_CALL_EXPR => {
+                self.format_code_ref_call(node);
+            }
+            SyntaxKind::HASH_SUBSCRIPTION_EXPR => {
+                self.format_hash_subscription(node);
+            }
+            SyntaxKind::ARRAY_SUBSCRIPTION_EXPR => {
+                self.format_array_subscription(node);
+            }
+            SyntaxKind::DEREF_EXPR => {
+                self.format_deref_expr(node);
+            }
+            SyntaxKind::REGEX_EXPR => {
+                // Default handling for regex expressions - just format children
+                // The spacing around regex operators is handled in format_token
+                self.format_children(node, false);
+            }
+            SyntaxKind::BACKTICK_EXPR => {
+                // Backtick command substitution: just format children (the backtick string literal)
+                self.format_children(node, false);
+            }
+            _ => {
+                // Check if this node contains parentheses that should be formatted multiline
+                if self.should_format_parentheses_multiline(node) {
+                    self.format_parenthesized_expr(node);
+                } else {
+                    self.format_children(node, false);
+                }
+            }
+        }
+    }
+
+    pub(super) fn format_anon_sub_expr(&mut self, node: &PerlNode) {
         // Format anonymous subroutine: sub { ... }
         // Use K&R style like regular subroutines: space before opening brace
 
@@ -32,7 +84,7 @@ impl Formatter {
             }
         }
     }
-    pub fn format_parenthesized_expr(&mut self, node: &PerlNode) {
+    pub(super) fn format_parenthesized_expr(&mut self, node: &PerlNode) {
         // Check if the parenthesized expression contains newlines
         if self.has_newline_before_first_value(node) {
             // Use multiline formatting for expressions with newlines
@@ -43,7 +95,7 @@ impl Formatter {
         }
     }
 
-    pub fn format_block_function_call(&mut self, node: &PerlNode) {
+    pub(super) fn format_block_function_call(&mut self, node: &PerlNode) {
         // Format block function call: function_name { ... } additional_args
         // Use single-line for simple blocks (single statement, no semicolon)
         // Use multi-line for complex blocks
@@ -80,7 +132,7 @@ impl Formatter {
         }
     }
 
-    pub fn format_method_call(&mut self, node: &PerlNode) {
+    pub(super) fn format_method_call(&mut self, node: &PerlNode) {
         let mut children = node.children_with_tokens();
         self.format_until_arrow_iter(children.by_ref());
         // Format the method name part
@@ -159,19 +211,19 @@ impl Formatter {
         self.format_subscription_iter(children, opening, closing);
     }
 
-    pub fn format_hash_ref_access(&mut self, node: &PerlNode) {
+    pub(super) fn format_hash_ref_access(&mut self, node: &PerlNode) {
         self.format_ref_access_expr(node, SyntaxKind::L_BRACE, SyntaxKind::R_BRACE);
     }
 
-    pub fn format_array_ref_access(&mut self, node: &PerlNode) {
+    pub(super) fn format_array_ref_access(&mut self, node: &PerlNode) {
         self.format_ref_access_expr(node, SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET);
     }
 
-    pub fn format_code_ref_call(&mut self, node: &PerlNode) {
+    pub(super) fn format_code_ref_call(&mut self, node: &PerlNode) {
         self.format_ref_access_expr(node, SyntaxKind::L_PAREN, SyntaxKind::R_PAREN);
     }
 
-    pub fn format_deref_expr(&mut self, node: &PerlNode) {
+    pub(super) fn format_deref_expr(&mut self, node: &PerlNode) {
         // Handle dereferencing expressions like @$var, @{expr}
         // For braced expressions, format them compactly without newlines or indentation
         for child in node.children_with_tokens() {
@@ -208,15 +260,15 @@ impl Formatter {
         self.format_subscription_iter(children, opening, closing);
     }
 
-    pub fn format_hash_subscription(&mut self, node: &PerlNode) {
+    pub(super) fn format_hash_subscription(&mut self, node: &PerlNode) {
         self.format_subscription_expr(node, SyntaxKind::L_BRACE, SyntaxKind::R_BRACE);
     }
 
-    pub fn format_array_subscription(&mut self, node: &PerlNode) {
+    pub(super) fn format_array_subscription(&mut self, node: &PerlNode) {
         self.format_subscription_expr(node, SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET);
     }
 
-    pub fn format_typeglob_expr(&mut self, node: &PerlNode) {
+    pub(super) fn format_typeglob_expr(&mut self, node: &PerlNode) {
         // Format typeglob expressions (e.g., *{$name}, *STDIN)
         // Keep braces compact - no multiline formatting
         for child in node.children_with_tokens() {
@@ -244,7 +296,7 @@ impl Formatter {
         }
     }
 
-    pub fn format_sub_prototype(&mut self, node: &PerlNode) {
+    pub(super) fn format_sub_prototype(&mut self, node: &PerlNode) {
         // Format subroutine prototype: no spaces between parentheses and prototype symbols
         // Example: (@@), ($@), (\@$$@), etc.
         for child in node.children_with_tokens() {
@@ -279,7 +331,7 @@ impl Formatter {
         }
     }
 
-    fn format_children(&mut self, node: &PerlNode, skip_whitespace: bool) {
+    pub(super) fn format_children(&mut self, node: &PerlNode, skip_whitespace: bool) {
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(node) => self.format_node(&node),
