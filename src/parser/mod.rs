@@ -311,50 +311,58 @@ impl<'a> Parser<'a> {
     }
 
     fn is_at_start_of_expression(&self) -> bool {
-        if let Some(kind) = self.current_kind() {
-            self.at_any(&[
-                SyntaxKind::NUMBER,
-                SyntaxKind::STRING,
-                SyntaxKind::REGEX_LITERAL,
-                SyntaxKind::IO_EXPR,
-                SyntaxKind::HEREDOC_START,
-                SyntaxKind::IDENT,
-                SyntaxKind::L_PAREN,
-                SyntaxKind::L_BRACE,
-                SyntaxKind::L_BRACKET,
-                SyntaxKind::QW_KW,
-                SyntaxKind::Q_KW,
-                SyntaxKind::QQ_KW,
-                SyntaxKind::QX_KW,
-                SyntaxKind::M_KW,
-                SyntaxKind::QR_KW,
-                SyntaxKind::S_KW,
-                SyntaxKind::TR_KW,
-                SyntaxKind::Y_KW,
-                SyntaxKind::MY_KW, // Add variable declaration keywords as start of expression
-                SyntaxKind::OUR_KW,
-                SyntaxKind::STATE_KW,
-                SyntaxKind::LOCAL_KW,
-                SyntaxKind::UNDEF_KW,  // undef can appear in expression context
-                SyntaxKind::RETURN_KW, // return statements can start expressions
-                SyntaxKind::NEXT_KW,   // next can start expressions
-                SyntaxKind::LAST_KW,   // last can start expressions
-                SyntaxKind::REDO_KW,   // redo can start expressions
-                SyntaxKind::SUB_KW,    // anonymous subroutines in expression context
-                SyntaxKind::PLUS,      // unary plus operator
-                SyntaxKind::MINUS,     // unary minus operator
-                SyntaxKind::INCREMENT, // prefix increment operator
-                SyntaxKind::DECREMENT, // prefix decrement operator
-                SyntaxKind::LOGICAL_NOT, // prefix logical NOT operator
-                SyntaxKind::BITWISE_NOT, // prefix bitwise NOT operator
-                SyntaxKind::NOT_KW,    // prefix NOT keyword operator
-                SyntaxKind::FILE_TEST_OP, // file test operators
-                SyntaxKind::X,         // x can start expressions like "x => 1" in use statements
-            ]) || kind.is_variable()
-                || kind.is_sigil()
-        } else {
-            false
-        }
+        self.current_kind()
+            .is_some_and(|kind| Self::can_start_expression(kind))
+    }
+
+    fn can_start_expression(kind: SyntaxKind) -> bool {
+        matches!(
+            kind,
+            SyntaxKind::NUMBER
+                | SyntaxKind::STRING
+                | SyntaxKind::REGEX_LITERAL
+                | SyntaxKind::SLASH
+                | SyntaxKind::IO_EXPR
+                | SyntaxKind::HEREDOC_START
+                | SyntaxKind::IDENT
+                | SyntaxKind::L_PAREN
+                | SyntaxKind::L_BRACE
+                | SyntaxKind::L_BRACKET
+                | SyntaxKind::QW_KW
+                | SyntaxKind::Q_KW
+                | SyntaxKind::QQ_KW
+                | SyntaxKind::QX_KW
+                | SyntaxKind::M_KW
+                | SyntaxKind::QR_KW
+                | SyntaxKind::S_KW
+                | SyntaxKind::TR_KW
+                | SyntaxKind::Y_KW
+                | SyntaxKind::MY_KW
+                | SyntaxKind::OUR_KW
+                | SyntaxKind::STATE_KW
+                | SyntaxKind::LOCAL_KW
+                | SyntaxKind::UNDEF_KW
+                | SyntaxKind::RETURN_KW
+                | SyntaxKind::NEXT_KW
+                | SyntaxKind::LAST_KW
+                | SyntaxKind::REDO_KW
+                | SyntaxKind::SUB_KW
+                | SyntaxKind::PLUS
+                | SyntaxKind::MINUS
+                | SyntaxKind::UNARY_PLUS
+                | SyntaxKind::UNARY_MINUS
+                | SyntaxKind::INCREMENT
+                | SyntaxKind::DECREMENT
+                | SyntaxKind::PREFIX_INCREMENT
+                | SyntaxKind::PREFIX_DECREMENT
+                | SyntaxKind::LOGICAL_NOT
+                | SyntaxKind::BITWISE_NOT
+                | SyntaxKind::NOT_KW
+                | SyntaxKind::FILE_TEST_OP
+                | SyntaxKind::X
+                | SyntaxKind::AMPERSAND
+        ) || kind.is_variable()
+            || kind.is_sigil()
     }
 }
 
@@ -613,6 +621,37 @@ mod tests {
             stmt.descendants().any(|node| node.kind() == SyntaxKind::EXPR_LIST),
             "Expected EXPR_LIST node for return value list"
         );
+    }
+
+    #[test]
+    fn test_block_function_accepts_expression_argument() {
+        let input = "grep +$_, @list;";
+        let (green, errors) = parse(input);
+        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+
+        let root = PerlNode::new_root(green);
+        let stmt = root
+            .children()
+            .next()
+            .expect("missing statement for grep call");
+        assert_eq!(stmt.kind(), SyntaxKind::STMT);
+
+        let mut found_call = false;
+        for child in stmt.children() {
+            if child.kind() == SyntaxKind::FUNCTION_CALL_EXPR {
+                found_call = true;
+                // Ensure we parsed arguments as an expression list, not an infix expression
+                assert!(
+                    child
+                        .children()
+                        .any(|node| node.kind() == SyntaxKind::EXPR_LIST),
+                    "expected expression list inside function call"
+                );
+            }
+            assert_ne!(child.kind(), SyntaxKind::INFIX_EXPR);
+        }
+
+        assert!(found_call, "expected to find function call for grep");
     }
 }
 
