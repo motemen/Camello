@@ -1141,7 +1141,10 @@ fn test_print_complex_scalar_expressions() {
         ("print $hash{key}, $value;", "print $hash{key}, $value;\n"),
         // Function calls on scalars - should be parsed as expressions
         // Note: formatter adds space before parentheses in this context
-        ("print $func(), \"result\";", "print $func (), \"result\";\n"),
+        (
+            "print $func(), \"result\";",
+            "print $func (), \"result\";\n",
+        ),
     ];
     check_formatting_cases(&cases);
 }
@@ -1153,7 +1156,7 @@ fn test_print_simple_filehandle_behavior() {
         // Simple scalar variables as filehandles (no postfix operations)
         ("print $fh \"data\";", "print $fh \"data\";\n"),
         ("printf $fh \"%s\", $msg;", "printf $fh \"%s\", $msg;\n"),
-        ("say $fh $message;", "say $fh$message;\n"),
+        ("say $fh $message;", "say $fh $message;\n"),
         // With explicit comma (traditional filehandle syntax)
         ("print $fh, \"data\";", "print $fh, \"data\";\n"),
         ("printf $fh, \"%s\", $msg;", "printf $fh, \"%s\", $msg;\n"),
@@ -1174,7 +1177,7 @@ fn test_print_function_vs_filehandle_disambiguation() {
         ("print get_handle(), $data;", "print get_handle(), $data;\n"),
         // Simple scalars followed by expressions - should be treated as filehandles
         ("print $fh \"data\";", "print $fh \"data\";\n"),
-        ("print $handle $message;", "print $handle$message;\n"),
+        ("print $handle $message;", "print $handle $message;\n"),
         // Complex expressions - should NOT be treated as filehandles
         (
             "print $obj->method(), \"result\";",

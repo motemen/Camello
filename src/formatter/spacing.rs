@@ -268,6 +268,9 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
     use SyntaxKind::*;
 
     match (prev, current) {
+        // Variables followed by other variables, identifiers, or strings need space (for filehandle syntax)
+        (SCALAR_VAR | ARRAY_VAR | HASH_VAR | TYPEGLOB_VAR, SCALAR_VAR | ARRAY_VAR | HASH_VAR | TYPEGLOB_VAR | IDENT | STRING) => Some(true),
+
         // Arrow operator: highest priority, never spaces
         (ARROW, _) | (_, ARROW) => Some(false),
 
