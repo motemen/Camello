@@ -2583,6 +2583,32 @@ fn test_compound_assignment_precedence() {
 }
 
 #[test]
+fn test_comma_operator_precedence() {
+    let cases = [
+        // Basic comma operator
+        ("$a, $b;", "$a, $b;\n"),
+        ("$a, $b, $c;", "$a, $b, $c;\n"),
+        // Comma has lower precedence than assignment
+        // This should parse as: (($x = $y), $z), not: $x = ($y, $z)
+        ("$x = $y, $z;", "$x = $y, $z;\n"),
+        ("$a = 1, $b = 2;", "$a = 1, $b = 2;\n"),
+        // Comma has lower precedence than arithmetic operators
+        ("$a + $b, $c * $d;", "$a + $b, $c * $d;\n"),
+        // Comma has lower precedence than logical operators
+        ("$a && $b, $c || $d;", "$a && $b, $c || $d;\n"),
+        // Complex expression with multiple comma operators
+        (
+            "$x = $a + $b, $y = $c * $d, $z = $e / $f;",
+            "$x = $a + $b, $y = $c * $d, $z = $e / $f;\n",
+        ),
+        // Comma with parentheses for grouping
+        ("($a, $b) = ($c, $d);", "($a, $b) = ($c, $d);\n"),
+    ];
+
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_bitwise_operators_formatting() {
     let cases = [
         // Basic bitwise operators

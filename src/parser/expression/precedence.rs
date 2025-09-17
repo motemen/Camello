@@ -56,6 +56,13 @@ impl OperatorInfo {
 /// Get operator information for binary operators
 pub fn get_operator_info(kind: SyntaxKind) -> Option<OperatorInfo> {
     match kind {
+        // Comma operator (lowest precedence, except for logical operators)
+        SyntaxKind::COMMA => Some(OperatorInfo::new(
+            Precedence::COMMA,
+            false,
+            SyntaxKind::INFIX_EXPR,
+        )),
+
         // Fat comma operator (=> for hash pairs) - lowest precedence
         SyntaxKind::FAT_COMMA => Some(OperatorInfo::new(
             Precedence::COMMA,
