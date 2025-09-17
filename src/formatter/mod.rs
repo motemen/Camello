@@ -171,14 +171,21 @@ impl Formatter {
         // Track statement-level context for logical continuation indent decisions
         match node.kind() {
             // Statement-level constructs that end with closing braces
-            SyntaxKind::IF_STMT | SyntaxKind::UNLESS_STMT | SyntaxKind::WHILE_STMT 
-            | SyntaxKind::UNTIL_STMT | SyntaxKind::FOR_STMT | SyntaxKind::SUB_DEF 
+            SyntaxKind::IF_STMT
+            | SyntaxKind::UNLESS_STMT
+            | SyntaxKind::WHILE_STMT
+            | SyntaxKind::UNTIL_STMT
+            | SyntaxKind::FOR_STMT
+            | SyntaxKind::SUB_DEF
             | SyntaxKind::BLOCK_STMT => {
                 self.prev_brace_was_statement_level = true;
             }
             // Expression-level constructs that end with closing braces
-            SyntaxKind::HASH_REF | SyntaxKind::ARRAY_REF | SyntaxKind::ANON_SUB_EXPR 
-            | SyntaxKind::TYPEGLOB_EXPR | SyntaxKind::BLOCK_FUNCTION_CALL_EXPR => {
+            SyntaxKind::HASH_REF
+            | SyntaxKind::ARRAY_REF
+            | SyntaxKind::ANON_SUB_EXPR
+            | SyntaxKind::TYPEGLOB_EXPR
+            | SyntaxKind::BLOCK_FUNCTION_CALL_EXPR => {
                 self.prev_brace_was_statement_level = false;
             }
             _ => {
@@ -624,6 +631,14 @@ impl Formatter {
             return false;
         }
 
+        // Never apply continuation indent to closing delimiters
+        if matches!(
+            current,
+            SyntaxKind::R_PAREN | SyntaxKind::R_BRACKET | SyntaxKind::R_BRACE
+        ) {
+            return false;
+        }
+
         match self.prev_token_kind {
             None => return false,
             Some(SyntaxKind::L_BRACE) => return false,
@@ -633,39 +648,16 @@ impl Formatter {
                 return self.is_prev_comment_inline();
             }
             Some(SyntaxKind::R_BRACE) => {
-                // Suppress continuation indent for else/elsif keywords so they align with their if
                 if matches!(current, SyntaxKind::ELSE_KW | SyntaxKind::ELSIF_KW) {
                     return false; // These should align with the if, not be indented
                 }
-                if matches!(current, SyntaxKind::ARROW | SyntaxKind::DOT) {
-                    return true; // Method chaining
-                }
-                // For postfix modifier keywords, use logical statement-level context
-                if matches!(
-                    current,
-                    SyntaxKind::IF_KW
-                        | SyntaxKind::UNLESS_KW
-                        | SyntaxKind::WHILE_KW
-                        | SyntaxKind::UNTIL_KW
-                        | SyntaxKind::FOR_KW
-                        | SyntaxKind::FOREACH_KW
-                ) {
-                    // Logical approach: if the previous brace closed a statement-level construct,
-                    // then this keyword is a new statement (no continuation indent).
-                    // Otherwise, it's likely a postfix modifier (needs continuation indent).
-                    return !self.prev_brace_was_statement_level;
-                }
-                return false; // Default: no continuation
+
+                // If the previous brace closed an expression-level construct (e.g., a `do` block),
+                // we are continuing an expression and should indent. Otherwise, the brace closed
+                // a statement, and we should not apply continuation indent.
+                return !self.prev_brace_was_statement_level;
             }
             _ => {}
-        }
-
-        // Never apply continuation indent to closing delimiters
-        if matches!(
-            current,
-            SyntaxKind::R_PAREN | SyntaxKind::R_BRACKET | SyntaxKind::R_BRACE
-        ) {
-            return false;
         }
 
         true
@@ -675,7 +667,11 @@ impl Formatter {
         // Check if the previous comment was inline AND if it's in a continuation context
         // Comments after complete statements (ending with semicolon or closing brace) should not allow continuation
         if let Some(last_line) = self.lines.last() {
-            if let Some(comment_pos) = last_line.tokens.iter().position(|t| t.kind == SyntaxKind::COMMENT) {
+            if let Some(comment_pos) = last_line
+                .tokens
+                .iter()
+                .position(|t| t.kind == SyntaxKind::COMMENT)
+            {
                 let mut has_content_before_comment = false;
                 let mut last_token_before_comment: Option<SyntaxKind> = None;
 
@@ -692,7 +688,10 @@ impl Formatter {
                 }
 
                 // Don't allow continuation if the comment follows a statement-ending token.
-                if matches!(last_token_before_comment, Some(SyntaxKind::SEMICOLON | SyntaxKind::R_BRACE)) {
+                if matches!(
+                    last_token_before_comment,
+                    Some(SyntaxKind::SEMICOLON | SyntaxKind::R_BRACE)
+                ) {
                     return false;
                 }
 
@@ -702,7 +701,6 @@ impl Formatter {
         // If we can't determine, be conservative and don't allow continuation
         false
     }
-
 
     fn format_token(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
         let kind = token.kind();
