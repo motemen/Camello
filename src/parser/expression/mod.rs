@@ -158,17 +158,43 @@ impl Parser<'_> {
     /// Check if a bareword (IDENT) should be treated as a filehandle.
     /// Only treat as filehandle if followed by whitespace or end of statement.
     fn should_treat_as_filehandle(&self) -> bool {
-        // Look ahead to see what follows the IDENT
-        let next_token = self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1);
+        // Look ahead to see what follows the IDENT. Use Operator context to help disambiguate.
+        let next_token = self.peek_nth_non_trivia_token_with_context(LexContext::Operator, 1);
 
         match next_token {
             // If followed by parentheses, it's a function call
             Some((SyntaxKind::L_PAREN, _)) => false,
-            // If followed by something that can start an expression or end of file, treat as filehandle
+            // If followed by a likely binary operator, it's a function call in an expression
+            Some((kind, _))
+                if matches!(
+                    kind,
+                    SyntaxKind::PLUS
+                        | SyntaxKind::MINUS
+                        | SyntaxKind::ASTERISK
+                        | SyntaxKind::SLASH
+                        | SyntaxKind::PERCENT
+                        | SyntaxKind::CARET
+                        | SyntaxKind::AMPERSAND
+                        | SyntaxKind::BITWISE_OR
+                        | SyntaxKind::LT
+                        | SyntaxKind::GT
+                        | SyntaxKind::EQ
+                        | SyntaxKind::NE
+                        | SyntaxKind::LE
+                        | SyntaxKind::GE
+                        | SyntaxKind::STR_CMP
+                        | SyntaxKind::LOGICAL_AND
+                        | SyntaxKind::LOGICAL_OR
+                        | SyntaxKind::BITWISE_XOR
+                ) =>
+            {
+                false
+            }
+            // If followed by something that can start an expression, treat as filehandle
             Some((kind, _)) if Self::can_start_expression(kind) => true,
             // End of file or other contexts - treat as filehandle
             None => true,
-            // Other tokens (operators, semicolon, etc.) - treat as filehandle
+            // Other tokens (comma, semicolon, etc.) - treat as filehandle
             _ => true,
         }
     }
@@ -199,6 +225,32 @@ impl Parser<'_> {
                 | SyntaxKind::L_PAREN,
                 _,
             )) => false,
+            // If followed by a likely binary operator, it's an expression, not a filehandle
+            Some((kind, _))
+                if matches!(
+                    kind,
+                    SyntaxKind::PLUS
+                        | SyntaxKind::MINUS
+                        | SyntaxKind::ASTERISK
+                        | SyntaxKind::SLASH
+                        | SyntaxKind::PERCENT
+                        | SyntaxKind::CARET
+                        | SyntaxKind::AMPERSAND
+                        | SyntaxKind::BITWISE_OR
+                        | SyntaxKind::LT
+                        | SyntaxKind::GT
+                        | SyntaxKind::EQ
+                        | SyntaxKind::NE
+                        | SyntaxKind::LE
+                        | SyntaxKind::GE
+                        | SyntaxKind::STR_CMP
+                        | SyntaxKind::LOGICAL_AND
+                        | SyntaxKind::LOGICAL_OR
+                        | SyntaxKind::BITWISE_XOR
+                ) =>
+            {
+                false
+            }
             // If followed by something that can start an expression or end of file, treat as filehandle
             Some((kind, _)) if Self::can_start_expression(kind) => true,
             // End of file or other contexts - treat as filehandle
