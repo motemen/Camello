@@ -34,7 +34,7 @@ impl Parser<'_> {
         }
         self.skip_whitespace_and_newlines();
 
-        // Block function call: e.g., map { ... } @list
+        // Block-style function call: e.g., foo { ... } @list
         if self.at(SyntaxKind::L_BRACE)
             && (Self::is_block_function(&function_name)
                 || Self::is_print_like_function(&function_name))
@@ -113,15 +113,12 @@ impl Parser<'_> {
         }
     }
 
-    /// Check if a function name is a block-receiving function (has & prototype)
-    /// This includes built-in functions and should be extended to handle user-defined functions with & prototypes
+    /// Determine whether a function name should be treated as accepting a leading block argument.
+    ///
+    /// We currently allow any function name (including qualified names) to take a block argument.
+    /// This hook remains so future work can restore more selective behavior if desired.
     fn is_block_function(function_name: &str) -> bool {
-        matches!(
-            function_name,
-            // Built-in block functions
-            "eval" | "map" | "grep" | "sort" | "do" // Note: User-defined functions with & prototypes should also be detected
-                                                    // but that requires tracking function definitions across the parse
-        )
+        !function_name.is_empty()
     }
 
     fn parse_print_like_args(&mut self) {

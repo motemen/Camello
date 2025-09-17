@@ -1268,6 +1268,17 @@ fn test_eval_block_function_formatting() {
 }
 
 #[test]
+fn test_generic_block_function_formatting() {
+    let input = "foo{$_+1}@values; Module::bar{process($_)}@items;";
+    let formatted = format_and_assert(input);
+
+    insta::assert_snapshot!(formatted, @r"
+        foo { $_ + 1 } @values;
+        Module::bar { process($_) } @items;
+        ");
+}
+
+#[test]
 fn test_print_binary_operator_disambiguation() {
     // Test cases to ensure binary operators are correctly parsed as expressions, not filehandles
     // Focus on key cases that verify the disambiguation logic works
