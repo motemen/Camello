@@ -215,7 +215,7 @@ impl Formatter {
             | SyntaxKind::CODE_REF_CALL_EXPR
             | SyntaxKind::HASH_SUBSCRIPTION_EXPR
             | SyntaxKind::ARRAY_SUBSCRIPTION_EXPR
-            | SyntaxKind::DEREF_EXPR
+            | SyntaxKind::COMPOUND_VAR
             | SyntaxKind::REGEX_EXPR
             | SyntaxKind::BACKTICK_EXPR => {
                 self.format_expr(node);

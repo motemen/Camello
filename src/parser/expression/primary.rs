@@ -41,13 +41,50 @@ impl Parser<'_> {
 
     pub fn parse_variable(&mut self) {
         let sigil = self.current_kind().unwrap();
-        let var_kind = match sigil {
-            SyntaxKind::DOLLAR => SyntaxKind::SCALAR_VAR,
-            SyntaxKind::DOLLAR_HASH => SyntaxKind::SCALAR_VAR, // $# variables are still scalar variables
-            SyntaxKind::AT => SyntaxKind::ARRAY_VAR,
-            SyntaxKind::PERCENT => SyntaxKind::HASH_VAR,
-            SyntaxKind::ASTERISK => SyntaxKind::TYPEGLOB_VAR,
-            _ => unreachable!(),
+
+        // Check if this should be a compound variable
+        let is_compound = match sigil {
+            SyntaxKind::DOLLAR_HASH => true, // $# variables are always compound
+            SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT => {
+                // Check if followed by brace or valid dereferencing pattern
+                match self
+                    .peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 1)
+                {
+                    Some((SyntaxKind::L_BRACE, _)) => true, // @{expr}, %{expr}, ${expr}
+                    Some((SyntaxKind::DOLLAR, _)) => {
+                        // Peek the third token to ensure a valid variable name follows
+                        // to avoid misclassifying special variables like "$$;" as dereferencing
+                        let third = self.peek_nth_non_trivia_token_with_context(
+                            crate::lexer::LexContext::Value,
+                            2,
+                        );
+                        matches!(
+                            third.map(|(k, _)| k),
+                            Some(
+                                SyntaxKind::IDENT
+                                    | SyntaxKind::NUMBER
+                                    | SyntaxKind::AT
+                                    | SyntaxKind::CARET
+                                    | SyntaxKind::L_BRACE
+                            )
+                        )
+                    }
+                    _ => false,
+                }
+            }
+            _ => false,
+        };
+
+        let var_kind = if is_compound {
+            SyntaxKind::COMPOUND_VAR
+        } else {
+            match sigil {
+                SyntaxKind::DOLLAR => SyntaxKind::SCALAR_VAR,
+                SyntaxKind::AT => SyntaxKind::ARRAY_VAR,
+                SyntaxKind::PERCENT => SyntaxKind::HASH_VAR,
+                SyntaxKind::ASTERISK => SyntaxKind::TYPEGLOB_VAR,
+                _ => unreachable!(),
+            }
         };
 
         self.builder.start_node(var_kind.into());
@@ -56,37 +93,72 @@ impl Parser<'_> {
         self.bump();
         self.skip_whitespace_and_newlines();
 
-        // For $# sigil, parse the array name or variable reference
-        if sigil == SyntaxKind::DOLLAR_HASH {
-            match self.current_kind() {
-                Some(SyntaxKind::IDENT) => {
-                    // $#array_name
-                    self.parse_identifier_or_qualified();
-                }
-                Some(SyntaxKind::DOLLAR) => {
-                    // $#$var
-                    self.parse_variable();
-                }
-                Some(SyntaxKind::L_BRACE) => {
-                    // $#{...}
-                    self.bump(); // consume {
+        // Handle compound variable parsing
+        if is_compound {
+            match sigil {
+                SyntaxKind::DOLLAR_HASH => {
+                    // $# variables
+                    match self.current_kind() {
+                        Some(SyntaxKind::IDENT) => {
+                            // $#array_name
+                            self.parse_identifier_or_qualified();
+                        }
+                        Some(SyntaxKind::DOLLAR) => {
+                            // $#$var
+                            self.parse_variable();
+                        }
+                        Some(SyntaxKind::L_BRACE) => {
+                            // $#{...}
+                            self.bump(); // consume {
 
-                    if !self.expression() {
-                        self.error("Expected expression in $#{...}");
-                    }
+                            if !self.expression() {
+                                self.error("Expected expression in $#{...}");
+                            }
 
-                    if self.at(SyntaxKind::R_BRACE) {
-                        self.bump(); // consume }
-                    } else {
-                        self.error("Expected '}' after expression in $#{...}");
+                            if self.at(SyntaxKind::R_BRACE) {
+                                self.bump(); // consume }
+                            } else {
+                                self.error("Expected '}' after expression in $#{...}");
+                            }
+                        }
+                        _ => {
+                            self.error("Expected array name or variable after $#");
+                        }
                     }
                 }
-                _ => {
-                    self.error("Expected array name or variable after $#");
+                SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT => {
+                    // Handle braced variables and dereferencing
+                    match self.current_kind() {
+                        Some(SyntaxKind::L_BRACE) => {
+                            // Braced variable: @{expr}, %{expr}, ${expr}
+                            self.bump(); // consume {
+                            self.skip_whitespace_and_newlines();
+
+                            if !self.expression() {
+                                self.error("Expected expression inside braces");
+                            }
+
+                            self.skip_whitespace_and_newlines();
+                            if self.at(SyntaxKind::R_BRACE) {
+                                self.bump(); // consume }
+                            } else {
+                                self.error("Expected '}' to close braced variable");
+                            }
+                        }
+                        Some(SyntaxKind::DOLLAR) => {
+                            // Dereferencing: @$ref, %$ref, $$ref
+                            self.parse_variable();
+                        }
+                        _ => {
+                            // This shouldn't happen due to our lookahead check
+                            self.error("Expected '{' or '$' after compound variable sigil");
+                        }
+                    }
                 }
+                _ => unreachable!(),
             }
         } else {
-            // Standard variable parsing for other sigils
+            // Standard variable parsing for simple variables
             match self.current_kind() {
                 Some(SyntaxKind::IDENT) => {
                     // Regular identifier or qualified identifier (including $_, $_foo, etc.)
@@ -278,43 +350,7 @@ impl Parser<'_> {
             .is_some_and(|(kind, _)| kind == SyntaxKind::R_BRACE)
     }
 
-    /// Parses a dereferencing expression (e.g., @$var, %$var, $$var, @{expr}, %{expr}, ${expr}).
-    pub fn parse_dereferencing(&mut self) {
-        self.builder.start_node(SyntaxKind::DEREF_EXPR.into());
-
-        // Consume the first sigil (dereference operator)
-        self.bump();
-        self.skip_whitespace_and_newlines();
-
-        // Parse what comes after the dereference sigil
-        match self.current_kind() {
-            Some(SyntaxKind::DOLLAR) => {
-                // Traditional dereferencing: @$var, %$var, $$var
-                self.parse_variable();
-            }
-            Some(SyntaxKind::L_BRACE) => {
-                // Expression dereferencing: @{expr}, %{expr}, ${expr}
-                self.bump(); // consume {
-                self.skip_whitespace_and_newlines();
-
-                if !self.expression() {
-                    self.error("Expected expression in dereferencing braces");
-                }
-
-                if self.at(SyntaxKind::R_BRACE) {
-                    self.bump(); // consume }
-                    self.skip_whitespace_and_newlines();
-                } else {
-                    self.error("Expected '}' after dereferencing expression");
-                }
-            }
-            _ => {
-                self.error("Expected scalar variable (e.g., $ref) or expression in braces (e.g., {expr}) after dereference sigil");
-            }
-        }
-
-        self.builder.finish_node();
-    }
+    // This function is no longer needed - compound variables are now handled in parse_variable()
 
     /// Parses a regular identifier or qualified identifier, accepting keywords as identifiers
     /// in identifier-expected positions. Examples: Foo, Foo::Bar, Foo::Bar::Baz, and keywords
