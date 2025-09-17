@@ -278,6 +278,12 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
         // Arrow operator: highest priority, never spaces
         (ARROW, _) | (_, ARROW) => Some(false),
 
+        // Postfix dereference operators (->@*, ->%*, ->$*): never add spaces before them
+        (
+            _,
+            POSTFIX_DEREF_ARRAY | POSTFIX_DEREF_HASH | POSTFIX_DEREF_SCALAR,
+        ) => Some(false),
+
         // Compound assignment operators: no space between operator and =
         // e.g., ||=, &&=, +=, -=, *=, /=, %=, .=, //=, &=
         (prev_op, EQ) if prev_op.is_compoundable_operator() => Some(false),
