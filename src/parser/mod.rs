@@ -663,6 +663,24 @@ mod tests {
     }
 
     #[test]
+    fn test_say_with_qualified_method_call() {
+        let input = "say Foo::Bar->method();";
+        let (green, errors) = parse(input);
+        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+
+        let root = PerlNode::new_root(green);
+        let stmt = root.children().next().expect("missing statement");
+        assert_eq!(stmt.kind(), SyntaxKind::STMT);
+
+        assert!(
+            stmt
+                .descendants()
+                .any(|node| node.kind() == SyntaxKind::METHOD_CALL_EXPR),
+            "expected METHOD_CALL_EXPR inside say arguments"
+        );
+    }
+
+    #[test]
     fn test_bare_block_statement() {
         let input = "warn 1; { warn 2 } warn 3;";
         let (green, errors) = parse(input);

@@ -162,8 +162,8 @@ impl Parser<'_> {
         let next_token = self.peek_nth_non_trivia_token_with_context(LexContext::Operator, 1);
 
         match next_token {
-            // If followed by parentheses, it's a function call
-            Some((SyntaxKind::L_PAREN, _)) => false,
+            // If followed by parentheses or method/package separators, it's an expression
+            Some((SyntaxKind::L_PAREN | SyntaxKind::DOUBLE_COLON | SyntaxKind::ARROW, _)) => false,
             // If followed by a likely binary operator, it's a function call in an expression
             Some((
                 SyntaxKind::PLUS
