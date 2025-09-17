@@ -41,6 +41,7 @@ pub struct Formatter {
     in_multiline_context: bool, // Track when we're in structured multiline formatting
     last_line_break_was_user: bool,
     user_newlines_to_skip: usize,
+    prev_brace_was_statement_level: bool, // Track if the previous R_BRACE closed a statement-level construct
 }
 
 impl Default for Formatter {
@@ -63,6 +64,7 @@ impl Formatter {
             in_multiline_context: false,
             last_line_break_was_user: false,
             user_newlines_to_skip: 0,
+            prev_brace_was_statement_level: false,
         }
     }
 
@@ -164,6 +166,24 @@ impl Formatter {
                 | SyntaxKind::EMPTY_STMT
         ) {
             self.add_empty_line_before_if_needed(node);
+        }
+
+        // Track statement-level context for logical continuation indent decisions
+        match node.kind() {
+            // Statement-level constructs that end with closing braces
+            SyntaxKind::IF_STMT | SyntaxKind::UNLESS_STMT | SyntaxKind::WHILE_STMT 
+            | SyntaxKind::UNTIL_STMT | SyntaxKind::FOR_STMT | SyntaxKind::SUB_DEF 
+            | SyntaxKind::BLOCK_STMT => {
+                self.prev_brace_was_statement_level = true;
+            }
+            // Expression-level constructs that end with closing braces
+            SyntaxKind::HASH_REF | SyntaxKind::ARRAY_REF | SyntaxKind::ANON_SUB_EXPR 
+            | SyntaxKind::TYPEGLOB_EXPR | SyntaxKind::BLOCK_FUNCTION_CALL_EXPR => {
+                self.prev_brace_was_statement_level = false;
+            }
+            _ => {
+                // For other constructs, don't change the flag
+            }
         }
 
         // Node types that require special handling
@@ -620,7 +640,7 @@ impl Formatter {
                 if matches!(current, SyntaxKind::ARROW | SyntaxKind::DOT) {
                     return true; // Method chaining
                 }
-                // For postfix modifier keywords, check if this might be a consecutive statement
+                // For postfix modifier keywords, use logical statement-level context
                 if matches!(
                     current,
                     SyntaxKind::IF_KW
@@ -630,9 +650,10 @@ impl Formatter {
                         | SyntaxKind::FOR_KW
                         | SyntaxKind::FOREACH_KW
                 ) {
-                    // Simple heuristic: if we recently saw the same keyword, it's likely
-                    // consecutive statements rather than a postfix modifier
-                    return !self.recently_saw_same_statement_keyword(current);
+                    // Logical approach: if the previous brace closed a statement-level construct,
+                    // then this keyword is a new statement (no continuation indent).
+                    // Otherwise, it's likely a postfix modifier (needs continuation indent).
+                    return !self.prev_brace_was_statement_level;
                 }
                 return false; // Default: no continuation
             }
@@ -678,26 +699,6 @@ impl Formatter {
         false
     }
 
-    fn recently_saw_same_statement_keyword(&self, current: SyntaxKind) -> bool {
-        // Look at recent lines to see if we had the same statement keyword
-        // If so, this is likely consecutive statements rather than a postfix modifier
-        let recent_lines = if self.lines.len() >= 2 {
-            &self.lines[self.lines.len() - 2..]
-        } else {
-            &self.lines
-        };
-
-        for line in recent_lines.iter() {
-            for token in &line.tokens {
-                if token.kind == current {
-                    // We found the same keyword recently - likely consecutive statements
-                    return true;
-                }
-            }
-        }
-
-        false // Didn't find the same keyword recently
-    }
 
     fn format_token(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
         let kind = token.kind();
