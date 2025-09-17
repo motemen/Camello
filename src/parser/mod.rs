@@ -673,8 +673,7 @@ mod tests {
         assert_eq!(stmt.kind(), SyntaxKind::STMT);
 
         assert!(
-            stmt
-                .descendants()
+            stmt.descendants()
                 .any(|node| node.kind() == SyntaxKind::METHOD_CALL_EXPR),
             "expected METHOD_CALL_EXPR inside say arguments"
         );
