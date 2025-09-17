@@ -165,31 +165,27 @@ impl Parser<'_> {
             // If followed by parentheses, it's a function call
             Some((SyntaxKind::L_PAREN, _)) => false,
             // If followed by a likely binary operator, it's a function call in an expression
-            Some((kind, _))
-                if matches!(
-                    kind,
-                    SyntaxKind::PLUS
-                        | SyntaxKind::MINUS
-                        | SyntaxKind::ASTERISK
-                        | SyntaxKind::SLASH
-                        | SyntaxKind::PERCENT
-                        | SyntaxKind::CARET
-                        | SyntaxKind::AMPERSAND
-                        | SyntaxKind::BITWISE_OR
-                        | SyntaxKind::LT
-                        | SyntaxKind::GT
-                        | SyntaxKind::EQ
-                        | SyntaxKind::NE
-                        | SyntaxKind::LE
-                        | SyntaxKind::GE
-                        | SyntaxKind::STR_CMP
-                        | SyntaxKind::LOGICAL_AND
-                        | SyntaxKind::LOGICAL_OR
-                        | SyntaxKind::BITWISE_XOR
-                ) =>
-            {
-                false
-            }
+            Some((
+                SyntaxKind::PLUS
+                | SyntaxKind::MINUS
+                | SyntaxKind::ASTERISK
+                | SyntaxKind::SLASH
+                | SyntaxKind::PERCENT
+                | SyntaxKind::CARET
+                | SyntaxKind::AMPERSAND
+                | SyntaxKind::BITWISE_OR
+                | SyntaxKind::LT
+                | SyntaxKind::GT
+                | SyntaxKind::EQ
+                | SyntaxKind::NE
+                | SyntaxKind::LE
+                | SyntaxKind::GE
+                | SyntaxKind::STR_CMP
+                | SyntaxKind::LOGICAL_AND
+                | SyntaxKind::LOGICAL_OR
+                | SyntaxKind::BITWISE_XOR,
+                _,
+            )) => false,
             // If followed by something that can start an expression, treat as filehandle
             Some((kind, _)) if Self::can_start_expression(kind) => true,
             // End of file or other contexts - treat as filehandle
@@ -226,31 +222,27 @@ impl Parser<'_> {
                 _,
             )) => false,
             // If followed by a likely binary operator, it's an expression, not a filehandle
-            Some((kind, _))
-                if matches!(
-                    kind,
-                    SyntaxKind::PLUS
-                        | SyntaxKind::MINUS
-                        | SyntaxKind::ASTERISK
-                        | SyntaxKind::SLASH
-                        | SyntaxKind::PERCENT
-                        | SyntaxKind::CARET
-                        | SyntaxKind::AMPERSAND
-                        | SyntaxKind::BITWISE_OR
-                        | SyntaxKind::LT
-                        | SyntaxKind::GT
-                        | SyntaxKind::EQ
-                        | SyntaxKind::NE
-                        | SyntaxKind::LE
-                        | SyntaxKind::GE
-                        | SyntaxKind::STR_CMP
-                        | SyntaxKind::LOGICAL_AND
-                        | SyntaxKind::LOGICAL_OR
-                        | SyntaxKind::BITWISE_XOR
-                ) =>
-            {
-                false
-            }
+            Some((
+                SyntaxKind::PLUS
+                | SyntaxKind::MINUS
+                | SyntaxKind::ASTERISK
+                | SyntaxKind::SLASH
+                | SyntaxKind::PERCENT
+                | SyntaxKind::CARET
+                | SyntaxKind::AMPERSAND
+                | SyntaxKind::BITWISE_OR
+                | SyntaxKind::LT
+                | SyntaxKind::GT
+                | SyntaxKind::EQ
+                | SyntaxKind::NE
+                | SyntaxKind::LE
+                | SyntaxKind::GE
+                | SyntaxKind::STR_CMP
+                | SyntaxKind::LOGICAL_AND
+                | SyntaxKind::LOGICAL_OR
+                | SyntaxKind::BITWISE_XOR,
+                _,
+            )) => false,
             // If followed by something that can start an expression or end of file, treat as filehandle
             Some((kind, _)) if Self::can_start_expression(kind) => true,
             // End of file or other contexts - treat as filehandle
