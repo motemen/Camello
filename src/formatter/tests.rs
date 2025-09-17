@@ -262,6 +262,7 @@ fn test_postfix_dereference_formatting() {
         ("$ref->$*;", "$ref->$*;\n"),
         ("$foo->@*[0];", "$foo->@*[0];\n"),
         ("$bar->%*{key};", "$bar->%*{key};\n"),
+        ("$obj->meth->@*;", "$obj->meth->@*;\n"),
     ];
     check_formatting_cases(&cases);
 }
