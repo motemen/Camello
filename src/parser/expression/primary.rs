@@ -43,6 +43,7 @@ impl Parser<'_> {
         let sigil = self.current_kind().unwrap();
         let var_kind = match sigil {
             SyntaxKind::DOLLAR => SyntaxKind::SCALAR_VAR,
+            SyntaxKind::DOLLAR_HASH => SyntaxKind::SCALAR_VAR, // $# variables are still scalar variables
             SyntaxKind::AT => SyntaxKind::ARRAY_VAR,
             SyntaxKind::PERCENT => SyntaxKind::HASH_VAR,
             SyntaxKind::ASTERISK => SyntaxKind::TYPEGLOB_VAR,
@@ -55,79 +56,110 @@ impl Parser<'_> {
         self.bump();
         self.skip_whitespace_and_newlines();
 
-        // Check what comes after the sigil
-        match self.current_kind() {
-            Some(SyntaxKind::IDENT) => {
-                // Regular identifier or qualified identifier (including $_, $_foo, etc.)
-                self.parse_identifier_or_qualified();
-            }
-            Some(SyntaxKind::NUMBER) => {
-                // Number like $1, $2, etc. - treat as regular variable name
-                self.bump();
-            }
-            Some(SyntaxKind::AT) => {
-                // Special punctuation like $@ - treat as regular variable name
-                self.bump();
-            }
-            Some(SyntaxKind::CARET) => {
-                // Handle $^ or $^X patterns
-                self.bump(); // consume ^
+        // For $# sigil, parse the array name or variable reference
+        if sigil == SyntaxKind::DOLLAR_HASH {
+            match self.current_kind() {
+                Some(SyntaxKind::IDENT) => {
+                    // $#array_name
+                    self.parse_identifier_or_qualified();
+                }
+                Some(SyntaxKind::DOLLAR) => {
+                    // $#$var
+                    self.parse_variable();
+                }
+                Some(SyntaxKind::L_BRACE) => {
+                    // $#{...}
+                    self.bump(); // consume {
 
-                // Check if there's a character after ^
-                if self.at(SyntaxKind::IDENT) {
-                    // This is $^X pattern where X is an identifier (single char)
-                    self.bump();
+                    if !self.expression() {
+                        self.error("Expected expression in $#{...}");
+                    }
+
+                    if self.at(SyntaxKind::R_BRACE) {
+                        self.bump(); // consume }
+                    } else {
+                        self.error("Expected '}' after expression in $#{...}");
+                    }
+                }
+                _ => {
+                    self.error("Expected array name or variable after $#");
                 }
             }
-            Some(SyntaxKind::L_BRACE) => {
-                // Handle ${...} syntax (e.g., ${^NAME})
-                self.bump(); // consume {
-
-                // Check for ^ inside braces
-                if self.at(SyntaxKind::CARET) {
+        } else {
+            // Standard variable parsing for other sigils
+            match self.current_kind() {
+                Some(SyntaxKind::IDENT) => {
+                    // Regular identifier or qualified identifier (including $_, $_foo, etc.)
+                    self.parse_identifier_or_qualified();
+                }
+                Some(SyntaxKind::NUMBER) => {
+                    // Number like $1, $2, etc. - treat as regular variable name
+                    self.bump();
+                }
+                Some(SyntaxKind::AT) => {
+                    // Special punctuation like $@ - treat as regular variable name
+                    self.bump();
+                }
+                Some(SyntaxKind::CARET) => {
+                    // Handle $^ or $^X patterns
                     self.bump(); // consume ^
-                }
 
-                // Parse identifier inside braces
-                if self.at(SyntaxKind::IDENT) {
-                    self.bump();
+                    // Check if there's a character after ^
+                    if self.at(SyntaxKind::IDENT) {
+                        // This is $^X pattern where X is an identifier (single char)
+                        self.bump();
+                    }
                 }
+                Some(SyntaxKind::L_BRACE) => {
+                    // Handle ${...} syntax (e.g., ${^NAME})
+                    self.bump(); // consume {
 
-                // Expect closing brace
-                if self.at(SyntaxKind::R_BRACE) {
-                    self.bump();
-                } else {
-                    self.error("Expected '}' to close variable name");
+                    // Check for ^ inside braces
+                    if self.at(SyntaxKind::CARET) {
+                        self.bump(); // consume ^
+                    }
+
+                    // Parse identifier inside braces
+                    if self.at(SyntaxKind::IDENT) {
+                        self.bump();
+                    }
+
+                    // Expect closing brace
+                    if self.at(SyntaxKind::R_BRACE) {
+                        self.bump();
+                    } else {
+                        self.error("Expected '}' to close variable name");
+                    }
                 }
-            }
-            Some(SyntaxKind::DOUBLE_COLON) => {
-                // Allow variables like $::foo (root-qualified names)
-                self.bump(); // consume ::
-                self.skip_whitespace_and_newlines();
-                self.parse_identifier_or_qualified();
-            }
-            _ => {
-                // Accept any ASCII punctuation as a valid special variable name by
-                // consuming exactly one character, regardless of the lexer's tokenization.
-                if let Some(text) = self.current_text() {
-                    if text
-                        .chars()
-                        .next()
-                        .is_some_and(|ch| ch.is_ascii_punctuation())
-                    {
-                        // Manually consume one character from the lexer and emit it as IDENT.
-                        if let Some((k, t)) = self.lexer.consume_one_char_as_ident() {
-                            self.builder.token(k.into(), t);
-                            self.current_pos += t.len();
+                Some(SyntaxKind::DOUBLE_COLON) => {
+                    // Allow variables like $::foo (root-qualified names)
+                    self.bump(); // consume ::
+                    self.skip_whitespace_and_newlines();
+                    self.parse_identifier_or_qualified();
+                }
+                _ => {
+                    // Accept any ASCII punctuation as a valid special variable name by
+                    // consuming exactly one character, regardless of the lexer's tokenization.
+                    if let Some(text) = self.current_text() {
+                        if text
+                            .chars()
+                            .next()
+                            .is_some_and(|ch| ch.is_ascii_punctuation())
+                        {
+                            // Manually consume one character from the lexer and emit it as IDENT.
+                            if let Some((k, t)) = self.lexer.consume_one_char_as_ident() {
+                                self.builder.token(k.into(), t);
+                                self.current_pos += t.len();
+                            } else {
+                                self.error("Unexpected end while reading special variable name");
+                            }
                         } else {
-                            self.error("Unexpected end while reading special variable name");
+                            // Expect an identifier (including qualified identifiers)
+                            self.parse_identifier_or_qualified();
                         }
                     } else {
-                        // Expect an identifier (including qualified identifiers)
-                        self.parse_identifier_or_qualified();
+                        self.error("Expected variable name after sigil");
                     }
-                } else {
-                    self.error("Expected variable name after sigil");
                 }
             }
         }
@@ -200,6 +232,10 @@ impl Parser<'_> {
         // If the current token is not a sigil, it's not a dereference
         if let Some(current) = self.current_kind() {
             if !current.is_sigil() {
+                return false;
+            }
+            // DOLLAR_HASH ($#) is not a dereferencing sigil, it's for array last index
+            if current == SyntaxKind::DOLLAR_HASH {
                 return false;
             }
         } else {
