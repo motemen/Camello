@@ -12,6 +12,9 @@ struct HeredocMarker<'a> {
 #[derive(Logos, Debug, PartialEq, Clone)]
 pub enum Token {
     // Sigils（変数の型を示すプレフィックス）
+    #[token("$#")]
+    DollarHash,
+
     #[token("$")]
     Dollar,
 
@@ -239,6 +242,7 @@ impl Token {
     #[must_use]
     pub fn to_syntax_kind(&self) -> SyntaxKind {
         match self {
+            Token::DollarHash => SyntaxKind::DOLLAR_HASH,
             Token::Dollar => SyntaxKind::DOLLAR,
             Token::At => SyntaxKind::AT,
             Token::Backslash => SyntaxKind::BACKSLASH,

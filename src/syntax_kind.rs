@@ -14,13 +14,14 @@ pub enum SyntaxKind {
     QUALIFIED_IDENT, // Qualified identifier (e.g., Foo::Bar::baz)
 
     // Sigils (prefixes indicating variable type)
-    DOLLAR,    // $
-    AT,        // @
-    PERCENT,   // %
-    CARET,     // ^
-    BACKSLASH, // \ (reference operator)
-    AMPERSAND, // & (function sigil/reference)
-    ASTERISK,  // * (typeglob sigil)
+    DOLLAR,      // $
+    DOLLAR_HASH, // $# (array last index sigil)
+    AT,          // @
+    PERCENT,     // %
+    CARET,       // ^
+    BACKSLASH,   // \ (reference operator)
+    AMPERSAND,   // & (function sigil/reference)
+    ASTERISK,    // * (typeglob sigil)
 
     // Composite variable nodes (used later)
     SCALAR_VAR,
@@ -364,11 +365,11 @@ impl SyntaxKind {
         )
     }
 
-    #[must_use]
     pub fn is_sigil(self) -> bool {
         matches!(
             self,
             SyntaxKind::DOLLAR
+                | SyntaxKind::DOLLAR_HASH
                 | SyntaxKind::AT
                 | SyntaxKind::PERCENT
                 | SyntaxKind::BACKSLASH
