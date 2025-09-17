@@ -35,7 +35,10 @@ impl Parser<'_> {
         self.skip_whitespace_and_newlines();
 
         // Block function call: e.g., map { ... } @list
-        if Self::is_block_function(&function_name) && self.at(SyntaxKind::L_BRACE) {
+        if self.at(SyntaxKind::L_BRACE)
+            && (Self::is_block_function(&function_name)
+                || Self::is_print_like_function(&function_name))
+        {
             self.builder
                 .start_node_at(start, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());
             self.parse_block_function_args();
@@ -55,6 +58,19 @@ impl Parser<'_> {
                 // Parenthesized calls are handled by postfix parsing logic
                 return;
             }
+        }
+
+        if Self::is_print_like_function(&function_name) {
+            if self.is_at_start_of_expression() {
+                self.builder
+                    .start_node_at(start, SyntaxKind::FUNCTION_CALL_EXPR.into());
+                self.parse_print_like_args();
+                self.builder.finish_node();
+            }
+            return;
+        }
+
+        if let Some(kind) = next_kind {
             if Self::can_start_expression(kind) {
                 // We have a regular function call, wrap everything in FUNCTION_CALL_EXPR
                 self.builder
@@ -106,6 +122,138 @@ impl Parser<'_> {
             "eval" | "map" | "grep" | "sort" | "do" // Note: User-defined functions with & prototypes should also be detected
                                                     // but that requires tracking function definitions across the parse
         )
+    }
+
+    fn parse_print_like_args(&mut self) {
+        let mut consumed_filehandle = false;
+
+        // Use lookahead to determine if this is a filehandle pattern:
+        // Only treat IDENT/SCALAR as filehandle if followed by whitespace or end of statement
+        // Otherwise treat as normal function call
+        if self.at(SyntaxKind::IDENT) {
+            // Check if this bareword should be treated as a filehandle
+            if self.should_treat_as_filehandle() {
+                self.bump_value();
+                consumed_filehandle = true;
+                self.skip_whitespace_and_newlines();
+            }
+        } else if self.at(SyntaxKind::DOLLAR) {
+            // Check if this scalar should be treated as a filehandle
+            if self.should_treat_scalar_as_filehandle() {
+                self.parse_variable();
+                consumed_filehandle = true;
+            }
+        }
+
+        if consumed_filehandle && self.at_any(&[SyntaxKind::COMMA, SyntaxKind::FAT_COMMA]) {
+            self.bump_value();
+            self.skip_whitespace_and_newlines();
+        }
+
+        if self.is_at_start_of_expression() {
+            self.expression_list();
+        }
+    }
+
+    /// Check if a bareword (IDENT) should be treated as a filehandle.
+    /// Only treat as filehandle if followed by whitespace or end of statement.
+    fn should_treat_as_filehandle(&self) -> bool {
+        // Look ahead to see what follows the IDENT. Use Operator context to help disambiguate.
+        let next_token = self.peek_nth_non_trivia_token_with_context(LexContext::Operator, 1);
+
+        match next_token {
+            // If followed by parentheses, it's a function call
+            Some((SyntaxKind::L_PAREN, _)) => false,
+            // If followed by a likely binary operator, it's a function call in an expression
+            Some((
+                SyntaxKind::PLUS
+                | SyntaxKind::MINUS
+                | SyntaxKind::ASTERISK
+                | SyntaxKind::SLASH
+                | SyntaxKind::PERCENT
+                | SyntaxKind::CARET
+                | SyntaxKind::AMPERSAND
+                | SyntaxKind::BITWISE_OR
+                | SyntaxKind::LT
+                | SyntaxKind::GT
+                | SyntaxKind::EQ
+                | SyntaxKind::NE
+                | SyntaxKind::LE
+                | SyntaxKind::GE
+                | SyntaxKind::STR_CMP
+                | SyntaxKind::LOGICAL_AND
+                | SyntaxKind::LOGICAL_OR
+                | SyntaxKind::BITWISE_XOR,
+                _,
+            )) => false,
+            // If followed by something that can start an expression, treat as filehandle
+            Some((kind, _)) if Self::can_start_expression(kind) => true,
+            // End of file or other contexts - treat as filehandle
+            None => true,
+            // Other tokens (comma, semicolon, etc.) - treat as filehandle
+            _ => true,
+        }
+    }
+
+    /// Check if a scalar variable should be treated as a filehandle.
+    /// Only treat as filehandle if it's a simple variable followed by whitespace or end of statement.
+    fn should_treat_scalar_as_filehandle(&self) -> bool {
+        // Look ahead past the $IDENT to see what follows
+        // First, check if we have $IDENT pattern
+        if !self.at(SyntaxKind::DOLLAR) {
+            return false;
+        }
+
+        let next_after_dollar = self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1);
+        if !matches!(next_after_dollar, Some((SyntaxKind::IDENT, _))) {
+            return false;
+        }
+
+        // Now check what follows the $IDENT pattern
+        let token_after_var = self.peek_nth_non_trivia_token_with_context(LexContext::Operator, 2);
+
+        match token_after_var {
+            // If followed by postfix operations (arrow, brackets, etc.), it's not a simple filehandle
+            Some((
+                SyntaxKind::ARROW
+                | SyntaxKind::L_BRACKET
+                | SyntaxKind::L_BRACE
+                | SyntaxKind::L_PAREN,
+                _,
+            )) => false,
+            // If followed by a likely binary operator, it's an expression, not a filehandle
+            Some((
+                SyntaxKind::PLUS
+                | SyntaxKind::MINUS
+                | SyntaxKind::ASTERISK
+                | SyntaxKind::SLASH
+                | SyntaxKind::PERCENT
+                | SyntaxKind::CARET
+                | SyntaxKind::AMPERSAND
+                | SyntaxKind::BITWISE_OR
+                | SyntaxKind::LT
+                | SyntaxKind::GT
+                | SyntaxKind::EQ
+                | SyntaxKind::NE
+                | SyntaxKind::LE
+                | SyntaxKind::GE
+                | SyntaxKind::STR_CMP
+                | SyntaxKind::LOGICAL_AND
+                | SyntaxKind::LOGICAL_OR
+                | SyntaxKind::BITWISE_XOR,
+                _,
+            )) => false,
+            // If followed by something that can start an expression or end of file, treat as filehandle
+            Some((kind, _)) if Self::can_start_expression(kind) => true,
+            // End of file or other contexts - treat as filehandle
+            None => true,
+            // Other tokens (operators, semicolon, etc.) - treat as filehandle
+            _ => true,
+        }
+    }
+
+    fn is_print_like_function(function_name: &str) -> bool {
+        matches!(function_name, "print" | "printf" | "say")
     }
 
     pub fn expression(&mut self) -> bool {
