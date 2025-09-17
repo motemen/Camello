@@ -745,19 +745,13 @@ impl Parser<'_> {
                     Some((SyntaxKind::L_BRACE | SyntaxKind::IDENT, _))
                 ) {
                     self.parse_typeglob_expr();
-                } else if self.is_dereferencing_pattern() {
-                    self.parse_dereferencing();
                 } else {
                     self.parse_variable();
                 }
             }
             kind if kind.is_sigil() => {
-                // Check if this is a dereferencing pattern (sigil followed by another sigil)
-                if self.is_dereferencing_pattern() {
-                    self.parse_dereferencing();
-                } else {
-                    self.parse_variable();
-                }
+                // All sigil-based variables are now handled by parse_variable
+                self.parse_variable();
             }
             SyntaxKind::PLUS => {
                 // Unary plus prefix operator

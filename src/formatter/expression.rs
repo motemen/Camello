@@ -34,8 +34,8 @@ impl Formatter {
             SyntaxKind::ARRAY_SUBSCRIPTION_EXPR => {
                 self.format_array_subscription(node);
             }
-            SyntaxKind::DEREF_EXPR => {
-                self.format_deref_expr(node);
+            SyntaxKind::COMPOUND_VAR => {
+                self.format_compound_var(node);
             }
             SyntaxKind::REGEX_EXPR => {
                 // Default handling for regex expressions - just format children
@@ -223,8 +223,8 @@ impl Formatter {
         self.format_ref_access_expr(node, SyntaxKind::L_PAREN, SyntaxKind::R_PAREN);
     }
 
-    pub(super) fn format_deref_expr(&mut self, node: &PerlNode) {
-        // Handle dereferencing expressions like @$var, @{expr}
+    pub(super) fn format_compound_var(&mut self, node: &PerlNode) {
+        // Handle compound variables like @{expr}, %$var, $#array
         // For braced expressions, format them compactly without newlines or indentation
         for child in node.children_with_tokens() {
             match child {
