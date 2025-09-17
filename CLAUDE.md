@@ -63,6 +63,7 @@ The parser implements multiple error recovery strategies:
 - Multiline Formatting: Intelligently formats multiline array/hash references and `qw` expressions based on whether they contain newlines in the original source.
 - Verbatim Sections: Preserves `__DATA__` and POD sections exactly as they are.
 - Token Spans: Tracks the original token span for each line, enabling source mapping and diff generation features.
+- Design Principle: The formatter operates at the token level, not the character level. All formatting decisions should be based on `SyntaxKind` tokens and their relationships rather than string content analysis. This ensures robustness against edge cases like string literals containing special characters.
 
 **CLI** (`src/cli.rs`): Clap-based interface with `format` and `dump` subcommands. The `format` command also supports a `--check` flag to verify that code is already formatted. Input can come from files, strings (`-e`/`-E`), or stdin.
 

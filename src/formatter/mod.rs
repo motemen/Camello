@@ -673,27 +673,31 @@ impl Formatter {
 
     fn is_prev_comment_inline(&self) -> bool {
         // Check if the previous comment was inline AND if it's in a continuation context
-        // Comments after complete statements (ending with semicolon) should not allow continuation
+        // Comments after complete statements (ending with semicolon or closing brace) should not allow continuation
         if let Some(last_line) = self.lines.last() {
-            let mut has_content_before_comment = false;
-            let mut has_semicolon_before_comment = false;
+            if let Some(comment_pos) = last_line.tokens.iter().position(|t| t.kind == SyntaxKind::COMMENT) {
+                let mut has_content_before_comment = false;
+                let mut last_token_before_comment: Option<SyntaxKind> = None;
 
-            // Look for content before any comment token
-            for token_span in &last_line.tokens {
-                if token_span.kind == SyntaxKind::COMMENT {
-                    if token_span.start_byte > 0 {
-                        let content_before = last_line.text[..token_span.start_byte].trim();
-                        has_content_before_comment = !content_before.is_empty();
-                        has_semicolon_before_comment = content_before.ends_with(';') || content_before.ends_with('}');
+                // Check tokens before the comment to find the last significant token
+                for token in last_line.tokens.iter().take(comment_pos) {
+                    if !token.kind.is_trivia() {
+                        has_content_before_comment = true;
+                        last_token_before_comment = Some(token.kind);
                     }
-                    break;
                 }
-            }
 
-            // Only allow continuation if:
-            // 1. There's content before the comment (it's inline)
-            // 2. The content doesn't end with a statement terminator (like ';' or '}') (not a complete statement)
-            return has_content_before_comment && !has_semicolon_before_comment;
+                if !has_content_before_comment {
+                    return false; // Standalone comment, no continuation.
+                }
+
+                // Don't allow continuation if the comment follows a statement-ending token.
+                if matches!(last_token_before_comment, Some(SyntaxKind::SEMICOLON | SyntaxKind::R_BRACE)) {
+                    return false;
+                }
+
+                return true; // Inline comment on an incomplete statement.
+            }
         }
         // If we can't determine, be conservative and don't allow continuation
         false
