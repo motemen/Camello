@@ -2917,3 +2917,28 @@ fn test_hash_keyword_keys() {
     ];
     check_formatting_cases(&cases);
 }
+
+#[test]
+fn test_trailing_comma_and_fat_comma_in_blocks() {
+    check_formatting_cases(&[
+        // Basic trailing comma in block
+        ("sub f { 1, }", "sub f { 1, }"),
+        // Basic trailing fat comma in block
+        ("sub f { 1 => }", "sub f { 1 => }"),
+        // Multiple expressions with trailing comma
+        ("sub f { 1, 2, }", "sub f { 1, 2, }"),
+        // Hash-like structure with trailing fat comma
+        ("sub f { a => 1, b => }", "sub f { a => 1, b => }"),
+        // Mixed commas and fat commas with trailing operators
+        ("sub f { a => 1, 2, b => }", "sub f { a => 1, 2, b => }"),
+        // Complex expression with trailing comma
+        ("sub f { $x + $y, $z * 2, }", "sub f { $x + $y, $z * 2, }"),
+        // Nested structures with trailing operators
+        (
+            "sub f { [1, 2,], {a => 1,}, }",
+            "sub f { [1, 2,], {a => 1,}, }",
+        ),
+        // Multiline with trailing operators (corrected expected output)
+        ("sub f {\n    1,\n    2 =>\n}", "sub f { 1,\n    2 =>\n }"),
+    ]);
+}
