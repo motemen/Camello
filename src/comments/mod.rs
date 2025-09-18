@@ -54,7 +54,10 @@ impl TokenKey {
     /// Resolves the key back to an actual token inside `root` if possible.
     #[must_use]
     pub fn resolve(self, root: &SyntaxNode<PerlLanguage>) -> Option<SyntaxToken<PerlLanguage>> {
-        debug_assert!(root.parent().is_none(), "resolve must be called on the root node");
+        debug_assert!(
+            root.parent().is_none(),
+            "resolve must be called on the root node"
+        );
         if root.parent().is_some() {
             return None;
         }
