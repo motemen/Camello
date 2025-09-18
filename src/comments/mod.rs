@@ -58,8 +58,7 @@ impl TokenKey {
             return None;
         }
 
-        root.descendants_with_tokens()
-            .filter_map(|element| element.into_token())
+        root.token_at_offset(self.range.start())
             .find(|token| token.kind() == self.kind && token.text_range() == self.range)
     }
 }
