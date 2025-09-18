@@ -909,10 +909,14 @@ impl Parser<'_> {
                 // List inside parentheses (e.g., array initialization)
                 self.parse_parenthesized_list();
 
+                self.skip_whitespace_and_newlines();
+
                 if self.at(SyntaxKind::R_PAREN) {
                     // After ')', expect an operator
                     self.bump_op(); // )
                     self.skip_whitespace_and_newlines();
+                } else {
+                    self.error("Expected ')' to close parenthesized list");
                 }
             }
             SyntaxKind::L_BRACE => {
