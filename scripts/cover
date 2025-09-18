@@ -1,0 +1,46 @@
+#!/bin/bash
+
+set -euo pipefail
+
+base_dir="$(cd "$(dirname "$0")/.." && pwd)"
+
+( cd "$base_dir" && cargo build )
+
+# Takes a list of directories as arguments, runs $base_dir/target/debug/camello dump on them, and displays success rate
+
+total=0
+success=0
+failed_files=()
+
+for dir in "$@"; do
+	if [ -d "$dir" ]; then
+		echo "Processing directory: $dir"
+
+		while IFS= read -r file; do
+			if [ -f "$file" ]; then
+				((total++))
+				if "$base_dir/target/debug/camello" dump -Q "$file"; then
+					((success++))
+					/bin/echo -n "." >&2
+				else
+					failed_files+=("$file")
+					/bin/echo -n "F" >&2
+				fi
+			fi
+		done < <(find "$dir" -type f \( -name "*.pm" -o -name "*.t" \))
+	fi
+done
+
+echo >&2
+
+rate=$((success * 100 / total))
+
+if [ ${#failed_files[@]} -gt 0 ]; then
+	echo "\nFailed files:" >&2
+	for file in "${failed_files[@]}"; do
+		echo "$file" >&2
+	done
+fi
+
+echo
+echo "Success rate: $success / $total ($rate%)"
