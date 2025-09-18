@@ -43,6 +43,10 @@ pub enum SyntaxKind {
     OUR_KW,
     STATE_KW,
     LOCAL_KW,
+    BEGIN_KW,     // BEGIN block keyword
+    END_BLOCK_KW, // END block keyword
+    INIT_KW,      // INIT block keyword
+    CHECK_KW,     // CHECK block keyword
     IF_KW,
     UNLESS_KW,
     ELSIF_KW,
@@ -210,6 +214,10 @@ pub enum SyntaxKind {
     ATTR,          // Attribute (e.g., :method)
     ATTR_ARGS,     // Attribute arguments (e.g., (1, 2))
     BLOCK_STMT,    // Block statement
+    BEGIN_STMT,    // BEGIN block statement
+    END_STMT,      // END block statement
+    INIT_STMT,     // INIT block statement
+    CHECK_STMT,    // CHECK block statement
     LABELED_STMT,  // Labeled statement
     LABEL,         // Statement label
 
@@ -317,6 +325,10 @@ impl SyntaxKind {
                 | SyntaxKind::OUR_KW
                 | SyntaxKind::STATE_KW
                 | SyntaxKind::LOCAL_KW
+                | SyntaxKind::BEGIN_KW
+                | SyntaxKind::END_BLOCK_KW
+                | SyntaxKind::INIT_KW
+                | SyntaxKind::CHECK_KW
                 | SyntaxKind::IF_KW
                 | SyntaxKind::UNLESS_KW
                 | SyntaxKind::ELSIF_KW
