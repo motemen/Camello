@@ -29,8 +29,12 @@ impl Parser<'_> {
                 true
             }
             Some(SyntaxKind::SUB_KW) => {
-                self.sub_def();
-                true
+                if self.looks_like_sub_definition() {
+                    self.sub_def();
+                    true
+                } else {
+                    self.expression_stmt()
+                }
             }
             Some(SyntaxKind::IF_KW) => {
                 self.if_stmt();
@@ -102,6 +106,15 @@ impl Parser<'_> {
                 self.expression_stmt()
             }
             None => false, // EOF
+        }
+    }
+
+    fn looks_like_sub_definition(&self) -> bool {
+        match self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1) {
+            Some((next, _)) => {
+                next == SyntaxKind::DOUBLE_COLON || next == SyntaxKind::IDENT || next.is_keyword()
+            }
+            None => false,
         }
     }
 
@@ -894,6 +907,29 @@ __END__",
                 );
             }
         }
+    }
+
+    #[test]
+    fn anonymous_sub_expression_can_be_top_level_statement() {
+        let input = "sub f { sub {} }";
+        let (green, errors) = parse(input);
+
+        assert!(
+            errors.is_empty(),
+            "Expected anonymous sub expression to parse without errors, got: {:?}",
+            errors
+        );
+
+        let root = PerlNode::new_root(green);
+        assert_eq!(root.kind(), SyntaxKind::ROOT);
+
+        let has_anon_sub = root
+            .descendants()
+            .any(|node| node.kind() == SyntaxKind::ANON_SUB_EXPR);
+        assert!(
+            has_anon_sub,
+            "Parsed tree should contain an anonymous subexpression node"
+        );
     }
 
     #[test]
