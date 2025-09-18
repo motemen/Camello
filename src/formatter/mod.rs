@@ -259,6 +259,8 @@ impl Formatter {
             | SyntaxKind::METHOD_CALL_EXPR
             | SyntaxKind::HASH_REF_ACCESS_EXPR
             | SyntaxKind::ARRAY_REF_ACCESS_EXPR
+            | SyntaxKind::POSTFIX_ARRAY_SLICE_EXPR
+            | SyntaxKind::POSTFIX_HASH_SLICE_EXPR
             | SyntaxKind::CODE_REF_CALL_EXPR
             | SyntaxKind::HASH_SUBSCRIPTION_EXPR
             | SyntaxKind::ARRAY_SUBSCRIPTION_EXPR
