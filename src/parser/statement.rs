@@ -740,7 +740,7 @@ impl Parser<'_> {
         self.builder.finish_node();
     }
 
-    fn parse_sub_attribute(&mut self) {
+    pub(crate) fn parse_sub_attribute(&mut self) {
         self.builder.start_node(SyntaxKind::ATTR.into());
 
         self.expect(SyntaxKind::COLON);
@@ -798,7 +798,7 @@ impl Parser<'_> {
     }
 
     /// Parse subroutine prototype like (\@@), ($@), (\@$@), etc.
-    fn parse_sub_prototype(&mut self) {
+    pub(crate) fn parse_sub_prototype(&mut self) {
         use crate::lexer::LexContext;
         self.builder.start_node(SyntaxKind::SUB_PROTOTYPE.into());
 
@@ -929,6 +929,65 @@ __END__",
         assert!(
             has_anon_sub,
             "Parsed tree should contain an anonymous subexpression node"
+        );
+    }
+
+    #[test]
+    fn anonymous_sub_expression_can_have_prototype() {
+        let input = "sub f { sub () { 0 } }";
+        let (green, errors) = parse(input);
+
+        assert!(
+            errors.is_empty(),
+            "Expected anonymous sub expression with prototype to parse without errors, got: {:?}",
+            errors
+        );
+
+        let root = PerlNode::new_root(green);
+        let anon_sub = root
+            .descendants()
+            .find(|node| node.kind() == SyntaxKind::ANON_SUB_EXPR)
+            .expect("Parsed tree should contain an anonymous subexpression node");
+
+        assert!(
+            anon_sub
+                .children()
+                .any(|child| child.kind() == SyntaxKind::SUB_PROTOTYPE),
+            "Anonymous subexpression should include a prototype child"
+        );
+    }
+
+    #[test]
+    fn anonymous_sub_expression_can_have_attributes() {
+        let input = "sub f { sub :method :foo(1) { 0 } }";
+        let (green, errors) = parse(input);
+
+        assert!(
+            errors.is_empty(),
+            "Expected anonymous sub expression with attributes to parse without errors, got: {:?}",
+            errors
+        );
+
+        let root = PerlNode::new_root(green);
+        let anon_sub = root
+            .descendants()
+            .find(|node| node.kind() == SyntaxKind::ANON_SUB_EXPR)
+            .expect("Parsed tree should contain an anonymous subexpression node");
+
+        let attr_count = anon_sub
+            .children()
+            .filter(|child| child.kind() == SyntaxKind::ATTR)
+            .count();
+        assert!(
+            attr_count >= 2,
+            "Anonymous subexpression should include multiple attribute nodes"
+        );
+
+        assert!(
+            anon_sub
+                .descendants()
+                .any(|node| node.kind() == SyntaxKind::ATTR_ARGS),
+            "Anonymous subexpression should include attribute argument list"
         );
     }
 

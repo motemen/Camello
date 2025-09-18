@@ -1035,13 +1035,25 @@ impl Parser<'_> {
         true
     }
 
-    /// Parse anonymous subroutine expression: sub { ... }
+    /// Parse anonymous subroutine expression: sub [PROTO]? [:ATTR]* { ... }
     fn anon_sub_expr(&mut self) {
         self.builder.start_node(SyntaxKind::ANON_SUB_EXPR.into());
 
         // Consume 'sub' keyword
         self.expect(SyntaxKind::SUB_KW);
         self.skip_whitespace_and_newlines();
+
+        // Optional prototype
+        if self.at(SyntaxKind::L_PAREN) {
+            self.parse_sub_prototype();
+            self.skip_whitespace_and_newlines();
+        }
+
+        // Optional attributes
+        while self.at(SyntaxKind::COLON) {
+            self.parse_sub_attribute();
+            self.skip_whitespace_and_newlines();
+        }
 
         // Parse the block
         self.block();
