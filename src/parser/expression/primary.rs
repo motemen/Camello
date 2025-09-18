@@ -369,6 +369,7 @@ impl Parser<'_> {
     /// Parses a regular identifier or qualified identifier, accepting keywords as identifiers
     /// in identifier-expected positions. Examples: Foo, Foo::Bar, Foo::Bar::Baz, and keywords
     /// like `else` when grammar expects an identifier (e.g., `sub else {}` or `use if`).
+    /// Also supports package names with digits after :: (e.g., Foo::123, Foo::123ABC).
     pub fn parse_identifier_or_qualified(&mut self) {
         // Accept IDENT or coerce a keyword into IDENT at identifier positions
         let checkpoint = self.builder.checkpoint();
@@ -395,6 +396,12 @@ impl Parser<'_> {
                     || self.current_kind().is_some_and(SyntaxKind::is_keyword)
                 {
                     // Coerce subsequent segments to IDENT as needed
+                    self.bump_as(SyntaxKind::IDENT);
+                } else if self.try_bump_digit_prefixed_ident() {
+                    // Successfully consumed a digit-prefixed identifier (e.g., 123ABC)
+                    // Nothing more to do here
+                } else if self.at(SyntaxKind::NUMBER) {
+                    // Allow pure numbers after :: (e.g., Foo::123) as fallback
                     self.bump_as(SyntaxKind::IDENT);
                 } else {
                     // A trailing `::` is valid, so we don't report an error, just stop parsing the qualified name.

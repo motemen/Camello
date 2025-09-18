@@ -628,6 +628,50 @@ fn test_package_with_version_empty_block() {
 }
 
 #[test]
+fn test_package_with_digits_after_colons() {
+    let cases = [
+        // Package names with digits after :: separators
+        ("package Foo::123;", "package Foo::123;\n"),
+        ("package Foo::Bar::456;", "package Foo::Bar::456;\n"),
+        ("package Module::123::Test;", "package Module::123::Test;\n"),
+        ("package My::2024::Version;", "package My::2024::Version;\n"),
+        // Package names with mixed digit-letter identifiers
+        ("package Foo::123ABC;", "package Foo::123ABC;\n"),
+        ("package Bar::456DEF::Test;", "package Bar::456DEF::Test;\n"),
+        ("package Module::123abc456;", "package Module::123abc456;\n"),
+        ("package Test::999XYZ789;", "package Test::999XYZ789;\n"),
+        // Package names with digits in blocks
+        (
+            "package Foo::123{my $x=1;}",
+            "package Foo::123 {\n    my $x = 1;\n}\n",
+        ),
+        (
+            "package Test::456::Module{}",
+            "package Test::456::Module {}",
+        ),
+        (
+            "package Foo::123ABC{my $x=1;}",
+            "package Foo::123ABC {\n    my $x = 1;\n}\n",
+        ),
+        // Package names with versions and digits
+        ("package Foo::123 1.0;", "package Foo::123 1.0;\n"),
+        ("package Bar::456 v2.0{}", "package Bar::456 v2.0 {}"),
+        ("package Foo::123ABC v1.0;", "package Foo::123ABC v1.0;\n"),
+        // Mixed patterns
+        (
+            "package Foo::123::Bar::789;",
+            "package Foo::123::Bar::789;\n",
+        ),
+        ("package A::1::B::2::C::3;", "package A::1::B::2::C::3;\n"),
+        (
+            "package A::123ABC::B::456DEF;",
+            "package A::123ABC::B::456DEF;\n",
+        ),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_typeglob_formatting() {
     // Test simple typeglob reference
     let input = "my $fh = \\*STDIN;";
