@@ -758,11 +758,19 @@ mod tests {
     fn test_parenthesized_list_with_trailing_space() {
         let input = "(a => [] )";
         let (_green, errors) = parse(input);
-        assert!(errors.is_empty(), "Parse errors for '(a => [] )' A: {:?}", errors);
+        assert!(
+            errors.is_empty(),
+            "Parse errors for '(a => [] )' A: {:?}",
+            errors
+        );
 
         let input_no_space = "(a => [])";
         let (_green_no_space, errors_no_space) = parse(input_no_space);
-        assert!(errors_no_space.is_empty(), "Parse errors for '(a => [])' B: {:?}", errors_no_space);
+        assert!(
+            errors_no_space.is_empty(),
+            "Parse errors for '(a => [])' B: {:?}",
+            errors_no_space
+        );
     }
 }
 
