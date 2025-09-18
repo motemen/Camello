@@ -279,10 +279,7 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
         (ARROW, _) | (_, ARROW) => Some(false),
 
         // Postfix dereference operators (->@*, ->%*, ->$*): never add spaces before them
-        (
-            _,
-            POSTFIX_DEREF_ARRAY | POSTFIX_DEREF_HASH | POSTFIX_DEREF_SCALAR,
-        ) => Some(false),
+        (_, POSTFIX_DEREF_ARRAY | POSTFIX_DEREF_HASH | POSTFIX_DEREF_SCALAR) => Some(false),
 
         // Compound assignment operators: no space between operator and =
         // e.g., ||=, &&=, +=, -=, *=, /=, %=, .=, //=, &=

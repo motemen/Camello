@@ -1,4 +1,5 @@
 pub mod cli;
+pub mod comments;
 pub mod formatter;
 pub mod lexer;
 pub mod parser;

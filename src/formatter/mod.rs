@@ -1,4 +1,7 @@
-use crate::{PerlLanguage, PerlNode, SyntaxKind};
+use crate::{
+    comments::{CommentModel, CommentOwner},
+    PerlLanguage, PerlNode, SyntaxKind,
+};
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
 
 #[derive(Debug, Clone)]
@@ -33,17 +36,12 @@ pub struct Formatter {
     at_line_start: bool,
     pending_empty_lines: usize, // Number of empty lines waiting to be output
     in_multiline_context: bool, // Track when we're in structured multiline formatting
-}
-
-impl Default for Formatter {
-    fn default() -> Self {
-        Self::new()
-    }
+    comment_model: CommentModel,
 }
 
 impl Formatter {
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(comment_model: CommentModel) -> Self {
         Self {
             current_line: Line::new(),
             lines: Vec::new(),
@@ -53,6 +51,7 @@ impl Formatter {
             at_line_start: true,
             pending_empty_lines: 0,
             in_multiline_context: false,
+            comment_model,
         }
     }
 
@@ -128,6 +127,13 @@ impl Formatter {
                 .last()
                 .map(|l| l.text.is_empty())
                 .unwrap_or(false)
+    }
+
+    fn node_has_leading_comment(&self, node: &PerlNode) -> bool {
+        let owner = CommentOwner::for_node(node);
+        self.comment_model
+            .attached_to(owner)
+            .any(|assignment| assignment.placement().is_leading())
     }
 
     fn format_node(&mut self, node: &PerlNode) {
@@ -892,7 +898,12 @@ impl Formatter {
 
 #[must_use]
 pub fn format(node: &PerlNode) -> String {
-    let mut formatter = Formatter::new();
+    let mut root = node.clone();
+    while let Some(parent) = root.parent() {
+        root = parent;
+    }
+    let comment_model = CommentModel::from_syntax(&root);
+    let mut formatter = Formatter::new(comment_model);
     formatter.format(node)
 }
 

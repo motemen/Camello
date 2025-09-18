@@ -719,6 +719,47 @@ fn test_inline_comment_preservation() {
 }
 
 #[test]
+fn test_leading_comment_attached_to_sub() {
+    let input = r#"my $x = 1;
+
+# doc comment
+sub foo {
+    return $x;
+}
+"#;
+
+    let formatted = format_and_assert(input);
+
+    insta::assert_snapshot!(formatted, @r"
+        my $x = 1;
+
+        # doc comment
+        sub foo {
+            return $x;
+        }
+        ");
+}
+
+#[test]
+fn test_inline_comment_before_sub_still_spaced() {
+    let input = r#"my $x = 1; # trailing comment
+sub foo {
+    return $x;
+}
+"#;
+
+    let formatted = format_and_assert(input);
+
+    insta::assert_snapshot!(formatted, @r"
+        my $x = 1; # trailing comment
+
+        sub foo {
+            return $x;
+        }
+        ");
+}
+
+#[test]
 fn test_nested_eval_in_sub() {
     let input = "sub f{eval{print$x;};return 1;}";
     let formatted = format_and_assert(input);
