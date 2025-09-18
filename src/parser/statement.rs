@@ -267,19 +267,7 @@ impl Parser<'_> {
         self.parse_identifier_or_qualified();
         self.skip_whitespace_and_newlines();
 
-        // Parse optional prototype
-        if self.at(SyntaxKind::L_PAREN) {
-            self.parse_sub_prototype();
-            self.skip_whitespace_and_newlines();
-        }
-
-        // Parse optional attributes
-        while self.at(SyntaxKind::COLON) {
-            self.parse_sub_attribute();
-            self.skip_whitespace_and_newlines();
-        }
-
-        self.block();
+        self.parse_sub_tail();
 
         self.builder.finish_node();
     }
@@ -738,6 +726,20 @@ impl Parser<'_> {
         }
 
         self.builder.finish_node();
+    }
+
+    pub(crate) fn parse_sub_tail(&mut self) {
+        if self.at(SyntaxKind::L_PAREN) {
+            self.parse_sub_prototype();
+            self.skip_whitespace_and_newlines();
+        }
+
+        while self.at(SyntaxKind::COLON) {
+            self.parse_sub_attribute();
+            self.skip_whitespace_and_newlines();
+        }
+
+        self.block();
     }
 
     pub(crate) fn parse_sub_attribute(&mut self) {
