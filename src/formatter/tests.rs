@@ -511,6 +511,26 @@ fn test_postfix_for_modifier_formatting() {
 }
 
 #[test]
+fn test_postfix_while_modifier_formatting() {
+    let cases = [
+        ("print $i while $i<10;", "print $i while $i < 10;\n"),
+        ("say $x while$x>0;", "say $x while $x > 0;\n"),
+        ("print while($condition);", "print while ($condition);\n"),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
+fn test_postfix_until_modifier_formatting() {
+    let cases = [
+        ("print $i until $i==10;", "print $i until $i == 10;\n"),
+        ("say $x until$x<=0;", "say $x until $x <= 0;\n"),
+        ("print until($condition);", "print until ($condition);\n"),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_basic_heredoc_formatting() {
     let input = "my $str = <<EOF;\nhello\nEOF\n";
     let formatted = format_and_assert(input);
