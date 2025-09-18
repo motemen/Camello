@@ -1,5 +1,5 @@
 use crate::{
-    comments::{CommentAnchor, CommentId, CommentModel, CommentOwner, CommentPlacement},
+    comments::{CommentAnchor, CommentId, CommentOwner, CommentPlacement, CommentRegistry},
     PerlLanguage, PerlNode, SyntaxKind,
 };
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
@@ -36,12 +36,12 @@ pub struct Formatter {
     at_line_start: bool,
     pending_empty_lines: usize, // Number of empty lines waiting to be output
     in_multiline_context: bool, // Track when we're in structured multiline formatting
-    comment_model: CommentModel,
+    comment_registry: CommentRegistry,
 }
 
 impl Formatter {
     #[must_use]
-    pub fn new(comment_model: CommentModel) -> Self {
+    pub fn new(comment_registry: CommentRegistry) -> Self {
         Self {
             current_line: Line::new(),
             lines: Vec::new(),
@@ -51,7 +51,7 @@ impl Formatter {
             at_line_start: true,
             pending_empty_lines: 0,
             in_multiline_context: false,
-            comment_model,
+            comment_registry,
         }
     }
 
@@ -131,7 +131,7 @@ impl Formatter {
 
     fn node_has_leading_comment(&self, node: &PerlNode) -> bool {
         let owner = CommentOwner::for_node(node);
-        self.comment_model
+        self.comment_registry
             .attached_to(owner)
             .any(|assignment| assignment.placement().is_leading())
     }
@@ -141,16 +141,16 @@ impl Formatter {
             return false;
         };
 
-        if !self.comment_model.is_first_in_block(comment_id) {
+        if !self.comment_registry.is_first_in_block(comment_id) {
             return false;
         }
 
-        let Some(block_id) = self.comment_model.block_of(comment_id) else {
+        let Some(block_id) = self.comment_registry.block_of(comment_id) else {
             return false;
         };
 
         let Some(CommentPlacement::Leading(owner)) =
-            self.comment_model.placement_of_block(block_id)
+            self.comment_registry.placement_of_block(block_id)
         else {
             return false;
         };
@@ -950,8 +950,8 @@ pub fn format(node: &PerlNode) -> String {
     while let Some(parent) = root.parent() {
         root = parent;
     }
-    let comment_model = CommentModel::from_syntax(&root);
-    let mut formatter = Formatter::new(comment_model);
+    let comment_registry = CommentRegistry::from_syntax(&root);
+    let mut formatter = Formatter::new(comment_registry);
     formatter.format(node)
 }
 

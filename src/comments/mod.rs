@@ -301,22 +301,22 @@ impl CommentAssignment {
     }
 }
 
-/// A collection describing all comment blocks and their assignments for a syntax tree.
+/// A registry describing all comment blocks and their assignments for a syntax tree.
 #[derive(Debug, Default, Clone)]
-pub struct CommentModel {
+pub struct CommentRegistry {
     blocks: Vec<Option<CommentBlock>>,
     assignments: Vec<Option<CommentAssignment>>,
     comment_to_block: HashMap<CommentId, CommentBlockId>,
 }
 
-impl CommentModel {
-    /// Creates an empty comment model.
+impl CommentRegistry {
+    /// Creates an empty comment registry.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Creates an empty model with pre-allocated capacity.
+    /// Creates an empty registry with pre-allocated capacity.
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
@@ -326,22 +326,22 @@ impl CommentModel {
         }
     }
 
-    /// Builds a comment model for the provided syntax tree.
+    /// Builds a comment registry for the provided syntax tree.
     #[must_use]
     pub fn from_syntax(root: &SyntaxNode<PerlLanguage>) -> Self {
-        let mut model = CommentModel::new();
-        build_comment_blocks(root, &mut model);
+        let mut registry = CommentRegistry::new();
+        build_comment_blocks(root, &mut registry);
 
         for node in std::iter::once(root.clone()).chain(root.descendants()) {
             if node.kind() == SyntaxKind::SUB_DEF {
-                collect_leading_function_comments(&node, &mut model);
+                collect_leading_function_comments(&node, &mut registry);
             }
         }
 
-        model
+        registry
     }
 
-    /// Registers a new comment block with the model.
+    /// Registers a new comment block with the registry.
     fn add_block(&mut self, comments: Vec<CommentId>) -> CommentBlockId {
         debug_assert!(!comments.is_empty(), "cannot register empty comment block");
         let id = CommentBlockId(self.blocks.len());
@@ -464,16 +464,16 @@ impl CommentModel {
     }
 }
 
-fn flush_pending_block(model: &mut CommentModel, pending: &mut Vec<CommentId>) {
+fn flush_pending_block(registry: &mut CommentRegistry, pending: &mut Vec<CommentId>) {
     if pending.is_empty() {
         return;
     }
 
     let comments = std::mem::take(pending);
-    model.add_block(comments);
+    registry.add_block(comments);
 }
 
-fn build_comment_blocks(root: &SyntaxNode<PerlLanguage>, model: &mut CommentModel) {
+fn build_comment_blocks(root: &SyntaxNode<PerlLanguage>, registry: &mut CommentRegistry) {
     let mut pending_block: Vec<CommentId> = Vec::new();
 
     for event in root.preorder_with_tokens() {
@@ -488,16 +488,19 @@ fn build_comment_blocks(root: &SyntaxNode<PerlLanguage>, model: &mut CommentMode
                     // Keep the current block open across indentation tokens.
                 }
                 _ => {
-                    flush_pending_block(model, &mut pending_block);
+                    flush_pending_block(registry, &mut pending_block);
                 }
             }
         }
     }
 
-    flush_pending_block(model, &mut pending_block);
+    flush_pending_block(registry, &mut pending_block);
 }
 
-fn collect_leading_function_comments(node: &SyntaxNode<PerlLanguage>, model: &mut CommentModel) {
+fn collect_leading_function_comments(
+    node: &SyntaxNode<PerlLanguage>,
+    registry: &mut CommentRegistry,
+) {
     let Some(first_token) = node.first_token() else {
         return;
     };
@@ -515,7 +518,7 @@ fn collect_leading_function_comments(node: &SyntaxNode<PerlLanguage>, model: &mu
                     break;
                 }
                 if let Some(comment_id) = CommentId::from_token(&token) {
-                    if let Some(block_id) = model.block_of(comment_id) {
+                    if let Some(block_id) = registry.block_of(comment_id) {
                         if blocks.last().copied() != Some(block_id) {
                             blocks.push(block_id);
                         }
@@ -529,7 +532,7 @@ fn collect_leading_function_comments(node: &SyntaxNode<PerlLanguage>, model: &mu
     }
 
     for block in blocks.into_iter().rev() {
-        model.set(CommentAssignment::new(
+        registry.set(CommentAssignment::new(
             block,
             CommentPlacement::Leading(owner),
         ));
@@ -567,8 +570,8 @@ mod tests {
     }
 
     #[test]
-    fn model_insert_and_query() {
-        let mut model = CommentModel::new();
+    fn registry_insert_and_query() {
+        let mut registry = CommentRegistry::new();
         let comment_range = TextRange::new(TextSize::from(0), TextSize::from(10));
         let comment_id =
             CommentId::from_token_key(TokenKey::new(SyntaxKind::COMMENT, comment_range)).unwrap();
@@ -578,29 +581,29 @@ mod tests {
         );
         let owner = CommentOwner::from_token_key(owner_key);
         let placement = CommentPlacement::Trailing(owner);
-        let block = model.add_block(vec![comment_id]);
+        let block = registry.add_block(vec![comment_id]);
         let assignment = CommentAssignment::new(block, placement);
 
-        assert!(model.set(assignment).is_none());
-        assert_eq!(model.len(), 1);
-        assert!(!model.is_empty());
-        assert_eq!(model.placement_of(comment_id), Some(placement));
-        let collected: Vec<_> = model.attached_to(owner).collect();
+        assert!(registry.set(assignment).is_none());
+        assert_eq!(registry.len(), 1);
+        assert!(!registry.is_empty());
+        assert_eq!(registry.placement_of(comment_id), Some(placement));
+        let collected: Vec<_> = registry.attached_to(owner).collect();
         assert_eq!(collected.len(), 1);
         assert_eq!(collected[0].block(), block);
-        assert!(model.is_first_in_block(comment_id));
-        assert_eq!(model.block_comments(block).unwrap(), &[comment_id]);
+        assert!(registry.is_first_in_block(comment_id));
+        assert_eq!(registry.block_comments(block).unwrap(), &[comment_id]);
 
-        let removed = model.remove(block).expect("expected removal");
+        let removed = registry.remove(block).expect("expected removal");
         assert_eq!(removed.block(), block);
-        assert!(model.is_empty());
+        assert!(registry.is_empty());
     }
 
     #[test]
     fn leading_comment_block_attached_to_sub() {
         let source = "my $x = 1;\n# doc one\n# doc two\nsub foo { return $x; }\n";
         let (root, _errors) = parse_perl(source);
-        let model = CommentModel::from_syntax(&root);
+        let registry = CommentRegistry::from_syntax(&root);
 
         let sub = root
             .descendants()
@@ -608,18 +611,18 @@ mod tests {
             .expect("expected sub definition");
 
         let owner = CommentOwner::for_node(&sub);
-        let assignments: Vec<_> = model.attached_to(owner).collect();
+        let assignments: Vec<_> = registry.attached_to(owner).collect();
         assert_eq!(assignments.len(), 1);
 
         let assignment = assignments[0];
         assert!(assignment.placement().is_leading());
 
         let block_id = assignment.block();
-        let comments = model
+        let comments = registry
             .block_comments(block_id)
             .expect("block should contain comments");
         assert_eq!(comments.len(), 2);
-        assert!(model.is_first_in_block(comments[0]));
-        assert!(!model.is_first_in_block(comments[1]));
+        assert!(registry.is_first_in_block(comments[0]));
+        assert!(!registry.is_first_in_block(comments[1]));
     }
 }
