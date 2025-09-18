@@ -179,6 +179,10 @@ impl Formatter {
         if matches!(
             node.kind(),
             SyntaxKind::SUB_DEF
+                | SyntaxKind::BEGIN_STMT
+                | SyntaxKind::END_STMT
+                | SyntaxKind::INIT_STMT
+                | SyntaxKind::CHECK_STMT
                 | SyntaxKind::USE_STMT
                 | SyntaxKind::NO_STMT
                 | SyntaxKind::STMT
@@ -290,7 +294,12 @@ impl Formatter {
                     if self.pending_empty_lines > 0
                         && matches!(
                             child_node.kind(),
-                            SyntaxKind::STMT | SyntaxKind::DECLARATION_STMT
+                            SyntaxKind::STMT
+                                | SyntaxKind::DECLARATION_STMT
+                                | SyntaxKind::BEGIN_STMT
+                                | SyntaxKind::END_STMT
+                                | SyntaxKind::INIT_STMT
+                                | SyntaxKind::CHECK_STMT
                         )
                     {
                         self.output_pending_empty_lines();
@@ -304,7 +313,13 @@ impl Formatter {
         // Add empty line after subs, use, and no statements, but only if there are siblings
         if matches!(
             node.kind(),
-            SyntaxKind::SUB_DEF | SyntaxKind::USE_STMT | SyntaxKind::NO_STMT
+            SyntaxKind::SUB_DEF
+                | SyntaxKind::BEGIN_STMT
+                | SyntaxKind::END_STMT
+                | SyntaxKind::INIT_STMT
+                | SyntaxKind::CHECK_STMT
+                | SyntaxKind::USE_STMT
+                | SyntaxKind::NO_STMT
         ) {
             self.add_empty_line_after_if_needed(node);
         }
@@ -389,6 +404,18 @@ impl Formatter {
     }
 
     fn is_simple_block(&self, node: &PerlNode) -> bool {
+        if node.children().any(|child| {
+            matches!(
+                child.kind(),
+                SyntaxKind::BEGIN_STMT
+                    | SyntaxKind::END_STMT
+                    | SyntaxKind::INIT_STMT
+                    | SyntaxKind::CHECK_STMT
+            )
+        }) {
+            return false;
+        }
+
         // Check if a block contains only a single expression without semicolon or comments
 
         let statement_count = node

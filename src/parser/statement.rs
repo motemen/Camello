@@ -68,6 +68,15 @@ impl Parser<'_> {
                 self.no_stmt();
                 true
             }
+            Some(
+                kind @ (SyntaxKind::BEGIN_KW
+                | SyntaxKind::END_BLOCK_KW
+                | SyntaxKind::INIT_KW
+                | SyntaxKind::CHECK_KW),
+            ) => {
+                self.phase_block_stmt(kind);
+                true
+            }
             Some(SyntaxKind::END_KW | SyntaxKind::DATA_KW) => {
                 self.data_section();
                 true
@@ -268,6 +277,29 @@ impl Parser<'_> {
         self.skip_whitespace_and_newlines();
 
         self.parse_sub_tail();
+
+        self.builder.finish_node();
+    }
+
+    fn phase_block_stmt(&mut self, keyword_kind: SyntaxKind) {
+        let (stmt_kind, name) = match keyword_kind {
+            SyntaxKind::BEGIN_KW => (SyntaxKind::BEGIN_STMT, "BEGIN"),
+            SyntaxKind::END_BLOCK_KW => (SyntaxKind::END_STMT, "END"),
+            SyntaxKind::INIT_KW => (SyntaxKind::INIT_STMT, "INIT"),
+            SyntaxKind::CHECK_KW => (SyntaxKind::CHECK_STMT, "CHECK"),
+            _ => unreachable!("invalid phase block keyword"),
+        };
+
+        self.builder.start_node(stmt_kind.into());
+
+        self.expect(keyword_kind);
+        self.skip_whitespace_and_newlines();
+
+        if !self.at(SyntaxKind::L_BRACE) {
+            self.error(&format!("Expected block after {name}"));
+        }
+
+        self.block();
 
         self.builder.finish_node();
     }
