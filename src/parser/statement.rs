@@ -371,36 +371,57 @@ impl Parser<'_> {
 
     fn for_stmt(&mut self) {
         self.builder.start_node(SyntaxKind::FOR_STMT.into());
-
-        // "for" or "foreach" - already validated by statement()
-        self.bump();
+        self.bump_value(); // consume "for"
         self.skip_whitespace_and_newlines();
 
-        // Check what comes next to determine the for loop style:
-        // 1. Perl-style: for VAR (LIST) BLOCK - VAR starts with sigil or "my"
-        // 2. C-style: for (EXPR) BLOCK - starts with "("
-
-        if self.at(SyntaxKind::L_PAREN) {
-            // C-style for loop: for (EXPR) BLOCK
-            self.bump(); // (
+        if self.current_kind() == Some(SyntaxKind::L_PAREN) {
+            self.bump_value(); // consume "("
             self.skip_whitespace_and_newlines();
 
-            // Parse the condition/iterator expression list
-            if !self.expression_list() {
-                self.error("Expected expression in for condition");
+            // Parse first expression
+            if self.current_kind() != Some(SyntaxKind::SEMICOLON) {
+                self.expression();
             }
 
+            // Check if this is C-style (has semicolon)
+            if self.current_kind() == Some(SyntaxKind::SEMICOLON) {
+                // C-style for loop: for (init; condition; increment)
+                self.bump_value(); // consume first semicolon
+                self.skip_whitespace_and_newlines();
+
+                // Parse condition (optional)
+                if self.current_kind() != Some(SyntaxKind::SEMICOLON) {
+                    self.expression();
+                }
+
+                self.skip_whitespace_and_newlines();
+                // Expect second semicolon
+                if self.current_kind() == Some(SyntaxKind::SEMICOLON) {
+                    self.bump_value();
+                }
+
+                self.skip_whitespace_and_newlines();
+                // Parse increment (optional)
+                if self.current_kind() != Some(SyntaxKind::R_PAREN) {
+                    self.expression();
+                }
+            }
+            // else: Perl-style for loop with parentheses - expression already parsed
+
             self.skip_whitespace_and_newlines();
-            self.expect(SyntaxKind::R_PAREN);
+            // Expect closing parenthesis
+            if self.current_kind() == Some(SyntaxKind::R_PAREN) {
+                self.bump_value();
+            }
         } else {
-            // Perl-style for loop: for VAR (LIST) BLOCK
-            // Parse the iterator variable (VAR part): my $var, $var, @var, etc.
+            // Perl-style for loop without parentheses: for VAR (LIST) BLOCK
+            // Use existing parse_for_variable function for this case
             self.parse_for_variable();
             self.skip_whitespace_and_newlines();
 
             // List expression in parentheses: (LIST)
-            if self.at(SyntaxKind::L_PAREN) {
-                self.bump(); // (
+            if self.current_kind() == Some(SyntaxKind::L_PAREN) {
+                self.bump_value(); // consume "("
                 self.skip_whitespace_and_newlines();
 
                 // Parse the list expression - can be multiple expressions separated by commas
@@ -409,7 +430,9 @@ impl Parser<'_> {
                 }
 
                 self.skip_whitespace_and_newlines();
-                self.expect(SyntaxKind::R_PAREN);
+                if self.current_kind() == Some(SyntaxKind::R_PAREN) {
+                    self.bump_value();
+                }
             } else {
                 self.error("Expected '(' after for variable");
             }
@@ -417,7 +440,7 @@ impl Parser<'_> {
 
         self.skip_whitespace_and_newlines();
 
-        // Block
+        // Parse the body block
         self.block();
 
         self.builder.finish_node();
@@ -425,21 +448,24 @@ impl Parser<'_> {
 
     /// Parse the variable part of a for loop (my $var, $var)
     fn parse_for_variable(&mut self) {
-        if self.at_any(&[
-            SyntaxKind::MY_KW,
-            SyntaxKind::OUR_KW,
-            SyntaxKind::STATE_KW,
-            SyntaxKind::LOCAL_KW,
-        ]) {
+        if matches!(
+            self.current_kind(),
+            Some(
+                SyntaxKind::MY_KW
+                    | SyntaxKind::OUR_KW
+                    | SyntaxKind::STATE_KW
+                    | SyntaxKind::LOCAL_KW
+            )
+        ) {
             // Variable declaration case - parse as a variable declaration
             self.builder.start_node(SyntaxKind::DECLARATION_STMT.into());
 
             let decl_kind = self.current_kind().unwrap();
-            self.bump(); // consume the keyword
+            self.bump_value(); // consume the keyword
             self.skip_whitespace_and_newlines();
 
             // Parse the variable - must be a scalar
-            if self.at(SyntaxKind::DOLLAR) {
+            if self.current_kind() == Some(SyntaxKind::DOLLAR) {
                 // Use qualified parsing for our/local, simple for my/state
                 if matches!(decl_kind, SyntaxKind::OUR_KW | SyntaxKind::LOCAL_KW) {
                     self.parse_variable_qualified();
@@ -453,7 +479,7 @@ impl Parser<'_> {
             }
 
             self.builder.finish_node();
-        } else if self.at(SyntaxKind::DOLLAR) {
+        } else if self.current_kind() == Some(SyntaxKind::DOLLAR) {
             // $var case - parse as a variable reference
             self.parse_variable();
         } else {

@@ -269,6 +269,22 @@ fn test_keywords_as_hash_keys_formatting() {
 }
 
 #[test]
+fn test_c_style_for_formatting() {
+    let cases = [
+        // Basic C-style for loops
+        ("for(;;){}", "for (; ; ) {}"),
+        (
+            "for(my $i=0;$i<10;$i++){}",
+            "for (my $i = 0; $i < 10; $i++) {}",
+        ),
+        // C-style for with empty parts
+        ("for(;$i<10;){}", "for (; $i < 10; ) {}"),
+        ("for($i=0;;$i++){}", "for ($i = 0; ; $i++) {}"),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_backtick_command_substitution_formatting() {
     let cases = [
         // Basic backtick command substitution
