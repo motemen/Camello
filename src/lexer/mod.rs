@@ -469,6 +469,36 @@ impl<'a> Lexer<'a> {
         Some((SyntaxKind::IDENT, text))
     }
 
+    /// Consume a digit-prefixed identifier (e.g., "123ABC", "456") from the stream and return it as an IDENT token.
+    /// This is used by the parser for package names like Foo::123ABC after :: separators.
+    pub fn consume_digit_prefixed_ident(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        let remainder = self.logos_lexer.remainder();
+        if remainder.is_empty() {
+            return None;
+        }
+
+        // Must start with a digit
+        let mut chars = remainder.char_indices();
+        let (_, first_char) = chars.next()?;
+        if !first_char.is_ascii_digit() {
+            return None;
+        }
+
+        // Find the end of the identifier (digits and letters, similar to normal identifiers)
+        let mut end_pos = first_char.len_utf8();
+        for (pos, ch) in chars {
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                end_pos = pos + ch.len_utf8();
+            } else {
+                break;
+            }
+        }
+
+        let text = &remainder[..end_pos];
+        self.logos_lexer.bump(end_pos);
+        Some((SyntaxKind::IDENT, text))
+    }
+
     pub fn next_token(&mut self) -> Option<(SyntaxKind, &'a str)> {
         self.next_token_with_context(Default::default())
     }

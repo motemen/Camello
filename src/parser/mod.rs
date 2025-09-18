@@ -162,6 +162,17 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Try to consume a digit-prefixed identifier and add it as an IDENT token
+    fn try_bump_digit_prefixed_ident(&mut self) -> bool {
+        if let Some((kind, text)) = self.lexer.consume_digit_prefixed_ident() {
+            self.builder.token(kind.into(), text);
+            self.current_pos += text.len();
+            true
+        } else {
+            false
+        }
+    }
+
     /// Consume current token and fetch next using an explicit lexical context
     fn bump_with_context(&mut self, context: LexContext) {
         if let Some((kind, text)) = self.lexer.next_token_with_context(context) {
@@ -794,6 +805,71 @@ fn test_package_with_quote_like_name() {
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
     let syntax = PerlNode::new_root(green);
     assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+}
+
+#[test]
+fn test_package_with_digits_after_colons() {
+    use crate::PerlNode;
+
+    let test_cases = [
+        "package Foo::123;",
+        "package Bar::456::Test;",
+        "package Module::2024::Version;",
+        "package A::1::B::2::C::3;",
+        "package Foo::123 { my $x = 1; }",
+        "package Bar::456 1.0;",
+        // Mixed digit-letter identifiers
+        "package Foo::123ABC;",
+        "package Bar::456DEF::Test;",
+        "package Module::123abc456;",
+        "package Test::999XYZ789;",
+        "package Foo::123ABC { my $x = 1; }",
+        "package Bar::456DEF v1.0;",
+        "package A::123ABC::B::456DEF;",
+    ];
+
+    for input in test_cases {
+        let (green, errors) = parse(input);
+        assert!(
+            errors.is_empty(),
+            "Parse errors for '{}': {:?}",
+            input,
+            errors
+        );
+
+        let syntax = PerlNode::new_root(green);
+        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+
+        // Check that we have a package statement
+        let package = syntax
+            .children()
+            .find(|n| n.kind() == SyntaxKind::PACKAGE_STMT)
+            .expect(&format!("missing package statement in '{}'", input));
+
+        // Verify the package statement contains a qualified identifier
+        assert!(
+            package
+                .descendants()
+                .any(|n| n.kind() == SyntaxKind::QUALIFIED_IDENT),
+            "package statement should contain qualified identifier in '{}'",
+            input
+        );
+    }
+}
+
+#[test]
+fn test_digit_prefixed_ident_lexer() {
+    let mut lexer = crate::lexer::Lexer::new("123ABC");
+    let result = lexer.consume_digit_prefixed_ident();
+    assert_eq!(result, Some((SyntaxKind::IDENT, "123ABC")));
+
+    let mut lexer2 = crate::lexer::Lexer::new("456");
+    let result2 = lexer2.consume_digit_prefixed_ident();
+    assert_eq!(result2, Some((SyntaxKind::IDENT, "456")));
+
+    let mut lexer3 = crate::lexer::Lexer::new("789XYZ123");
+    let result3 = lexer3.consume_digit_prefixed_ident();
+    assert_eq!(result3, Some((SyntaxKind::IDENT, "789XYZ123")));
 }
 
 #[test]
