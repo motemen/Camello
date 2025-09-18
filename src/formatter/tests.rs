@@ -767,6 +767,20 @@ fn test_unless_stmt_formatting() {
 }
 
 #[test]
+fn test_unless_else_stmt_formatting() {
+    let input = "unless($condition){do_something();}else{do_something_else();}";
+    let formatted = format_and_assert(input);
+
+    insta::assert_snapshot!(formatted, @r"
+        unless ($condition) {
+            do_something();
+        } else {
+            do_something_else();
+        }
+        ");
+}
+
+#[test]
 fn test_shift_exponent_and_bitwise_not_formatting() {
     let cases = [
         ("$a<<2;", "$a << 2;\n"),
