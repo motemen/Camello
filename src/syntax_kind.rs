@@ -199,9 +199,12 @@ pub enum SyntaxKind {
     FILE_TEST_OP, // -f, -d, etc.
 
     // Postfix dereference operators (introduced in Perl 5.20)
-    POSTFIX_DEREF_ARRAY,  // ->@*
-    POSTFIX_DEREF_HASH,   // ->%*
-    POSTFIX_DEREF_SCALAR, // ->$*
+    POSTFIX_DEREF_ARRAY,            // ->@*
+    POSTFIX_DEREF_HASH,             // ->%*
+    POSTFIX_DEREF_SCALAR,           // ->$*
+    POSTFIX_DEREF_ARRAY_LAST_INDEX, // ->$#*
+    POSTFIX_DEREF_CODE,             // ->&*
+    POSTFIX_DEREF_GLOB,             // ->**
 
     // ===== Node Level (composite structures) =====
     ROOT,          // File root
@@ -262,8 +265,10 @@ pub enum SyntaxKind {
     ANON_SUB_EXPR, // Anonymous subroutine expression (e.g., sub { ... })
     TYPEGLOB_EXPR, // Typeglob expression (e.g., *{$name}, *STDIN)
     FILE_TEST_EXPR, // File test expression (e.g., -f $file)
-    POSTFIX_DEREF_EXPR, // Postfix dereference expression (e.g., $ref->@*, $ref->%*, $ref->$*)
-    REQUIRE_EXPR, // Require expression (e.g., require local::lib)
+    POSTFIX_DEREF_EXPR, // Postfix dereference expression (e.g., $ref->@*, $ref->%*, $ref->$*, $ref->$#*)
+    POSTFIX_ARRAY_SLICE_EXPR, // Postfix array slice (e.g., $ref->@[...], $ref->@{...})
+    POSTFIX_HASH_SLICE_EXPR, // Postfix hash slice (e.g., $ref->%[...], $ref->%{...})
+    REQUIRE_EXPR,       // Require expression (e.g., require local::lib)
 
     // Literal references
     HASH_REF,  // Hash reference (anonymous hash)

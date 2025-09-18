@@ -460,6 +460,72 @@ impl Parser<'_> {
         self.builder.finish_node();
     }
 
+    fn parse_postfix_slice_expr(
+        &mut self,
+        initial_checkpoint: rowan::Checkpoint,
+        sigil_kind: SyntaxKind,
+        opening: SyntaxKind,
+        closing: SyntaxKind,
+    ) {
+        let node_kind = match sigil_kind {
+            SyntaxKind::AT => SyntaxKind::POSTFIX_ARRAY_SLICE_EXPR,
+            SyntaxKind::PERCENT => SyntaxKind::POSTFIX_HASH_SLICE_EXPR,
+            _ => unreachable!("Unsupported sigil for postfix slice"),
+        };
+
+        self.builder
+            .start_node_at(initial_checkpoint, node_kind.into());
+
+        // Consume the sigil (@ or %)
+        self.bump_value();
+        self.skip_whitespace_and_newlines();
+
+        if self.at(opening) {
+            self.bump_value();
+            self.skip_whitespace_and_newlines();
+        } else {
+            let message = match (sigil_kind, opening) {
+                (SyntaxKind::AT, SyntaxKind::L_BRACKET) => {
+                    "Expected '[' after '@' in postfix slice"
+                }
+                (SyntaxKind::AT, SyntaxKind::L_BRACE) => "Expected '{' after '@' in postfix slice",
+                (SyntaxKind::PERCENT, SyntaxKind::L_BRACKET) => {
+                    "Expected '[' after '%' in postfix slice"
+                }
+                (SyntaxKind::PERCENT, SyntaxKind::L_BRACE) => {
+                    "Expected '{' after '%' in postfix slice"
+                }
+                _ => "Expected slice delimiter after sigil",
+            };
+            self.error(message);
+        }
+
+        if !self.expression() {
+            let message = match sigil_kind {
+                SyntaxKind::AT => "Expected expression in postfix array slice",
+                SyntaxKind::PERCENT => "Expected expression in postfix hash slice",
+                _ => "Expected expression in postfix slice",
+            };
+            self.error(message);
+        }
+
+        self.skip_whitespace_and_newlines();
+
+        if self.at(closing) {
+            self.bump_op();
+            self.skip_whitespace_and_newlines();
+        } else {
+            let message = match closing {
+                SyntaxKind::R_BRACKET => "Expected ']' after postfix slice expression",
+                SyntaxKind::R_BRACE => "Expected '}' after postfix slice expression",
+                _ => "Expected closing delimiter after postfix slice expression",
+            };
+            self.error(message);
+        }
+
+        self.builder.finish_node();
+    }
+
     /// Parse all postfix operations (method calls, subscripts, etc.)
     fn parse_postfix_operations_with_checkpoint(
         &mut self,
@@ -586,6 +652,58 @@ impl Parser<'_> {
                             self.builder.finish_node();
                         }
                         Some(kind) if kind.is_sigil() => {
+                            let mut handled_slice = false;
+
+                            if kind == SyntaxKind::AT || kind == SyntaxKind::PERCENT {
+                                let next_token = self
+                                    .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
+                                    .map(|(k, _)| k);
+
+                                handled_slice = match (kind, next_token) {
+                                    (SyntaxKind::AT, Some(SyntaxKind::L_BRACKET)) => {
+                                        self.parse_postfix_slice_expr(
+                                            initial_checkpoint,
+                                            SyntaxKind::AT,
+                                            SyntaxKind::L_BRACKET,
+                                            SyntaxKind::R_BRACKET,
+                                        );
+                                        true
+                                    }
+                                    (SyntaxKind::AT, Some(SyntaxKind::L_BRACE)) => {
+                                        self.parse_postfix_slice_expr(
+                                            initial_checkpoint,
+                                            SyntaxKind::AT,
+                                            SyntaxKind::L_BRACE,
+                                            SyntaxKind::R_BRACE,
+                                        );
+                                        true
+                                    }
+                                    (SyntaxKind::PERCENT, Some(SyntaxKind::L_BRACKET)) => {
+                                        self.parse_postfix_slice_expr(
+                                            initial_checkpoint,
+                                            SyntaxKind::PERCENT,
+                                            SyntaxKind::L_BRACKET,
+                                            SyntaxKind::R_BRACKET,
+                                        );
+                                        true
+                                    }
+                                    (SyntaxKind::PERCENT, Some(SyntaxKind::L_BRACE)) => {
+                                        self.parse_postfix_slice_expr(
+                                            initial_checkpoint,
+                                            SyntaxKind::PERCENT,
+                                            SyntaxKind::L_BRACE,
+                                            SyntaxKind::R_BRACE,
+                                        );
+                                        true
+                                    }
+                                    _ => false,
+                                };
+                            }
+
+                            if handled_slice {
+                                continue;
+                            }
+
                             // Dynamic method call: expr->$method()
                             self.builder.start_node_at(
                                 initial_checkpoint,
@@ -677,13 +795,16 @@ impl Parser<'_> {
                 Some(
                     SyntaxKind::POSTFIX_DEREF_ARRAY
                     | SyntaxKind::POSTFIX_DEREF_HASH
-                    | SyntaxKind::POSTFIX_DEREF_SCALAR,
+                    | SyntaxKind::POSTFIX_DEREF_SCALAR
+                    | SyntaxKind::POSTFIX_DEREF_ARRAY_LAST_INDEX
+                    | SyntaxKind::POSTFIX_DEREF_CODE
+                    | SyntaxKind::POSTFIX_DEREF_GLOB,
                 ) => {
-                    // Postfix dereference: expr->@*, expr->%*, expr->$*
+                    // Postfix dereference: expr->@*, expr->%*, expr->$*, expr->$#*, expr->&*, expr->**
                     self.builder
                         .start_node_at(initial_checkpoint, SyntaxKind::POSTFIX_DEREF_EXPR.into());
                     // Postfix deref is a value-ending token; expect operator next
-                    self.bump_op(); // ->@*, ->%*, or ->$*
+                    self.bump_op(); // ->@*, ->%*, ->$*, ->$#*, ->&*, or ->**
                     self.skip_whitespace_and_newlines();
                     self.builder.finish_node();
                 }
