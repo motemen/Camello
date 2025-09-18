@@ -741,6 +741,29 @@ sub foo {
 }
 
 #[test]
+fn test_multiple_leading_comments_attached_to_sub() {
+    let input = r#"my $x = 1;
+# first line
+# second line
+sub foo {
+    return $x;
+}
+"#;
+
+    let formatted = format_and_assert(input);
+
+    insta::assert_snapshot!(formatted, @r"
+        my $x = 1;
+
+        # first line
+        # second line
+        sub foo {
+            return $x;
+        }
+        ");
+}
+
+#[test]
 fn test_inline_comment_before_sub_still_spaced() {
     let input = r#"my $x = 1; # trailing comment
 sub foo {

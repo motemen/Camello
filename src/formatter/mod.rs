@@ -1,5 +1,5 @@
 use crate::{
-    comments::{CommentModel, CommentOwner},
+    comments::{CommentAnchor, CommentId, CommentModel, CommentOwner, CommentPlacement},
     PerlLanguage, PerlNode, SyntaxKind,
 };
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
@@ -134,6 +134,64 @@ impl Formatter {
         self.comment_model
             .attached_to(owner)
             .any(|assignment| assignment.placement().is_leading())
+    }
+
+    fn should_isolate_comment(&self, token: &SyntaxToken<PerlLanguage>) -> bool {
+        let Some(comment_id) = CommentId::from_token(token) else {
+            return false;
+        };
+
+        let Some(CommentPlacement::Leading(owner)) = self.comment_model.placement_of(comment_id)
+        else {
+            return false;
+        };
+
+        if self.comment_has_preceding_leading_comment(token, owner) {
+            return false;
+        }
+
+        let Some(root) = Self::comment_root(token) else {
+            return false;
+        };
+
+        matches!(
+            owner.resolve(&root),
+            Some(CommentAnchor::Node(node)) if node.kind() == SyntaxKind::SUB_DEF
+        )
+    }
+
+    fn comment_has_preceding_leading_comment(
+        &self,
+        token: &SyntaxToken<PerlLanguage>,
+        owner: CommentOwner,
+    ) -> bool {
+        let mut current = token.prev_token();
+        while let Some(prev) = current {
+            match prev.kind() {
+                SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE => {
+                    current = prev.prev_token();
+                }
+                SyntaxKind::COMMENT => {
+                    let Some(prev_id) = CommentId::from_token(&prev) else {
+                        return false;
+                    };
+                    return self
+                        .comment_model
+                        .placement_of(prev_id)
+                        .is_some_and(|placement| placement.owner() == Some(owner));
+                }
+                _ => return false,
+            }
+        }
+        false
+    }
+
+    fn comment_root(token: &SyntaxToken<PerlLanguage>) -> Option<PerlNode> {
+        let mut node = token.parent()?;
+        while let Some(parent) = node.parent() {
+            node = parent;
+        }
+        Some(node)
     }
 
     fn format_node(&mut self, node: &PerlNode) {
@@ -647,6 +705,12 @@ impl Formatter {
                 }
             }
             SyntaxKind::COMMENT => {
+                self.output_pending_empty_lines();
+
+                if self.should_isolate_comment(token) {
+                    self.add_empty_line_before();
+                }
+
                 // コメントは保持するが、適切な位置に配置
                 if self.at_line_start {
                     self.add_indent();
