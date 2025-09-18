@@ -134,6 +134,8 @@ impl Parser<'_> {
                             self.bump(); // consume {
                             self.skip_whitespace_and_newlines();
 
+                            // Parse the expression inside braces
+                            // For ${^MATCH}, this will parse ^MATCH as a primary expression
                             if !self.expression() {
                                 self.error("Expected expression inside braces");
                             }
@@ -183,19 +185,26 @@ impl Parser<'_> {
                     }
                 }
                 Some(SyntaxKind::L_BRACE) => {
-                    // Handle ${...} syntax (e.g., ${^NAME})
+                    // Handle ${...} syntax (e.g., ${^NAME}) as simple variables
                     self.bump(); // consume {
+                    self.skip_whitespace_and_newlines();
 
                     // Check for ^ inside braces
                     if self.at(SyntaxKind::CARET) {
                         self.bump(); // consume ^
+                        self.skip_whitespace_and_newlines();
                     }
 
-                    // Parse identifier inside braces
+                    // Parse identifier inside braces - accept keywords as identifiers
                     if self.at(SyntaxKind::IDENT) {
                         self.bump();
+                    } else if self.current_kind().is_some_and(SyntaxKind::is_keyword) {
+                        self.bump_as(SyntaxKind::IDENT);
+                    } else {
+                        self.error("Expected identifier inside braces");
                     }
 
+                    self.skip_whitespace_and_newlines();
                     // Expect closing brace
                     if self.at(SyntaxKind::R_BRACE) {
                         self.bump();
@@ -210,9 +219,12 @@ impl Parser<'_> {
                     self.parse_identifier_or_qualified();
                 }
                 _ => {
-                    // Accept any ASCII punctuation as a valid special variable name by
-                    // consuming exactly one character, regardless of the lexer's tokenization.
-                    if let Some(text) = self.current_text() {
+                    // Check if it's a keyword that should be treated as an identifier
+                    if self.current_kind().is_some_and(SyntaxKind::is_keyword) {
+                        self.bump_as(SyntaxKind::IDENT);
+                    } else if let Some(text) = self.current_text() {
+                        // Accept any ASCII punctuation as a valid special variable name by
+                        // consuming exactly one character, regardless of the lexer's tokenization.
                         if text
                             .chars()
                             .next()

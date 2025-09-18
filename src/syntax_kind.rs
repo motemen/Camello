@@ -351,6 +351,7 @@ impl SyntaxKind {
                 | SyntaxKind::STR_LE
                 | SyntaxKind::STR_CMP
                 | SyntaxKind::X
+                | SyntaxKind::UNDEF_KW
         )
     }
 

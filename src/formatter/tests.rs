@@ -177,6 +177,38 @@ fn test_undef_function_call_formatting() {
 }
 
 #[test]
+fn test_special_variable_formatting() {
+    let cases = [
+        // Special variables with undef keyword as variable name
+        ("$undef", "$undef"),
+        ("@undef", "@undef"),
+        ("%undef", "%undef"),
+        ("my $undef = 1;", "my $undef = 1;\n"),
+        ("our @undef;", "our @undef;\n"),
+        ("state %undef;", "state %undef;\n"),
+        // Special variables with caret notation
+        ("${^MATCH}", "${^MATCH}"),
+        ("${^PREMATCH}", "${^PREMATCH}"),
+        ("${^POSTMATCH}", "${^POSTMATCH}"),
+        ("${^ENCODING}", "${^ENCODING}"),
+        ("${^TAINT}", "${^TAINT}"),
+        ("${^UNICODE}", "${^UNICODE}"),
+        ("${^UTF8CACHE}", "${^UTF8CACHE}"),
+        ("${^UTF8LOCALE}", "${^UTF8LOCALE}"),
+        // Assignment with special variables
+        ("my $result = ${^MATCH};", "my $result = ${^MATCH};\n"),
+        ("$undef = ${^ENCODING};", "$undef = ${^ENCODING};\n"),
+        // Mixed usage
+        ("print $undef, ${^MATCH};", "print $undef, ${^MATCH};\n"),
+        (
+            "use vars qw($undef ${^MATCH});",
+            "use vars qw($undef ${^MATCH});\n",
+        ),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_backtick_command_substitution_formatting() {
     let cases = [
         // Basic backtick command substitution

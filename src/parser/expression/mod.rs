@@ -865,6 +865,23 @@ impl Parser<'_> {
             SyntaxKind::IDENT => {
                 self.parse_ident_like_expr(false);
             }
+            SyntaxKind::CARET => {
+                // Handle caret followed by identifier: ^MATCH
+                // Just consume as separate tokens
+                self.bump_value(); // consume ^
+                self.skip_whitespace_and_newlines();
+
+                // Expect an identifier after ^
+                if self.at(SyntaxKind::IDENT) {
+                    self.bump_value();
+                } else if self.current_kind().is_some_and(SyntaxKind::is_keyword) {
+                    self.bump_as(SyntaxKind::IDENT);
+                } else {
+                    self.error("Expected identifier after '^'");
+                }
+
+                self.skip_whitespace_and_newlines();
+            }
             SyntaxKind::X => {
                 // Handle 'x' as an identifier when it appears at the start of expressions
                 // This allows expressions like "x => 1" in use statements
