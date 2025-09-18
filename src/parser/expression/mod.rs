@@ -416,8 +416,19 @@ impl Parser<'_> {
             };
 
             // Parse right-hand side
-            if !self.parse_expression_with_precedence(next_min_precedence) {
-                self.error("Expected expression after binary operator");
+            // For comma and fat comma, allow trailing operators in block-like contexts
+            let parsed_rhs = self.parse_expression_with_precedence(next_min_precedence);
+            if !parsed_rhs {
+                // Check if this is a trailing comma or fat comma in a block context
+                if (current_kind == SyntaxKind::COMMA || current_kind == SyntaxKind::FAT_COMMA)
+                    && (self.at(SyntaxKind::R_BRACE) || self.at_end())
+                {
+                    // This is a trailing comma/fat comma - that's OK, just finish the node
+                    self.builder.finish_node();
+                    break;
+                } else {
+                    self.error("Expected expression after binary operator");
+                }
             }
 
             self.builder.finish_node();
