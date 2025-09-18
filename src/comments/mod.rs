@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use crate::{PerlLanguage, SyntaxKind};
 use rowan::ast::SyntaxNodePtr;
-use rowan::{SyntaxNode, SyntaxToken, TextRange};
+use rowan::{NodeOrToken, SyntaxNode, SyntaxToken, TextRange, WalkEvent};
 
 /// A stable identifier for a token inside a syntax tree.
 ///
@@ -104,6 +104,56 @@ impl CommentId {
     #[must_use]
     pub fn resolve(self, root: &SyntaxNode<PerlLanguage>) -> Option<SyntaxToken<PerlLanguage>> {
         self.0.resolve(root)
+    }
+}
+
+/// Identifier for a comment block consisting of one or more consecutive comment tokens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CommentBlockId(usize);
+
+impl CommentBlockId {
+    /// Returns the underlying index for this block.
+    #[must_use]
+    pub fn as_usize(self) -> usize {
+        self.0
+    }
+}
+
+/// A contiguous run of comment tokens that should be treated as a single block.
+#[derive(Debug, Clone)]
+pub struct CommentBlock {
+    id: CommentBlockId,
+    comments: Vec<CommentId>,
+}
+
+impl CommentBlock {
+    fn new(id: CommentBlockId, comments: Vec<CommentId>) -> Self {
+        debug_assert!(!comments.is_empty(), "comment block must contain comments");
+        Self { id, comments }
+    }
+
+    /// Returns the identifier of this block.
+    #[must_use]
+    pub fn id(&self) -> CommentBlockId {
+        self.id
+    }
+
+    /// Returns the comments contained in this block.
+    #[must_use]
+    pub fn comments(&self) -> &[CommentId] {
+        &self.comments
+    }
+
+    /// Returns the first comment contained in this block.
+    #[must_use]
+    pub fn first_comment(&self) -> Option<CommentId> {
+        self.comments.first().copied()
+    }
+
+    /// Returns `true` if the block contains the specified comment identifier.
+    #[must_use]
+    pub fn contains(&self, id: CommentId) -> bool {
+        self.comments.contains(&id)
     }
 }
 
@@ -224,24 +274,24 @@ impl CommentPlacement {
     }
 }
 
-/// Mapping between comment identifiers and their placement.
+/// Mapping between comment blocks and their placement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CommentAssignment {
-    comment: CommentId,
+    block: CommentBlockId,
     placement: CommentPlacement,
 }
 
 impl CommentAssignment {
     /// Creates a new assignment.
     #[must_use]
-    pub fn new(comment: CommentId, placement: CommentPlacement) -> Self {
-        Self { comment, placement }
+    pub fn new(block: CommentBlockId, placement: CommentPlacement) -> Self {
+        Self { block, placement }
     }
 
-    /// Returns the associated comment identifier.
+    /// Returns the associated comment block identifier.
     #[must_use]
-    pub fn comment(self) -> CommentId {
-        self.comment
+    pub fn block(self) -> CommentBlockId {
+        self.block
     }
 
     /// Returns the stored placement.
@@ -251,11 +301,12 @@ impl CommentAssignment {
     }
 }
 
-/// A collection describing all comment assignments for a syntax tree.
+/// A collection describing all comment blocks and their assignments for a syntax tree.
 #[derive(Debug, Default, Clone)]
 pub struct CommentModel {
-    entries: Vec<Option<CommentAssignment>>,
-    index: HashMap<CommentId, usize>,
+    blocks: Vec<Option<CommentBlock>>,
+    assignments: Vec<Option<CommentAssignment>>,
+    comment_to_block: HashMap<CommentId, CommentBlockId>,
 }
 
 impl CommentModel {
@@ -269,8 +320,9 @@ impl CommentModel {
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            entries: Vec::with_capacity(capacity),
-            index: HashMap::with_capacity(capacity),
+            blocks: Vec::with_capacity(capacity),
+            assignments: Vec::with_capacity(capacity),
+            comment_to_block: HashMap::with_capacity(capacity),
         }
     }
 
@@ -278,63 +330,119 @@ impl CommentModel {
     #[must_use]
     pub fn from_syntax(root: &SyntaxNode<PerlLanguage>) -> Self {
         let mut model = CommentModel::new();
+        build_comment_blocks(root, &mut model);
+
         for node in std::iter::once(root.clone()).chain(root.descendants()) {
             if node.kind() == SyntaxKind::SUB_DEF {
                 collect_leading_function_comments(&node, &mut model);
             }
         }
+
         model
     }
 
-    /// Adds or replaces a comment assignment.
-    ///
-    /// Returns the previous assignment for the same comment if it existed.
-    pub fn set(&mut self, assignment: CommentAssignment) -> Option<CommentAssignment> {
-        if let Some(index) = self.index.get(&assignment.comment).copied() {
-            self.entries[index].replace(assignment)
-        } else {
-            let index = self.entries.len();
-            self.entries.push(Some(assignment));
-            self.index.insert(assignment.comment, index);
-            None
+    /// Registers a new comment block with the model.
+    fn add_block(&mut self, comments: Vec<CommentId>) -> CommentBlockId {
+        debug_assert!(!comments.is_empty(), "cannot register empty comment block");
+        let id = CommentBlockId(self.blocks.len());
+        let block = CommentBlock::new(id, comments);
+        for comment in block.comments() {
+            let previous = self.comment_to_block.insert(*comment, id);
+            debug_assert!(previous.is_none(), "comment assigned to multiple blocks");
         }
+        self.blocks.push(Some(block));
+        self.assignments.push(None);
+        id
     }
 
-    /// Returns the assignment associated with the given comment identifier.
+    /// Returns an iterator over all registered comment blocks in lexical order.
+    pub fn blocks(&self) -> impl Iterator<Item = &CommentBlock> {
+        self.blocks.iter().filter_map(Option::as_ref)
+    }
+
+    /// Returns the comment block corresponding to the provided identifier.
     #[must_use]
-    pub fn assignment(&self, id: CommentId) -> Option<&CommentAssignment> {
-        self.index
-            .get(&id)
-            .copied()
-            .and_then(|idx| self.entries[idx].as_ref())
+    pub fn block(&self, id: CommentBlockId) -> Option<&CommentBlock> {
+        self.blocks
+            .get(id.as_usize())
+            .and_then(|entry| entry.as_ref())
+    }
+
+    /// Returns the block identifier containing the specified comment.
+    #[must_use]
+    pub fn block_of(&self, comment: CommentId) -> Option<CommentBlockId> {
+        self.comment_to_block.get(&comment).copied()
+    }
+
+    /// Returns the comments that belong to the provided block.
+    #[must_use]
+    pub fn block_comments(&self, id: CommentBlockId) -> Option<&[CommentId]> {
+        self.block(id).map(|block| block.comments())
+    }
+
+    /// Returns `true` if the supplied comment is the first one in its block.
+    #[must_use]
+    pub fn is_first_in_block(&self, comment: CommentId) -> bool {
+        self.block_of(comment)
+            .and_then(|block_id| self.block(block_id))
+            .and_then(|block| block.first_comment())
+            .is_some_and(|first| first == comment)
+    }
+
+    /// Adds or replaces a comment block assignment.
+    ///
+    /// Returns the previous assignment for the same block if it existed.
+    pub fn set(&mut self, assignment: CommentAssignment) -> Option<CommentAssignment> {
+        let index = assignment.block().as_usize();
+        if index >= self.assignments.len() {
+            debug_assert!(false, "assignment references unknown comment block");
+            return None;
+        }
+        self.assignments[index].replace(assignment)
+    }
+
+    /// Returns the assignment associated with the given comment block identifier.
+    #[must_use]
+    pub fn assignment(&self, block: CommentBlockId) -> Option<&CommentAssignment> {
+        self.assignments
+            .get(block.as_usize())
+            .and_then(|entry| entry.as_ref())
+    }
+
+    /// Returns the placement associated with the given comment block identifier.
+    #[must_use]
+    pub fn placement_of_block(&self, block: CommentBlockId) -> Option<CommentPlacement> {
+        self.assignment(block).map(|entry| entry.placement())
     }
 
     /// Returns the placement associated with the given comment identifier.
     #[must_use]
-    pub fn placement_of(&self, id: CommentId) -> Option<CommentPlacement> {
-        self.assignment(id).map(|entry| entry.placement())
+    pub fn placement_of(&self, comment: CommentId) -> Option<CommentPlacement> {
+        self.block_of(comment)
+            .and_then(|block| self.placement_of_block(block))
     }
 
-    /// Removes the assignment for the provided comment identifier.
-    pub fn remove(&mut self, id: CommentId) -> Option<CommentAssignment> {
-        let index = self.index.remove(&id)?;
-        let removed = self.entries[index].take();
-        if removed.is_some() {
-            while matches!(self.entries.last(), Some(None)) {
-                self.entries.pop();
-            }
-        }
-        removed
+    /// Removes the assignment for the provided comment block identifier.
+    pub fn remove(&mut self, block: CommentBlockId) -> Option<CommentAssignment> {
+        self.assignments
+            .get_mut(block.as_usize())
+            .and_then(|entry| entry.take())
+    }
+
+    /// Removes the assignment for the block containing the specified comment identifier.
+    pub fn remove_for_comment(&mut self, comment: CommentId) -> Option<CommentAssignment> {
+        let block = self.block_of(comment)?;
+        self.remove(block)
     }
 
     /// Returns an iterator over all assignments in insertion order.
     pub fn iter(&self) -> impl Iterator<Item = &CommentAssignment> {
-        self.entries.iter().filter_map(Option::as_ref)
+        self.assignments.iter().filter_map(Option::as_ref)
     }
 
     /// Returns an iterator over assignments attached to the specified owner.
     pub fn attached_to(&self, owner: CommentOwner) -> impl Iterator<Item = &CommentAssignment> {
-        self.entries
+        self.assignments
             .iter()
             .filter_map(Option::as_ref)
             .filter(move |assignment| assignment.placement.owner() == Some(owner))
@@ -343,14 +451,50 @@ impl CommentModel {
     /// Returns the number of stored assignments.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.index.len()
+        self.assignments
+            .iter()
+            .filter(|entry| entry.is_some())
+            .count()
     }
 
     /// Returns `true` if there are no stored assignments.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.index.is_empty()
+        self.assignments.iter().all(|entry| entry.is_none())
     }
+}
+
+fn flush_pending_block(model: &mut CommentModel, pending: &mut Vec<CommentId>) {
+    if pending.is_empty() {
+        return;
+    }
+
+    let comments = std::mem::take(pending);
+    model.add_block(comments);
+}
+
+fn build_comment_blocks(root: &SyntaxNode<PerlLanguage>, model: &mut CommentModel) {
+    let mut pending_block: Vec<CommentId> = Vec::new();
+
+    for event in root.preorder_with_tokens() {
+        if let WalkEvent::Enter(NodeOrToken::Token(token)) = event {
+            match token.kind() {
+                SyntaxKind::COMMENT => {
+                    if let Some(comment_id) = CommentId::from_token(&token) {
+                        pending_block.push(comment_id);
+                    }
+                }
+                SyntaxKind::WHITESPACE => {
+                    // Keep the current block open across indentation tokens.
+                }
+                _ => {
+                    flush_pending_block(model, &mut pending_block);
+                }
+            }
+        }
+    }
+
+    flush_pending_block(model, &mut pending_block);
 }
 
 fn collect_leading_function_comments(node: &SyntaxNode<PerlLanguage>, model: &mut CommentModel) {
@@ -359,39 +503,34 @@ fn collect_leading_function_comments(node: &SyntaxNode<PerlLanguage>, model: &mu
     };
 
     let owner = CommentOwner::for_node(node);
-    let mut comments: Vec<CommentId> = Vec::new();
+    let mut blocks: Vec<CommentBlockId> = Vec::new();
     let mut current = first_token.prev_token();
-    let mut newline_streak = 0usize;
 
     while let Some(token) = current {
         match token.kind() {
-            SyntaxKind::WHITESPACE => {
-                current = token.prev_token();
-            }
-            SyntaxKind::NEWLINE => {
-                newline_streak += 1;
-                if newline_streak >= 2 {
-                    break;
-                }
-                current = token.prev_token();
-            }
+            SyntaxKind::WHITESPACE => {}
+            SyntaxKind::NEWLINE => break,
             SyntaxKind::COMMENT => {
                 if !is_line_comment(&token) {
                     break;
                 }
-                newline_streak = 0;
                 if let Some(comment_id) = CommentId::from_token(&token) {
-                    comments.push(comment_id);
+                    if let Some(block_id) = model.block_of(comment_id) {
+                        if blocks.last().copied() != Some(block_id) {
+                            blocks.push(block_id);
+                        }
+                    }
                 }
-                current = token.prev_token();
             }
             _ => break,
         }
+
+        current = token.prev_token();
     }
 
-    for comment_id in comments.into_iter().rev() {
+    for block in blocks.into_iter().rev() {
         model.set(CommentAssignment::new(
-            comment_id,
+            block,
             CommentPlacement::Leading(owner),
         ));
     }
@@ -404,7 +543,7 @@ fn is_line_comment(token: &SyntaxToken<PerlLanguage>) -> bool {
             SyntaxKind::WHITESPACE => {
                 current = prev.prev_token();
             }
-            SyntaxKind::NEWLINE => return true,
+            SyntaxKind::NEWLINE | SyntaxKind::COMMENT => return true,
             _ => return false,
         }
     }
@@ -414,6 +553,7 @@ fn is_line_comment(token: &SyntaxToken<PerlLanguage>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parse_perl;
     use rowan::TextSize;
 
     #[test]
@@ -438,7 +578,8 @@ mod tests {
         );
         let owner = CommentOwner::from_token_key(owner_key);
         let placement = CommentPlacement::Trailing(owner);
-        let assignment = CommentAssignment::new(comment_id, placement);
+        let block = model.add_block(vec![comment_id]);
+        let assignment = CommentAssignment::new(block, placement);
 
         assert!(model.set(assignment).is_none());
         assert_eq!(model.len(), 1);
@@ -446,10 +587,39 @@ mod tests {
         assert_eq!(model.placement_of(comment_id), Some(placement));
         let collected: Vec<_> = model.attached_to(owner).collect();
         assert_eq!(collected.len(), 1);
-        assert_eq!(collected[0].comment(), comment_id);
+        assert_eq!(collected[0].block(), block);
+        assert!(model.is_first_in_block(comment_id));
+        assert_eq!(model.block_comments(block).unwrap(), &[comment_id]);
 
-        let removed = model.remove(comment_id).expect("expected removal");
-        assert_eq!(removed.comment(), comment_id);
+        let removed = model.remove(block).expect("expected removal");
+        assert_eq!(removed.block(), block);
         assert!(model.is_empty());
+    }
+
+    #[test]
+    fn leading_comment_block_attached_to_sub() {
+        let source = "my $x = 1;\n# doc one\n# doc two\nsub foo { return $x; }\n";
+        let (root, _errors) = parse_perl(source);
+        let model = CommentModel::from_syntax(&root);
+
+        let sub = root
+            .descendants()
+            .find(|node| node.kind() == SyntaxKind::SUB_DEF)
+            .expect("expected sub definition");
+
+        let owner = CommentOwner::for_node(&sub);
+        let assignments: Vec<_> = model.attached_to(owner).collect();
+        assert_eq!(assignments.len(), 1);
+
+        let assignment = assignments[0];
+        assert!(assignment.placement().is_leading());
+
+        let block_id = assignment.block();
+        let comments = model
+            .block_comments(block_id)
+            .expect("block should contain comments");
+        assert_eq!(comments.len(), 2);
+        assert!(model.is_first_in_block(comments[0]));
+        assert!(!model.is_first_in_block(comments[1]));
     }
 }

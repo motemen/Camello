@@ -141,14 +141,19 @@ impl Formatter {
             return false;
         };
 
-        let Some(CommentPlacement::Leading(owner)) = self.comment_model.placement_of(comment_id)
-        else {
+        if !self.comment_model.is_first_in_block(comment_id) {
+            return false;
+        }
+
+        let Some(block_id) = self.comment_model.block_of(comment_id) else {
             return false;
         };
 
-        if self.comment_has_preceding_leading_comment(token, owner) {
+        let Some(CommentPlacement::Leading(owner)) =
+            self.comment_model.placement_of_block(block_id)
+        else {
             return false;
-        }
+        };
 
         let Some(root) = Self::comment_root(token) else {
             return false;
@@ -158,32 +163,6 @@ impl Formatter {
             owner.resolve(&root),
             Some(CommentAnchor::Node(node)) if node.kind() == SyntaxKind::SUB_DEF
         )
-    }
-
-    fn comment_has_preceding_leading_comment(
-        &self,
-        token: &SyntaxToken<PerlLanguage>,
-        owner: CommentOwner,
-    ) -> bool {
-        let mut current = token.prev_token();
-        while let Some(prev) = current {
-            match prev.kind() {
-                SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE => {
-                    current = prev.prev_token();
-                }
-                SyntaxKind::COMMENT => {
-                    let Some(prev_id) = CommentId::from_token(&prev) else {
-                        return false;
-                    };
-                    return self
-                        .comment_model
-                        .placement_of(prev_id)
-                        .is_some_and(|placement| placement.owner() == Some(owner));
-                }
-                _ => return false,
-            }
-        }
-        false
     }
 
     fn comment_root(token: &SyntaxToken<PerlLanguage>) -> Option<PerlNode> {
@@ -649,6 +628,10 @@ impl Formatter {
             return false;
         }
 
+        if self.prev_token_kind == Some(SyntaxKind::COMMENT) {
+            return false;
+        }
+
         use SyntaxKind::*;
 
         if matches!(
@@ -721,6 +704,7 @@ impl Formatter {
                 }
                 self.write_str(text.trim(), Some(kind));
                 self.handle_newline();
+                self.prev_token_kind = Some(kind);
             }
             SyntaxKind::HEREDOC_CONTENT | SyntaxKind::HEREDOC_END => {
                 self.write_str(text, Some(kind));
@@ -881,7 +865,7 @@ impl Formatter {
                             self.handle_newline();
                         }
 
-                        if saw_extra_newline {
+                        if saw_extra_newline || self.prev_token_kind == Some(SyntaxKind::COMMENT) {
                             self.pending_empty_lines = 1;
                         }
                     }
