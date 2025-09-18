@@ -594,6 +594,20 @@ impl Parser<'_> {
         // Unless block
         self.block();
 
+        // Skip trivia only if we detect else ahead, to avoid consuming inter-statement whitespace
+        if self.lookahead_for_elsif_or_else() {
+            self.skip_whitespace_and_newlines();
+        }
+
+        // "else"
+        if self.at(SyntaxKind::ELSE_KW) {
+            self.bump(); // else
+            self.skip_whitespace_and_newlines();
+
+            // Else block
+            self.block();
+        }
+
         self.builder.finish_node();
     }
 
