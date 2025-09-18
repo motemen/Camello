@@ -1043,20 +1043,8 @@ impl Parser<'_> {
         self.expect(SyntaxKind::SUB_KW);
         self.skip_whitespace_and_newlines();
 
-        // Optional prototype
-        if self.at(SyntaxKind::L_PAREN) {
-            self.parse_sub_prototype();
-            self.skip_whitespace_and_newlines();
-        }
-
-        // Optional attributes
-        while self.at(SyntaxKind::COLON) {
-            self.parse_sub_attribute();
-            self.skip_whitespace_and_newlines();
-        }
-
-        // Parse the block
-        self.block();
+        // Parse optional prototype, attributes, and required block shared with named subs
+        self.parse_sub_tail();
 
         self.builder.finish_node();
     }
