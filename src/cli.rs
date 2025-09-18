@@ -17,13 +17,13 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Perlコードを整形する
+    /// Format Perl code
     Format {
-        /// 整形するPerlファイルのパス（指定しない場合は標準入力）
+        /// Path to the Perl file to format (reads from stdin if not provided)
         #[arg(help = "Path to the Perl file (reads from stdin if not provided)")]
         path: Option<PathBuf>,
 
-        /// 整形するPerlコード
+        /// Perl code to format
         #[arg(
             short,
             long = "eval",
@@ -32,7 +32,7 @@ pub enum Commands {
         )]
         eval: Option<String>,
 
-        /// 整形するPerlコード（エスケープシーケンス解釈付き）
+        /// Perl code to format with escape sequence interpretation
         #[arg(
             short = 'E',
             long = "eval-escape",
@@ -41,21 +41,21 @@ pub enum Commands {
         )]
         eval_escape: Option<String>,
 
-        /// ファイルがすでに整形済みかどうかを確認し、変更は行わない
+        /// Check if file is already formatted without making changes
         #[arg(long, help = "Check if file is already formatted")]
         check: bool,
 
-        /// 標準出力の代わりにファイルへ出力する
+        /// Output to file instead of stdout
         #[arg(short, long, help = "Output file path")]
         output: Option<PathBuf>,
     },
-    /// パースしたAST構造をダンプする
+    /// Dump parsed AST structure
     Dump {
-        /// パース・ダンプするPerlファイルのパス（指定しない場合は標準入力）
+        /// Path to the Perl file to parse and dump (reads from stdin if not provided)
         #[arg(help = "Path to the Perl file (reads from stdin if not provided)")]
         path: Option<PathBuf>,
 
-        /// パース・ダンプするPerlコード
+        /// Perl code to parse and dump
         #[arg(
             short,
             long = "eval",
@@ -64,7 +64,7 @@ pub enum Commands {
         )]
         eval: Option<String>,
 
-        /// パース・ダンプするPerlコード（エスケープシーケンス解釈付き）
+        /// Perl code to parse and dump with escape sequence interpretation
         #[arg(
             short = 'E',
             long = "eval-escape",
@@ -72,9 +72,25 @@ pub enum Commands {
             conflicts_with_all = ["path", "eval"]
         )]
         eval_escape: Option<String>,
+
+        /// Quiet mode: suppress output on success
+        #[arg(
+            short = 'q',
+            long = "quiet",
+            help = "Quiet mode: suppress output on success"
+        )]
+        quiet: bool,
+
+        /// Very quiet mode: suppress all output
+        #[arg(
+            short = 'Q',
+            long = "very-quiet",
+            help = "Very quiet mode: suppress all output"
+        )]
+        very_quiet: bool,
     },
 }
-/// エスケープシーケンスを解釈する関数
+/// Function to interpret escape sequences
 fn interpret_escape_sequences(input: &str) -> String {
     let mut result = String::new();
     let mut chars = input.chars().peekable();
@@ -136,8 +152,10 @@ pub fn run() -> Result<()> {
             path,
             eval,
             eval_escape,
+            quiet,
+            very_quiet,
         } => {
-            dump_file(path, eval, eval_escape)?;
+            dump_file(path, eval, eval_escape, quiet, very_quiet)?;
         }
     }
 
@@ -216,23 +234,31 @@ fn dump_file(
     path: Option<PathBuf>,
     eval: Option<String>,
     eval_escape: Option<String>,
+    quiet: bool,
+    very_quiet: bool,
 ) -> Result<()> {
-    // ファイルまたは標準入力から読み込む
+    // Read from file or standard input
     let (input, source_name) = read_source(path, eval, eval_escape)?;
     let (syntax, errors) = parse_perl(&input);
 
     if !errors.is_empty() {
-        eprintln!("Parse errors in '{source_name}':");
-        for error in errors {
-            eprintln!("{:?}", Report::new(error));
+        if !very_quiet {
+            eprintln!("Parse errors in '{source_name}':");
+            for error in errors {
+                eprintln!("{:?}", Report::new(error));
+            }
+            // Still dump the parsed AST for debugging, but exit with code 2.
+            if !quiet {
+                println!("Parsed AST for '{source_name}':");
+                println!("{syntax:#?}");
+            }
         }
-        // Still dump the parsed AST for debugging, but exit with code 2.
-        println!("Parsed AST for '{source_name}':");
-        println!("{syntax:#?}");
         std::process::exit(2);
     } else {
-        println!("Parsed AST for '{source_name}':");
-        println!("{syntax:#?}");
+        if !quiet && !very_quiet {
+            println!("Parsed AST for '{source_name}':");
+            println!("{syntax:#?}");
+        }
         Ok(())
     }
 }
