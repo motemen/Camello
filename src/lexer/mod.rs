@@ -936,11 +936,10 @@ impl<'a> Lexer<'a> {
     fn try_consume_postfix_deref(&mut self) -> Option<(SyntaxKind, &'a str)> {
         let remainder = self.logos_lexer.remainder();
 
-        // Check for ->@*, ->%*, ->$*
-        if remainder.len() >= 4 && remainder.starts_with("->") {
-            let chars: Vec<char> = remainder.chars().collect();
-            if chars.len() >= 4 && chars[3] == '*' {
-                let syntax_kind = match chars[2] {
+        if remainder.starts_with("->") {
+            let mut chars = remainder.chars().skip(2); // Skip "->"
+            if let (Some(sigil), Some('*')) = (chars.next(), chars.next()) {
+                let syntax_kind = match sigil {
                     '@' => Some(SyntaxKind::POSTFIX_DEREF_ARRAY),
                     '%' => Some(SyntaxKind::POSTFIX_DEREF_HASH),
                     '$' => Some(SyntaxKind::POSTFIX_DEREF_SCALAR),
@@ -948,7 +947,7 @@ impl<'a> Lexer<'a> {
                 };
 
                 if let Some(kind) = syntax_kind {
-                    let text = &remainder[..4]; // "->@*", "->%*", or "->$*"
+                    let text = &remainder[..4];
                     self.logos_lexer.bump(4);
                     return Some((kind, text));
                 }
