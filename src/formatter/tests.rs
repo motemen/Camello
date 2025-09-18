@@ -567,6 +567,19 @@ fn test_bareword_call_with_heredoc() {
 }
 
 #[test]
+fn test_indented_heredoc_formatting() {
+    let input = "if ($some_var) {\n    print <<~EOF;\n        This is a here-doc\n        EOF\n}\n";
+    let formatted = format_and_assert(input);
+    insta::assert_snapshot!(formatted, @r###"
+if ($some_var) {
+    print <<~EOF;
+            This is a here-doc
+        EOF
+}
+"###);
+}
+
+#[test]
 fn test_package_block_formatting() {
     let input = "package Foo::Bar{my $x=1;}";
     let formatted = format_and_assert(input);

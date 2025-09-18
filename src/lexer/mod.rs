@@ -7,6 +7,7 @@ mod quote;
 #[derive(Debug, Clone)]
 struct HeredocMarker<'a> {
     marker: &'a str,
+    strip_indent: bool,
 }
 
 #[derive(Logos, Debug, PartialEq, Clone)]
@@ -837,6 +838,16 @@ impl<'a> Lexer<'a> {
         while idx < bytes.len() && (bytes[idx] == b' ' || bytes[idx] == b'\t') {
             idx += 1;
         }
+
+        let mut strip_indent = false;
+        if idx < bytes.len() && bytes[idx] == b'~' {
+            strip_indent = true;
+            idx += 1;
+            while idx < bytes.len() && (bytes[idx] == b' ' || bytes[idx] == b'\t') {
+                idx += 1;
+            }
+        }
+
         if idx >= bytes.len() {
             return None;
         }
@@ -901,7 +912,10 @@ impl<'a> Lexer<'a> {
 
         let text = &remainder[..idx];
         self.logos_lexer.bump(idx);
-        self.heredoc_queue.push_back(HeredocMarker { marker });
+        self.heredoc_queue.push_back(HeredocMarker {
+            marker,
+            strip_indent,
+        });
         Some((SyntaxKind::HEREDOC_START, text))
     }
 
@@ -1089,7 +1103,10 @@ impl<'a> Lexer<'a> {
     }
 
     fn bump_until_marker(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        let HeredocMarker { marker } = self.heredoc_queue.pop_front()?;
+        let HeredocMarker {
+            marker,
+            strip_indent,
+        } = self.heredoc_queue.pop_front()?;
         let remainder = self.logos_lexer.remainder();
         let bytes = remainder.as_bytes();
         let mut search_pos = 0;
@@ -1118,7 +1135,16 @@ impl<'a> Lexer<'a> {
             }
 
             let line = &remainder[search_pos..line_end];
-            if line == marker && (line_end == bytes.len() || newline_len > 0) {
+            let mut is_marker_line = line == marker;
+
+            if strip_indent && !is_marker_line {
+                let trimmed = line.trim_start_matches([' ', '\t']);
+                if trimmed == marker {
+                    is_marker_line = true;
+                }
+            }
+
+            if is_marker_line && (line_end == bytes.len() || newline_len > 0) {
                 // Found terminator
                 let content = &remainder[..search_pos];
                 let end = &remainder[search_pos..line_end + newline_len];
