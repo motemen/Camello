@@ -254,7 +254,7 @@ impl CommentAssignment {
 /// A collection describing all comment assignments for a syntax tree.
 #[derive(Debug, Default, Clone)]
 pub struct CommentModel {
-    entries: Vec<CommentAssignment>,
+    entries: Vec<Option<CommentAssignment>>,
     index: HashMap<CommentId, usize>,
 }
 
@@ -291,11 +291,10 @@ impl CommentModel {
     /// Returns the previous assignment for the same comment if it existed.
     pub fn set(&mut self, assignment: CommentAssignment) -> Option<CommentAssignment> {
         if let Some(index) = self.index.get(&assignment.comment).copied() {
-            let previous = std::mem::replace(&mut self.entries[index], assignment);
-            Some(previous)
+            self.entries[index].replace(assignment)
         } else {
             let index = self.entries.len();
-            self.entries.push(assignment);
+            self.entries.push(Some(assignment));
             self.index.insert(assignment.comment, index);
             None
         }
@@ -304,47 +303,53 @@ impl CommentModel {
     /// Returns the assignment associated with the given comment identifier.
     #[must_use]
     pub fn assignment(&self, id: CommentId) -> Option<&CommentAssignment> {
-        self.index.get(&id).copied().map(|idx| &self.entries[idx])
+        self.index
+            .get(&id)
+            .copied()
+            .and_then(|idx| self.entries[idx].as_ref())
     }
 
     /// Returns the placement associated with the given comment identifier.
     #[must_use]
     pub fn placement_of(&self, id: CommentId) -> Option<CommentPlacement> {
-        self.assignment(id).map(|entry| entry.placement)
+        self.assignment(id).map(|entry| entry.placement())
     }
 
     /// Removes the assignment for the provided comment identifier.
     pub fn remove(&mut self, id: CommentId) -> Option<CommentAssignment> {
         let index = self.index.remove(&id)?;
-        let removed = self.entries.remove(index);
-        for (idx, entry) in self.entries.iter().enumerate().skip(index) {
-            self.index.insert(entry.comment, idx);
+        let removed = self.entries[index].take();
+        if removed.is_some() {
+            while matches!(self.entries.last(), Some(None)) {
+                self.entries.pop();
+            }
         }
-        Some(removed)
+        removed
     }
 
     /// Returns an iterator over all assignments in insertion order.
     pub fn iter(&self) -> impl Iterator<Item = &CommentAssignment> {
-        self.entries.iter()
+        self.entries.iter().filter_map(Option::as_ref)
     }
 
     /// Returns an iterator over assignments attached to the specified owner.
     pub fn attached_to(&self, owner: CommentOwner) -> impl Iterator<Item = &CommentAssignment> {
         self.entries
             .iter()
+            .filter_map(Option::as_ref)
             .filter(move |assignment| assignment.placement.owner() == Some(owner))
     }
 
     /// Returns the number of stored assignments.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.entries.len()
+        self.index.len()
     }
 
     /// Returns `true` if there are no stored assignments.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
+        self.index.is_empty()
     }
 }
 
