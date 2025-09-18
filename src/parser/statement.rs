@@ -29,8 +29,12 @@ impl Parser<'_> {
                 true
             }
             Some(SyntaxKind::SUB_KW) => {
-                self.sub_def();
-                true
+                if self.looks_like_sub_definition() {
+                    self.sub_def();
+                    true
+                } else {
+                    self.expression_stmt()
+                }
             }
             Some(SyntaxKind::IF_KW) => {
                 self.if_stmt();
@@ -102,6 +106,15 @@ impl Parser<'_> {
                 self.expression_stmt()
             }
             None => false, // EOF
+        }
+    }
+
+    fn looks_like_sub_definition(&self) -> bool {
+        match self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1) {
+            Some((next, _)) => {
+                next == SyntaxKind::DOUBLE_COLON || next == SyntaxKind::IDENT || next.is_keyword()
+            }
+            None => false,
         }
     }
 
@@ -254,19 +267,7 @@ impl Parser<'_> {
         self.parse_identifier_or_qualified();
         self.skip_whitespace_and_newlines();
 
-        // Parse optional prototype
-        if self.at(SyntaxKind::L_PAREN) {
-            self.parse_sub_prototype();
-            self.skip_whitespace_and_newlines();
-        }
-
-        // Parse optional attributes
-        while self.at(SyntaxKind::COLON) {
-            self.parse_sub_attribute();
-            self.skip_whitespace_and_newlines();
-        }
-
-        self.block();
+        self.parse_sub_tail();
 
         self.builder.finish_node();
     }
@@ -727,7 +728,21 @@ impl Parser<'_> {
         self.builder.finish_node();
     }
 
-    fn parse_sub_attribute(&mut self) {
+    pub(crate) fn parse_sub_tail(&mut self) {
+        if self.at(SyntaxKind::L_PAREN) {
+            self.parse_sub_prototype();
+            self.skip_whitespace_and_newlines();
+        }
+
+        while self.at(SyntaxKind::COLON) {
+            self.parse_sub_attribute();
+            self.skip_whitespace_and_newlines();
+        }
+
+        self.block();
+    }
+
+    pub(crate) fn parse_sub_attribute(&mut self) {
         self.builder.start_node(SyntaxKind::ATTR.into());
 
         self.expect(SyntaxKind::COLON);
@@ -785,7 +800,7 @@ impl Parser<'_> {
     }
 
     /// Parse subroutine prototype like (\@@), ($@), (\@$@), etc.
-    fn parse_sub_prototype(&mut self) {
+    pub(crate) fn parse_sub_prototype(&mut self) {
         use crate::lexer::LexContext;
         self.builder.start_node(SyntaxKind::SUB_PROTOTYPE.into());
 
@@ -894,6 +909,88 @@ __END__",
                 );
             }
         }
+    }
+
+    #[test]
+    fn anonymous_sub_expression_can_be_top_level_statement() {
+        let input = "sub f { sub {} }";
+        let (green, errors) = parse(input);
+
+        assert!(
+            errors.is_empty(),
+            "Expected anonymous sub expression to parse without errors, got: {:?}",
+            errors
+        );
+
+        let root = PerlNode::new_root(green);
+        assert_eq!(root.kind(), SyntaxKind::ROOT);
+
+        let has_anon_sub = root
+            .descendants()
+            .any(|node| node.kind() == SyntaxKind::ANON_SUB_EXPR);
+        assert!(
+            has_anon_sub,
+            "Parsed tree should contain an anonymous subexpression node"
+        );
+    }
+
+    #[test]
+    fn anonymous_sub_expression_can_have_prototype() {
+        let input = "sub f { sub () { 0 } }";
+        let (green, errors) = parse(input);
+
+        assert!(
+            errors.is_empty(),
+            "Expected anonymous sub expression with prototype to parse without errors, got: {:?}",
+            errors
+        );
+
+        let root = PerlNode::new_root(green);
+        let anon_sub = root
+            .descendants()
+            .find(|node| node.kind() == SyntaxKind::ANON_SUB_EXPR)
+            .expect("Parsed tree should contain an anonymous subexpression node");
+
+        assert!(
+            anon_sub
+                .children()
+                .any(|child| child.kind() == SyntaxKind::SUB_PROTOTYPE),
+            "Anonymous subexpression should include a prototype child"
+        );
+    }
+
+    #[test]
+    fn anonymous_sub_expression_can_have_attributes() {
+        let input = "sub f { sub :method :foo(1) { 0 } }";
+        let (green, errors) = parse(input);
+
+        assert!(
+            errors.is_empty(),
+            "Expected anonymous sub expression with attributes to parse without errors, got: {:?}",
+            errors
+        );
+
+        let root = PerlNode::new_root(green);
+        let anon_sub = root
+            .descendants()
+            .find(|node| node.kind() == SyntaxKind::ANON_SUB_EXPR)
+            .expect("Parsed tree should contain an anonymous subexpression node");
+
+        let attr_count = anon_sub
+            .children()
+            .filter(|child| child.kind() == SyntaxKind::ATTR)
+            .count();
+        assert!(
+            attr_count >= 2,
+            "Anonymous subexpression should include multiple attribute nodes"
+        );
+
+        assert!(
+            anon_sub
+                .descendants()
+                .any(|node| node.kind() == SyntaxKind::ATTR_ARGS),
+            "Anonymous subexpression should include attribute argument list"
+        );
     }
 
     #[test]
