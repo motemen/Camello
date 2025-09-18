@@ -521,22 +521,41 @@ impl Parser<'_> {
     }
 
     fn if_stmt(&mut self) {
-        self.builder.start_node(SyntaxKind::IF_STMT.into());
+        self.parse_conditional_stmt(SyntaxKind::IF_STMT, SyntaxKind::IF_KW, "if");
+    }
 
-        // "if"
-        self.expect(SyntaxKind::IF_KW);
+    /// Look ahead to see if there's an elsif or else keyword after whitespace
+    fn lookahead_for_elsif_or_else(&self) -> bool {
+        // Use token-based lookahead to check for elsif or else keywords
+        self.lookahead_for_any(&[SyntaxKind::ELSIF_KW, SyntaxKind::ELSE_KW])
+    }
+
+    fn unless_stmt(&mut self) {
+        self.parse_conditional_stmt(SyntaxKind::UNLESS_STMT, SyntaxKind::UNLESS_KW, "unless");
+    }
+
+    fn parse_conditional_stmt(
+        &mut self,
+        stmt_kind: SyntaxKind,
+        initial_keyword: SyntaxKind,
+        keyword_name: &str,
+    ) {
+        self.builder.start_node(stmt_kind.into());
+
+        // Initial keyword (if/unless)
+        self.expect(initial_keyword);
         self.skip_whitespace_and_newlines();
 
         // Parse parenthesized condition
-        self.parse_parenthesized_condition("if");
+        self.parse_parenthesized_condition(keyword_name);
 
         self.skip_whitespace_and_newlines();
 
-        // If block
+        // Initial block
         self.block();
 
         // Skip trivia only if we detect elsif/else ahead, to avoid consuming inter-statement whitespace
-        // FIXME: This implementation is buggy. It fails if there's a comment between the if block and elsif/else.
+        // FIXME: This implementation is buggy. It fails if there's a comment between the block and elsif/else.
         // A more robust solution would be:
         // 1. Implement a proper multi-lookahead mechanism in the lexer.
         // 2. Implement a lexer with pushback capability.
@@ -559,44 +578,6 @@ impl Parser<'_> {
             if self.lookahead_for_elsif_or_else() {
                 self.skip_whitespace_and_newlines();
             }
-        }
-
-        // "else"
-        if self.at(SyntaxKind::ELSE_KW) {
-            self.bump(); // else
-            self.skip_whitespace_and_newlines();
-
-            // Else block
-            self.block();
-        }
-
-        self.builder.finish_node();
-    }
-
-    /// Look ahead to see if there's an elsif or else keyword after whitespace
-    fn lookahead_for_elsif_or_else(&self) -> bool {
-        // Use token-based lookahead to check for elsif or else keywords
-        self.lookahead_for_any(&[SyntaxKind::ELSIF_KW, SyntaxKind::ELSE_KW])
-    }
-
-    fn unless_stmt(&mut self) {
-        self.builder.start_node(SyntaxKind::UNLESS_STMT.into());
-
-        // "unless"
-        self.expect(SyntaxKind::UNLESS_KW);
-        self.skip_whitespace_and_newlines();
-
-        // Parse parenthesized condition
-        self.parse_parenthesized_condition("unless");
-
-        self.skip_whitespace_and_newlines();
-
-        // Unless block
-        self.block();
-
-        // Skip trivia only if we detect else ahead, to avoid consuming inter-statement whitespace
-        if self.lookahead_for_elsif_or_else() {
-            self.skip_whitespace_and_newlines();
         }
 
         // "else"
@@ -1023,6 +1004,20 @@ __END__",
         assert!(
             errors.is_empty(),
             "Should parse postfix for modifier without errors, got: {:?}",
+            errors
+        );
+        let syntax = PerlNode::new_root(green);
+        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+    }
+
+    #[test]
+    fn test_unless_with_elsif() {
+        let input =
+            "unless ($condition) { print 1; } elsif ($other) { print 2; } else { print 3; }";
+        let (green, errors) = parse(input);
+        assert!(
+            errors.is_empty(),
+            "Should parse unless with elsif without errors, got: {:?}",
             errors
         );
         let syntax = PerlNode::new_root(green);
