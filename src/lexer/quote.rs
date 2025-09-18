@@ -272,7 +272,7 @@ impl<'a> Lexer<'a> {
                 return Some((SyntaxKind::WHITESPACE, text));
             }
         }
-        self.try_consume_qw_content(closing)
+        self.try_consume_qw_content(delimiter, closing)
     }
 
     fn get_closing_delimiter(opening: char) -> char {
@@ -347,13 +347,19 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn try_consume_qw_content(&mut self, closing: char) -> Option<(SyntaxKind, &'a str)> {
+    fn try_consume_qw_content(
+        &mut self,
+        opening: char,
+        closing: char,
+    ) -> Option<(SyntaxKind, &'a str)> {
         let remainder = self.logos_lexer.remainder();
         if remainder.is_empty() {
             return None;
         }
         let mut i = 0usize;
         let bytes = remainder.as_bytes();
+        let is_paired = matches!(opening, '(' | '[' | '{' | '<');
+        let mut depth = 0usize;
         // skip whitespace -> return as trivia via normal path; here only words
         while i < bytes.len() {
             let ch = remainder[i..].chars().next().unwrap();
@@ -369,8 +375,18 @@ impl<'a> Lexer<'a> {
         let start = i;
         while i < bytes.len() {
             let ch = remainder[i..].chars().next().unwrap();
-            if ch.is_whitespace() || ch == closing {
+            if ch.is_whitespace() && depth == 0 {
                 break;
+            }
+            if ch == closing && (!is_paired || depth == 0) {
+                break;
+            }
+            if is_paired {
+                if ch == opening {
+                    depth += 1;
+                } else if ch == closing && depth > 0 {
+                    depth -= 1;
+                }
             }
             i += ch.len_utf8();
         }

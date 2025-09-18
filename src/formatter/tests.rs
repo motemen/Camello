@@ -1742,6 +1742,7 @@ fn test_qw_variable_assignment() {
             "our @list = qw/alpha beta gamma/;",
             "our @list = qw/alpha beta gamma/;\n",
         ),
+        ("my @words = qw( a (b) c );", "my @words = qw(a (b) c);\n"),
     ];
     check_formatting_cases(&cases);
 }
