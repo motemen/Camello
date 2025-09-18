@@ -1,4 +1,7 @@
-use crate::{PerlLanguage, PerlNode, SyntaxKind};
+use crate::{
+    comments::{CommentAnchor, CommentId, CommentOwner, CommentPlacement, CommentRegistry},
+    PerlLanguage, PerlNode, SyntaxKind,
+};
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
 
 #[derive(Debug, Clone)]
@@ -33,17 +36,12 @@ pub struct Formatter {
     at_line_start: bool,
     pending_empty_lines: usize, // Number of empty lines waiting to be output
     in_multiline_context: bool, // Track when we're in structured multiline formatting
-}
-
-impl Default for Formatter {
-    fn default() -> Self {
-        Self::new()
-    }
+    comment_registry: CommentRegistry,
 }
 
 impl Formatter {
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(comment_registry: CommentRegistry) -> Self {
         Self {
             current_line: Line::new(),
             lines: Vec::new(),
@@ -53,6 +51,7 @@ impl Formatter {
             at_line_start: true,
             pending_empty_lines: 0,
             in_multiline_context: false,
+            comment_registry,
         }
     }
 
@@ -128,6 +127,50 @@ impl Formatter {
                 .last()
                 .map(|l| l.text.is_empty())
                 .unwrap_or(false)
+    }
+
+    fn node_has_leading_comment(&self, node: &PerlNode) -> bool {
+        let owner = CommentOwner::for_node(node);
+        self.comment_registry
+            .attached_to(owner)
+            .any(|assignment| assignment.placement().is_leading())
+    }
+
+    fn should_isolate_comment(&self, token: &SyntaxToken<PerlLanguage>) -> bool {
+        let Some(comment_id) = CommentId::from_token(token) else {
+            return false;
+        };
+
+        if !self.comment_registry.is_first_in_block(comment_id) {
+            return false;
+        }
+
+        let Some(block_id) = self.comment_registry.block_of(comment_id) else {
+            return false;
+        };
+
+        let Some(CommentPlacement::Leading(owner)) =
+            self.comment_registry.placement_of_block(block_id)
+        else {
+            return false;
+        };
+
+        let Some(root) = Self::comment_root(token) else {
+            return false;
+        };
+
+        matches!(
+            owner.resolve(&root),
+            Some(CommentAnchor::Node(node)) if node.kind() == SyntaxKind::SUB_DEF
+        )
+    }
+
+    fn comment_root(token: &SyntaxToken<PerlLanguage>) -> Option<PerlNode> {
+        let mut node = token.parent()?;
+        while let Some(parent) = node.parent() {
+            node = parent;
+        }
+        Some(node)
     }
 
     fn format_node(&mut self, node: &PerlNode) {
@@ -585,6 +628,10 @@ impl Formatter {
             return false;
         }
 
+        if self.prev_token_kind == Some(SyntaxKind::COMMENT) {
+            return false;
+        }
+
         use SyntaxKind::*;
 
         if matches!(
@@ -641,6 +688,12 @@ impl Formatter {
                 }
             }
             SyntaxKind::COMMENT => {
+                self.output_pending_empty_lines();
+
+                if self.should_isolate_comment(token) {
+                    self.add_empty_line_before();
+                }
+
                 // コメントは保持するが、適切な位置に配置
                 if self.at_line_start {
                     self.add_indent();
@@ -651,6 +704,7 @@ impl Formatter {
                 }
                 self.write_str(text.trim(), Some(kind));
                 self.handle_newline();
+                self.prev_token_kind = Some(kind);
             }
             SyntaxKind::HEREDOC_CONTENT | SyntaxKind::HEREDOC_END => {
                 self.write_str(text, Some(kind));
@@ -811,7 +865,7 @@ impl Formatter {
                             self.handle_newline();
                         }
 
-                        if saw_extra_newline {
+                        if saw_extra_newline || self.prev_token_kind == Some(SyntaxKind::COMMENT) {
                             self.pending_empty_lines = 1;
                         }
                     }
@@ -892,7 +946,12 @@ impl Formatter {
 
 #[must_use]
 pub fn format(node: &PerlNode) -> String {
-    let mut formatter = Formatter::new();
+    let mut root = node.clone();
+    while let Some(parent) = root.parent() {
+        root = parent;
+    }
+    let comment_registry = CommentRegistry::from_syntax(&root);
+    let mut formatter = Formatter::new(comment_registry);
     formatter.format(node)
 }
 

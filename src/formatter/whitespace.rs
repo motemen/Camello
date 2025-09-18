@@ -37,7 +37,7 @@ impl Formatter {
         // or if this is a SUB_DEF with any preceding sibling (to separate all subs)
         // Exception: Don't add empty line between PACKAGE_STMT and USE_STMT/NO_STMT
         if let Some(prev) = node.prev_sibling() {
-            let should_add_empty_line = match node.kind() {
+            let mut should_add_empty_line = match node.kind() {
                 // For SUB_DEF, always add empty line if there's a preceding sibling
                 SyntaxKind::SUB_DEF => true,
                 // For regular statements, don't add automatic empty lines
@@ -54,6 +54,13 @@ impl Formatter {
                                 || node.kind() == SyntaxKind::NO_STMT))
                 }
             };
+
+            if should_add_empty_line
+                && node.kind() == SyntaxKind::SUB_DEF
+                && self.node_has_leading_comment(node)
+            {
+                should_add_empty_line = false;
+            }
 
             if should_add_empty_line {
                 self.add_empty_line_before();
