@@ -249,6 +249,10 @@ impl Formatter {
                 self.format_sub_prototype(node);
                 return;
             }
+            SyntaxKind::FOR_STMT => {
+                self.format_for_stmt(node);
+                return;
+            }
             SyntaxKind::ANON_SUB_EXPR
             | SyntaxKind::TYPEGLOB_EXPR
             | SyntaxKind::BLOCK_FUNCTION_CALL_EXPR
@@ -939,6 +943,29 @@ impl Formatter {
             match child {
                 NodeOrToken::Node(n) => self.format_node(&n),
                 NodeOrToken::Token(t) => self.format_token(&t),
+            }
+        }
+    }
+
+    fn format_for_stmt(&mut self, node: &PerlNode) {
+        // Handle FOR statement with special semicolon treatment
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(child_node) => {
+                    self.format_node(&child_node);
+                }
+                NodeOrToken::Token(token) => {
+                    match token.kind() {
+                        SyntaxKind::SEMICOLON => {
+                            // In FOR statements, semicolons are followed by space, not newline
+                            self.write(&token);
+                            self.write_char(' ');
+                        }
+                        _ => {
+                            self.format_token(&token);
+                        }
+                    }
+                }
             }
         }
     }

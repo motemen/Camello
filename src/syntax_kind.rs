@@ -218,7 +218,7 @@ pub enum SyntaxKind {
     PACKAGE_STMT,     // Package declaration (package Foo::Bar)
     USE_STMT,         // use statement (use warnings qw(all);)
     NO_STMT,          // no statement (no warnings qw(all);)
-    FOR_STMT,         // for statement
+    FOR_STMT,         // for statement (Perl-style)
     WHILE_STMT,       // while statement
     UNTIL_STMT,       // until statement
     IF_STMT,          // if statement
