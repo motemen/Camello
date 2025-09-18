@@ -3020,3 +3020,17 @@ fn test_trailing_comma_and_fat_comma_in_blocks() {
         ("sub f {\n    1,\n    2 =>\n}", "sub f { 1,\n    2 =>\n }"),
     ]);
 }
+
+#[test]
+fn test_trailing_comma_and_fat_comma_in_statements() {
+    check_formatting_cases(&[
+        // Basic trailing comma in statement
+        ("1, 2, 3,;", "1, 2, 3, ;\n"),
+        // Basic trailing fat comma in statement
+        ("a => 1, b =>;", "a => 1, b =>;\n"),
+        // Mixed commas and fat commas with trailing operators
+        ("a => 1, 2, b =>;", "a => 1, 2, b =>;\n"),
+        // Complex expression with trailing comma
+        ("$x + $y, $z * 2,;", "$x + $y, $z * 2, ;\n"),
+    ]);
+}
