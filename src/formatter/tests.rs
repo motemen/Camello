@@ -1268,6 +1268,26 @@ fn test_eval_block_function_formatting() {
 }
 
 #[test]
+fn test_eval_block_followed_by_defined_or() {
+    let input = "eval{}//1;";
+    let formatted = format_and_assert(input);
+
+    insta::assert_snapshot!(formatted, @r"
+        eval {} // 1;
+        ");
+}
+
+#[test]
+fn test_do_block_followed_by_defined_or() {
+    let input = "do{}//1;";
+    let formatted = format_and_assert(input);
+
+    insta::assert_snapshot!(formatted, @r"
+        do {} // 1;
+        ");
+}
+
+#[test]
 fn test_generic_block_function_formatting() {
     let input = "foo{$_+1}@values; Module::bar{process($_)}@items;";
     let formatted = format_and_assert(input);
