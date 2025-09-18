@@ -24,7 +24,7 @@ impl Parser<'_> {
         let start = self.builder.checkpoint();
 
         // Capture name before consuming
-        let function_name = self.current_text_value().unwrap_or("").to_string();
+        let function_name = self.peek_block_function_basename().unwrap_or_default();
 
         if coerce_current_to_ident {
             self.bump_as(SyntaxKind::IDENT);
@@ -41,7 +41,7 @@ impl Parser<'_> {
         {
             self.builder
                 .start_node_at(start, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());
-            self.parse_block_function_args();
+            self.parse_block_function_args(&function_name);
             self.builder.finish_node();
             return;
         }
@@ -81,7 +81,7 @@ impl Parser<'_> {
         }
     }
     // Parse block function arguments: block + optional additional arguments
-    fn parse_block_function_args(&mut self) {
+    fn parse_block_function_args(&mut self, function_name: &str) {
         // Parse the block (which should be at L_BRACE)
         if self.at(SyntaxKind::L_BRACE) {
             self.builder.start_node(SyntaxKind::BLOCK_STMT.into());
@@ -108,7 +108,7 @@ impl Parser<'_> {
 
         // Parse additional arguments if present (no comma before them)
         // For example: map { ... } @list
-        if self.is_at_start_of_expression() {
+        if !Self::block_args_end_after_block(function_name) && self.is_at_start_of_expression() {
             self.expression_list();
         }
     }
@@ -119,6 +119,44 @@ impl Parser<'_> {
     /// This hook remains so future work can restore more selective behavior if desired.
     fn is_block_function(function_name: &str) -> bool {
         !function_name.is_empty()
+    }
+
+    /// Certain block-taking functions (`eval`, `do`) treat the block as their only argument.
+    /// Stop parsing additional arguments after the first block for these names so operators like
+    /// `//` are parsed in expression position instead of as another argument.
+    fn block_args_end_after_block(function_name: &str) -> bool {
+        matches!(function_name, "eval" | "do")
+    }
+
+    /// Peek ahead to capture the final segment of a (possibly qualified) identifier without
+    /// consuming tokens. This is used to drive block-function heuristics before we parse the name.
+    fn peek_block_function_basename(&self) -> Option<String> {
+        let mut name = self.current_text_value()?.to_string();
+        let mut offset = 1;
+
+        while let Some((kind, _)) =
+            self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset)
+        {
+            if kind != SyntaxKind::DOUBLE_COLON {
+                break;
+            }
+
+            let Some((next_kind, next_text)) =
+                self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset + 1)
+            else {
+                break;
+            };
+
+            if next_kind == SyntaxKind::IDENT || next_kind.is_keyword() {
+                name = next_text.to_string();
+                offset += 2;
+                continue;
+            }
+
+            break;
+        }
+
+        Some(name)
     }
 
     fn parse_print_like_args(&mut self) {
