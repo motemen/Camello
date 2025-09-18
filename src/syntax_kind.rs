@@ -322,6 +322,7 @@ impl SyntaxKind {
                 | SyntaxKind::FOR_KW
                 | SyntaxKind::FOREACH_KW
                 | SyntaxKind::WHILE_KW
+                | SyntaxKind::UNTIL_KW
                 | SyntaxKind::PACKAGE_KW
                 | SyntaxKind::QW_KW
                 | SyntaxKind::Q_KW
@@ -352,6 +353,9 @@ impl SyntaxKind {
                 | SyntaxKind::STR_CMP
                 | SyntaxKind::X
                 | SyntaxKind::UNDEF_KW
+                | SyntaxKind::END_KW
+                | SyntaxKind::DATA_KW
+                | SyntaxKind::CUT_KW
         )
     }
 

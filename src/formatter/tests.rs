@@ -209,6 +209,66 @@ fn test_special_variable_formatting() {
 }
 
 #[test]
+fn test_keywords_as_hash_keys_formatting() {
+    let cases = [
+        // Control flow keywords
+        ("$h->{if}", "$h->{if}"),
+        ("$h->{unless}", "$h->{unless}"),
+        ("$h->{elsif}", "$h->{elsif}"),
+        ("$h->{else}", "$h->{else}"),
+        ("$h->{for}", "$h->{for}"),
+        ("$h->{foreach}", "$h->{foreach}"),
+        ("$h->{while}", "$h->{while}"),
+        ("$h->{until}", "$h->{until}"),
+        // Declaration keywords
+        ("$h->{sub}", "$h->{sub}"),
+        ("$h->{my}", "$h->{my}"),
+        ("$h->{our}", "$h->{our}"),
+        ("$h->{state}", "$h->{state}"),
+        ("$h->{local}", "$h->{local}"),
+        // Special keywords
+        ("$h->{package}", "$h->{package}"),
+        ("$h->{use}", "$h->{use}"),
+        ("$h->{no}", "$h->{no}"),
+        ("$h->{require}", "$h->{require}"),
+        ("$h->{return}", "$h->{return}"),
+        ("$h->{undef}", "$h->{undef}"),
+        // Control keywords
+        ("$h->{next}", "$h->{next}"),
+        ("$h->{last}", "$h->{last}"),
+        ("$h->{redo}", "$h->{redo}"),
+        // Logical operators as keywords
+        ("$h->{not}", "$h->{not}"),
+        ("$h->{and}", "$h->{and}"),
+        ("$h->{or}", "$h->{or}"),
+        ("$h->{xor}", "$h->{xor}"),
+        // Quote-like operators
+        ("$h->{q}", "$h->{q}"),
+        ("$h->{qq}", "$h->{qq}"),
+        ("$h->{qw}", "$h->{qw}"),
+        ("$h->{qx}", "$h->{qx}"),
+        ("$h->{qr}", "$h->{qr}"),
+        ("$h->{m}", "$h->{m}"),
+        ("$h->{s}", "$h->{s}"),
+        ("$h->{tr}", "$h->{tr}"),
+        ("$h->{y}", "$h->{y}"),
+        // Special tokens
+        ("$h->{__END__}", "$h->{__END__}"),
+        ("$h->{__DATA__}", "$h->{__DATA__}"),
+        // Multiple keywords in one hash
+        (
+            "$h = {if => 1, while => 2, until => 3};",
+            "$h = {if => 1, while => 2, until => 3};\n",
+        ),
+        // Keywords as variable names
+        ("my $until = 1;", "my $until = 1;\n"),
+        ("our $while;", "our $while;\n"),
+        ("state $for = 'loop';", "state $for = 'loop';\n"),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_backtick_command_substitution_formatting() {
     let cases = [
         // Basic backtick command substitution
