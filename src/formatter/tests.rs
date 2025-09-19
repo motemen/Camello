@@ -128,6 +128,12 @@ fn test_continuation_indent_fat_comma() {
 }
 
 #[test]
+fn test_my_declaration_in_trailing_comma_argument() {
+    let formatted = format_and_assert("func(my $a,);");
+    assert_eq!(formatted, "func(my $a, );\n");
+}
+
+#[test]
 fn test_undef_in_variable_declaration_formatting() {
     let cases = [
         ("my(undef,$x)=@_;", "my (undef, $x) = @_;\n"),

@@ -1274,7 +1274,9 @@ impl Parser<'_> {
         self.skip_whitespace_and_newlines();
 
         // Parse the variable and any assignment with minimum precedence
-        if !self.parse_expression_with_precedence(Precedence::LOWEST) {
+        // Use LIST_ITEM precedence so a trailing comma in contexts like func(my $a,)
+        // doesn't get treated as part of the declaration expression.
+        if !self.parse_expression_with_precedence(Precedence::LIST_ITEM) {
             self.error("Expected expression after variable declaration keyword");
         }
 
