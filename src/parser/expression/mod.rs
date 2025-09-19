@@ -963,8 +963,8 @@ impl Parser<'_> {
             | SyntaxKind::OUR_KW
             | SyntaxKind::STATE_KW
             | SyntaxKind::LOCAL_KW => {
-                // Variable declaration as expression (e.g., my $x = 1)
-                self.var_decl_expr();
+                // Variable declaration as prefix operator
+                self.parse_var_decl_prefix();
             }
             SyntaxKind::UNDEF_KW => {
                 // undef can be used both as a literal and as a function call
@@ -1261,6 +1261,22 @@ impl Parser<'_> {
 
         // Parse the function name (identifier or qualified identifier)
         self.parse_identifier_or_qualified();
+
+        self.builder.finish_node();
+    }
+
+    /// Parse variable declaration as prefix operator (my/our/state/local)
+    fn parse_var_decl_prefix(&mut self) {
+        self.builder.start_node(SyntaxKind::VAR_DECL.into());
+
+        // Variable declaration keyword (my, our, state, local)
+        self.bump_value(); // consume the keyword
+        self.skip_whitespace_and_newlines();
+
+        // Parse the variable and any assignment with minimum precedence
+        if !self.parse_expression_with_precedence(Precedence::LOWEST) {
+            self.error("Expected expression after variable declaration keyword");
+        }
 
         self.builder.finish_node();
     }

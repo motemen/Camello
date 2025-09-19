@@ -24,10 +24,14 @@ impl Parser<'_> {
                     self.lexical_sub_def(kind);
                     true
                 } else {
+                    // Route through expression system for prefix operator handling
                     self.expression_stmt()
                 }
             }
-            Some(SyntaxKind::LOCAL_KW) => self.expression_stmt(),
+            Some(SyntaxKind::LOCAL_KW) => {
+                // Route through expression system for prefix operator handling
+                self.expression_stmt()
+            }
             Some(SyntaxKind::SUB_KW) => {
                 if self.looks_like_sub_definition() {
                     self.sub_def();
@@ -142,156 +146,6 @@ impl Parser<'_> {
         if !self.statement() {
             self.error("Expected statement after label");
         }
-
-        self.builder.finish_node();
-    }
-
-    pub fn var_decl_expr(&mut self) {
-        self.var_decl_common();
-    }
-
-    fn is_local_lvalue_start(&self) -> bool {
-        match self.current_kind() {
-            Some(kind) if kind.is_sigil() || kind == SyntaxKind::AMPERSAND => true,
-            Some(SyntaxKind::IDENT) => self
-                .peek_nth_non_trivia_token_with_context(LexContext::Operator, 1)
-                .is_some_and(|(next, _)| {
-                    matches!(next, SyntaxKind::ARROW | SyntaxKind::DOUBLE_COLON)
-                }),
-            _ => false,
-        }
-    }
-
-    // Helper to parse variable based on declaration kind
-    fn parse_variable_by_decl_kind(&mut self, decl_kind: SyntaxKind) {
-        if matches!(decl_kind, SyntaxKind::OUR_KW | SyntaxKind::LOCAL_KW) {
-            self.parse_variable_qualified();
-        } else {
-            self.parse_variable_simple();
-        }
-    }
-
-    // Common logic for variable declarations
-    fn var_decl_common(&mut self) {
-        self.builder.start_node(SyntaxKind::VAR_DECL.into());
-
-        // Variable declaration keyword (my, our, state, local)
-        let decl_kind = self.current_kind().unwrap();
-        self.bump(); // consume the keyword
-        self.skip_whitespace_and_newlines();
-
-        // For local, we need to allow more complex lvalue expressions
-        let is_local = matches!(decl_kind, SyntaxKind::LOCAL_KW);
-
-        // my $var or my ($var, ...) or local $hash{key} or local ($a, $b)
-        if self.at(SyntaxKind::L_PAREN) {
-            self.bump(); // (
-            self.skip_whitespace_and_newlines();
-
-            while !self.at(SyntaxKind::R_PAREN) && !self.at_end() {
-                if is_local {
-                    // For local, allow any lvalue expression
-                    if self.at(SyntaxKind::UNDEF_KW) {
-                        self.bump(); // consume 'undef'
-                    } else if self.is_local_lvalue_start() {
-                        // Parse as lvalue expression to handle subscriptions
-                        if !self.expression() {
-                            self.error("Expected lvalue expression in local statement");
-                            break;
-                        }
-                    } else {
-                        self.error("Expected lvalue expression or undef in local statement");
-                        break;
-                    }
-                } else {
-                    // For my/our/state, only allow simple variables or undef
-                    if self
-                        .current_kind()
-                        .is_some_and(super::super::syntax_kind::SyntaxKind::is_sigil)
-                    {
-                        self.parse_variable_by_decl_kind(decl_kind);
-                    } else if self.at(SyntaxKind::UNDEF_KW) {
-                        self.bump(); // consume 'undef'
-                    } else {
-                        self.error("Expected variable in parenthesized list");
-                        break; // Break loop when error occurs
-                    }
-                }
-
-                self.skip_whitespace_and_newlines();
-
-                if self.at(SyntaxKind::COMMA) {
-                    self.bump();
-                    self.skip_whitespace_and_newlines();
-                } else if !self.at(SyntaxKind::R_PAREN) {
-                    self.error("Expected ',' or ')' in variable list");
-                    break; // Break loop when error occurs
-                }
-            }
-
-            self.expect(SyntaxKind::R_PAREN);
-        } else if is_local {
-            if self.is_local_lvalue_start() {
-                // For local, parse as expression to handle subscriptions
-                if !self.expression() {
-                    self.error("Expected lvalue expression after local");
-                }
-            } else {
-                self.error("Expected lvalue expression after local");
-            }
-        } else if self
-            .current_kind()
-            .is_some_and(super::super::syntax_kind::SyntaxKind::is_sigil)
-        {
-            // For my/our/state, parse as simple variable
-            self.parse_variable_by_decl_kind(decl_kind);
-        } else {
-            self.error("Expected variable or parenthesized list of variables after variable declaration keyword");
-        }
-
-        self.skip_whitespace_and_newlines();
-
-        // Process initializer if present
-        if self.at(SyntaxKind::EQ) {
-            self.bump_op(); // '='
-            self.skip_whitespace_and_newlines();
-            if !self.expression() {
-                self.error("Invalid expression in variable assignment");
-            }
-        } else {
-            let current_operator = self
-                .peek_non_trivia_token_with_context(LexContext::Operator)
-                .map(|(kind, _)| kind);
-            let is_compound_assignment = current_operator
-                .is_some_and(SyntaxKind::is_compoundable_operator)
-                && self
-                    .peek_nth_non_trivia_token_with_context(LexContext::Operator, 1)
-                    .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::EQ);
-
-            if is_compound_assignment {
-                let op_checkpoint = self.builder.checkpoint();
-
-                // Consume the operator composing the compound assignment, e.g., '+' in '+='
-                self.bump_op();
-
-                self.builder
-                    .start_node_at(op_checkpoint, SyntaxKind::COMPOUND_ASSIGNMENT.into());
-
-                self.expect_op(SyntaxKind::EQ);
-
-                self.builder.finish_node();
-
-                self.skip_whitespace_and_newlines();
-                if !self.expression() {
-                    self.error("Invalid expression in variable assignment");
-                }
-            }
-        }
-
-        self.skip_whitespace_and_newlines();
-
-        // Check for postfix modifiers (if/unless/for)
-        self.parse_optional_postfix_modifier();
 
         self.builder.finish_node();
     }
