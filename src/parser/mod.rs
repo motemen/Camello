@@ -753,9 +753,8 @@ mod tests {
         let stmt = root.children().next().expect("missing statement");
         assert_eq!(stmt.kind(), SyntaxKind::STMT);
         assert!(
-            stmt
-                .descendants()
-                .any(|node| node.kind() == SyntaxKind::DECLARATION_STMT),
+            stmt.descendants()
+                .any(|node| node.kind() == SyntaxKind::VAR_DECL),
             "expected declaration inside statement"
         );
         assert!(
@@ -776,9 +775,8 @@ mod tests {
         assert_eq!(stmt.kind(), SyntaxKind::STMT);
 
         assert!(
-            stmt
-                .descendants()
-                .any(|node| node.kind() == SyntaxKind::DECLARATION_STMT),
+            stmt.descendants()
+                .any(|node| node.kind() == SyntaxKind::VAR_DECL),
             "expected declaration inside statement"
         );
 
