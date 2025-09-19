@@ -18,6 +18,27 @@ impl Parser<'_> {
             .is_none_or(|(k, _)| k != SyntaxKind::FAT_COMMA)
     }
 
+    /// Check if a function name has a prototype that restricts its arguments
+    fn has_restricted_prototype(name: &str) -> bool {
+        matches!(name, "shift")
+    }
+
+    /// Check if the next tokens indicate a valid argument for the given builtin function
+    fn can_accept_next_as_argument(&self, function_name: &str) -> bool {
+        match function_name {
+            "shift" => {
+                // shift can take no arguments or an array reference
+                // If next token starts with @, it's likely an array
+                match self.peek_non_trivia_token_with_context(LexContext::Value) {
+                    Some((SyntaxKind::AT, _)) => true,
+                    Some((SyntaxKind::L_PAREN, _)) => true, // shift()
+                    _ => false,                             // anything else means no arguments
+                }
+            }
+            _ => true, // other functions accept any expressions
+        }
+    }
+
     /// Parse an identifier-like expression (including cases where a keyword is coerced to IDENT)
     /// and handle possible function calls (regular or block).
     fn parse_ident_like_expr(&mut self, coerce_current_to_ident: bool) {
@@ -43,6 +64,15 @@ impl Parser<'_> {
                 .start_node_at(start, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());
             self.parse_block_function_args(&function_name);
             self.builder.finish_node();
+            return;
+        }
+
+        // Special handling for functions with restricted prototypes (like shift)
+        if Self::has_restricted_prototype(&function_name)
+            && !self.can_accept_next_as_argument(&function_name)
+        {
+            // No valid arguments for this function, so we're done parsing it
+            // Return early to avoid treating it as a function call
             return;
         }
 

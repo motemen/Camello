@@ -3092,3 +3092,23 @@ fn test_trailing_comma_and_fat_comma_in_statements() {
         ("$x + $y, $z * 2,;", "$x + $y, $z * 2, ;\n"),
     ]);
 }
+
+#[test]
+fn test_shift_defined_or_formatting() {
+    check_formatting_cases(&[
+        // shift without parentheses followed by defined-or operator
+        ("shift//0;", "shift // 0;\n"),
+        ("shift // 0;", "shift // 0;\n"),
+        ("shift//'default';", "shift // 'default';\n"),
+        ("shift // 'default';", "shift // 'default';\n"),
+        // shift with parentheses followed by defined-or operator
+        ("shift()//0;", "shift() // 0;\n"),
+        ("shift() // 0;", "shift() // 0;\n"),
+        ("shift()//'default';", "shift() // 'default';\n"),
+        ("shift() // 'default';", "shift() // 'default';\n"),
+        // shift with array argument (should work normally)
+        ("shift@array;", "shift @array;\n"),
+        ("shift @array;", "shift @array;\n"),
+        ("shift(@array);", "shift(@array);\n"),
+    ]);
+}
