@@ -176,21 +176,19 @@ impl Formatter {
     fn format_node(&mut self, node: &PerlNode) {
         // Add empty line before subs, use statements, and regular statements when appropriate
         // This preserves existing behavior for simple cases while also handling statement spacing
-        if matches!(
-            node.kind(),
-            SyntaxKind::SUB_DEF
-                | SyntaxKind::BEGIN_STMT
-                | SyntaxKind::END_STMT
-                | SyntaxKind::INIT_STMT
-                | SyntaxKind::CHECK_STMT
-                | SyntaxKind::USE_STMT
-                | SyntaxKind::NO_STMT
-                | SyntaxKind::STMT
-                | SyntaxKind::LABELED_STMT
-                | SyntaxKind::DECLARATION_STMT
-                | SyntaxKind::ELLIPSIS_STMT
-                | SyntaxKind::EMPTY_STMT
-        ) {
+        if node.kind().is_phase_block_stmt()
+            || matches!(
+                node.kind(),
+                SyntaxKind::SUB_DEF
+                    | SyntaxKind::USE_STMT
+                    | SyntaxKind::NO_STMT
+                    | SyntaxKind::STMT
+                    | SyntaxKind::LABELED_STMT
+                    | SyntaxKind::DECLARATION_STMT
+                    | SyntaxKind::ELLIPSIS_STMT
+                    | SyntaxKind::EMPTY_STMT
+            )
+        {
             self.add_empty_line_before_if_needed(node);
         }
 
@@ -292,15 +290,11 @@ impl Formatter {
                 NodeOrToken::Node(child_node) => {
                     // Output pending empty lines before processing child nodes
                     if self.pending_empty_lines > 0
-                        && matches!(
-                            child_node.kind(),
-                            SyntaxKind::STMT
-                                | SyntaxKind::DECLARATION_STMT
-                                | SyntaxKind::BEGIN_STMT
-                                | SyntaxKind::END_STMT
-                                | SyntaxKind::INIT_STMT
-                                | SyntaxKind::CHECK_STMT
-                        )
+                        && (child_node.kind().is_phase_block_stmt()
+                            || matches!(
+                                child_node.kind(),
+                                SyntaxKind::STMT | SyntaxKind::DECLARATION_STMT
+                            ))
                     {
                         self.output_pending_empty_lines();
                     }
@@ -311,16 +305,12 @@ impl Formatter {
         }
 
         // Add empty line after subs, use, and no statements, but only if there are siblings
-        if matches!(
-            node.kind(),
-            SyntaxKind::SUB_DEF
-                | SyntaxKind::BEGIN_STMT
-                | SyntaxKind::END_STMT
-                | SyntaxKind::INIT_STMT
-                | SyntaxKind::CHECK_STMT
-                | SyntaxKind::USE_STMT
-                | SyntaxKind::NO_STMT
-        ) {
+        if node.kind().is_phase_block_stmt()
+            || matches!(
+                node.kind(),
+                SyntaxKind::SUB_DEF | SyntaxKind::USE_STMT | SyntaxKind::NO_STMT
+            )
+        {
             self.add_empty_line_after_if_needed(node);
         }
 
@@ -404,15 +394,10 @@ impl Formatter {
     }
 
     fn is_simple_block(&self, node: &PerlNode) -> bool {
-        if node.children().any(|child| {
-            matches!(
-                child.kind(),
-                SyntaxKind::BEGIN_STMT
-                    | SyntaxKind::END_STMT
-                    | SyntaxKind::INIT_STMT
-                    | SyntaxKind::CHECK_STMT
-            )
-        }) {
+        if node
+            .children()
+            .any(|child| child.kind().is_phase_block_stmt())
+        {
             return false;
         }
 

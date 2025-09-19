@@ -318,58 +318,77 @@ impl SyntaxKind {
 
     #[must_use]
     pub fn is_keyword(self) -> bool {
+        self.is_phase_block_kw()
+            || matches!(
+                self,
+                SyntaxKind::SUB_KW
+                    | SyntaxKind::MY_KW
+                    | SyntaxKind::OUR_KW
+                    | SyntaxKind::STATE_KW
+                    | SyntaxKind::LOCAL_KW
+                    | SyntaxKind::IF_KW
+                    | SyntaxKind::UNLESS_KW
+                    | SyntaxKind::ELSIF_KW
+                    | SyntaxKind::ELSE_KW
+                    | SyntaxKind::FOR_KW
+                    | SyntaxKind::FOREACH_KW
+                    | SyntaxKind::WHILE_KW
+                    | SyntaxKind::UNTIL_KW
+                    | SyntaxKind::PACKAGE_KW
+                    | SyntaxKind::QW_KW
+                    | SyntaxKind::Q_KW
+                    | SyntaxKind::QQ_KW
+                    | SyntaxKind::QX_KW
+                    | SyntaxKind::M_KW
+                    | SyntaxKind::QR_KW
+                    | SyntaxKind::S_KW
+                    | SyntaxKind::TR_KW
+                    | SyntaxKind::Y_KW
+                    | SyntaxKind::USE_KW
+                    | SyntaxKind::NO_KW
+                    | SyntaxKind::REQUIRE_KW
+                    | SyntaxKind::RETURN_KW
+                    | SyntaxKind::NEXT_KW
+                    | SyntaxKind::LAST_KW
+                    | SyntaxKind::REDO_KW
+                    | SyntaxKind::NOT_KW
+                    | SyntaxKind::AND_KW
+                    | SyntaxKind::OR_KW
+                    | SyntaxKind::XOR_KW
+                    | SyntaxKind::STR_EQ
+                    | SyntaxKind::STR_NE
+                    | SyntaxKind::STR_GT
+                    | SyntaxKind::STR_LT
+                    | SyntaxKind::STR_GE
+                    | SyntaxKind::STR_LE
+                    | SyntaxKind::STR_CMP
+                    | SyntaxKind::X
+                    | SyntaxKind::UNDEF_KW
+                    | SyntaxKind::END_KW
+                    | SyntaxKind::DATA_KW
+                    | SyntaxKind::CUT_KW
+            )
+    }
+
+    #[must_use]
+    pub fn is_phase_block_kw(self) -> bool {
         matches!(
             self,
-            SyntaxKind::SUB_KW
-                | SyntaxKind::MY_KW
-                | SyntaxKind::OUR_KW
-                | SyntaxKind::STATE_KW
-                | SyntaxKind::LOCAL_KW
-                | SyntaxKind::BEGIN_KW
+            SyntaxKind::BEGIN_KW
                 | SyntaxKind::END_BLOCK_KW
                 | SyntaxKind::INIT_KW
                 | SyntaxKind::CHECK_KW
-                | SyntaxKind::IF_KW
-                | SyntaxKind::UNLESS_KW
-                | SyntaxKind::ELSIF_KW
-                | SyntaxKind::ELSE_KW
-                | SyntaxKind::FOR_KW
-                | SyntaxKind::FOREACH_KW
-                | SyntaxKind::WHILE_KW
-                | SyntaxKind::UNTIL_KW
-                | SyntaxKind::PACKAGE_KW
-                | SyntaxKind::QW_KW
-                | SyntaxKind::Q_KW
-                | SyntaxKind::QQ_KW
-                | SyntaxKind::QX_KW
-                | SyntaxKind::M_KW
-                | SyntaxKind::QR_KW
-                | SyntaxKind::S_KW
-                | SyntaxKind::TR_KW
-                | SyntaxKind::Y_KW
-                | SyntaxKind::USE_KW
-                | SyntaxKind::NO_KW
-                | SyntaxKind::REQUIRE_KW
-                | SyntaxKind::RETURN_KW
-                | SyntaxKind::NEXT_KW
-                | SyntaxKind::LAST_KW
-                | SyntaxKind::REDO_KW
-                | SyntaxKind::NOT_KW
-                | SyntaxKind::AND_KW
-                | SyntaxKind::OR_KW
-                | SyntaxKind::XOR_KW
-                | SyntaxKind::STR_EQ
-                | SyntaxKind::STR_NE
-                | SyntaxKind::STR_GT
-                | SyntaxKind::STR_LT
-                | SyntaxKind::STR_GE
-                | SyntaxKind::STR_LE
-                | SyntaxKind::STR_CMP
-                | SyntaxKind::X
-                | SyntaxKind::UNDEF_KW
-                | SyntaxKind::END_KW
-                | SyntaxKind::DATA_KW
-                | SyntaxKind::CUT_KW
+        )
+    }
+
+    #[must_use]
+    pub fn is_phase_block_stmt(self) -> bool {
+        matches!(
+            self,
+            SyntaxKind::BEGIN_STMT
+                | SyntaxKind::END_STMT
+                | SyntaxKind::INIT_STMT
+                | SyntaxKind::CHECK_STMT
         )
     }
 
