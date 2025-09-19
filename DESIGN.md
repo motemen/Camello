@@ -262,7 +262,7 @@ Perlの構文要素を表現するための enum を定義します。\#\[derive
 
 *   **提案内容:** `SyntaxKind`の命名と粒度を、より抽象的で汎用的なものにすることを推奨します。
 *   **具体例:**
-    *   `VAR_DECL` → `DECLARATION_STMT` に変更し、`my`, `our`, `state` などのキーワードをその子ノードとして持つ構造にする。
+    *   `VAR_DECL` ノードで `my`, `our`, `state` などのキーワードを子として保持する。
     *   `BINARY_EXPR` → `INFIX_EXPR`（中置式）とし、`PREFIX_EXPR`（前置式、例: `!$foo`）や `POSTFIX_EXPR`（後置式、例: `$i++`）といった分類を導入する。
     *   Perl特有の後置修飾子（`... if ...`）のために、`IF_MODIFIER` のようなKindを早期に検討する。
 

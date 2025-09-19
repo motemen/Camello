@@ -45,7 +45,7 @@ impl Formatter {
                 // They should only get empty lines if they were in the source
                 SyntaxKind::STMT
                 | SyntaxKind::LABELED_STMT
-                | SyntaxKind::DECLARATION_STMT
+                | SyntaxKind::VAR_DECL
                 | SyntaxKind::ELLIPSIS_STMT => false,
                 // For other node types, use the original logic
                 _ => {
