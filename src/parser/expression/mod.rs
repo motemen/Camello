@@ -654,49 +654,30 @@ impl Parser<'_> {
                         Some(kind) if kind.is_sigil() => {
                             let mut handled_slice = false;
 
-                            if kind == SyntaxKind::AT || kind == SyntaxKind::PERCENT {
+                            if matches!(kind, SyntaxKind::AT | SyntaxKind::PERCENT) {
                                 let next_token = self
                                     .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
                                     .map(|(k, _)| k);
 
-                                handled_slice = match (kind, next_token) {
-                                    (SyntaxKind::AT, Some(SyntaxKind::L_BRACKET)) => {
-                                        self.parse_postfix_slice_expr(
-                                            initial_checkpoint,
-                                            SyntaxKind::AT,
-                                            SyntaxKind::L_BRACKET,
-                                            SyntaxKind::R_BRACKET,
-                                        );
-                                        true
-                                    }
-                                    (SyntaxKind::AT, Some(SyntaxKind::L_BRACE)) => {
-                                        self.parse_postfix_slice_expr(
-                                            initial_checkpoint,
-                                            SyntaxKind::AT,
-                                            SyntaxKind::L_BRACE,
-                                            SyntaxKind::R_BRACE,
-                                        );
-                                        true
-                                    }
-                                    (SyntaxKind::PERCENT, Some(SyntaxKind::L_BRACKET)) => {
-                                        self.parse_postfix_slice_expr(
-                                            initial_checkpoint,
-                                            SyntaxKind::PERCENT,
-                                            SyntaxKind::L_BRACKET,
-                                            SyntaxKind::R_BRACKET,
-                                        );
-                                        true
-                                    }
-                                    (SyntaxKind::PERCENT, Some(SyntaxKind::L_BRACE)) => {
-                                        self.parse_postfix_slice_expr(
-                                            initial_checkpoint,
-                                            SyntaxKind::PERCENT,
-                                            SyntaxKind::L_BRACE,
-                                            SyntaxKind::R_BRACE,
-                                        );
-                                        true
-                                    }
-                                    _ => false,
+                                handled_slice = if let Some(
+                                    opening @ (SyntaxKind::L_BRACKET | SyntaxKind::L_BRACE),
+                                ) = next_token
+                                {
+                                    let closing = if opening == SyntaxKind::L_BRACKET {
+                                        SyntaxKind::R_BRACKET
+                                    } else {
+                                        SyntaxKind::R_BRACE
+                                    };
+
+                                    self.parse_postfix_slice_expr(
+                                        initial_checkpoint,
+                                        kind,
+                                        opening,
+                                        closing,
+                                    );
+                                    true
+                                } else {
+                                    false
                                 };
                             }
 
