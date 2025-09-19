@@ -295,11 +295,11 @@ impl Parser<'_> {
         self.expect(keyword_kind);
         self.skip_whitespace_and_newlines();
 
-        if !self.at(SyntaxKind::L_BRACE) {
+        if self.at(SyntaxKind::L_BRACE) {
+            self.block();
+        } else {
             self.error(&format!("Expected block after {name}"));
         }
-
-        self.block();
 
         self.builder.finish_node();
     }
