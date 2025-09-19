@@ -68,12 +68,7 @@ impl Parser<'_> {
                 self.no_stmt();
                 true
             }
-            Some(
-                kind @ (SyntaxKind::BEGIN_KW
-                | SyntaxKind::END_BLOCK_KW
-                | SyntaxKind::INIT_KW
-                | SyntaxKind::CHECK_KW),
-            ) => {
+            Some(kind) if kind.is_phase_block_kw() => {
                 self.phase_block_stmt(kind);
                 true
             }

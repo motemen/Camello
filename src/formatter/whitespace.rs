@@ -39,11 +39,8 @@ impl Formatter {
         if let Some(prev) = node.prev_sibling() {
             let mut should_add_empty_line = match node.kind() {
                 // For SUB_DEF and phase blocks, always add empty line if there's a preceding sibling
-                SyntaxKind::SUB_DEF
-                | SyntaxKind::BEGIN_STMT
-                | SyntaxKind::END_STMT
-                | SyntaxKind::INIT_STMT
-                | SyntaxKind::CHECK_STMT => true,
+                SyntaxKind::SUB_DEF => true,
+                kind if kind.is_phase_block_stmt() => true,
                 // For regular statements, don't add automatic empty lines
                 // They should only get empty lines if they were in the source
                 SyntaxKind::STMT
@@ -60,14 +57,7 @@ impl Formatter {
             };
 
             if should_add_empty_line
-                && matches!(
-                    node.kind(),
-                    SyntaxKind::SUB_DEF
-                        | SyntaxKind::BEGIN_STMT
-                        | SyntaxKind::END_STMT
-                        | SyntaxKind::INIT_STMT
-                        | SyntaxKind::CHECK_STMT
-                )
+                && (node.kind() == SyntaxKind::SUB_DEF || node.kind().is_phase_block_stmt())
                 && self.node_has_leading_comment(node)
             {
                 should_add_empty_line = false;
