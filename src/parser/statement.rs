@@ -173,7 +173,7 @@ impl Parser<'_> {
 
     // Common logic for variable declarations
     fn var_decl_common(&mut self) {
-        self.builder.start_node(SyntaxKind::DECLARATION_STMT.into());
+        self.builder.start_node(SyntaxKind::VAR_DECL.into());
 
         // Variable declaration keyword (my, our, state, local)
         let decl_kind = self.current_kind().unwrap();
@@ -535,7 +535,7 @@ impl Parser<'_> {
             )
         ) {
             // Variable declaration case - parse as a variable declaration
-            self.builder.start_node(SyntaxKind::DECLARATION_STMT.into());
+            self.builder.start_node(SyntaxKind::VAR_DECL.into());
 
             let decl_kind = self.current_kind().unwrap();
             self.bump_value(); // consume the keyword
