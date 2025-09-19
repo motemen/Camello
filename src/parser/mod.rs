@@ -890,3 +890,46 @@ fn test_package_with_block() {
         "package statement should contain block"
     );
 }
+
+#[test]
+fn test_infix_expression_with_newline() {
+    use crate::PerlNode;
+
+    // Test cases that should all parse as valid infix expressions
+    let test_cases = [
+        ("[] | 1", "array ref with space"),
+        ("[]\n| 1", "array ref with newline"),
+        ("[] \n | 1", "array ref with space and newline"),
+        ("[1,2]\n& 3", "array with elements and newline"),
+        ("[]\n+ 2", "array ref with newline and plus"),
+        ("[1]\n* 5", "array ref with newline and multiply"),
+    ];
+
+    for (input, description) in test_cases {
+        let (green, errors) = parse(input);
+        assert!(
+            errors.is_empty(),
+            "Parse errors in {}: {:?}",
+            description,
+            errors
+        );
+
+        let syntax = PerlNode::new_root(green);
+        // Should contain exactly one statement with an infix expression
+        let stmts: Vec<_> = syntax
+            .children()
+            .filter(|n| n.kind() == SyntaxKind::STMT)
+            .collect();
+        assert_eq!(
+            stmts.len(),
+            1,
+            "Expected exactly one statement in {}",
+            description
+        );
+
+        let has_infix = stmts[0]
+            .descendants()
+            .any(|n| n.kind() == SyntaxKind::INFIX_EXPR);
+        assert!(has_infix, "Expected infix expression in {}", description);
+    }
+}

@@ -19,7 +19,7 @@ for dir in "$@"; do
 		while IFS= read -r file; do
 			if [ -f "$file" ]; then
 				((total++))
-				if "$base_dir/target/debug/camello" dump -Q "$file"; then
+				if "$base_dir/target/debug/camello" dump -q "$file"; then
 					((success++))
 					/bin/echo -n "." >&2
 				else
