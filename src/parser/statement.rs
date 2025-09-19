@@ -277,15 +277,16 @@ impl Parser<'_> {
     }
 
     fn phase_block_stmt(&mut self, keyword_kind: SyntaxKind) {
-        let (stmt_kind, name) = match keyword_kind {
-            SyntaxKind::BEGIN_KW => (SyntaxKind::BEGIN_STMT, "BEGIN"),
-            SyntaxKind::END_BLOCK_KW => (SyntaxKind::END_STMT, "END"),
-            SyntaxKind::INIT_KW => (SyntaxKind::INIT_STMT, "INIT"),
-            SyntaxKind::CHECK_KW => (SyntaxKind::CHECK_STMT, "CHECK"),
+        let name = match keyword_kind {
+            SyntaxKind::BEGIN_KW => "BEGIN",
+            SyntaxKind::END_BLOCK_KW => "END",
+            SyntaxKind::INIT_KW => "INIT",
+            SyntaxKind::CHECK_KW => "CHECK",
+            SyntaxKind::UNITCHECK_KW => "UNITCHECK",
             _ => unreachable!("invalid phase block keyword"),
         };
 
-        self.builder.start_node(stmt_kind.into());
+        self.builder.start_node(SyntaxKind::PHASE_BLOCK_STMT.into());
 
         self.expect(keyword_kind);
         self.skip_whitespace_and_newlines();
