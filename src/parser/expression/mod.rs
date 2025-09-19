@@ -22,6 +22,71 @@ impl Parser<'_> {
             .is_none_or(|(k, _)| k != SyntaxKind::FAT_COMMA)
     }
 
+    /// Determine if {} should be parsed as a hash reference or block in statement context
+    /// Returns true for hash reference if:
+    /// - Number followed by comma/fat arrow: {1,} or {1=>}
+    /// - Identifier followed by fat arrow: {a=>}
+    /// - String followed by comma/fat arrow: {"key",} or {"key"=>}
+    pub fn looks_like_hash_ref(&mut self) -> bool {
+        // Look ahead to see what's inside the braces
+        let mut offset = 1; // Skip the opening brace
+
+        // Skip any whitespace after opening brace
+        while let Some((kind, _)) =
+            self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset)
+        {
+            if !kind.is_trivia() {
+                break;
+            }
+            offset += 1;
+        }
+
+        // Check the first non-trivia token inside braces
+        let first_token = self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset);
+
+        match first_token {
+            // Empty braces: {} - treat as block in statement context
+            Some((SyntaxKind::R_BRACE, _)) => false,
+
+            // Number followed by comma or fat arrow: {1, or {1=> - hash reference
+            Some((SyntaxKind::NUMBER, _)) => {
+                let next_token =
+                    self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset + 1);
+                matches!(
+                    next_token,
+                    Some((SyntaxKind::COMMA | SyntaxKind::FAT_COMMA, _))
+                )
+            }
+
+            // Identifier followed by fat arrow: {a=> - hash reference (bareword as hash key)
+            Some((SyntaxKind::IDENT, _)) => {
+                let next_token =
+                    self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset + 1);
+                matches!(next_token, Some((SyntaxKind::FAT_COMMA, _)))
+            }
+
+            // Keyword followed by fat arrow: {if=> - hash reference (keyword as hash key)
+            Some((kind, _)) if kind.is_keyword() => {
+                let next_token =
+                    self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset + 1);
+                matches!(next_token, Some((SyntaxKind::FAT_COMMA, _)))
+            }
+
+            // String followed by fat arrow or comma: {"key"=> or {"key", - hash reference
+            Some((SyntaxKind::STRING, _)) => {
+                let next_token =
+                    self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset + 1);
+                matches!(
+                    next_token,
+                    Some((SyntaxKind::FAT_COMMA | SyntaxKind::COMMA, _))
+                )
+            }
+
+            // Everything else is a block
+            _ => false,
+        }
+    }
+
     /// Parse an identifier-like expression (including cases where a keyword is coerced to IDENT)
     /// and handle possible function calls (regular or block).
     fn parse_ident_like_expr(&mut self, coerce_current_to_ident: bool) {
@@ -1042,7 +1107,7 @@ impl Parser<'_> {
                 }
             }
             SyntaxKind::L_BRACE => {
-                // Hash reference (anonymous hash): {}
+                // In expression context, always treat as hash reference
                 self.hash_ref();
             }
             SyntaxKind::L_BRACKET => {

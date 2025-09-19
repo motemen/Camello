@@ -103,11 +103,17 @@ impl Parser<'_> {
                 true
             }
             Some(SyntaxKind::L_BRACE) => {
-                // Bare block statement (e.g., { ... }) used for scoping or flow control
-                self.builder.start_node(SyntaxKind::STMT.into());
-                self.block();
-                self.builder.finish_node();
-                true
+                // Check if this looks like a hash reference based on content only
+                if self.looks_like_hash_ref() {
+                    // This is likely a hash reference expression, parse as expression statement
+                    self.expression_stmt()
+                } else {
+                    // Bare block statement (e.g., { ... }) used for scoping or flow control
+                    self.builder.start_node(SyntaxKind::STMT.into());
+                    self.block();
+                    self.builder.finish_node();
+                    true
+                }
             }
             Some(_) => {
                 // Try to parse as an expression statement
