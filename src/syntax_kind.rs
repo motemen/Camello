@@ -47,6 +47,7 @@ pub enum SyntaxKind {
     END_BLOCK_KW, // END block keyword
     INIT_KW,      // INIT block keyword
     CHECK_KW,     // CHECK block keyword
+    UNITCHECK_KW, // UNITCHECK block keyword
     IF_KW,
     UNLESS_KW,
     ELSIF_KW,
@@ -208,18 +209,15 @@ pub enum SyntaxKind {
     POSTFIX_DEREF_SCALAR, // ->$*
 
     // ===== Node Level (composite structures) =====
-    ROOT,          // File root
-    SUB_DEF,       // Subroutine definition
-    SUB_PROTOTYPE, // Subroutine prototype (e.g., (\\@@), ($@), etc.)
-    ATTR,          // Attribute (e.g., :method)
-    ATTR_ARGS,     // Attribute arguments (e.g., (1, 2))
-    BLOCK_STMT,    // Block statement
-    BEGIN_STMT,    // BEGIN block statement
-    END_STMT,      // END block statement
-    INIT_STMT,     // INIT block statement
-    CHECK_STMT,    // CHECK block statement
-    LABELED_STMT,  // Labeled statement
-    LABEL,         // Statement label
+    ROOT,             // File root
+    SUB_DEF,          // Subroutine definition
+    SUB_PROTOTYPE,    // Subroutine prototype (e.g., (\\@@), ($@), etc.)
+    ATTR,             // Attribute (e.g., :method)
+    ATTR_ARGS,        // Attribute arguments (e.g., (1, 2))
+    BLOCK_STMT,       // Block statement
+    PHASE_BLOCK_STMT, // Phase block statement (BEGIN/UNITCHECK/CHECK/INIT/END)
+    LABELED_STMT,     // Labeled statement
+    LABEL,            // Statement label
 
     // Declarations
     DECLARATION_STMT, // Variable declaration (my, our, state, etc.)
@@ -378,18 +376,13 @@ impl SyntaxKind {
                 | SyntaxKind::END_BLOCK_KW
                 | SyntaxKind::INIT_KW
                 | SyntaxKind::CHECK_KW
+                | SyntaxKind::UNITCHECK_KW
         )
     }
 
     #[must_use]
     pub fn is_phase_block_stmt(self) -> bool {
-        matches!(
-            self,
-            SyntaxKind::BEGIN_STMT
-                | SyntaxKind::END_STMT
-                | SyntaxKind::INIT_STMT
-                | SyntaxKind::CHECK_STMT
-        )
+        self == SyntaxKind::PHASE_BLOCK_STMT
     }
 
     #[must_use]
