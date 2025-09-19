@@ -177,15 +177,46 @@ fn test_undef_function_call_formatting() {
 }
 
 #[test]
+fn test_phase_blocks_formatting() {
+    let input =
+        "BEGIN{say\"hi\";}UNITCHECK{say\"unit\";}INIT{my $x=1;}CHECK{warn 1;}END{say 'bye';}";
+    let formatted = format_and_assert(input);
+    assert_eq!(
+        formatted,
+        "BEGIN {\n    say \"hi\";\n}\n\nUNITCHECK {\n    say \"unit\";\n}\n\nINIT {\n    my $x = 1;\n}\n\nCHECK {\n    warn 1;\n}\n\nEND {\n    say 'bye';\n}\n"
+    );
+}
+
+#[test]
+fn test_phase_block_inside_sub() {
+    let input = "sub foo { BEGIN { warn \"hi\"; } }";
+    let formatted = format_and_assert(input);
+    assert_eq!(
+        formatted,
+        "sub foo {\n    BEGIN {\n        warn \"hi\";\n    }\n}\n"
+    );
+}
+
+#[test]
 fn test_special_variable_formatting() {
     let cases = [
         // Special variables with undef keyword as variable name
         ("$undef", "$undef"),
         ("@undef", "@undef"),
         ("%undef", "%undef"),
+        ("$BEGIN", "$BEGIN"),
+        ("$INIT", "$INIT"),
+        ("$CHECK", "$CHECK"),
+        ("$UNITCHECK", "$UNITCHECK"),
+        ("$END", "$END"),
         ("my $undef = 1;", "my $undef = 1;\n"),
         ("our @undef;", "our @undef;\n"),
         ("state %undef;", "state %undef;\n"),
+        ("my $BEGIN = 1;", "my $BEGIN = 1;\n"),
+        ("my $INIT = 1;", "my $INIT = 1;\n"),
+        ("my $CHECK = 1;", "my $CHECK = 1;\n"),
+        ("my $UNITCHECK = 1;", "my $UNITCHECK = 1;\n"),
+        ("my $END = 1;", "my $END = 1;\n"),
         // Special variables with caret notation
         ("${^MATCH}", "${^MATCH}"),
         ("${^PREMATCH}", "${^PREMATCH}"),

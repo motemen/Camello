@@ -41,6 +41,21 @@ pub enum Token {
     #[token("require")]
     RequireKw,
 
+    #[token("BEGIN")]
+    BeginKw,
+
+    #[token("END")]
+    EndBlockKw,
+
+    #[token("INIT")]
+    InitKw,
+
+    #[token("CHECK")]
+    CheckKw,
+
+    #[token("UNITCHECK")]
+    UnitcheckKw,
+
     // POD commands (must be at line start)
     // Note: POD detection is handled manually in lexer due to line-start requirement
     PodCommand,
@@ -252,6 +267,11 @@ impl Token {
             Token::Backslash => SyntaxKind::BACKSLASH,
             Token::Ampersand => SyntaxKind::AMPERSAND, // Will be disambiguated
             Token::RequireKw => SyntaxKind::REQUIRE_KW,
+            Token::BeginKw => SyntaxKind::BEGIN_KW,
+            Token::EndBlockKw => SyntaxKind::END_BLOCK_KW,
+            Token::InitKw => SyntaxKind::INIT_KW,
+            Token::CheckKw => SyntaxKind::CHECK_KW,
+            Token::UnitcheckKw => SyntaxKind::UNITCHECK_KW,
             Token::Ident => SyntaxKind::IDENT,
             Token::Number => SyntaxKind::NUMBER,
             Token::String => SyntaxKind::STRING,
