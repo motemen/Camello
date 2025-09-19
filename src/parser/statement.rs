@@ -161,8 +161,7 @@ impl Parser<'_> {
 
     fn is_local_lvalue_start(&self) -> bool {
         match self.current_kind() {
-            Some(kind) if kind.is_variable() || kind.is_sigil() => true,
-            Some(SyntaxKind::AMPERSAND) => true,
+            Some(kind) if kind.is_sigil() || kind == SyntaxKind::AMPERSAND => true,
             Some(SyntaxKind::IDENT) => self
                 .peek_nth_non_trivia_token_with_context(LexContext::Operator, 1)
                 .is_some_and(|(next, _)| {
