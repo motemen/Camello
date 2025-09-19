@@ -751,7 +751,12 @@ mod tests {
 
         let root = PerlNode::new_root(green);
         let stmt = root.children().next().expect("missing statement");
-        assert_eq!(stmt.kind(), SyntaxKind::DECLARATION_STMT);
+        assert_eq!(stmt.kind(), SyntaxKind::STMT);
+        assert!(
+            stmt.descendants()
+                .any(|node| node.kind() == SyntaxKind::VAR_DECL),
+            "expected declaration inside statement"
+        );
         assert!(
             stmt.descendants()
                 .any(|node| node.kind() == SyntaxKind::HASH_REF),
@@ -767,7 +772,13 @@ mod tests {
 
         let root = PerlNode::new_root(green);
         let stmt = root.children().next().expect("missing statement");
-        assert_eq!(stmt.kind(), SyntaxKind::DECLARATION_STMT);
+        assert_eq!(stmt.kind(), SyntaxKind::STMT);
+
+        assert!(
+            stmt.descendants()
+                .any(|node| node.kind() == SyntaxKind::VAR_DECL),
+            "expected declaration inside statement"
+        );
 
         let mut saw_package = false;
         let mut saw_and = false;

@@ -94,6 +94,7 @@ The parser implements multiple error recovery strategies:
 ### Version Control
 
 - Use Conventional Commits when crafting commit messages (e.g., `feat: ...`, `fix: ...`) to keep history consistent and machine-parseable.
+- Always include a descriptive commit body that explains the motivation and high-level changes.
 
 ### Pre-commit Checks
 

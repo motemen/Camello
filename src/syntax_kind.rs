@@ -223,15 +223,15 @@ pub enum SyntaxKind {
     LABEL,            // Statement label
 
     // Declarations
-    DECLARATION_STMT, // Variable declaration (my, our, state, etc.)
-    PACKAGE_STMT,     // Package declaration (package Foo::Bar)
-    USE_STMT,         // use statement (use warnings qw(all);)
-    NO_STMT,          // no statement (no warnings qw(all);)
-    FOR_STMT,         // for statement (Perl-style)
-    WHILE_STMT,       // while statement
-    UNTIL_STMT,       // until statement
-    IF_STMT,          // if statement
-    UNLESS_STMT,      // unless statement
+    VAR_DECL,     // Variable declaration (my, our, state, etc.)
+    PACKAGE_STMT, // Package declaration (package Foo::Bar)
+    USE_STMT,     // use statement (use warnings qw(all);)
+    NO_STMT,      // no statement (no warnings qw(all);)
+    FOR_STMT,     // for statement (Perl-style)
+    WHILE_STMT,   // while statement
+    UNTIL_STMT,   // until statement
+    IF_STMT,      // if statement
+    UNLESS_STMT,  // unless statement
 
     // Data section (content after __END__ / __DATA__)
     DATA_SECTION,

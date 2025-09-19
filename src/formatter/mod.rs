@@ -184,7 +184,7 @@ impl Formatter {
                     | SyntaxKind::NO_STMT
                     | SyntaxKind::STMT
                     | SyntaxKind::LABELED_STMT
-                    | SyntaxKind::DECLARATION_STMT
+                    | SyntaxKind::VAR_DECL
                     | SyntaxKind::ELLIPSIS_STMT
                     | SyntaxKind::EMPTY_STMT
             )
@@ -293,10 +293,7 @@ impl Formatter {
                     // Output pending empty lines before processing child nodes
                     if self.pending_empty_lines > 0
                         && (child_node.kind().is_phase_block_stmt()
-                            || matches!(
-                                child_node.kind(),
-                                SyntaxKind::STMT | SyntaxKind::DECLARATION_STMT
-                            ))
+                            || matches!(child_node.kind(), SyntaxKind::STMT | SyntaxKind::VAR_DECL))
                     {
                         self.output_pending_empty_lines();
                     }
@@ -407,12 +404,7 @@ impl Formatter {
 
         let statement_count = node
             .children()
-            .filter(|child| {
-                matches!(
-                    child.kind(),
-                    SyntaxKind::STMT | SyntaxKind::DECLARATION_STMT
-                )
-            })
+            .filter(|child| matches!(child.kind(), SyntaxKind::STMT | SyntaxKind::VAR_DECL))
             .count();
 
         // Simple if: 1 or fewer statements AND no semicolons or comments anywhere
