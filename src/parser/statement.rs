@@ -24,14 +24,10 @@ impl Parser<'_> {
                     self.lexical_sub_def(kind);
                     true
                 } else {
-                    self.var_decl();
-                    true
+                    self.expression_stmt()
                 }
             }
-            Some(SyntaxKind::LOCAL_KW) => {
-                self.var_decl();
-                true
-            }
+            Some(SyntaxKind::LOCAL_KW) => self.expression_stmt(),
             Some(SyntaxKind::SUB_KW) => {
                 if self.looks_like_sub_definition() {
                     self.sub_def();
@@ -150,13 +146,8 @@ impl Parser<'_> {
         self.builder.finish_node();
     }
 
-    fn var_decl(&mut self) {
-        self.var_decl_common(true);
-    }
-
-    // Variable declaration as expression (no semicolon expected)
     pub fn var_decl_expr(&mut self) {
-        self.var_decl_common(false);
+        self.var_decl_common();
     }
 
     fn is_local_lvalue_start(&self) -> bool {
@@ -181,7 +172,7 @@ impl Parser<'_> {
     }
 
     // Common logic for variable declarations
-    fn var_decl_common(&mut self, expect_semicolon: bool) {
+    fn var_decl_common(&mut self) {
         self.builder.start_node(SyntaxKind::DECLARATION_STMT.into());
 
         // Variable declaration keyword (my, our, state, local)
@@ -262,10 +253,38 @@ impl Parser<'_> {
 
         // Process initializer if present
         if self.at(SyntaxKind::EQ) {
-            self.bump(); // =
+            self.bump_op(); // '='
             self.skip_whitespace_and_newlines();
             if !self.expression() {
                 self.error("Invalid expression in variable assignment");
+            }
+        } else {
+            let current_operator = self
+                .peek_non_trivia_token_with_context(LexContext::Operator)
+                .map(|(kind, _)| kind);
+            let is_compound_assignment = current_operator
+                .is_some_and(SyntaxKind::is_compoundable_operator)
+                && self
+                    .peek_nth_non_trivia_token_with_context(LexContext::Operator, 1)
+                    .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::EQ);
+
+            if is_compound_assignment {
+                let op_checkpoint = self.builder.checkpoint();
+
+                // Consume the operator composing the compound assignment, e.g., '+' in '+='
+                self.bump_op();
+
+                self.builder
+                    .start_node_at(op_checkpoint, SyntaxKind::COMPOUND_ASSIGNMENT.into());
+
+                self.expect_op(SyntaxKind::EQ);
+
+                self.builder.finish_node();
+
+                self.skip_whitespace_and_newlines();
+                if !self.expression() {
+                    self.error("Invalid expression in variable assignment");
+                }
             }
         }
 
@@ -273,10 +292,6 @@ impl Parser<'_> {
 
         // Check for postfix modifiers (if/unless/for)
         self.parse_optional_postfix_modifier();
-
-        if expect_semicolon {
-            self.expect(SyntaxKind::SEMICOLON);
-        }
 
         self.builder.finish_node();
     }
@@ -981,6 +996,29 @@ __END__",
                     errors
                 );
             }
+        }
+    }
+
+    #[test]
+    fn variable_declarations_allow_compound_assignment() {
+        let inputs = [
+            "my $x += 1;",
+            "state $count ||= 0;",
+            "our $total //= 0;",
+            "say my $value += 2;",
+            "my $x + 1;",
+            "my $y // 'abc';",
+            "my $z => {};",
+        ];
+
+        for input in inputs {
+            let (_green, errors) = parse(input);
+            assert!(
+                errors.is_empty(),
+                "Expected '{}' to parse without errors, got: {:?}",
+                input,
+                errors
+            );
         }
     }
 
