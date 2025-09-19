@@ -37,7 +37,7 @@ impl Parser<'_> {
         self.skip_whitespace_and_newlines();
         // After closing ']', expect an operator
         self.expect_op(SyntaxKind::R_BRACKET);
-        self.skip_whitespace(); // 改行ではなくスペースのみをスキップ
+        self.skip_whitespace_and_newlines();
         self.builder.finish_node();
     }
 

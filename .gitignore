@@ -1,3 +1,4 @@
 /target
 snapshots
 *.pending-snap
+test_*.pl
