@@ -12,6 +12,7 @@ impl Precedence {
     pub const LOGICAL_AND_KW: Precedence = Precedence(6); // and
     pub const LOGICAL_NOT_KW: Precedence = Precedence(7); // not
     pub const ASSIGNMENT: Precedence = Precedence(10); // =
+    pub const VAR_DECL: Precedence = Precedence(12); // my, our, state, local
     pub const TERNARY: Precedence = Precedence(15); // ?: (ternary conditional)
     pub const RANGE: Precedence = Precedence(17); // .. and ... range operators
     pub const DEFINED_OR: Precedence = Precedence(20); // // (same as ||)
