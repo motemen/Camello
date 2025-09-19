@@ -159,6 +159,18 @@ impl Parser<'_> {
         self.var_decl_common(false);
     }
 
+    fn is_local_lvalue_start(&self) -> bool {
+        match self.current_kind() {
+            Some(kind) if kind.is_sigil() || kind == SyntaxKind::AMPERSAND => true,
+            Some(SyntaxKind::IDENT) => self
+                .peek_nth_non_trivia_token_with_context(LexContext::Operator, 1)
+                .is_some_and(|(next, _)| {
+                    matches!(next, SyntaxKind::ARROW | SyntaxKind::DOUBLE_COLON)
+                }),
+            _ => false,
+        }
+    }
+
     // Helper to parse variable based on declaration kind
     fn parse_variable_by_decl_kind(&mut self, decl_kind: SyntaxKind) {
         if matches!(decl_kind, SyntaxKind::OUR_KW | SyntaxKind::LOCAL_KW) {
@@ -188,17 +200,14 @@ impl Parser<'_> {
             while !self.at(SyntaxKind::R_PAREN) && !self.at_end() {
                 if is_local {
                     // For local, allow any lvalue expression
-                    if self
-                        .current_kind()
-                        .is_some_and(super::super::syntax_kind::SyntaxKind::is_sigil)
-                    {
+                    if self.at(SyntaxKind::UNDEF_KW) {
+                        self.bump(); // consume 'undef'
+                    } else if self.is_local_lvalue_start() {
                         // Parse as lvalue expression to handle subscriptions
                         if !self.expression() {
                             self.error("Expected lvalue expression in local statement");
                             break;
                         }
-                    } else if self.at(SyntaxKind::UNDEF_KW) {
-                        self.bump(); // consume 'undef'
                     } else {
                         self.error("Expected lvalue expression or undef in local statement");
                         break;
@@ -230,19 +239,21 @@ impl Parser<'_> {
             }
 
             self.expect(SyntaxKind::R_PAREN);
-        } else if self
-            .current_kind()
-            .is_some_and(super::super::syntax_kind::SyntaxKind::is_sigil)
-        {
-            if is_local {
+        } else if is_local {
+            if self.is_local_lvalue_start() {
                 // For local, parse as expression to handle subscriptions
                 if !self.expression() {
                     self.error("Expected lvalue expression after local");
                 }
             } else {
-                // For my/our/state, parse as simple variable
-                self.parse_variable_by_decl_kind(decl_kind);
+                self.error("Expected lvalue expression after local");
             }
+        } else if self
+            .current_kind()
+            .is_some_and(super::super::syntax_kind::SyntaxKind::is_sigil)
+        {
+            // For my/our/state, parse as simple variable
+            self.parse_variable_by_decl_kind(decl_kind);
         } else {
             self.error("Expected variable or parenthesized list of variables after variable declaration keyword");
         }
