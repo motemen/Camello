@@ -50,6 +50,11 @@ fn test_local_complex_lvalue_formatting() {
             "local $ENV{PATH} = '/usr/bin';\n",
         ),
         ("local $hash{key} = $value;", "local $hash{key} = $value;\n"),
+        (
+            "local Module->hash->{key} = $value;",
+            "local Module->hash->{key} = $value;\n",
+        ),
+        ("local M->lvar = 1;", "local M->lvar = 1;\n"),
         // Array subscriptions
         ("local $array[0] = 'first';", "local $array[0] = 'first';\n"),
         ("local $list[1] = $item;", "local $list[1] = $item;\n"),
