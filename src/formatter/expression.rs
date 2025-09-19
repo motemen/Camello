@@ -25,6 +25,12 @@ impl Formatter {
             SyntaxKind::ARRAY_REF_ACCESS_EXPR => {
                 self.format_array_ref_access(node);
             }
+            SyntaxKind::POSTFIX_ARRAY_SLICE_EXPR => {
+                self.format_postfix_slice_expr(node, SyntaxKind::AT);
+            }
+            SyntaxKind::POSTFIX_HASH_SLICE_EXPR => {
+                self.format_postfix_slice_expr(node, SyntaxKind::PERCENT);
+            }
             SyntaxKind::CODE_REF_CALL_EXPR => {
                 self.format_code_ref_call(node);
             }
@@ -208,6 +214,59 @@ impl Formatter {
     ) {
         let mut children = node.children_with_tokens();
         self.format_until_arrow_iter(children.by_ref());
+        self.format_subscription_iter(children, opening, closing);
+    }
+
+    fn format_postfix_slice_expr(&mut self, node: &PerlNode, sigil_kind: SyntaxKind) {
+        let mut children = node.children_with_tokens();
+        self.format_until_arrow_iter(children.by_ref());
+
+        for child in children.by_ref() {
+            match child {
+                NodeOrToken::Token(token) => {
+                    if token.kind() == SyntaxKind::WHITESPACE {
+                        continue;
+                    }
+                    self.format_token(&token);
+                }
+                NodeOrToken::Node(child_node) => {
+                    self.format_node(&child_node);
+                }
+            }
+            break;
+        }
+
+        let mut opening = if sigil_kind == SyntaxKind::PERCENT {
+            SyntaxKind::L_BRACE
+        } else {
+            SyntaxKind::L_BRACKET
+        };
+        let mut closing = if sigil_kind == SyntaxKind::PERCENT {
+            SyntaxKind::R_BRACE
+        } else {
+            SyntaxKind::R_BRACKET
+        };
+
+        for element in children.clone() {
+            match element {
+                NodeOrToken::Token(token) => match token.kind() {
+                    SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE | SyntaxKind::COMMENT => continue,
+                    SyntaxKind::L_BRACE => {
+                        opening = SyntaxKind::L_BRACE;
+                        closing = SyntaxKind::R_BRACE;
+                        break;
+                    }
+                    SyntaxKind::L_BRACKET => {
+                        opening = SyntaxKind::L_BRACKET;
+                        closing = SyntaxKind::R_BRACKET;
+                        break;
+                    }
+                    _ => break,
+                },
+                NodeOrToken::Node(_) => break,
+            }
+        }
+
         self.format_subscription_iter(children, opening, closing);
     }
 

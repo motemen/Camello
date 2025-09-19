@@ -234,9 +234,12 @@ pub enum Token {
     DataSection,
 
     // Postfix dereference operators (handled manually due to context sensitivity)
-    PostfixDerefArray,  // ->@*
-    PostfixDerefHash,   // ->%*
-    PostfixDerefScalar, // ->$*
+    PostfixDerefArray,          // ->@*
+    PostfixDerefHash,           // ->%*
+    PostfixDerefScalar,         // ->$*
+    PostfixDerefArrayLastIndex, // ->$#*
+    PostfixDerefCode,           // ->&*
+    PostfixDerefGlob,           // ->**
 }
 
 impl Token {
@@ -309,6 +312,9 @@ impl Token {
             Token::PostfixDerefArray => SyntaxKind::POSTFIX_DEREF_ARRAY,
             Token::PostfixDerefHash => SyntaxKind::POSTFIX_DEREF_HASH,
             Token::PostfixDerefScalar => SyntaxKind::POSTFIX_DEREF_SCALAR,
+            Token::PostfixDerefArrayLastIndex => SyntaxKind::POSTFIX_DEREF_ARRAY_LAST_INDEX,
+            Token::PostfixDerefCode => SyntaxKind::POSTFIX_DEREF_CODE,
+            Token::PostfixDerefGlob => SyntaxKind::POSTFIX_DEREF_GLOB,
         }
     }
 }
@@ -975,26 +981,32 @@ impl<'a> Lexer<'a> {
         Some((SyntaxKind::FILE_TEST_OP, text))
     }
 
-    /// Try to consume postfix dereference operators (->@*, ->%*, ->$*)
+    /// Try to consume postfix dereference operators (->@*, ->%*, ->$*, ->$#*, ->&*, ->**)
     // FIXME: This is a bit of a hacky solution - ideally Logos would support context-sensitive lexing
     fn try_consume_postfix_deref(&mut self) -> Option<(SyntaxKind, &'a str)> {
         let remainder = self.logos_lexer.remainder();
 
-        if remainder.starts_with("->") {
-            let mut chars = remainder.chars().skip(2); // Skip "->"
-            if let (Some(sigil), Some('*')) = (chars.next(), chars.next()) {
-                let syntax_kind = match sigil {
-                    '@' => Some(SyntaxKind::POSTFIX_DEREF_ARRAY),
-                    '%' => Some(SyntaxKind::POSTFIX_DEREF_HASH),
-                    '$' => Some(SyntaxKind::POSTFIX_DEREF_SCALAR),
-                    _ => None,
-                };
+        if let Some(rest) = remainder.strip_prefix("->") {
+            let (kind, len) = if rest.starts_with("$#*") {
+                (Some(SyntaxKind::POSTFIX_DEREF_ARRAY_LAST_INDEX), 5)
+            } else if rest.starts_with("@*") {
+                (Some(SyntaxKind::POSTFIX_DEREF_ARRAY), 4)
+            } else if rest.starts_with("%*") {
+                (Some(SyntaxKind::POSTFIX_DEREF_HASH), 4)
+            } else if rest.starts_with("$*") {
+                (Some(SyntaxKind::POSTFIX_DEREF_SCALAR), 4)
+            } else if rest.starts_with("&*") {
+                (Some(SyntaxKind::POSTFIX_DEREF_CODE), 4)
+            } else if rest.starts_with("**") {
+                (Some(SyntaxKind::POSTFIX_DEREF_GLOB), 4)
+            } else {
+                (None, 0)
+            };
 
-                if let Some(kind) = syntax_kind {
-                    let text = &remainder[..4];
-                    self.logos_lexer.bump(4);
-                    return Some((kind, text));
-                }
+            if let Some(kind) = kind {
+                let text = &remainder[..len];
+                self.logos_lexer.bump(len);
+                return Some((kind, text));
             }
         }
         None

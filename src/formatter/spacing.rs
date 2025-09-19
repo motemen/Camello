@@ -117,6 +117,12 @@ pub const fn get_token_spacing(kind: SyntaxKind) -> TokenSpacing {
         SyntaxKind::UNARY_PLUS | SyntaxKind::UNARY_MINUS => TokenSpacing::prefix_op(),
         SyntaxKind::PREFIX_INCREMENT | SyntaxKind::PREFIX_DECREMENT => TokenSpacing::prefix_op(),
         SyntaxKind::POSTFIX_INCREMENT | SyntaxKind::POSTFIX_DECREMENT => TokenSpacing::postfix_op(),
+        SyntaxKind::POSTFIX_DEREF_ARRAY
+        | SyntaxKind::POSTFIX_DEREF_HASH
+        | SyntaxKind::POSTFIX_DEREF_SCALAR
+        | SyntaxKind::POSTFIX_DEREF_ARRAY_LAST_INDEX
+        | SyntaxKind::POSTFIX_DEREF_CODE
+        | SyntaxKind::POSTFIX_DEREF_GLOB => TokenSpacing::postfix_op(),
 
         // Comparison operators
         SyntaxKind::GT
@@ -279,7 +285,15 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
         (ARROW, _) | (_, ARROW) => Some(false),
 
         // Postfix dereference operators (->@*, ->%*, ->$*): never add spaces before them
-        (_, POSTFIX_DEREF_ARRAY | POSTFIX_DEREF_HASH | POSTFIX_DEREF_SCALAR) => Some(false),
+        (
+            _,
+            POSTFIX_DEREF_ARRAY
+            | POSTFIX_DEREF_HASH
+            | POSTFIX_DEREF_SCALAR
+            | POSTFIX_DEREF_ARRAY_LAST_INDEX
+            | POSTFIX_DEREF_CODE
+            | POSTFIX_DEREF_GLOB,
+        ) => Some(false),
 
         // Compound assignment operators: no space between operator and =
         // e.g., ||=, &&=, +=, -=, *=, /=, %=, .=, //=, &=
@@ -350,13 +364,19 @@ fn handle_contextual_spacing(
 ) -> bool {
     use SyntaxKind::{
         COMMA, FOREACH_KW, FOR_KW, IF_KW, L_BRACE, L_BRACKET, L_PAREN, POSTFIX_DEREF_ARRAY,
-        POSTFIX_DEREF_HASH, POSTFIX_DEREF_SCALAR, R_BRACE, R_BRACKET, R_PAREN, UNLESS_KW,
+        POSTFIX_DEREF_ARRAY_LAST_INDEX, POSTFIX_DEREF_CODE, POSTFIX_DEREF_GLOB, POSTFIX_DEREF_HASH,
+        POSTFIX_DEREF_SCALAR, R_BRACE, R_BRACKET, R_PAREN, UNLESS_KW,
     };
 
     if prev_spacing.category == TokenCategory::Variable
         && !matches!(
             current,
-            POSTFIX_DEREF_ARRAY | POSTFIX_DEREF_HASH | POSTFIX_DEREF_SCALAR
+            POSTFIX_DEREF_ARRAY
+                | POSTFIX_DEREF_HASH
+                | POSTFIX_DEREF_SCALAR
+                | POSTFIX_DEREF_ARRAY_LAST_INDEX
+                | POSTFIX_DEREF_CODE
+                | POSTFIX_DEREF_GLOB
         )
         && matches!(
             current_spacing.category,
