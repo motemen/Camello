@@ -858,7 +858,7 @@ impl Parser<'_> {
             self.skip_whitespace_and_newlines();
 
             // Parse the condition
-            if !self.expression() {
+            if !self.expression_list() {
                 self.error(&format!(
                     "Expected expression in {construct_name} condition"
                 ));
@@ -1158,6 +1158,30 @@ __END__",
         );
         let syntax = PerlNode::new_root(green);
         assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+    }
+
+    #[test]
+    fn if_condition_accepts_expression_list_with_trailing_comma() {
+        let input = "if ($x,) { 1 }";
+        let (green, errors) = parse(input);
+        assert!(
+            errors.is_empty(),
+            "Should parse if statement with trailing comma in condition, got: {:?}",
+            errors
+        );
+
+        let root = PerlNode::new_root(green);
+        let if_stmt = root
+            .descendants()
+            .find(|node| node.kind() == SyntaxKind::IF_STMT)
+            .expect("Parsed tree should contain an if statement");
+
+        assert!(
+            if_stmt
+                .descendants()
+                .any(|node| node.kind() == SyntaxKind::EXPR_LIST),
+            "If condition should produce an expression list node"
+        );
     }
 
     #[test]
