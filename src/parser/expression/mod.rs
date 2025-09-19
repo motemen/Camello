@@ -545,18 +545,26 @@ impl Parser<'_> {
     ) -> bool {
         loop {
             // Always look ahead in Operator context for postfix continuations
-            let next_kind_op = self
+            let Some(next_kind_op) = self
                 .peek_non_trivia_token_with_context(LexContext::Operator)
-                .map(|(k, _)| k);
+                .map(|(k, _)| k)
+            else {
+                break;
+            };
+
+            // Align the real lexer position with the non-trivia operator we just peeked.
+            // Without this, trivia like newlines remain pending and the upcoming bump_* call
+            // ends up consuming the trivia instead of the operator (e.g. expr\n->).
+            self.skip_whitespace_and_newlines();
 
             match next_kind_op {
-                Some(SyntaxKind::INCREMENT) => {
+                SyntaxKind::INCREMENT => {
                     self.parse_postfix_op(initial_checkpoint, SyntaxKind::POSTFIX_INCREMENT);
                 }
-                Some(SyntaxKind::DECREMENT) => {
+                SyntaxKind::DECREMENT => {
                     self.parse_postfix_op(initial_checkpoint, SyntaxKind::POSTFIX_DECREMENT);
                 }
-                Some(SyntaxKind::ARROW) => {
+                SyntaxKind::ARROW => {
                     // After '->', the next token is a value (method name, '{', '(', etc.)
                     self.bump_value(); // ->
                     self.skip_whitespace_and_newlines();
@@ -718,7 +726,7 @@ impl Parser<'_> {
                         }
                     }
                 }
-                Some(SyntaxKind::L_PAREN) => {
+                SyntaxKind::L_PAREN => {
                     // Function call: expr(args)
                     self.builder
                         .start_node_at(initial_checkpoint, SyntaxKind::FUNCTION_CALL_EXPR.into());
@@ -741,7 +749,7 @@ impl Parser<'_> {
 
                     self.builder.finish_node();
                 }
-                Some(SyntaxKind::L_BRACKET) => {
+                SyntaxKind::L_BRACKET => {
                     // Direct array subscription: expr[index]
                     self.builder.start_node_at(
                         initial_checkpoint,
@@ -763,7 +771,7 @@ impl Parser<'_> {
 
                     self.builder.finish_node();
                 }
-                Some(SyntaxKind::L_BRACE) => {
+                SyntaxKind::L_BRACE => {
                     // Direct hash subscription: expr{key}
                     self.builder.start_node_at(
                         initial_checkpoint,
@@ -785,14 +793,12 @@ impl Parser<'_> {
 
                     self.builder.finish_node();
                 }
-                Some(
-                    SyntaxKind::POSTFIX_DEREF_ARRAY
-                    | SyntaxKind::POSTFIX_DEREF_HASH
-                    | SyntaxKind::POSTFIX_DEREF_SCALAR
-                    | SyntaxKind::POSTFIX_DEREF_ARRAY_LAST_INDEX
-                    | SyntaxKind::POSTFIX_DEREF_CODE
-                    | SyntaxKind::POSTFIX_DEREF_GLOB,
-                ) => {
+                SyntaxKind::POSTFIX_DEREF_ARRAY
+                | SyntaxKind::POSTFIX_DEREF_HASH
+                | SyntaxKind::POSTFIX_DEREF_SCALAR
+                | SyntaxKind::POSTFIX_DEREF_ARRAY_LAST_INDEX
+                | SyntaxKind::POSTFIX_DEREF_CODE
+                | SyntaxKind::POSTFIX_DEREF_GLOB => {
                     // Postfix dereference: expr->@*, expr->%*, expr->$*, expr->$#*, expr->&*, expr->**
                     self.builder
                         .start_node_at(initial_checkpoint, SyntaxKind::POSTFIX_DEREF_EXPR.into());

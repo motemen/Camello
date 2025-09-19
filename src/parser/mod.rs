@@ -765,6 +765,22 @@ mod tests {
     }
 
     #[test]
+    fn test_hashref_access_after_unary_plus_with_newline() {
+        let input = "+{}\n->{key}";
+        let (green, errors) = parse(input);
+        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+
+        let root = PerlNode::new_root(green);
+        let stmt = root.children().next().expect("missing statement");
+        assert_eq!(stmt.kind(), SyntaxKind::STMT);
+        assert!(
+            stmt.descendants()
+                .any(|node| node.kind() == SyntaxKind::HASH_REF_ACCESS_EXPR),
+            "expected HASH_REF_ACCESS_EXPR when '->' follows a newline"
+        );
+    }
+
+    #[test]
     fn test_hashref_keywords_as_keys() {
         let input = "my $hash = +{ package => 1, and => 2 };";
         let (green, errors) = parse(input);
