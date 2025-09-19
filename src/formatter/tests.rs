@@ -371,6 +371,14 @@ fn test_postfix_dereference_formatting() {
         ("$foo->@*[0];", "$foo->@*[0];\n"),
         ("$bar->%*{key};", "$bar->%*{key};\n"),
         ("$obj->meth->@*;", "$obj->meth->@*;\n"),
+        ("$aref->$#*;", "$aref->$#*;\n"),
+        ("$cref->&*;", "$cref->&*;\n"),
+        ("$gref->**;", "$gref->**;\n"),
+        ("$aref->@[0,1,2];", "$aref->@[0, 1, 2];\n"),
+        ("$href->@{'foo','bar'};", "$href->@{'foo', 'bar'};\n"),
+        ("$aref->%[0,1];", "$aref->%[0, 1];\n"),
+        ("$href->%{'foo','bar'};", "$href->%{'foo', 'bar'};\n"),
+        ("$aref->@[1]->@*;", "$aref->@[1]->@*;\n"),
     ];
     check_formatting_cases(&cases);
 }
