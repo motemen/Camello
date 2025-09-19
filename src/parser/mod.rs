@@ -674,6 +674,34 @@ mod tests {
     }
 
     #[test]
+    fn test_defined_or_after_shift_pop_and_file_test() {
+        let cases = ["shift // 1;", "pop // 1;", "-f // 0;"];
+
+        for input in cases {
+            let (green, errors) = parse(input);
+            assert!(
+                errors.is_empty(),
+                "Parse errors for '{}': {:?}",
+                input,
+                errors
+            );
+
+            let root = PerlNode::new_root(green);
+            assert!(
+                root.descendants_with_tokens().any(|element| {
+                    matches!(
+                        element,
+                        rowan::NodeOrToken::Token(token)
+                            if token.kind() == SyntaxKind::DEFINED_OR
+                    )
+                }),
+                "expected DEFINED_OR token for '{}'",
+                input
+            );
+        }
+    }
+
+    #[test]
     fn test_say_with_qualified_method_call() {
         let input = "say Foo::Bar->method();";
         let (green, errors) = parse(input);

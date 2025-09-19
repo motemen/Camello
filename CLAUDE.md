@@ -91,6 +91,10 @@ The parser implements multiple error recovery strategies:
 
 ## Development Guidelines
 
+### Version Control
+
+- Use Conventional Commits when crafting commit messages (e.g., `feat: ...`, `fix: ...`) to keep history consistent and machine-parseable.
+
 ### Pre-commit Checks
 
 ```bash

@@ -8,6 +8,10 @@ use precedence::{get_operator_info, OperatorInfo, Precedence};
 
 use super::Parser;
 
+fn is_empty_regex(token: Option<(SyntaxKind, &str)>) -> bool {
+    matches!(token, Some((SyntaxKind::REGEX_LITERAL, text)) if text == "//")
+}
+
 impl Parser<'_> {
     /// Decide whether the current quote-like keyword should be parsed as a quote-like expression
     /// or treated as an identifier. In the parser-driven quote-like mode, the lexer does not
@@ -46,11 +50,19 @@ impl Parser<'_> {
             return;
         }
 
-        let mut next_kind = self.current_kind_value();
+        let next_value_token = self.peek_non_trivia_token_with_context(LexContext::Value);
+        let mut next_kind = next_value_token.map(|(kind, _)| kind);
         if next_kind.is_none() {
             next_kind = self
                 .peek_non_trivia_token_with_context(LexContext::Operator)
                 .map(|(kind, _)| kind);
+        }
+
+        if is_empty_regex(next_value_token) && matches!(function_name.as_str(), "shift" | "pop") {
+            // Treat 'shift' and 'pop' without arguments as expression values so
+            // the upcoming '//' is lexed as the defined-or operator instead of
+            // a regex literal representing the empty pattern.
+            return;
         }
 
         if let Some(kind) = next_kind {
@@ -1127,11 +1139,16 @@ impl Parser<'_> {
                 self.bump_value(); // consume file test operator
                 self.skip_whitespace_and_newlines();
 
+                let next_value_token = self.peek_non_trivia_token_with_context(LexContext::Value);
+                let should_parse_argument = !is_empty_regex(next_value_token);
+
                 // Try to parse an expression argument, but don't require it
                 // File test operators like -f can be used without arguments (they operate on $_)
-                self.parse_expression_with_precedence(
-                    crate::parser::expression::precedence::Precedence::PREFIX,
-                );
+                if should_parse_argument {
+                    self.parse_expression_with_precedence(
+                        crate::parser::expression::precedence::Precedence::PREFIX,
+                    );
+                }
 
                 self.builder.finish_node();
             }
