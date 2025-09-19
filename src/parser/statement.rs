@@ -19,12 +19,16 @@ impl Parser<'_> {
         }
 
         match self.current_kind() {
-            Some(
-                SyntaxKind::MY_KW
-                | SyntaxKind::OUR_KW
-                | SyntaxKind::STATE_KW
-                | SyntaxKind::LOCAL_KW,
-            ) => {
+            Some(kind @ (SyntaxKind::MY_KW | SyntaxKind::OUR_KW | SyntaxKind::STATE_KW)) => {
+                if self.looks_like_lexical_sub_definition() {
+                    self.lexical_sub_def(kind);
+                    true
+                } else {
+                    self.var_decl();
+                    true
+                }
+            }
+            Some(SyntaxKind::LOCAL_KW) => {
                 self.var_decl();
                 true
             }
@@ -120,6 +124,11 @@ impl Parser<'_> {
             }
             None => false,
         }
+    }
+
+    fn looks_like_lexical_sub_definition(&self) -> bool {
+        self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
+            .is_some_and(|(next, _)| next == SyntaxKind::SUB_KW)
     }
 
     fn labeled_stmt(&mut self) {
@@ -262,7 +271,20 @@ impl Parser<'_> {
     }
 
     fn sub_def(&mut self) {
+        self.sub_def_with_modifier(None);
+    }
+
+    fn lexical_sub_def(&mut self, modifier_kind: SyntaxKind) {
+        self.sub_def_with_modifier(Some(modifier_kind));
+    }
+
+    fn sub_def_with_modifier(&mut self, modifier_kind: Option<SyntaxKind>) {
         self.builder.start_node(SyntaxKind::SUB_DEF.into());
+
+        if let Some(kind) = modifier_kind {
+            self.expect(kind);
+            self.skip_whitespace_and_newlines();
+        }
 
         self.expect(SyntaxKind::SUB_KW);
         self.skip_whitespace_and_newlines();
@@ -771,7 +793,15 @@ impl Parser<'_> {
             self.skip_whitespace_and_newlines();
         }
 
-        self.block();
+        self.skip_whitespace_and_newlines();
+
+        if self.at(SyntaxKind::SEMICOLON) {
+            self.bump();
+        } else if self.at(SyntaxKind::L_BRACE) {
+            self.block();
+        } else {
+            self.error("Expected block or ';' after subroutine declaration");
+        }
     }
 
     pub(crate) fn parse_sub_attribute(&mut self) {
@@ -941,6 +971,73 @@ __END__",
                 );
             }
         }
+    }
+
+    #[test]
+    fn lexical_sub_definitions_parse_without_errors() {
+        let input = r#"
+            my sub foo { 42 }
+            state sub bar($) { $_[0] }
+            our sub baz :method :Attr(1) { }
+        "#;
+
+        let (green, errors) = parse(input);
+
+        assert!(
+            errors.is_empty(),
+            "Expected lexical subroutines to parse without errors, got: {:?}",
+            errors
+        );
+
+        let root = PerlNode::new_root(green);
+        let sub_defs: Vec<_> = root
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::SUB_DEF)
+            .collect();
+
+        assert_eq!(
+            sub_defs.len(),
+            3,
+            "Expected three subroutine definitions, found {}",
+            sub_defs.len()
+        );
+    }
+
+    #[test]
+    fn sub_forward_declarations_supported() {
+        let input = r#"
+            sub foo;
+            sub bar($);
+            sub baz :method;
+            sub quux ($) :method :Attr(1);
+        "#;
+
+        let (green, errors) = parse(input);
+
+        assert!(
+            errors.is_empty(),
+            "Expected forward sub declarations to parse without errors, got: {:?}",
+            errors
+        );
+
+        let root = PerlNode::new_root(green);
+        let sub_defs: Vec<_> = root
+            .descendants()
+            .filter(|node| node.kind() == SyntaxKind::SUB_DEF)
+            .collect();
+
+        assert_eq!(
+            sub_defs.len(),
+            4,
+            "Expected four subroutine declarations, found {}",
+            sub_defs.len()
+        );
+
+        assert!(sub_defs.iter().all(|node| {
+            !node
+                .children()
+                .any(|child| child.kind() == SyntaxKind::BLOCK_STMT)
+        }));
     }
 
     #[test]
