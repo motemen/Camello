@@ -61,17 +61,7 @@ impl Parser<'_> {
                             2,
                         );
 
-                        match third.map(|(k, _)| k) {
-                            // Special variables (e.g. $^FOO) should not be implicitly dereferenced
-                            Some(SyntaxKind::CARET) => false,
-                            Some(
-                                SyntaxKind::IDENT
-                                | SyntaxKind::NUMBER
-                                | SyntaxKind::AT
-                                | SyntaxKind::L_BRACE,
-                            ) => true,
-                            _ => false,
-                        }
+                        Self::is_compound_dereference_target(third.map(|(k, _)| k))
                     }
                     _ => false,
                 }
@@ -338,20 +328,19 @@ impl Parser<'_> {
                 // special variables like "$$;" as dereferencing.
                 let third =
                     self.peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 2);
-                match third.map(|(k, _)| k) {
-                    // Special variables like $^FOO shouldn't trigger implicit dereferencing
-                    Some(SyntaxKind::CARET) => false,
-                    Some(
-                        SyntaxKind::IDENT
-                        | SyntaxKind::NUMBER
-                        | SyntaxKind::AT
-                        | SyntaxKind::L_BRACE,
-                    ) => true,
-                    _ => false,
-                }
+                Self::is_compound_dereference_target(third.map(|(k, _)| k))
             }
             _ => false,
         }
+    }
+
+    fn is_compound_dereference_target(lookahead: Option<SyntaxKind>) -> bool {
+        // Special variables (e.g. $^FOO) should not be implicitly dereferenced. Only permit
+        // tokens that can legally start a normal variable or a braced expression.
+        matches!(
+            lookahead,
+            Some(SyntaxKind::IDENT | SyntaxKind::NUMBER | SyntaxKind::AT | SyntaxKind::L_BRACE)
+        )
     }
 
     /// Checks if we are currently inside hash braces (for treating keywords as identifiers).
