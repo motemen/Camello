@@ -787,6 +787,16 @@ $[; $]; $+; $-; $=; $%; $|; $~; $*;
 }
 
 #[test]
+fn test_special_variables_not_implicitly_dereferenced() {
+    let cases = [
+        ("say $$^H;", "say $$ ^ H;\n"),
+        ("my $value = $$^ 2;", "my $value = $$ ^ 2;\n"),
+        ("say ${$^H};", "say ${$^H};\n"),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_array_last_index_variables() {
     let cases = [
         // Basic $#array syntax

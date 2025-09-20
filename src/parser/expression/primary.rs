@@ -60,16 +60,8 @@ impl Parser<'_> {
                             crate::lexer::LexContext::Value,
                             2,
                         );
-                        matches!(
-                            third.map(|(k, _)| k),
-                            Some(
-                                SyntaxKind::IDENT
-                                    | SyntaxKind::NUMBER
-                                    | SyntaxKind::AT
-                                    | SyntaxKind::CARET
-                                    | SyntaxKind::L_BRACE
-                            )
-                        )
+
+                        Self::is_compound_dereference_target(third.map(|(k, _)| k))
                     }
                     _ => false,
                 }
@@ -336,19 +328,19 @@ impl Parser<'_> {
                 // special variables like "$$;" as dereferencing.
                 let third =
                     self.peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 2);
-                matches!(
-                    third.map(|(k, _)| k),
-                    Some(
-                        SyntaxKind::IDENT
-                            | SyntaxKind::NUMBER
-                            | SyntaxKind::AT
-                            | SyntaxKind::CARET
-                            | SyntaxKind::L_BRACE
-                    )
-                )
+                Self::is_compound_dereference_target(third.map(|(k, _)| k))
             }
             _ => false,
         }
+    }
+
+    fn is_compound_dereference_target(lookahead: Option<SyntaxKind>) -> bool {
+        // Special variables (e.g. $^FOO) should not be implicitly dereferenced. Only permit
+        // tokens that can legally start a normal variable or a braced expression.
+        matches!(
+            lookahead,
+            Some(SyntaxKind::IDENT | SyntaxKind::NUMBER | SyntaxKind::AT | SyntaxKind::L_BRACE)
+        )
     }
 
     /// Checks if we are currently inside hash braces (for treating keywords as identifiers).
