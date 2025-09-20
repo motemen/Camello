@@ -127,13 +127,6 @@ impl Parser<'_> {
             next_kind = Some(SyntaxKind::HEREDOC_START);
         }
 
-        if is_empty_regex(next_value_token) && matches!(function_name.as_str(), "shift" | "pop") {
-            // Treat 'shift' and 'pop' without arguments as expression values so
-            // the upcoming '//' is lexed as the defined-or operator instead of
-            // a regex literal representing the empty pattern.
-            return;
-        }
-
         if let Some(kind) = next_kind {
             if kind == SyntaxKind::L_PAREN {
                 // Parenthesized calls are handled by postfix parsing logic
@@ -384,6 +377,9 @@ impl Parser<'_> {
         next_kind: Option<SyntaxKind>,
     ) -> Option<SyntaxKind> {
         match (function_name, next_value_token, next_kind) {
+            ("shift" | "pop", Some((SyntaxKind::REGEX_LITERAL, "//")), _) => {
+                Some(SyntaxKind::DEFINED_OR)
+            }
             ("split", Some((SyntaxKind::REGEX_LITERAL, _)), Some(SyntaxKind::DEFINED_OR)) => {
                 Some(SyntaxKind::REGEX_LITERAL)
             }
