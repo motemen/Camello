@@ -108,7 +108,7 @@ impl SyntaxKind {
                 | SyntaxKind::ARRAY_INDEX_SIGIL
                 | SyntaxKind::ARRAY_SIGIL
                 | SyntaxKind::HASH_SIGIL
-                | SyntaxKind::REFERENCE_SIGIL
+                | SyntaxKind::BACKSLASH
                 | SyntaxKind::TYPEGLOB_SIGIL
         )
     }
@@ -174,7 +174,7 @@ impl SyntaxKind {
                 | SyntaxKind::REGEX_NOT_MATCH
                 // Misc punctuation used as operators in contexts
                 | SyntaxKind::COMMA
-                | SyntaxKind::REFERENCE_SIGIL
+                | SyntaxKind::BACKSLASH
                 // Postfix deref
                 | SyntaxKind::POSTFIX_DEREF_ARRAY
                 | SyntaxKind::POSTFIX_DEREF_HASH

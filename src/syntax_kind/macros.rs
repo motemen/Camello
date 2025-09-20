@@ -41,8 +41,11 @@ macro_rules! __syntax_kind_token {
     (hash_sigil) => {
         $crate::SyntaxKind::HASH_SIGIL
     };
-    (reference_sigil) => {
-        $crate::SyntaxKind::REFERENCE_SIGIL
+    (backslash) => {
+        $crate::SyntaxKind::BACKSLASH
+    };
+    ('\\') => {
+        $crate::SyntaxKind::BACKSLASH
     };
     (code_sigil) => {
         $crate::SyntaxKind::CODE_SIGIL

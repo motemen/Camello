@@ -264,7 +264,7 @@ impl Token {
             Token::DollarHash => SyntaxKind::ARRAY_INDEX_SIGIL,
             Token::Dollar => SyntaxKind::SCALAR_SIGIL,
             Token::At => SyntaxKind::ARRAY_SIGIL,
-            Token::Backslash => SyntaxKind::REFERENCE_SIGIL,
+            Token::Backslash => SyntaxKind::BACKSLASH,
             Token::Ampersand => SyntaxKind::CODE_SIGIL, // Will be disambiguated
             Token::RequireKw => SyntaxKind::REQUIRE_KW,
             Token::BeginKw => SyntaxKind::BEGIN_KW,
