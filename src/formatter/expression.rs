@@ -26,10 +26,10 @@ impl Formatter {
                 self.format_array_ref_access(node);
             }
             SyntaxKind::POSTFIX_ARRAY_SLICE_EXPR => {
-                self.format_postfix_slice_expr(node, SyntaxKind::AT);
+                self.format_postfix_slice_expr(node, SyntaxKind::ARRAY_SIGIL);
             }
             SyntaxKind::POSTFIX_HASH_SLICE_EXPR => {
-                self.format_postfix_slice_expr(node, SyntaxKind::PERCENT);
+                self.format_postfix_slice_expr(node, SyntaxKind::HASH_SIGIL);
             }
             SyntaxKind::CODE_REF_CALL_EXPR => {
                 self.format_code_ref_call(node);
@@ -236,12 +236,12 @@ impl Formatter {
             break;
         }
 
-        let mut opening = if sigil_kind == SyntaxKind::PERCENT {
+        let mut opening = if sigil_kind == SyntaxKind::HASH_SIGIL {
             SyntaxKind::L_BRACE
         } else {
             SyntaxKind::L_BRACKET
         };
-        let mut closing = if sigil_kind == SyntaxKind::PERCENT {
+        let mut closing = if sigil_kind == SyntaxKind::HASH_SIGIL {
             SyntaxKind::R_BRACE
         } else {
             SyntaxKind::R_BRACKET

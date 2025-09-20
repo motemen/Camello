@@ -402,7 +402,7 @@ impl Parser<'_> {
             self.skip_whitespace_and_newlines();
 
             // Parse the variable - must be a scalar
-            if self.current_kind() == Some(SyntaxKind::DOLLAR) {
+            if self.current_kind() == Some(SyntaxKind::SCALAR_SIGIL) {
                 // Use qualified parsing for our/local, simple for my/state
                 if matches!(decl_kind, SyntaxKind::OUR_KW | SyntaxKind::LOCAL_KW) {
                     self.parse_variable_qualified();
@@ -416,7 +416,7 @@ impl Parser<'_> {
             }
 
             self.builder.finish_node();
-        } else if self.current_kind() == Some(SyntaxKind::DOLLAR) {
+        } else if self.current_kind() == Some(SyntaxKind::SCALAR_SIGIL) {
             // $var case - parse as a variable reference
             self.parse_variable();
         } else {
@@ -760,12 +760,12 @@ impl Parser<'_> {
                 break;
             }
             match kind {
-                SyntaxKind::BACKSLASH
-                | SyntaxKind::AT
-                | SyntaxKind::PERCENT
-                | SyntaxKind::DOLLAR
-                | SyntaxKind::AMPERSAND
-                | SyntaxKind::ASTERISK
+                SyntaxKind::REFERENCE_SIGIL
+                | SyntaxKind::ARRAY_SIGIL
+                | SyntaxKind::HASH_SIGIL
+                | SyntaxKind::SCALAR_SIGIL
+                | SyntaxKind::CODE_SIGIL
+                | SyntaxKind::TYPEGLOB_SIGIL
                 | SyntaxKind::SEMICOLON
                 | SyntaxKind::L_BRACKET
                 | SyntaxKind::R_BRACKET

@@ -378,7 +378,7 @@ impl<'a> Parser<'a> {
                 | SyntaxKind::NOT_KW
                 | SyntaxKind::FILE_TEST_OP
                 | SyntaxKind::X
-                | SyntaxKind::AMPERSAND
+                | SyntaxKind::CODE_SIGIL
         ) || kind.is_variable()
             || kind.is_sigil()
     }
@@ -483,11 +483,11 @@ mod tests {
         // Test peek_non_trivia_token
         assert_eq!(
             lexer.peek_non_trivia_token(),
-            Some((SyntaxKind::DOLLAR, "$"))
+            Some((SyntaxKind::SCALAR_SIGIL, "$"))
         );
 
         // Consume first token and test again
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::DOLLAR, "$")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::SCALAR_SIGIL, "$")));
         assert_eq!(
             lexer.peek_non_trivia_token(),
             Some((SyntaxKind::IDENT, "var"))
@@ -498,7 +498,10 @@ mod tests {
 
         // Skip newline and test peek again
         assert_eq!(lexer.next_token(), Some((SyntaxKind::NEWLINE, "\n")));
-        assert_eq!(lexer.peek_non_trivia_token(), Some((SyntaxKind::AT, "@")));
+        assert_eq!(
+            lexer.peek_non_trivia_token(),
+            Some((SyntaxKind::ARRAY_SIGIL, "@"))
+        );
     }
 
     #[test]
