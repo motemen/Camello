@@ -29,9 +29,9 @@ fn test_all_var_decl_types_formatting() {
         ("our $x = 2;", "our $x = 2;\n"),
         ("state $x = 3;", "state $x = 3;\n"),
         ("local $x = 4;", "local $x = 4;\n"),
-        ("my@arr=(1,2,3);", "my @arr = (1, 2, 3);\n"),
-        ("our%hash=(a=>1);", "our %hash = (a => 1);\n"),
-        ("state($x,$y)=(1,2);", "state ($x, $y) = (1, 2);\n"),
+        ("my@arr=(1,2,3);", "my @arr = ( 1, 2, 3 );\n"),
+        ("our%hash=(a=>1);", "our %hash = ( a => 1 );\n"),
+        ("state($x,$y)=(1,2);", "state ( $x, $y ) = ( 1, 2 );\n"),
         ("my*glob=\\*STDIN;", "my *glob = \\*STDIN;\n"),
     ];
     check_formatting_cases(&cases);
@@ -59,28 +59,28 @@ fn test_local_complex_lvalue_formatting() {
         ("local $array[0] = 'first';", "local $array[0] = 'first';\n"),
         ("local $list[1] = $item;", "local $list[1] = $item;\n"),
         // Parenthesized lists with variables
-        ("local ($a, $b) = (1, 2);", "local ($a, $b) = (1, 2);\n"),
+        ("local ($a, $b) = (1, 2);", "local ( $a, $b ) = ( 1, 2 );\n"),
         (
             "local ($x, $y, $z) = @values;",
-            "local ($x, $y, $z) = @values;\n",
+            "local ( $x, $y, $z ) = @values;\n",
         ),
         // Mixed parenthesized lists with complex lvalues
         (
             "local ($SIG{__WARN__}, $a) = (\\&handler, $old_a);",
-            "local ($SIG{__WARN__}, $a) = (\\&handler, $old_a);\n",
+            "local ( $SIG{__WARN__}, $a ) = ( \\&handler, $old_a );\n",
         ),
         (
             "local ($array[0], $hash{key}) = ($new_first, $new_value);",
-            "local ($array[0], $hash{key}) = ($new_first, $new_value);\n",
+            "local ( $array[0], $hash{key} ) = ( $new_first, $new_value );\n",
         ),
         // With undef in lists
         (
             "local (undef, $SIG{__DIE__}) = (undef, \\&my_die);",
-            "local (undef, $SIG{__DIE__}) = (undef, \\&my_die);\n",
+            "local ( undef, $SIG{__DIE__} ) = ( undef, \\&my_die );\n",
         ),
         (
             "local ($a, undef, $hash{key}) = @list;",
-            "local ($a, undef, $hash{key}) = @list;\n",
+            "local ( $a, undef, $hash{key} ) = @list;\n",
         ),
     ];
     check_formatting_cases(&cases);
@@ -123,7 +123,7 @@ fn test_continuation_indent_fat_comma() {
     let formatted = format_and_assert(input);
     assert_eq!(
         formatted,
-        "my %hash = (key1 => 'value1',\n    key2 => 'value2');\n"
+        "my %hash = ( key1 => 'value1',\n    key2 => 'value2' );\n"
     );
 }
 
@@ -136,27 +136,27 @@ fn test_my_declaration_in_trailing_comma_argument() {
 #[test]
 fn test_undef_in_variable_declaration_formatting() {
     let cases = [
-        ("my(undef,$x)=@_;", "my (undef, $x) = @_;\n"),
-        ("my($a,undef,$c)=@list;", "my ($a, undef, $c) = @list;\n"),
+        ("my(undef,$x)=@_;", "my ( undef, $x ) = @_;\n"),
+        ("my($a,undef,$c)=@list;", "my ( $a, undef, $c ) = @list;\n"),
         (
             "my(undef,undef,$result)=func();",
-            "my (undef, undef, $result) = func();\n",
+            "my ( undef, undef, $result ) = func();\n",
         ),
-        ("our(undef,$y)=(1,2);", "our (undef, $y) = (1, 2);\n"),
-        ("state($x,undef)=@array;", "state ($x, undef) = @array;\n"),
+        ("our(undef,$y)=(1,2);", "our ( undef, $y ) = ( 1, 2 );\n"),
+        ("state($x,undef)=@array;", "state ( $x, undef ) = @array;\n"),
         // Mixed variable declarations and undef (not part of variable declaration statement)
-        ("(undef,my @a)=@_;", "(undef, my @a) = @_;\n"),
+        ("(undef,my @a)=@_;", "( undef, my @a ) = @_;\n"),
         (
             "(my $x,undef,our @y)=get_values();",
-            "(my $x, undef, our @y) = get_values();\n",
+            "( my $x, undef, our @y ) = get_values();\n",
         ),
         (
             "(undef,state $cache,my %hash)=complex_func(@args);",
-            "(undef, state $cache, my %hash) = complex_func(@args);\n",
+            "( undef, state $cache, my %hash ) = complex_func(@args);\n",
         ),
         (
             "(local $old,undef)=backup();",
-            "(local $old, undef) = backup();\n",
+            "( local $old, undef ) = backup();\n",
         ),
     ];
     check_formatting_cases(&cases);
@@ -300,7 +300,7 @@ fn test_keywords_as_hash_keys_formatting() {
         // Multiple keywords in one hash
         (
             "$h = {if => 1, while => 2, until => 3};",
-            "$h = {if => 1, while => 2, until => 3};\n",
+            "$h = { if => 1, while => 2, until => 3 };\n",
         ),
         // Keywords as variable names
         ("my $until = 1;", "my $until = 1;\n"),
@@ -314,14 +314,14 @@ fn test_keywords_as_hash_keys_formatting() {
 fn test_c_style_for_formatting() {
     let cases = [
         // Basic C-style for loops
-        ("for(;;){}", "for (; ; ) {}"),
+        ("for(;;){}", "for (; ; ) { }"),
         (
             "for(my $i=0;$i<10;$i++){}",
-            "for (my $i = 0; $i < 10; $i++) {}",
+            "for (my $i = 0; $i < 10; $i++) { }",
         ),
         // C-style for with empty parts
-        ("for(;$i<10;){}", "for (; $i < 10; ) {}"),
-        ("for($i=0;;$i++){}", "for ($i = 0; ; $i++) {}"),
+        ("for(;$i<10;){}", "for (; $i < 10; ) { }"),
+        ("for($i=0;;$i++){}", "for ($i = 0; ; $i++) { }"),
     ];
     check_formatting_cases(&cases);
 }
@@ -428,9 +428,9 @@ fn test_postfix_dereference_formatting() {
 #[test]
 fn test_sub_attribute_formatting() {
     let cases = [
-        ("sub foo:bar {}", "sub foo : bar {}"),
-        ("sub foo :bar:baz {}", "sub foo : bar : baz {}"),
-        ("sub foo:bar(1,2) {}", "sub foo : bar(1, 2) {}"),
+        ("sub foo:bar {}", "sub foo : bar { }"),
+        ("sub foo :bar:baz {}", "sub foo : bar : baz { }"),
+        ("sub foo:bar(1,2) {}", "sub foo : bar(1, 2) { }"),
     ];
     check_formatting_cases(&cases);
 }
@@ -497,7 +497,7 @@ fn test_label_with_whitespace_before_colon() {
     let input = "LOOP : while($i<2){}";
     let formatted = format_and_assert(input);
     insta::assert_snapshot!(formatted, @r"
-        LOOP: while ($i < 2) {}
+        LOOP: while ($i < 2) { }
         ");
 }
 
@@ -565,7 +565,7 @@ fn test_postfix_while_modifier_formatting() {
     let cases = [
         ("print $i while $i<10;", "print $i while $i < 10;\n"),
         ("say $x while$x>0;", "say $x while $x > 0;\n"),
-        ("print while($condition);", "print while ($condition);\n"),
+        ("print while($condition);", "print while ( $condition );\n"),
     ];
     check_formatting_cases(&cases);
 }
@@ -575,7 +575,7 @@ fn test_postfix_until_modifier_formatting() {
     let cases = [
         ("print $i until $i==10;", "print $i until $i == 10;\n"),
         ("say $x until$x<=0;", "say $x until $x <= 0;\n"),
-        ("print until($condition);", "print until ($condition);\n"),
+        ("print until($condition);", "print until ( $condition );\n"),
     ];
     check_formatting_cases(&cases);
 }
@@ -687,7 +687,7 @@ fn test_package_with_version_empty_block() {
     // Test empty block separately to understand formatting
     let input = "package Bar 5.024.001{}";
     let formatted = format_and_assert(input);
-    insta::assert_snapshot!(formatted, @"package Bar 5.024.001 {}");
+    insta::assert_snapshot!(formatted, @"package Bar 5.024.001 { }");
 }
 
 #[test]
@@ -710,7 +710,7 @@ fn test_package_with_digits_after_colons() {
         ),
         (
             "package Test::456::Module{}",
-            "package Test::456::Module {}",
+            "package Test::456::Module { }",
         ),
         (
             "package Foo::123ABC{my $x=1;}",
@@ -718,7 +718,7 @@ fn test_package_with_digits_after_colons() {
         ),
         // Package names with versions and digits
         ("package Foo::123 1.0;", "package Foo::123 1.0;\n"),
-        ("package Bar::456 v2.0{}", "package Bar::456 v2.0 {}"),
+        ("package Bar::456 v2.0{}", "package Bar::456 v2.0 { }"),
         ("package Foo::123ABC v1.0;", "package Foo::123ABC v1.0;\n"),
         // Mixed patterns
         (
@@ -753,11 +753,11 @@ fn test_ambiguous_argument_lookahead_regressions() {
     let formatted = format_and_assert(input);
     insta::assert_snapshot!(formatted, @r"
         foo < $o->meth;
-        foo * (1 + 2);
+        foo * ( 1 + 2 );
         foo % +1;
-        foo * {k => 1}->{k};
+        foo * { k => 1 }->{k};
         foo * @_;
-        foo * [1, 2, 3]->[0];
+        foo * [ 1, 2, 3 ]->[0];
         foo * bar;
         foo * bar;
         foo % bar;
@@ -829,8 +829,11 @@ fn test_array_last_index_variables() {
         ("$#$arrayref;", "$#$arrayref;\n"),
         ("my $size = $#$ref + 1;", "my $size = $#$ref + 1;\n"),
         // Complex expressions with $#
-        ("for my $i (0 .. $#array) {}", "for my $i (0 .. $#array) {}"),
-        ("if ($#data >= 0) {}", "if ($#data >= 0) {}"),
+        (
+            "for my $i (0 .. $#array) {}",
+            "for my $i (0 .. $#array) { }",
+        ),
+        ("if ($#data >= 0) {}", "if ($#data >= 0) { }"),
         // Note: $#{array} syntax with braces has formatting issues and is commented out for now
         // ("$#{arr};", "$#{arr};\n"),
         // ("$#{Package::items};", "$#{Package::items};\n"),
@@ -1179,10 +1182,13 @@ fn test_no_statement_with_expressions() {
             "no A::B func => \\&function;",
             "no A::B func => \\&function;\n",
         ),
-        ("no A::B array => [1,2,3];", "no A::B array => [1, 2, 3];\n"),
+        (
+            "no A::B array => [1,2,3];",
+            "no A::B array => [ 1, 2, 3 ];\n",
+        ),
         (
             "no A::B hash => {a=>1,b=>2};",
-            "no A::B hash => {a => 1, b => 2};\n",
+            "no A::B hash => { a => 1, b => 2 };\n",
         ),
         // With spacing variations
         ("no  A::B  x  =>  1  ;", "no A::B x => 1;\n"),
@@ -1286,11 +1292,11 @@ fn test_use_statement_with_expressions() {
         ),
         (
             "use A::B array => [1,2,3];",
-            "use A::B array => [1, 2, 3];\n",
+            "use A::B array => [ 1, 2, 3 ];\n",
         ),
         (
             "use A::B hash => {a=>1,b=>2};",
-            "use A::B hash => {a => 1, b => 2};\n",
+            "use A::B hash => { a => 1, b => 2 };\n",
         ),
         // Spacing variations
         ("use  A::B  x  =>  1  ;", "use A::B x => 1;\n"),
@@ -1616,7 +1622,7 @@ fn test_eval_block_followed_by_defined_or() {
     let formatted = format_and_assert(input);
 
     insta::assert_snapshot!(formatted, @r"
-        eval {} // 1;
+        eval { } // 1;
         ");
 }
 
@@ -1626,7 +1632,7 @@ fn test_do_block_followed_by_defined_or() {
     let formatted = format_and_assert(input);
 
     insta::assert_snapshot!(formatted, @r"
-        do {} // 1;
+        do { } // 1;
         ");
 }
 
@@ -1675,7 +1681,7 @@ fn test_parenthesized_eval_block_formatting() {
     let input = "(eval {})";
     let formatted = format_and_assert(input);
 
-    insta::assert_snapshot!(formatted, @"(eval {})");
+    insta::assert_snapshot!(formatted, @"( eval { } )");
 }
 
 #[test]
@@ -1702,7 +1708,7 @@ fn test_ternary_in_data_structures_formatting() {
     let input =
         "my $config = { timeout => $is_production ? 30 : 5, retries => $is_critical ? 3 : 1 };";
     let output = format_and_assert(input);
-    insta::assert_snapshot!(output, @"my $config = {timeout => $is_production ? 30 : 5, retries => $is_critical ? 3 : 1};");
+    insta::assert_snapshot!(output, @"my $config = { timeout => $is_production ? 30 : 5, retries => $is_critical ? 3 : 1 };");
 }
 
 #[test]
@@ -1770,7 +1776,7 @@ fn test_single_line_hash_ref_formatting() {
     let input = "my $hash = { a => 1, b => 2 };";
     let formatted = format_and_assert(input);
 
-    insta::assert_snapshot!(formatted, @"my $hash = {a => 1, b => 2};");
+    insta::assert_snapshot!(formatted, @"my $hash = { a => 1, b => 2 };");
 }
 
 #[test]
@@ -1794,7 +1800,31 @@ fn test_single_line_array_ref_formatting() {
     let input = "my $array = [1, 2, 3];";
     let formatted = format_and_assert(input);
 
-    insta::assert_snapshot!(formatted, @"my $array = [1, 2, 3];");
+    insta::assert_snapshot!(formatted, @"my $array = [ 1, 2, 3 ];");
+}
+
+#[test]
+fn test_parenthesized_multi_token_spacing() {
+    let input = "my $value = ($foo + $bar);";
+    let formatted = format_and_assert(input);
+
+    insta::assert_snapshot!(formatted, @"my $value = ( $foo + $bar );");
+}
+
+#[test]
+fn test_array_literal_expression_spacing() {
+    let input = "my $array = [$foo + $bar];";
+    let formatted = format_and_assert(input);
+
+    insta::assert_snapshot!(formatted, @"my $array = [ $foo + $bar ];");
+}
+
+#[test]
+fn test_empty_block_spacing() {
+    let input = "sub foo {}";
+    let formatted = format_and_assert(input);
+
+    insta::assert_snapshot!(formatted, @"sub foo { }");
 }
 
 #[test]
@@ -1907,9 +1937,9 @@ items => [
 
     insta::assert_snapshot!(formatted, @r#"
         my $mixed = {
-            simple => {a => 1, b => 2},
+            simple => { a => 1, b => 2 },
             complex => {
-                nested => [1, 2, 3],
+                nested => [ 1, 2, 3 ],
                 items => [
                     "first",
                     "second"
@@ -2018,12 +2048,12 @@ if ($string =~ m|pattern|i) { }"#;
 
     insta::assert_snapshot!(formatted, @r"
     # Test m// with various delimiters
-    if ($string =~ m(pattern)i) {}
-    if ($string =~ m/pattern/i) {}
-    if ($string =~ m{pattern}i) {}
-    if ($string =~ m[pattern]i) {}
-    if ($string =~ m<pattern>i) {}
-    if ($string =~ m|pattern|i) {}
+    if ($string =~ m(pattern)i) { }
+    if ($string =~ m/pattern/i) { }
+    if ($string =~ m{pattern}i) { }
+    if ($string =~ m[pattern]i) { }
+    if ($string =~ m<pattern>i) { }
+    if ($string =~ m|pattern|i) { }
     ");
 }
 
@@ -2251,7 +2281,7 @@ fn test_logical_operators_formatting() {
         // Logical NOT prefix operator (no space after !)
         ("!$x;", "!$x;\n"),
         ("$a||!$b;", "$a || !$b;\n"),
-        ("(!$a&&$b);", "(!$a && $b);\n"),
+        ("(!$a&&$b);", "( !$a && $b );\n"),
         // Low-precedence logical operators (space around)
         ("$a and $b;", "$a and $b;\n"),
         ("$x or $y;", "$x or $y;\n"),
@@ -2285,7 +2315,7 @@ fn test_logical_operators_with_parentheses() {
     let input = "(!$a&&($b||$c))and($x//$y);";
     let formatted = format_and_assert(input);
 
-    insta::assert_snapshot!(formatted, @"(!$a && ($b || $c)) and ($x // $y);");
+    insta::assert_snapshot!(formatted, @"( !$a && ( $b || $c ) ) and ( $x // $y );");
 }
 
 #[test]
@@ -2303,7 +2333,7 @@ fn test_contextual_logical_keywords() {
     let formatted = format_and_assert(input);
 
     insta::assert_snapshot!(formatted, @r"
-    sub and {}
+    sub and { }
 
     my $or = 1;
     ");
@@ -2556,7 +2586,7 @@ fn test_anonymous_subroutine_various_cases() {
         // Anonymous sub with parameters and multiple statements
         (
             "my$f=sub{my($x,$y)=@_;return $x+$y;};",
-            "my $f = sub {\n    my ($x, $y) = @_;\n    return $x + $y;\n};\n",
+            "my $f = sub {\n    my ( $x, $y ) = @_;\n    return $x + $y;\n};\n",
         ),
         // Anonymous sub in function call
         ("map(sub{$_*2},@arr);", "map(sub { $_ * 2 }, @arr);\n"),
@@ -2576,7 +2606,7 @@ fn test_anonymous_subroutine_in_expressions() {
         // As standalone assignment
         ("my $simple = sub { 42 };", "my $simple = sub { 42 };\n"),
         // In array context
-        ("my @subs = (sub { 1 });", "my @subs = (sub { 1 });\n"),
+        ("my @subs = (sub { 1 });", "my @subs = ( sub { 1 } );\n"),
         // As function argument
         (
             "call_me(sub { \"hello\" });",
@@ -2622,25 +2652,25 @@ fn test_subroutine_prototypes_formatting() {
     );
     let formatted = format_and_assert(input);
     insta::assert_snapshot!(formatted, @r"
-    sub mypush (\@@) {}
+    sub mypush (\@@) { }
 
-    sub myjoin ($@) {}
+    sub myjoin ($@) { }
 
-    sub mysplice (\@$$@) {}
+    sub mysplice (\@$$@) { }
 
-    sub mykeys (\[%@]) {}
+    sub mykeys (\[%@]) { }
 
-    sub myopen (*;$) {}
+    sub myopen (*;$) { }
 
-    sub mygrep (&@) {}
+    sub mygrep (&@) { }
 
-    sub myrand (;$) {}
+    sub myrand (;$) { }
 
-    sub mytime () {}
+    sub mytime () { }
 
-    sub test ($@) {}
+    sub test ($@) { }
 
-    sub foo (\@) {}
+    sub foo (\@) { }
 
     sub mypush (\@@) {
         my $x = 1;
@@ -2669,7 +2699,7 @@ fn test_complex_subroutine_prototype() {
 
     insta::assert_snapshot!(formatted, @r"
         sub complex_func (\@$$;*&\[%@]) {
-            my ($arr_ref, $scalar1, $scalar2, $opt_typeglob, $code_block, $hash_or_array_ref) = @_;
+            my ( $arr_ref, $scalar1, $scalar2, $opt_typeglob, $code_block, $hash_or_array_ref ) = @_;
         }
         ");
 }
@@ -2704,7 +2734,7 @@ fn test_x_operator_formatting() {
         ("qw(a) x 10;", "qw(a) x 10;\n"),
         ("qw/word1 word2/ x 2;", "qw/word1 word2/ x 2;\n"),
         // Complex expressions
-        ("($str . $suffix) x 2;", "($str . $suffix) x 2;\n"),
+        ("($str . $suffix) x 2;", "( $str . $suffix ) x 2;\n"),
         ("func() x 4;", "func() x 4;\n"),
     ];
     check_formatting_cases(&cases);
@@ -2746,7 +2776,7 @@ fn test_regex_literals_in_function_calls() {
         ("warn /^Error: .*$/", "warn /^Error: .*$/"),
         // Regex in other contexts (should still work)
         ("match(/pattern/, $str)", "match(/pattern/, $str)"),
-        ("if ($str =~ /pattern/) { }", "if ($str =~ /pattern/) {}"),
+        ("if ($str =~ /pattern/) { }", "if ($str =~ /pattern/) { }"),
         // Make sure division still works correctly
         ("$a / $b", "$a / $b"),
         ("my $result = $x / $y;", "my $result = $x / $y;\n"),
@@ -2793,20 +2823,20 @@ fn test_unary_plus_operator_formatting() {
         ("my $x = +42;", "my $x = +42;\n"),
         ("my $y = +$var;", "my $y = +$var;\n"),
         // Unary plus with hash reference (the main use case)
-        ("my $h = +{ a => 1 };", "my $h = +{a => 1};\n"),
-        ("my $h = +{a=>1,b=>2};", "my $h = +{a => 1, b => 2};\n"),
+        ("my $h = +{ a => 1 };", "my $h = +{ a => 1 };\n"),
+        ("my $h = +{a=>1,b=>2};", "my $h = +{ a => 1, b => 2 };\n"),
         // Unary plus with array reference
-        ("my $a = +[ 1, 2, 3 ];", "my $a = +[1, 2, 3];\n"),
-        ("my $a = +[1,2,3];", "my $a = +[1, 2, 3];\n"),
+        ("my $a = +[ 1, 2, 3 ];", "my $a = +[ 1, 2, 3 ];\n"),
+        ("my $a = +[1,2,3];", "my $a = +[ 1, 2, 3 ];\n"),
         // Nested unary plus
-        ("my $x = +(+$y);", "my $x = +(+$y);\n"),
+        ("my $x = +(+$y);", "my $x = +( +$y );\n"),
         // Unary plus in expressions
         ("my $result = +$x * 2;", "my $result = +$x * 2;\n"),
         ("my $result = 3 + +$x;", "my $result = 3 + +$x;\n"),
         // Complex cases
         (
             "my $complex = +{ key => +[ +$a, +$b ] };",
-            "my $complex = +{key => +[+$a, +$b]};\n",
+            "my $complex = +{ key => +[ +$a, +$b ] };\n",
         ),
     ];
 
@@ -2820,10 +2850,10 @@ fn test_unary_minus_operator_formatting() {
         ("my $x = -42;", "my $x = -42;\n"),
         ("my $y = -$var;", "my $y = -$var;\n"),
         // Unary minus with complex expressions
-        ("my $h = -{ a => 1 };", "my $h = -{a => 1};\n"),
-        ("my $a = -[ 1, 2, 3 ];", "my $a = -[1, 2, 3];\n"),
+        ("my $h = -{ a => 1 };", "my $h = -{ a => 1 };\n"),
+        ("my $a = -[ 1, 2, 3 ];", "my $a = -[ 1, 2, 3 ];\n"),
         // Nested unary minus
-        ("my $x = -(-$y);", "my $x = -(-$y);\n"),
+        ("my $x = -(-$y);", "my $x = -( -$y );\n"),
         // Mixed unary operators
         ("my $x = +-$y;", "my $x = +-$y;\n"),
         ("my $x = -+$y;", "my $x = -+$y;\n"),
@@ -2840,19 +2870,19 @@ fn test_unary_operators_in_context() {
     let cases = vec![
         // Function arguments with parentheses (works correctly)
         ("func(+$x, -$y);", "func(+$x, -$y);\n"),
-        ("print(+{a => 1});", "print(+{a => 1});\n"),
+        ("print(+{a => 1});", "print(+{ a => 1 });\n"),
         // Function calls without parentheses (space between function and args is correct in Perl)
-        ("print +{a => 1};", "print + {a => 1};\n"),
+        ("print +{a => 1};", "print + { a => 1 };\n"),
         // Return statements
         (
             "sub foo { return +{ result => $val }; }",
-            "sub foo {\n    return +{result => $val};\n}\n",
+            "sub foo {\n    return +{ result => $val };\n}\n",
         ),
         // Assignment context
-        ("@arr = (+1, -2, +$x);", "@arr = (+1, -2, +$x);\n"),
+        ("@arr = (+1, -2, +$x);", "@arr = ( +1, -2, +$x );\n"),
         // Hash and array contexts
-        ("%hash = ( key => +$val );", "%hash = (key => +$val);\n"),
-        ("@array = [ +$a, -$b ];", "@array = [+$a, -$b];\n"),
+        ("%hash = ( key => +$val );", "%hash = ( key => +$val );\n"),
+        ("@array = [ +$a, -$b ];", "@array = [ +$a, -$b ];\n"),
         // Conditional context
         (
             "if (+$x > 0) { print \"positive\"; }",
@@ -2869,12 +2899,12 @@ fn test_keyword_variable_names_formatting() {
     let cases = [
         // Basic keyword variable names mentioned in the issue
         ("my $package = \"test\";", "my $package = \"test\";\n"),
-        ("my @if = (1, 2, 3);", "my @if = (1, 2, 3);\n"),
+        ("my @if = (1, 2, 3);", "my @if = ( 1, 2, 3 );\n"),
         // Various declaration types with keyword variable names
         ("our $sub = 1;", "our $sub = 1;\n"),
         ("state $while = 2;", "state $while = 2;\n"),
         ("local $for = 3;", "local $for = 3;\n"),
-        ("my %else = (a => 1);", "my %else = (a => 1);\n"),
+        ("my %else = (a => 1);", "my %else = ( a => 1 );\n"),
         // More keywords as variable names
         ("my $unless = 4;", "my $unless = 4;\n"),
         ("my $elsif = 5;", "my $elsif = 5;\n"),
@@ -2884,7 +2914,7 @@ fn test_keyword_variable_names_formatting() {
         // Mixed normal and keyword variables
         (
             "my ($x, $if, $y) = (1, 2, 3);",
-            "my ($x, $if, $y) = (1, 2, 3);\n",
+            "my ( $x, $if, $y ) = ( 1, 2, 3 );\n",
         ),
         ("my @package = qw(foo bar);", "my @package = qw(foo bar);\n"),
         // In expressions
@@ -2909,15 +2939,15 @@ fn test_declaration_keywords_as_variable_names_formatting() {
         ("state $our = 6;", "state $our = 6;\n"),
         ("local $state = 7;", "local $state = 7;\n"),
         // Different sigil types
-        ("my @my = (1, 2);", "my @my = (1, 2);\n"),
-        ("my %our = (a => 1);", "my %our = (a => 1);\n"),
+        ("my @my = (1, 2);", "my @my = ( 1, 2 );\n"),
+        ("my %our = (a => 1);", "my %our = ( a => 1 );\n"),
         // In expressions
         ("$my + $our;", "$my + $our;\n"),
         ("print $state, $local;", "print $state, $local;\n"),
         // Multiple on one line
         (
             "my ($my, $our, $state) = (1, 2, 3);",
-            "my ($my, $our, $state) = (1, 2, 3);\n",
+            "my ( $my, $our, $state ) = ( 1, 2, 3 );\n",
         ),
     ];
 
@@ -3000,7 +3030,7 @@ fn test_comma_operator_precedence() {
             "$x = $a + $b, $y = $c * $d, $z = $e / $f;\n",
         ),
         // Comma with parentheses for grouping
-        ("($a, $b) = ($c, $d);", "($a, $b) = ($c, $d);\n"),
+        ("($a, $b) = ($c, $d);", "( $a, $b ) = ( $c, $d );\n"),
     ];
 
     check_formatting_cases(&cases);
@@ -3020,7 +3050,7 @@ fn test_bitwise_operators_formatting() {
         // Bitwise operators in complex expressions
         (
             "$mask = ($a & $b) | ($c ^ $d);",
-            "$mask = ($a & $b) | ($c ^ $d);\n",
+            "$mask = ( $a & $b ) | ( $c ^ $d );\n",
         ),
         ("$result = $x + $y & $mask;", "$result = $x + $y & $mask;\n"), // + has higher precedence than &
         // Mixed with logical operators
@@ -3108,7 +3138,7 @@ fn test_trailing_comma_and_fat_comma_in_blocks() {
         // Nested structures with trailing operators
         (
             "sub f { [1, 2,], {a => 1,}, }",
-            "sub f { [1, 2,], {a => 1,}, }",
+            "sub f { [ 1, 2, ], { a => 1, }, }",
         ),
         // Multiline with trailing operators (corrected expected output)
         ("sub f {\n    1,\n    2 =>\n}", "sub f { 1,\n    2 =>\n }"),

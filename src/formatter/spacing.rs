@@ -347,10 +347,6 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
             | BITWISE_AND | BITWISE_OR | BITWISE_XOR | EXPONENT | SHIFT_LEFT | SHIFT_RIGHT,
         ) => Some(true),
 
-        // No space inside parentheses/brackets/braces
-        (_, R_PAREN | R_BRACE | R_BRACKET) => Some(false),
-        (L_PAREN | L_BRACE | L_BRACKET, _) => Some(false),
-
         _ => None,
     }
 }
@@ -363,9 +359,9 @@ fn handle_contextual_spacing(
     current_spacing: &TokenSpacing,
 ) -> bool {
     use SyntaxKind::{
-        COMMA, FOREACH_KW, FOR_KW, IF_KW, L_BRACE, L_BRACKET, L_PAREN, POSTFIX_DEREF_ARRAY,
-        POSTFIX_DEREF_ARRAY_LAST_INDEX, POSTFIX_DEREF_CODE, POSTFIX_DEREF_GLOB, POSTFIX_DEREF_HASH,
-        POSTFIX_DEREF_SCALAR, R_BRACE, R_BRACKET, R_PAREN, UNLESS_KW,
+        COMMA, FOREACH_KW, FOR_KW, IF_KW, POSTFIX_DEREF_ARRAY, POSTFIX_DEREF_ARRAY_LAST_INDEX,
+        POSTFIX_DEREF_CODE, POSTFIX_DEREF_GLOB, POSTFIX_DEREF_HASH, POSTFIX_DEREF_SCALAR,
+        UNLESS_KW,
     };
 
     if prev_spacing.category == TokenCategory::Variable
@@ -396,10 +392,6 @@ fn handle_contextual_spacing(
 
         // Keywords in postfix position (if/unless/for)
         (_, IF_KW | UNLESS_KW | FOR_KW | FOREACH_KW) => true,
-
-        // Generally no space inside delimiters
-        (L_PAREN | L_BRACE | L_BRACKET, _) => false,
-        (_, R_PAREN | R_BRACE | R_BRACKET) => false,
 
         _ => false,
     }

@@ -19,33 +19,7 @@ impl Formatter {
         opening: SyntaxKind,
         closing: SyntaxKind,
     ) {
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
-                NodeOrToken::Token(token) => {
-                    let kind = token.kind();
-
-                    match kind {
-                        k if k == opening => {
-                            self.handle_spacing_before(kind);
-                            if self.at_line_start {
-                                self.add_indent();
-                                self.at_line_start = false;
-                            }
-                            self.write(&token);
-                            self.prev_token_kind = Some(kind);
-                        }
-                        k if k == closing => {
-                            self.write(&token);
-                            self.prev_token_kind = Some(kind);
-                        }
-                        _ => {
-                            self.format_token(&token);
-                        }
-                    }
-                }
-            }
-        }
+        self.format_single_line_delimited_children(node, opening, closing, true);
     }
 
     fn format_delimited_literal(

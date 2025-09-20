@@ -278,8 +278,7 @@ impl Formatter {
                 return;
             }
             _ => {
-                // Check if this node contains parentheses that should be formatted multiline
-                if self.should_format_parentheses_multiline(node) {
+                if self.should_use_parenthesized_formatter(node) {
                     self.format_parenthesized_expr(node);
                     return;
                 }
@@ -421,7 +420,7 @@ impl Formatter {
 
     fn format_simple_block(&mut self, node: &PerlNode) {
         // Format a simple block on a single line: { expression }
-        // For empty blocks, use {} without spaces
+        // Always emit spaces around the braces to match inline block style
 
         let mut has_content = false;
 
@@ -462,14 +461,15 @@ impl Formatter {
                                 self.at_line_start = false;
                             }
                             self.write(&token);
-                            if has_content {
-                                self.write_char(' '); // Add space after opening brace only if there's content
-                            }
+                            self.write_char(' ');
                             self.prev_token_kind = Some(token.kind());
                         }
                         SyntaxKind::R_BRACE => {
-                            if has_content && self.prev_token_kind != Some(SyntaxKind::L_BRACE) {
-                                self.write_char(' '); // Add space before closing brace only if there's content
+                            if has_content
+                                && self.prev_token_kind != Some(SyntaxKind::L_BRACE)
+                                && !self.current_line.text.ends_with(' ')
+                            {
+                                self.write_char(' ');
                             }
                             self.write(&token);
                             self.prev_token_kind = Some(token.kind());
@@ -480,6 +480,116 @@ impl Formatter {
                         _ => {
                             self.format_token(&token);
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    fn format_single_line_delimited_children(
+        &mut self,
+        node: &PerlNode,
+        opening: SyntaxKind,
+        closing: SyntaxKind,
+        skip_whitespace: bool,
+    ) {
+        use SyntaxKind::WHITESPACE;
+
+        let children: Vec<_> = node.children_with_tokens().collect();
+
+        let mut stack: Vec<usize> = Vec::new();
+        let mut pairs: Vec<(usize, usize)> = Vec::new();
+
+        for (index, child) in children.iter().enumerate() {
+            if let NodeOrToken::Token(token) = child {
+                match token.kind() {
+                    k if k == opening => stack.push(index),
+                    k if k == closing => {
+                        if let Some(open_index) = stack.pop() {
+                            pairs.push((open_index, index));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if pairs.is_empty() {
+            self.format_children(node, skip_whitespace);
+            return;
+        }
+
+        let mut open_spacing: Vec<Option<bool>> = vec![None; children.len()];
+        let mut close_spacing: Vec<Option<bool>> = vec![None; children.len()];
+
+        for (open_index, close_index) in &pairs {
+            if close_index <= open_index {
+                continue;
+            }
+
+            let mut significant_tokens = 0;
+            for child in &children[open_index + 1..*close_index] {
+                match child {
+                    NodeOrToken::Node(inner) => {
+                        for element in inner.descendants_with_tokens() {
+                            if let Some(token) = element.as_token() {
+                                if !token.kind().is_trivia() {
+                                    significant_tokens += 1;
+                                    if significant_tokens >= 2 {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    NodeOrToken::Token(token) => {
+                        if !token.kind().is_trivia() {
+                            significant_tokens += 1;
+                        }
+                    }
+                }
+
+                if significant_tokens >= 2 {
+                    break;
+                }
+            }
+
+            let add_interior_space = significant_tokens >= 2;
+            open_spacing[*open_index] = Some(add_interior_space);
+            close_spacing[*close_index] = Some(add_interior_space);
+        }
+
+        for (index, child) in children.into_iter().enumerate() {
+            match child {
+                NodeOrToken::Node(child_node) => self.format_node(&child_node),
+                NodeOrToken::Token(token) => {
+                    let kind = token.kind();
+
+                    if let Some(add_space) = open_spacing[index] {
+                        self.handle_spacing_before(kind);
+                        if self.at_line_start {
+                            self.add_indent();
+                            self.at_line_start = false;
+                        }
+                        self.write(&token);
+                        if add_space {
+                            self.write_char(' ');
+                        }
+                        self.prev_token_kind = Some(kind);
+                    } else if let Some(add_space) = close_spacing[index] {
+                        if add_space && !self.current_line.text.ends_with(' ') {
+                            if self.at_line_start {
+                                self.add_indent();
+                                self.at_line_start = false;
+                            }
+                            self.write_char(' ');
+                        }
+                        self.write(&token);
+                        self.prev_token_kind = Some(kind);
+                    } else if skip_whitespace && kind == WHITESPACE {
+                        continue;
+                    } else {
+                        self.format_token(&token);
                     }
                 }
             }
@@ -601,9 +711,63 @@ impl Formatter {
         self.prev_token_kind = Some(kind);
     }
 
-    fn should_format_parentheses_multiline(&self, node: &PerlNode) -> bool {
-        // Check if this node contains parentheses with newlines that should be multiline formatted
-        self.has_newline_before_first_value(node)
+    fn should_use_parenthesized_formatter(&self, node: &PerlNode) -> bool {
+        if !self.node_contains_parentheses(node) {
+            return false;
+        }
+
+        if self.has_newline_before_first_value(node) {
+            return true;
+        }
+
+        use SyntaxKind::*;
+
+        if matches!(
+            node.kind(),
+            FUNCTION_CALL_EXPR
+                | BLOCK_FUNCTION_CALL_EXPR
+                | METHOD_CALL_EXPR
+                | CODE_REF_CALL_EXPR
+                | HASH_REF_ACCESS_EXPR
+                | ARRAY_REF_ACCESS_EXPR
+                | HASH_SUBSCRIPTION_EXPR
+                | ARRAY_SUBSCRIPTION_EXPR
+                | POSTFIX_ARRAY_SLICE_EXPR
+                | POSTFIX_HASH_SLICE_EXPR
+                | SUB_PROTOTYPE
+                | ATTR_ARGS
+                | USE_STMT
+                | NO_STMT
+                | IF_STMT
+                | UNLESS_STMT
+                | WHILE_STMT
+                | UNTIL_STMT
+                | FOR_STMT
+        ) {
+            return false;
+        }
+
+        true
+    }
+
+    fn node_contains_parentheses(&self, node: &PerlNode) -> bool {
+        let mut has_open = false;
+        let mut has_close = false;
+
+        for child in node.children_with_tokens() {
+            if let Some(token) = child.as_token() {
+                match token.kind() {
+                    SyntaxKind::L_PAREN => has_open = true,
+                    SyntaxKind::R_PAREN => has_close = true,
+                    _ => {}
+                }
+                if has_open && has_close {
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 
     fn next_significant_token(
