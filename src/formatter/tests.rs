@@ -128,6 +128,44 @@ fn test_continuation_indent_fat_comma() {
 }
 
 #[test]
+fn test_formatter_newline_does_not_trigger_continuation_indent() {
+    let input = "if ($x) { print \"hello\"; } if ($y) { print \"world\"; }";
+    let formatted = format_and_assert(input);
+    assert_eq!(
+        formatted,
+        "if ($x) {\n    print \"hello\";\n}\nif ($y) {\n    print \"world\";\n}\n"
+    );
+}
+
+#[test]
+fn test_continuation_indent_through_comment_block() {
+    let input = "warn 1\n# explanation\nif $err;";
+    let formatted = format_and_assert(input);
+    assert_eq!(formatted, "warn 1\n# explanation\n    if $err;\n");
+}
+
+#[test]
+fn test_continuation_indent_through_blank_line() {
+    let input = "warn 1\n\nif $err;";
+    let formatted = format_and_assert(input);
+    assert_eq!(formatted, "warn 1\n\n    if $err;\n");
+}
+
+#[test]
+fn test_trailing_comment_resets_continuation_indent() {
+    let input = "warn 1; # trailing\nwarn 2;";
+    let formatted = format_and_assert(input);
+    assert_eq!(formatted, "warn 1; # trailing\nwarn 2;\n");
+}
+
+#[test]
+fn test_continuation_indent_with_infix_and_comment() {
+    let input = "my $x = 1\n# adjust\n+ 2;";
+    let formatted = format_and_assert(input);
+    assert_eq!(formatted, "my $x = 1\n# adjust\n    + 2;\n");
+}
+
+#[test]
 fn test_my_declaration_in_trailing_comma_argument() {
     let formatted = format_and_assert("func(my $a,);");
     assert_eq!(formatted, "func(my $a, );\n");

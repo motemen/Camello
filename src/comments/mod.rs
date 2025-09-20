@@ -342,6 +342,8 @@ impl CommentRegistry {
             }
         }
 
+        assign_general_comment_placements(root, &mut registry);
+
         registry
     }
 
@@ -541,6 +543,120 @@ fn collect_leading_function_comments(
             CommentPlacement::Leading(owner),
         ));
     }
+}
+
+fn assign_general_comment_placements(
+    root: &SyntaxNode<PerlLanguage>,
+    registry: &mut CommentRegistry,
+) {
+    let block_ids: Vec<_> = registry.blocks().map(|block| block.id()).collect();
+
+    for block_id in block_ids {
+        if registry.assignment(block_id).is_some() {
+            continue;
+        }
+
+        let placement = classify_comment_block(root, registry, block_id);
+        registry.set(CommentAssignment::new(block_id, placement));
+    }
+}
+
+fn classify_comment_block(
+    root: &SyntaxNode<PerlLanguage>,
+    registry: &CommentRegistry,
+    block_id: CommentBlockId,
+) -> CommentPlacement {
+    let Some(block) = registry.block(block_id) else {
+        return CommentPlacement::Standalone;
+    };
+    let Some(first_comment) = block.first_comment() else {
+        return CommentPlacement::Standalone;
+    };
+    let Some(first_token) = first_comment.resolve(root) else {
+        return CommentPlacement::Standalone;
+    };
+
+    let (prev_token, saw_newline) =
+        find_previous_significant_token(registry, block_id, first_token.prev_token());
+
+    if let Some(prev) = prev_token {
+        if !saw_newline {
+            return CommentPlacement::Trailing(CommentOwner::for_token(&prev));
+        }
+    }
+
+    if let Some(next) = find_next_significant_token(root, registry, block) {
+        return CommentPlacement::Leading(CommentOwner::for_token(&next));
+    }
+
+    CommentPlacement::Standalone
+}
+
+fn find_previous_significant_token(
+    registry: &CommentRegistry,
+    block_id: CommentBlockId,
+    mut current: Option<SyntaxToken<PerlLanguage>>,
+) -> (Option<SyntaxToken<PerlLanguage>>, bool) {
+    let mut saw_newline = false;
+
+    while let Some(token) = current {
+        match token.kind() {
+            SyntaxKind::WHITESPACE => {
+                current = token.prev_token();
+            }
+            SyntaxKind::NEWLINE => {
+                saw_newline = true;
+                break;
+            }
+            SyntaxKind::COMMENT => {
+                if comment_belongs_to_block(registry, block_id, &token) {
+                    current = token.prev_token();
+                    continue;
+                }
+                current = token.prev_token();
+            }
+            _ => return (Some(token), saw_newline),
+        }
+    }
+
+    (None, saw_newline)
+}
+
+fn find_next_significant_token(
+    root: &SyntaxNode<PerlLanguage>,
+    registry: &CommentRegistry,
+    block: &CommentBlock,
+) -> Option<SyntaxToken<PerlLanguage>> {
+    let last_comment = block.comments().last().copied()?;
+    let mut current = last_comment.resolve(root)?.next_token();
+
+    while let Some(token) = current {
+        match token.kind() {
+            SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE => {
+                current = token.next_token();
+            }
+            SyntaxKind::COMMENT => {
+                if comment_belongs_to_block(registry, block.id(), &token) {
+                    current = token.next_token();
+                    continue;
+                }
+                break;
+            }
+            _ => return Some(token),
+        }
+    }
+
+    None
+}
+
+fn comment_belongs_to_block(
+    registry: &CommentRegistry,
+    block_id: CommentBlockId,
+    token: &SyntaxToken<PerlLanguage>,
+) -> bool {
+    CommentId::from_token(token)
+        .and_then(|comment| registry.block_of(comment))
+        .is_some_and(|candidate| candidate == block_id)
 }
 
 fn is_line_comment(token: &SyntaxToken<PerlLanguage>) -> bool {
