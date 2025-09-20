@@ -3061,6 +3061,16 @@ fn test_hash_keyword_keys() {
 }
 
 #[test]
+fn test_bareword_followed_by_operator_disambiguation() {
+    check_formatting_cases(&[
+        ("xxx < $self->meth;", "xxx < $self->meth;\n"),
+        ("xxx * (1+2);", "xxx * (1 + 2);\n"),
+        ("xxx <STDIN>;", "xxx <STDIN>;\n"),
+        ("xxx *STDIN;", "xxx *STDIN;\n"),
+    ]);
+}
+
+#[test]
 fn test_trailing_comma_and_fat_comma_in_blocks() {
     check_formatting_cases(&[
         // Basic trailing comma in block

@@ -116,11 +116,47 @@ impl Parser<'_> {
         }
 
         let next_value_token = self.peek_non_trivia_token_with_context(LexContext::Value);
-        let mut next_kind = next_value_token.map(|(kind, _)| kind);
+        let next_operator_kind = self
+            .peek_non_trivia_token_with_context(LexContext::Operator)
+            .map(|(kind, _)| kind);
+
+        let mut next_kind = match next_value_token {
+            Some((SyntaxKind::IO_EXPR, text)) => {
+                let suspicious = text.contains("->")
+                    || text.contains("=>")
+                    || text.contains(">=")
+                    || text.contains(">>");
+
+                if suspicious {
+                    next_operator_kind
+                } else {
+                    Some(SyntaxKind::IO_EXPR)
+                }
+            }
+            Some((SyntaxKind::ASTERISK, _)) => {
+                let after_star_kind = self
+                    .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
+                    .map(|(kind, _)| kind);
+
+                let looks_like_typeglob = after_star_kind.is_some_and(|kind| {
+                    kind == SyntaxKind::L_BRACE
+                        || kind == SyntaxKind::IDENT
+                        || kind == SyntaxKind::DOUBLE_COLON
+                        || SyntaxKind::is_keyword(kind)
+                });
+
+                if looks_like_typeglob {
+                    Some(SyntaxKind::ASTERISK)
+                } else {
+                    next_operator_kind
+                }
+            }
+            Some((kind, _)) => Some(kind),
+            None => None,
+        };
+
         if next_kind.is_none() {
-            next_kind = self
-                .peek_non_trivia_token_with_context(LexContext::Operator)
-                .map(|(kind, _)| kind);
+            next_kind = next_operator_kind;
         }
 
         if is_empty_regex(next_value_token) && matches!(function_name.as_str(), "shift" | "pop") {

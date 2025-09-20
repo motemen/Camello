@@ -958,6 +958,21 @@ impl<'a> Lexer<'a> {
         for (i, c) in remainder.char_indices().skip(1) {
             match c {
                 '>' => {
+                    let bytes = remainder.as_bytes();
+                    let prev = if i > 0 {
+                        bytes.get(i - 1).copied()
+                    } else {
+                        None
+                    };
+                    let next = bytes.get(i + 1).copied();
+
+                    let part_of_other_operator =
+                        matches!(prev, Some(b'-' | b'=')) || matches!(next, Some(b'=' | b'>'));
+
+                    if part_of_other_operator {
+                        continue;
+                    }
+
                     closing_angle_pos = Some(i);
                     break;
                 }
