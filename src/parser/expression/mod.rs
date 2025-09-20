@@ -151,6 +151,12 @@ impl Parser<'_> {
             return;
         }
 
+        next_kind = Self::adjust_ambiguous_next_kind_for_builtin(
+            &function_name,
+            next_value_token,
+            next_kind,
+        );
+
         if let Some(kind) = next_kind {
             if Self::can_start_expression(kind) {
                 // We have a regular function call, wrap everything in FUNCTION_CALL_EXPR
@@ -365,6 +371,26 @@ impl Parser<'_> {
             None => true,
             // Other tokens (operators, semicolon, etc.) - treat as filehandle
             _ => true,
+        }
+    }
+
+    /// Some builtins have fixed prototypes that influence how their first argument should be
+    /// interpreted. When probing lookahead tokens in [`LexContext::AmbiguousValueLookahead`]
+    /// we bypass value-context conveniences like regex and sigil recognition, so compensate for
+    /// known names whose prototypes require those behaviors.
+    fn adjust_ambiguous_next_kind_for_builtin(
+        function_name: &str,
+        next_value_token: Option<(SyntaxKind, &str)>,
+        next_kind: Option<SyntaxKind>,
+    ) -> Option<SyntaxKind> {
+        match (function_name, next_value_token, next_kind) {
+            ("split", Some((SyntaxKind::REGEX_LITERAL, _)), Some(SyntaxKind::DEFINED_OR)) => {
+                Some(SyntaxKind::REGEX_LITERAL)
+            }
+            ("keys", Some((SyntaxKind::PERCENT, _)), Some(SyntaxKind::MODULO)) => {
+                Some(SyntaxKind::PERCENT)
+            }
+            _ => next_kind,
         }
     }
 
