@@ -748,6 +748,24 @@ fn test_typeglob_formatting() {
 }
 
 #[test]
+fn test_ambiguous_argument_lookahead_regressions() {
+    let input = "foo < $o->meth; foo * (1+2); foo % +1; foo * { k => 1 }->{k}; foo*@_; foo*[1,2,3]->[0]; foo * bar; foo*bar; foo%bar; foo::bar($baz);";
+    let formatted = format_and_assert(input);
+    insta::assert_snapshot!(formatted, @r"
+        foo < $o->meth;
+        foo * (1 + 2);
+        foo % +1;
+        foo * {k => 1}->{k};
+        foo * @_;
+        foo * [1, 2, 3]->[0];
+        foo * bar;
+        foo * bar;
+        foo % bar;
+        foo::bar($baz);
+    ");
+}
+
+#[test]
 fn test_typeglob_brace_formatting() {
     // Test typeglob with braces - this might need different handling
     let input = "*{$name};";

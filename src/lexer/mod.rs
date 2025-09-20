@@ -348,6 +348,12 @@ pub enum LexContext {
     Value,
     /// Expecting an operator (after identifiers, numbers, variables)
     Operator,
+    /// Ambiguous value lookahead used by the parser when probing for possible arguments.
+    ///
+    /// This behaves like `Value` for most tokens but avoids implicit regex/io/filetest
+    /// handling and performs additional disambiguation for sigils so the parser can
+    /// inspect upcoming tokens without forcing value-context side effects.
+    AmbiguousValueLookahead,
 }
 
 // No separate DisambiguationContext; use LexContext directly
@@ -591,9 +597,9 @@ impl<'a> Lexer<'a> {
         }
 
         // Handle special tokens when in Value context
-        let is_value_context = matches!(context, Some(LexContext::Value));
+        let allow_value_specific_handling = matches!(context, Some(LexContext::Value));
         let in_quote_like = matches!(self.mode, LexerMode::QuoteLike { .. });
-        if is_value_context && !in_quote_like {
+        if allow_value_specific_handling && !in_quote_like {
             if let Some(result) = self.try_handle_expecting_value_context() {
                 let (syntax_kind, text) = result;
                 self.update_line_position(text);
@@ -659,7 +665,7 @@ impl<'a> Lexer<'a> {
             Token::Ident => match text {
                 // Word operators in operator context; otherwise identifiers
                 "eq" | "ne" | "gt" | "lt" | "ge" | "le" | "cmp" => match ctx {
-                    LexContext::Operator => match text {
+                    LexContext::Operator | LexContext::AmbiguousValueLookahead => match text {
                         "eq" => SyntaxKind::STR_EQ,
                         "ne" => SyntaxKind::STR_NE,
                         "gt" => SyntaxKind::STR_GT,
@@ -673,7 +679,7 @@ impl<'a> Lexer<'a> {
                 },
                 // Repetition operator vs identifier
                 "x" => match ctx {
-                    LexContext::Operator => SyntaxKind::X,
+                    LexContext::Operator | LexContext::AmbiguousValueLookahead => SyntaxKind::X,
                     LexContext::Value => SyntaxKind::IDENT,
                 },
                 _ => {
@@ -698,27 +704,95 @@ impl<'a> Lexer<'a> {
             Token::Percent => match ctx {
                 LexContext::Value => SyntaxKind::PERCENT,
                 LexContext::Operator => SyntaxKind::MODULO,
+                LexContext::AmbiguousValueLookahead => {
+                    if self.ambiguous_remainder_starts_sigil_target(token) {
+                        SyntaxKind::PERCENT
+                    } else {
+                        SyntaxKind::MODULO
+                    }
+                }
             },
             Token::Star => match ctx {
                 LexContext::Value => SyntaxKind::ASTERISK,
                 LexContext::Operator => SyntaxKind::STAR,
+                LexContext::AmbiguousValueLookahead => {
+                    if self.ambiguous_remainder_starts_sigil_target(token) {
+                        SyntaxKind::ASTERISK
+                    } else {
+                        SyntaxKind::STAR
+                    }
+                }
             },
             Token::DotDotDot => match ctx {
-                LexContext::Operator => SyntaxKind::RANGE_EXCLUSIVE,
+                LexContext::Operator | LexContext::AmbiguousValueLookahead => {
+                    SyntaxKind::RANGE_EXCLUSIVE
+                }
                 LexContext::Value => SyntaxKind::ELLIPSIS,
             },
             Token::Slash => SyntaxKind::SLASH, // regex literals handled elsewhere
             Token::Ampersand => match ctx {
                 LexContext::Value => SyntaxKind::AMPERSAND,
                 LexContext::Operator => SyntaxKind::BITWISE_AND,
+                LexContext::AmbiguousValueLookahead => {
+                    if self.ambiguous_remainder_starts_sigil_target(token) {
+                        SyntaxKind::AMPERSAND
+                    } else {
+                        SyntaxKind::BITWISE_AND
+                    }
+                }
             },
             Token::Caret => match ctx {
                 LexContext::Value => SyntaxKind::CARET,
-                LexContext::Operator => SyntaxKind::BITWISE_XOR,
+                LexContext::Operator | LexContext::AmbiguousValueLookahead => {
+                    SyntaxKind::BITWISE_XOR
+                }
             },
             Token::Pipe => SyntaxKind::BITWISE_OR,
             // Everything else: direct mapping
             _ => token.to_syntax_kind(),
+        }
+    }
+
+    /// While the parser runs [`LexContext::AmbiguousValueLookahead`] we need to decide if a
+    /// `%`, `&`, or `*` token should keep behaving like a sigil or fall back to an infix
+    /// operator. The goal is to keep arguments like `%hash`, `&func`, or `%{...}` available to
+    /// function-call lookahead without accidentally reinterpreting infix operators such as
+    /// `foo % +1`, `foo * { ... }`, or `foo*@_` as sigils.
+    ///
+    /// We therefore only recognize a sigil when the next non-trivia character is either an
+    /// opening brace (for typeglob/hash dereferences) or an identifier start, provided the sigil
+    /// isn't glued directly to a preceding identifier. This keeps `%hash`, `&foo`, or `*STDOUT`
+    /// available to the parser's lookahead while whitespace-delimited operators like `foo % +1`,
+    /// `foo * { ... }`, or `foo*@_` continue to lex as infix.
+    fn ambiguous_remainder_starts_sigil_target(&self, token: &Token) -> bool {
+        let Some(next) = self.logos_lexer.remainder().chars().next() else {
+            return false;
+        };
+
+        if next.is_whitespace() {
+            return false;
+        }
+
+        let span = self.logos_lexer.span();
+        if span.start > 0 {
+            let source = self.logos_lexer.source();
+            if source[..span.start]
+                .chars()
+                .next_back()
+                .is_some_and(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+            {
+                return false;
+            }
+        }
+
+        match (token, next) {
+            (Token::Star | Token::Ampersand | Token::Percent, '{') => true,
+            (Token::Star | Token::Ampersand | Token::Percent, ch)
+                if ch.is_ascii_alphanumeric() || ch == '_' =>
+            {
+                true
+            }
+            _ => false,
         }
     }
 
