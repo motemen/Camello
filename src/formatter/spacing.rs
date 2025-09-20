@@ -205,12 +205,12 @@ pub const fn get_token_spacing(kind: SyntaxKind) -> TokenSpacing {
         SyntaxKind::DOUBLE_COLON => TokenSpacing::new(Never, Never, Punctuation),
 
         // Sigils: no space after sigil
-        SyntaxKind::DOLLAR
-        | SyntaxKind::AT
-        | SyntaxKind::PERCENT
-        | SyntaxKind::ASTERISK
+        SyntaxKind::SCALAR_SIGIL
+        | SyntaxKind::ARRAY_SIGIL
+        | SyntaxKind::HASH_SIGIL
+        | SyntaxKind::TYPEGLOB_SIGIL
         | SyntaxKind::BACKSLASH
-        | SyntaxKind::AMPERSAND => TokenSpacing::new(Contextual, Never, PrefixOperator),
+        | SyntaxKind::CODE_SIGIL => TokenSpacing::new(Contextual, Never, PrefixOperator),
 
         // Identifiers and variables
         SyntaxKind::IDENT | SyntaxKind::QUALIFIED_IDENT => {
@@ -277,8 +277,8 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
         // Variables followed by other variables, identifiers, or strings need space (for filehandle syntax)
         (
             SCALAR_VAR | ARRAY_VAR | HASH_VAR | TYPEGLOB_VAR,
-            DOLLAR | AT | PERCENT | ASTERISK | SCALAR_VAR | ARRAY_VAR | HASH_VAR | TYPEGLOB_VAR
-            | IDENT | STRING,
+            SCALAR_SIGIL | ARRAY_SIGIL | HASH_SIGIL | TYPEGLOB_SIGIL | SCALAR_VAR | ARRAY_VAR
+            | HASH_VAR | TYPEGLOB_VAR | IDENT | STRING,
         ) => Some(true),
 
         // Arrow operator: highest priority, never spaces

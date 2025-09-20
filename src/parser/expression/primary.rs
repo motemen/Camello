@@ -46,14 +46,14 @@ impl Parser<'_> {
 
         // Check if this should be a compound variable
         let is_compound = match sigil {
-            SyntaxKind::DOLLAR_HASH => true, // $# variables are always compound
-            SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT => {
+            SyntaxKind::ARRAY_INDEX_SIGIL => true, // $# variables are always compound
+            SyntaxKind::SCALAR_SIGIL | SyntaxKind::ARRAY_SIGIL | SyntaxKind::HASH_SIGIL => {
                 // Check if followed by brace or valid dereferencing pattern
                 match self
                     .peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 1)
                 {
                     Some((SyntaxKind::L_BRACE, _)) => true, // @{expr}, %{expr}, ${expr}
-                    Some((SyntaxKind::DOLLAR, _)) => {
+                    Some((SyntaxKind::SCALAR_SIGIL, _)) => {
                         // Peek the third token to ensure a valid variable name follows
                         // to avoid misclassifying special variables like "$$;" as dereferencing
                         let third = self.peek_nth_non_trivia_token_with_context(
@@ -73,10 +73,10 @@ impl Parser<'_> {
             SyntaxKind::COMPOUND_VAR
         } else {
             match sigil {
-                SyntaxKind::DOLLAR => SyntaxKind::SCALAR_VAR,
-                SyntaxKind::AT => SyntaxKind::ARRAY_VAR,
-                SyntaxKind::PERCENT => SyntaxKind::HASH_VAR,
-                SyntaxKind::ASTERISK => SyntaxKind::TYPEGLOB_VAR,
+                SyntaxKind::SCALAR_SIGIL => SyntaxKind::SCALAR_VAR,
+                SyntaxKind::ARRAY_SIGIL => SyntaxKind::ARRAY_VAR,
+                SyntaxKind::HASH_SIGIL => SyntaxKind::HASH_VAR,
+                SyntaxKind::TYPEGLOB_SIGIL => SyntaxKind::TYPEGLOB_VAR,
                 _ => unreachable!(),
             }
         };
@@ -90,14 +90,14 @@ impl Parser<'_> {
         // Handle compound variable parsing
         if is_compound {
             match sigil {
-                SyntaxKind::DOLLAR_HASH => {
+                SyntaxKind::ARRAY_INDEX_SIGIL => {
                     // $# variables
                     match self.current_kind() {
                         Some(SyntaxKind::IDENT) => {
                             // $#array_name
                             self.parse_identifier_or_qualified();
                         }
-                        Some(SyntaxKind::DOLLAR) => {
+                        Some(SyntaxKind::SCALAR_SIGIL) => {
                             // $#$var
                             self.parse_variable();
                         }
@@ -120,7 +120,7 @@ impl Parser<'_> {
                         }
                     }
                 }
-                SyntaxKind::DOLLAR | SyntaxKind::AT | SyntaxKind::PERCENT => {
+                SyntaxKind::SCALAR_SIGIL | SyntaxKind::ARRAY_SIGIL | SyntaxKind::HASH_SIGIL => {
                     // Handle braced variables and dereferencing
                     match self.current_kind() {
                         Some(SyntaxKind::L_BRACE) => {
@@ -141,7 +141,7 @@ impl Parser<'_> {
                                 self.error("Expected '}' to close braced variable");
                             }
                         }
-                        Some(SyntaxKind::DOLLAR) => {
+                        Some(SyntaxKind::SCALAR_SIGIL) => {
                             // Dereferencing: @$ref, %$ref, $$ref
                             self.parse_variable();
                         }
@@ -164,7 +164,7 @@ impl Parser<'_> {
                     // Number like $1, $2, etc. - treat as regular variable name
                     self.bump();
                 }
-                Some(SyntaxKind::AT) => {
+                Some(SyntaxKind::ARRAY_SIGIL) => {
                     // Special punctuation like $@ - treat as regular variable name
                     self.bump();
                 }
@@ -251,10 +251,10 @@ impl Parser<'_> {
     pub fn parse_variable_simple(&mut self) {
         let sigil = self.current_kind().unwrap();
         let var_kind = match sigil {
-            SyntaxKind::DOLLAR => SyntaxKind::SCALAR_VAR,
-            SyntaxKind::AT => SyntaxKind::ARRAY_VAR,
-            SyntaxKind::PERCENT => SyntaxKind::HASH_VAR,
-            SyntaxKind::ASTERISK => SyntaxKind::TYPEGLOB_VAR,
+            SyntaxKind::SCALAR_SIGIL => SyntaxKind::SCALAR_VAR,
+            SyntaxKind::ARRAY_SIGIL => SyntaxKind::ARRAY_VAR,
+            SyntaxKind::HASH_SIGIL => SyntaxKind::HASH_VAR,
+            SyntaxKind::TYPEGLOB_SIGIL => SyntaxKind::TYPEGLOB_VAR,
             _ => unreachable!(),
         };
 
@@ -285,10 +285,10 @@ impl Parser<'_> {
     pub fn parse_variable_qualified(&mut self) {
         let sigil = self.current_kind().unwrap();
         let var_kind = match sigil {
-            SyntaxKind::DOLLAR => SyntaxKind::SCALAR_VAR,
-            SyntaxKind::AT => SyntaxKind::ARRAY_VAR,
-            SyntaxKind::PERCENT => SyntaxKind::HASH_VAR,
-            SyntaxKind::ASTERISK => SyntaxKind::TYPEGLOB_VAR,
+            SyntaxKind::SCALAR_SIGIL => SyntaxKind::SCALAR_VAR,
+            SyntaxKind::ARRAY_SIGIL => SyntaxKind::ARRAY_VAR,
+            SyntaxKind::HASH_SIGIL => SyntaxKind::HASH_VAR,
+            SyntaxKind::TYPEGLOB_SIGIL => SyntaxKind::TYPEGLOB_VAR,
             _ => unreachable!(),
         };
 
@@ -313,7 +313,7 @@ impl Parser<'_> {
                 return false;
             }
             // DOLLAR_HASH ($#) is not a dereferencing sigil, it's for array last index
-            if current == SyntaxKind::DOLLAR_HASH {
+            if current == SyntaxKind::ARRAY_INDEX_SIGIL {
                 return false;
             }
         } else {
@@ -323,7 +323,7 @@ impl Parser<'_> {
         // Valid dereference patterns are of the form: @$ref, %$ref, $$ref, @{expr}, %{expr}, ${expr}
         match self.peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 1) {
             Some((SyntaxKind::L_BRACE, _)) => true,
-            Some((SyntaxKind::DOLLAR, _)) => {
+            Some((SyntaxKind::SCALAR_SIGIL, _)) => {
                 // Peek the third token to ensure a valid variable name follows; avoid misclassifying
                 // special variables like "$$;" as dereferencing.
                 let third =
@@ -339,7 +339,12 @@ impl Parser<'_> {
         // tokens that can legally start a normal variable or a braced expression.
         matches!(
             lookahead,
-            Some(SyntaxKind::IDENT | SyntaxKind::NUMBER | SyntaxKind::AT | SyntaxKind::L_BRACE)
+            Some(
+                SyntaxKind::IDENT
+                    | SyntaxKind::NUMBER
+                    | SyntaxKind::ARRAY_SIGIL
+                    | SyntaxKind::L_BRACE
+            )
         )
     }
 
@@ -410,7 +415,7 @@ impl Parser<'_> {
         self.builder.start_node(SyntaxKind::TYPEGLOB_EXPR.into());
 
         // Consume the asterisk
-        self.expect(SyntaxKind::ASTERISK);
+        self.expect(SyntaxKind::TYPEGLOB_SIGIL);
         self.skip_whitespace_and_newlines();
 
         // Check what comes after the asterisk

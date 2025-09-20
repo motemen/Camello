@@ -4,6 +4,7 @@ pub mod quoted;
 
 use crate::lexer::LexContext;
 use crate::SyntaxKind;
+use crate::T;
 use precedence::{get_operator_info, OperatorInfo, Precedence};
 
 use super::Parser;
@@ -245,14 +246,14 @@ impl Parser<'_> {
         // Use lookahead to determine if this is a filehandle pattern:
         // Only treat IDENT/SCALAR as filehandle if followed by whitespace or end of statement
         // Otherwise treat as normal function call
-        if self.at(SyntaxKind::IDENT) {
+        if self.at(T![ident]) {
             // Check if this bareword should be treated as a filehandle
             if self.should_treat_as_filehandle() {
                 self.bump_value();
                 consumed_filehandle = true;
                 self.skip_whitespace_and_newlines();
             }
-        } else if self.at(SyntaxKind::DOLLAR) {
+        } else if self.at(T![scalar_sigil]) {
             // Check if this scalar should be treated as a filehandle
             if self.should_treat_scalar_as_filehandle() {
                 self.parse_variable();
@@ -260,7 +261,7 @@ impl Parser<'_> {
             }
         }
 
-        if consumed_filehandle && self.at_any(&[SyntaxKind::COMMA, SyntaxKind::FAT_COMMA]) {
+        if consumed_filehandle && self.at_any(&[T![,], T![=>]]) {
             self.bump_value();
             self.skip_whitespace_and_newlines();
         }
@@ -279,26 +280,26 @@ impl Parser<'_> {
 
         match next_token {
             // If followed by parentheses or method/package separators, it's an expression
-            Some((SyntaxKind::L_PAREN | SyntaxKind::DOUBLE_COLON | SyntaxKind::ARROW, _)) => false,
+            Some((T!['('] | T![::] | T![->], _)) => false,
             // If followed by a likely binary operator, it's a function call in an expression
             Some((
-                SyntaxKind::PLUS
-                | SyntaxKind::MINUS
-                | SyntaxKind::STAR
-                | SyntaxKind::SLASH
-                | SyntaxKind::MODULO
-                | SyntaxKind::BITWISE_XOR
-                | SyntaxKind::BITWISE_AND
-                | SyntaxKind::BITWISE_OR
-                | SyntaxKind::LT
-                | SyntaxKind::GT
-                | SyntaxKind::EQ
-                | SyntaxKind::NE
-                | SyntaxKind::LE
-                | SyntaxKind::GE
+                T![+]
+                | T![-]
+                | T![*]
+                | T![/]
+                | T![%]
+                | T![^]
+                | T![&]
+                | T![|]
+                | T![<]
+                | T![>]
+                | T![=]
+                | T![!=]
+                | T![<=]
+                | T![>=]
                 | SyntaxKind::STR_CMP
-                | SyntaxKind::LOGICAL_AND
-                | SyntaxKind::LOGICAL_OR,
+                | T![&&]
+                | T![||],
                 _,
             )) => false,
             // If followed by something that can start an expression, treat as filehandle
@@ -315,12 +316,12 @@ impl Parser<'_> {
     fn should_treat_scalar_as_filehandle(&self) -> bool {
         // Look ahead past the $IDENT to see what follows
         // First, check if we have $IDENT pattern
-        if !self.at(SyntaxKind::DOLLAR) {
+        if !self.at(T![scalar_sigil]) {
             return false;
         }
 
         let next_after_dollar = self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1);
-        if !matches!(next_after_dollar, Some((SyntaxKind::IDENT, _))) {
+        if !matches!(next_after_dollar, Some((T![ident], _))) {
             return false;
         }
 
@@ -330,32 +331,26 @@ impl Parser<'_> {
 
         match token_after_var {
             // If followed by postfix operations (arrow, brackets, etc.), it's not a simple filehandle
-            Some((
-                SyntaxKind::ARROW
-                | SyntaxKind::L_BRACKET
-                | SyntaxKind::L_BRACE
-                | SyntaxKind::L_PAREN,
-                _,
-            )) => false,
+            Some((T![->] | T!['['] | T!['{'] | T!['('], _)) => false,
             // If followed by a likely binary operator, it's an expression, not a filehandle
             Some((
-                SyntaxKind::PLUS
-                | SyntaxKind::MINUS
-                | SyntaxKind::STAR
-                | SyntaxKind::SLASH
-                | SyntaxKind::MODULO
-                | SyntaxKind::BITWISE_XOR
-                | SyntaxKind::BITWISE_AND
-                | SyntaxKind::BITWISE_OR
-                | SyntaxKind::LT
-                | SyntaxKind::GT
-                | SyntaxKind::EQ
-                | SyntaxKind::NE
-                | SyntaxKind::LE
-                | SyntaxKind::GE
+                T![+]
+                | T![-]
+                | T![*]
+                | T![/]
+                | T![%]
+                | T![^]
+                | T![&]
+                | T![|]
+                | T![<]
+                | T![>]
+                | T![=]
+                | T![!=]
+                | T![<=]
+                | T![>=]
                 | SyntaxKind::STR_CMP
-                | SyntaxKind::LOGICAL_AND
-                | SyntaxKind::LOGICAL_OR,
+                | T![&&]
+                | T![||],
                 _,
             )) => false,
             // If followed by something that can start an expression or end of file, treat as filehandle
@@ -383,8 +378,8 @@ impl Parser<'_> {
             ("split", Some((SyntaxKind::REGEX_LITERAL, _)), Some(SyntaxKind::DEFINED_OR)) => {
                 Some(SyntaxKind::REGEX_LITERAL)
             }
-            ("keys", Some((SyntaxKind::PERCENT, _)), Some(SyntaxKind::MODULO)) => {
-                Some(SyntaxKind::PERCENT)
+            ("keys", Some((SyntaxKind::HASH_SIGIL, _)), Some(SyntaxKind::MODULO)) => {
+                Some(SyntaxKind::HASH_SIGIL)
             }
             _ => next_kind,
         }
@@ -571,8 +566,8 @@ impl Parser<'_> {
         closing: SyntaxKind,
     ) {
         let node_kind = match sigil_kind {
-            SyntaxKind::AT => SyntaxKind::POSTFIX_ARRAY_SLICE_EXPR,
-            SyntaxKind::PERCENT => SyntaxKind::POSTFIX_HASH_SLICE_EXPR,
+            SyntaxKind::ARRAY_SIGIL => SyntaxKind::POSTFIX_ARRAY_SLICE_EXPR,
+            SyntaxKind::HASH_SIGIL => SyntaxKind::POSTFIX_HASH_SLICE_EXPR,
             _ => unreachable!("Unsupported sigil for postfix slice"),
         };
 
@@ -588,14 +583,16 @@ impl Parser<'_> {
             self.skip_whitespace_and_newlines();
         } else {
             let message = match (sigil_kind, opening) {
-                (SyntaxKind::AT, SyntaxKind::L_BRACKET) => {
+                (SyntaxKind::ARRAY_SIGIL, SyntaxKind::L_BRACKET) => {
                     "Expected '[' after '@' in postfix slice"
                 }
-                (SyntaxKind::AT, SyntaxKind::L_BRACE) => "Expected '{' after '@' in postfix slice",
-                (SyntaxKind::PERCENT, SyntaxKind::L_BRACKET) => {
+                (SyntaxKind::ARRAY_SIGIL, SyntaxKind::L_BRACE) => {
+                    "Expected '{' after '@' in postfix slice"
+                }
+                (SyntaxKind::HASH_SIGIL, SyntaxKind::L_BRACKET) => {
                     "Expected '[' after '%' in postfix slice"
                 }
-                (SyntaxKind::PERCENT, SyntaxKind::L_BRACE) => {
+                (SyntaxKind::HASH_SIGIL, SyntaxKind::L_BRACE) => {
                     "Expected '{' after '%' in postfix slice"
                 }
                 _ => "Expected slice delimiter after sigil",
@@ -605,8 +602,8 @@ impl Parser<'_> {
 
         if !self.expression() {
             let message = match sigil_kind {
-                SyntaxKind::AT => "Expected expression in postfix array slice",
-                SyntaxKind::PERCENT => "Expected expression in postfix hash slice",
+                SyntaxKind::ARRAY_SIGIL => "Expected expression in postfix array slice",
+                SyntaxKind::HASH_SIGIL => "Expected expression in postfix hash slice",
                 _ => "Expected expression in postfix slice",
             };
             self.error(message);
@@ -765,7 +762,7 @@ impl Parser<'_> {
                         Some(kind) if kind.is_sigil() => {
                             let mut handled_slice = false;
 
-                            if matches!(kind, SyntaxKind::AT | SyntaxKind::PERCENT) {
+                            if matches!(kind, SyntaxKind::ARRAY_SIGIL | SyntaxKind::HASH_SIGIL) {
                                 let next_token = self
                                     .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
                                     .map(|(k, _)| k);
@@ -991,11 +988,11 @@ impl Parser<'_> {
                 // Reference operator as prefix: \expr
                 self.parse_standard_prefix_expr("\\", Precedence::PREFIX, None);
             }
-            SyntaxKind::AMPERSAND => {
+            SyntaxKind::CODE_SIGIL => {
                 // Function reference: &function
                 self.parse_function_ref();
             }
-            SyntaxKind::ASTERISK => {
+            SyntaxKind::TYPEGLOB_SIGIL => {
                 // Handle typeglob expressions specially
                 // Check if this is followed by a brace or identifier (typeglob syntax)
                 let next_token = self
