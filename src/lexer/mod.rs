@@ -705,7 +705,7 @@ impl<'a> Lexer<'a> {
                 LexContext::Value => SyntaxKind::PERCENT,
                 LexContext::Operator => SyntaxKind::MODULO,
                 LexContext::AmbiguousValueLookahead => {
-                    if self.ambiguous_remainder_starts_sigil_target(token) {
+                    if self.ambiguous_remainder_starts_sigil_target() {
                         SyntaxKind::PERCENT
                     } else {
                         SyntaxKind::MODULO
@@ -716,7 +716,7 @@ impl<'a> Lexer<'a> {
                 LexContext::Value => SyntaxKind::ASTERISK,
                 LexContext::Operator => SyntaxKind::STAR,
                 LexContext::AmbiguousValueLookahead => {
-                    if self.ambiguous_remainder_starts_sigil_target(token) {
+                    if self.ambiguous_remainder_starts_sigil_target() {
                         SyntaxKind::ASTERISK
                     } else {
                         SyntaxKind::STAR
@@ -734,7 +734,7 @@ impl<'a> Lexer<'a> {
                 LexContext::Value => SyntaxKind::AMPERSAND,
                 LexContext::Operator => SyntaxKind::BITWISE_AND,
                 LexContext::AmbiguousValueLookahead => {
-                    if self.ambiguous_remainder_starts_sigil_target(token) {
+                    if self.ambiguous_remainder_starts_sigil_target() {
                         SyntaxKind::AMPERSAND
                     } else {
                         SyntaxKind::BITWISE_AND
@@ -764,7 +764,7 @@ impl<'a> Lexer<'a> {
     /// isn't glued directly to a preceding identifier. This keeps `%hash`, `&foo`, or `*STDOUT`
     /// available to the parser's lookahead while whitespace-delimited operators like `foo % +1`,
     /// `foo * { ... }`, or `foo*@_` continue to lex as infix.
-    fn ambiguous_remainder_starts_sigil_target(&self, token: &Token) -> bool {
+    fn ambiguous_remainder_starts_sigil_target(&self) -> bool {
         let Some(next) = self.logos_lexer.remainder().chars().next() else {
             return false;
         };
@@ -785,15 +785,7 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        match (token, next) {
-            (Token::Star | Token::Ampersand | Token::Percent, '{') => true,
-            (Token::Star | Token::Ampersand | Token::Percent, ch)
-                if ch.is_ascii_alphanumeric() || ch == '_' =>
-            {
-                true
-            }
-            _ => false,
-        }
+        matches!(next, '{') || next.is_ascii_alphanumeric() || next == '_'
     }
 
     /// Map known identifier keywords and quote-like starters
