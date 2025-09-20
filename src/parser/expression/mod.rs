@@ -116,11 +116,15 @@ impl Parser<'_> {
         }
 
         let next_value_token = self.peek_non_trivia_token_with_context(LexContext::Value);
-        let mut next_kind = next_value_token.map(|(kind, _)| kind);
-        if next_kind.is_none() {
-            next_kind = self
-                .peek_non_trivia_token_with_context(LexContext::Operator)
-                .map(|(kind, _)| kind);
+        let mut next_kind = self
+            .peek_non_trivia_token_with_context(LexContext::AmbiguousValueLookahead)
+            .map(|(kind, _)| kind);
+
+        if next_value_token
+            .map(|(kind, _)| kind)
+            .is_some_and(|kind| kind == SyntaxKind::HEREDOC_START)
+        {
+            next_kind = Some(SyntaxKind::HEREDOC_START);
         }
 
         if is_empty_regex(next_value_token) && matches!(function_name.as_str(), "shift" | "pop") {
@@ -271,7 +275,8 @@ impl Parser<'_> {
     /// Only treat as filehandle if followed by whitespace or end of statement.
     fn should_treat_as_filehandle(&self) -> bool {
         // Look ahead to see what follows the IDENT. Use Operator context to help disambiguate.
-        let next_token = self.peek_nth_non_trivia_token_with_context(LexContext::Operator, 1);
+        let next_token =
+            self.peek_nth_non_trivia_token_with_context(LexContext::AmbiguousValueLookahead, 1);
 
         match next_token {
             // If followed by parentheses or method/package separators, it's an expression
@@ -280,11 +285,11 @@ impl Parser<'_> {
             Some((
                 SyntaxKind::PLUS
                 | SyntaxKind::MINUS
-                | SyntaxKind::ASTERISK
+                | SyntaxKind::STAR
                 | SyntaxKind::SLASH
-                | SyntaxKind::PERCENT
-                | SyntaxKind::CARET
-                | SyntaxKind::AMPERSAND
+                | SyntaxKind::MODULO
+                | SyntaxKind::BITWISE_XOR
+                | SyntaxKind::BITWISE_AND
                 | SyntaxKind::BITWISE_OR
                 | SyntaxKind::LT
                 | SyntaxKind::GT
@@ -294,8 +299,7 @@ impl Parser<'_> {
                 | SyntaxKind::GE
                 | SyntaxKind::STR_CMP
                 | SyntaxKind::LOGICAL_AND
-                | SyntaxKind::LOGICAL_OR
-                | SyntaxKind::BITWISE_XOR,
+                | SyntaxKind::LOGICAL_OR,
                 _,
             )) => false,
             // If followed by something that can start an expression, treat as filehandle
@@ -322,7 +326,8 @@ impl Parser<'_> {
         }
 
         // Now check what follows the $IDENT pattern
-        let token_after_var = self.peek_nth_non_trivia_token_with_context(LexContext::Operator, 2);
+        let token_after_var =
+            self.peek_nth_non_trivia_token_with_context(LexContext::AmbiguousValueLookahead, 2);
 
         match token_after_var {
             // If followed by postfix operations (arrow, brackets, etc.), it's not a simple filehandle
@@ -337,11 +342,11 @@ impl Parser<'_> {
             Some((
                 SyntaxKind::PLUS
                 | SyntaxKind::MINUS
-                | SyntaxKind::ASTERISK
+                | SyntaxKind::STAR
                 | SyntaxKind::SLASH
-                | SyntaxKind::PERCENT
-                | SyntaxKind::CARET
-                | SyntaxKind::AMPERSAND
+                | SyntaxKind::MODULO
+                | SyntaxKind::BITWISE_XOR
+                | SyntaxKind::BITWISE_AND
                 | SyntaxKind::BITWISE_OR
                 | SyntaxKind::LT
                 | SyntaxKind::GT
@@ -351,8 +356,7 @@ impl Parser<'_> {
                 | SyntaxKind::GE
                 | SyntaxKind::STR_CMP
                 | SyntaxKind::LOGICAL_AND
-                | SyntaxKind::LOGICAL_OR
-                | SyntaxKind::BITWISE_XOR,
+                | SyntaxKind::LOGICAL_OR,
                 _,
             )) => false,
             // If followed by something that can start an expression or end of file, treat as filehandle
@@ -972,7 +976,8 @@ impl Parser<'_> {
             SyntaxKind::ASTERISK => {
                 // Handle typeglob expressions specially
                 // Check if this is followed by a brace or identifier (typeglob syntax)
-                let next_token = self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1);
+                let next_token = self
+                    .peek_nth_non_trivia_token_with_context(LexContext::AmbiguousValueLookahead, 1);
                 if matches!(
                     next_token,
                     Some((SyntaxKind::L_BRACE | SyntaxKind::IDENT, _))
