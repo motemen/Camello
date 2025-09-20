@@ -261,11 +261,11 @@ impl Token {
     #[must_use]
     pub fn to_syntax_kind(&self) -> SyntaxKind {
         match self {
-            Token::DollarHash => SyntaxKind::DOLLAR_HASH,
-            Token::Dollar => SyntaxKind::DOLLAR,
-            Token::At => SyntaxKind::AT,
+            Token::DollarHash => SyntaxKind::ARRAY_INDEX_SIGIL,
+            Token::Dollar => SyntaxKind::SCALAR_SIGIL,
+            Token::At => SyntaxKind::ARRAY_SIGIL,
             Token::Backslash => SyntaxKind::BACKSLASH,
-            Token::Ampersand => SyntaxKind::AMPERSAND, // Will be disambiguated
+            Token::Ampersand => SyntaxKind::CODE_SIGIL, // Will be disambiguated
             Token::RequireKw => SyntaxKind::REQUIRE_KW,
             Token::BeginKw => SyntaxKind::BEGIN_KW,
             Token::EndBlockKw => SyntaxKind::END_BLOCK_KW,
@@ -702,22 +702,22 @@ impl<'a> Lexer<'a> {
             },
             // Ambiguous symbol tokens depending on context
             Token::Percent => match ctx {
-                LexContext::Value => SyntaxKind::PERCENT,
+                LexContext::Value => SyntaxKind::HASH_SIGIL,
                 LexContext::Operator => SyntaxKind::MODULO,
                 LexContext::AmbiguousValueLookahead => {
                     if self.ambiguous_remainder_starts_sigil_target() {
-                        SyntaxKind::PERCENT
+                        SyntaxKind::HASH_SIGIL
                     } else {
                         SyntaxKind::MODULO
                     }
                 }
             },
             Token::Star => match ctx {
-                LexContext::Value => SyntaxKind::ASTERISK,
+                LexContext::Value => SyntaxKind::TYPEGLOB_SIGIL,
                 LexContext::Operator => SyntaxKind::STAR,
                 LexContext::AmbiguousValueLookahead => {
                     if self.ambiguous_remainder_starts_sigil_target() {
-                        SyntaxKind::ASTERISK
+                        SyntaxKind::TYPEGLOB_SIGIL
                     } else {
                         SyntaxKind::STAR
                     }
@@ -731,11 +731,11 @@ impl<'a> Lexer<'a> {
             },
             Token::Slash => SyntaxKind::SLASH, // regex literals handled elsewhere
             Token::Ampersand => match ctx {
-                LexContext::Value => SyntaxKind::AMPERSAND,
+                LexContext::Value => SyntaxKind::CODE_SIGIL,
                 LexContext::Operator => SyntaxKind::BITWISE_AND,
                 LexContext::AmbiguousValueLookahead => {
                     if self.ambiguous_remainder_starts_sigil_target() {
-                        SyntaxKind::AMPERSAND
+                        SyntaxKind::CODE_SIGIL
                     } else {
                         SyntaxKind::BITWISE_AND
                     }
