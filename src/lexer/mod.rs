@@ -705,7 +705,7 @@ impl<'a> Lexer<'a> {
                 LexContext::Value => SyntaxKind::PERCENT,
                 LexContext::Operator => SyntaxKind::MODULO,
                 LexContext::AmbiguousValueLookahead => {
-                    if self.remainder_starts_sigil_target(token) {
+                    if self.ambiguous_remainder_starts_sigil_target(token) {
                         SyntaxKind::PERCENT
                     } else {
                         SyntaxKind::MODULO
@@ -716,7 +716,7 @@ impl<'a> Lexer<'a> {
                 LexContext::Value => SyntaxKind::ASTERISK,
                 LexContext::Operator => SyntaxKind::STAR,
                 LexContext::AmbiguousValueLookahead => {
-                    if self.remainder_starts_sigil_target(token) {
+                    if self.ambiguous_remainder_starts_sigil_target(token) {
                         SyntaxKind::ASTERISK
                     } else {
                         SyntaxKind::STAR
@@ -734,7 +734,7 @@ impl<'a> Lexer<'a> {
                 LexContext::Value => SyntaxKind::AMPERSAND,
                 LexContext::Operator => SyntaxKind::BITWISE_AND,
                 LexContext::AmbiguousValueLookahead => {
-                    if self.remainder_starts_sigil_target(token) {
+                    if self.ambiguous_remainder_starts_sigil_target(token) {
                         SyntaxKind::AMPERSAND
                     } else {
                         SyntaxKind::BITWISE_AND
@@ -745,7 +745,7 @@ impl<'a> Lexer<'a> {
                 LexContext::Value => SyntaxKind::CARET,
                 LexContext::Operator => SyntaxKind::BITWISE_XOR,
                 LexContext::AmbiguousValueLookahead => {
-                    if self.remainder_starts_sigil_target(token) {
+                    if self.ambiguous_remainder_starts_sigil_target(token) {
                         SyntaxKind::CARET
                     } else {
                         SyntaxKind::BITWISE_XOR
@@ -758,11 +758,13 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn remainder_starts_sigil_target(&self, token: &Token) -> bool {
+    fn ambiguous_remainder_starts_sigil_target(&self, token: &Token) -> bool {
         let remainder = self.logos_lexer.remainder();
+        let mut saw_whitespace = false;
 
         for (idx, ch) in remainder.char_indices() {
             if ch.is_whitespace() {
+                saw_whitespace = true;
                 continue;
             }
 
@@ -771,23 +773,20 @@ impl<'a> Lexer<'a> {
                 return true;
             }
 
-            let allows_braced = matches!(
-                token,
-                &Token::Star | &Token::Ampersand | &Token::Percent | &Token::Caret
-            );
-            if allows_braced && ch == '{' {
+            if matches!(token, &Token::Star | &Token::Ampersand) && ch == '\'' && !saw_whitespace {
                 return true;
             }
 
-            if matches!(token, &Token::Star | &Token::Ampersand) && ch == '\'' {
+            if matches!(
+                token,
+                &Token::Star | &Token::Ampersand | &Token::Percent | &Token::Caret
+            ) && ch == '{'
+                && !saw_whitespace
+            {
                 return true;
             }
 
             if ch.is_ascii_alphabetic() || ch == '_' {
-                return true;
-            }
-
-            if matches!(token, &Token::Percent) && matches!(ch, '^' | '+' | '-') {
                 return true;
             }
 
