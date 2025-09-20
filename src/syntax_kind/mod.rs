@@ -22,7 +22,7 @@ pub enum SyntaxKind {
     ARRAY_SIGIL,       // @
     HASH_SIGIL,        // %
     CARET,             // ^
-    REFERENCE_SIGIL,   // \ (reference operator)
+    BACKSLASH,         // \ (reference operator)
     CODE_SIGIL,        // & (function sigil/reference)
     TYPEGLOB_SIGIL,    // * (typeglob sigil)
 

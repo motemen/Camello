@@ -984,7 +984,7 @@ impl Parser<'_> {
                 self.bump_value();
                 self.skip_whitespace_and_newlines();
             }
-            SyntaxKind::REFERENCE_SIGIL => {
+            SyntaxKind::BACKSLASH => {
                 // Reference operator as prefix: \expr
                 self.parse_standard_prefix_expr("\\", Precedence::PREFIX, None);
             }

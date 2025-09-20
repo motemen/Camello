@@ -760,7 +760,7 @@ impl Parser<'_> {
                 break;
             }
             match kind {
-                SyntaxKind::REFERENCE_SIGIL
+                SyntaxKind::BACKSLASH
                 | SyntaxKind::ARRAY_SIGIL
                 | SyntaxKind::HASH_SIGIL
                 | SyntaxKind::SCALAR_SIGIL

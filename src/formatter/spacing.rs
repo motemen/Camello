@@ -209,7 +209,7 @@ pub const fn get_token_spacing(kind: SyntaxKind) -> TokenSpacing {
         | SyntaxKind::ARRAY_SIGIL
         | SyntaxKind::HASH_SIGIL
         | SyntaxKind::TYPEGLOB_SIGIL
-        | SyntaxKind::REFERENCE_SIGIL
+        | SyntaxKind::BACKSLASH
         | SyntaxKind::CODE_SIGIL => TokenSpacing::new(Contextual, Never, PrefixOperator),
 
         // Identifiers and variables
