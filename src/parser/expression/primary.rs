@@ -60,16 +60,18 @@ impl Parser<'_> {
                             crate::lexer::LexContext::Value,
                             2,
                         );
-                        matches!(
-                            third.map(|(k, _)| k),
+
+                        match third.map(|(k, _)| k) {
+                            // Special variables (e.g. $^FOO) should not be implicitly dereferenced
+                            Some(SyntaxKind::CARET) => false,
                             Some(
                                 SyntaxKind::IDENT
-                                    | SyntaxKind::NUMBER
-                                    | SyntaxKind::AT
-                                    | SyntaxKind::CARET
-                                    | SyntaxKind::L_BRACE
-                            )
-                        )
+                                | SyntaxKind::NUMBER
+                                | SyntaxKind::AT
+                                | SyntaxKind::L_BRACE,
+                            ) => true,
+                            _ => false,
+                        }
                     }
                     _ => false,
                 }
@@ -336,16 +338,17 @@ impl Parser<'_> {
                 // special variables like "$$;" as dereferencing.
                 let third =
                     self.peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 2);
-                matches!(
-                    third.map(|(k, _)| k),
+                match third.map(|(k, _)| k) {
+                    // Special variables like $^FOO shouldn't trigger implicit dereferencing
+                    Some(SyntaxKind::CARET) => false,
                     Some(
                         SyntaxKind::IDENT
-                            | SyntaxKind::NUMBER
-                            | SyntaxKind::AT
-                            | SyntaxKind::CARET
-                            | SyntaxKind::L_BRACE
-                    )
-                )
+                        | SyntaxKind::NUMBER
+                        | SyntaxKind::AT
+                        | SyntaxKind::L_BRACE,
+                    ) => true,
+                    _ => false,
+                }
             }
             _ => false,
         }
