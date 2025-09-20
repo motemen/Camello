@@ -348,6 +348,12 @@ pub enum LexContext {
     Value,
     /// Expecting an operator (after identifiers, numbers, variables)
     Operator,
+    /// Ambiguous value lookahead used by the parser when probing for possible arguments.
+    ///
+    /// This behaves like `Value` for most tokens but avoids implicit regex/io/filetest
+    /// handling and performs additional disambiguation for sigils so the parser can
+    /// inspect upcoming tokens without forcing value-context side effects.
+    AmbiguousValueLookahead,
 }
 
 // No separate DisambiguationContext; use LexContext directly
@@ -591,9 +597,9 @@ impl<'a> Lexer<'a> {
         }
 
         // Handle special tokens when in Value context
-        let is_value_context = matches!(context, Some(LexContext::Value));
+        let allow_value_specific_handling = matches!(context, Some(LexContext::Value));
         let in_quote_like = matches!(self.mode, LexerMode::QuoteLike { .. });
-        if is_value_context && !in_quote_like {
+        if allow_value_specific_handling && !in_quote_like {
             if let Some(result) = self.try_handle_expecting_value_context() {
                 let (syntax_kind, text) = result;
                 self.update_line_position(text);
@@ -659,7 +665,7 @@ impl<'a> Lexer<'a> {
             Token::Ident => match text {
                 // Word operators in operator context; otherwise identifiers
                 "eq" | "ne" | "gt" | "lt" | "ge" | "le" | "cmp" => match ctx {
-                    LexContext::Operator => match text {
+                    LexContext::Operator | LexContext::AmbiguousValueLookahead => match text {
                         "eq" => SyntaxKind::STR_EQ,
                         "ne" => SyntaxKind::STR_NE,
                         "gt" => SyntaxKind::STR_GT,
@@ -673,7 +679,7 @@ impl<'a> Lexer<'a> {
                 },
                 // Repetition operator vs identifier
                 "x" => match ctx {
-                    LexContext::Operator => SyntaxKind::X,
+                    LexContext::Operator | LexContext::AmbiguousValueLookahead => SyntaxKind::X,
                     LexContext::Value => SyntaxKind::IDENT,
                 },
                 _ => {
@@ -698,28 +704,120 @@ impl<'a> Lexer<'a> {
             Token::Percent => match ctx {
                 LexContext::Value => SyntaxKind::PERCENT,
                 LexContext::Operator => SyntaxKind::MODULO,
+                LexContext::AmbiguousValueLookahead => {
+                    if self.remainder_starts_sigil_target() {
+                        SyntaxKind::PERCENT
+                    } else {
+                        SyntaxKind::MODULO
+                    }
+                }
             },
             Token::Star => match ctx {
                 LexContext::Value => SyntaxKind::ASTERISK,
                 LexContext::Operator => SyntaxKind::STAR,
+                LexContext::AmbiguousValueLookahead => {
+                    if self.remainder_starts_sigil_target() {
+                        SyntaxKind::ASTERISK
+                    } else {
+                        SyntaxKind::STAR
+                    }
+                }
             },
             Token::DotDotDot => match ctx {
-                LexContext::Operator => SyntaxKind::RANGE_EXCLUSIVE,
+                LexContext::Operator | LexContext::AmbiguousValueLookahead => {
+                    SyntaxKind::RANGE_EXCLUSIVE
+                }
                 LexContext::Value => SyntaxKind::ELLIPSIS,
             },
             Token::Slash => SyntaxKind::SLASH, // regex literals handled elsewhere
             Token::Ampersand => match ctx {
                 LexContext::Value => SyntaxKind::AMPERSAND,
                 LexContext::Operator => SyntaxKind::BITWISE_AND,
+                LexContext::AmbiguousValueLookahead => {
+                    if self.remainder_starts_sigil_target() {
+                        SyntaxKind::AMPERSAND
+                    } else {
+                        SyntaxKind::BITWISE_AND
+                    }
+                }
             },
             Token::Caret => match ctx {
                 LexContext::Value => SyntaxKind::CARET,
                 LexContext::Operator => SyntaxKind::BITWISE_XOR,
+                LexContext::AmbiguousValueLookahead => {
+                    if self.remainder_starts_sigil_target() {
+                        SyntaxKind::CARET
+                    } else {
+                        SyntaxKind::BITWISE_XOR
+                    }
+                }
             },
             Token::Pipe => SyntaxKind::BITWISE_OR,
             // Everything else: direct mapping
             _ => token.to_syntax_kind(),
         }
+    }
+
+    fn remainder_starts_sigil_target(&self) -> bool {
+        let remainder = self.logos_lexer.remainder();
+
+        for (idx, ch) in remainder.char_indices() {
+            if ch.is_whitespace() {
+                continue;
+            }
+
+            let tail = &remainder[idx..];
+            if tail.starts_with("::") {
+                return true;
+            }
+
+            if ch == '\'' {
+                return true;
+            }
+
+            if ch.is_ascii_alphabetic() || ch == '_' {
+                return true;
+            }
+
+            if Self::is_special_variable_start(ch) {
+                return true;
+            }
+
+            return false;
+        }
+
+        false
+    }
+
+    fn is_special_variable_start(ch: char) -> bool {
+        matches!(
+            ch,
+            '!' | '?'
+                | '/'
+                | '\\'
+                | ':'
+                | ';'
+                | '"'
+                | '\''
+                | '`'
+                | '&'
+                | '.'
+                | ','
+                | '<'
+                | '>'
+                | '['
+                | ']'
+                | '+'
+                | '-'
+                | '='
+                | '%'
+                | '|'
+                | '~'
+                | '*'
+                | '#'
+                | '@'
+                | '^'
+        )
     }
 
     /// Map known identifier keywords and quote-like starters
