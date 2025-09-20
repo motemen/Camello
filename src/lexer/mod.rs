@@ -705,7 +705,7 @@ impl<'a> Lexer<'a> {
                 LexContext::Value => SyntaxKind::PERCENT,
                 LexContext::Operator => SyntaxKind::MODULO,
                 LexContext::AmbiguousValueLookahead => {
-                    if self.remainder_starts_sigil_target() {
+                    if self.remainder_starts_sigil_target(token) {
                         SyntaxKind::PERCENT
                     } else {
                         SyntaxKind::MODULO
@@ -716,7 +716,7 @@ impl<'a> Lexer<'a> {
                 LexContext::Value => SyntaxKind::ASTERISK,
                 LexContext::Operator => SyntaxKind::STAR,
                 LexContext::AmbiguousValueLookahead => {
-                    if self.remainder_starts_sigil_target() {
+                    if self.remainder_starts_sigil_target(token) {
                         SyntaxKind::ASTERISK
                     } else {
                         SyntaxKind::STAR
@@ -734,7 +734,7 @@ impl<'a> Lexer<'a> {
                 LexContext::Value => SyntaxKind::AMPERSAND,
                 LexContext::Operator => SyntaxKind::BITWISE_AND,
                 LexContext::AmbiguousValueLookahead => {
-                    if self.remainder_starts_sigil_target() {
+                    if self.remainder_starts_sigil_target(token) {
                         SyntaxKind::AMPERSAND
                     } else {
                         SyntaxKind::BITWISE_AND
@@ -745,7 +745,7 @@ impl<'a> Lexer<'a> {
                 LexContext::Value => SyntaxKind::CARET,
                 LexContext::Operator => SyntaxKind::BITWISE_XOR,
                 LexContext::AmbiguousValueLookahead => {
-                    if self.remainder_starts_sigil_target() {
+                    if self.remainder_starts_sigil_target(token) {
                         SyntaxKind::CARET
                     } else {
                         SyntaxKind::BITWISE_XOR
@@ -758,7 +758,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn remainder_starts_sigil_target(&self) -> bool {
+    fn remainder_starts_sigil_target(&self, token: &Token) -> bool {
         let remainder = self.logos_lexer.remainder();
 
         for (idx, ch) in remainder.char_indices() {
@@ -771,7 +771,15 @@ impl<'a> Lexer<'a> {
                 return true;
             }
 
-            if ch == '\'' {
+            let allows_braced = matches!(
+                token,
+                &Token::Star | &Token::Ampersand | &Token::Percent | &Token::Caret
+            );
+            if allows_braced && ch == '{' {
+                return true;
+            }
+
+            if matches!(token, &Token::Star | &Token::Ampersand) && ch == '\'' {
                 return true;
             }
 
@@ -779,7 +787,7 @@ impl<'a> Lexer<'a> {
                 return true;
             }
 
-            if Self::is_special_variable_start(ch) {
+            if matches!(token, &Token::Percent) && matches!(ch, '^' | '+' | '-') {
                 return true;
             }
 
@@ -787,37 +795,6 @@ impl<'a> Lexer<'a> {
         }
 
         false
-    }
-
-    fn is_special_variable_start(ch: char) -> bool {
-        matches!(
-            ch,
-            '!' | '?'
-                | '/'
-                | '\\'
-                | ':'
-                | ';'
-                | '"'
-                | '\''
-                | '`'
-                | '&'
-                | '.'
-                | ','
-                | '<'
-                | '>'
-                | '['
-                | ']'
-                | '+'
-                | '-'
-                | '='
-                | '%'
-                | '|'
-                | '~'
-                | '*'
-                | '#'
-                | '@'
-                | '^'
-        )
     }
 
     /// Map known identifier keywords and quote-like starters

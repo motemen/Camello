@@ -749,11 +749,13 @@ fn test_typeglob_formatting() {
 
 #[test]
 fn test_ambiguous_argument_lookahead_regressions() {
-    let input = "foo < $o->meth; foo * (1+2);";
+    let input = "foo < $o->meth; foo * (1+2); foo*@_; foo*[1,2,3]->[0];";
     let formatted = format_and_assert(input);
     insta::assert_snapshot!(formatted, @r"
         foo < $o->meth;
         foo * (1 + 2);
+        foo * @_;
+        foo * [1, 2, 3]->[0];
     ");
 }
 
