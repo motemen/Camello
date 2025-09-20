@@ -743,13 +743,8 @@ impl<'a> Lexer<'a> {
             },
             Token::Caret => match ctx {
                 LexContext::Value => SyntaxKind::CARET,
-                LexContext::Operator => SyntaxKind::BITWISE_XOR,
-                LexContext::AmbiguousValueLookahead => {
-                    if self.ambiguous_remainder_starts_sigil_target(token) {
-                        SyntaxKind::CARET
-                    } else {
-                        SyntaxKind::BITWISE_XOR
-                    }
+                LexContext::Operator | LexContext::AmbiguousValueLookahead => {
+                    SyntaxKind::BITWISE_XOR
                 }
             },
             Token::Pipe => SyntaxKind::BITWISE_OR,
@@ -762,31 +757,23 @@ impl<'a> Lexer<'a> {
         let remainder = self.logos_lexer.remainder();
         let mut saw_whitespace = false;
 
-        for (idx, ch) in remainder.char_indices() {
+        for ch in remainder.chars() {
             if ch.is_whitespace() {
                 saw_whitespace = true;
                 continue;
             }
 
-            let tail = &remainder[idx..];
-            if tail.starts_with("::") {
-                return true;
-            }
-
-            if matches!(token, &Token::Star | &Token::Ampersand) && ch == '\'' && !saw_whitespace {
-                return true;
-            }
-
-            if matches!(
-                token,
-                &Token::Star | &Token::Ampersand | &Token::Percent | &Token::Caret
-            ) && ch == '{'
+            if matches!(token, &Token::Star | &Token::Ampersand | &Token::Percent)
+                && ch == '{'
                 && !saw_whitespace
             {
                 return true;
             }
 
-            if ch.is_ascii_alphabetic() || ch == '_' {
+            if (ch.is_ascii_alphabetic() || ch == '_')
+                && matches!(token, &Token::Percent | &Token::Ampersand)
+                && !saw_whitespace
+            {
                 return true;
             }
 
