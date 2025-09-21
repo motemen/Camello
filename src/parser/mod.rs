@@ -476,6 +476,66 @@ mod tests {
     }
 
     #[test]
+    fn test_regex_literal_with_slash_in_char_class() {
+        let input = "$foo =~ /[a/]/;";
+        let (_green, errors) = parse(input);
+
+        assert!(
+            errors.is_empty(),
+            "Expected no parse errors, got: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_regex_literal_with_literal_closing_bracket() {
+        let input = "$foo =~ /[]/]/;";
+        let (_green, errors) = parse(input);
+
+        assert!(
+            errors.is_empty(),
+            "Expected no parse errors, got: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_substitution_with_escaped_delimiter() {
+        let input = "s/\\//::/g;";
+        let (_green, errors) = parse(input);
+
+        assert!(
+            errors.is_empty(),
+            "Expected no parse errors, got: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_quote_like_with_nested_delimiters() {
+        let input = "m<.<a>.>;";
+        let (_green, errors) = parse(input);
+
+        assert!(
+            errors.is_empty(),
+            "Expected no parse errors, got: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_qw_nested_delimiters() {
+        let input = "my @list = qw(a (b) c);";
+        let (_green, errors) = parse(input);
+
+        assert!(
+            errors.is_empty(),
+            "Expected no parse errors, got: {:?}",
+            errors
+        );
+    }
+
+    #[test]
     fn test_lexer_lookahead_functionality() {
         // Test the lexer's new lookahead methods
         let mut lexer = crate::lexer::Lexer::new("$var\n@array");
