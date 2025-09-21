@@ -33,6 +33,104 @@ enum LineBreakSource {
     Formatter,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DelimiterTightness {
+    /// Keep delimiters tight with no interior spacing.
+    Tight,
+    /// Apply the formatter's standard spacing heuristics.
+    Standard,
+    /// Prefer looser spacing when possible.
+    Loose,
+}
+
+impl Default for DelimiterTightness {
+    fn default() -> Self {
+        Self::Standard
+    }
+}
+
+impl DelimiterTightness {
+    fn should_add_space(self, significant_tokens: usize) -> bool {
+        match self {
+            Self::Tight => false,
+            Self::Standard => significant_tokens >= 2,
+            Self::Loose => significant_tokens >= 1,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DelimiterTightnessConfig {
+    pub parentheses: DelimiterTightness,
+    pub brackets: DelimiterTightness,
+    pub braces: DelimiterTightness,
+}
+
+impl DelimiterTightnessConfig {
+    #[must_use]
+    pub fn new(
+        parentheses: DelimiterTightness,
+        brackets: DelimiterTightness,
+        braces: DelimiterTightness,
+    ) -> Self {
+        Self {
+            parentheses,
+            brackets,
+            braces,
+        }
+    }
+
+    #[must_use]
+    pub fn with_parentheses(mut self, tightness: DelimiterTightness) -> Self {
+        self.parentheses = tightness;
+        self
+    }
+
+    #[must_use]
+    pub fn with_brackets(mut self, tightness: DelimiterTightness) -> Self {
+        self.brackets = tightness;
+        self
+    }
+
+    #[must_use]
+    pub fn with_braces(mut self, tightness: DelimiterTightness) -> Self {
+        self.braces = tightness;
+        self
+    }
+
+    fn for_kind(&self, kind: SyntaxKind) -> DelimiterTightness {
+        match kind {
+            SyntaxKind::L_PAREN | SyntaxKind::R_PAREN => self.parentheses,
+            SyntaxKind::L_BRACKET | SyntaxKind::R_BRACKET => self.brackets,
+            SyntaxKind::L_BRACE | SyntaxKind::R_BRACE => self.braces,
+            _ => DelimiterTightness::Standard,
+        }
+    }
+}
+
+impl Default for DelimiterTightnessConfig {
+    fn default() -> Self {
+        Self {
+            parentheses: DelimiterTightness::Tight,
+            brackets: DelimiterTightness::Tight,
+            braces: DelimiterTightness::Tight,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct FormatterOptions {
+    pub delimiter_tightness: DelimiterTightnessConfig,
+}
+
+impl FormatterOptions {
+    #[must_use]
+    pub fn with_delimiter_tightness(mut self, config: DelimiterTightnessConfig) -> Self {
+        self.delimiter_tightness = config;
+        self
+    }
+}
+
 pub struct Formatter {
     current_line: Line,
     lines: Vec<Line>,
@@ -45,11 +143,17 @@ pub struct Formatter {
     pending_empty_lines: usize, // Number of empty lines waiting to be output
     in_multiline_context: bool, // Track when we're in structured multiline formatting
     comment_registry: CommentRegistry,
+    options: FormatterOptions,
 }
 
 impl Formatter {
     #[must_use]
     pub fn new(comment_registry: CommentRegistry) -> Self {
+        Self::with_options(comment_registry, FormatterOptions::default())
+    }
+
+    #[must_use]
+    pub fn with_options(comment_registry: CommentRegistry, options: FormatterOptions) -> Self {
         Self {
             current_line: Line::new(),
             lines: Vec::new(),
@@ -62,6 +166,7 @@ impl Formatter {
             pending_empty_lines: 0,
             in_multiline_context: false,
             comment_registry,
+            options,
         }
     }
 
@@ -615,6 +720,117 @@ impl Formatter {
             }
         }
         self.in_multiline_context = old_multiline_context;
+    }
+
+    fn format_single_line_delimited_children(
+        &mut self,
+        node: &PerlNode,
+        opening: SyntaxKind,
+        closing: SyntaxKind,
+        skip_whitespace: bool,
+    ) {
+        use SyntaxKind::WHITESPACE;
+
+        let children: Vec<_> = node.children_with_tokens().collect();
+
+        let mut stack: Vec<usize> = Vec::new();
+        let mut pairs: Vec<(usize, usize)> = Vec::new();
+
+        for (index, child) in children.iter().enumerate() {
+            if let NodeOrToken::Token(token) = child {
+                match token.kind() {
+                    k if k == opening => stack.push(index),
+                    k if k == closing => {
+                        if let Some(open_index) = stack.pop() {
+                            pairs.push((open_index, index));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if pairs.is_empty() {
+            self.format_children(node, skip_whitespace);
+            return;
+        }
+
+        let mut open_spacing: Vec<Option<bool>> = vec![None; children.len()];
+        let mut close_spacing: Vec<Option<bool>> = vec![None; children.len()];
+
+        for (open_index, close_index) in &pairs {
+            if close_index <= open_index {
+                continue;
+            }
+
+            let mut significant_tokens = 0;
+            for child in &children[open_index + 1..*close_index] {
+                match child {
+                    NodeOrToken::Node(inner) => {
+                        for element in inner.descendants_with_tokens() {
+                            if let Some(token) = element.as_token() {
+                                if !token.kind().is_trivia() {
+                                    significant_tokens += 1;
+                                    if significant_tokens >= 2 {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    NodeOrToken::Token(token) => {
+                        if !token.kind().is_trivia() {
+                            significant_tokens += 1;
+                        }
+                    }
+                }
+
+                if significant_tokens >= 2 {
+                    break;
+                }
+            }
+
+            let tightness = self.options.delimiter_tightness.for_kind(opening);
+            let add_interior_space = tightness.should_add_space(significant_tokens);
+            open_spacing[*open_index] = Some(add_interior_space);
+            close_spacing[*close_index] = Some(add_interior_space);
+        }
+
+        for (index, child) in children.into_iter().enumerate() {
+            match child {
+                NodeOrToken::Node(child_node) => self.format_node(&child_node),
+                NodeOrToken::Token(token) => {
+                    let kind = token.kind();
+
+                    if let Some(add_space) = open_spacing[index] {
+                        self.handle_spacing_before(kind);
+                        if self.at_line_start {
+                            self.add_indent();
+                            self.at_line_start = false;
+                        }
+                        self.write(&token);
+                        if add_space {
+                            self.write_char(' ');
+                        }
+                        self.prev_token_kind = Some(kind);
+                    } else if let Some(add_space) = close_spacing[index] {
+                        if add_space && !self.current_line.text.ends_with(' ') {
+                            if self.at_line_start {
+                                self.add_indent();
+                                self.at_line_start = false;
+                            }
+                            self.write_char(' ');
+                        }
+                        self.write(&token);
+                        self.prev_token_kind = Some(kind);
+                    } else if skip_whitespace && kind == WHITESPACE {
+                        continue;
+                    } else {
+                        self.format_token(&token);
+                    }
+                }
+            }
+        }
     }
 
     fn handle_multiline_opening_delimiter(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {

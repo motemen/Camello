@@ -96,8 +96,13 @@ impl Formatter {
             // Use multiline formatting for expressions with newlines
             self.format_multiline_delimited(node, SyntaxKind::L_PAREN, SyntaxKind::R_PAREN);
         } else {
-            // Use simple single-line formatting for compact expressions
-            self.format_children(node, true);
+            // Use single-line formatting with contextual spacing for compact expressions
+            self.format_single_line_delimited_children(
+                node,
+                SyntaxKind::L_PAREN,
+                SyntaxKind::R_PAREN,
+                true,
+            );
         }
     }
 
