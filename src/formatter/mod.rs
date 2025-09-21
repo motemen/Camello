@@ -875,8 +875,8 @@ impl Formatter {
         let mut has_open = false;
         let mut has_close = false;
 
-        for child in node.children_with_tokens() {
-            if let Some(token) = child.as_token() {
+        for element in node.descendants_with_tokens() {
+            if let Some(token) = element.as_token() {
                 match token.kind() {
                     SyntaxKind::L_PAREN => has_open = true,
                     SyntaxKind::R_PAREN => has_close = true,

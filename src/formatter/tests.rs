@@ -3181,3 +3181,56 @@ fn test_trailing_comma_and_fat_comma_in_statements() {
         ("$x + $y, $z * 2,;", "$x + $y, $z * 2, ;\n"),
     ]);
 }
+
+#[test]
+fn test_nested_parentheses_detection() {
+    // Test cases that specifically exercise the node_contains_parentheses function
+    // These cases would have failed with the old implementation that only checked direct children
+    check_formatting_cases(&[
+        // Nested parentheses in arithmetic expressions
+        ("my $x = 1 + (2 * 3);", "my $x = 1 + (2 * 3);\n"),
+        ("my $y = (1 + 2) * 3;", "my $y = (1 + 2) * 3;\n"),
+        ("my $z = ((1 + 2) * (3 + 4));", "my $z = ((1 + 2) * (3 + 4));\n"),
+        // Nested parentheses in function calls
+        ("foo(bar(1, 2), baz(3));", "foo(bar(1, 2), baz(3));\n"),
+        // Nested parentheses in array/hash references
+        ("my $arr = [(1 + 2), (3 * 4)];", "my $arr = [ (1 + 2), (3 * 4) ];\n"),
+        ("my $hash = {a => (1 + 2), b => (3 * 4)};", "my $hash = { a => (1 + 2), b => (3 * 4) };\n"),
+        // Mixed delimiters with nested parentheses
+        ("my @array = [foo(1), bar(2)];", "my @array = [ foo(1), bar(2) ];\n"),
+        ("my %hash = {key => func(arg)};", "my %hash = { key => func(arg) };\n"),
+    ]);
+}
+
+#[test]
+fn test_delimiter_tightness_with_nested_parentheses() {
+    // Test that delimiter tightness works correctly with nested parentheses
+    let input = "my $x = [(1 + 2), {a => (3 * 4)}];";
+    let (syntax, errors) = parse_perl(input);
+    assert!(
+        errors.is_empty(),
+        "Parse errors for '{}': {:?}",
+        input,
+        errors
+    );
+    
+    // Test with standard tightness (loose)
+    let loose_options = FormatterOptions::default()
+        .with_delimiter_tightness(DelimiterTightnessConfig::new(
+            DelimiterTightness::Standard,
+            DelimiterTightness::Standard, 
+            DelimiterTightness::Standard,
+        ));
+    let loose_formatted = format_with_options(&syntax, loose_options);
+    assert_eq!(loose_formatted, "my $x = [ ( 1 + 2 ), { a => ( 3 * 4 ) } ];\n");
+    
+    // Test with tight tightness (default for parentheses)
+    let tight_options = FormatterOptions::default()
+        .with_delimiter_tightness(DelimiterTightnessConfig::new(
+            DelimiterTightness::Tight,
+            DelimiterTightness::Standard,
+            DelimiterTightness::Standard,
+        ));
+    let tight_formatted = format_with_options(&syntax, tight_options);
+    assert_eq!(tight_formatted, "my $x = [ (1 + 2), { a => (3 * 4) } ];\n");
+}
