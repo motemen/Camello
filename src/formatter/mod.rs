@@ -688,6 +688,10 @@ impl Formatter {
 
         use SyntaxKind::*;
 
+        if prev_kind == SyntaxKind::PACKAGE_KW {
+            return true;
+        }
+
         if matches!(
             current,
             IF_KW | UNLESS_KW | WHILE_KW | UNTIL_KW | FOR_KW | FOREACH_KW

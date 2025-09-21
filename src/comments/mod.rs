@@ -613,7 +613,8 @@ fn find_previous_significant_token(
                     current = token.prev_token();
                     continue;
                 }
-                current = token.prev_token();
+                // A comment from another block marks a significant boundary.
+                break;
             }
             _ => return (Some(token), saw_newline),
         }
