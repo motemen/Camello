@@ -53,8 +53,7 @@ impl Formatter {
                 self.format_children(node, false);
             }
             _ => {
-                // Check if this node contains parentheses that should be formatted multiline
-                if self.should_format_parentheses_multiline(node) {
+                if self.should_use_parenthesized_formatter(node) {
                     self.format_parenthesized_expr(node);
                 } else {
                     self.format_children(node, false);

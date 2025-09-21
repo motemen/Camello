@@ -5,7 +5,9 @@ pub mod lexer;
 pub mod parser;
 pub mod syntax_kind;
 
-pub use formatter::format;
+pub use formatter::{
+    format, format_with_options, DelimiterTightness, DelimiterTightnessConfig, FormatterOptions,
+};
 pub use parser::parse;
 pub use syntax_kind::SyntaxKind;
 
