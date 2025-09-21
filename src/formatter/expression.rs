@@ -53,8 +53,7 @@ impl Formatter {
                 self.format_children(node, false);
             }
             _ => {
-                // Check if this node contains parentheses that should be formatted multiline
-                if self.should_format_parentheses_multiline(node) {
+                if self.should_use_parenthesized_formatter(node) {
                     self.format_parenthesized_expr(node);
                 } else {
                     self.format_children(node, false);
@@ -96,8 +95,13 @@ impl Formatter {
             // Use multiline formatting for expressions with newlines
             self.format_multiline_delimited(node, SyntaxKind::L_PAREN, SyntaxKind::R_PAREN);
         } else {
-            // Use simple single-line formatting for compact expressions
-            self.format_children(node, true);
+            // Use single-line formatting with contextual spacing for compact expressions
+            self.format_single_line_delimited_children(
+                node,
+                SyntaxKind::L_PAREN,
+                SyntaxKind::R_PAREN,
+                true,
+            );
         }
     }
 
