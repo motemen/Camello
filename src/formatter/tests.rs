@@ -690,6 +690,15 @@ fn test_package_with_version_basic() {
 }
 
 #[test]
+fn test_package_with_user_line_break() {
+    let input = "package\nFoo;";
+    let formatted = format_and_assert(input);
+    insta::assert_snapshot!(formatted, @r###"package
+    Foo;
+"###);
+}
+
+#[test]
 fn test_package_with_version_and_block() {
     let cases = [
         // Package with version and block
