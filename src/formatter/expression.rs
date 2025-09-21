@@ -198,7 +198,7 @@ impl Formatter {
                         match kind {
                             _ if kind == opening || kind == closing => {
                                 self.write(&token);
-                                self.prev_token_kind = Some(kind);
+                                self.remember_token(&token);
                             }
                             _ => {
                                 self.format_token(&token);
@@ -302,7 +302,7 @@ impl Formatter {
                         SyntaxKind::L_BRACE | SyntaxKind::R_BRACE => {
                             // Format braces without extra spacing or newlines
                             self.write(&token);
-                            self.prev_token_kind = Some(token.kind());
+                            self.remember_token(&token);
                         }
                         _ => {
                             self.format_token(&token);
@@ -347,7 +347,7 @@ impl Formatter {
                         SyntaxKind::L_BRACE | SyntaxKind::R_BRACE => {
                             // Handle braces directly without spacing - keep typeglobs compact
                             self.write(&token);
-                            self.prev_token_kind = Some(kind);
+                            self.remember_token(&token);
                         }
                         _ => {
                             // For other tokens (asterisk, identifiers, variables, etc.), apply normal formatting
@@ -381,12 +381,12 @@ impl Formatter {
                             // Subroutine prototypes always get a space before opening paren
                             self.write_char(' ');
                             self.write(&token);
-                            self.prev_token_kind = Some(token.kind());
+                            self.remember_token(&token);
                         }
                         _ => {
                             // R_PAREN and prototype symbols: no spacing, just output them directly
                             self.write(&token);
-                            self.prev_token_kind = Some(token.kind());
+                            self.remember_token(&token);
                         }
                     }
                 }

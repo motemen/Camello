@@ -69,7 +69,7 @@ impl Formatter {
                             }
                             self.write(&token);
                             first_word = false;
-                            self.prev_token_kind = Some(kind);
+                            self.remember_token(&token);
                         }
                         _ => {
                             self.format_token(&token);
@@ -105,9 +105,9 @@ impl Formatter {
                             }
                             self.write(&token);
                             if !self.ends_with_newline() {
-                                self.handle_newline();
+                                self.handle_formatter_newline();
                             }
-                            self.prev_token_kind = Some(kind);
+                            self.remember_token(&token);
                         }
                         SyntaxKind::WHITESPACE => {
                             // Newline is handled for QW_STRING tokens, so skip whitespace here
@@ -165,7 +165,7 @@ impl Formatter {
                         }
                         _ => {
                             self.write(&token);
-                            self.prev_token_kind = Some(kind);
+                            self.remember_token(&token);
                         }
                     }
                 }
@@ -194,15 +194,15 @@ impl Formatter {
                         | SyntaxKind::SLASH
                         | SyntaxKind::DELIMITER => {
                             self.write(&token);
-                            self.prev_token_kind = Some(kind);
+                            self.remember_token(&token);
                         }
                         k if k == string_kind => {
                             self.write(&token);
-                            self.prev_token_kind = Some(kind);
+                            self.remember_token(&token);
                         }
                         SyntaxKind::R_PAREN | SyntaxKind::R_BRACKET | SyntaxKind::R_BRACE => {
                             self.write(&token);
-                            self.prev_token_kind = Some(kind);
+                            self.remember_token(&token);
                         }
                         SyntaxKind::WHITESPACE => {
                             // Special handling: preserve whitespace inside q-family strings
@@ -211,7 +211,7 @@ impl Formatter {
                         _ => {
                             // Handle any remaining tokens (including closing slash) directly
                             self.write(&token);
-                            self.prev_token_kind = Some(kind);
+                            self.remember_token(&token);
                         }
                     }
                 }

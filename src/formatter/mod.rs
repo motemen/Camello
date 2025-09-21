@@ -28,6 +28,12 @@ impl Line {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LineBreakSource {
+    User,
+    Formatter,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DelimiterTightness {
     /// Keep delimiters tight with no interior spacing.
     Tight,
@@ -138,6 +144,8 @@ pub struct Formatter {
     indent_level: usize,
     indent_string: String,
     prev_token_kind: Option<SyntaxKind>,
+    last_significant_token_kind: Option<SyntaxKind>,
+    last_line_break: Option<LineBreakSource>,
     at_line_start: bool,
     pending_empty_lines: usize, // Number of empty lines waiting to be output
     in_multiline_context: bool, // Track when we're in structured multiline formatting
@@ -159,6 +167,8 @@ impl Formatter {
             indent_level: 0,
             indent_string: "    ".to_string(), // 4 spaces
             prev_token_kind: None,
+            last_significant_token_kind: None,
+            last_line_break: None,
             at_line_start: true,
             pending_empty_lines: 0,
             in_multiline_context: false,
@@ -192,7 +202,7 @@ impl Formatter {
             if is_first_part {
                 is_first_part = false;
             } else {
-                self.handle_newline();
+                self.handle_user_newline();
             }
 
             if !part.is_empty() {
@@ -218,9 +228,39 @@ impl Formatter {
 
     pub(super) fn write_char(&mut self, ch: char) {
         if ch == '\n' {
-            self.handle_newline();
+            self.handle_formatter_newline();
         } else {
             self.current_line.text.push(ch);
+        }
+    }
+
+    fn remember_token(&mut self, token: &SyntaxToken<PerlLanguage>) {
+        self.prev_token_kind = Some(token.kind());
+        self.update_last_significant_token(token);
+    }
+
+    fn update_last_significant_token(&mut self, token: &SyntaxToken<PerlLanguage>) {
+        let kind = token.kind();
+
+        if kind.is_trivia() {
+            return;
+        }
+
+        if kind == SyntaxKind::COMMENT {
+            if let Some(comment_id) = CommentId::from_token(token) {
+                match self.comment_registry.placement_of(comment_id) {
+                    Some(CommentPlacement::Leading(_)) | Some(CommentPlacement::Standalone) => {}
+                    Some(CommentPlacement::Trailing(_))
+                    | Some(CommentPlacement::Dangling(_))
+                    | None => {
+                        self.last_significant_token_kind = Some(kind);
+                    }
+                }
+            } else {
+                self.last_significant_token_kind = Some(kind);
+            }
+        } else {
+            self.last_significant_token_kind = Some(kind);
         }
     }
 
@@ -581,7 +621,7 @@ impl Formatter {
                             if add_space_for_block {
                                 self.write_char(' ');
                             }
-                            self.prev_token_kind = Some(token.kind());
+                            self.remember_token(&token);
                         }
                         SyntaxKind::R_BRACE => {
                             if add_space_for_block
@@ -592,7 +632,7 @@ impl Formatter {
                                 self.write_char(' ');
                             }
                             self.write(&token);
-                            self.prev_token_kind = Some(token.kind());
+                            self.remember_token(&token);
                         }
                         SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE => {
                             // Skip trivia in simple blocks
@@ -795,7 +835,7 @@ impl Formatter {
                         }
                         SyntaxKind::COMMA => {
                             self.format_token(&token);
-                            self.handle_newline();
+                            self.handle_formatter_newline();
                         }
                         _ => {
                             // その他のトークンは通常通り処理
@@ -809,27 +849,23 @@ impl Formatter {
     }
 
     fn handle_multiline_opening_delimiter(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
-        let kind = token.kind();
-
         self.write(token);
         self.indent_level += 1;
-        self.handle_newline();
-        self.prev_token_kind = Some(kind);
+        self.handle_formatter_newline();
+        self.remember_token(token);
     }
 
     fn handle_multiline_closing_delimiter(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
-        let kind = token.kind();
-
         if self.indent_level > 0 {
             self.indent_level -= 1;
         }
         if !self.at_line_start || !self.current_line.text.is_empty() {
-            self.handle_newline();
+            self.handle_formatter_newline();
         }
         self.add_indent();
         self.write(token);
         self.at_line_start = false;
-        self.prev_token_kind = Some(kind);
+        self.remember_token(token);
     }
 
     fn should_use_parenthesized_formatter(&self, node: &PerlNode) -> bool {
@@ -919,25 +955,34 @@ impl Formatter {
     }
 
     fn needs_continuation_indent(&self, current: SyntaxKind) -> bool {
-        if !self.at_line_start || self.prev_token_kind.is_none() {
+        if !self.at_line_start {
             return false;
         }
 
-        if self.prev_token_kind == Some(SyntaxKind::COMMENT) {
+        if self.last_line_break != Some(LineBreakSource::User) {
+            return false;
+        }
+
+        let Some(prev_kind) = self.last_significant_token_kind else {
+            return false;
+        };
+
+        if prev_kind == SyntaxKind::COMMENT {
             return false;
         }
 
         use SyntaxKind::*;
 
+        if prev_kind == SyntaxKind::PACKAGE_KW {
+            return true;
+        }
+
         if matches!(
             current,
             IF_KW | UNLESS_KW | WHILE_KW | UNTIL_KW | FOR_KW | FOREACH_KW
-        ) {
-            if let Some(prev) = self.prev_token_kind {
-                if !matches!(prev, L_BRACE | R_BRACE | SEMICOLON) {
-                    return true;
-                }
-            }
+        ) && !matches!(prev_kind, L_BRACE | R_BRACE | SEMICOLON)
+        {
+            return true;
         }
 
         if current.is_operator()
@@ -956,12 +1001,8 @@ impl Formatter {
             return true;
         }
 
-        if !self.in_multiline_context {
-            if let Some(prev) = self.prev_token_kind {
-                if matches!(prev, COMMA | FAT_COMMA) {
-                    return true;
-                }
-            }
+        if !self.in_multiline_context && matches!(prev_kind, COMMA | FAT_COMMA) {
+            return true;
         }
 
         false
@@ -979,7 +1020,7 @@ impl Formatter {
                         self.pending_empty_lines = 1;
                     }
                 } else {
-                    self.handle_newline();
+                    self.handle_user_newline();
                 }
             }
             SyntaxKind::COMMENT => {
@@ -998,12 +1039,12 @@ impl Formatter {
                     self.write_char(' ');
                 }
                 self.write_str(text.trim(), Some(kind));
-                self.handle_newline();
-                self.prev_token_kind = Some(kind);
+                self.handle_user_newline();
+                self.remember_token(token);
             }
             SyntaxKind::HEREDOC_CONTENT | SyntaxKind::HEREDOC_END => {
                 self.write_str(text, Some(kind));
-                self.prev_token_kind = Some(kind);
+                self.remember_token(token);
             }
             SyntaxKind::R_BRACE => {
                 // 閉じブレースは特別処理：先にインデントを下げる
@@ -1028,10 +1069,10 @@ impl Formatter {
                             | SyntaxKind::L_PAREN
                     )
                 ) {
-                    self.handle_newline();
+                    self.handle_formatter_newline();
                 }
 
-                self.prev_token_kind = Some(kind);
+                self.remember_token(token);
             }
             _ => {
                 // Output pending empty lines before processing non-trivia tokens
@@ -1065,7 +1106,7 @@ impl Formatter {
                     }
                 }
                 self.handle_spacing_after_with_token(kind, token);
-                self.prev_token_kind = Some(kind);
+                self.remember_token(token);
             }
         }
     }
@@ -1084,11 +1125,11 @@ impl Formatter {
                         return;
                     }
                 }
-                self.handle_newline();
+                self.handle_formatter_newline();
             }
             SyntaxKind::L_BRACE => {
                 self.indent_level += 1;
-                self.handle_newline();
+                self.handle_formatter_newline();
             }
             _ => {}
         }
@@ -1125,7 +1166,7 @@ impl Formatter {
                                 // Add empty line after use/no block
                                 if !self.is_output_empty() {
                                     if !self.ends_with_newline() {
-                                        self.handle_newline();
+                                        self.handle_formatter_newline();
                                     }
                                     self.lines.push(Line::new());
                                 }
@@ -1157,7 +1198,7 @@ impl Formatter {
                         }
 
                         if !self.at_line_start || !self.current_line.text.is_empty() {
-                            self.handle_newline();
+                            self.handle_user_newline();
                         }
 
                         if saw_extra_newline || self.prev_token_kind == Some(SyntaxKind::COMMENT) {
@@ -1199,6 +1240,11 @@ impl Formatter {
         }
 
         self.prev_token_kind = last_token_kind;
+        if let Some(kind) = last_token_kind {
+            if !kind.is_trivia() {
+                self.last_significant_token_kind = Some(kind);
+            }
+        }
     }
 
     fn format_labeled_stmt(&mut self, node: &PerlNode) {
@@ -1214,7 +1260,7 @@ impl Formatter {
         if let Some(child) = children.peek() {
             match child {
                 NodeOrToken::Token(t) if t.kind() == SyntaxKind::NEWLINE => {
-                    self.handle_newline();
+                    self.handle_user_newline();
                     children.next();
                 }
                 NodeOrToken::Token(t) if t.kind() == SyntaxKind::WHITESPACE => {
