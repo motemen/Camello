@@ -840,32 +840,140 @@ impl<'a> Lexer<'a> {
             return None;
         }
 
-        let mut closing_slash_pos: Option<usize> = None;
-        let mut escaped = false;
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        enum CharClassContext {
+            Normal { allow_closing: bool },
+            Posix { terminator: char },
+        }
 
-        for (i, c) in remainder.char_indices().skip(1) {
+        let mut contexts: Vec<CharClassContext> = Vec::new();
+        let mut escaped = false;
+        let mut prev_char: Option<char> = None;
+        let mut closing_slash_pos: Option<usize> = None;
+
+        let mut idx = 1usize; // Skip initial '/'
+        while idx < remainder.len() {
+            let ch = match remainder[idx..].chars().next() {
+                Some(c) => c,
+                None => break,
+            };
+            let ch_len = ch.len_utf8();
+
+            if ch == '\n' {
+                return None;
+            }
+
             if escaped {
                 escaped = false;
+                if let Some(CharClassContext::Normal { allow_closing }) = contexts.last_mut() {
+                    *allow_closing = true;
+                }
+                prev_char = Some(ch);
+                idx += ch_len;
                 continue;
             }
-            match c {
-                '/' => {
-                    closing_slash_pos = Some(i);
-                    break;
+
+            if contexts.is_empty() {
+                match ch {
+                    '/' => {
+                        closing_slash_pos = Some(idx);
+                        break;
+                    }
+                    '\\' => {
+                        escaped = true;
+                    }
+                    '[' => {
+                        contexts.push(CharClassContext::Normal {
+                            allow_closing: false,
+                        });
+                    }
+                    _ => {}
                 }
-                '\\' => {
-                    escaped = true;
-                }
-                '\n' => return None,
-                _ => {}
+                prev_char = Some(ch);
+                idx += ch_len;
+                continue;
             }
+
+            let mut push_context: Option<CharClassContext> = None;
+            let mut pop_normal = false;
+            let mut pop_posix = false;
+
+            {
+                let ctx = contexts.last_mut().unwrap();
+                match ctx {
+                    CharClassContext::Normal { allow_closing } => match ch {
+                        '\\' => {
+                            escaped = true;
+                            *allow_closing = true;
+                        }
+                        '[' => {
+                            let rest = &remainder[idx + ch_len..];
+                            let mut chars = rest.chars();
+                            match chars.next() {
+                                Some(next @ (':' | '=' | '.')) => {
+                                    push_context =
+                                        Some(CharClassContext::Posix { terminator: next });
+                                    *allow_closing = true;
+                                }
+                                _ => {
+                                    *allow_closing = true;
+                                }
+                            }
+                        }
+                        ']' => {
+                            if *allow_closing {
+                                pop_normal = true;
+                            } else {
+                                *allow_closing = true;
+                            }
+                        }
+                        '^' => {
+                            if *allow_closing {
+                                // treat '^' as a literal after the first position
+                            } else {
+                                // Leading '^' keeps allow_closing false so that an immediate ']'
+                                // is still treated as literal content.
+                            }
+                        }
+                        _ => {
+                            *allow_closing = true;
+                        }
+                    },
+                    CharClassContext::Posix { terminator } => {
+                        if ch == ']' && prev_char == Some(*terminator) {
+                            pop_posix = true;
+                        }
+                    }
+                }
+            }
+
+            if pop_posix {
+                contexts.pop();
+                if let Some(CharClassContext::Normal { allow_closing }) = contexts.last_mut() {
+                    *allow_closing = true;
+                }
+            }
+
+            if pop_normal {
+                contexts.pop();
+                if let Some(CharClassContext::Normal { allow_closing }) = contexts.last_mut() {
+                    *allow_closing = true;
+                }
+            }
+
+            if let Some(ctx) = push_context {
+                contexts.push(ctx);
+            }
+
+            prev_char = Some(ch);
+            idx += ch_len;
         }
 
         if let Some(pos) = closing_slash_pos {
             let mut end_pos = pos + 1;
-            // Consume optional flags
+            const VALID_FLAGS: &str = "msixpodualngcer";
             for c in remainder[end_pos..].chars() {
-                if matches!(c, 'g' | 'i' | 'm' | 's' | 'x') {
+                if VALID_FLAGS.contains(c) {
                     end_pos += c.len_utf8();
                 } else {
                     break;
