@@ -290,6 +290,77 @@ fn test_special_variable_formatting() {
 }
 
 #[test]
+fn test_complex_sigil_expressions_formatting() {
+    let cases = [
+        // Complex code sigil expressions
+        ("&{$coderef}(1,2,3);", "&{$coderef}(1, 2, 3);\n"),
+        (
+            "&{ $dispatch{$index} }(1,2,3);",
+            "&{$dispatch{$index}}(1, 2, 3);\n",
+        ),
+        ("&$ORIG;", "&$ORIG;\n"),
+        ("&{\"package::method\"};", "&{\"package::method\"};\n"),
+        ("&{$obj->method};", "&{$obj->method};\n"),
+        ("&{'DynamicSub::' . $name};", "&{'DynamicSub::' . $name};\n"),
+        // Complex scalar sigil expressions
+        ("${$ref};", "${$ref};\n"),
+        ("${$hash{key}};", "${$hash{key}};\n"),
+        ("${ $complex_expression };", "${$complex_expression};\n"),
+        ("${\"dynamic_var\"};", "${\"dynamic_var\"};\n"),
+        ("${'$var_' . $suffix};", "${'$var_' . $suffix};\n"),
+        // Complex array sigil expressions
+        ("@{$arrayref};", "@{$arrayref};\n"),
+        ("@{$hash{arrays}};", "@{$hash{arrays}};\n"),
+        (
+            "@{ $array_dispatch{$type} };",
+            "@{$array_dispatch{$type}};\n",
+        ),
+        ("@{\"Package::ARRAY\"};", "@{\"Package::ARRAY\"};\n"),
+        ("@{'@array_' . $name};", "@{'@array_' . $name};\n"),
+        // Complex hash sigil expressions
+        ("%{$hashref};", "%{$hashref};\n"),
+        ("%{$obj->get_hash};", "%{$obj->get_hash};\n"),
+        ("%{ $hash_table{$key} };", "%{$hash_table{$key}};\n"),
+        ("%{\"Package::HASH\"};", "%{\"Package::HASH\"};\n"),
+        ("%{'%hash_' . $suffix};", "%{'%hash_' . $suffix};\n"),
+        // Nested complex expressions
+        (
+            "&{$handlers{$type || 'default'}};",
+            "&{$handlers{$type || 'default'}};\n",
+        ),
+        ("${$refs->[0]};", "${$refs->[0]};\n"),
+        ("@{$data->{arrays}->[0]};", "@{$data->{arrays}->[0]};\n"),
+        (
+            "%{$config->{$env}->{hashes}};",
+            "%{$config->{$env}->{hashes}};\n",
+        ),
+        // Function calls with complex sigils
+        ("&{$code}();", "&{$code}();\n"),
+        (
+            "&{$dispatch{$method}}(@args);",
+            "&{$dispatch{$method}}(@args);\n",
+        ),
+        (
+            "print &{$formatters{$type}}($data);",
+            "print &{$formatters{$type}}($data);\n",
+        ),
+        // Assignment with complex sigils
+        (
+            "my $result = &{$callback}($input);",
+            "my $result = &{$callback}($input);\n",
+        ),
+        ("my @items = @{$container};", "my @items = @{$container};\n"),
+        ("my %config = %{$settings};", "my %config = %{$settings};\n"),
+        // Mixed complex expressions
+        (
+            "&{$obj->get_method}(&{$factory}(), @{$args});",
+            "&{$obj->get_method}(&{$factory}(), @{$args});\n",
+        ),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_keywords_as_hash_keys_formatting() {
     let cases = [
         // Control flow keywords
