@@ -1789,6 +1789,26 @@ fn test_map_with_parentheses_formatting() {
 }
 
 #[test]
+fn test_parenthesized_block_builtin_formatting() {
+    let input = "map({$_*2}1,2,3); grep({/foo/}@items); sort({$a<=>$b}@values);";
+    let formatted = format_and_assert(input);
+
+    insta::assert_snapshot!(formatted, @r"
+        map({ $_ * 2 } 1, 2, 3);
+        grep({ /foo/ } @items);
+        sort({ $a <=> $b } @values);
+        ");
+}
+
+#[test]
+fn test_parenthesized_map_hashref_argument_is_not_block() {
+    let input = "map({k=>1},@list);";
+    let formatted = format_and_assert(input);
+
+    assert_eq!(formatted, "map({ k => 1 }, @list);\n");
+}
+
+#[test]
 fn test_single_line_function_call_formatting() {
     let input = "func(arg1, arg2, arg3);";
     let formatted = format_and_assert(input);
