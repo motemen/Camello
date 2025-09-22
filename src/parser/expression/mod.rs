@@ -116,6 +116,33 @@ impl Parser<'_> {
             return;
         }
 
+        if self.at(SyntaxKind::L_PAREN)
+            && Self::is_parenthesized_block_builtin(&function_name)
+            && self
+                .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
+                .is_some_and(|(kind, _)| kind == SyntaxKind::L_BRACE)
+        {
+            self.builder
+                .start_node_at(start, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());
+
+            self.bump_value(); // (
+            self.skip_whitespace_and_newlines();
+
+            self.parse_block_function_args(&function_name);
+
+            self.skip_whitespace_and_newlines();
+
+            if self.at(SyntaxKind::R_PAREN) {
+                self.bump_op(); // )
+                self.skip_whitespace_and_newlines();
+            } else {
+                self.error("Expected ')' after block arguments");
+            }
+
+            self.builder.finish_node();
+            return;
+        }
+
         let next_value_token = self.peek_non_trivia_token_with_context(LexContext::Value);
         let mut next_kind = self
             .peek_non_trivia_token_with_context(LexContext::AmbiguousValueLookahead)
@@ -207,6 +234,16 @@ impl Parser<'_> {
     /// `//` are parsed in expression position instead of as another argument.
     fn block_args_end_after_block(function_name: &str) -> bool {
         matches!(function_name, "eval" | "do")
+    }
+
+    /// Builtins like `map`, `grep`, and `sort` accept a curious hybrid syntax where the block is
+    /// wrapped in parentheses before the list arguments: `map({ ... } @list)`.  Perl only permits
+    /// this exact form for those core functions—the parser still treats `{ ... }` as the leading
+    /// block argument, but user-defined subs never see the same special casing.  Keep a tight
+    /// whitelist so we don't accidentally parse ordinary function calls using this Perl-specific
+    /// quirk as `BLOCK_FUNCTION_CALL_EXPR`s.
+    fn is_parenthesized_block_builtin(function_name: &str) -> bool {
+        matches!(function_name, "map" | "grep" | "sort")
     }
 
     /// Peek ahead to capture the final segment of a (possibly qualified) identifier without
