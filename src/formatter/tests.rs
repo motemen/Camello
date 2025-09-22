@@ -1816,6 +1816,7 @@ fn test_io_operator_formatting() {
     let cases = [
         // Basic I/O operators
         ("$line = <$fh>;", "$line = <$fh>;\n"),
+        ("scalar <$fh>;", "scalar <$fh>;\n"),
         ("$data=<FILE>;", "$data = <FILE>;\n"),
         ("my $input = <STDIN>;", "my $input = <STDIN>;\n"),
         ("while (<>) { print; }", "while (<>) {\n    print;\n}\n"),
