@@ -30,7 +30,7 @@ impl Formatter {
                         .text()
                         .chars()
                         .next()
-                        .map_or(false, |c| c.is_ascii_digit() || c == 'v')
+                        .is_some_and(|c| c.is_ascii_digit() || c == 'v')
                 }
                 _ => false,
             };
