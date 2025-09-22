@@ -324,6 +324,8 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
 
         // L_PAREN after certain tokens
         (SCALAR_VAR | ARRAY_VAR | HASH_VAR | TYPEGLOB_VAR, L_PAREN) => Some(true),
+        // COMPOUND_VAR followed by L_PAREN should have no space (for function calls like &{$code}())
+        (COMPOUND_VAR, L_PAREN) => Some(false),
         (
             MY_KW | OUR_KW | STATE_KW | LOCAL_KW | FOR_KW | FOREACH_KW | WHILE_KW | UNTIL_KW
             | IF_KW | UNLESS_KW | ELSIF_KW,

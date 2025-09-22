@@ -13,6 +13,9 @@ impl Formatter {
             SyntaxKind::TYPEGLOB_EXPR => {
                 self.format_typeglob_expr(node);
             }
+            SyntaxKind::FUNCTION_CALL_EXPR => {
+                self.format_function_call_expr(node);
+            }
             SyntaxKind::BLOCK_FUNCTION_CALL_EXPR => {
                 self.format_block_function_call(node);
             }
@@ -58,6 +61,53 @@ impl Formatter {
                 } else {
                     self.format_children(node, false);
                 }
+            }
+        }
+    }
+
+    /// Format function call expressions, handling special spacing for complex sigil expressions
+    fn format_function_call_expr(&mut self, node: &PerlNode) {
+        let mut children = node.children_with_tokens();
+
+        // Check if the first child is a COMPOUND_VAR starting with CODE_SIGIL
+        let first_child = children.by_ref().next();
+        let is_complex_code_sigil = if let Some(NodeOrToken::Node(first_node)) = &first_child {
+            first_node.kind() == SyntaxKind::COMPOUND_VAR
+                && first_node.first_token().map(|t| t.kind()) == Some(SyntaxKind::CODE_SIGIL)
+        } else {
+            false
+        };
+
+        if is_complex_code_sigil {
+            // Format complex code sigil expressions like &{$coderef}(1,2,3) without space before (
+            if let Some(first_child) = first_child {
+                match first_child {
+                    NodeOrToken::Node(child_node) => self.format_node(&child_node),
+                    NodeOrToken::Token(token) => self.format_token(&token),
+                }
+            }
+
+            // Format the rest without adding spaces before L_PAREN
+            for child in children {
+                match child {
+                    NodeOrToken::Node(child_node) => self.format_node(&child_node),
+                    NodeOrToken::Token(token) => {
+                        if token.kind() == SyntaxKind::L_PAREN {
+                            // Force no space before this L_PAREN by writing it directly
+                            self.write_str("(", Some(SyntaxKind::L_PAREN));
+                            self.remember_token(&token);
+                        } else {
+                            self.format_token(&token);
+                        }
+                    }
+                }
+            }
+        } else {
+            // For regular function calls, use the default parenthesized formatter logic
+            if self.should_use_parenthesized_formatter(node) {
+                self.format_parenthesized_expr(node);
+            } else {
+                self.format_children(node, false);
             }
         }
     }

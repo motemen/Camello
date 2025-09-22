@@ -1041,8 +1041,46 @@ impl Parser<'_> {
                 self.parse_standard_prefix_expr("\\", Precedence::PREFIX, None);
             }
             SyntaxKind::CODE_SIGIL => {
-                // Function reference: &function
-                self.parse_function_ref();
+                // Check if this is a complex code reference like &{expr} or &$var
+                let next_token = self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1);
+                match next_token {
+                    Some((SyntaxKind::L_BRACE, _)) => {
+                        // Complex code reference: &{$coderef}, &{"package::method"}, etc.
+                        self.builder.start_node(SyntaxKind::COMPOUND_VAR.into());
+                        self.bump(); // consume &
+                        self.skip_whitespace_and_newlines();
+
+                        self.bump(); // consume {
+                        self.skip_whitespace_and_newlines();
+
+                        if !self.expression() {
+                            self.error("Expected expression inside braces after &");
+                        }
+
+                        self.skip_whitespace_and_newlines();
+                        if self.at(SyntaxKind::R_BRACE) {
+                            self.bump(); // consume }
+                        } else {
+                            self.error("Expected '}' to close code reference");
+                        }
+
+                        self.builder.finish_node();
+                    }
+                    Some((SyntaxKind::SCALAR_SIGIL, _)) => {
+                        // Code dereference: &$coderef
+                        self.builder.start_node(SyntaxKind::COMPOUND_VAR.into());
+                        self.bump(); // consume &
+                        self.skip_whitespace_and_newlines();
+
+                        self.parse_variable(); // parse $var
+
+                        self.builder.finish_node();
+                    }
+                    _ => {
+                        // Simple function reference: &function
+                        self.parse_function_ref();
+                    }
+                }
             }
             SyntaxKind::TYPEGLOB_SIGIL => {
                 // Handle typeglob expressions specially
