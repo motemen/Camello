@@ -1571,6 +1571,19 @@ fn test_print_like_filehandles() {
 }
 
 #[test]
+fn test_parenthesized_print_like_filehandles() {
+    let cases = [
+        ("print(STDERR \"error\");", "print(STDERR \"error\");\n"),
+        ("print(FH $value);", "print(FH $value);\n"),
+        ("printf($fh\"%s\",$msg);", "printf($fh \"%s\", $msg);\n"),
+        ("say($fh $message);", "say($fh $message);\n"),
+        ("print($fh,$data);", "print($fh, $data);\n"),
+        ("print($fh=>$data);", "print($fh => $data);\n"),
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_print_function_calls_as_expressions() {
     // Test cases where function calls should be parsed as expressions, not filehandles
     let cases = [
