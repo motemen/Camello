@@ -965,7 +965,7 @@ fn test_comprehensive_typeglob_formatting() {
     let cases = [
         // Symbolic reference assignment
         ("*{$name} = \\&some_sub;", "*{$name} = \\&some_sub;\n"),
-        // Package-qualified typeglob with braces and string literal
+        // Package-qualified typeglob variables with braces and string literal
         (
             r#"*{"Foo::bar"} = *STDOUT;"#,
             "*{\"Foo::bar\"} = *STDOUT;\n",
@@ -981,6 +981,20 @@ fn test_comprehensive_typeglob_formatting() {
         ("*name = \\$scalar;", "*name = \\$scalar;\n"),
         // Typeglob in hash context
         ("*{$hash{key}} = \\@array;", "*{$hash{key}} = \\@array;\n"),
+        // Typeglob variables with sigils - new syntax support
+        ("*$name = \\&func;", "*$name = \\&func;\n"),
+        ("*@name = \\@array;", "*@name = \\@array;\n"),
+        ("*%name = \\%hash;", "*%name = \\%hash;\n"),
+        // Package-qualified typeglob variables with braces
+        ("*{\"pkg::name\"} = \\&sub;", "*{\"pkg::name\"} = \\&sub;\n"),
+        // Simple typeglob variable assignments
+        (
+            "my $name = 'foo'; *$name = \\$scalar;",
+            "my $name = 'foo';\n*$name = \\$scalar;\n",
+        ),
+        // Assignment to typeglob variables
+        ("*$handle = *STDOUT;", "*$handle = *STDOUT;\n"),
+        ("*@arr = (1, 2, 3);", "*@arr = (1, 2, 3);\n"),
     ];
     check_formatting_cases(&cases);
 }
