@@ -89,8 +89,8 @@ pub enum Token {
     // Backtick command substitution (handled manually like RegexLiteral due to complexity)
     BacktickString,
 
-    // Version literal (v1.23, v5.008_001, etc.)
-    #[regex(r"v[0-9]+(\.[0-9_]+)*")]
+    // Version literal (v1.23, v5.008_001, etc.) - requires at least one dot component
+    #[regex(r"v[0-9]+(\.[0-9_]+)+")]
     Version,
 
     // Bare version number (e.g., 5.24.1) - contextually determined

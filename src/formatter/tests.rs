@@ -3365,3 +3365,22 @@ fn test_delimiter_tightness_with_nested_parentheses() {
     let tight_formatted = format_with_options(&syntax, tight_options);
     assert_eq!(tight_formatted, "my $x = [ (1 + 2), { a => (3 * 4) } ];\n");
 }
+
+#[test]
+fn test_identifier_starting_with_v_and_single_digit() {
+    // Test that identifiers like "v1", "v2", etc. are parsed as identifiers,
+    // not as version literals (which require at least one dot)
+    let cases = [
+        ("my $v1;", "my $v1;\n"),
+        ("my $v9;", "my $v9;\n"),
+        ("my @v0;", "my @v0;\n"),
+        ("my %v123;", "my %v123;\n"),
+        ("sub v1 { }", "sub v1 { }"),
+        ("$obj->v1()", "$obj->v1()"),
+    ];
+
+    for (input, expected) in cases {
+        let formatted = format_and_assert(input);
+        assert_eq!(formatted, expected, "Failed for input: '{}'", input);
+    }
+}
