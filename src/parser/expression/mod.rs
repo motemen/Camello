@@ -127,34 +127,6 @@ impl Parser<'_> {
             return;
         }
 
-        if self.at(SyntaxKind::L_PAREN)
-            && Self::is_parenthesized_block_builtin(&function_name)
-            && self
-                .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
-                .is_some_and(|(kind, _)| kind == SyntaxKind::L_BRACE)
-            && !self.looks_like_hash_ref_at_offset(1)
-        {
-            self.builder
-                .start_node_at(start, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());
-
-            self.bump_value(); // (
-            self.skip_whitespace_and_newlines();
-
-            self.parse_block_function_args(&function_name);
-
-            self.skip_whitespace_and_newlines();
-
-            if self.at(SyntaxKind::R_PAREN) {
-                self.bump_op(); // )
-                self.skip_whitespace_and_newlines();
-            } else {
-                self.error("Expected ')' after block arguments");
-            }
-
-            self.builder.finish_node();
-            return;
-        }
-
         let next_value_token = self.peek_non_trivia_token_with_context(LexContext::Value);
         let mut next_kind = self
             .peek_non_trivia_token_with_context(LexContext::AmbiguousValueLookahead)
@@ -169,6 +141,10 @@ impl Parser<'_> {
 
         if let Some(kind) = next_kind {
             if kind == SyntaxKind::L_PAREN {
+                if self.try_parse_parenthesized_special_function_call(&function_name, start) {
+                    return;
+                }
+
                 // Parenthesized calls are handled by postfix parsing logic
                 return;
             }
@@ -200,6 +176,69 @@ impl Parser<'_> {
             }
         }
     }
+    fn parse_parenthesized_special_call(
+        &mut self,
+        start: rowan::Checkpoint,
+        node_kind: SyntaxKind,
+        error_message: &str,
+        parse_args: impl FnOnce(&mut Self),
+    ) {
+        self.builder.start_node_at(start, node_kind.into());
+
+        self.bump_value(); // (
+        self.skip_whitespace_and_newlines();
+
+        parse_args(self);
+
+        self.skip_whitespace_and_newlines();
+
+        if self.at(SyntaxKind::R_PAREN) {
+            self.bump_op(); // )
+            self.skip_whitespace_and_newlines();
+        } else {
+            self.error(error_message);
+        }
+
+        self.builder.finish_node();
+    }
+
+    fn try_parse_parenthesized_special_function_call(
+        &mut self,
+        function_name: &str,
+        start: rowan::Checkpoint,
+    ) -> bool {
+        if !self.at(SyntaxKind::L_PAREN) {
+            return false;
+        }
+
+        if Self::is_parenthesized_block_builtin(function_name)
+            && self
+                .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
+                .is_some_and(|(kind, _)| kind == SyntaxKind::L_BRACE)
+            && !self.looks_like_hash_ref_at_offset(1)
+        {
+            self.parse_parenthesized_special_call(
+                start,
+                SyntaxKind::BLOCK_FUNCTION_CALL_EXPR,
+                "Expected ')' after block arguments",
+                |parser| parser.parse_block_function_args(function_name),
+            );
+            return true;
+        }
+
+        if Self::is_print_like_function(function_name) {
+            self.parse_parenthesized_special_call(
+                start,
+                SyntaxKind::FUNCTION_CALL_EXPR,
+                "Expected ')' after print arguments",
+                |parser| parser.parse_print_like_args(),
+            );
+            return true;
+        }
+
+        false
+    }
+
     // Parse block function arguments: block + optional additional arguments
     fn parse_block_function_args(&mut self, function_name: &str) {
         // Parse the block (which should be at L_BRACE)
