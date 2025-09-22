@@ -1083,17 +1083,27 @@ impl Parser<'_> {
                 }
             }
             SyntaxKind::TYPEGLOB_SIGIL => {
-                // Handle typeglob expressions specially
-                // Check if this is followed by a brace or identifier (typeglob syntax)
+                // Handle typeglob expressions and variables
+                // Check what follows the * to determine the appropriate parsing
                 let next_token = self
                     .peek_nth_non_trivia_token_with_context(LexContext::AmbiguousValueLookahead, 1);
-                if matches!(
-                    next_token,
-                    Some((SyntaxKind::L_BRACE | SyntaxKind::IDENT, _))
-                ) {
-                    self.parse_typeglob_expr();
-                } else {
-                    self.parse_variable();
+                match next_token {
+                    Some((SyntaxKind::L_BRACE, _)) => {
+                        // *{...} - complex typeglob expression
+                        self.parse_typeglob_expr();
+                    }
+                    Some((SyntaxKind::IDENT, _)) => {
+                        // *STDIN - simple typeglob expression
+                        self.parse_typeglob_expr();
+                    }
+                    Some((kind, _)) if kind.is_sigil() => {
+                        // *$name, *@name, *%name, *&name - typeglob variables with sigils
+                        self.parse_variable();
+                    }
+                    _ => {
+                        // *name or other patterns - treat as simple variable
+                        self.parse_variable();
+                    }
                 }
             }
             kind if kind.is_sigil() => {

@@ -66,6 +66,16 @@ impl Parser<'_> {
                     _ => false,
                 }
             }
+            SyntaxKind::TYPEGLOB_SIGIL => {
+                // Check if followed by brace or another sigil for compound typeglob variables
+                match self
+                    .peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 1)
+                {
+                    Some((SyntaxKind::L_BRACE, _)) => true,     // *{expr}
+                    Some((kind, _)) if kind.is_sigil() => true, // *$name, *@name, etc.
+                    _ => false,
+                }
+            }
             _ => false,
         };
 
@@ -148,6 +158,35 @@ impl Parser<'_> {
                         _ => {
                             // This shouldn't happen due to our lookahead check
                             self.error("Expected '{' or '$' after compound variable sigil");
+                        }
+                    }
+                }
+                SyntaxKind::TYPEGLOB_SIGIL => {
+                    // Handle compound typeglob variables: *{expr}, *$name, *@name, etc.
+                    match self.current_kind() {
+                        Some(SyntaxKind::L_BRACE) => {
+                            // Braced typeglob: *{expr}
+                            self.bump(); // consume {
+                            self.skip_whitespace_and_newlines();
+
+                            if !self.expression() {
+                                self.error("Expected expression inside braces after *");
+                            }
+
+                            self.skip_whitespace_and_newlines();
+                            if self.at(SyntaxKind::R_BRACE) {
+                                self.bump(); // consume }
+                            } else {
+                                self.error("Expected '}' to close typeglob braces");
+                            }
+                        }
+                        Some(kind) if kind.is_sigil() => {
+                            // Typeglob with sigil: *$name, *@name, *%name, *&name
+                            self.parse_variable();
+                        }
+                        _ => {
+                            // This shouldn't happen due to our lookahead check
+                            self.error("Expected '{' or sigil after typeglob '*'");
                         }
                     }
                 }
