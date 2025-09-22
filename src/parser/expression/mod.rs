@@ -28,9 +28,27 @@ impl Parser<'_> {
     /// - Number followed by comma/fat arrow: {1,} or {1=>}
     /// - Identifier followed by fat arrow: {a=>}
     /// - String followed by comma/fat arrow: {"key",} or {"key"=>}
-    pub fn looks_like_hash_ref(&mut self) -> bool {
+    pub fn looks_like_hash_ref(&self) -> bool {
+        self.looks_like_hash_ref_at_offset(0)
+    }
+
+    fn looks_like_parenthesized_hash_ref_arg(&self) -> bool {
+        self.looks_like_hash_ref_at_offset(1)
+            && self
+                .next_non_trivia_after_brace_group(1)
+                .is_some_and(|kind| kind == SyntaxKind::COMMA)
+    }
+
+    fn looks_like_hash_ref_at_offset(&self, brace_offset: usize) -> bool {
+        if self
+            .peek_nth_non_trivia_token_with_context(LexContext::Value, brace_offset)
+            .is_none_or(|(kind, _)| kind != SyntaxKind::L_BRACE)
+        {
+            return false;
+        }
+
         // Look ahead to see what's inside the braces
-        let mut offset = 1; // Skip the opening brace
+        let mut offset = brace_offset + 1; // Skip the opening brace
 
         // Skip any whitespace after opening brace
         while let Some((kind, _)) =
@@ -88,6 +106,48 @@ impl Parser<'_> {
         }
     }
 
+    fn next_non_trivia_after_brace_group(&self, brace_offset: usize) -> Option<SyntaxKind> {
+        if self
+            .peek_nth_non_trivia_token_with_context(LexContext::Value, brace_offset)
+            .is_none_or(|(kind, _)| kind != SyntaxKind::L_BRACE)
+        {
+            return None;
+        }
+
+        let mut offset = brace_offset;
+        let mut depth = 0usize;
+
+        loop {
+            let (kind, _) =
+                self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset)?;
+
+            match kind {
+                SyntaxKind::L_BRACE => {
+                    depth += 1;
+                    offset += 1;
+                }
+                SyntaxKind::R_BRACE => {
+                    if depth == 0 {
+                        return None;
+                    }
+
+                    depth -= 1;
+                    offset += 1;
+
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                _ => {
+                    offset += 1;
+                }
+            }
+        }
+
+        self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset)
+            .map(|(kind, _)| kind)
+    }
+
     /// Parse an identifier-like expression (including cases where a keyword is coerced to IDENT)
     /// and handle possible function calls (regular or block).
     fn parse_ident_like_expr(&mut self, coerce_current_to_ident: bool) {
@@ -121,6 +181,7 @@ impl Parser<'_> {
             && self
                 .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
                 .is_some_and(|(kind, _)| kind == SyntaxKind::L_BRACE)
+            && !self.looks_like_parenthesized_hash_ref_arg()
         {
             self.builder
                 .start_node_at(start, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());

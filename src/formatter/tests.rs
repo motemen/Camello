@@ -1801,6 +1801,14 @@ fn test_parenthesized_block_builtin_formatting() {
 }
 
 #[test]
+fn test_parenthesized_map_hashref_argument_is_not_block() {
+    let input = "map({k=>1},@list);";
+    let formatted = format_and_assert(input);
+
+    assert_eq!(formatted, "map({ k => 1 }, @list);\n");
+}
+
+#[test]
 fn test_single_line_function_call_formatting() {
     let input = "func(arg1, arg2, arg3);";
     let formatted = format_and_assert(input);
