@@ -1363,6 +1363,51 @@ fn test_use_statement_with_expressions() {
 }
 
 #[test]
+fn test_use_statement_with_version_and_list() {
+    check_formatting_cases(&[
+        // Module with version and qw list
+        (
+            "use Foo::Bar 1.00 qw(a b c);",
+            "use Foo::Bar 1.00 qw(a b c);\n",
+        ),
+        (
+            "use Module 5.42 qw/func1 func2/;",
+            "use Module 5.42 qw/func1 func2/;\n",
+        ),
+        // Module with version and parenthesized list
+        (
+            "use Foo::Bar 1.00 (a, b, c);",
+            "use Foo::Bar 1.00 (a, b, c);\n",
+        ),
+        (
+            "use Module 5.42 (func1, func2);",
+            "use Module 5.42 (func1, func2);\n",
+        ),
+        // Module with version and hash pairs
+        ("use Foo::Bar 1.00 x => 1;", "use Foo::Bar 1.00 x => 1;\n"),
+        (
+            "use Module 5.42 key => 'value';",
+            "use Module 5.42 key => 'value';\n",
+        ),
+        // Version formats
+        (
+            "use Foo::Bar v1.0.0 qw(a b);",
+            "use Foo::Bar v1.0.0 qw(a b);\n",
+        ),
+        ("use Module 1.234 qw(test);", "use Module 1.234 qw(test);\n"),
+        // Spacing variations
+        (
+            "use  Foo::Bar  1.00  qw(a b c)  ;",
+            "use Foo::Bar 1.00 qw(a b c);\n",
+        ),
+        (
+            "use\tModule\t5.42\tqw/func/\t;",
+            "use Module 5.42 qw/func/;\n",
+        ),
+    ]);
+}
+
+#[test]
 fn test_method_call_formatting() {
     let cases = [
         // Basic method calls

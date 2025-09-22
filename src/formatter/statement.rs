@@ -12,10 +12,27 @@ impl Formatter {
         }
 
         // Special handling for use/no statements: add space between identifier and parentheses
+        // and between version and following expressions
         for child in node.children_with_tokens() {
             let is_module_name = match &child {
                 NodeOrToken::Node(n) => n.kind() == crate::SyntaxKind::QUALIFIED_IDENT,
                 NodeOrToken::Token(t) => t.kind() == crate::SyntaxKind::IDENT,
+            };
+
+            let is_version = match &child {
+                NodeOrToken::Token(t) => {
+                    matches!(
+                        t.kind(),
+                        crate::SyntaxKind::VERSION
+                            | crate::SyntaxKind::BARE_VERSION
+                            | crate::SyntaxKind::NUMBER
+                    ) && t
+                        .text()
+                        .chars()
+                        .next()
+                        .map_or(false, |c| c.is_ascii_digit() || c == 'v')
+                }
+                _ => false,
             };
 
             match &child {
@@ -31,6 +48,26 @@ impl Formatter {
                 if let Some(last_token) = last_token {
                     if let Some(next_token) = Self::next_significant_token(&last_token) {
                         if next_token.kind() == crate::SyntaxKind::L_PAREN {
+                            self.write_char(' ');
+                        }
+                    }
+                }
+            }
+
+            // Add space after version if followed by an expression
+            if is_version {
+                let last_token = match &child {
+                    NodeOrToken::Token(t) => Some(t.clone()),
+                    _ => None,
+                };
+                if let Some(last_token) = last_token {
+                    if let Some(next_token) = Self::next_significant_token(&last_token) {
+                        if matches!(
+                            next_token.kind(),
+                            crate::SyntaxKind::IDENT
+                                | crate::SyntaxKind::L_PAREN
+                                | crate::SyntaxKind::QW_KW
+                        ) {
                             self.write_char(' ');
                         }
                     }

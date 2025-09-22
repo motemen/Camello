@@ -270,6 +270,15 @@ impl Parser<'_> {
         } else {
             // Module name (qualified identifier); allow keywords as identifiers
             self.parse_identifier_or_qualified();
+            self.skip_whitespace_and_newlines();
+
+            // Check for optional version after module name
+            if self.at(SyntaxKind::VERSION)
+                || self.at(SyntaxKind::BARE_VERSION)
+                || self.at(SyntaxKind::NUMBER)
+            {
+                self.bump();
+            }
         }
         self.skip_whitespace_and_newlines();
 
