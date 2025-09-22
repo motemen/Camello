@@ -381,6 +381,9 @@ impl Parser<'_> {
             ("keys", Some((SyntaxKind::HASH_SIGIL, _)), Some(SyntaxKind::MODULO)) => {
                 Some(SyntaxKind::HASH_SIGIL)
             }
+            ("scalar", Some((SyntaxKind::IO_EXPR, _)), Some(SyntaxKind::LT)) => {
+                Some(SyntaxKind::IO_EXPR)
+            }
             _ => next_kind,
         }
     }
