@@ -28,9 +28,20 @@ impl Parser<'_> {
     /// - Number followed by comma/fat arrow: {1,} or {1=>}
     /// - Identifier followed by fat arrow: {a=>}
     /// - String followed by comma/fat arrow: {"key",} or {"key"=>}
-    pub fn looks_like_hash_ref(&mut self) -> bool {
+    pub fn looks_like_hash_ref(&self) -> bool {
+        self.looks_like_hash_ref_at_offset(0)
+    }
+
+    fn looks_like_hash_ref_at_offset(&self, brace_offset: usize) -> bool {
+        if self
+            .peek_nth_non_trivia_token_with_context(LexContext::Value, brace_offset)
+            .is_none_or(|(kind, _)| kind != SyntaxKind::L_BRACE)
+        {
+            return false;
+        }
+
         // Look ahead to see what's inside the braces
-        let mut offset = 1; // Skip the opening brace
+        let mut offset = brace_offset + 1; // Skip the opening brace
 
         // Skip any whitespace after opening brace
         while let Some((kind, _)) =
@@ -112,6 +123,34 @@ impl Parser<'_> {
             self.builder
                 .start_node_at(start, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());
             self.parse_block_function_args(&function_name);
+            self.builder.finish_node();
+            return;
+        }
+
+        if self.at(SyntaxKind::L_PAREN)
+            && Self::is_parenthesized_block_builtin(&function_name)
+            && self
+                .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
+                .is_some_and(|(kind, _)| kind == SyntaxKind::L_BRACE)
+            && !self.looks_like_hash_ref_at_offset(1)
+        {
+            self.builder
+                .start_node_at(start, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());
+
+            self.bump_value(); // (
+            self.skip_whitespace_and_newlines();
+
+            self.parse_block_function_args(&function_name);
+
+            self.skip_whitespace_and_newlines();
+
+            if self.at(SyntaxKind::R_PAREN) {
+                self.bump_op(); // )
+                self.skip_whitespace_and_newlines();
+            } else {
+                self.error("Expected ')' after block arguments");
+            }
+
             self.builder.finish_node();
             return;
         }
@@ -207,6 +246,16 @@ impl Parser<'_> {
     /// `//` are parsed in expression position instead of as another argument.
     fn block_args_end_after_block(function_name: &str) -> bool {
         matches!(function_name, "eval" | "do")
+    }
+
+    /// Builtins like `map`, `grep`, and `sort` accept a curious hybrid syntax where the block is
+    /// wrapped in parentheses before the list arguments: `map({ ... } @list)`.  Perl only permits
+    /// this exact form for those core functions—the parser still treats `{ ... }` as the leading
+    /// block argument, but user-defined subs never see the same special casing.  Keep a tight
+    /// whitelist so we don't accidentally parse ordinary function calls using this Perl-specific
+    /// quirk as `BLOCK_FUNCTION_CALL_EXPR`s.
+    fn is_parenthesized_block_builtin(function_name: &str) -> bool {
+        matches!(function_name, "map" | "grep" | "sort")
     }
 
     /// Peek ahead to capture the final segment of a (possibly qualified) identifier without
