@@ -32,10 +32,6 @@ impl Parser<'_> {
         self.looks_like_hash_ref_at_offset(0)
     }
 
-    fn looks_like_parenthesized_hash_ref_arg(&self) -> bool {
-        self.looks_like_hash_ref_at_offset(1)
-    }
-
     fn looks_like_hash_ref_at_offset(&self, brace_offset: usize) -> bool {
         if self
             .peek_nth_non_trivia_token_with_context(LexContext::Value, brace_offset)
@@ -136,7 +132,7 @@ impl Parser<'_> {
             && self
                 .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
                 .is_some_and(|(kind, _)| kind == SyntaxKind::L_BRACE)
-            && !self.looks_like_parenthesized_hash_ref_arg()
+            && !self.looks_like_hash_ref_at_offset(1)
         {
             self.builder
                 .start_node_at(start, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());
