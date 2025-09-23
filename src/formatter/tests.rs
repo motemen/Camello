@@ -3118,10 +3118,30 @@ fn test_expression_dereference_formatting() {
         ("@{ $obj->method() };", "@{$obj->method()};\n"),
         ("%{ get_hash_ref() };", "%{get_hash_ref()};\n"),
         ("${ $array[0] };", "${$array[0]};\n"),
+        // Simple identifiers and special cases should stay compact
+        ("@{abc};", "@{abc};\n"),
+        ("${1};", "${1};\n"),
+        ("%{^HOOK};", "%{^HOOK};\n"),
         // With spacing variations
         ("@{func()};", "@{func()};\n"),
         ("@{ func() };", "@{func()};\n"),
         ("@{  func()  };", "@{func()};\n"),
+    ];
+
+    check_formatting_cases(&cases);
+}
+
+#[test]
+fn test_compound_var_block_formatting() {
+    let cases = [
+        (
+            "@{ my $x = 1; $x; };",
+            "@{\n    my $x = 1;\n    $x;\n};\n",
+        ),
+        (
+            "@{ if ($cond) { say 'yes'; } else { say 'no'; } };",
+            "@{\n    if ($cond) {\n        say 'yes';\n    } else {\n        say 'no';\n    }\n};\n",
+        ),
     ];
 
     check_formatting_cases(&cases);

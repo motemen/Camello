@@ -338,11 +338,29 @@ impl Formatter {
 
     pub(super) fn format_compound_var(&mut self, node: &PerlNode) {
         // Handle compound variables like @{expr}, %$var, $#array
-        // For braced expressions, format them compactly without newlines or indentation
+        // For braced expressions, default to compact formatting unless the braces contain
+        // statement blocks (e.g., @{ my $x = 1; $x }) in which case we format as a block.
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(child_node) => {
-                    self.format_node(&child_node);
+                    if child_node.kind() == SyntaxKind::BLOCK_STMT {
+                        if self.is_simple_block(&child_node) {
+                            self.format_compound_var_simple_block(&child_node);
+                        } else if child_node
+                            .children()
+                            .any(|grandchild| grandchild.kind() == SyntaxKind::STMT)
+                        {
+                            self.format_multiline_delimited(
+                                &child_node,
+                                SyntaxKind::L_BRACE,
+                                SyntaxKind::R_BRACE,
+                            );
+                        } else {
+                            self.format_node(&child_node);
+                        }
+                    } else {
+                        self.format_node(&child_node);
+                    }
                 }
                 NodeOrToken::Token(token) => {
                     match token.kind() {
@@ -351,6 +369,30 @@ impl Formatter {
                         }
                         SyntaxKind::L_BRACE | SyntaxKind::R_BRACE => {
                             // Format braces without extra spacing or newlines
+                            self.write(&token);
+                            self.remember_token(&token);
+                        }
+                        _ => {
+                            self.format_token(&token);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn format_compound_var_simple_block(&mut self, node: &PerlNode) {
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(child_node) => {
+                    self.format_node(&child_node);
+                }
+                NodeOrToken::Token(token) => {
+                    match token.kind() {
+                        SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE => {
+                            // Skip trivia to keep the block tight inside compound variables.
+                        }
+                        SyntaxKind::L_BRACE | SyntaxKind::R_BRACE => {
                             self.write(&token);
                             self.remember_token(&token);
                         }
