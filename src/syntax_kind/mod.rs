@@ -272,7 +272,6 @@ pub enum SyntaxKind {
     FUNCTION_REF, // Function reference (e.g., &function)
     IO_EXPR,      // I/O expression (e.g., <STDIN>, <>, <$fh>)
     ANON_SUB_EXPR, // Anonymous subroutine expression (e.g., sub { ... })
-    TYPEGLOB_EXPR, // Typeglob expression (e.g., *{$name}, *STDIN)
     FILE_TEST_EXPR, // File test expression (e.g., -f $file)
     POSTFIX_DEREF_EXPR, // Postfix dereference expression (e.g., $ref->@*, $ref->%*, $ref->$*, $ref->$#*)
     POSTFIX_ARRAY_SLICE_EXPR, // Postfix array slice (e.g., $ref->@[...], $ref->@{...})
