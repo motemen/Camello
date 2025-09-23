@@ -161,12 +161,98 @@ fn test_trailing_comment_resets_continuation_indent() {
 
 #[test]
 fn test_try_catch_finally_formatting() {
-    let input = "try{ call_a_function(); } catch ($e){ warn \"Unable to call; $e\"; } finally{ print \"Finished\\n\"; }";
-    let formatted = format_and_assert(input);
-    assert_eq!(
-        formatted,
-        "try {\n    call_a_function();\n} catch ($e) {\n    warn \"Unable to call; $e\";\n} finally {\n    print \"Finished\\n\";\n}\n"
-    );
+    let cases = [
+        // Basic try/catch/finally
+        (
+            r#"try{ call_a_function(); } catch ($e){ warn "Unable to call; $e"; } finally{ print "Finished\n"; }"#,
+            r#"try {
+    call_a_function();
+} catch ($e) {
+    warn "Unable to call; $e";
+} finally {
+    print "Finished\n";
+}
+"#,
+        ),
+        // Try with catch only (no finally)
+        (
+            r#"try{$result = risky_operation();}catch($error){log_error($error);}"#,
+            r#"try {
+    $result = risky_operation();
+} catch ($error) {
+    log_error($error);
+}
+"#,
+        ),
+        // Try with finally only (no catch)
+        (
+            r#"try{open_file();}finally{close_file();}"#,
+            r#"try {
+    open_file();
+} finally {
+    close_file();
+}
+"#,
+        ),
+        // Try with no catch signature (bare catch)
+        (
+            r#"try{dangerous_code();}catch{handle_any_error();}"#,
+            r#"try {
+    dangerous_code();
+} catch {
+    handle_any_error();
+}
+"#,
+        ),
+        // Try with nested blocks
+        (
+            r#"try{if($condition){do_something();}}catch($e){if($e->isa('MyError')){handle_my_error($e);}}"#,
+            r#"try {
+    if ($condition) {
+        do_something();
+    }
+} catch ($e) {
+    if ($e->isa('MyError')) {
+        handle_my_error($e);
+    }
+}
+"#,
+        ),
+        // Try with multiline content
+        (
+            r#"try {
+    my $data = fetch_data();
+    process($data);
+} catch ($err) {
+    warn "Error: $err";
+    return undef;
+} finally {
+    cleanup();
+}"#,
+            r#"try {
+    my $data = fetch_data();
+    process($data);
+} catch ($err) {
+    warn "Error: $err";
+    return undef;
+} finally {
+    cleanup();
+}
+"#,
+        ),
+        // Try with complex expressions
+        (
+            r#"try{$hash->{key}=complex_function(@args,$more_args);}catch($exception){die"Fatal: $exception";}"#,
+            r#"try {
+    $hash->{key} = complex_function(@args, $more_args);
+} catch ($exception) {
+    die "Fatal: $exception";
+}
+"#,
+        ),
+    ];
+
+    check_formatting_cases(&cases);
 }
 
 #[test]
