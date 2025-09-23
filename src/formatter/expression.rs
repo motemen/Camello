@@ -10,9 +10,6 @@ impl Formatter {
             SyntaxKind::ANON_SUB_EXPR => {
                 self.format_anon_sub_expr(node);
             }
-            SyntaxKind::TYPEGLOB_EXPR => {
-                self.format_typeglob_expr(node);
-            }
             SyntaxKind::FUNCTION_CALL_EXPR => {
                 self.format_function_call_expr(node);
             }
@@ -421,34 +418,6 @@ impl Formatter {
 
     pub(super) fn format_array_subscription(&mut self, node: &PerlNode) {
         self.format_subscription_expr(node, SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET);
-    }
-
-    pub(super) fn format_typeglob_expr(&mut self, node: &PerlNode) {
-        // Format typeglob expressions (e.g., *{$name}, *STDIN)
-        // Keep braces compact - no multiline formatting
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
-                NodeOrToken::Token(token) => {
-                    let kind = token.kind();
-
-                    match kind {
-                        SyntaxKind::WHITESPACE => {
-                            // Skip whitespace inside typeglob expressions to keep them compact
-                        }
-                        SyntaxKind::L_BRACE | SyntaxKind::R_BRACE => {
-                            // Handle braces directly without spacing - keep typeglobs compact
-                            self.write(&token);
-                            self.remember_token(&token);
-                        }
-                        _ => {
-                            // For other tokens (asterisk, identifiers, variables, etc.), apply normal formatting
-                            self.format_token(&token);
-                        }
-                    }
-                }
-            }
-        }
     }
 
     pub(super) fn format_sub_prototype(&mut self, node: &PerlNode) {
