@@ -134,21 +134,15 @@ impl Parser<'_> {
                     // Handle braced variables and dereferencing
                     match self.current_kind() {
                         Some(SyntaxKind::L_BRACE) => {
-                            // Braced variable: @{expr}, %{expr}, ${expr}
-                            self.bump(); // consume {
-                            self.skip_whitespace_and_newlines();
-
-                            // Parse the expression inside braces
-                            // For ${^MATCH}, this will parse ^MATCH as a primary expression
-                            if !self.expression() {
-                                self.error("Expected expression inside braces");
-                            }
-
-                            self.skip_whitespace_and_newlines();
-                            if self.at(SyntaxKind::R_BRACE) {
-                                self.bump(); // consume }
+                            if self.should_parse_braced_block_in_compound_var() {
+                                self.block();
+                                self.skip_whitespace_and_newlines();
                             } else {
-                                self.error("Expected '}' to close braced variable");
+                                // Braced variable: @{expr}, %{expr}, ${expr}
+                                self.parse_braced_expression(
+                                    "Expected expression inside braces",
+                                    "Expected '}' to close braced variable",
+                                );
                             }
                         }
                         Some(SyntaxKind::SCALAR_SIGIL) => {
@@ -165,19 +159,15 @@ impl Parser<'_> {
                     // Handle compound typeglob variables: *{expr}, *$name, *@name, etc.
                     match self.current_kind() {
                         Some(SyntaxKind::L_BRACE) => {
-                            // Braced typeglob: *{expr}
-                            self.bump(); // consume {
-                            self.skip_whitespace_and_newlines();
-
-                            if !self.expression() {
-                                self.error("Expected expression inside braces after *");
-                            }
-
-                            self.skip_whitespace_and_newlines();
-                            if self.at(SyntaxKind::R_BRACE) {
-                                self.bump(); // consume }
+                            if self.should_parse_braced_block_in_compound_var() {
+                                self.block();
+                                self.skip_whitespace_and_newlines();
                             } else {
-                                self.error("Expected '}' to close typeglob braces");
+                                // Braced typeglob: *{expr}
+                                self.parse_braced_expression(
+                                    "Expected expression inside braces after *",
+                                    "Expected '}' to close typeglob braces",
+                                );
                             }
                         }
                         Some(kind) if kind.is_sigil() => {
@@ -387,6 +377,17 @@ impl Parser<'_> {
         )
     }
 
+    fn should_parse_braced_block_in_compound_var(&self) -> bool {
+        match self
+            .peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 1)
+            .map(|(kind, _)| kind)
+        {
+            Some(SyntaxKind::CARET) => false,
+            Some(_) => true,
+            None => false,
+        }
+    }
+
     /// Checks if we are currently inside hash braces (for treating keywords as identifiers).
     #[must_use]
     pub fn is_inside_hash_braces(&self) -> bool {
@@ -446,6 +447,23 @@ impl Parser<'_> {
             }
             self.builder.finish_node();
             self.skip_whitespace_and_newlines(); // Skip trivia after QUALIFIED_IDENT is complete
+        }
+    }
+
+    /// Helper function to parse braced expressions like {expr}
+    fn parse_braced_expression(&mut self, expr_error: &str, brace_error: &str) {
+        self.bump(); // consume {
+        self.skip_whitespace_and_newlines();
+
+        if !self.expression() {
+            self.error(expr_error);
+        }
+
+        self.skip_whitespace_and_newlines();
+        if self.at(SyntaxKind::R_BRACE) {
+            self.bump(); // consume }
+        } else {
+            self.error(brace_error);
         }
     }
 
