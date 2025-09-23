@@ -139,21 +139,10 @@ impl Parser<'_> {
                                 self.skip_whitespace_and_newlines();
                             } else {
                                 // Braced variable: @{expr}, %{expr}, ${expr}
-                                self.bump(); // consume {
-                                self.skip_whitespace_and_newlines();
-
-                                // Parse the expression inside braces
-                                // For ${^MATCH}, this will parse ^MATCH as a primary expression
-                                if !self.expression() {
-                                    self.error("Expected expression inside braces");
-                                }
-
-                                self.skip_whitespace_and_newlines();
-                                if self.at(SyntaxKind::R_BRACE) {
-                                    self.bump(); // consume }
-                                } else {
-                                    self.error("Expected '}' to close braced variable");
-                                }
+                                self.parse_braced_expression(
+                                    "Expected expression inside braces",
+                                    "Expected '}' to close braced variable",
+                                );
                             }
                         }
                         Some(SyntaxKind::SCALAR_SIGIL) => {
@@ -175,19 +164,10 @@ impl Parser<'_> {
                                 self.skip_whitespace_and_newlines();
                             } else {
                                 // Braced typeglob: *{expr}
-                                self.bump(); // consume {
-                                self.skip_whitespace_and_newlines();
-
-                                if !self.expression() {
-                                    self.error("Expected expression inside braces after *");
-                                }
-
-                                self.skip_whitespace_and_newlines();
-                                if self.at(SyntaxKind::R_BRACE) {
-                                    self.bump(); // consume }
-                                } else {
-                                    self.error("Expected '}' to close typeglob braces");
-                                }
+                                self.parse_braced_expression(
+                                    "Expected expression inside braces after *",
+                                    "Expected '}' to close typeglob braces",
+                                );
                             }
                         }
                         Some(kind) if kind.is_sigil() => {
@@ -398,10 +378,6 @@ impl Parser<'_> {
     }
 
     fn should_parse_braced_block_in_compound_var(&self) -> bool {
-        if !self.at(SyntaxKind::L_BRACE) {
-            return false;
-        }
-
         match self
             .peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 1)
             .map(|(kind, _)| kind)
@@ -471,6 +447,23 @@ impl Parser<'_> {
             }
             self.builder.finish_node();
             self.skip_whitespace_and_newlines(); // Skip trivia after QUALIFIED_IDENT is complete
+        }
+    }
+
+    /// Helper function to parse braced expressions like {expr}
+    fn parse_braced_expression(&mut self, expr_error: &str, brace_error: &str) {
+        self.bump(); // consume {
+        self.skip_whitespace_and_newlines();
+
+        if !self.expression() {
+            self.error(expr_error);
+        }
+
+        self.skip_whitespace_and_newlines();
+        if self.at(SyntaxKind::R_BRACE) {
+            self.bump(); // consume }
+        } else {
+            self.error(brace_error);
         }
     }
 
