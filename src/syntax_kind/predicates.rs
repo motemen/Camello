@@ -37,6 +37,9 @@ impl SyntaxKind {
                     | SyntaxKind::FOREACH_KW
                     | SyntaxKind::WHILE_KW
                     | SyntaxKind::UNTIL_KW
+                    | SyntaxKind::TRY_KW
+                    | SyntaxKind::CATCH_KW
+                    | SyntaxKind::FINALLY_KW
                     | SyntaxKind::PACKAGE_KW
                     | SyntaxKind::QW_KW
                     | SyntaxKind::Q_KW

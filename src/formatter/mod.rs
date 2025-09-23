@@ -1065,6 +1065,8 @@ impl Formatter {
                     Some(
                         SyntaxKind::ELSIF_KW
                             | SyntaxKind::ELSE_KW
+                            | SyntaxKind::CATCH_KW
+                            | SyntaxKind::FINALLY_KW
                             | SyntaxKind::SEMICOLON
                             | SyntaxKind::L_PAREN
                     )

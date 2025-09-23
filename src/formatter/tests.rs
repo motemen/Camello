@@ -160,6 +160,16 @@ fn test_trailing_comment_resets_continuation_indent() {
 }
 
 #[test]
+fn test_try_catch_finally_formatting() {
+    let input = "try{ call_a_function(); } catch ($e){ warn \"Unable to call; $e\"; } finally{ print \"Finished\\n\"; }";
+    let formatted = format_and_assert(input);
+    assert_eq!(
+        formatted,
+        "try {\n    call_a_function();\n} catch ($e) {\n    warn \"Unable to call; $e\";\n} finally {\n    print \"Finished\\n\";\n}\n"
+    );
+}
+
+#[test]
 fn test_continuation_indent_with_infix_and_comment() {
     let input = "my $x = 1\n# adjust\n+ 2;";
     let formatted = format_and_assert(input);

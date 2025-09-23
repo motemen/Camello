@@ -59,6 +59,9 @@ pub enum SyntaxKind {
     FOREACH_KW, // foreach keyword (synonym for for)
     WHILE_KW,   // while keyword
     UNTIL_KW,   // until keyword
+    TRY_KW,
+    CATCH_KW,
+    FINALLY_KW,
     PACKAGE_KW,
     QW_KW,      // qw keyword
     Q_KW,       // q keyword (single-quoted string literal)
@@ -226,15 +229,19 @@ pub enum SyntaxKind {
     LABEL,            // Statement label
 
     // Declarations
-    VAR_DECL,     // Variable declaration (my, our, state, etc.)
-    PACKAGE_STMT, // Package declaration (package Foo::Bar)
-    USE_STMT,     // use statement (use warnings qw(all);)
-    NO_STMT,      // no statement (no warnings qw(all);)
-    FOR_STMT,     // for statement (Perl-style)
-    WHILE_STMT,   // while statement
-    UNTIL_STMT,   // until statement
-    IF_STMT,      // if statement
-    UNLESS_STMT,  // unless statement
+    VAR_DECL,        // Variable declaration (my, our, state, etc.)
+    PACKAGE_STMT,    // Package declaration (package Foo::Bar)
+    USE_STMT,        // use statement (use warnings qw(all);)
+    NO_STMT,         // no statement (no warnings qw(all);)
+    FOR_STMT,        // for statement (Perl-style)
+    WHILE_STMT,      // while statement
+    UNTIL_STMT,      // until statement
+    IF_STMT,         // if statement
+    UNLESS_STMT,     // unless statement
+    TRY_STMT,        // try statement
+    CATCH_BLOCK,     // catch { ... }
+    FINALLY_BLOCK,   // finally { ... }
+    CATCH_SIGNATURE, // catch ($error)
 
     // Data section (content after __END__ / __DATA__)
     DATA_SECTION,

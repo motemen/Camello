@@ -248,6 +248,15 @@ macro_rules! __syntax_kind_token {
     (until) => {
         $crate::SyntaxKind::UNTIL_KW
     };
+    (try) => {
+        $crate::SyntaxKind::TRY_KW
+    };
+    (catch) => {
+        $crate::SyntaxKind::CATCH_KW
+    };
+    (finally) => {
+        $crate::SyntaxKind::FINALLY_KW
+    };
     (package) => {
         $crate::SyntaxKind::PACKAGE_KW
     };

@@ -178,6 +178,9 @@ pub const fn get_token_spacing(kind: SyntaxKind) -> TokenSpacing {
         | SyntaxKind::UNLESS_KW
         | SyntaxKind::ELSIF_KW
         | SyntaxKind::ELSE_KW
+        | SyntaxKind::TRY_KW
+        | SyntaxKind::CATCH_KW
+        | SyntaxKind::FINALLY_KW
         | SyntaxKind::PACKAGE_KW
         | SyntaxKind::USE_KW
         | SyntaxKind::NO_KW
@@ -328,7 +331,7 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
         (COMPOUND_VAR, L_PAREN) => Some(false),
         (
             MY_KW | OUR_KW | STATE_KW | LOCAL_KW | FOR_KW | FOREACH_KW | WHILE_KW | UNTIL_KW
-            | IF_KW | UNLESS_KW | ELSIF_KW,
+            | IF_KW | UNLESS_KW | ELSIF_KW | CATCH_KW,
             L_PAREN,
         ) => Some(true),
 

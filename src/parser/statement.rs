@@ -60,6 +60,10 @@ impl Parser<'_> {
                 self.until_stmt();
                 true
             }
+            Some(SyntaxKind::TRY_KW) => {
+                self.try_stmt();
+                true
+            }
             Some(SyntaxKind::PACKAGE_KW) => {
                 self.package_stmt();
                 true
@@ -461,6 +465,85 @@ impl Parser<'_> {
 
         // Block
         self.block();
+
+        self.builder.finish_node();
+    }
+
+    fn try_stmt(&mut self) {
+        self.builder.start_node(SyntaxKind::TRY_STMT.into());
+
+        self.expect(SyntaxKind::TRY_KW);
+        self.skip_whitespace_and_newlines();
+
+        if self.at(SyntaxKind::L_BRACE) {
+            self.block();
+        } else {
+            self.error("Expected block after try");
+        }
+
+        self.skip_whitespace_and_newlines();
+
+        if self.at(SyntaxKind::CATCH_KW) {
+            self.parse_catch_block();
+            self.skip_whitespace_and_newlines();
+        }
+
+        if self.at(SyntaxKind::FINALLY_KW) {
+            self.parse_finally_block();
+        }
+
+        self.builder.finish_node();
+    }
+
+    fn parse_catch_block(&mut self) {
+        self.builder.start_node(SyntaxKind::CATCH_BLOCK.into());
+
+        self.expect(SyntaxKind::CATCH_KW);
+        self.skip_whitespace_and_newlines();
+
+        if self.at(SyntaxKind::L_PAREN) {
+            self.parse_catch_signature();
+            self.skip_whitespace_and_newlines();
+        }
+
+        if self.at(SyntaxKind::L_BRACE) {
+            self.block();
+        } else {
+            self.error("Expected block after catch");
+        }
+
+        self.builder.finish_node();
+    }
+
+    fn parse_catch_signature(&mut self) {
+        self.builder.start_node(SyntaxKind::CATCH_SIGNATURE.into());
+
+        self.expect_value(SyntaxKind::L_PAREN);
+        self.skip_whitespace_and_newlines();
+
+        if !self.at(SyntaxKind::R_PAREN) {
+            if !self.expression_list() {
+                self.error("Expected expression in catch signature");
+            }
+            self.skip_whitespace_and_newlines();
+        }
+
+        self.expect_op(SyntaxKind::R_PAREN);
+
+        self.builder.finish_node();
+    }
+
+    fn parse_finally_block(&mut self) {
+        self.builder.start_node(SyntaxKind::FINALLY_BLOCK.into());
+
+        self.expect(SyntaxKind::FINALLY_KW);
+        self.skip_whitespace_and_newlines();
+
+        if self.at(SyntaxKind::L_BRACE) {
+            self.block();
+        } else {
+            self.error("Expected block after finally");
+        }
 
         self.builder.finish_node();
     }
