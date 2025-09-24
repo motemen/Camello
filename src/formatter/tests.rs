@@ -1556,6 +1556,7 @@ fn test_function_call_formatting() {
         ("shift@array;", "shift @array;\n"),
         ("delete$hash{key};", "delete $hash{key};\n"),
         ("my_func$a,$b,$c;", "my_func $a, $b, $c;\n"),
+        ("func unless=>1;", "func unless => 1;\n"),
     ];
     check_formatting_cases(&cases);
 }
