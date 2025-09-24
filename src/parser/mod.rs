@@ -316,14 +316,19 @@ impl<'a> Parser<'a> {
         self.lexer.peek_nth_non_trivia_with_context(ctx, n)
     }
 
-    /// Returns true when `kind` is a keyword token whose following non-trivia token is a
-    /// fat comma (`=>`). The `fat_comma_offset` specifies how many non-trivia tokens ahead
-    /// the fat comma should appear from the current parser position.
-    fn is_keyword_followed_by_fat_comma(&self, kind: SyntaxKind, fat_comma_offset: usize) -> bool {
-        kind.is_keyword()
-            && self
-                .peek_nth_non_trivia_token_with_context(LexContext::Value, fat_comma_offset)
-                .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::FAT_COMMA)
+    /// Returns true if the token at `keyword_offset` is a keyword and is followed by a
+    /// fat comma (`=>`).
+    fn is_keyword_followed_by_fat_comma(&self, keyword_offset: usize) -> bool {
+        if let Some((kind, _)) =
+            self.peek_nth_non_trivia_token_with_context(LexContext::Value, keyword_offset)
+        {
+            kind.is_keyword()
+                && self
+                    .peek_nth_non_trivia_token_with_context(LexContext::Value, keyword_offset + 1)
+                    .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::FAT_COMMA)
+        } else {
+            false
+        }
     }
 
     /// Check if any of the given token kinds appears next (skipping trivia)
@@ -332,8 +337,8 @@ impl<'a> Parser<'a> {
     }
 
     fn is_at_start_of_expression(&self) -> bool {
-        self.current_kind().is_some_and(|kind| {
-            Self::can_start_expression(kind) || self.is_keyword_followed_by_fat_comma(kind, 1)
+        self.current_kind_value().is_some_and(|kind| {
+            Self::can_start_expression(kind) || self.is_keyword_followed_by_fat_comma(0)
         })
     }
 
