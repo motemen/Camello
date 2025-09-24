@@ -181,10 +181,6 @@ impl Parser<'_> {
                     // Number like $1, $2, etc. - treat as regular variable name
                     self.bump();
                 }
-                Some(SyntaxKind::ARRAY_SIGIL) => {
-                    // Special punctuation like $@ - treat as regular variable name
-                    self.bump();
-                }
                 Some(SyntaxKind::CARET) => {
                     // Handle $^ or $^X patterns
                     self.bump(); // consume ^
@@ -354,15 +350,16 @@ impl Parser<'_> {
     fn is_compound_dereference_target(lookahead: Option<SyntaxKind>) -> bool {
         // Special variables (e.g. $^FOO) should not be implicitly dereferenced. Only permit
         // tokens that can legally start a normal variable or a braced expression.
-        matches!(
-            lookahead,
-            Some(
-                SyntaxKind::IDENT
-                    | SyntaxKind::NUMBER
-                    | SyntaxKind::ARRAY_SIGIL
-                    | SyntaxKind::L_BRACE
-            )
-        )
+        match lookahead {
+            Some(kind) => {
+                kind == SyntaxKind::IDENT
+                    || kind == SyntaxKind::NUMBER
+                    || kind == SyntaxKind::L_BRACE
+                    || kind == SyntaxKind::DOUBLE_COLON  // for qualified names like $::foo
+                    || kind.is_keyword() // keywords can be used as variable names
+            }
+            None => false,
+        }
     }
 
     fn should_recurse_into_compound_var(current_sigil: SyntaxKind, next_kind: SyntaxKind) -> bool {

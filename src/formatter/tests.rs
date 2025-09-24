@@ -3418,3 +3418,23 @@ fn test_identifier_starting_with_v_and_single_digit() {
         assert_eq!(formatted, expected, "Failed for input: '{}'", input);
     }
 }
+
+#[test]
+fn test_array_scalar_dereferencing_formatting() {
+    // Test array dereferencing with scalar reference
+    let cases = [
+        ("@$ref", "@$ref"),
+        ("@$next", "@$next"),
+        ("@{ $var }", "@{$var}"),
+        ("%$ref", "%$ref"),
+        ("% $hash", "%$hash"),
+        // Test existing special variables still work
+        ("$@", "$@"),
+        ("$#array", "$#array"),
+    ];
+
+    for (input, expected) in cases {
+        let formatted = format_and_assert(input);
+        assert_eq!(formatted, expected, "Failed for input: '{}'", input);
+    }
+}
