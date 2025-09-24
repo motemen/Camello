@@ -522,8 +522,10 @@ impl Parser<'_> {
         self.skip_whitespace_and_newlines();
 
         if !self.at(SyntaxKind::R_PAREN) {
-            if !self.expression_list() {
-                self.error("Expected expression in catch signature");
+            if self.at(SyntaxKind::SCALAR_SIGIL) {
+                self.parse_variable();
+            } else {
+                self.error("Expected scalar variable in catch signature");
             }
             self.skip_whitespace_and_newlines();
         }
