@@ -44,16 +44,17 @@ impl Parser<'_> {
     pub fn parse_variable(&mut self) {
         let sigil = self.current_kind().unwrap();
 
+        let next_token_kind = self
+            .peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 1)
+            .map(|(kind, _)| kind);
+
         // Check if this should be a compound variable
         let is_compound = match sigil {
             SyntaxKind::ARRAY_INDEX_SIGIL => true, // $# variables are always compound
             SyntaxKind::SCALAR_SIGIL | SyntaxKind::ARRAY_SIGIL | SyntaxKind::HASH_SIGIL => {
-                // Check if followed by brace or valid dereferencing pattern
-                match self
-                    .peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 1)
-                {
-                    Some((SyntaxKind::L_BRACE, _)) => true, // @{expr}, %{expr}, ${expr}
-                    Some((SyntaxKind::SCALAR_SIGIL, _)) => {
+                match next_token_kind {
+                    Some(SyntaxKind::L_BRACE) => true, // @{expr}, %{expr}, ${expr}
+                    Some(SyntaxKind::SCALAR_SIGIL) => {
                         // Peek the third token to ensure a valid variable name follows
                         // to avoid misclassifying special variables like "$$;" as dereferencing
                         let third = self.peek_nth_non_trivia_token_with_context(
@@ -66,16 +67,11 @@ impl Parser<'_> {
                     _ => false,
                 }
             }
-            SyntaxKind::TYPEGLOB_SIGIL => {
-                // Check if followed by brace or another sigil for compound typeglob variables
-                match self
-                    .peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 1)
-                {
-                    Some((SyntaxKind::L_BRACE, _)) => true,     // *{expr}
-                    Some((kind, _)) if kind.is_sigil() => true, // *$name, *@name, etc.
-                    _ => false,
-                }
-            }
+            SyntaxKind::TYPEGLOB_SIGIL => match next_token_kind {
+                Some(SyntaxKind::L_BRACE) => true,     // *{expr}
+                Some(kind) if kind.is_sigil() => true, // *$name, *@name, etc.
+                _ => false,
+            },
             _ => false,
         };
 
@@ -130,7 +126,10 @@ impl Parser<'_> {
                         }
                     }
                 }
-                SyntaxKind::SCALAR_SIGIL | SyntaxKind::ARRAY_SIGIL | SyntaxKind::HASH_SIGIL => {
+                SyntaxKind::SCALAR_SIGIL
+                | SyntaxKind::ARRAY_SIGIL
+                | SyntaxKind::HASH_SIGIL
+                | SyntaxKind::TYPEGLOB_SIGIL => {
                     // Handle braced variables and dereferencing
                     match self.current_kind() {
                         Some(SyntaxKind::L_BRACE) => {
@@ -138,45 +137,34 @@ impl Parser<'_> {
                                 self.block();
                                 self.skip_whitespace_and_newlines();
                             } else {
-                                // Braced variable: @{expr}, %{expr}, ${expr}
-                                self.parse_braced_expression(
-                                    "Expected expression inside braces",
-                                    "Expected '}' to close braced variable",
-                                );
+                                // Braced dereference like @{expr}, %{expr}, ${expr}, *{expr}
+                                let (expr_error, brace_error) =
+                                    if sigil == SyntaxKind::TYPEGLOB_SIGIL {
+                                        (
+                                            "Expected expression inside braces after *",
+                                            "Expected '}' to close typeglob braces",
+                                        )
+                                    } else {
+                                        (
+                                            "Expected expression inside braces",
+                                            "Expected '}' to close braced variable",
+                                        )
+                                    };
+                                self.parse_braced_expression(expr_error, brace_error);
                             }
                         }
-                        Some(SyntaxKind::SCALAR_SIGIL) => {
-                            // Dereferencing: @$ref, %$ref, $$ref
+                        Some(kind) if Self::should_recurse_into_compound_var(sigil, kind) => {
+                            // Dereferencing like @$ref, %$ref, $$ref or typeglob variants
                             self.parse_variable();
                         }
                         _ => {
                             // This shouldn't happen due to our lookahead check
-                            self.error("Expected '{' or '$' after compound variable sigil");
-                        }
-                    }
-                }
-                SyntaxKind::TYPEGLOB_SIGIL => {
-                    // Handle compound typeglob variables: *{expr}, *$name, *@name, etc.
-                    match self.current_kind() {
-                        Some(SyntaxKind::L_BRACE) => {
-                            if self.should_parse_braced_block_in_compound_var() {
-                                self.block();
-                                self.skip_whitespace_and_newlines();
+                            let message = if sigil == SyntaxKind::TYPEGLOB_SIGIL {
+                                "Expected '{' or sigil after typeglob '*'"
                             } else {
-                                // Braced typeglob: *{expr}
-                                self.parse_braced_expression(
-                                    "Expected expression inside braces after *",
-                                    "Expected '}' to close typeglob braces",
-                                );
-                            }
-                        }
-                        Some(kind) if kind.is_sigil() => {
-                            // Typeglob with sigil: *$name, *@name, *%name, *&name
-                            self.parse_variable();
-                        }
-                        _ => {
-                            // This shouldn't happen due to our lookahead check
-                            self.error("Expected '{' or sigil after typeglob '*'");
+                                "Expected '{' or '$' after compound variable sigil"
+                            };
+                            self.error(message);
                         }
                     }
                 }
@@ -377,12 +365,23 @@ impl Parser<'_> {
         )
     }
 
+    fn should_recurse_into_compound_var(current_sigil: SyntaxKind, next_kind: SyntaxKind) -> bool {
+        match current_sigil {
+            SyntaxKind::TYPEGLOB_SIGIL => next_kind.is_sigil(),
+            SyntaxKind::SCALAR_SIGIL | SyntaxKind::ARRAY_SIGIL | SyntaxKind::HASH_SIGIL => {
+                next_kind == SyntaxKind::SCALAR_SIGIL
+            }
+            _ => false,
+        }
+    }
+
     fn should_parse_braced_block_in_compound_var(&self) -> bool {
         match self
             .peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 1)
             .map(|(kind, _)| kind)
         {
             Some(SyntaxKind::CARET) => false,
+            Some(kind) if kind.is_literal() => false,
             Some(_) => true,
             None => false,
         }
@@ -465,43 +464,5 @@ impl Parser<'_> {
         } else {
             self.error(brace_error);
         }
-    }
-
-    /// Parses a typeglob expression (e.g., *{$name}, *STDIN)
-    pub fn parse_typeglob_expr(&mut self) {
-        self.builder.start_node(SyntaxKind::TYPEGLOB_EXPR.into());
-
-        // Consume the asterisk
-        self.expect(SyntaxKind::TYPEGLOB_SIGIL);
-        self.skip_whitespace_and_newlines();
-
-        // Check what comes after the asterisk
-        match self.current_kind() {
-            Some(SyntaxKind::L_BRACE) => {
-                // Handle *{expression} syntax
-                self.bump(); // consume {
-                self.skip_whitespace_and_newlines();
-
-                if !self.expression() {
-                    self.error("Expected expression in typeglob braces");
-                }
-
-                if self.at(SyntaxKind::R_BRACE) {
-                    self.bump(); // }
-                    self.skip_whitespace_and_newlines();
-                } else {
-                    self.error("Expected '}' after typeglob expression");
-                }
-            }
-            Some(kind) if kind == SyntaxKind::IDENT || SyntaxKind::is_keyword(kind) => {
-                // Handle *STDIN syntax (simple identifier), allow keywords as names
-                self.parse_identifier_or_qualified();
-            }
-            _ => {
-                self.error("Expected '{' or identifier after '*' in typeglob expression");
-            }
-        }
-
-        self.builder.finish_node();
     }
 }
