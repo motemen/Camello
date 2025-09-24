@@ -257,6 +257,7 @@ impl Parser<'_> {
                         self.bump(); // Skip the problematic token
                     }
                 }
+                self.recover_statement();
                 self.skip_whitespace_and_newlines();
             }
 

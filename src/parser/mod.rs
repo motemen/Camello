@@ -35,9 +35,13 @@ pub struct Parser<'a> {
     errors: Vec<ParseError>,
     current_pos: usize,
     source: &'a str,
+    panic_mode: bool,
+    last_error_token: Option<SyntaxKind>,
 }
 
 impl<'a> Parser<'a> {
+    const STATEMENT_RECOVERY_SET: [SyntaxKind; 2] = [SyntaxKind::SEMICOLON, SyntaxKind::R_BRACE];
+
     #[must_use]
     pub fn new(input: &'a str) -> Self {
         let lexer = Lexer::new(input);
@@ -48,6 +52,8 @@ impl<'a> Parser<'a> {
             errors: Vec::new(),
             current_pos: 0,
             source: input,
+            panic_mode: false,
+            last_error_token: None,
         }
     }
 
@@ -85,6 +91,7 @@ impl<'a> Parser<'a> {
             } else if !self.statement() {
                 self.error("Expected a statement, but found an unexpected token.");
             }
+            self.recover_statement();
             self.skip_whitespace_and_newlines();
         }
 
@@ -208,6 +215,16 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn bump_error_token(&mut self) -> Option<SyntaxKind> {
+        if let Some((kind, text)) = self.lexer.next_token() {
+            self.builder.token(SyntaxKind::ERROR.into(), text);
+            self.current_pos += text.len();
+            Some(kind)
+        } else {
+            None
+        }
+    }
+
     fn expect(&mut self, expected: SyntaxKind) {
         if self.at(expected) {
             self.bump();
@@ -288,11 +305,49 @@ impl<'a> Parser<'a> {
         self.errors
             .push(ParseError::new(message.to_string(), range, self.source));
 
+        self.panic_mode = true;
+
         // Create error token by consuming one token (if any)
-        if let Some((_, text)) = self.lexer.next_token() {
-            self.builder.token(SyntaxKind::ERROR.into(), text);
-            self.current_pos += text.len();
+        self.last_error_token = self.bump_error_token();
+    }
+
+    fn recover_to(&mut self, recovery_set: &[SyntaxKind]) {
+        if !self.panic_mode {
+            return;
         }
+
+        if self
+            .last_error_token
+            .take()
+            .is_some_and(|kind| recovery_set.contains(&kind))
+        {
+            self.panic_mode = false;
+            return;
+        }
+
+        while let Some(kind) = self.current_kind() {
+            if recovery_set.contains(&kind) {
+                if kind == SyntaxKind::SEMICOLON {
+                    self.bump();
+                }
+                self.panic_mode = false;
+                self.last_error_token = None;
+                return;
+            }
+
+            if kind.is_trivia() {
+                self.bump();
+            } else if self.bump_error_token().is_none() {
+                break;
+            }
+        }
+
+        self.panic_mode = false;
+        self.last_error_token = None;
+    }
+
+    fn recover_statement(&mut self) {
+        self.recover_to(&Self::STATEMENT_RECOVERY_SET);
     }
 
     /// 括弧内のカンマ区切り式をパースするヘルパー関数
@@ -410,6 +465,88 @@ mod tests {
         assert!(
             syntax.children().count() > 0,
             "Should have some parsed structure"
+        );
+    }
+
+    #[test]
+    fn test_statement_recovery_resumes_after_semicolon() {
+        let input = "my $x = ; my $y = 2;";
+        let (green, errors) = parse(input);
+
+        assert!(
+            !errors.is_empty(),
+            "Expected a parse error for the incomplete assignment"
+        );
+
+        let root = PerlNode::new_root(green);
+        assert_eq!(root.kind(), SyntaxKind::ROOT);
+
+        let statements: Vec<_> = root
+            .children()
+            .filter(|child| child.kind() == SyntaxKind::STMT)
+            .collect();
+
+        assert_eq!(
+            statements.len(),
+            2,
+            "Expected two statements at the root, got {}",
+            statements.len()
+        );
+
+        let recovered_stmt_contains_y = statements.iter().any(|stmt| {
+            stmt.descendants_with_tokens()
+                .filter_map(|element| element.into_token())
+                .any(|token| token.kind() == SyntaxKind::IDENT && token.text() == "y")
+        });
+
+        assert!(
+            recovered_stmt_contains_y,
+            "Expected to recover and parse the statement containing identifier 'y'"
+        );
+    }
+
+    #[test]
+    fn test_recovery_inside_block_resumes_after_error() {
+        let input = "sub foo { my $x = ; my $y = 2; } my $z = 3;";
+        let (green, errors) = parse(input);
+
+        assert!(
+            !errors.is_empty(),
+            "Expected a parse error for the incomplete assignment inside the block"
+        );
+
+        let root = PerlNode::new_root(green);
+        assert_eq!(root.kind(), SyntaxKind::ROOT);
+
+        let block = root
+            .descendants()
+            .find(|node| node.kind() == SyntaxKind::BLOCK_STMT)
+            .expect("Expected a block statement inside the subroutine");
+
+        let inner_statements: Vec<_> = block
+            .children()
+            .filter(|child| child.kind() == SyntaxKind::STMT)
+            .collect();
+
+        assert_eq!(
+            inner_statements.len(),
+            2,
+            "Expected to retain both statements inside the block, got {}",
+            inner_statements.len()
+        );
+
+        let outer_has_z = root
+            .children()
+            .filter(|child| child.kind() == SyntaxKind::STMT)
+            .any(|stmt| {
+                stmt.descendants_with_tokens()
+                    .filter_map(|element| element.into_token())
+                    .any(|token| token.kind() == SyntaxKind::IDENT && token.text() == "z")
+            });
+
+        assert!(
+            outer_has_z,
+            "Expected to parse the statement following the erroneous block"
         );
     }
 

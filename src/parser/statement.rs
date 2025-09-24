@@ -564,6 +564,8 @@ impl Parser<'_> {
         // Semicolons are required except for the last statement in a block, end of file, or before data sections
         if self.at(SyntaxKind::SEMICOLON) {
             self.bump();
+        } else if self.panic_mode {
+            // Already recovering from a previous error; defer to the recovery logic
         } else if self.at_end()
             || self.at_any(&[SyntaxKind::R_BRACE, SyntaxKind::END_KW, SyntaxKind::DATA_KW])
         {
@@ -589,6 +591,7 @@ impl Parser<'_> {
             if !self.statement() {
                 self.error("Expected a statement in block, but found an unexpected token.");
             }
+            self.recover_statement();
             self.skip_whitespace_and_newlines();
         }
 
