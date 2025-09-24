@@ -163,7 +163,9 @@ impl Parser<'_> {
         );
 
         if let Some(kind) = next_kind {
-            if Self::can_start_expression(kind) || self.is_keyword_followed_by_fat_comma(0) {
+            if Self::can_start_expression(kind)
+                || (kind.is_keyword() && self.is_followed_by_fat_comma(0))
+            {
                 // We have a regular function call, wrap everything in FUNCTION_CALL_EXPR
                 self.builder
                     .start_node_at(start, SyntaxKind::FUNCTION_CALL_EXPR.into());
