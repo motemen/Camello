@@ -859,10 +859,6 @@ impl<'a> Lexer<'a> {
             };
             let ch_len = ch.len_utf8();
 
-            if ch == '\n' {
-                return None;
-            }
-
             if escaped {
                 escaped = false;
                 if let Some(CharClassContext::Normal { allow_closing }) = contexts.last_mut() {

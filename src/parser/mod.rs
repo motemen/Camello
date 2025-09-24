@@ -500,6 +500,18 @@ mod tests {
     }
 
     #[test]
+    fn test_regex_literal_with_newline() {
+        let input = "$foo =~ /foo\nbar/x;";
+        let (_green, errors) = parse(input);
+
+        assert!(
+            errors.is_empty(),
+            "Expected no parse errors, got: {:?}",
+            errors
+        );
+    }
+
+    #[test]
     fn test_substitution_with_escaped_delimiter() {
         let input = "s/\\//::/g;";
         let (_green, errors) = parse(input);
