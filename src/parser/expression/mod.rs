@@ -167,13 +167,10 @@ impl Parser<'_> {
         );
 
         if let Some(kind) = next_kind {
-            let keyword_followed_by_fat_comma =
-                next_value_token.map(|(kind, _)| kind).is_some_and(|kind| {
-                    kind.is_keyword()
-                        && self
-                            .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
-                            .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::FAT_COMMA)
-                });
+            let keyword_followed_by_fat_comma = kind.is_keyword()
+                && self
+                    .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
+                    .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::FAT_COMMA);
 
             if Self::can_start_expression(kind) || keyword_followed_by_fat_comma {
                 // We have a regular function call, wrap everything in FUNCTION_CALL_EXPR
