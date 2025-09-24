@@ -1366,7 +1366,7 @@ impl Parser<'_> {
         self.expect(SyntaxKind::REQUIRE_KW);
         self.skip_whitespace_and_newlines();
 
-        // VERSION literal or module name (qualified identifier)
+        // VERSION literal, module name (qualified identifier), or general expression
         if self.at(SyntaxKind::VERSION) {
             // Version literal (e.g., require v5.42)
             self.bump();
@@ -1377,8 +1377,8 @@ impl Parser<'_> {
             // Simple version number (e.g., require 5)
             self.bump();
         } else {
-            // Module name (qualified identifier); allow keywords as identifiers
-            self.parse_identifier_or_qualified();
+            // Parse as general expression (handles module names, variables, etc.)
+            self.parse_expression_with_precedence(precedence::Precedence(0));
         }
         self.skip_whitespace_and_newlines();
 

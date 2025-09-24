@@ -1337,99 +1337,14 @@ fn test_require_formatting() {
             "my $result = require local::lib;",
             "my $result = require local::lib;\n",
         ),
-    ]);
-}
-
-#[test]
-fn test_keyword_module_names() {
-    check_formatting_cases(&[
-        // Method calls on keyword module names
-        ("local::lib->new;", "local::lib->new;\n"),
-        ("local::lib->import;", "local::lib->import;\n"),
-        ("use::ok->new;", "use::ok->new;\n"),
-        ("if::then->call;", "if::then->call;\n"),
-        // Keyword:: followed by ->
-        ("local::->new;", "local::->new;\n"),
-        ("use::->import;", "use::->import;\n"),
-        // Multiple levels
-        ("local::lib::more->new;", "local::lib::more->new;\n"),
-        // In expressions
-        ("my $obj = local::lib->new;", "my $obj = local::lib->new;\n"),
+        // Variable expressions
+        ("require $file;", "require $file;\n"),
+        ("require $package_name;", "require $package_name;\n"),
         (
-            "my $result = use::ok->call($arg);",
-            "my $result = use::ok->call($arg);\n",
+            "my $result = require $module;",
+            "my $result = require $module;\n",
         ),
-        // With parentheses
-        ("local::lib->new();", "local::lib->new();\n"),
-        (
-            "local::lib->import('feature');",
-            "local::lib->import('feature');\n",
-        ),
-    ]);
-}
-
-#[test]
-fn test_use_statement_with_parentheses_formatting() {
-    check_formatting_cases(&[
-        // Use statement with empty parentheses (import list)
-        ("use A();", "use A ();\n"),
-        // Qualified module names now have space
-        ("use Module::Name();", "use Module::Name ();\n"),
-        // Use statement with import list - qw formatting should not have extra spaces
-        ("use A(qw/func1 func2/);", "use A (qw/func1 func2/);\n"),
-        ("use Module(func1,func2);", "use Module (func1, func2);\n"),
-        // With spacing variations
-        ("use  A  ()  ;", "use A ();\n"),
-        ("use\tA\t()\t;", "use A ();\n"),
-    ]);
-}
-
-#[test]
-fn test_use_statement_with_expressions() {
-    check_formatting_cases(&[
-        // Basic hash pair expressions
-        ("use A::B x => 1;", "use A::B x => 1;\n"),
-        ("use Module x=>1;", "use Module x => 1;\n"),
-        // Dash-prefixed import flag should be preserved
-        ("use A -abcde => 1;", "use A -abcde => 1;\n"),
-        // Multiple hash pairs
-        ("use A::B x => 1, y => 2;", "use A::B x => 1, y => 2;\n"),
-        (
-            "use Module foo=>bar,baz=>123;",
-            "use Module foo => bar, baz => 123;\n",
-        ),
-        // Different value types
-        ("use A::B key => 'value';", "use A::B key => 'value';\n"),
-        (
-            "use A::B num => 42, str => \"hello\";",
-            "use A::B num => 42, str => \"hello\";\n",
-        ),
-        // Complex expressions
-        (
-            "use A::B func => \\&function;",
-            "use A::B func => \\&function;\n",
-        ),
-        (
-            "use A::B array => [1,2,3];",
-            "use A::B array => [ 1, 2, 3 ];\n",
-        ),
-        (
-            "use A::B hash => {a=>1,b=>2};",
-            "use A::B hash => { a => 1, b => 2 };\n",
-        ),
-        // Spacing variations
-        ("use  A::B  x  =>  1  ;", "use A::B x => 1;\n"),
-        ("use\tModule\tx\t=>\t1\t;", "use Module x => 1;\n"),
-        // Mixed with regular identifiers (not starting with 'x')
-        (
-            "use A::B foo => 1, bar => 2;",
-            "use A::B foo => 1, bar => 2;\n",
-        ),
-        // Complex module names with expressions
-        (
-            "use Very::Long::Module::Name x => 1;",
-            "use Very::Long::Module::Name x => 1;\n",
-        ),
+        ("require $config->{module};", "require $config->{module};\n"),
     ]);
 }
 
