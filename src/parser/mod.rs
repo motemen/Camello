@@ -316,19 +316,19 @@ impl<'a> Parser<'a> {
         self.lexer.peek_nth_non_trivia_with_context(ctx, n)
     }
 
+    /// Returns true if the token at `offset` is followed by a fat comma (`=>`).
+    fn is_followed_by_fat_comma(&self, offset: usize) -> bool {
+        self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset + 1)
+            .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::FAT_COMMA)
+    }
+
     /// Returns true if the token at `keyword_offset` is a keyword and is followed by a
     /// fat comma (`=>`).
     fn is_keyword_followed_by_fat_comma(&self, keyword_offset: usize) -> bool {
-        if let Some((kind, _)) =
-            self.peek_nth_non_trivia_token_with_context(LexContext::Value, keyword_offset)
-        {
-            kind.is_keyword()
-                && self
-                    .peek_nth_non_trivia_token_with_context(LexContext::Value, keyword_offset + 1)
-                    .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::FAT_COMMA)
-        } else {
-            false
-        }
+        self.peek_nth_non_trivia_token_with_context(LexContext::Value, keyword_offset)
+            .is_some_and(|(kind, _)| {
+                kind.is_keyword() && self.is_followed_by_fat_comma(keyword_offset)
+            })
     }
 
     /// Check if any of the given token kinds appears next (skipping trivia)
