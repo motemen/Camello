@@ -78,6 +78,7 @@ The parser implements multiple error recovery strategies:
 - `mod.rs`: The main parser module, defining the `Parser` struct and core parsing loop.
 - `statement.rs`: Handles statement-level parsing (e.g., `if`, `while`, `sub`).
 - `expression/mod.rs`: Manages expression parsing using a Pratt parser.
+- `expression/call.rs`: Groups function-call parsing helpers and heuristics.
 - `expression/precedence.rs`: Defines operator precedence and associativity.
 - `expression/primary.rs`: Parses primary expressions like variables, literals, and parenthesized expressions.
 - `expression/quoted.rs`: Handles complex quote-like operators.
