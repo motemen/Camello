@@ -408,7 +408,6 @@ impl Formatter {
                 return;
             }
             SyntaxKind::ANON_SUB_EXPR
-            | SyntaxKind::TYPEGLOB_EXPR
             | SyntaxKind::FUNCTION_CALL_EXPR
             | SyntaxKind::BLOCK_FUNCTION_CALL_EXPR
             | SyntaxKind::METHOD_CALL_EXPR
