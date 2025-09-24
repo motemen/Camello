@@ -78,7 +78,7 @@ impl Parser<'_> {
             }
 
             // Keyword followed by fat arrow: {if=> - hash reference (keyword as hash key)
-            Some((kind, _)) if kind.is_keyword() => self.is_keyword_followed_by_fat_comma(offset),
+            Some((kind, _)) if kind.is_keyword() => self.is_followed_by_fat_comma(offset),
 
             // String followed by fat arrow or comma: {"key"=> or {"key", - hash reference
             Some((SyntaxKind::STRING, _)) => {
@@ -1033,7 +1033,7 @@ impl Parser<'_> {
         // Treat bare keywords as identifiers when they appear before fat comma (=>)
         // or when they are inside hash braces (for hash keys like $h->{package})
         if current_kind.is_keyword()
-            && (self.is_keyword_followed_by_fat_comma(0) || self.is_inside_hash_braces())
+            && (self.is_followed_by_fat_comma(0) || self.is_inside_hash_braces())
         {
             self.parse_ident_like_expr(true);
             return true;
