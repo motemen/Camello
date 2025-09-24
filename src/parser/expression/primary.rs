@@ -380,7 +380,7 @@ impl Parser<'_> {
             .peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 1)
             .map(|(kind, _)| kind)
         {
-            Some(kind) if kind == SyntaxKind::CARET => false,
+            Some(SyntaxKind::CARET) => false,
             Some(kind) if kind.is_literal() => false,
             Some(_) => true,
             None => false,
