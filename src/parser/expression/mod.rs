@@ -79,9 +79,7 @@ impl Parser<'_> {
 
             // Keyword followed by fat arrow: {if=> - hash reference (keyword as hash key)
             Some((kind, _)) if kind.is_keyword() => {
-                let next_token =
-                    self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset + 1);
-                matches!(next_token, Some((SyntaxKind::FAT_COMMA, _)))
+                self.is_keyword_followed_by_fat_comma(kind, offset + 1)
             }
 
             // String followed by fat arrow or comma: {"key"=> or {"key", - hash reference
@@ -167,12 +165,7 @@ impl Parser<'_> {
         );
 
         if let Some(kind) = next_kind {
-            let keyword_followed_by_fat_comma = kind.is_keyword()
-                && self
-                    .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
-                    .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::FAT_COMMA);
-
-            if Self::can_start_expression(kind) || keyword_followed_by_fat_comma {
+            if Self::can_start_expression(kind) || self.is_keyword_followed_by_fat_comma(kind, 1) {
                 // We have a regular function call, wrap everything in FUNCTION_CALL_EXPR
                 self.builder
                     .start_node_at(start, SyntaxKind::FUNCTION_CALL_EXPR.into());
@@ -1042,9 +1035,7 @@ impl Parser<'_> {
         // Treat bare keywords as identifiers when they appear before fat comma (=>)
         // or when they are inside hash braces (for hash keys like $h->{package})
         if current_kind.is_keyword()
-            && (self
-                .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
-                .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::FAT_COMMA)
+            && (self.is_keyword_followed_by_fat_comma(current_kind, 1)
                 || self.is_inside_hash_braces())
         {
             self.parse_ident_like_expr(true);
