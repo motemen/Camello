@@ -174,8 +174,58 @@ impl Parser<'_> {
             // Standard variable parsing for simple variables
             match self.current_kind() {
                 Some(SyntaxKind::IDENT) => {
-                    // Regular identifier or qualified identifier (including $_, $_foo, etc.)
-                    self.parse_identifier_or_qualified();
+                    // Check if this is 'x' followed by more tokens that should be combined
+                    if self.current_text() == Some("x") {
+                        // Peek at the next non-trivia token
+                        let next_token = self.peek_nth_non_trivia_token_with_context(
+                            crate::lexer::LexContext::Value,
+                            1,
+                        );
+
+                        match next_token {
+                            Some((SyntaxKind::IDENT, _)) | Some((SyntaxKind::NUMBER, _)) => {
+                                // Combine 'x' with the following token (e.g., x2, xerror)
+                                self.parse_identifier_or_qualified();
+                                // Parse the following token as part of the same identifier
+                                if self.current_kind().is_some_and(|k| {
+                                    k == SyntaxKind::IDENT || k == SyntaxKind::NUMBER
+                                }) {
+                                    self.bump_as(SyntaxKind::IDENT);
+                                }
+                            }
+                            _ => {
+                                // Just a standalone 'x', parse normally
+                                self.parse_identifier_or_qualified();
+                            }
+                        }
+                    } else {
+                        // Regular identifier or qualified identifier (including $_, $_foo, etc.)
+                        self.parse_identifier_or_qualified();
+                    }
+                }
+                Some(SyntaxKind::X) => {
+                    // Handle case where 'x' is tokenized as X (repetition operator)
+                    // but we're in variable context, so check if it should be part of variable name
+                    let next_token = self
+                        .peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 1);
+
+                    match next_token {
+                        Some((SyntaxKind::IDENT, _)) | Some((SyntaxKind::NUMBER, _)) => {
+                            // Combine 'x' with the following token (e.g., x2, xerror)
+                            self.bump_as(SyntaxKind::IDENT); // treat X as IDENT
+                                                             // Parse the following token as part of the same identifier
+                            if self
+                                .current_kind()
+                                .is_some_and(|k| k == SyntaxKind::IDENT || k == SyntaxKind::NUMBER)
+                            {
+                                self.bump_as(SyntaxKind::IDENT);
+                            }
+                        }
+                        _ => {
+                            // Just a standalone 'x', treat as identifier in variable context
+                            self.bump_as(SyntaxKind::IDENT);
+                        }
+                    }
                 }
                 Some(SyntaxKind::NUMBER) => {
                     // Number like $1, $2, etc. - treat as regular variable name
@@ -407,7 +457,47 @@ impl Parser<'_> {
         // Accept IDENT or coerce a keyword into IDENT at identifier positions
         let checkpoint = self.builder.checkpoint();
         if self.at(SyntaxKind::IDENT) {
-            self.bump(); // First identifier
+            // Check if this is 'x' that should be combined with following tokens
+            if self.current_text() == Some("x") {
+                let next_token =
+                    self.peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 1);
+                match next_token {
+                    Some((SyntaxKind::IDENT, _)) | Some((SyntaxKind::NUMBER, _)) => {
+                        // Combine x with the following token
+                        self.bump(); // consume 'x'
+                        if self
+                            .current_kind()
+                            .is_some_and(|k| k == SyntaxKind::IDENT || k == SyntaxKind::NUMBER)
+                        {
+                            self.bump_as(SyntaxKind::IDENT);
+                        }
+                    }
+                    _ => {
+                        self.bump(); // Just standalone 'x'
+                    }
+                }
+            } else {
+                self.bump(); // Regular identifier
+            }
+        } else if self.at(SyntaxKind::X) {
+            // Handle 'x' tokenized as operator in name context
+            let next_token =
+                self.peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 1);
+            match next_token {
+                Some((SyntaxKind::IDENT, _)) | Some((SyntaxKind::NUMBER, _)) => {
+                    // Combine x with the following token
+                    self.bump_as(SyntaxKind::IDENT); // treat X as IDENT
+                    if self
+                        .current_kind()
+                        .is_some_and(|k| k == SyntaxKind::IDENT || k == SyntaxKind::NUMBER)
+                    {
+                        self.bump_as(SyntaxKind::IDENT);
+                    }
+                }
+                _ => {
+                    self.bump_as(SyntaxKind::IDENT); // Standalone 'x' as identifier
+                }
+            }
         } else if self.current_kind().is_some_and(SyntaxKind::is_keyword) {
             self.bump_as(SyntaxKind::IDENT);
         } else {
@@ -425,9 +515,50 @@ impl Parser<'_> {
                 self.bump(); // ::
                 self.skip_whitespace_and_newlines();
 
-                if self.at(SyntaxKind::IDENT)
-                    || self.current_kind().is_some_and(SyntaxKind::is_keyword)
-                {
+                if self.at(SyntaxKind::IDENT) {
+                    // Check if this segment is 'x' that should be combined
+                    if self.current_text() == Some("x") {
+                        let next_token = self.peek_nth_non_trivia_token_with_context(
+                            crate::lexer::LexContext::Value,
+                            1,
+                        );
+                        match next_token {
+                            Some((SyntaxKind::IDENT, _)) | Some((SyntaxKind::NUMBER, _)) => {
+                                // Combine x with the following token
+                                self.bump_as(SyntaxKind::IDENT); // consume 'x'
+                                if self.current_kind().is_some_and(|k| {
+                                    k == SyntaxKind::IDENT || k == SyntaxKind::NUMBER
+                                }) {
+                                    self.bump_as(SyntaxKind::IDENT);
+                                }
+                            }
+                            _ => {
+                                self.bump_as(SyntaxKind::IDENT); // Just standalone 'x'
+                            }
+                        }
+                    } else {
+                        self.bump_as(SyntaxKind::IDENT); // Regular identifier
+                    }
+                } else if self.at(SyntaxKind::X) {
+                    // Handle 'x' tokenized as operator in qualified identifier segment
+                    let next_token = self
+                        .peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 1);
+                    match next_token {
+                        Some((SyntaxKind::IDENT, _)) | Some((SyntaxKind::NUMBER, _)) => {
+                            // Combine x with the following token
+                            self.bump_as(SyntaxKind::IDENT); // treat X as IDENT
+                            if self
+                                .current_kind()
+                                .is_some_and(|k| k == SyntaxKind::IDENT || k == SyntaxKind::NUMBER)
+                            {
+                                self.bump_as(SyntaxKind::IDENT);
+                            }
+                        }
+                        _ => {
+                            self.bump_as(SyntaxKind::IDENT); // Standalone 'x' as identifier
+                        }
+                    }
+                } else if self.current_kind().is_some_and(SyntaxKind::is_keyword) {
                     // Coerce subsequent segments to IDENT as needed
                     self.bump_as(SyntaxKind::IDENT);
                 } else if self.try_bump_digit_prefixed_ident() {

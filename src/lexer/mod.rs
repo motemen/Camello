@@ -61,7 +61,8 @@ pub enum Token {
     PodCommand,
 
     // 識別子（サブルーチン名など）
-    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*")]
+    // Match identifiers but exclude standalone 'x' (x operator handled separately)
+    #[regex(r"[a-zA-Z_--x][a-zA-Z0-9_]*|x[a-zA-Z_]+[a-zA-Z_0-9]*", priority = 1)]
     Ident,
 
     // リテラル
@@ -221,6 +222,9 @@ pub enum Token {
     #[token("%")]
     Percent,
 
+    #[token("x", priority = 2)]
+    X,
+
     #[token(">")]
     Greater,
 
@@ -335,6 +339,7 @@ impl Token {
             Token::PostfixDerefArrayLastIndex => SyntaxKind::POSTFIX_DEREF_ARRAY_LAST_INDEX,
             Token::PostfixDerefCode => SyntaxKind::POSTFIX_DEREF_CODE,
             Token::PostfixDerefGlob => SyntaxKind::POSTFIX_DEREF_GLOB,
+            Token::X => SyntaxKind::X,
         }
     }
 }

@@ -3438,3 +3438,20 @@ fn test_array_scalar_dereferencing_formatting() {
         assert_eq!(formatted, expected, "Failed for input: '{}'", input);
     }
 }
+
+#[test]
+fn test_string_repetition_operator_formatting() {
+    check_formatting_cases(&[
+        // Basic string repetition with x operator - spaces already present
+        (r#"" " x 10"#, r#"" " x 10"#),
+        // Without spaces (should add spaces around x)
+        (r#""hello" x 2"#, r#""hello" x 2"#),
+        (r#""test" x 5"#, r#""test" x 5"#),
+        // With variables
+        (r#"$str x $count"#, r#"$str x $count"#),
+        // The problematic case - no space between string and x (should add spaces)
+        (r#""hello"x2"#, r#""hello" x 2"#),
+        (r#"'test'x5"#, r#"'test' x 5"#),
+        (r#""text"x$n"#, r#""text" x $n"#),
+    ]);
+}
