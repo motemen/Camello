@@ -49,8 +49,7 @@ impl PrototypeProfile {
 
 static BUILTIN_PROTOTYPES: LazyLock<HashMap<&'static str, PrototypeProfile>> =
     LazyLock::new(|| {
-        let mut map = HashMap::new();
-        const SPECS: &[(&str, PrototypeProfile)] = &[
+        [
             ("do", PrototypeProfile::Single(PrototypeArg::Block)),
             ("eval", PrototypeProfile::Single(PrototypeArg::Block)),
             ("grep", PrototypeProfile::Multi(PrototypeArg::Block)),
@@ -71,13 +70,9 @@ static BUILTIN_PROTOTYPES: LazyLock<HashMap<&'static str, PrototypeProfile>> =
             ("scalar", PrototypeProfile::Single(PrototypeArg::Any)),
             ("substr", PrototypeProfile::Multi(PrototypeArg::Any)),
             ("index", PrototypeProfile::Multi(PrototypeArg::Any)),
-        ];
-
-        for (name, profile) in SPECS {
-            map.insert(*name, *profile);
-        }
-
-        map
+        ]
+        .into_iter()
+        .collect()
     });
 
 impl Parser<'_> {
@@ -330,7 +325,7 @@ impl Parser<'_> {
         // Parse additional arguments if present (no comma before them)
         // For example: map { ... } @list
         let allow_more_args =
-            Self::builtin_prototype(function_name).map_or(true, |spec| spec.allows_trailing_list());
+            Self::builtin_prototype(function_name).is_none_or(|spec| spec.allows_trailing_list());
 
         if allow_more_args && self.is_at_start_of_expression() {
             self.expression_list();
@@ -515,11 +510,11 @@ impl Parser<'_> {
         next_value_token: Option<(SyntaxKind, &str)>,
         next_kind: Option<SyntaxKind>,
     ) -> Option<SyntaxKind> {
-        if Self::builtin_prototype(function_name).is_some_and(|spec| spec.zero_arity()) {
-            return None;
-        }
-
         if let Some(profile) = Self::builtin_prototype(function_name) {
+            if profile.zero_arity() {
+                return None;
+            }
+
             if let Some(leading) = profile.leading() {
                 match leading {
                     PrototypeArg::Array => {
