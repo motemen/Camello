@@ -65,9 +65,12 @@ static BUILTIN_PROTOTYPES: LazyLock<HashMap<&'static str, PrototypeProfile>> =
             ("print", PrototypeProfile::Multi(PrototypeArg::Filehandle)),
             ("printf", PrototypeProfile::Multi(PrototypeArg::Filehandle)),
             ("say", PrototypeProfile::Multi(PrototypeArg::Filehandle)),
+            ("warn", PrototypeProfile::Multi(PrototypeArg::Any)),
             ("keys", PrototypeProfile::Single(PrototypeArg::HashOrArray)),
             ("split", PrototypeProfile::Multi(PrototypeArg::Any)),
             ("scalar", PrototypeProfile::Single(PrototypeArg::Any)),
+            ("substr", PrototypeProfile::Multi(PrototypeArg::Any)),
+            ("index", PrototypeProfile::Multi(PrototypeArg::Any)),
         ];
 
         for (name, profile) in SPECS {
@@ -213,6 +216,14 @@ impl Parser<'_> {
             next_value_token,
             next_kind,
         );
+
+        if next_kind == Some(SyntaxKind::SLASH)
+            && next_value_token.is_some_and(|(kind, _)| kind == SyntaxKind::REGEX_LITERAL)
+            && Self::builtin_prototype(&function_name).is_none()
+        {
+            // Treat `/` as division for unknown barewords instead of forcing a regex literal
+            next_kind = None;
+        }
 
         if let Some(kind) = next_kind {
             if Self::can_start_expression(kind)

@@ -780,6 +780,31 @@ mod tests {
     }
 
     #[test]
+    fn test_unknown_function_followed_by_slash_is_division() {
+        let input = "my $x = f / 10 / 2;";
+        let (green, errors) = parse(input);
+        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+
+        let root = PerlNode::new_root(green);
+        let mut slash_count = 0;
+        let mut saw_regex_literal = false;
+
+        for element in root.descendants_with_tokens() {
+            if let rowan::NodeOrToken::Token(token) = element {
+                if token.kind() == SyntaxKind::SLASH {
+                    slash_count += 1;
+                }
+                if token.kind() == SyntaxKind::REGEX_LITERAL {
+                    saw_regex_literal = true;
+                }
+            }
+        }
+
+        assert_eq!(slash_count, 2, "expected division operators in '{}'", input);
+        assert!(!saw_regex_literal, "unexpected regex literal token found in '{}'", input);
+    }
+
+    #[test]
     fn test_zero_arity_builtins_followed_by_operators() {
         use SyntaxKind::{INFIX_EXPR, TERNARY_EXPR};
 
