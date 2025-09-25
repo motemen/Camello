@@ -324,9 +324,9 @@ impl Parser<'_> {
             self.bump_value(); // consume "("
             self.skip_whitespace_and_newlines();
 
-            // Parse first expression
-            if self.current_kind() != Some(SyntaxKind::SEMICOLON) {
-                self.expression();
+            // Parse first expression or expression list
+            if self.current_kind() != Some(SyntaxKind::SEMICOLON) && !self.expression_list() {
+                self.error("Expected expression in for initializer");
             }
 
             // Check if this is C-style (has semicolon)
@@ -1051,6 +1051,30 @@ __END__",
         );
         let syntax = PerlNode::new_root(green);
         assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+    }
+
+    #[test]
+    fn for_initializer_accepts_expression_list_with_trailing_comma() {
+        let input = "for (1, 2,) { }";
+        let (green, errors) = parse(input);
+        assert!(
+            errors.is_empty(),
+            "Should parse for loop with trailing comma in initializer, got: {:?}",
+            errors
+        );
+
+        let root = PerlNode::new_root(green);
+        let for_stmt = root
+            .descendants()
+            .find(|node| node.kind() == SyntaxKind::FOR_STMT)
+            .expect("Parsed tree should contain a for statement");
+
+        assert!(
+            for_stmt
+                .descendants()
+                .any(|node| node.kind() == SyntaxKind::EXPR_LIST),
+            "For initializer should produce an expression list node"
+        );
     }
 
     #[test]
