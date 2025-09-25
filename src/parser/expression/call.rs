@@ -258,7 +258,11 @@ impl Parser<'_> {
     /// We currently allow any function name (including qualified names) to take a block argument.
     /// This hook remains so future work can restore more selective behavior if desired.
     fn is_block_function(function_name: &str) -> bool {
-        !function_name.is_empty()
+        !function_name.is_empty() && !Self::is_zero_arg_builtin(function_name)
+    }
+
+    fn is_zero_arg_builtin(function_name: &str) -> bool {
+        matches!(function_name, "fork" | "time" | "wait" | "wantarray")
     }
 
     /// Certain block-taking functions (`eval`, `do`) treat the block as their only argument.
@@ -440,6 +444,10 @@ impl Parser<'_> {
         next_value_token: Option<(SyntaxKind, &str)>,
         next_kind: Option<SyntaxKind>,
     ) -> Option<SyntaxKind> {
+        if Self::is_zero_arg_builtin(function_name) {
+            return None;
+        }
+
         match (function_name, next_value_token, next_kind) {
             ("shift" | "pop", Some((SyntaxKind::REGEX_LITERAL, "//")), _) => {
                 Some(SyntaxKind::DEFINED_OR)

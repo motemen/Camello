@@ -780,6 +780,55 @@ mod tests {
     }
 
     #[test]
+    fn test_zero_arity_builtins_followed_by_operators() {
+        use SyntaxKind::{INFIX_EXPR, TERNARY_EXPR};
+
+        let cases = [
+            ("time // 1;", INFIX_EXPR, "time"),
+            ("fork + 1;", INFIX_EXPR, "fork"),
+            ("wait or die 'oops';", INFIX_EXPR, "wait"),
+            ("wantarray ? 1 : 0;", TERNARY_EXPR, "wantarray"),
+        ];
+
+        for (input, expected_kind, builtin_name) in cases {
+            let (green, errors) = parse(input);
+            assert!(errors.is_empty(), "Parse errors for '{}': {:?}", input, errors);
+
+            let root = PerlNode::new_root(green);
+            let stmt = root
+                .children()
+                .find(|child| child.kind() == SyntaxKind::STMT)
+                .expect("expected statement");
+
+            let expr = stmt
+                .children()
+                .find(|child| child.kind() != SyntaxKind::SEMICOLON)
+                .expect("expected expression child");
+
+            assert_eq!(expr.kind(), expected_kind, "unexpected kind for '{}'", input);
+
+            let builtin_token = expr
+                .descendants_with_tokens()
+                .find_map(|element| {
+                    if let rowan::NodeOrToken::Token(token) = element {
+                        if token.kind() == SyntaxKind::IDENT && token.text() == builtin_name {
+                            return Some(token);
+                        }
+                    }
+                    None
+                })
+                .expect("expected builtin token");
+
+            assert_ne!(
+                builtin_token.parent().map(|node| node.kind()),
+                Some(SyntaxKind::FUNCTION_CALL_EXPR),
+                "builtin parsed as function call in '{}'",
+                input
+            );
+        }
+    }
+
+    #[test]
     fn test_say_with_qualified_method_call() {
         let input = "say Foo::Bar->method();";
         let (green, errors) = parse(input);
