@@ -391,7 +391,7 @@ impl QuoteLikeMode {
             SyntaxKind::QR_KW => Self::QR,
             SyntaxKind::S_KW => Self::S,
             SyntaxKind::TR_KW | SyntaxKind::Y_KW => Self::TR,
-            _ => panic!("Invalid quote-like keyword: {:?}", kind),
+            _ => unreachable!("Invalid quote-like keyword: {:?}", kind),
         }
     }
 }
