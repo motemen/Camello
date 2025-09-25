@@ -706,11 +706,16 @@ impl Parser<'_> {
         self.skip_whitespace_and_newlines();
 
         // Attribute name (qualified identifier allowed); keywords accepted as identifiers
-        self.parse_identifier_or_qualified();
-        self.skip_whitespace_and_newlines();
+        let can_start_identifier =
+            self.at(SyntaxKind::IDENT) || self.current_kind().is_some_and(SyntaxKind::is_keyword);
 
-        if self.at(SyntaxKind::L_PAREN) {
-            self.parse_attr_args();
+        if can_start_identifier {
+            self.parse_identifier_or_qualified();
+            self.skip_whitespace_and_newlines();
+
+            if self.at(SyntaxKind::L_PAREN) {
+                self.parse_attr_args();
+            }
         }
 
         self.builder.finish_node();
@@ -1037,6 +1042,31 @@ __END__",
                 .descendants()
                 .any(|node| node.kind() == SyntaxKind::ATTR_ARGS),
             "Anonymous subexpression should include attribute argument list"
+        );
+    }
+
+    #[test]
+    fn anonymous_sub_expression_can_have_empty_attribute_slot() {
+        let input = "sub f { sub : { 0 } }";
+        let (green, errors) = parse(input);
+
+        assert!(
+            errors.is_empty(),
+            "Expected anonymous sub expression with empty attribute slot to parse without errors, got: {:?}",
+            errors
+        );
+
+        let root = PerlNode::new_root(green);
+        let anon_sub = root
+            .descendants()
+            .find(|node| node.kind() == SyntaxKind::ANON_SUB_EXPR)
+            .expect("Parsed tree should contain an anonymous subexpression node");
+
+        assert!(
+            anon_sub
+                .children()
+                .any(|child| child.kind() == SyntaxKind::ATTR),
+            "Anonymous subexpression should include an attribute node even when the name is missing"
         );
     }
 
