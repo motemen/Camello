@@ -792,7 +792,12 @@ mod tests {
 
         for (input, expected_kind, builtin_name) in cases {
             let (green, errors) = parse(input);
-            assert!(errors.is_empty(), "Parse errors for '{}': {:?}", input, errors);
+            assert!(
+                errors.is_empty(),
+                "Parse errors for '{}': {:?}",
+                input,
+                errors
+            );
 
             let root = PerlNode::new_root(green);
             let stmt = root
@@ -805,7 +810,12 @@ mod tests {
                 .find(|child| child.kind() != SyntaxKind::SEMICOLON)
                 .expect("expected expression child");
 
-            assert_eq!(expr.kind(), expected_kind, "unexpected kind for '{}'", input);
+            assert_eq!(
+                expr.kind(),
+                expected_kind,
+                "unexpected kind for '{}'",
+                input
+            );
 
             let builtin_token = expr
                 .descendants_with_tokens()
