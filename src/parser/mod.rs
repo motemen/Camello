@@ -780,6 +780,94 @@ mod tests {
     }
 
     #[test]
+    fn test_unknown_function_followed_by_slash_is_division() {
+        let input = "my $x = f / 10 / 2;";
+        let (green, errors) = parse(input);
+        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+
+        let root = PerlNode::new_root(green);
+        let mut slash_count = 0;
+        let mut saw_regex_literal = false;
+
+        for element in root.descendants_with_tokens() {
+            if let rowan::NodeOrToken::Token(token) = element {
+                if token.kind() == SyntaxKind::SLASH {
+                    slash_count += 1;
+                }
+                if token.kind() == SyntaxKind::REGEX_LITERAL {
+                    saw_regex_literal = true;
+                }
+            }
+        }
+
+        assert_eq!(slash_count, 2, "expected division operators in '{}'", input);
+        assert!(
+            !saw_regex_literal,
+            "unexpected regex literal token found in '{}'",
+            input
+        );
+    }
+
+    #[test]
+    fn test_zero_arity_builtins_followed_by_operators() {
+        use SyntaxKind::{INFIX_EXPR, TERNARY_EXPR};
+
+        let cases = [
+            ("time // 1;", INFIX_EXPR, "time"),
+            ("fork + 1;", INFIX_EXPR, "fork"),
+            ("wait or die 'oops';", INFIX_EXPR, "wait"),
+            ("wantarray ? 1 : 0;", TERNARY_EXPR, "wantarray"),
+        ];
+
+        for (input, expected_kind, builtin_name) in cases {
+            let (green, errors) = parse(input);
+            assert!(
+                errors.is_empty(),
+                "Parse errors for '{}': {:?}",
+                input,
+                errors
+            );
+
+            let root = PerlNode::new_root(green);
+            let stmt = root
+                .children()
+                .find(|child| child.kind() == SyntaxKind::STMT)
+                .expect("expected statement");
+
+            let expr = stmt
+                .children()
+                .find(|child| child.kind() != SyntaxKind::SEMICOLON)
+                .expect("expected expression child");
+
+            assert_eq!(
+                expr.kind(),
+                expected_kind,
+                "unexpected kind for '{}'",
+                input
+            );
+
+            let builtin_token = expr
+                .descendants_with_tokens()
+                .find_map(|element| {
+                    if let rowan::NodeOrToken::Token(token) = element {
+                        if token.kind() == SyntaxKind::IDENT && token.text() == builtin_name {
+                            return Some(token);
+                        }
+                    }
+                    None
+                })
+                .expect("expected builtin token");
+
+            assert_ne!(
+                builtin_token.parent().map(|node| node.kind()),
+                Some(SyntaxKind::FUNCTION_CALL_EXPR),
+                "builtin parsed as function call in '{}'",
+                input
+            );
+        }
+    }
+
+    #[test]
     fn test_say_with_qualified_method_call() {
         let input = "say Foo::Bar->method();";
         let (green, errors) = parse(input);
@@ -977,7 +1065,7 @@ fn test_package_with_digits_after_colons() {
         let package = syntax
             .children()
             .find(|n| n.kind() == SyntaxKind::PACKAGE_STMT)
-            .expect(&format!("missing package statement in '{}'", input));
+            .unwrap_or_else(|| panic!("missing package statement in '{}'", input));
 
         // Verify the package statement contains a qualified identifier
         assert!(
