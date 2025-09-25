@@ -1,8 +1,79 @@
 use crate::lexer::LexContext;
 use crate::SyntaxKind;
 use crate::T;
+use std::collections::HashMap;
+use std::sync::LazyLock;
 
 use super::Parser;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PrototypeArg {
+    Block,
+    Filehandle,
+    Array,
+    HashOrArray,
+    Any,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PrototypeProfile {
+    NoArgs,
+    Single(PrototypeArg),
+    Multi(PrototypeArg),
+}
+
+impl PrototypeProfile {
+    const fn zero_arity(self) -> bool {
+        matches!(self, Self::NoArgs)
+    }
+
+    const fn leading(self) -> Option<PrototypeArg> {
+        match self {
+            Self::NoArgs => None,
+            Self::Single(kind) | Self::Multi(kind) => Some(kind),
+        }
+    }
+
+    const fn allows_trailing_list(self) -> bool {
+        matches!(self, Self::Multi(_)) || self.print_like()
+    }
+
+    const fn takes_block(self) -> bool {
+        matches!(self.leading(), Some(PrototypeArg::Block))
+    }
+
+    const fn print_like(self) -> bool {
+        matches!(self.leading(), Some(PrototypeArg::Filehandle))
+    }
+}
+
+static BUILTIN_PROTOTYPES: LazyLock<HashMap<&'static str, PrototypeProfile>> =
+    LazyLock::new(|| {
+        [
+            ("do", PrototypeProfile::Single(PrototypeArg::Block)),
+            ("eval", PrototypeProfile::Single(PrototypeArg::Block)),
+            ("grep", PrototypeProfile::Multi(PrototypeArg::Block)),
+            ("map", PrototypeProfile::Multi(PrototypeArg::Block)),
+            ("sort", PrototypeProfile::Multi(PrototypeArg::Block)),
+            ("fork", PrototypeProfile::NoArgs),
+            ("time", PrototypeProfile::NoArgs),
+            ("wait", PrototypeProfile::NoArgs),
+            ("wantarray", PrototypeProfile::NoArgs),
+            ("shift", PrototypeProfile::Multi(PrototypeArg::Array)),
+            ("pop", PrototypeProfile::Single(PrototypeArg::Array)),
+            ("print", PrototypeProfile::Multi(PrototypeArg::Filehandle)),
+            ("printf", PrototypeProfile::Multi(PrototypeArg::Filehandle)),
+            ("say", PrototypeProfile::Multi(PrototypeArg::Filehandle)),
+            ("warn", PrototypeProfile::Multi(PrototypeArg::Any)),
+            ("keys", PrototypeProfile::Single(PrototypeArg::HashOrArray)),
+            ("split", PrototypeProfile::Multi(PrototypeArg::Any)),
+            ("scalar", PrototypeProfile::Single(PrototypeArg::Any)),
+            ("substr", PrototypeProfile::Multi(PrototypeArg::Any)),
+            ("index", PrototypeProfile::Multi(PrototypeArg::Any)),
+        ]
+        .into_iter()
+        .collect()
+    });
 
 impl Parser<'_> {
     /// Determine if {} should be parsed as a hash reference or block in statement context
@@ -96,7 +167,7 @@ impl Parser<'_> {
         // Block-style function call: e.g., foo { ... } @list
         if self.at(SyntaxKind::L_BRACE)
             && (Self::is_block_function(&function_name)
-                || Self::is_print_like_function(&function_name))
+                || Self::builtin_prototype(&function_name).is_some_and(|spec| spec.print_like()))
         {
             self.builder
                 .start_node_at(start, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());
@@ -110,10 +181,7 @@ impl Parser<'_> {
             .peek_non_trivia_token_with_context(LexContext::AmbiguousValueLookahead)
             .map(|(kind, _)| kind);
 
-        if next_value_token
-            .map(|(kind, _)| kind)
-            .is_some_and(|kind| kind == SyntaxKind::HEREDOC_START)
-        {
+        if next_value_token.is_some_and(|(kind, _)| kind == SyntaxKind::HEREDOC_START) {
             next_kind = Some(SyntaxKind::HEREDOC_START);
         }
 
@@ -128,7 +196,7 @@ impl Parser<'_> {
             }
         }
 
-        if Self::is_print_like_function(&function_name) {
+        if Self::builtin_prototype(&function_name).is_some_and(|spec| spec.print_like()) {
             if self.is_at_start_of_expression() {
                 self.builder
                     .start_node_at(start, SyntaxKind::FUNCTION_CALL_EXPR.into());
@@ -143,6 +211,14 @@ impl Parser<'_> {
             next_value_token,
             next_kind,
         );
+
+        if next_kind == Some(SyntaxKind::SLASH)
+            && next_value_token.is_some_and(|(kind, _)| kind == SyntaxKind::REGEX_LITERAL)
+            && Self::builtin_prototype(&function_name).is_none()
+        {
+            // Treat `/` as division for unknown barewords instead of forcing a regex literal
+            next_kind = None;
+        }
 
         if let Some(kind) = next_kind {
             if Self::can_start_expression(kind)
@@ -192,7 +268,7 @@ impl Parser<'_> {
             return false;
         }
 
-        if Self::is_parenthesized_block_builtin(function_name)
+        if Self::builtin_prototype(function_name).is_some_and(|spec| spec.takes_block())
             && self
                 .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
                 .is_some_and(|(kind, _)| kind == SyntaxKind::L_BRACE)
@@ -207,7 +283,7 @@ impl Parser<'_> {
             return true;
         }
 
-        if Self::is_print_like_function(function_name) {
+        if Self::builtin_prototype(function_name).is_some_and(|spec| spec.print_like()) {
             self.parse_parenthesized_special_call(
                 start,
                 SyntaxKind::FUNCTION_CALL_EXPR,
@@ -248,34 +324,24 @@ impl Parser<'_> {
 
         // Parse additional arguments if present (no comma before them)
         // For example: map { ... } @list
-        if !Self::block_args_end_after_block(function_name) && self.is_at_start_of_expression() {
+        let allow_more_args =
+            Self::builtin_prototype(function_name).is_none_or(|spec| spec.allows_trailing_list());
+
+        if allow_more_args && self.is_at_start_of_expression() {
             self.expression_list();
         }
     }
 
     /// Determine whether a function name should be treated as accepting a leading block argument.
     ///
-    /// We currently allow any function name (including qualified names) to take a block argument.
-    /// This hook remains so future work can restore more selective behavior if desired.
+    /// We continue to allow any function name (including qualified names) to take a block
+    /// argument. Builtins opt out via prototype metadata when they are truly zero-arity.
     fn is_block_function(function_name: &str) -> bool {
+        if let Some(spec) = Self::builtin_prototype(function_name) {
+            return spec.takes_block();
+        }
+
         !function_name.is_empty()
-    }
-
-    /// Certain block-taking functions (`eval`, `do`) treat the block as their only argument.
-    /// Stop parsing additional arguments after the first block for these names so operators like
-    /// `//` are parsed in expression position instead of as another argument.
-    fn block_args_end_after_block(function_name: &str) -> bool {
-        matches!(function_name, "eval" | "do")
-    }
-
-    /// Builtins like `map`, `grep`, and `sort` accept a curious hybrid syntax where the block is
-    /// wrapped in parentheses before the list arguments: `map({ ... } @list)`.  Perl only permits
-    /// this exact form for those core functions—the parser still treats `{ ... }` as the leading
-    /// block argument, but user-defined subs never see the same special casing.  Keep a tight
-    /// whitelist so we don't accidentally parse ordinary function calls using this Perl-specific
-    /// quirk as `BLOCK_FUNCTION_CALL_EXPR`s.
-    fn is_parenthesized_block_builtin(function_name: &str) -> bool {
-        matches!(function_name, "map" | "grep" | "sort")
     }
 
     /// Peek ahead to capture the final segment of a (possibly qualified) identifier without
@@ -435,30 +501,64 @@ impl Parser<'_> {
     /// interpreted. When probing lookahead tokens in [`LexContext::AmbiguousValueLookahead`]
     /// we bypass value-context conveniences like regex and sigil recognition, so compensate for
     /// known names whose prototypes require those behaviors.
+    ///
+    /// Earlier we patched in ad-hoc cases (e.g. shifting `%`/`@`, fixing `//` and `<` for `split`
+    /// and `scalar`). Those rules now live inside the prototype metadata below, so we keep the
+    /// comment to explain why the adjustments exist.
     fn adjust_ambiguous_next_kind_for_builtin(
         function_name: &str,
         next_value_token: Option<(SyntaxKind, &str)>,
         next_kind: Option<SyntaxKind>,
     ) -> Option<SyntaxKind> {
-        match (function_name, next_value_token, next_kind) {
-            ("shift" | "pop", Some((SyntaxKind::REGEX_LITERAL, "//")), _) => {
-                Some(SyntaxKind::DEFINED_OR)
+        if let Some(profile) = Self::builtin_prototype(function_name) {
+            if profile.zero_arity() {
+                return None;
             }
-            ("split", Some((SyntaxKind::REGEX_LITERAL, _)), Some(SyntaxKind::DEFINED_OR)) => {
-                Some(SyntaxKind::REGEX_LITERAL)
+
+            if let Some(leading) = profile.leading() {
+                match leading {
+                    PrototypeArg::Array => {
+                        if let Some((SyntaxKind::ARRAY_SIGIL, _)) = next_value_token {
+                            return Some(SyntaxKind::ARRAY_SIGIL);
+                        }
+                        if let Some((SyntaxKind::REGEX_LITERAL, literal)) = next_value_token {
+                            if literal == "//" {
+                                return Some(SyntaxKind::DEFINED_OR);
+                            }
+                        }
+                    }
+                    PrototypeArg::HashOrArray => {
+                        if let Some((value_kind, _)) = next_value_token {
+                            if matches!(
+                                value_kind,
+                                SyntaxKind::HASH_SIGIL | SyntaxKind::ARRAY_SIGIL
+                            ) {
+                                return Some(value_kind);
+                            }
+                        }
+                    }
+                    PrototypeArg::Any => {
+                        if next_kind == Some(SyntaxKind::DEFINED_OR) {
+                            if let Some((SyntaxKind::REGEX_LITERAL, _)) = next_value_token {
+                                return Some(SyntaxKind::REGEX_LITERAL);
+                            }
+                        }
+                        if next_kind == Some(SyntaxKind::LT) {
+                            if let Some((SyntaxKind::IO_EXPR, _)) = next_value_token {
+                                return Some(SyntaxKind::IO_EXPR);
+                            }
+                        }
+                    }
+                    PrototypeArg::Block | PrototypeArg::Filehandle => {}
+                }
             }
-            ("keys", Some((SyntaxKind::HASH_SIGIL, _)), Some(SyntaxKind::MODULO)) => {
-                Some(SyntaxKind::HASH_SIGIL)
-            }
-            ("scalar", Some((SyntaxKind::IO_EXPR, _)), Some(SyntaxKind::LT)) => {
-                Some(SyntaxKind::IO_EXPR)
-            }
-            _ => next_kind,
         }
+
+        next_kind
     }
 
-    fn is_print_like_function(function_name: &str) -> bool {
-        matches!(function_name, "print" | "printf" | "say")
+    fn builtin_prototype(function_name: &str) -> Option<&'static PrototypeProfile> {
+        BUILTIN_PROTOTYPES.get(function_name)
     }
 
     /// Parse method arguments if parentheses are present
