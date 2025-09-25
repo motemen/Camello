@@ -125,6 +125,22 @@ impl<'a> Parser<'a> {
         self.lexer.peek_token().map(|(_, t)| t)
     }
 
+    /// Check if the given SyntaxKind is a quote-like keyword
+    fn is_quote_like_keyword(kind: SyntaxKind) -> bool {
+        matches!(
+            kind,
+            SyntaxKind::Q_KW
+                | SyntaxKind::QQ_KW
+                | SyntaxKind::QX_KW
+                | SyntaxKind::QW_KW
+                | SyntaxKind::QR_KW
+                | SyntaxKind::M_KW
+                | SyntaxKind::S_KW
+                | SyntaxKind::TR_KW
+                | SyntaxKind::Y_KW
+        )
+    }
+
     // Value-context peek helpers for expression starts (parser-driven lexing)
     fn current_kind_value(&self) -> Option<SyntaxKind> {
         self.peek_non_trivia_token_with_context(LexContext::Value)
@@ -313,7 +329,29 @@ impl<'a> Parser<'a> {
         ctx: LexContext,
         n: usize,
     ) -> Option<(SyntaxKind, &'a str)> {
-        self.lexer.peek_nth_non_trivia_with_context(ctx, n)
+        let mut cloned = self.lexer.clone();
+
+        // 現在のトークンがquote-likeキーワードの場合、特別な処理が必要
+        if let Some(current_kind) = self.current_kind() {
+            if Self::is_quote_like_keyword(current_kind) {
+                // 次のトークンを確認（triviaも含む）
+                let mut temp_lexer = self.lexer.clone();
+                temp_lexer.next_token(); // 現在のトークンを消費
+                let next_token = temp_lexer.peek_token();
+
+                match next_token {
+                    // 直後が # で始まるCOMMENTなら確実に quote-like なので、quote-like モードに設定
+                    Some((SyntaxKind::COMMENT, text)) if text.starts_with('#') => {
+                        let mode = crate::lexer::QuoteLikeMode::from_keyword(current_kind);
+                        cloned.begin_quote_like(current_kind, mode);
+                    }
+                    // その他の場合は通常通り（bareword 判定は既存ロジックに任せる）
+                    _ => {}
+                }
+            }
+        }
+
+        cloned.peek_nth_non_trivia_with_context(ctx, n)
     }
 
     /// Returns true if the token at `offset` is followed by a fat comma (`=>`).
@@ -1064,5 +1102,75 @@ fn test_infix_expression_with_newline() {
             .descendants()
             .any(|n| n.kind() == SyntaxKind::INFIX_EXPR);
         assert!(has_infix, "Expected infix expression in {}", description);
+    }
+}
+
+#[test]
+fn test_quote_like_hash_delimiter_lookahead() {
+    use crate::PerlNode;
+
+    // Test quote-like expressions with # delimiter
+    let quote_like_cases = [
+        ("{ (qr#x#)\n}", "QR_EXPR"),
+        ("{s#x#y#\n}", "S_EXPR"),
+        ("{ (m#pattern#) }", "M_EXPR"),
+        ("{tr#a#b#}", "TR_EXPR"),
+        ("{y#a#b#}", "TR_EXPR"), // y uses same TR_EXPR as tr
+    ];
+
+    for (input, expected_expr) in quote_like_cases {
+        let (green, errors) = parse(input);
+        println!("Testing quote-like: {}", input);
+
+        assert!(
+            errors.is_empty(),
+            "Parse errors for '{}': {:?}",
+            input,
+            errors
+        );
+
+        let syntax = PerlNode::new_root(green);
+        let expected_kind = match expected_expr {
+            "QR_EXPR" => SyntaxKind::QR_EXPR,
+            "S_EXPR" => SyntaxKind::S_EXPR,
+            "M_EXPR" => SyntaxKind::M_EXPR,
+            "TR_EXPR" => SyntaxKind::TR_EXPR,
+            _ => panic!("Unknown expected expr: {}", expected_expr),
+        };
+
+        assert!(
+            syntax
+                .descendants()
+                .any(|node| node.kind() == expected_kind),
+            "Expected {} in '{}', but AST was: {:#?}",
+            expected_expr,
+            input,
+            syntax
+        );
+    }
+
+    // Test bareword cases (should parse as hash)
+    let bareword_cases = ["{ qr => 1 }", "{ s => 2 }"];
+
+    for input in bareword_cases {
+        let (green, errors) = parse(input);
+        println!("Testing bareword: {}", input);
+
+        assert!(
+            errors.is_empty(),
+            "Parse errors for bareword '{}': {:?}",
+            input,
+            errors
+        );
+
+        let syntax = PerlNode::new_root(green);
+        assert!(
+            syntax
+                .descendants()
+                .any(|node| node.kind() == SyntaxKind::HASH_REF),
+            "Expected HASH_REF for bareword '{}', but AST was: {:#?}",
+            input,
+            syntax
+        );
     }
 }

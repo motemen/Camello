@@ -381,6 +381,20 @@ pub enum QuoteLikeMode {
     S,  // s
     TR, // tr, y
 }
+impl QuoteLikeMode {
+    /// Get QuoteLikeMode from keyword SyntaxKind
+    pub fn from_keyword(kind: SyntaxKind) -> Self {
+        match kind {
+            SyntaxKind::Q_KW | SyntaxKind::QQ_KW | SyntaxKind::QX_KW => Self::Q,
+            SyntaxKind::QW_KW => Self::QW,
+            SyntaxKind::M_KW => Self::M,
+            SyntaxKind::QR_KW => Self::QR,
+            SyntaxKind::S_KW => Self::S,
+            SyntaxKind::TR_KW | SyntaxKind::Y_KW => Self::TR,
+            _ => panic!("Invalid quote-like keyword: {:?}", kind),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum QuoteLikeState {
