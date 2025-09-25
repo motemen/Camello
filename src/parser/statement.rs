@@ -1071,6 +1071,31 @@ __END__",
     }
 
     #[test]
+    fn named_sub_definition_can_have_empty_attribute_slot() {
+        let input = "sub foo : {}";
+        let (green, errors) = parse(input);
+
+        assert!(
+            errors.is_empty(),
+            "Expected named sub definition with empty attribute slot to parse without errors, got: {:?}",
+            errors
+        );
+
+        let root = PerlNode::new_root(green);
+        let sub_def = root
+            .descendants()
+            .find(|node| node.kind() == SyntaxKind::SUB_DEF)
+            .expect("Parsed tree should contain a subroutine definition node");
+
+        assert!(
+            sub_def
+                .children()
+                .any(|child| child.kind() == SyntaxKind::ATTR),
+            "Subroutine definition should include an attribute node even when the name is missing"
+        );
+    }
+
+    #[test]
     fn test_postfix_for_modifier() {
         let input = "print $_ for @values;";
         let (green, errors) = parse(input);
