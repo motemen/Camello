@@ -1065,7 +1065,7 @@ fn test_package_with_digits_after_colons() {
         let package = syntax
             .children()
             .find(|n| n.kind() == SyntaxKind::PACKAGE_STMT)
-            .expect(&format!("missing package statement in '{}'", input));
+            .unwrap_or_else(|| panic!("missing package statement in '{}'", input));
 
         // Verify the package statement contains a qualified identifier
         assert!(
