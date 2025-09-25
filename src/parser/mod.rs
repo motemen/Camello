@@ -801,7 +801,11 @@ mod tests {
         }
 
         assert_eq!(slash_count, 2, "expected division operators in '{}'", input);
-        assert!(!saw_regex_literal, "unexpected regex literal token found in '{}'", input);
+        assert!(
+            !saw_regex_literal,
+            "unexpected regex literal token found in '{}'",
+            input
+        );
     }
 
     #[test]
