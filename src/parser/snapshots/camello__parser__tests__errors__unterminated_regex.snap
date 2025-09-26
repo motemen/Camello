@@ -1,0 +1,16 @@
+---
+source: src/parser/mod.rs
+expression: render_errors(&errors)
+---
+  × Parse error: Expected expression after binary operator
+   ╭────
+ 1 │ $foo =~ /unterminated;
+   ·         ┬
+   ·         ╰── here
+   ╰────
+  × Parse error: Expected ';' after expression statement
+   ╭────
+ 1 │ $foo =~ /unterminated;
+   ·          ──────┬─────
+   ·                ╰── here
+   ╰────

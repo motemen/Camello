@@ -64,8 +64,8 @@ impl Parser<'_> {
                 self.bump_op();
                 self.skip_whitespace_and_newlines();
 
-                // Parse the true expression with ternary precedence (right associative)
-                if !self.parse_expression_with_precedence(ternary_precedence) {
+                // Parse the true expression allowing assignment-level precedence
+                if !self.parse_expression_with_precedence(Precedence::ASSIGNMENT) {
                     self.error("Expected expression after '?'");
                 }
 
@@ -85,8 +85,8 @@ impl Parser<'_> {
                     self.error("Expected ':' after true expression in ternary operator");
                 }
 
-                // Parse the false expression with ternary precedence (right associative)
-                if !self.parse_expression_with_precedence(ternary_precedence) {
+                // Parse the false expression allowing assignment-level precedence
+                if !self.parse_expression_with_precedence(Precedence::ASSIGNMENT) {
                     self.error("Expected expression after ':' in ternary operator");
                 }
 

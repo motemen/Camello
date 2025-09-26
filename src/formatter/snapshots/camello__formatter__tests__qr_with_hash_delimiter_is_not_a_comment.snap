@@ -1,0 +1,7 @@
+---
+source: src/formatter/tests.rs
+expression: formatted
+---
+{
+    qr #.#
+}

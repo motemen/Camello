@@ -407,619 +407,112 @@ pub fn parse(input: &str) -> (GreenNode, Vec<ParseError>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parser::test_utils::*;
     use crate::PerlNode;
+    use std::fs;
 
     #[test]
-    fn test_error_recovery_no_infinite_loop() {
-        // Confirm that error recovery does not cause an infinite loop
-        let input = "my = @ % ^ invalid tokens here;";
-        let (green, errors) = parse(input);
-
-        // Errors occur, but parsing completes
-        assert!(!errors.is_empty(), "Should have parse errors");
-
-        let syntax = PerlNode::new_root(green);
-        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-
-        // Confirm that the AST has some structure (evidence that there is no infinite loop)
+    fn parser_success_snapshots() {
+        let success_dir = fixtures_root().join("success");
+        let mut files = Vec::new();
+        collect_fixture_files(&success_dir, &mut files);
+        files.sort();
         assert!(
-            syntax.children().count() > 0,
-            "Should have some parsed structure"
+            !files.is_empty(),
+            "No success fixtures found in {:?}",
+            success_dir
         );
-    }
 
-    #[test]
-    fn test_pod_parsing() {
-        let test_cases = [
-            ("=pod\nContent\n=cut\n", true),
-            ("=head1 TITLE\nContent\n=cut\n", true),
-            ("my $var;\n=pod\nContent\n=cut\nmy $other;\n", true),
-            (
-                "=pod\nContent without cut",
-                true, // POD at EOF is valid
-            ),
-        ];
+        for path in files {
+            let source = fs::read_to_string(&path)
+                .unwrap_or_else(|err| panic!("Failed to read {}: {}", path.display(), err));
+            let (green, errors) = parse(&source);
+            assert!(
+                errors.is_empty(),
+                "Unexpected parse errors for {}: {:?}",
+                path.display(),
+                errors
+            );
 
-        for (input, should_succeed) in test_cases {
-            let (green, errors) = parse(input);
             let syntax = PerlNode::new_root(green);
-
-            // All inputs should parse structurally
-            assert_eq!(
-                syntax.kind(),
-                SyntaxKind::ROOT,
-                "Failed to parse: '{}'",
-                input
-            );
-
-            if should_succeed {
-                assert!(
-                    errors.is_empty(),
-                    "Should parse '{}' without errors, but got: {:?}",
-                    input,
-                    errors
-                );
-            } else {
-                assert!(
-                    !errors.is_empty(),
-                    "Should generate parse error for '{}' but didn't",
-                    input
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn test_cut_without_pod_error() {
-        let input = "=cut\n";
-        let (green, errors) = parse(input);
-        let syntax = PerlNode::new_root(green);
-
-        // Should parse structurally but with errors
-        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-        assert!(
-            !errors.is_empty(),
-            "Should generate error for =cut without POD"
-        );
-        assert!(
-            errors
+            let relative = path
+                .strip_prefix(&success_dir)
+                .expect("Success fixture should live under success directory");
+            let mut parts = relative
                 .iter()
-                .any(|e| e.message.contains("=cut") && e.message.contains("POD")),
-            "Error should mention =cut and POD, got: {:?}",
-            errors
-        );
-    }
-
-    #[test]
-    fn test_regex_literal_with_slash_in_char_class() {
-        let input = "$foo =~ /[a/]/;";
-        let (_green, errors) = parse(input);
-
-        assert!(
-            errors.is_empty(),
-            "Expected no parse errors, got: {:?}",
-            errors
-        );
-    }
-
-    #[test]
-    fn test_regex_literal_with_literal_closing_bracket() {
-        let input = "$foo =~ /[]/]/;";
-        let (_green, errors) = parse(input);
-
-        assert!(
-            errors.is_empty(),
-            "Expected no parse errors, got: {:?}",
-            errors
-        );
-    }
-
-    #[test]
-    fn test_regex_literal_with_newline() {
-        let input = "$foo =~ /foo\nbar/x;";
-        let (_green, errors) = parse(input);
-
-        assert!(
-            errors.is_empty(),
-            "Expected no parse errors, got: {:?}",
-            errors
-        );
-    }
-
-    #[test]
-    fn test_substitution_with_escaped_delimiter() {
-        let input = "s/\\//::/g;";
-        let (_green, errors) = parse(input);
-
-        assert!(
-            errors.is_empty(),
-            "Expected no parse errors, got: {:?}",
-            errors
-        );
-    }
-
-    #[test]
-    fn test_quote_like_with_nested_delimiters() {
-        let input = "m<.<a>.>;";
-        let (_green, errors) = parse(input);
-
-        assert!(
-            errors.is_empty(),
-            "Expected no parse errors, got: {:?}",
-            errors
-        );
-    }
-
-    #[test]
-    fn test_qw_nested_delimiters() {
-        let input = "my @list = qw(a (b) c);";
-        let (_green, errors) = parse(input);
-
-        assert!(
-            errors.is_empty(),
-            "Expected no parse errors, got: {:?}",
-            errors
-        );
-    }
-
-    #[test]
-    fn test_lexer_lookahead_functionality() {
-        // Test the lexer's new lookahead methods
-        let mut lexer = crate::lexer::Lexer::new("$var\n@array");
-
-        // Test peek_non_trivia_token
-        assert_eq!(
-            lexer.peek_non_trivia_token(),
-            Some((SyntaxKind::SCALAR_SIGIL, "$"))
-        );
-
-        // Consume first token and test again
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::SCALAR_SIGIL, "$")));
-        assert_eq!(
-            lexer.peek_non_trivia_token(),
-            Some((SyntaxKind::IDENT, "var"))
-        );
-
-        // Consume identifier
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "var")));
-
-        // Skip newline and test peek again
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::NEWLINE, "\n")));
-        assert_eq!(
-            lexer.peek_non_trivia_token(),
-            Some((SyntaxKind::ARRAY_SIGIL, "@"))
-        );
-    }
-
-    #[test]
-    fn test_debug_q_parsing() {
-        use crate::PerlNode;
-
-        let input = "q(hello)";
-        println!("Testing input: {}", input);
-        let (green, errors) = parse(input);
-
-        println!("Parse errors: {:?}", errors);
-
-        let syntax = PerlNode::new_root(green);
-        println!("AST: {:#?}", syntax);
-
-        // Even if there are errors, check if we got some structure
-        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-    }
-
-    #[test]
-    fn test_debug_print_q_parsing() {
-        use crate::PerlNode;
-
-        let input = "print q(hello);";
-        println!("Testing input: {}", input);
-        let (green, errors) = parse(input);
-
-        println!("Parse errors: {:?}", errors);
-
-        let syntax = PerlNode::new_root(green);
-        println!("AST: {:#?}", syntax);
-
-        // Even if there are errors, check if we got some structure
-        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-    }
-
-    #[test]
-    fn test_debug_qq_hash_parsing() {
-        use crate::PerlNode;
-
-        let input = "qq#hash $var#";
-        println!("Testing input: {}", input);
-        let (green, errors) = parse(input);
-
-        println!("Parse errors: {:?}", errors);
-
-        let syntax = PerlNode::new_root(green);
-        println!("AST: {:#?}", syntax);
-
-        // Even if there are errors, check if we got some structure
-        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-    }
-
-    #[test]
-    fn test_dereferencing_pattern_detection() {
-        // Test that is_dereferencing_pattern works with token-based lookahead
-
-        // Test valid dereferencing patterns
-        let test_cases = [
-            ("@$ref", true),
-            ("%$ref", true),
-            ("$$ref", true),
-            ("@ $ref", true), // with whitespace
-            ("% $ref", true), // with whitespace
-            ("$ $ref", true), // with whitespace
-        ];
-
-        for (input, expected) in test_cases {
-            let mut parser = crate::parser::Parser::new(input);
-            parser.skip_whitespace_and_newlines();
-            assert_eq!(
-                parser.is_dereferencing_pattern(),
-                expected,
-                "Failed for input: '{}'",
-                input
-            );
-        }
-
-        // Test expression dereferencing patterns (new functionality)
-        let expr_deref_cases = [
-            ("@{$ref}", true),
-            ("%{$ref}", true),
-            ("${$ref}", true),
-            ("@{ $ref }", true), // with whitespace
-            ("@{func()}", true),
-        ];
-        for (input, expected) in expr_deref_cases {
-            let mut parser = crate::parser::Parser::new(input);
-            parser.skip_whitespace_and_newlines();
-            assert_eq!(
-                parser.is_dereferencing_pattern(),
-                expected,
-                "Failed for input: '{}'",
-                input
-            );
-        }
-
-        // Test non-dereferencing patterns
-        let non_deref_cases = [("@array", false), ("%hash", false), ("$scalar", false)];
-
-        for (input, expected) in non_deref_cases {
-            let mut parser = crate::parser::Parser::new(input);
-            parser.skip_whitespace_and_newlines();
-            assert_eq!(
-                parser.is_dereferencing_pattern(),
-                expected,
-                "Failed for input: '{}'",
-                input
-            );
-        }
-    }
-
-    #[test]
-    fn test_fat_comma_chain_expr_list() {
-        let input = "(a=>b=>1)";
-        let (green, errors) = parse(input);
-        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
-        let root = PerlNode::new_root(green);
-        let stmt = root.children().next().expect("missing stmt");
-        assert_eq!(stmt.kind(), SyntaxKind::STMT);
-        assert!(
-            stmt.children()
-                .any(|child| child.kind() == SyntaxKind::EXPR_LIST),
-            "Expected EXPR_LIST node inside parentheses"
-        );
-    }
-
-    #[test]
-    fn test_return_multiple_values_expression_list() {
-        let input = "return 1, 2;";
-        let (green, errors) = parse(input);
-        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
-
-        let root = PerlNode::new_root(green);
-        let stmt = root.children().next().expect("missing stmt");
-        assert_eq!(stmt.kind(), SyntaxKind::STMT);
-        assert!(
-            stmt.descendants()
-                .any(|node| node.kind() == SyntaxKind::EXPR_LIST),
-            "Expected EXPR_LIST node for return value list"
-        );
-    }
-
-    #[test]
-    fn test_block_function_accepts_expression_argument() {
-        let input = "grep +$_, @list;";
-        let (green, errors) = parse(input);
-        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
-
-        let root = PerlNode::new_root(green);
-        let stmt = root
-            .children()
-            .next()
-            .expect("missing statement for grep call");
-        assert_eq!(stmt.kind(), SyntaxKind::STMT);
-
-        let mut found_call = false;
-        for child in stmt.children() {
-            if child.kind() == SyntaxKind::FUNCTION_CALL_EXPR {
-                found_call = true;
-                // Ensure we parsed arguments as an expression list, not an infix expression
-                assert!(
-                    child
-                        .children()
-                        .any(|node| node.kind() == SyntaxKind::EXPR_LIST),
-                    "expected expression list inside function call"
-                );
-            }
-            assert_ne!(child.kind(), SyntaxKind::INFIX_EXPR);
-        }
-
-        assert!(found_call, "expected to find function call for grep");
-    }
-
-    #[test]
-    fn test_defined_or_after_shift_pop_and_file_test() {
-        let cases = ["shift // 1;", "pop // 1;", "-f // 0;"];
-
-        for input in cases {
-            let (green, errors) = parse(input);
-            assert!(
-                errors.is_empty(),
-                "Parse errors for '{}': {:?}",
-                input,
-                errors
-            );
-
-            let root = PerlNode::new_root(green);
-            assert!(
-                root.descendants_with_tokens().any(|element| {
-                    matches!(
-                        element,
-                        rowan::NodeOrToken::Token(token)
-                            if token.kind() == SyntaxKind::DEFINED_OR
-                    )
-                }),
-                "expected DEFINED_OR token for '{}'",
-                input
-            );
-        }
-    }
-
-    #[test]
-    fn test_unknown_function_followed_by_slash_is_division() {
-        let input = "my $x = f / 10 / 2;";
-        let (green, errors) = parse(input);
-        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
-
-        let root = PerlNode::new_root(green);
-        let mut slash_count = 0;
-        let mut saw_regex_literal = false;
-
-        for element in root.descendants_with_tokens() {
-            if let rowan::NodeOrToken::Token(token) = element {
-                if token.kind() == SyntaxKind::SLASH {
-                    slash_count += 1;
-                }
-                if token.kind() == SyntaxKind::REGEX_LITERAL {
-                    saw_regex_literal = true;
+                .map(|component| component.to_string_lossy().into_owned())
+                .collect::<Vec<String>>();
+            if let Some(last) = parts.last_mut() {
+                if let Some(stripped) = last.strip_suffix(".pl") {
+                    *last = stripped.to_string();
                 }
             }
-        }
+            let snapshot_name = format!("success__{}", parts.join("__"));
 
-        assert_eq!(slash_count, 2, "expected division operators in '{}'", input);
-        assert!(
-            !saw_regex_literal,
-            "unexpected regex literal token found in '{}'",
-            input
-        );
+            insta::assert_snapshot!(snapshot_name, render_success_tree(&syntax));
+        }
     }
 
     #[test]
-    fn test_zero_arity_builtins_followed_by_operators() {
-        use SyntaxKind::{INFIX_EXPR, TERNARY_EXPR};
+    fn parser_error_snapshots() {
+        let error_dir = fixtures_root().join("errors");
+        let mut files = Vec::new();
+        collect_fixture_files(&error_dir, &mut files);
+        files.sort();
+        assert!(
+            !files.is_empty(),
+            "No error fixtures found in {:?}",
+            error_dir
+        );
 
-        let cases = [
-            ("time // 1;", INFIX_EXPR, "time"),
-            ("fork + 1;", INFIX_EXPR, "fork"),
-            ("wait or die 'oops';", INFIX_EXPR, "wait"),
-            ("wantarray ? 1 : 0;", TERNARY_EXPR, "wantarray"),
-        ];
-
-        for (input, expected_kind, builtin_name) in cases {
-            let (green, errors) = parse(input);
+        for path in files {
+            let source = fs::read_to_string(&path)
+                .unwrap_or_else(|err| panic!("Failed to read {}: {}", path.display(), err));
+            let (_green, errors) = parse(&source);
             assert!(
-                errors.is_empty(),
-                "Parse errors for '{}': {:?}",
-                input,
-                errors
+                !errors.is_empty(),
+                "Expected parse errors for {} but parser succeeded",
+                path.display()
             );
 
-            let root = PerlNode::new_root(green);
-            let stmt = root
-                .children()
-                .find(|child| child.kind() == SyntaxKind::STMT)
-                .expect("expected statement");
-
-            let expr = stmt
-                .children()
-                .find(|child| child.kind() != SyntaxKind::SEMICOLON)
-                .expect("expected expression child");
-
-            assert_eq!(
-                expr.kind(),
-                expected_kind,
-                "unexpected kind for '{}'",
-                input
-            );
-
-            let builtin_token = expr
-                .descendants_with_tokens()
-                .find_map(|element| {
-                    if let rowan::NodeOrToken::Token(token) = element {
-                        if token.kind() == SyntaxKind::IDENT && token.text() == builtin_name {
-                            return Some(token);
-                        }
-                    }
-                    None
-                })
-                .expect("expected builtin token");
-
-            assert_ne!(
-                builtin_token.parent().map(|node| node.kind()),
-                Some(SyntaxKind::FUNCTION_CALL_EXPR),
-                "builtin parsed as function call in '{}'",
-                input
-            );
-        }
-    }
-
-    #[test]
-    fn test_say_with_qualified_method_call() {
-        let input = "say Foo::Bar->method();";
-        let (green, errors) = parse(input);
-        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
-
-        let root = PerlNode::new_root(green);
-        let stmt = root.children().next().expect("missing statement");
-        assert_eq!(stmt.kind(), SyntaxKind::STMT);
-
-        assert!(
-            stmt.descendants()
-                .any(|node| node.kind() == SyntaxKind::METHOD_CALL_EXPR),
-            "expected METHOD_CALL_EXPR inside say arguments"
-        );
-    }
-
-    #[test]
-    fn test_bare_block_statement() {
-        let input = "warn 1; { warn 2 } warn 3;";
-        let (green, errors) = parse(input);
-        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
-
-        let root = PerlNode::new_root(green);
-        let mut stmts = root.children();
-
-        let first = stmts.next().expect("missing first statement");
-        assert_eq!(first.kind(), SyntaxKind::STMT);
-
-        let block_stmt = stmts.next().expect("missing block statement");
-        assert_eq!(block_stmt.kind(), SyntaxKind::STMT);
-        assert!(
-            block_stmt
-                .children()
-                .any(|child| child.kind() == SyntaxKind::BLOCK_STMT),
-            "expected block stmt inside bare block"
-        );
-
-        let third = stmts.next().expect("missing trailing statement");
-        assert_eq!(third.kind(), SyntaxKind::STMT);
-    }
-
-    #[test]
-    fn test_hashref_expression_after_unary_plus() {
-        let input = "my $hash = +{a => 1};";
-        let (green, errors) = parse(input);
-        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
-
-        let root = PerlNode::new_root(green);
-        let stmt = root.children().next().expect("missing statement");
-        assert_eq!(stmt.kind(), SyntaxKind::STMT);
-        assert!(
-            stmt.descendants()
-                .any(|node| node.kind() == SyntaxKind::VAR_DECL),
-            "expected declaration inside statement"
-        );
-        assert!(
-            stmt.descendants()
-                .any(|node| node.kind() == SyntaxKind::HASH_REF),
-            "expected hash ref inside declaration"
-        );
-    }
-
-    #[test]
-    fn test_hashref_access_after_unary_plus_with_newline() {
-        let input = "+{}\n->{key}";
-        let (green, errors) = parse(input);
-        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
-
-        let root = PerlNode::new_root(green);
-        let stmt = root.children().next().expect("missing statement");
-        assert_eq!(stmt.kind(), SyntaxKind::STMT);
-        assert!(
-            stmt.descendants()
-                .any(|node| node.kind() == SyntaxKind::HASH_REF_ACCESS_EXPR),
-            "expected HASH_REF_ACCESS_EXPR when '->' follows a newline"
-        );
-    }
-
-    #[test]
-    fn test_hashref_keywords_as_keys() {
-        let input = "my $hash = +{ package => 1, and => 2 };";
-        let (green, errors) = parse(input);
-        assert!(errors.is_empty(), "Parse errors: {:?}", errors);
-
-        let root = PerlNode::new_root(green);
-        let stmt = root.children().next().expect("missing statement");
-        assert_eq!(stmt.kind(), SyntaxKind::STMT);
-
-        assert!(
-            stmt.descendants()
-                .any(|node| node.kind() == SyntaxKind::VAR_DECL),
-            "expected declaration inside statement"
-        );
-
-        let mut saw_package = false;
-        let mut saw_and = false;
-        for element in stmt.descendants_with_tokens() {
-            if let rowan::NodeOrToken::Token(token) = element {
-                if token.kind() == SyntaxKind::IDENT {
-                    match token.text() {
-                        "package" => saw_package = true,
-                        "and" => saw_and = true,
-                        _ => {}
-                    }
+            let relative = path
+                .strip_prefix(&error_dir)
+                .expect("Fixture should live under error directory");
+            let mut parts = relative
+                .iter()
+                .map(|component| component.to_string_lossy().into_owned())
+                .collect::<Vec<String>>();
+            if let Some(last) = parts.last_mut() {
+                if let Some(stripped) = last.strip_suffix(".pl") {
+                    *last = stripped.to_string();
                 }
             }
-        }
+            let snapshot_name = format!("errors__{}", parts.join("__"));
 
-        assert!(
-            saw_package,
-            "expected to see 'package' coerced to IDENT inside hash"
-        );
-        assert!(
-            saw_and,
-            "expected to see 'and' coerced to IDENT inside hash"
-        );
+            insta::assert_snapshot!(snapshot_name, render_errors(&errors));
+        }
     }
 
     #[test]
-    fn test_parenthesized_list_with_trailing_space() {
-        let input = "(a => [] )";
-        let (_green, errors) = parse(input);
-        assert!(
-            errors.is_empty(),
-            "Parse errors for '(a => [] )' A: {:?}",
-            errors
-        );
+    fn test_digit_prefixed_ident_lexer() {
+        let mut lexer = crate::lexer::Lexer::new("123ABC");
+        let result = lexer.consume_digit_prefixed_ident();
+        assert_eq!(result, Some((SyntaxKind::IDENT, "123ABC")));
 
-        let input_no_space = "(a => [])";
-        let (_green_no_space, errors_no_space) = parse(input_no_space);
-        assert!(
-            errors_no_space.is_empty(),
-            "Parse errors for '(a => [])' B: {:?}",
-            errors_no_space
-        );
+        let mut lexer2 = crate::lexer::Lexer::new("456");
+        let result2 = lexer2.consume_digit_prefixed_ident();
+        assert_eq!(result2, Some((SyntaxKind::IDENT, "456")));
+
+        let mut lexer3 = crate::lexer::Lexer::new("789XYZ123");
+        let result3 = lexer3.consume_digit_prefixed_ident();
+        assert_eq!(result3, Some((SyntaxKind::IDENT, "789XYZ123")));
     }
 }
 
 mod expression;
 mod statement;
+#[cfg(test)]
+mod test_utils;
 #[test]
 fn test_sub_with_quote_like_name() {
     use crate::PerlNode;

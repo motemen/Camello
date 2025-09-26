@@ -1,0 +1,17 @@
+---
+source: src/parser/statement.rs
+expression: render_success_tree(&syntax)
+---
+ROOT@0..13
+  SUB_DEF@0..12
+    SUB_KW@0..3 "sub"
+    WHITESPACE@3..4 " "
+    IDENT@4..7 "foo"
+    WHITESPACE@7..8 " "
+    ATTR@8..10
+      COLON@8..9 ":"
+      WHITESPACE@9..10 " "
+    BLOCK_STMT@10..12
+      L_BRACE@10..11 "{"
+      R_BRACE@11..12 "}"
+  NEWLINE@12..13 "\n"

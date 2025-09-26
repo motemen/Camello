@@ -1,0 +1,274 @@
+---
+source: src/parser/mod.rs
+expression: render_success_tree(&syntax)
+---
+ROOT@0..502
+  PACKAGE_STMT@0..22
+    PACKAGE_KW@0..7 "package"
+    WHITESPACE@7..8 " "
+    QUALIFIED_IDENT@8..16
+      IDENT@8..11 "Foo"
+      DOUBLE_COLON@11..13 "::"
+      IDENT@13..16 "Bar"
+    WHITESPACE@16..17 " "
+    NUMBER@17..21 "1.23"
+    SEMICOLON@21..22 ";"
+  NEWLINE@22..23 "\n"
+  PACKAGE_STMT@23..47
+    PACKAGE_KW@23..30 "package"
+    WHITESPACE@30..31 " "
+    QUALIFIED_IDENT@31..41
+      IDENT@31..33 "My"
+      DOUBLE_COLON@33..35 "::"
+      IDENT@35..41 "Module"
+    WHITESPACE@41..42 " "
+    NUMBER@42..46 "0.01"
+    SEMICOLON@46..47 ";"
+  NEWLINE@47..48 "\n"
+  PACKAGE_STMT@48..65
+    PACKAGE_KW@48..55 "package"
+    WHITESPACE@55..56 " "
+    IDENT@56..60 "Test"
+    WHITESPACE@60..61 " "
+    NUMBER@61..64 "2.5"
+    SEMICOLON@64..65 ";"
+  NEWLINE@65..66 "\n"
+  PACKAGE_STMT@66..97
+    PACKAGE_KW@66..73 "package"
+    WHITESPACE@73..74 " "
+    QUALIFIED_IDENT@74..82
+      IDENT@74..77 "Foo"
+      DOUBLE_COLON@77..79 "::"
+      IDENT@79..82 "Bar"
+    WHITESPACE@82..83 " "
+    BLOCK_STMT@83..97
+      L_BRACE@83..84 "{"
+      WHITESPACE@84..85 " "
+      STMT@85..95
+        VAR_DECL@85..94
+          MY_KW@85..87 "my"
+          WHITESPACE@87..88 " "
+          INFIX_EXPR@88..94
+            SCALAR_VAR@88..91
+              SCALAR_SIGIL@88..89 "$"
+              IDENT@89..90 "x"
+              WHITESPACE@90..91 " "
+            EQ@91..92 "="
+            WHITESPACE@92..93 " "
+            NUMBER@93..94 "1"
+        SEMICOLON@94..95 ";"
+      WHITESPACE@95..96 " "
+      R_BRACE@96..97 "}"
+  NEWLINE@97..98 "\n"
+  PACKAGE_STMT@98..133
+    PACKAGE_KW@98..105 "package"
+    WHITESPACE@105..106 " "
+    QUALIFIED_IDENT@106..119
+      IDENT@106..109 "Foo"
+      DOUBLE_COLON@109..111 "::"
+      IDENT@111..114 "Bar"
+      DOUBLE_COLON@114..116 "::"
+      IDENT@116..119 "Baz"
+    WHITESPACE@119..120 " "
+    BLOCK_STMT@120..133
+      L_BRACE@120..121 "{"
+      WHITESPACE@121..122 " "
+      STMT@122..131
+        FUNCTION_CALL_EXPR@122..130
+          IDENT@122..125 "say"
+          WHITESPACE@125..126 " "
+          STRING@126..130 "\"hi\""
+        SEMICOLON@130..131 ";"
+      WHITESPACE@131..132 " "
+      R_BRACE@132..133 "}"
+  NEWLINE@133..134 "\n"
+  PACKAGE_STMT@134..151
+    PACKAGE_KW@134..141 "package"
+    WHITESPACE@141..142 " "
+    QUALIFIED_IDENT@142..150
+      IDENT@142..145 "Foo"
+      DOUBLE_COLON@145..147 "::"
+      IDENT@147..150 "123"
+    SEMICOLON@150..151 ";"
+  NEWLINE@151..152 "\n"
+  PACKAGE_STMT@152..175
+    PACKAGE_KW@152..159 "package"
+    WHITESPACE@159..160 " "
+    QUALIFIED_IDENT@160..174
+      IDENT@160..163 "Bar"
+      DOUBLE_COLON@163..165 "::"
+      IDENT@165..168 "456"
+      DOUBLE_COLON@168..170 "::"
+      IDENT@170..174 "Test"
+    SEMICOLON@174..175 ";"
+  NEWLINE@175..176 "\n"
+  PACKAGE_STMT@176..206
+    PACKAGE_KW@176..183 "package"
+    WHITESPACE@183..184 " "
+    QUALIFIED_IDENT@184..205
+      IDENT@184..190 "Module"
+      DOUBLE_COLON@190..192 "::"
+      IDENT@192..196 "2024"
+      DOUBLE_COLON@196..198 "::"
+      IDENT@198..205 "Version"
+    SEMICOLON@205..206 ";"
+  NEWLINE@206..207 "\n"
+  PACKAGE_STMT@207..232
+    PACKAGE_KW@207..214 "package"
+    WHITESPACE@214..215 " "
+    QUALIFIED_IDENT@215..231
+      IDENT@215..216 "A"
+      DOUBLE_COLON@216..218 "::"
+      IDENT@218..219 "1"
+      DOUBLE_COLON@219..221 "::"
+      IDENT@221..222 "B"
+      DOUBLE_COLON@222..224 "::"
+      IDENT@224..225 "2"
+      DOUBLE_COLON@225..227 "::"
+      IDENT@227..228 "C"
+      DOUBLE_COLON@228..230 "::"
+      IDENT@230..231 "3"
+    SEMICOLON@231..232 ";"
+  NEWLINE@232..233 "\n"
+  PACKAGE_STMT@233..264
+    PACKAGE_KW@233..240 "package"
+    WHITESPACE@240..241 " "
+    QUALIFIED_IDENT@241..249
+      IDENT@241..244 "Foo"
+      DOUBLE_COLON@244..246 "::"
+      IDENT@246..249 "123"
+    WHITESPACE@249..250 " "
+    BLOCK_STMT@250..264
+      L_BRACE@250..251 "{"
+      WHITESPACE@251..252 " "
+      STMT@252..262
+        VAR_DECL@252..261
+          MY_KW@252..254 "my"
+          WHITESPACE@254..255 " "
+          INFIX_EXPR@255..261
+            SCALAR_VAR@255..258
+              SCALAR_SIGIL@255..256 "$"
+              IDENT@256..257 "x"
+              WHITESPACE@257..258 " "
+            EQ@258..259 "="
+            WHITESPACE@259..260 " "
+            NUMBER@260..261 "1"
+        SEMICOLON@261..262 ";"
+      WHITESPACE@262..263 " "
+      R_BRACE@263..264 "}"
+  NEWLINE@264..265 "\n"
+  PACKAGE_STMT@265..286
+    PACKAGE_KW@265..272 "package"
+    WHITESPACE@272..273 " "
+    QUALIFIED_IDENT@273..281
+      IDENT@273..276 "Bar"
+      DOUBLE_COLON@276..278 "::"
+      IDENT@278..281 "456"
+    WHITESPACE@281..282 " "
+    NUMBER@282..285 "1.0"
+    SEMICOLON@285..286 ";"
+  NEWLINE@286..287 "\n"
+  PACKAGE_STMT@287..307
+    PACKAGE_KW@287..294 "package"
+    WHITESPACE@294..295 " "
+    QUALIFIED_IDENT@295..306
+      IDENT@295..298 "Foo"
+      DOUBLE_COLON@298..300 "::"
+      IDENT@300..306 "123ABC"
+    SEMICOLON@306..307 ";"
+  NEWLINE@307..308 "\n"
+  PACKAGE_STMT@308..334
+    PACKAGE_KW@308..315 "package"
+    WHITESPACE@315..316 " "
+    QUALIFIED_IDENT@316..333
+      IDENT@316..319 "Bar"
+      DOUBLE_COLON@319..321 "::"
+      IDENT@321..327 "456DEF"
+      DOUBLE_COLON@327..329 "::"
+      IDENT@329..333 "Test"
+    SEMICOLON@333..334 ";"
+  NEWLINE@334..335 "\n"
+  PACKAGE_STMT@335..361
+    PACKAGE_KW@335..342 "package"
+    WHITESPACE@342..343 " "
+    QUALIFIED_IDENT@343..360
+      IDENT@343..349 "Module"
+      DOUBLE_COLON@349..351 "::"
+      IDENT@351..360 "123abc456"
+    SEMICOLON@360..361 ";"
+  NEWLINE@361..362 "\n"
+  PACKAGE_STMT@362..386
+    PACKAGE_KW@362..369 "package"
+    WHITESPACE@369..370 " "
+    QUALIFIED_IDENT@370..385
+      IDENT@370..374 "Test"
+      DOUBLE_COLON@374..376 "::"
+      IDENT@376..385 "999XYZ789"
+    SEMICOLON@385..386 ";"
+  NEWLINE@386..387 "\n"
+  PACKAGE_STMT@387..421
+    PACKAGE_KW@387..394 "package"
+    WHITESPACE@394..395 " "
+    QUALIFIED_IDENT@395..406
+      IDENT@395..398 "Foo"
+      DOUBLE_COLON@398..400 "::"
+      IDENT@400..406 "123ABC"
+    WHITESPACE@406..407 " "
+    BLOCK_STMT@407..421
+      L_BRACE@407..408 "{"
+      WHITESPACE@408..409 " "
+      STMT@409..419
+        VAR_DECL@409..418
+          MY_KW@409..411 "my"
+          WHITESPACE@411..412 " "
+          INFIX_EXPR@412..418
+            SCALAR_VAR@412..415
+              SCALAR_SIGIL@412..413 "$"
+              IDENT@413..414 "x"
+              WHITESPACE@414..415 " "
+            EQ@415..416 "="
+            WHITESPACE@416..417 " "
+            NUMBER@417..418 "1"
+        SEMICOLON@418..419 ";"
+      WHITESPACE@419..420 " "
+      R_BRACE@420..421 "}"
+  NEWLINE@421..422 "\n"
+  PACKAGE_STMT@422..447
+    PACKAGE_KW@422..429 "package"
+    WHITESPACE@429..430 " "
+    QUALIFIED_IDENT@430..441
+      IDENT@430..433 "Bar"
+      DOUBLE_COLON@433..435 "::"
+      IDENT@435..441 "456DEF"
+    WHITESPACE@441..442 " "
+    VERSION@442..446 "v1.0"
+    SEMICOLON@446..447 ";"
+  NEWLINE@447..448 "\n"
+  PACKAGE_STMT@448..479
+    PACKAGE_KW@448..455 "package"
+    WHITESPACE@455..456 " "
+    QUALIFIED_IDENT@456..478
+      IDENT@456..459 "Foo"
+      DOUBLE_COLON@459..461 "::"
+      IDENT@461..467 "123ABC"
+      DOUBLE_COLON@467..469 "::"
+      IDENT@469..470 "B"
+      DOUBLE_COLON@470..472 "::"
+      IDENT@472..478 "456DEF"
+    SEMICOLON@478..479 ";"
+  NEWLINE@479..480 "\n"
+  SUB_DEF@480..489
+    SUB_KW@480..483 "sub"
+    WHITESPACE@483..484 " "
+    IDENT@484..486 "tr"
+    WHITESPACE@486..487 " "
+    BLOCK_STMT@487..489
+      L_BRACE@487..488 "{"
+      R_BRACE@488..489 "}"
+  NEWLINE@489..490 "\n"
+  PACKAGE_STMT@490..501
+    PACKAGE_KW@490..497 "package"
+    WHITESPACE@497..498 " "
+    IDENT@498..500 "tr"
+    SEMICOLON@500..501 ";"
+  NEWLINE@501..502 "\n"

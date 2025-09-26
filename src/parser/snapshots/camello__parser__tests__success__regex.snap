@@ -1,0 +1,79 @@
+---
+source: src/parser/mod.rs
+expression: render_success_tree(&syntax)
+---
+ROOT@0..97
+  STMT@0..15
+    REGEX_EXPR@0..14
+      SCALAR_VAR@0..5
+        SCALAR_SIGIL@0..1 "$"
+        IDENT@1..4 "foo"
+        WHITESPACE@4..5 " "
+      REGEX_MATCH@5..7 "=~"
+      WHITESPACE@7..8 " "
+      REGEX_LITERAL@8..14 "/[a/]/"
+    SEMICOLON@14..15 ";"
+  NEWLINE@15..16 "\n"
+  STMT@16..31
+    REGEX_EXPR@16..30
+      SCALAR_VAR@16..21
+        SCALAR_SIGIL@16..17 "$"
+        IDENT@17..20 "foo"
+        WHITESPACE@20..21 " "
+      REGEX_MATCH@21..23 "=~"
+      WHITESPACE@23..24 " "
+      REGEX_LITERAL@24..30 "/[]/]/"
+    SEMICOLON@30..31 ";"
+  NEWLINE@31..32 "\n"
+  STMT@32..51
+    REGEX_EXPR@32..50
+      SCALAR_VAR@32..37
+        SCALAR_SIGIL@32..33 "$"
+        IDENT@33..36 "foo"
+        WHITESPACE@36..37 " "
+      REGEX_MATCH@37..39 "=~"
+      WHITESPACE@39..40 " "
+      REGEX_LITERAL@40..50 "/foo\nbar/x"
+    SEMICOLON@50..51 ";"
+  NEWLINE@51..52 "\n"
+  STMT@52..62
+    S_EXPR@52..61
+      S_KW@52..53 "s"
+      DELIMITER@53..54 "/"
+      REGEX_PATTERN@54..56 "\\/"
+      DELIMITER@56..57 "/"
+      INTERPOLATED_STRING@57..59 "::"
+      DELIMITER@59..60 "/"
+      S_FLAGS@60..61 "g"
+    SEMICOLON@61..62 ";"
+  NEWLINE@62..63 "\n"
+  STMT@63..72
+    M_EXPR@63..71
+      M_KW@63..64 "m"
+      DELIMITER@64..65 "<"
+      REGEX_PATTERN@65..70 ".<a>."
+      DELIMITER@70..71 ">"
+    SEMICOLON@71..72 ";"
+  NEWLINE@72..73 "\n"
+  STMT@73..96
+    VAR_DECL@73..95
+      MY_KW@73..75 "my"
+      WHITESPACE@75..76 " "
+      INFIX_EXPR@76..95
+        ARRAY_VAR@76..82
+          ARRAY_SIGIL@76..77 "@"
+          IDENT@77..81 "list"
+          WHITESPACE@81..82 " "
+        EQ@82..83 "="
+        WHITESPACE@83..84 " "
+        QW_EXPR@84..95
+          QW_KW@84..86 "qw"
+          DELIMITER@86..87 "("
+          QW_STRING@87..88 "a"
+          WHITESPACE@88..89 " "
+          QW_STRING@89..92 "(b)"
+          WHITESPACE@92..93 " "
+          QW_STRING@93..94 "c"
+          DELIMITER@94..95 ")"
+    SEMICOLON@95..96 ";"
+  NEWLINE@96..97 "\n"

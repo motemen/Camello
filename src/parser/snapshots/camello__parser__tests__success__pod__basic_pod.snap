@@ -1,0 +1,7 @@
+---
+source: src/parser/mod.rs
+expression: render_success_tree(&syntax)
+---
+ROOT@0..18
+  POD_BLOCK@0..18
+    POD_CONTENT@0..18 "=pod\nContent\n=cut\n"
