@@ -2891,6 +2891,25 @@ fn test_x_operator_formatting() {
 }
 
 #[test]
+fn test_x_identifier_parsing() {
+    // Test that identifiers containing 'x' followed by numbers work correctly
+    // This addresses the issue where `x2foo` was incorrectly parsed as `x` + `2foo`
+    let cases = [
+        // Basic identifier cases that should work
+        ("my $xerror = 1;", "my $xerror = 1;\n"),
+        ("my $x_var = 2;", "my $x_var = 2;\n"),
+        // Cases that were problematic before the fix
+        ("my $x2 = 4;", "my $x2 = 4;\n"),
+        ("my $x2foo = 3;", "my $x2foo = 3;\n"),
+        ("my $x123abc = 5;", "my $x123abc = 5;\n"),
+        // String repetition operator should still work correctly
+        (r#""hello" x 2;"#, "\"hello\" x 2;\n"),
+        (r#""hello"x2;"#, "\"hello\" x 2;\n"), // Adds proper spacing
+    ];
+    check_formatting_cases(&cases);
+}
+
+#[test]
 fn test_regex_literals_in_function_calls() {
     check_formatting_cases(&[
         // Basic split with regex literal - with parentheses

@@ -551,6 +551,43 @@ impl<'a> Lexer<'a> {
         Some((SyntaxKind::IDENT, text))
     }
 
+    /// Consume an 'x'-prefixed identifier (e.g., "x2foo", "x123") from the stream and return it as an IDENT token.
+    /// This is used by the parser when 'x' appears in variable context and should be combined with following alphanumeric characters.
+    pub fn consume_x_prefixed_ident(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        let remainder = self.logos_lexer.remainder();
+        if remainder.is_empty() {
+            return None;
+        }
+
+        // Must start with 'x'
+        let mut chars = remainder.char_indices();
+        let (_, first_char) = chars.next()?;
+        if first_char != 'x' {
+            return None;
+        }
+
+        // Must have at least one following alphanumeric character or underscore
+        let mut end_pos = first_char.len_utf8(); // Position after 'x'
+        let mut found_following = false;
+        for (pos, ch) in chars {
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                end_pos = pos + ch.len_utf8();
+                found_following = true;
+            } else {
+                break;
+            }
+        }
+
+        // Only consume if there's at least one character after 'x'
+        if !found_following {
+            return None;
+        }
+
+        let text = &remainder[..end_pos];
+        self.logos_lexer.bump(end_pos);
+        Some((SyntaxKind::IDENT, text))
+    }
+
     pub fn next_token(&mut self) -> Option<(SyntaxKind, &'a str)> {
         self.next_token_with_context(Default::default())
     }

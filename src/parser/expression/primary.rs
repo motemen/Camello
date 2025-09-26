@@ -211,13 +211,12 @@ impl Parser<'_> {
 
                     match next_token {
                         Some((SyntaxKind::IDENT, _)) | Some((SyntaxKind::NUMBER, _)) => {
-                            // Combine 'x' with the following token (e.g., x2, xerror)
-                            self.bump_as(SyntaxKind::IDENT); // treat X as IDENT
-                                                             // Parse the following token as part of the same identifier
-                            if self
-                                .current_kind()
-                                .is_some_and(|k| k == SyntaxKind::IDENT || k == SyntaxKind::NUMBER)
-                            {
+                            // Try to consume 'x' + following characters as a single identifier
+                            if let Some((k, t)) = self.lexer.consume_x_prefixed_ident() {
+                                self.builder.token(k.into(), t);
+                                self.current_pos += t.len();
+                            } else {
+                                // Fallback: just treat X as identifier
                                 self.bump_as(SyntaxKind::IDENT);
                             }
                         }
@@ -463,13 +462,19 @@ impl Parser<'_> {
                     self.peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 1);
                 match next_token {
                     Some((SyntaxKind::IDENT, _)) | Some((SyntaxKind::NUMBER, _)) => {
-                        // Combine x with the following token
-                        self.bump(); // consume 'x'
-                        if self
-                            .current_kind()
-                            .is_some_and(|k| k == SyntaxKind::IDENT || k == SyntaxKind::NUMBER)
-                        {
-                            self.bump_as(SyntaxKind::IDENT);
+                        // Try to consume 'x' + following characters as a single identifier
+                        if let Some((k, t)) = self.lexer.consume_x_prefixed_ident() {
+                            self.builder.token(k.into(), t);
+                            self.current_pos += t.len();
+                        } else {
+                            // Fallback: treat as separate tokens
+                            self.bump(); // consume 'x'
+                            if self
+                                .current_kind()
+                                .is_some_and(|k| k == SyntaxKind::IDENT || k == SyntaxKind::NUMBER)
+                            {
+                                self.bump_as(SyntaxKind::IDENT);
+                            }
                         }
                     }
                     _ => {
@@ -485,12 +490,12 @@ impl Parser<'_> {
                 self.peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 1);
             match next_token {
                 Some((SyntaxKind::IDENT, _)) | Some((SyntaxKind::NUMBER, _)) => {
-                    // Combine x with the following token
-                    self.bump_as(SyntaxKind::IDENT); // treat X as IDENT
-                    if self
-                        .current_kind()
-                        .is_some_and(|k| k == SyntaxKind::IDENT || k == SyntaxKind::NUMBER)
-                    {
+                    // Try to consume 'x' + following characters as a single identifier
+                    if let Some((k, t)) = self.lexer.consume_x_prefixed_ident() {
+                        self.builder.token(k.into(), t);
+                        self.current_pos += t.len();
+                    } else {
+                        // Fallback: just treat X as identifier
                         self.bump_as(SyntaxKind::IDENT);
                     }
                 }
@@ -524,12 +529,18 @@ impl Parser<'_> {
                         );
                         match next_token {
                             Some((SyntaxKind::IDENT, _)) | Some((SyntaxKind::NUMBER, _)) => {
-                                // Combine x with the following token
-                                self.bump_as(SyntaxKind::IDENT); // consume 'x'
-                                if self.current_kind().is_some_and(|k| {
-                                    k == SyntaxKind::IDENT || k == SyntaxKind::NUMBER
-                                }) {
-                                    self.bump_as(SyntaxKind::IDENT);
+                                // Try to consume 'x' + following characters as a single identifier
+                                if let Some((k, t)) = self.lexer.consume_x_prefixed_ident() {
+                                    self.builder.token(k.into(), t);
+                                    self.current_pos += t.len();
+                                } else {
+                                    // Fallback: treat as separate tokens
+                                    self.bump_as(SyntaxKind::IDENT); // consume 'x'
+                                    if self.current_kind().is_some_and(|k| {
+                                        k == SyntaxKind::IDENT || k == SyntaxKind::NUMBER
+                                    }) {
+                                        self.bump_as(SyntaxKind::IDENT);
+                                    }
                                 }
                             }
                             _ => {
@@ -545,13 +556,18 @@ impl Parser<'_> {
                         .peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 1);
                     match next_token {
                         Some((SyntaxKind::IDENT, _)) | Some((SyntaxKind::NUMBER, _)) => {
-                            // Combine x with the following token
-                            self.bump_as(SyntaxKind::IDENT); // treat X as IDENT
-                            if self
-                                .current_kind()
-                                .is_some_and(|k| k == SyntaxKind::IDENT || k == SyntaxKind::NUMBER)
-                            {
-                                self.bump_as(SyntaxKind::IDENT);
+                            // Try to consume 'x' + following characters as a single identifier
+                            if let Some((k, t)) = self.lexer.consume_x_prefixed_ident() {
+                                self.builder.token(k.into(), t);
+                                self.current_pos += t.len();
+                            } else {
+                                // Fallback: treat as separate tokens
+                                self.bump_as(SyntaxKind::IDENT); // treat X as IDENT
+                                if self.current_kind().is_some_and(|k| {
+                                    k == SyntaxKind::IDENT || k == SyntaxKind::NUMBER
+                                }) {
+                                    self.bump_as(SyntaxKind::IDENT);
+                                }
                             }
                         }
                         _ => {
