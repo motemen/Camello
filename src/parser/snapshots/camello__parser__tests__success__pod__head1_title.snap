@@ -1,0 +1,7 @@
+---
+source: src/parser/mod.rs
+expression: render_success_tree(&syntax)
+---
+ROOT@0..26
+  POD_BLOCK@0..26
+    POD_CONTENT@0..26 "=head1 TITLE\nContent\n ..."

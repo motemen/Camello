@@ -1,0 +1,25 @@
+---
+source: src/parser/mod.rs
+expression: render_success_tree(&syntax)
+---
+ROOT@0..38
+  STMT@0..8
+    VAR_DECL@0..7
+      MY_KW@0..2 "my"
+      WHITESPACE@2..3 " "
+      SCALAR_VAR@3..7
+        SCALAR_SIGIL@3..4 "$"
+        IDENT@4..7 "var"
+    SEMICOLON@7..8 ";"
+  NEWLINE@8..9 "\n"
+  POD_BLOCK@9..27
+    POD_CONTENT@9..27 "=pod\nContent\n=cut\n"
+  STMT@27..37
+    VAR_DECL@27..36
+      MY_KW@27..29 "my"
+      WHITESPACE@29..30 " "
+      SCALAR_VAR@30..36
+        SCALAR_SIGIL@30..31 "$"
+        IDENT@31..36 "other"
+    SEMICOLON@36..37 ";"
+  NEWLINE@37..38 "\n"

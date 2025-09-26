@@ -1,0 +1,4 @@
+sub test {
+    foo();
+    bar()
+}
