@@ -236,4 +236,21 @@ impl SyntaxKind {
                 | SyntaxKind::INTERPOLATED_STRING
         )
     }
+
+    /// Check if the given SyntaxKind is a quote-like keyword
+    #[must_use]
+    pub fn is_quote_like_keyword(self) -> bool {
+        matches!(
+            self,
+            SyntaxKind::Q_KW
+                | SyntaxKind::QQ_KW
+                | SyntaxKind::QX_KW
+                | SyntaxKind::QW_KW
+                | SyntaxKind::QR_KW
+                | SyntaxKind::M_KW
+                | SyntaxKind::S_KW
+                | SyntaxKind::TR_KW
+                | SyntaxKind::Y_KW
+        )
+    }
 }

@@ -125,22 +125,6 @@ impl<'a> Parser<'a> {
         self.lexer.peek_token().map(|(_, t)| t)
     }
 
-    /// Check if the given SyntaxKind is a quote-like keyword
-    fn is_quote_like_keyword(kind: SyntaxKind) -> bool {
-        matches!(
-            kind,
-            SyntaxKind::Q_KW
-                | SyntaxKind::QQ_KW
-                | SyntaxKind::QX_KW
-                | SyntaxKind::QW_KW
-                | SyntaxKind::QR_KW
-                | SyntaxKind::M_KW
-                | SyntaxKind::S_KW
-                | SyntaxKind::TR_KW
-                | SyntaxKind::Y_KW
-        )
-    }
-
     // Value-context peek helpers for expression starts (parser-driven lexing)
     fn current_kind_value(&self) -> Option<SyntaxKind> {
         self.peek_non_trivia_token_with_context(LexContext::Value)
@@ -335,7 +319,7 @@ impl<'a> Parser<'a> {
         // configure the cloned lexer for quote-like parsing to handle the delimiter correctly.
         let (current_token, next_char) = self.lexer.peek_token_and_next_char();
         if let (Some(current_kind), Some('#')) = (current_token, next_char) {
-            if Self::is_quote_like_keyword(current_kind) {
+            if current_kind.is_quote_like_keyword() {
                 let mode = crate::lexer::QuoteLikeMode::from_keyword(current_kind);
                 cloned.begin_quote_like(current_kind, mode);
             }
