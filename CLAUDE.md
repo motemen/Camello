@@ -149,23 +149,30 @@ Use `-E` instead of `-e` to use character escapes in the input string. e.g. `-E 
 
 ### Testing Strategy
 
-Our testing strategy prioritizes end-to-end formatting correctness and maintainability by focusing on snapshot tests.
+Our testing strategy prioritizes end-to-end correctness and maintainability using fixture-based snapshot tests with external `.pl` files.
 
-- **Primary: Formatter Snapshot Tests (`src/formatter/tests.rs`)**
+- **Primary: Formatter Fixture Tests (`src/formatter/tests.rs`)**
 
   - These are the most important tests, acting as integration tests that cover the entire process from lexing and parsing to final output.
+  - Test cases are defined as separate `.pl` files in `src/formatter/fixtures/` for better maintainability and readability.
   - They verify the formatter's output against stored snapshots using `insta`.
-  - The goal is to have a comprehensive suite of snapshot tests that cover a wide range of valid Perl syntax and formatting edge cases.
+  - The goal is to have a comprehensive suite of fixture-based tests that cover a wide range of valid Perl syntax and formatting edge cases.
 
-- **Secondary: Parser Unit Tests (`src/parser/mod.rs`)**
+- **Secondary: Parser Fixture Tests (`src/parser/mod.rs` and `src/parser/statement.rs`)**
 
-  - Dedicated lexer tests have been removed as the lexer now contains little custom logic.
-  - Any tricky lexical edge cases should be covered through parser tests or formatter snapshots.
-  - Keep parser unit tests focused on scenarios that are difficult to express as formatter snapshots.
+  - Uses fixture files in `src/parser/fixtures/` organized by test type:
+    - `success/` - valid Perl code that should parse without errors
+    - `errors/` - invalid code that should generate specific parse errors
+    - `statements/` - statement-specific test cases
+  - Shared test utilities in `src/parser/test_utils.rs` provide common functions for fixture loading and result rendering.
+  - Parser tests verify both successful parsing (CST structure) and error recovery behavior.
 
 - **Integration Tests (`tests/` directory)**: Verifies CLI behavior, file I/O, and end-to-end functionality using real-world or complex examples.
 
-This approach ensures that our tests are both effective and efficient, focusing developer effort on creating robust, real-world formatting scenarios rather than on redundant, low-level unit tests.
+**Fixture Management:**
+- Test cases stored as `.pl` files are easier to read, edit, and maintain than inline strings
+- Fixtures can be organized hierarchically in subdirectories for better categorization
+- When adding new syntax support, create corresponding fixture files to ensure comprehensive coverage
 
 ### Adding New Syntax Support
 
@@ -173,7 +180,10 @@ This approach ensures that our tests are both effective and efficient, focusing 
 2. Update the lexer in `src/lexer/mod.rs`. This may involve adding a new `Token` variant, updating regexes, or extending `Lexer::disambiguate` with new contextual rules.
 3. Add parsing logic to the appropriate parser function in `src/parser/`. For expressions, this may involve adding a new `OperatorInfo` in `src/parser/expression/precedence.rs`.
 4. Update the formatter in `src/formatter/` by adding a new `format_...` function to handle the new syntax node.
-5. Add comprehensive snapshot tests in `src/formatter/tests.rs` to cover various use cases of the new syntax.
+5. Create fixture files in `src/formatter/fixtures/` and `src/parser/fixtures/` to test the new syntax:
+   - Add `.pl` files with examples of the new syntax to appropriate fixture directories
+   - Run tests to generate corresponding snapshots using `insta`
+   - Ensure both successful parsing and error cases are covered with appropriate fixtures
 
 ### Parser Function Pattern
 
