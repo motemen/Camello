@@ -1846,6 +1846,20 @@ fn test_ternary_with_array_hash_references() {
 }
 
 #[test]
+fn test_ternary_branch_allows_compound_assignment() {
+    let input = "$x ? $y += 1 : $z;";
+    let output = format_and_assert(input);
+    assert_eq!(output, "$x ? $y += 1 : $z;\n");
+}
+
+#[test]
+fn test_ternary_branch_allows_loop_control_keywords() {
+    let input = "$flag ? $value : next LABEL;";
+    let output = format_and_assert(input);
+    assert_eq!(output, "$flag ? $value : next LABEL;\n");
+}
+
+#[test]
 fn test_io_operator_formatting() {
     let cases = [
         // Basic I/O operators
