@@ -1,0 +1,23 @@
+---
+source: src/parser/statement.rs
+expression: render_success_tree(&syntax)
+---
+ROOT@0..17
+  SUB_DEF@0..16
+    SUB_KW@0..3 "sub"
+    WHITESPACE@3..4 " "
+    IDENT@4..5 "f"
+    WHITESPACE@5..6 " "
+    BLOCK_STMT@6..16
+      L_BRACE@6..7 "{"
+      WHITESPACE@7..8 " "
+      STMT@8..15
+        ANON_SUB_EXPR@8..14
+          SUB_KW@8..11 "sub"
+          WHITESPACE@11..12 " "
+          BLOCK_STMT@12..14
+            L_BRACE@12..13 "{"
+            R_BRACE@13..14 "}"
+        WHITESPACE@14..15 " "
+      R_BRACE@15..16 "}"
+  NEWLINE@16..17 "\n"

@@ -1,0 +1,22 @@
+---
+source: src/parser/statement.rs
+expression: render_success_tree(&syntax)
+---
+ROOT@0..16
+  FOR_STMT@0..15
+    FOR_KW@0..3 "for"
+    WHITESPACE@3..4 " "
+    L_PAREN@4..5 "("
+    EXPR_LIST@5..10
+      NUMBER@5..6 "1"
+      COMMA@6..7 ","
+      WHITESPACE@7..8 " "
+      NUMBER@8..9 "2"
+      COMMA@9..10 ","
+    R_PAREN@10..11 ")"
+    WHITESPACE@11..12 " "
+    BLOCK_STMT@12..15
+      L_BRACE@12..13 "{"
+      WHITESPACE@13..14 " "
+      R_BRACE@14..15 "}"
+  NEWLINE@15..16 "\n"

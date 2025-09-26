@@ -1,0 +1,10 @@
+---
+source: src/parser/mod.rs
+expression: render_errors(&errors)
+---
+  × Parse error: Expected expression after binary operator
+   ╭────
+ 1 │ $foo + ;
+   ·        ┬
+   ·        ╰── here
+   ╰────

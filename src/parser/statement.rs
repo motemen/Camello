@@ -434,11 +434,11 @@ impl Parser<'_> {
     }
 
     fn while_stmt(&mut self) {
-        self.parse_loop_statement(SyntaxKind::WHILE_STMT, SyntaxKind::WHILE_KW, "while");
+        self.parse_loop_statement(SyntaxKind::WHILE_STMT, SyntaxKind::WHILE_KW, "while", true);
     }
 
     fn until_stmt(&mut self) {
-        self.parse_loop_statement(SyntaxKind::UNTIL_STMT, SyntaxKind::UNTIL_KW, "until");
+        self.parse_loop_statement(SyntaxKind::UNTIL_STMT, SyntaxKind::UNTIL_KW, "until", false);
     }
 
     /// Helper function to parse loop statements like while/until
@@ -447,6 +447,7 @@ impl Parser<'_> {
         stmt_kind: SyntaxKind,
         kw_kind: SyntaxKind,
         construct_name: &str,
+        allow_empty_condition: bool,
     ) {
         self.builder.start_node(stmt_kind.into());
 
@@ -455,7 +456,7 @@ impl Parser<'_> {
         self.skip_whitespace_and_newlines();
 
         // Parse parenthesized condition
-        self.parse_parenthesized_condition(construct_name);
+        self.parse_parenthesized_condition(construct_name, allow_empty_condition);
 
         self.skip_whitespace_and_newlines();
 
@@ -492,7 +493,7 @@ impl Parser<'_> {
         self.skip_whitespace_and_newlines();
 
         // Parse parenthesized condition
-        self.parse_parenthesized_condition(keyword_name);
+        self.parse_parenthesized_condition(keyword_name, false);
 
         self.skip_whitespace_and_newlines();
 
@@ -513,7 +514,7 @@ impl Parser<'_> {
             self.skip_whitespace_and_newlines();
 
             // Parse parenthesized condition
-            self.parse_parenthesized_condition("elsif");
+            self.parse_parenthesized_condition("elsif", false);
 
             self.skip_whitespace_and_newlines();
 
@@ -740,14 +741,20 @@ impl Parser<'_> {
     }
 
     /// Helper function to parse parenthesized conditions for if/unless/while/until/elsif statements
-    fn parse_parenthesized_condition(&mut self, construct_name: &str) {
+    fn parse_parenthesized_condition(&mut self, construct_name: &str, allow_empty_condition: bool) {
         if self.at(SyntaxKind::L_PAREN) {
             // Inside condition parens, expect values
             self.bump_value(); // (
             self.skip_whitespace_and_newlines();
 
             // Parse the condition
-            if !self.expression_list() {
+            let has_condition = if self.at(SyntaxKind::R_PAREN) {
+                false
+            } else {
+                self.expression_list()
+            };
+
+            if !has_condition && !allow_empty_condition {
                 self.error(&format!(
                     "Expected expression in {construct_name} condition"
                 ));
@@ -802,372 +809,95 @@ impl Parser<'_> {
 
 #[cfg(test)]
 mod tests {
+    use crate::parser::test_utils::*;
     use crate::{parse, PerlNode, SyntaxKind};
+    use std::fs;
+    use std::path::PathBuf;
 
-    #[test]
-    fn test_semicolon_requirements() {
-        // Test cases to verify semicolon requirements
-        let test_cases = [
-            // Valid cases: semicolons present where required
-            ("foo(); bar();", true),
-            ("print(1); print(2);", true),
-            // Valid cases: single statement at EOF without semicolon
-            ("foo()", true),
-            // Valid cases: subroutines with multiple statements (last one without semicolon)
-            ("sub test { foo(); bar() }", true),
-            ("sub test { foo(); bar(); baz() }", true),
-            // Invalid cases: statements within blocks missing required semicolons
-            ("sub test { foo() bar() }", false), // Missing semicolon between foo() and bar()
-            // Invalid cases: missing semicolon between statements
-            ("foo() bar()", false),
-            ("print(1) print(2)", false),
-            ("$x = 1 $y = 2", false),
-            // Valid cases: semicolon before data sections
-            (
-                "foo()
-__DATA__",
-                true,
-            ),
-            (
-                "foo()
-__END__",
-                true,
-            ),
-        ];
-
-        for (input, should_succeed) in test_cases {
-            let (green, errors) = parse(input);
-            let syntax = PerlNode::new_root(green);
-
-            // All inputs should parse structurally (create a CST)
-            assert_eq!(
-                syntax.kind(),
-                SyntaxKind::ROOT,
-                "Failed to parse: '{}'",
-                input
-            );
-
-            if should_succeed {
-                // Should parse without errors
-                assert!(
-                    errors.is_empty(),
-                    "Should parse '{}' without errors, but got: {:?}",
-                    input,
-                    errors
-                );
-            } else {
-                // Should generate parse errors for missing semicolons
-                assert!(
-                    !errors.is_empty(),
-                    "Should generate parse error for '{}' but didn't",
-                    input
-                );
-                // Check that the error mentions semicolon
-                assert!(
-                    errors.iter().any(|e| e.message.contains(";")),
-                    "Error message should mention semicolon for '{}', but got: {:?}",
-                    input,
-                    errors
-                );
-            }
-        }
+    fn statement_fixtures_root() -> PathBuf {
+        fixtures_root().join("statements")
     }
 
     #[test]
-    fn variable_declarations_allow_compound_assignment() {
-        let inputs = [
-            "my $x += 1;",
-            "state $count ||= 0;",
-            "our $total //= 0;",
-            "say my $value += 2;",
-            "my $x + 1;",
-            "my $y // 'abc';",
-            "my $z => {};",
-        ];
+    fn statement_success_snapshots() {
+        let success_dir = statement_fixtures_root().join("success");
+        let mut files = Vec::new();
+        collect_fixture_files(&success_dir, &mut files);
+        files.sort();
+        assert!(
+            !files.is_empty(),
+            "No statement success fixtures found in {:?}",
+            success_dir
+        );
 
-        for input in inputs {
-            let (_green, errors) = parse(input);
+        for path in files {
+            let source = fs::read_to_string(&path)
+                .unwrap_or_else(|err| panic!("Failed to read {}: {}", path.display(), err));
+            let (green, errors) = parse(&source);
             assert!(
                 errors.is_empty(),
-                "Expected '{}' to parse without errors, got: {:?}",
-                input,
+                "Unexpected parse errors for {}: {:?}",
+                path.display(),
                 errors
             );
+
+            let syntax = PerlNode::new_root(green);
+            let relative = path
+                .strip_prefix(&success_dir)
+                .expect("Success fixture should live under success directory");
+            let mut parts = relative
+                .iter()
+                .map(|component| component.to_string_lossy().into_owned())
+                .collect::<Vec<String>>();
+            if let Some(last) = parts.last_mut() {
+                if let Some(stripped) = last.strip_suffix(".pl") {
+                    *last = stripped.to_string();
+                }
+            }
+            let snapshot_name = format!("statements__success__{}", parts.join("__"));
+
+            insta::assert_snapshot!(snapshot_name, render_success_tree(&syntax));
         }
     }
 
     #[test]
-    fn lexical_sub_definitions_parse_without_errors() {
-        let input = r#"
-            my sub foo { 42 }
-            state sub bar($) { $_[0] }
-            our sub baz :method :Attr(1) { }
-        "#;
-
-        let (green, errors) = parse(input);
-
+    fn statement_error_snapshots() {
+        let error_dir = statement_fixtures_root().join("errors");
+        let mut files = Vec::new();
+        collect_fixture_files(&error_dir, &mut files);
+        files.sort();
         assert!(
-            errors.is_empty(),
-            "Expected lexical subroutines to parse without errors, got: {:?}",
-            errors
+            !files.is_empty(),
+            "No statement error fixtures found in {:?}",
+            error_dir
         );
 
-        let root = PerlNode::new_root(green);
-        let sub_defs: Vec<_> = root
-            .descendants()
-            .filter(|node| node.kind() == SyntaxKind::SUB_DEF)
-            .collect();
+        for path in files {
+            let source = fs::read_to_string(&path)
+                .unwrap_or_else(|err| panic!("Failed to read {}: {}", path.display(), err));
+            let (_green, errors) = parse(&source);
+            assert!(
+                !errors.is_empty(),
+                "Expected parse errors for {} but parser succeeded",
+                path.display()
+            );
 
-        assert_eq!(
-            sub_defs.len(),
-            3,
-            "Expected three subroutine definitions, found {}",
-            sub_defs.len()
-        );
-    }
+            let relative = path
+                .strip_prefix(&error_dir)
+                .expect("Error fixture should live under statement error dir");
+            let mut parts = relative
+                .iter()
+                .map(|component| component.to_string_lossy().into_owned())
+                .collect::<Vec<String>>();
+            if let Some(last) = parts.last_mut() {
+                if let Some(stripped) = last.strip_suffix(".pl") {
+                    *last = stripped.to_string();
+                }
+            }
+            let snapshot_name = format!("statements__errors__{}", parts.join("__"));
 
-    #[test]
-    fn sub_forward_declarations_supported() {
-        let input = r#"
-            sub foo;
-            sub bar($);
-            sub baz :method;
-            sub quux ($) :method :Attr(1);
-        "#;
-
-        let (green, errors) = parse(input);
-
-        assert!(
-            errors.is_empty(),
-            "Expected forward sub declarations to parse without errors, got: {:?}",
-            errors
-        );
-
-        let root = PerlNode::new_root(green);
-        let sub_defs: Vec<_> = root
-            .descendants()
-            .filter(|node| node.kind() == SyntaxKind::SUB_DEF)
-            .collect();
-
-        assert_eq!(
-            sub_defs.len(),
-            4,
-            "Expected four subroutine declarations, found {}",
-            sub_defs.len()
-        );
-
-        assert!(sub_defs.iter().all(|node| {
-            !node
-                .children()
-                .any(|child| child.kind() == SyntaxKind::BLOCK_STMT)
-        }));
-    }
-
-    #[test]
-    fn anonymous_sub_expression_can_be_top_level_statement() {
-        let input = "sub f { sub {} }";
-        let (green, errors) = parse(input);
-
-        assert!(
-            errors.is_empty(),
-            "Expected anonymous sub expression to parse without errors, got: {:?}",
-            errors
-        );
-
-        let root = PerlNode::new_root(green);
-        assert_eq!(root.kind(), SyntaxKind::ROOT);
-
-        let has_anon_sub = root
-            .descendants()
-            .any(|node| node.kind() == SyntaxKind::ANON_SUB_EXPR);
-        assert!(
-            has_anon_sub,
-            "Parsed tree should contain an anonymous subexpression node"
-        );
-    }
-
-    #[test]
-    fn anonymous_sub_expression_can_have_prototype() {
-        let input = "sub f { sub () { 0 } }";
-        let (green, errors) = parse(input);
-
-        assert!(
-            errors.is_empty(),
-            "Expected anonymous sub expression with prototype to parse without errors, got: {:?}",
-            errors
-        );
-
-        let root = PerlNode::new_root(green);
-        let anon_sub = root
-            .descendants()
-            .find(|node| node.kind() == SyntaxKind::ANON_SUB_EXPR)
-            .expect("Parsed tree should contain an anonymous subexpression node");
-
-        assert!(
-            anon_sub
-                .children()
-                .any(|child| child.kind() == SyntaxKind::SUB_PROTOTYPE),
-            "Anonymous subexpression should include a prototype child"
-        );
-    }
-
-    #[test]
-    fn anonymous_sub_expression_can_have_attributes() {
-        let input = "sub f { sub :method :foo(1) { 0 } }";
-        let (green, errors) = parse(input);
-
-        assert!(
-            errors.is_empty(),
-            "Expected anonymous sub expression with attributes to parse without errors, got: {:?}",
-            errors
-        );
-
-        let root = PerlNode::new_root(green);
-        let anon_sub = root
-            .descendants()
-            .find(|node| node.kind() == SyntaxKind::ANON_SUB_EXPR)
-            .expect("Parsed tree should contain an anonymous subexpression node");
-
-        let attr_count = anon_sub
-            .children()
-            .filter(|child| child.kind() == SyntaxKind::ATTR)
-            .count();
-        assert!(
-            attr_count >= 2,
-            "Anonymous subexpression should include multiple attribute nodes"
-        );
-
-        assert!(
-            anon_sub
-                .descendants()
-                .any(|node| node.kind() == SyntaxKind::ATTR_ARGS),
-            "Anonymous subexpression should include attribute argument list"
-        );
-    }
-
-    #[test]
-    fn anonymous_sub_expression_can_have_empty_attribute_slot() {
-        let input = "sub f { sub : { 0 } }";
-        let (green, errors) = parse(input);
-
-        assert!(
-            errors.is_empty(),
-            "Expected anonymous sub expression with empty attribute slot to parse without errors, got: {:?}",
-            errors
-        );
-
-        let root = PerlNode::new_root(green);
-        let anon_sub = root
-            .descendants()
-            .find(|node| node.kind() == SyntaxKind::ANON_SUB_EXPR)
-            .expect("Parsed tree should contain an anonymous subexpression node");
-
-        assert!(
-            anon_sub
-                .children()
-                .any(|child| child.kind() == SyntaxKind::ATTR),
-            "Anonymous subexpression should include an attribute node even when the name is missing"
-        );
-    }
-
-    #[test]
-    fn named_sub_definition_can_have_empty_attribute_slot() {
-        let input = "sub foo : {}";
-        let (green, errors) = parse(input);
-
-        assert!(
-            errors.is_empty(),
-            "Expected named sub definition with empty attribute slot to parse without errors, got: {:?}",
-            errors
-        );
-
-        let root = PerlNode::new_root(green);
-        let sub_def = root
-            .descendants()
-            .find(|node| node.kind() == SyntaxKind::SUB_DEF)
-            .expect("Parsed tree should contain a subroutine definition node");
-
-        assert!(
-            sub_def
-                .children()
-                .any(|child| child.kind() == SyntaxKind::ATTR),
-            "Subroutine definition should include an attribute node even when the name is missing"
-        );
-    }
-
-    #[test]
-    fn test_postfix_for_modifier() {
-        let input = "print $_ for @values;";
-        let (green, errors) = parse(input);
-        assert!(
-            errors.is_empty(),
-            "Should parse postfix for modifier without errors, got: {:?}",
-            errors
-        );
-        let syntax = PerlNode::new_root(green);
-        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-    }
-
-    #[test]
-    fn for_initializer_accepts_expression_list_with_trailing_comma() {
-        let input = "for (1, 2,) { }";
-        let (green, errors) = parse(input);
-        assert!(
-            errors.is_empty(),
-            "Should parse for loop with trailing comma in initializer, got: {:?}",
-            errors
-        );
-
-        let root = PerlNode::new_root(green);
-        let for_stmt = root
-            .descendants()
-            .find(|node| node.kind() == SyntaxKind::FOR_STMT)
-            .expect("Parsed tree should contain a for statement");
-
-        assert!(
-            for_stmt
-                .descendants()
-                .any(|node| node.kind() == SyntaxKind::EXPR_LIST),
-            "For initializer should produce an expression list node"
-        );
-    }
-
-    #[test]
-    fn test_unless_with_elsif() {
-        let input =
-            "unless ($condition) { print 1; } elsif ($other) { print 2; } else { print 3; }";
-        let (green, errors) = parse(input);
-        assert!(
-            errors.is_empty(),
-            "Should parse unless with elsif without errors, got: {:?}",
-            errors
-        );
-        let syntax = PerlNode::new_root(green);
-        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-    }
-
-    #[test]
-    fn if_condition_accepts_expression_list_with_trailing_comma() {
-        let input = "if ($x,) { 1 }";
-        let (green, errors) = parse(input);
-        assert!(
-            errors.is_empty(),
-            "Should parse if statement with trailing comma in condition, got: {:?}",
-            errors
-        );
-
-        let root = PerlNode::new_root(green);
-        let if_stmt = root
-            .descendants()
-            .find(|node| node.kind() == SyntaxKind::IF_STMT)
-            .expect("Parsed tree should contain an if statement");
-
-        assert!(
-            if_stmt
-                .descendants()
-                .any(|node| node.kind() == SyntaxKind::EXPR_LIST),
-            "If condition should produce an expression list node"
-        );
+            insta::assert_snapshot!(snapshot_name, render_errors(&errors));
+        }
     }
 
     #[test]
@@ -1190,26 +920,16 @@ __END__",
 
         // Test the realistic scenario - positioned after a closing brace, looking for elsif/else
         let parser = crate::parser::Parser::new("} elsif");
-        // The parser starts at the closing brace
         assert_eq!(parser.current_kind(), Some(SyntaxKind::R_BRACE));
-        // Advance past the brace to simulate the real usage
         let mut parser = parser;
-        parser.bump(); // consume the }
-                       // Now we should be at whitespace, and lookahead should find elsif
+        parser.bump();
         assert!(
             parser.lookahead_for_elsif_or_else(),
             "Should detect 'elsif' after closing brace"
         );
 
         // Test cases where elsif/else should NOT be detected
-        let should_not_detect_cases = [
-            "foo",
-            "my",
-            "", // empty input
-            "if",
-            "while",
-            "# comment\nfoo", // comment followed by non-elsif/else
-        ];
+        let should_not_detect_cases = ["foo", "my", "", "if", "while", "# comment\nfoo"];
 
         for input in should_not_detect_cases {
             let parser = crate::parser::Parser::new(input);
@@ -1223,15 +943,16 @@ __END__",
         // Test a simpler validation that if/elsif/else can be parsed correctly
         let full_if_input = "if (1) { } elsif (2) { }";
         let (green, errors) = crate::parse(full_if_input);
-
-        // This should parse without errors
         assert!(
             errors.is_empty(),
-            "Should parse if/elsif without errors, got: {:?}",
+            "Parse errors for '{}': {:?}",
+            full_if_input,
             errors
         );
-
-        let syntax = crate::PerlNode::new_root(green);
-        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
+        let syntax = PerlNode::new_root(green);
+        let has_if = syntax
+            .descendants()
+            .any(|node| node.kind() == SyntaxKind::IF_STMT);
+        assert!(has_if, "Expected IF_STMT in parsed tree");
     }
 }

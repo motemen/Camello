@@ -10,6 +10,31 @@ struct HeredocMarker<'a> {
     strip_indent: bool,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn peek_non_trivia_token_skips_trivia() {
+        let mut lexer = Lexer::new("$var\n@array");
+        assert_eq!(
+            lexer.peek_non_trivia_token(),
+            Some((SyntaxKind::SCALAR_SIGIL, "$"))
+        );
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::SCALAR_SIGIL, "$")));
+        assert_eq!(
+            lexer.peek_non_trivia_token(),
+            Some((SyntaxKind::IDENT, "var"))
+        );
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "var")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::NEWLINE, "\n")));
+        assert_eq!(
+            lexer.peek_non_trivia_token(),
+            Some((SyntaxKind::ARRAY_SIGIL, "@"))
+        );
+    }
+}
+
 #[derive(Logos, Debug, PartialEq, Clone)]
 pub enum Token {
     // Sigils（変数の型を示すプレフィックス）

@@ -1,0 +1,22 @@
+---
+source: src/parser/mod.rs
+expression: render_errors(&errors)
+---
+  × Parse error: Expected expression after variable declaration keyword
+   ╭────
+ 1 │ my = @ % ^ invalid tokens here;
+   ·    ┬
+   ·    ╰── here
+   ╰────
+  × Parse error: Expected ';' after expression statement
+   ╭────
+ 1 │ my = @ % ^ invalid tokens here;
+   ·      ┬
+   ·      ╰── here
+   ╰────
+  × Parse error: Expected ';' after expression statement
+   ╭────
+ 1 │ my = @ % ^ invalid tokens here;
+   ·            ───┬───
+   ·               ╰── here
+   ╰────
