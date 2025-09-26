@@ -313,7 +313,19 @@ impl<'a> Parser<'a> {
         ctx: LexContext,
         n: usize,
     ) -> Option<(SyntaxKind, &'a str)> {
-        self.lexer.peek_nth_non_trivia_with_context(ctx, n)
+        let mut cloned = self.lexer.clone();
+
+        // If the current token is a quote-like keyword immediately followed by '#',
+        // configure the cloned lexer for quote-like parsing to handle the delimiter correctly.
+        let (current_token, next_char) = self.lexer.peek_token_and_next_char();
+        if let (Some(current_kind), Some('#')) = (current_token, next_char) {
+            if current_kind.is_quote_like_keyword() {
+                let mode = crate::lexer::QuoteLikeMode::from_keyword(current_kind);
+                cloned.begin_quote_like(current_kind, mode);
+            }
+        }
+
+        cloned.peek_nth_non_trivia_with_context(ctx, n)
     }
 
     /// Returns true if the token at `offset` is followed by a fat comma (`=>`).
@@ -1152,5 +1164,75 @@ fn test_infix_expression_with_newline() {
             .descendants()
             .any(|n| n.kind() == SyntaxKind::INFIX_EXPR);
         assert!(has_infix, "Expected infix expression in {}", description);
+    }
+}
+
+#[test]
+fn test_quote_like_hash_delimiter_lookahead() {
+    use crate::PerlNode;
+
+    // Test quote-like expressions with # delimiter
+    let quote_like_cases = [
+        ("{ (qr#x#)\n}", "QR_EXPR"),
+        ("{s#x#y#\n}", "S_EXPR"),
+        ("{ (m#pattern#) }", "M_EXPR"),
+        ("{tr#a#b#}", "TR_EXPR"),
+        ("{y#a#b#}", "TR_EXPR"), // y uses same TR_EXPR as tr
+    ];
+
+    for (input, expected_expr) in quote_like_cases {
+        let (green, errors) = parse(input);
+        println!("Testing quote-like: {}", input);
+
+        assert!(
+            errors.is_empty(),
+            "Parse errors for '{}': {:?}",
+            input,
+            errors
+        );
+
+        let syntax = PerlNode::new_root(green);
+        let expected_kind = match expected_expr {
+            "QR_EXPR" => SyntaxKind::QR_EXPR,
+            "S_EXPR" => SyntaxKind::S_EXPR,
+            "M_EXPR" => SyntaxKind::M_EXPR,
+            "TR_EXPR" => SyntaxKind::TR_EXPR,
+            _ => panic!("Unknown expected expr: {}", expected_expr),
+        };
+
+        assert!(
+            syntax
+                .descendants()
+                .any(|node| node.kind() == expected_kind),
+            "Expected {} in '{}', but AST was: {:#?}",
+            expected_expr,
+            input,
+            syntax
+        );
+    }
+
+    // Test bareword cases (should parse as hash)
+    let bareword_cases = ["{ qr => 1 }", "{ s => 2 }"];
+
+    for input in bareword_cases {
+        let (green, errors) = parse(input);
+        println!("Testing bareword: {}", input);
+
+        assert!(
+            errors.is_empty(),
+            "Parse errors for bareword '{}': {:?}",
+            input,
+            errors
+        );
+
+        let syntax = PerlNode::new_root(green);
+        assert!(
+            syntax
+                .descendants()
+                .any(|node| node.kind() == SyntaxKind::HASH_REF),
+            "Expected HASH_REF for bareword '{}', but AST was: {:#?}",
+            input,
+            syntax
+        );
     }
 }

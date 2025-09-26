@@ -381,6 +381,20 @@ pub enum QuoteLikeMode {
     S,  // s
     TR, // tr, y
 }
+impl QuoteLikeMode {
+    /// Get QuoteLikeMode from keyword SyntaxKind
+    pub fn from_keyword(kind: SyntaxKind) -> Self {
+        match kind {
+            SyntaxKind::Q_KW | SyntaxKind::QQ_KW | SyntaxKind::QX_KW => Self::Q,
+            SyntaxKind::QW_KW => Self::QW,
+            SyntaxKind::M_KW => Self::M,
+            SyntaxKind::QR_KW => Self::QR,
+            SyntaxKind::S_KW => Self::S,
+            SyntaxKind::TR_KW | SyntaxKind::Y_KW => Self::TR,
+            _ => panic!("Invalid quote-like keyword: {:?}", kind),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum QuoteLikeState {
@@ -1428,6 +1442,18 @@ impl<'a> Lexer<'a> {
                 None => return None,
             }
         }
+    }
+
+    /// Peek the current token and the character immediately following it.
+    /// This is useful for disambiguating cases like quote-like keywords followed by delimiters.
+    /// Returns (current_token_kind, next_char) where next_char is the character immediately
+    /// after the current token, or None if at end of input.
+    #[must_use]
+    pub fn peek_token_and_next_char(&self) -> (Option<SyntaxKind>, Option<char>) {
+        let mut cloned = self.clone();
+        let current_token = cloned.next_token().map(|(kind, _)| kind);
+        let next_char = cloned.logos_lexer.remainder().chars().next();
+        (current_token, next_char)
     }
 
     /// Peek the next non-trivia token using a given lexical context.
