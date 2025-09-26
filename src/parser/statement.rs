@@ -434,11 +434,21 @@ impl Parser<'_> {
     }
 
     fn while_stmt(&mut self) {
-        self.parse_loop_statement(SyntaxKind::WHILE_STMT, SyntaxKind::WHILE_KW, "while");
+        self.parse_loop_statement(
+            SyntaxKind::WHILE_STMT,
+            SyntaxKind::WHILE_KW,
+            "while",
+            true,
+        );
     }
 
     fn until_stmt(&mut self) {
-        self.parse_loop_statement(SyntaxKind::UNTIL_STMT, SyntaxKind::UNTIL_KW, "until");
+        self.parse_loop_statement(
+            SyntaxKind::UNTIL_STMT,
+            SyntaxKind::UNTIL_KW,
+            "until",
+            false,
+        );
     }
 
     /// Helper function to parse loop statements like while/until
@@ -447,6 +457,7 @@ impl Parser<'_> {
         stmt_kind: SyntaxKind,
         kw_kind: SyntaxKind,
         construct_name: &str,
+        allow_empty_condition: bool,
     ) {
         self.builder.start_node(stmt_kind.into());
 
@@ -455,7 +466,7 @@ impl Parser<'_> {
         self.skip_whitespace_and_newlines();
 
         // Parse parenthesized condition
-        self.parse_parenthesized_condition(construct_name);
+        self.parse_parenthesized_condition(construct_name, allow_empty_condition);
 
         self.skip_whitespace_and_newlines();
 
@@ -492,7 +503,7 @@ impl Parser<'_> {
         self.skip_whitespace_and_newlines();
 
         // Parse parenthesized condition
-        self.parse_parenthesized_condition(keyword_name);
+        self.parse_parenthesized_condition(keyword_name, false);
 
         self.skip_whitespace_and_newlines();
 
@@ -513,7 +524,7 @@ impl Parser<'_> {
             self.skip_whitespace_and_newlines();
 
             // Parse parenthesized condition
-            self.parse_parenthesized_condition("elsif");
+            self.parse_parenthesized_condition("elsif", false);
 
             self.skip_whitespace_and_newlines();
 
@@ -740,14 +751,24 @@ impl Parser<'_> {
     }
 
     /// Helper function to parse parenthesized conditions for if/unless/while/until/elsif statements
-    fn parse_parenthesized_condition(&mut self, construct_name: &str) {
+    fn parse_parenthesized_condition(
+        &mut self,
+        construct_name: &str,
+        allow_empty_condition: bool,
+    ) {
         if self.at(SyntaxKind::L_PAREN) {
             // Inside condition parens, expect values
             self.bump_value(); // (
             self.skip_whitespace_and_newlines();
 
             // Parse the condition
-            if !self.expression_list() {
+            let has_condition = if self.at(SyntaxKind::R_PAREN) {
+                false
+            } else {
+                self.expression_list()
+            };
+
+            if !has_condition && !allow_empty_condition {
                 self.error(&format!(
                     "Expected expression in {construct_name} condition"
                 ));
@@ -871,6 +892,18 @@ __END__",
                 );
             }
         }
+    }
+
+    #[test]
+    fn while_allows_empty_condition() {
+        let input = "while () { }";
+        let (_green, errors) = parse(input);
+
+        assert!(
+            errors.is_empty(),
+            "Expected while with empty condition to parse without errors, got: {:?}",
+            errors
+        );
     }
 
     #[test]
