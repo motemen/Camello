@@ -407,45 +407,9 @@ pub fn parse(input: &str) -> (GreenNode, Vec<ParseError>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parser::test_utils::*;
     use crate::PerlNode;
-    use miette::{GraphicalReportHandler, GraphicalTheme};
     use std::fs;
-    use std::path::{Path, PathBuf};
-
-    fn fixtures_root() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/parser/fixtures")
-    }
-
-    fn render_success_tree(node: &PerlNode) -> String {
-        format!("{node:#?}")
-    }
-
-    fn render_errors(errors: &[ParseError]) -> String {
-        let handler = GraphicalReportHandler::new_themed(GraphicalTheme::unicode_nocolor());
-        errors
-            .iter()
-            .map(|err| {
-                let mut rendered = String::new();
-                handler
-                    .render_report(&mut rendered, err)
-                    .expect("failed to render report");
-                rendered.trim_end().to_owned()
-            })
-            .collect::<Vec<String>>()
-            .join("\n")
-    }
-
-    fn collect_fixture_files(dir: &Path, acc: &mut Vec<PathBuf>) {
-        for entry in fs::read_dir(dir).expect("Failed to read fixture directory") {
-            let entry = entry.expect("Failed to read fixture entry");
-            let path = entry.path();
-            if path.is_dir() {
-                collect_fixture_files(&path, acc);
-            } else if path.extension().map(|ext| ext == "pl").unwrap_or(false) {
-                acc.push(path);
-            }
-        }
-    }
 
     #[test]
     fn parser_success_snapshots() {
@@ -547,6 +511,8 @@ mod tests {
 
 mod expression;
 mod statement;
+#[cfg(test)]
+mod test_utils;
 #[test]
 fn test_sub_with_quote_like_name() {
     use crate::PerlNode;

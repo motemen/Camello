@@ -809,52 +809,18 @@ impl Parser<'_> {
 
 #[cfg(test)]
 mod tests {
+    use crate::parser::test_utils::*;
     use crate::{parse, PerlNode, SyntaxKind};
-    use miette::{GraphicalReportHandler, GraphicalTheme};
     use std::fs;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
 
-    fn fixtures_root() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/parser/fixtures/statements")
-    }
-
-    fn render_success_tree(node: &PerlNode) -> String {
-        format!("{node:#?}")
-    }
-
-    fn render_errors(errors: &[crate::parser::ParseError]) -> String {
-        let handler = GraphicalReportHandler::new_themed(GraphicalTheme::unicode_nocolor());
-        errors
-            .iter()
-            .map(|err| {
-                let mut rendered = String::new();
-                handler
-                    .render_report(&mut rendered, err)
-                    .expect("failed to render report");
-                rendered.trim_end().to_owned()
-            })
-            .collect::<Vec<String>>()
-            .join("\n")
-    }
-
-    fn collect_fixture_files(dir: &Path, acc: &mut Vec<PathBuf>) {
-        if !dir.exists() {
-            return;
-        }
-        for entry in fs::read_dir(dir).expect("Failed to read statement fixture directory") {
-            let entry = entry.expect("Failed to read statement fixture entry");
-            let path = entry.path();
-            if path.is_dir() {
-                collect_fixture_files(&path, acc);
-            } else if path.extension().map(|ext| ext == "pl").unwrap_or(false) {
-                acc.push(path);
-            }
-        }
+    fn statement_fixtures_root() -> PathBuf {
+        fixtures_root().join("statements")
     }
 
     #[test]
     fn statement_success_snapshots() {
-        let success_dir = fixtures_root().join("success");
+        let success_dir = statement_fixtures_root().join("success");
         let mut files = Vec::new();
         collect_fixture_files(&success_dir, &mut files);
         files.sort();
@@ -896,7 +862,7 @@ mod tests {
 
     #[test]
     fn statement_error_snapshots() {
-        let error_dir = fixtures_root().join("errors");
+        let error_dir = statement_fixtures_root().join("errors");
         let mut files = Vec::new();
         collect_fixture_files(&error_dir, &mut files);
         files.sort();
