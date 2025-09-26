@@ -1,0 +1,1 @@
+my $str = q{unterminated;

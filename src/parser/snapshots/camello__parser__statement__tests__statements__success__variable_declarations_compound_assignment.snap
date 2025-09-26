@@ -1,0 +1,116 @@
+---
+source: src/parser/statement.rs
+expression: render_success_tree(&syntax)
+---
+ROOT@0..110
+  STMT@0..11
+    VAR_DECL@0..10
+      MY_KW@0..2 "my"
+      WHITESPACE@2..3 " "
+      INFIX_EXPR@3..10
+        SCALAR_VAR@3..6
+          SCALAR_SIGIL@3..4 "$"
+          IDENT@4..5 "x"
+          WHITESPACE@5..6 " "
+        COMPOUND_ASSIGNMENT@6..8
+          PLUS@6..7 "+"
+          EQ@7..8 "="
+        WHITESPACE@8..9 " "
+        NUMBER@9..10 "1"
+    SEMICOLON@10..11 ";"
+  NEWLINE@11..12 "\n"
+  STMT@12..31
+    VAR_DECL@12..30
+      STATE_KW@12..17 "state"
+      WHITESPACE@17..18 " "
+      INFIX_EXPR@18..30
+        SCALAR_VAR@18..25
+          SCALAR_SIGIL@18..19 "$"
+          IDENT@19..24 "count"
+          WHITESPACE@24..25 " "
+        COMPOUND_ASSIGNMENT@25..28
+          LOGICAL_OR@25..27 "||"
+          EQ@27..28 "="
+        WHITESPACE@28..29 " "
+        NUMBER@29..30 "0"
+    SEMICOLON@30..31 ";"
+  NEWLINE@31..32 "\n"
+  STMT@32..49
+    VAR_DECL@32..48
+      OUR_KW@32..35 "our"
+      WHITESPACE@35..36 " "
+      INFIX_EXPR@36..48
+        SCALAR_VAR@36..43
+          SCALAR_SIGIL@36..37 "$"
+          IDENT@37..42 "total"
+          WHITESPACE@42..43 " "
+        COMPOUND_ASSIGNMENT@43..46
+          DEFINED_OR@43..45 "//"
+          EQ@45..46 "="
+        WHITESPACE@46..47 " "
+        NUMBER@47..48 "0"
+    SEMICOLON@48..49 ";"
+  NEWLINE@49..50 "\n"
+  STMT@50..69
+    FUNCTION_CALL_EXPR@50..68
+      IDENT@50..53 "say"
+      WHITESPACE@53..54 " "
+      VAR_DECL@54..68
+        MY_KW@54..56 "my"
+        WHITESPACE@56..57 " "
+        INFIX_EXPR@57..68
+          SCALAR_VAR@57..64
+            SCALAR_SIGIL@57..58 "$"
+            IDENT@58..63 "value"
+            WHITESPACE@63..64 " "
+          COMPOUND_ASSIGNMENT@64..66
+            PLUS@64..65 "+"
+            EQ@65..66 "="
+          WHITESPACE@66..67 " "
+          NUMBER@67..68 "2"
+    SEMICOLON@68..69 ";"
+  NEWLINE@69..70 "\n"
+  STMT@70..80
+    VAR_DECL@70..79
+      MY_KW@70..72 "my"
+      WHITESPACE@72..73 " "
+      INFIX_EXPR@73..79
+        SCALAR_VAR@73..76
+          SCALAR_SIGIL@73..74 "$"
+          IDENT@74..75 "x"
+          WHITESPACE@75..76 " "
+        PLUS@76..77 "+"
+        WHITESPACE@77..78 " "
+        NUMBER@78..79 "1"
+    SEMICOLON@79..80 ";"
+  NEWLINE@80..81 "\n"
+  STMT@81..96
+    VAR_DECL@81..95
+      MY_KW@81..83 "my"
+      WHITESPACE@83..84 " "
+      INFIX_EXPR@84..95
+        SCALAR_VAR@84..86
+          SCALAR_SIGIL@84..85 "$"
+          IDENT@85..86 "y"
+        WHITESPACE@86..87 " "
+        DEFINED_OR@87..89 "//"
+        WHITESPACE@89..90 " "
+        STRING@90..95 "'abc'"
+    SEMICOLON@95..96 ";"
+  NEWLINE@96..97 "\n"
+  STMT@97..109
+    INFIX_EXPR@97..108
+      VAR_DECL@97..103
+        MY_KW@97..99 "my"
+        WHITESPACE@99..100 " "
+        SCALAR_VAR@100..103
+          SCALAR_SIGIL@100..101 "$"
+          IDENT@101..102 "z"
+          WHITESPACE@102..103 " "
+      FAT_COMMA@103..105 "=>"
+      WHITESPACE@105..106 " "
+      HASH_REF@106..108
+        L_BRACE@106..107 "{"
+        R_BRACE@107..108 "}"
+    SEMICOLON@108..109 ";"
+  NEWLINE@109..110 "\n"

@@ -1,0 +1,8 @@
+---
+source: src/parser/mod.rs
+expression: render_errors(&errors)
+---
+  × Parse error: Expected R_BRACE, found None
+   ╭────
+ 2 │     my $x = 1;
+   ╰────

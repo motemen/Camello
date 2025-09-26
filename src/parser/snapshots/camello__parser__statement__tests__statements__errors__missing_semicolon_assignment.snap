@@ -1,0 +1,20 @@
+---
+source: src/parser/statement.rs
+expression: render_errors(&errors)
+---
+  × Parse error: Expected ';' after expression statement
+   ╭────
+ 1 │ $x = 1 $y = 2
+   ·        ┬
+   ·        ╰── here
+   ╰────
+  × Parse error: Expected DELIMITER, found Some(NUMBER)
+   ╭────
+ 1 │ $x = 1 $y = 2
+   ·             ┬
+   ·             ╰── here
+   ╰────
+  × Parse error: Expected DELIMITER, found None
+   ╭────
+ 1 │ $x = 1 $y = 2
+   ╰────

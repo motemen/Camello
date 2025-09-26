@@ -1,0 +1,10 @@
+---
+source: src/parser/statement.rs
+expression: render_errors(&errors)
+---
+  × Parse error: Expected ';' after expression statement
+   ╭────
+ 1 │ foo() bar()
+   ·       ─┬─
+   ·        ╰── here
+   ╰────
