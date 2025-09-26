@@ -8,50 +8,8 @@ macro_rules! T {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __syntax_kind_token {
-    (ident) => {
-        $crate::SyntaxKind::IDENT
-    };
-    (number) => {
-        $crate::SyntaxKind::NUMBER
-    };
-    (string) => {
-        $crate::SyntaxKind::STRING
-    };
-    (regex_literal) => {
-        $crate::SyntaxKind::REGEX_LITERAL
-    };
-    (whitespace) => {
-        $crate::SyntaxKind::WHITESPACE
-    };
-    (newline) => {
-        $crate::SyntaxKind::NEWLINE
-    };
-    (comment) => {
-        $crate::SyntaxKind::COMMENT
-    };
-    (scalar_sigil) => {
-        $crate::SyntaxKind::SCALAR_SIGIL
-    };
-    (array_index_sigil) => {
-        $crate::SyntaxKind::ARRAY_INDEX_SIGIL
-    };
-    (array_sigil) => {
-        $crate::SyntaxKind::ARRAY_SIGIL
-    };
-    (hash_sigil) => {
-        $crate::SyntaxKind::HASH_SIGIL
-    };
-    (backslash) => {
-        $crate::SyntaxKind::BACKSLASH
-    };
     ('\\') => {
         $crate::SyntaxKind::BACKSLASH
-    };
-    (code_sigil) => {
-        $crate::SyntaxKind::CODE_SIGIL
-    };
-    (typeglob_sigil) => {
-        $crate::SyntaxKind::TYPEGLOB_SIGIL
     };
     ('{') => {
         $crate::SyntaxKind::L_BRACE
@@ -94,9 +52,6 @@ macro_rules! __syntax_kind_token {
     };
     (...) => {
         $crate::SyntaxKind::RANGE_EXCLUSIVE
-    };
-    (ellipsis) => {
-        $crate::SyntaxKind::ELLIPSIS
     };
     (->) => {
         $crate::SyntaxKind::ARROW
@@ -149,7 +104,7 @@ macro_rules! __syntax_kind_token {
     (%) => {
         $crate::SyntaxKind::MODULO
     };
-    (/ /) => {
+    ("//") => {
         $crate::SyntaxKind::DEFINED_OR
     };
     (&&) => {
@@ -207,9 +162,6 @@ macro_rules! __syntax_kind_token {
         $crate::SyntaxKind::LOCAL_KW
     };
     (BEGIN) => {
-        $crate::SyntaxKind::BEGIN_KW
-    };
-    (begin) => {
         $crate::SyntaxKind::BEGIN_KW
     };
     (END) => {
@@ -323,10 +275,7 @@ macro_rules! __syntax_kind_token {
     (__DATA__) => {
         $crate::SyntaxKind::DATA_KW
     };
-    (pod_start) => {
-        $crate::SyntaxKind::POD_START
-    };
-    (cut) => {
+    (=cut) => {
         $crate::SyntaxKind::CUT_KW
     };
 }

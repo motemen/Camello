@@ -381,14 +381,14 @@ impl Parser<'_> {
         // Use lookahead to determine if this is a filehandle pattern:
         // Only treat IDENT/SCALAR as filehandle if followed by whitespace or end of statement
         // Otherwise treat as normal function call
-        if self.at(T![ident]) {
+        if self.at(SyntaxKind::IDENT) {
             // Check if this bareword should be treated as a filehandle
             if self.should_treat_as_filehandle() {
                 self.bump_value();
                 consumed_filehandle = true;
                 self.skip_whitespace_and_newlines();
             }
-        } else if self.at(T![scalar_sigil]) {
+        } else if self.at(SyntaxKind::SCALAR_SIGIL) {
             // Check if this scalar should be treated as a filehandle
             if self.should_treat_scalar_as_filehandle() {
                 self.parse_variable();
@@ -451,12 +451,12 @@ impl Parser<'_> {
     fn should_treat_scalar_as_filehandle(&self) -> bool {
         // Look ahead past the $IDENT to see what follows
         // First, check if we have $IDENT pattern
-        if !self.at(T![scalar_sigil]) {
+        if !self.at(SyntaxKind::SCALAR_SIGIL) {
             return false;
         }
 
         let next_after_dollar = self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1);
-        if !matches!(next_after_dollar, Some((T![ident], _))) {
+        if !matches!(next_after_dollar, Some((SyntaxKind::IDENT, _))) {
             return false;
         }
 
