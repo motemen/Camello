@@ -1444,6 +1444,18 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Peek the current token and the character immediately following it.
+    /// This is useful for disambiguating cases like quote-like keywords followed by delimiters.
+    /// Returns (current_token_kind, next_char) where next_char is the character immediately
+    /// after the current token, or None if at end of input.
+    #[must_use]
+    pub fn peek_token_and_next_char(&self) -> (Option<SyntaxKind>, Option<char>) {
+        let mut cloned = self.clone();
+        let current_token = cloned.next_token().map(|(kind, _)| kind);
+        let next_char = cloned.logos_lexer.remainder().chars().next();
+        (current_token, next_char)
+    }
+
     /// Peek the next non-trivia token using a given lexical context.
     /// This does not mutate the original lexer state.
     #[must_use]

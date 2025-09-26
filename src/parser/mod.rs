@@ -331,19 +331,13 @@ impl<'a> Parser<'a> {
     ) -> Option<(SyntaxKind, &'a str)> {
         let mut cloned = self.lexer.clone();
 
-        // If the current token is a quote-like keyword, we need to perform special lookahead
-        // to see if it's followed by a '#' delimiter.
-        let mut temp_lexer = self.lexer.clone();
-        if let Some((current_kind, _)) = temp_lexer.next_token() {
+        // If the current token is a quote-like keyword immediately followed by '#',
+        // configure the cloned lexer for quote-like parsing to handle the delimiter correctly.
+        let (current_token, next_char) = self.lexer.peek_token_and_next_char();
+        if let (Some(current_kind), Some('#')) = (current_token, next_char) {
             if Self::is_quote_like_keyword(current_kind) {
-                // Check if the next token is a comment starting with '#'.
-                if let Some((SyntaxKind::COMMENT, text)) = temp_lexer.peek_token() {
-                    if text.starts_with('#') {
-                        // If so, this is a quote-like operator. Configure the main cloned lexer.
-                        let mode = crate::lexer::QuoteLikeMode::from_keyword(current_kind);
-                        cloned.begin_quote_like(current_kind, mode);
-                    }
-                }
+                let mode = crate::lexer::QuoteLikeMode::from_keyword(current_kind);
+                cloned.begin_quote_like(current_kind, mode);
             }
         }
 
