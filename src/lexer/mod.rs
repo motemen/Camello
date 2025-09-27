@@ -33,6 +33,21 @@ mod tests {
             Some((SyntaxKind::ARRAY_SIGIL, "@"))
         );
     }
+
+    #[test]
+    fn lex_string_repetition_without_whitespace() {
+        let mut lexer = Lexer::new(r#""abc"x2"#);
+
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::STRING, r#""abc""#)));
+        assert_eq!(
+            lexer.next_token_with_context(LexContext::Operator),
+            Some((SyntaxKind::X, "x"))
+        );
+        assert_eq!(
+            lexer.next_token_with_context(LexContext::Value),
+            Some((SyntaxKind::NUMBER, "2"))
+        );
+    }
 }
 
 #[derive(Logos, Debug, PartialEq, Clone)]
@@ -655,6 +670,16 @@ impl<'a> Lexer<'a> {
         match self.logos_lexer.next() {
             Some(Ok(token)) => {
                 let text = self.logos_lexer.slice();
+
+                if let Some(ctx) = context {
+                    if let Some((syntax_kind, split_text)) =
+                        self.try_split_repetition_word_operator(&token, text, ctx)
+                    {
+                        self.update_line_position(split_text);
+                        return Some((syntax_kind, split_text));
+                    }
+                }
+
                 // Decide mapping strategy based on token kind and text via a single disambiguator
                 let syntax_kind = {
                     // If previous token was a sigil, force IDENT for following identifier
@@ -790,6 +815,55 @@ impl<'a> Lexer<'a> {
             // Everything else: direct mapping
             _ => token.to_syntax_kind(),
         }
+    }
+
+    fn try_split_repetition_word_operator(
+        &mut self,
+        token: &Token,
+        text: &'a str,
+        ctx: LexContext,
+    ) -> Option<(SyntaxKind, &'a str)> {
+        if !matches!(token, Token::Ident) {
+            return None;
+        }
+
+        if !matches!(
+            ctx,
+            LexContext::Operator | LexContext::AmbiguousValueLookahead
+        ) {
+            return None;
+        }
+
+        let Some(rest) = text.strip_prefix('x') else {
+            return None;
+        };
+
+        if rest.is_empty() {
+            return None;
+        }
+
+        let mut rest_lexer = Token::lexer(rest);
+        let Some(next) = rest_lexer.next() else {
+            return None;
+        };
+
+        let Ok(number_token) = next else {
+            return None;
+        };
+
+        let number_kind = match number_token {
+            Token::Number => SyntaxKind::NUMBER,
+            Token::BareVersion => SyntaxKind::BARE_VERSION,
+            _ => return None,
+        };
+
+        if !rest_lexer.remainder().is_empty() {
+            return None;
+        }
+
+        let (first, _) = text.split_at(1);
+        self.pending.push_front((number_kind, rest));
+        Some((SyntaxKind::X, first))
     }
 
     /// While the parser runs [`LexContext::AmbiguousValueLookahead`] we need to decide if a
