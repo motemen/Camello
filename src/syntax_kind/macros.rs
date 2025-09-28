@@ -1,57 +1,15 @@
 #[macro_export]
 macro_rules! T {
-    [$token:tt] => {
-        $crate::__syntax_kind_token!($token)
+    [$($token:tt)+] => {
+        $crate::__syntax_kind_token!($($token)+)
     };
 }
 
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __syntax_kind_token {
-    (ident) => {
-        $crate::SyntaxKind::IDENT
-    };
-    (number) => {
-        $crate::SyntaxKind::NUMBER
-    };
-    (string) => {
-        $crate::SyntaxKind::STRING
-    };
-    (regex_literal) => {
-        $crate::SyntaxKind::REGEX_LITERAL
-    };
-    (whitespace) => {
-        $crate::SyntaxKind::WHITESPACE
-    };
-    (newline) => {
-        $crate::SyntaxKind::NEWLINE
-    };
-    (comment) => {
-        $crate::SyntaxKind::COMMENT
-    };
-    (scalar_sigil) => {
-        $crate::SyntaxKind::SCALAR_SIGIL
-    };
-    (array_index_sigil) => {
-        $crate::SyntaxKind::ARRAY_INDEX_SIGIL
-    };
-    (array_sigil) => {
-        $crate::SyntaxKind::ARRAY_SIGIL
-    };
-    (hash_sigil) => {
-        $crate::SyntaxKind::HASH_SIGIL
-    };
-    (backslash) => {
-        $crate::SyntaxKind::BACKSLASH
-    };
     ('\\') => {
         $crate::SyntaxKind::BACKSLASH
-    };
-    (code_sigil) => {
-        $crate::SyntaxKind::CODE_SIGIL
-    };
-    (typeglob_sigil) => {
-        $crate::SyntaxKind::TYPEGLOB_SIGIL
     };
     ('{') => {
         $crate::SyntaxKind::L_BRACE
@@ -125,6 +83,27 @@ macro_rules! __syntax_kind_token {
     (<) => {
         $crate::SyntaxKind::LT
     };
+    (eq) => {
+        $crate::SyntaxKind::STR_EQ
+    };
+    (ne) => {
+        $crate::SyntaxKind::STR_NE
+    };
+    (gt) => {
+        $crate::SyntaxKind::STR_GT
+    };
+    (lt) => {
+        $crate::SyntaxKind::STR_LT
+    };
+    (ge) => {
+        $crate::SyntaxKind::STR_GE
+    };
+    (le) => {
+        $crate::SyntaxKind::STR_LE
+    };
+    (cmp) => {
+        $crate::SyntaxKind::STR_CMP
+    };
     (+) => {
         $crate::SyntaxKind::PLUS
     };
@@ -149,7 +128,7 @@ macro_rules! __syntax_kind_token {
     (%) => {
         $crate::SyntaxKind::MODULO
     };
-    (/ /) => {
+    ("//") => {
         $crate::SyntaxKind::DEFINED_OR
     };
     (&&) => {
@@ -172,9 +151,6 @@ macro_rules! __syntax_kind_token {
     };
     (^) => {
         $crate::SyntaxKind::BITWISE_XOR
-    };
-    (caret_token) => {
-        $crate::SyntaxKind::CARET
     };
     (=~) => {
         $crate::SyntaxKind::REGEX_MATCH
@@ -322,9 +298,6 @@ macro_rules! __syntax_kind_token {
     };
     (__DATA__) => {
         $crate::SyntaxKind::DATA_KW
-    };
-    (pod_start) => {
-        $crate::SyntaxKind::POD_START
     };
     (cut) => {
         $crate::SyntaxKind::CUT_KW

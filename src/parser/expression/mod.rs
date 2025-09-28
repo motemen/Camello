@@ -20,7 +20,7 @@ impl Parser<'_> {
     /// unless the next token is a fat comma (=>), in which case it's likely a bareword key.
     fn should_parse_quote_like(&self) -> bool {
         self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
-            .is_none_or(|(k, _)| k != SyntaxKind::FAT_COMMA)
+            .is_none_or(|(k, _)| k != T![=>])
     }
 
     /// Determine if {} should be parsed as a hash reference or block in statement context
@@ -35,7 +35,7 @@ impl Parser<'_> {
     fn looks_like_hash_ref_at_offset(&self, brace_offset: usize) -> bool {
         if self
             .peek_nth_non_trivia_token_with_context(LexContext::Value, brace_offset)
-            .is_none_or(|(kind, _)| kind != SyntaxKind::L_BRACE)
+            .is_none_or(|(kind, _)| kind != T!['{'])
         {
             return false;
         }
@@ -58,40 +58,34 @@ impl Parser<'_> {
 
         match first_token {
             // Empty braces: {} - treat as block in statement context
-            Some((SyntaxKind::R_BRACE, _)) => false,
+            Some((T!['}'], _)) => false,
 
             // Number followed by comma or fat arrow: {1, or {1=> - hash reference
             Some((SyntaxKind::NUMBER, _)) => {
                 let next_token =
                     self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset + 1);
-                matches!(
-                    next_token,
-                    Some((SyntaxKind::COMMA | SyntaxKind::FAT_COMMA, _))
-                )
+                matches!(next_token, Some((T![,] | T![=>], _)))
             }
 
             // Identifier followed by fat arrow: {a=> - hash reference (bareword as hash key)
             Some((SyntaxKind::IDENT, _)) => {
                 let next_token =
                     self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset + 1);
-                matches!(next_token, Some((SyntaxKind::FAT_COMMA, _)))
+                matches!(next_token, Some((T![=>], _)))
             }
 
             // Keyword followed by fat arrow: {if=> - hash reference (keyword as hash key)
             Some((kind, _)) if kind.is_keyword() => {
                 let next_token =
                     self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset + 1);
-                matches!(next_token, Some((SyntaxKind::FAT_COMMA, _)))
+                matches!(next_token, Some((T![=>], _)))
             }
 
             // String followed by fat arrow or comma: {"key"=> or {"key", - hash reference
             Some((SyntaxKind::STRING, _)) => {
                 let next_token =
                     self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset + 1);
-                matches!(
-                    next_token,
-                    Some((SyntaxKind::FAT_COMMA | SyntaxKind::COMMA, _))
-                )
+                matches!(next_token, Some((T![=>] | T![,], _)))
             }
 
             // Everything else is a block
@@ -116,7 +110,7 @@ impl Parser<'_> {
         self.skip_whitespace_and_newlines();
 
         // Block-style function call: e.g., foo { ... } @list
-        if self.at(SyntaxKind::L_BRACE)
+        if self.at(T!['{'])
             && (Self::is_block_function(&function_name)
                 || Self::is_print_like_function(&function_name))
         {
@@ -140,7 +134,7 @@ impl Parser<'_> {
         }
 
         if let Some(kind) = next_kind {
-            if kind == SyntaxKind::L_PAREN {
+            if kind == T!['('] {
                 if self.try_parse_parenthesized_special_function_call(&function_name, start) {
                     return;
                 }
@@ -192,7 +186,7 @@ impl Parser<'_> {
 
         self.skip_whitespace_and_newlines();
 
-        if self.at(SyntaxKind::R_PAREN) {
+        if self.at(T![')']) {
             self.bump_op(); // )
             self.skip_whitespace_and_newlines();
         } else {
@@ -207,14 +201,14 @@ impl Parser<'_> {
         function_name: &str,
         start: rowan::Checkpoint,
     ) -> bool {
-        if !self.at(SyntaxKind::L_PAREN) {
+        if !self.at(T!['(']) {
             return false;
         }
 
         if Self::is_parenthesized_block_builtin(function_name)
             && self
                 .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
-                .is_some_and(|(kind, _)| kind == SyntaxKind::L_BRACE)
+                .is_some_and(|(kind, _)| kind == T!['{'])
             && !self.looks_like_hash_ref_at_offset(1)
         {
             self.parse_parenthesized_special_call(
@@ -242,14 +236,14 @@ impl Parser<'_> {
     // Parse block function arguments: block + optional additional arguments
     fn parse_block_function_args(&mut self, function_name: &str) {
         // Parse the block (which should be at L_BRACE)
-        if self.at(SyntaxKind::L_BRACE) {
+        if self.at(T!['{']) {
             self.builder.start_node(SyntaxKind::BLOCK_STMT.into());
             // Entering a block; next should expect a Value
             self.bump_value(); // {
             self.skip_whitespace_and_newlines();
 
             // Parse statements inside the block
-            while !self.at(SyntaxKind::R_BRACE) && !self.at_end() {
+            while !self.at(T!['}']) && !self.at_end() {
                 if !self.statement() {
                     // If we can't parse a statement, try to recover
                     self.error("Expected statement in block");
@@ -260,7 +254,7 @@ impl Parser<'_> {
                 self.skip_whitespace_and_newlines();
             }
 
-            self.expect(SyntaxKind::R_BRACE);
+            self.expect(T!['}']);
             self.builder.finish_node();
             self.skip_whitespace_and_newlines();
         }
@@ -306,7 +300,7 @@ impl Parser<'_> {
         while let Some((kind, _)) =
             self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset)
         {
-            if kind != SyntaxKind::DOUBLE_COLON {
+            if kind != T![::] {
                 break;
             }
 
@@ -334,14 +328,14 @@ impl Parser<'_> {
         // Use lookahead to determine if this is a filehandle pattern:
         // Only treat IDENT/SCALAR as filehandle if followed by whitespace or end of statement
         // Otherwise treat as normal function call
-        if self.at(T![ident]) {
+        if self.at(SyntaxKind::IDENT) {
             // Check if this bareword should be treated as a filehandle
             if self.should_treat_as_filehandle() {
                 self.bump_value();
                 consumed_filehandle = true;
                 self.skip_whitespace_and_newlines();
             }
-        } else if self.at(T![scalar_sigil]) {
+        } else if self.at(SyntaxKind::SCALAR_SIGIL) {
             // Check if this scalar should be treated as a filehandle
             if self.should_treat_scalar_as_filehandle() {
                 self.parse_variable();
@@ -385,7 +379,7 @@ impl Parser<'_> {
                 | T![!=]
                 | T![<=]
                 | T![>=]
-                | SyntaxKind::STR_CMP
+                | T![cmp]
                 | T![&&]
                 | T![||],
                 _,
@@ -404,12 +398,12 @@ impl Parser<'_> {
     fn should_treat_scalar_as_filehandle(&self) -> bool {
         // Look ahead past the $IDENT to see what follows
         // First, check if we have $IDENT pattern
-        if !self.at(T![scalar_sigil]) {
+        if !self.at(SyntaxKind::SCALAR_SIGIL) {
             return false;
         }
 
         let next_after_dollar = self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1);
-        if !matches!(next_after_dollar, Some((T![ident], _))) {
+        if !matches!(next_after_dollar, Some((SyntaxKind::IDENT, _))) {
             return false;
         }
 
@@ -436,7 +430,7 @@ impl Parser<'_> {
                 | T![!=]
                 | T![<=]
                 | T![>=]
-                | SyntaxKind::STR_CMP
+                | T![cmp]
                 | T![&&]
                 | T![||],
                 _,
@@ -460,18 +454,14 @@ impl Parser<'_> {
         next_kind: Option<SyntaxKind>,
     ) -> Option<SyntaxKind> {
         match (function_name, next_value_token, next_kind) {
-            ("shift" | "pop", Some((SyntaxKind::REGEX_LITERAL, "//")), _) => {
-                Some(SyntaxKind::DEFINED_OR)
-            }
-            ("split", Some((SyntaxKind::REGEX_LITERAL, _)), Some(SyntaxKind::DEFINED_OR)) => {
+            ("shift" | "pop", Some((SyntaxKind::REGEX_LITERAL, "//")), _) => Some(T!["//"]),
+            ("split", Some((SyntaxKind::REGEX_LITERAL, _)), Some(T!["//"])) => {
                 Some(SyntaxKind::REGEX_LITERAL)
             }
-            ("keys", Some((SyntaxKind::HASH_SIGIL, _)), Some(SyntaxKind::MODULO)) => {
+            ("keys", Some((SyntaxKind::HASH_SIGIL, _)), Some(T![%])) => {
                 Some(SyntaxKind::HASH_SIGIL)
             }
-            ("scalar", Some((SyntaxKind::IO_EXPR, _)), Some(SyntaxKind::LT)) => {
-                Some(SyntaxKind::IO_EXPR)
-            }
+            ("scalar", Some((SyntaxKind::IO_EXPR, _)), Some(T![<])) => Some(SyntaxKind::IO_EXPR),
             _ => next_kind,
         }
     }
@@ -504,7 +494,7 @@ impl Parser<'_> {
             };
 
             // Handle ternary operator specially
-            if current_kind == SyntaxKind::QUESTION_MARK {
+            if current_kind == T![?] {
                 let ternary_precedence = crate::parser::expression::precedence::Precedence::TERNARY;
 
                 // If ternary precedence is too low, stop here
@@ -530,8 +520,8 @@ impl Parser<'_> {
                 let colon_found = self
                     .peek_non_trivia_token_with_context(LexContext::Operator)
                     .map(|(k, _)| k)
-                    == Some(SyntaxKind::COLON)
-                    || self.current_kind() == Some(SyntaxKind::COLON);
+                    == Some(T![:])
+                    || self.current_kind() == Some(T![:]);
 
                 if colon_found {
                     // Consume ':' as Operator; next will be Value
@@ -554,7 +544,7 @@ impl Parser<'_> {
             let is_compound_assignment = current_kind.is_compoundable_operator() && {
                 // Look ahead to see if there's an '=' after the current operator
                 self.peek_nth_non_trivia_token_with_context(LexContext::Operator, 1)
-                    .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::EQ)
+                    .is_some_and(|(next_kind, _)| next_kind == T![=])
             };
 
             let op_info = if is_compound_assignment {
@@ -609,10 +599,8 @@ impl Parser<'_> {
             let parsed_rhs = self.parse_expression_with_precedence(next_min_precedence);
             if !parsed_rhs {
                 // Check if this is a trailing comma or fat comma
-                if (current_kind == SyntaxKind::COMMA || current_kind == SyntaxKind::FAT_COMMA)
-                    && (self.at(SyntaxKind::R_BRACE)
-                        || self.at(SyntaxKind::SEMICOLON)
-                        || self.at_end())
+                if (current_kind == T![,] || current_kind == T![=>])
+                    && (self.at(T!['}']) || self.at(T![;]) || self.at_end())
                 {
                     // This is a trailing comma/fat comma - that's OK, just finish the node
                     self.builder.finish_node();
@@ -674,18 +662,10 @@ impl Parser<'_> {
             self.skip_whitespace_and_newlines();
         } else {
             let message = match (sigil_kind, opening) {
-                (SyntaxKind::ARRAY_SIGIL, SyntaxKind::L_BRACKET) => {
-                    "Expected '[' after '@' in postfix slice"
-                }
-                (SyntaxKind::ARRAY_SIGIL, SyntaxKind::L_BRACE) => {
-                    "Expected '{' after '@' in postfix slice"
-                }
-                (SyntaxKind::HASH_SIGIL, SyntaxKind::L_BRACKET) => {
-                    "Expected '[' after '%' in postfix slice"
-                }
-                (SyntaxKind::HASH_SIGIL, SyntaxKind::L_BRACE) => {
-                    "Expected '{' after '%' in postfix slice"
-                }
+                (SyntaxKind::ARRAY_SIGIL, T!['[']) => "Expected '[' after '@' in postfix slice",
+                (SyntaxKind::ARRAY_SIGIL, T!['{']) => "Expected '{' after '@' in postfix slice",
+                (SyntaxKind::HASH_SIGIL, T!['[']) => "Expected '[' after '%' in postfix slice",
+                (SyntaxKind::HASH_SIGIL, T!['{']) => "Expected '{' after '%' in postfix slice",
                 _ => "Expected slice delimiter after sigil",
             };
             self.error(message);
@@ -707,8 +687,8 @@ impl Parser<'_> {
             self.skip_whitespace_and_newlines();
         } else {
             let message = match closing {
-                SyntaxKind::R_BRACKET => "Expected ']' after postfix slice expression",
-                SyntaxKind::R_BRACE => "Expected '}' after postfix slice expression",
+                T![']'] => "Expected ']' after postfix slice expression",
+                T!['}'] => "Expected '}' after postfix slice expression",
                 _ => "Expected closing delimiter after postfix slice expression",
             };
             self.error(message);
@@ -737,19 +717,19 @@ impl Parser<'_> {
             self.skip_whitespace_and_newlines();
 
             match next_kind_op {
-                SyntaxKind::INCREMENT => {
+                T![++] => {
                     self.parse_postfix_op(initial_checkpoint, SyntaxKind::POSTFIX_INCREMENT);
                 }
-                SyntaxKind::DECREMENT => {
+                T![--] => {
                     self.parse_postfix_op(initial_checkpoint, SyntaxKind::POSTFIX_DECREMENT);
                 }
-                SyntaxKind::ARROW => {
+                T![->] => {
                     // After '->', the next token is a value (method name, '{', '(', etc.)
                     self.bump_value(); // ->
                     self.skip_whitespace_and_newlines();
 
                     match self.current_kind() {
-                        Some(SyntaxKind::L_BRACE) => {
+                        Some(T!['{']) => {
                             // Hash reference access: expr->{key}
                             self.builder.start_node_at(
                                 initial_checkpoint,
@@ -763,7 +743,7 @@ impl Parser<'_> {
                                 self.error("Expected expression in hash reference access");
                             }
 
-                            if self.at(SyntaxKind::R_BRACE) {
+                            if self.at(T!['}']) {
                                 // After '}', expect an operator
                                 self.bump_op(); // }
                                 self.skip_whitespace_and_newlines();
@@ -773,7 +753,7 @@ impl Parser<'_> {
 
                             self.builder.finish_node();
                         }
-                        Some(SyntaxKind::L_BRACKET) => {
+                        Some(T!['[']) => {
                             // Array reference access: expr->[index]
                             self.builder.start_node_at(
                                 initial_checkpoint,
@@ -787,7 +767,7 @@ impl Parser<'_> {
                                 self.error("Expected expression in array reference access");
                             }
 
-                            if self.at(SyntaxKind::R_BRACKET) {
+                            if self.at(T![']']) {
                                 // After ']', expect an operator
                                 self.bump_op(); // ]
                                 self.skip_whitespace_and_newlines();
@@ -797,7 +777,7 @@ impl Parser<'_> {
 
                             self.builder.finish_node();
                         }
-                        Some(SyntaxKind::L_PAREN) => {
+                        Some(T!['(']) => {
                             // Code reference call: expr->(args)
                             self.builder.start_node_at(
                                 initial_checkpoint,
@@ -812,7 +792,7 @@ impl Parser<'_> {
                             // Allow newlines or other trivia before closing ')'
                             self.skip_whitespace_and_newlines();
 
-                            if self.at(SyntaxKind::R_PAREN) {
+                            if self.at(T![')']) {
                                 // After ')', expect an operator
                                 self.bump_op(); // )
                                 self.skip_whitespace_and_newlines();
@@ -827,14 +807,14 @@ impl Parser<'_> {
                                 || SyntaxKind::is_keyword(kind)
                                 || matches!(
                                     kind,
-                                    SyntaxKind::STR_EQ
-                                        | SyntaxKind::STR_NE
-                                        | SyntaxKind::STR_GT
-                                        | SyntaxKind::STR_LT
-                                        | SyntaxKind::STR_GE
-                                        | SyntaxKind::STR_LE
-                                        | SyntaxKind::STR_CMP
-                                        | SyntaxKind::X
+                                    T![eq]
+                                        | T![ne]
+                                        | T![gt]
+                                        | T![lt]
+                                        | T![ge]
+                                        | T![le]
+                                        | T![cmp]
+                                        | T![x]
                                 ) =>
                         {
                             // Method call: expr->method()
@@ -858,26 +838,21 @@ impl Parser<'_> {
                                     .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
                                     .map(|(k, _)| k);
 
-                                handled_slice = if let Some(
-                                    opening @ (SyntaxKind::L_BRACKET | SyntaxKind::L_BRACE),
-                                ) = next_token
-                                {
-                                    let closing = if opening == SyntaxKind::L_BRACKET {
-                                        SyntaxKind::R_BRACKET
-                                    } else {
-                                        SyntaxKind::R_BRACE
-                                    };
+                                handled_slice =
+                                    if let Some(opening @ (T!['['] | T!['{'])) = next_token {
+                                        let closing =
+                                            if opening == T!['['] { T![']'] } else { T!['}'] };
 
-                                    self.parse_postfix_slice_expr(
-                                        initial_checkpoint,
-                                        kind,
-                                        opening,
-                                        closing,
-                                    );
-                                    true
-                                } else {
-                                    false
-                                };
+                                        self.parse_postfix_slice_expr(
+                                            initial_checkpoint,
+                                            kind,
+                                            opening,
+                                            closing,
+                                        );
+                                        true
+                                    } else {
+                                        false
+                                    };
                             }
 
                             if handled_slice {
@@ -905,7 +880,7 @@ impl Parser<'_> {
                         }
                     }
                 }
-                SyntaxKind::L_PAREN => {
+                T!['('] => {
                     // Function call: expr(args)
                     self.builder
                         .start_node_at(initial_checkpoint, SyntaxKind::FUNCTION_CALL_EXPR.into());
@@ -918,7 +893,7 @@ impl Parser<'_> {
                     // Allow newlines or other trivia before closing ')'
                     self.skip_whitespace_and_newlines();
 
-                    if self.at(SyntaxKind::R_PAREN) {
+                    if self.at(T![')']) {
                         // After ')', expect an operator
                         self.bump_op(); // )
                         self.skip_whitespace_and_newlines();
@@ -928,7 +903,7 @@ impl Parser<'_> {
 
                     self.builder.finish_node();
                 }
-                SyntaxKind::L_BRACKET => {
+                T!['['] => {
                     // Direct array subscription: expr[index]
                     self.builder.start_node_at(
                         initial_checkpoint,
@@ -941,7 +916,7 @@ impl Parser<'_> {
                         self.error("Expected expression in array subscription");
                     }
 
-                    if self.at(SyntaxKind::R_BRACKET) {
+                    if self.at(T![']']) {
                         self.bump(); // ]
                         self.skip_whitespace_and_newlines();
                     } else {
@@ -950,7 +925,7 @@ impl Parser<'_> {
 
                     self.builder.finish_node();
                 }
-                SyntaxKind::L_BRACE => {
+                T!['{'] => {
                     // Direct hash subscription: expr{key}
                     self.builder.start_node_at(
                         initial_checkpoint,
@@ -963,7 +938,7 @@ impl Parser<'_> {
                         self.error("Expected expression in hash subscription");
                     }
 
-                    if self.at(SyntaxKind::R_BRACE) {
+                    if self.at(T!['}']) {
                         self.bump(); // }
                         self.skip_whitespace_and_newlines();
                     } else {
@@ -1003,11 +978,11 @@ impl Parser<'_> {
         }
 
         // If we have comma-separated expressions, wrap them in a single EXPR_LIST node
-        if self.at_any(&[SyntaxKind::COMMA, SyntaxKind::FAT_COMMA]) {
+        if self.at_any(&[T![,], T![=>]]) {
             self.builder
                 .start_node_at(start, SyntaxKind::EXPR_LIST.into());
 
-            while self.at_any(&[SyntaxKind::COMMA, SyntaxKind::FAT_COMMA]) {
+            while self.at_any(&[T![,], T![=>]]) {
                 // After a separator, next should be a value
                 self.bump_value(); // , or =>
                 self.skip_whitespace_and_newlines();
@@ -1039,7 +1014,7 @@ impl Parser<'_> {
         if current_kind.is_keyword()
             && (self
                 .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
-                .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::FAT_COMMA)
+                .is_some_and(|(next_kind, _)| next_kind == T![=>])
                 || self.is_inside_hash_braces())
         {
             self.parse_ident_like_expr(true);
@@ -1083,7 +1058,7 @@ impl Parser<'_> {
                 // Check if this is a complex code reference like &{expr} or &$var
                 let next_token = self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1);
                 match next_token {
-                    Some((SyntaxKind::L_BRACE, _)) => {
+                    Some((T!['{'], _)) => {
                         // Complex code reference: &{$coderef}, &{"package::method"}, etc.
                         self.builder.start_node(SyntaxKind::COMPOUND_VAR.into());
                         self.bump(); // consume &
@@ -1097,7 +1072,7 @@ impl Parser<'_> {
                         }
 
                         self.skip_whitespace_and_newlines();
-                        if self.at(SyntaxKind::R_BRACE) {
+                        if self.at(T!['}']) {
                             self.bump(); // consume }
                         } else {
                             self.error("Expected '}' to close code reference");
@@ -1125,7 +1100,7 @@ impl Parser<'_> {
                 // All sigil-based variables are now handled by parse_variable
                 self.parse_variable();
             }
-            SyntaxKind::PLUS => {
+            T![+] => {
                 // Unary plus prefix operator
                 self.parse_standard_prefix_expr(
                     "+",
@@ -1133,7 +1108,7 @@ impl Parser<'_> {
                     Some(SyntaxKind::UNARY_PLUS),
                 );
             }
-            SyntaxKind::MINUS => {
+            T![-] => {
                 // Unary minus prefix operator
                 self.parse_standard_prefix_expr(
                     "-",
@@ -1141,7 +1116,7 @@ impl Parser<'_> {
                     Some(SyntaxKind::UNARY_MINUS),
                 );
             }
-            SyntaxKind::INCREMENT => {
+            T![++] => {
                 // Prefix increment operator
                 self.parse_standard_prefix_expr(
                     "++",
@@ -1149,7 +1124,7 @@ impl Parser<'_> {
                     Some(SyntaxKind::PREFIX_INCREMENT),
                 );
             }
-            SyntaxKind::DECREMENT => {
+            T![--] => {
                 // Prefix decrement operator
                 self.parse_standard_prefix_expr(
                     "--",
@@ -1157,26 +1132,23 @@ impl Parser<'_> {
                     Some(SyntaxKind::PREFIX_DECREMENT),
                 );
             }
-            SyntaxKind::LOGICAL_NOT => {
+            T![!] => {
                 // Logical NOT prefix operator
                 self.parse_standard_prefix_expr("!", Precedence::PREFIX, None);
             }
-            SyntaxKind::BITWISE_NOT => {
+            T![~] => {
                 // Bitwise NOT prefix operator
                 self.parse_standard_prefix_expr("~", Precedence::PREFIX, None);
             }
-            SyntaxKind::NOT_KW => {
+            T![not] => {
                 // NOT keyword prefix operator
                 self.parse_standard_prefix_expr("not", Precedence::LOGICAL_NOT_KW, None);
             }
-            SyntaxKind::MY_KW
-            | SyntaxKind::OUR_KW
-            | SyntaxKind::STATE_KW
-            | SyntaxKind::LOCAL_KW => {
+            T![my] | T![our] | T![state] | T![local] => {
                 // Variable declaration as prefix operator
                 self.parse_var_decl_prefix();
             }
-            SyntaxKind::UNDEF_KW => {
+            T![undef] => {
                 // undef can be used both as a literal and as a function call
                 // Check if it's followed by an expression (function call) or not (literal)
                 let next_token = self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1);
@@ -1195,7 +1167,7 @@ impl Parser<'_> {
                     self.skip_whitespace_and_newlines();
                 }
             }
-            SyntaxKind::REQUIRE_KW => {
+            T![require] => {
                 // require expression (e.g., require v5.14, require local::lib)
                 self.require_expr();
             }
@@ -1219,14 +1191,14 @@ impl Parser<'_> {
 
                 self.skip_whitespace_and_newlines();
             }
-            SyntaxKind::X => {
+            T![x] => {
                 // Handle 'x' as an identifier when it appears at the start of expressions
                 // This allows expressions like "x => 1" in use statements
                 // Consume 'x' as a value in this context
                 self.bump_value();
                 self.skip_whitespace_and_newlines();
             }
-            SyntaxKind::L_PAREN => {
+            T!['('] => {
                 // Parenthesized expression
                 // Inside parens, expect a value
                 self.bump_value(); // (
@@ -1237,7 +1209,7 @@ impl Parser<'_> {
 
                 self.skip_whitespace_and_newlines();
 
-                if self.at(SyntaxKind::R_PAREN) {
+                if self.at(T![')']) {
                     // After ')', expect an operator
                     self.bump_op(); // )
                     self.skip_whitespace_and_newlines();
@@ -1245,15 +1217,15 @@ impl Parser<'_> {
                     self.error("Expected ')' to close parenthesized list");
                 }
             }
-            SyntaxKind::L_BRACE => {
+            T!['{'] => {
                 // In expression context, always treat as hash reference
                 self.hash_ref();
             }
-            SyntaxKind::L_BRACKET => {
+            T!['['] => {
                 // Array reference (anonymous array): []
                 self.array_ref();
             }
-            SyntaxKind::QW_KW => {
+            T![qw] => {
                 // qw() expression or bareword 'qw'
                 if self.should_parse_quote_like() {
                     self.qw_expr();
@@ -1261,7 +1233,7 @@ impl Parser<'_> {
                     self.parse_ident_like_expr(true);
                 }
             }
-            SyntaxKind::RETURN_KW => {
+            T![return] => {
                 // return statement (handled as a keyword)
                 // After 'return', if an expression follows, it is a value
                 self.bump_value(); // consume return
@@ -1272,7 +1244,7 @@ impl Parser<'_> {
                     self.expression_list();
                 }
             }
-            SyntaxKind::NEXT_KW | SyntaxKind::LAST_KW | SyntaxKind::REDO_KW => {
+            T![next] | T![last] | T![redo] => {
                 // loop control statements with optional label
                 self.bump_value(); // consume keyword
                 self.skip_whitespace_and_newlines();
@@ -1283,63 +1255,63 @@ impl Parser<'_> {
                     self.skip_whitespace_and_newlines();
                 }
             }
-            SyntaxKind::Q_KW => {
+            T![q] => {
                 if self.should_parse_quote_like() {
                     self.q_expr();
                 } else {
                     self.parse_ident_like_expr(true);
                 }
             }
-            SyntaxKind::QQ_KW => {
+            T![qq] => {
                 if self.should_parse_quote_like() {
                     self.qq_expr();
                 } else {
                     self.parse_ident_like_expr(true);
                 }
             }
-            SyntaxKind::QX_KW => {
+            T![qx] => {
                 if self.should_parse_quote_like() {
                     self.qx_expr();
                 } else {
                     self.parse_ident_like_expr(true);
                 }
             }
-            SyntaxKind::M_KW => {
+            T![m] => {
                 if self.should_parse_quote_like() {
                     self.m_expr();
                 } else {
                     self.parse_ident_like_expr(true);
                 }
             }
-            SyntaxKind::QR_KW => {
+            T![qr] => {
                 if self.should_parse_quote_like() {
                     self.qr_expr();
                 } else {
                     self.parse_ident_like_expr(true);
                 }
             }
-            SyntaxKind::S_KW => {
+            T![s] => {
                 if self.should_parse_quote_like() {
                     self.s_expr();
                 } else {
                     self.parse_ident_like_expr(true);
                 }
             }
-            SyntaxKind::TR_KW => {
+            T![tr] => {
                 if self.should_parse_quote_like() {
                     self.tr_expr();
                 } else {
                     self.parse_ident_like_expr(true);
                 }
             }
-            SyntaxKind::Y_KW => {
+            T![y] => {
                 if self.should_parse_quote_like() {
                     self.y_expr();
                 } else {
                     self.parse_ident_like_expr(true);
                 }
             }
-            SyntaxKind::SUB_KW => {
+            T![sub] => {
                 // Anonymous subroutine expression: sub { ... }
                 self.anon_sub_expr();
             }
@@ -1375,7 +1347,7 @@ impl Parser<'_> {
         self.builder.start_node(SyntaxKind::ANON_SUB_EXPR.into());
 
         // Consume 'sub' keyword
-        self.expect(SyntaxKind::SUB_KW);
+        self.expect(T![sub]);
         self.skip_whitespace_and_newlines();
 
         // Parse optional prototype, attributes, and required block shared with named subs
@@ -1388,7 +1360,7 @@ impl Parser<'_> {
         self.builder.start_node(SyntaxKind::REQUIRE_EXPR.into());
 
         // "require"
-        self.expect(SyntaxKind::REQUIRE_KW);
+        self.expect(T![require]);
         self.skip_whitespace_and_newlines();
 
         // VERSION literal, module name (qualified identifier), or general expression
@@ -1416,7 +1388,7 @@ impl Parser<'_> {
 
     /// Parse method arguments if parentheses are present
     fn parse_method_arguments(&mut self) {
-        if self.at(SyntaxKind::L_PAREN) {
+        if self.at(T!['(']) {
             // Inside method args, expect values
             self.bump_value(); // (
             self.skip_whitespace_and_newlines();
@@ -1426,7 +1398,7 @@ impl Parser<'_> {
             // Allow newlines or other trivia before closing ')'
             self.skip_whitespace_and_newlines();
 
-            if self.at(SyntaxKind::R_PAREN) {
+            if self.at(T![')']) {
                 // After ')', expect an operator
                 self.bump_op(); // )
                 self.skip_whitespace_and_newlines();
