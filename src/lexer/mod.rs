@@ -834,18 +834,14 @@ impl<'a> Lexer<'a> {
             return None;
         }
 
-        let Some(rest) = text.strip_prefix('x') else {
-            return None;
-        };
+        let rest = text.strip_prefix('x')?;
 
         if rest.is_empty() {
             return None;
         }
 
         let mut rest_lexer = Token::lexer(rest);
-        let Some(next) = rest_lexer.next() else {
-            return None;
-        };
+        let next = rest_lexer.next()?;
 
         let Ok(number_token) = next else {
             return None;
