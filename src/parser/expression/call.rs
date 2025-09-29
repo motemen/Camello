@@ -4,6 +4,7 @@ use crate::T;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
+use super::precedence;
 use super::Parser;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -153,7 +154,7 @@ impl Parser<'_> {
     pub(super) fn parse_ident_like_expr(&mut self, coerce_current_to_ident: bool) {
         let start = self.builder.checkpoint();
 
-        // Capture name before consuming
+        // Capture name before consuming, for prototype lookups.
         let function_name = self.peek_block_function_basename().unwrap_or_default();
 
         if coerce_current_to_ident {
@@ -164,15 +165,76 @@ impl Parser<'_> {
         }
         self.skip_whitespace_and_newlines();
 
-        // Block-style function call: e.g., foo { ... } @list
+        // Dispatch to different parsing helpers based on the next token.
+        if self.try_parse_block_function_call(&function_name, start) {
+            return;
+        }
+
+        if self.try_parse_parenthesized_function_call(&function_name, start) {
+            // Parenthesized calls are handled by the postfix parser,
+            // or by try_parse_parenthesized_special_function_call.
+            // Either way, our work here is done.
+            return;
+        }
+
+        // If it's not a block or parenthesized call, try parsing it as an indirect call.
+        self.try_parse_indirect_function_call(&function_name, start);
+    }
+
+    /// Try to parse a block-style function call, e.g., `grep { $_ > 1 } @list`.
+    /// Returns true if a block function call was parsed.
+    fn try_parse_block_function_call(
+        &mut self,
+        function_name: &str,
+        start: rowan::Checkpoint,
+    ) -> bool {
         if self.at(SyntaxKind::L_BRACE)
-            && (Self::is_block_function(&function_name)
-                || Self::builtin_prototype(&function_name).is_some_and(|spec| spec.print_like()))
+            && (Self::is_block_function(function_name)
+                || Self::builtin_prototype(function_name).is_some_and(|spec| spec.print_like()))
         {
             self.builder
                 .start_node_at(start, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());
-            self.parse_block_function_args(&function_name);
+            self.parse_block_function_args(function_name);
             self.builder.finish_node();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Try to parse a parenthesized function call, e.g., `foo(1, 2)`.
+    /// This handles both special built-in functions and regular function calls.
+    /// Returns true if a parenthesized call was found (even if it's left for the postfix parser).
+    fn try_parse_parenthesized_function_call(
+        &mut self,
+        function_name: &str,
+        start: rowan::Checkpoint,
+    ) -> bool {
+        if !self.at(SyntaxKind::L_PAREN) {
+            return false;
+        }
+
+        // Handle special cases for built-ins like `grep` or `print` inside parentheses.
+        if self.try_parse_parenthesized_special_function_call(function_name, start) {
+            return true;
+        }
+
+        // For regular parenthesized calls, we don't consume them here.
+        // We just signal that we've seen the `(`, and the postfix expression parser
+        // will handle it as a `FUNCTION_CALL_EXPR`.
+        true
+    }
+
+    /// Try to parse an indirect function call (without parentheses), e.g., `foo 1, 2`.
+    fn try_parse_indirect_function_call(&mut self, function_name: &str, start: rowan::Checkpoint) {
+        // Special handling for print-like functions (e.g., print STDOUT "hello")
+        if Self::builtin_prototype(function_name).is_some_and(|spec| spec.print_like()) {
+            if self.is_at_start_of_expression() {
+                self.builder
+                    .start_node_at(start, SyntaxKind::FUNCTION_CALL_EXPR.into());
+                self.parse_print_like_args();
+                self.builder.finish_node();
+            }
             return;
         }
 
@@ -185,46 +247,26 @@ impl Parser<'_> {
             next_kind = Some(SyntaxKind::HEREDOC_START);
         }
 
-        if let Some(kind) = next_kind {
-            if kind == SyntaxKind::L_PAREN {
-                if self.try_parse_parenthesized_special_function_call(&function_name, start) {
-                    return;
-                }
-
-                // Parenthesized calls are handled by postfix parsing logic
-                return;
-            }
-        }
-
-        if Self::builtin_prototype(&function_name).is_some_and(|spec| spec.print_like()) {
-            if self.is_at_start_of_expression() {
-                self.builder
-                    .start_node_at(start, SyntaxKind::FUNCTION_CALL_EXPR.into());
-                self.parse_print_like_args();
-                self.builder.finish_node();
-            }
-            return;
-        }
-
+        // Adjust lookahead for ambiguous tokens based on built-in prototypes.
         next_kind = Self::adjust_ambiguous_next_kind_for_builtin(
-            &function_name,
+            function_name,
             next_value_token,
             next_kind,
         );
 
         if next_kind == Some(SyntaxKind::SLASH)
             && next_value_token.is_some_and(|(kind, _)| kind == SyntaxKind::REGEX_LITERAL)
-            && Self::builtin_prototype(&function_name).is_none()
+            && Self::builtin_prototype(function_name).is_none()
         {
             // Treat `/` as division for unknown barewords instead of forcing a regex literal
             next_kind = None;
         }
 
+        // If the next token can start an expression, parse it as a list of arguments.
         if let Some(kind) = next_kind {
             if Self::can_start_expression(kind)
                 || (kind.is_keyword() && self.is_followed_by_fat_comma(0))
             {
-                // We have a regular function call, wrap everything in FUNCTION_CALL_EXPR
                 self.builder
                     .start_node_at(start, SyntaxKind::FUNCTION_CALL_EXPR.into());
                 self.expression_list();
@@ -416,27 +458,8 @@ impl Parser<'_> {
         match next_token {
             // If followed by parentheses or method/package separators, it's an expression
             Some((T!['('] | T![::] | T![->], _)) => false,
-            // If followed by a likely binary operator, it's a function call in an expression
-            Some((
-                T![+]
-                | T![-]
-                | T![*]
-                | T![/]
-                | T![%]
-                | T![^]
-                | T![&]
-                | T![|]
-                | T![<]
-                | T![>]
-                | T![=]
-                | T![!=]
-                | T![<=]
-                | T![>=]
-                | SyntaxKind::STR_CMP
-                | T![&&]
-                | T![||],
-                _,
-            )) => false,
+            // If followed by a binary operator, it's part of an expression, not a filehandle.
+            Some((kind, _)) if precedence::get_operator_info(kind).is_some() => false,
             // If followed by something that can start an expression, treat as filehandle
             Some((kind, _)) if Self::can_start_expression(kind) => true,
             // End of file or other contexts - treat as filehandle
@@ -467,27 +490,8 @@ impl Parser<'_> {
         match token_after_var {
             // If followed by postfix operations (arrow, brackets, etc.), it's not a simple filehandle
             Some((T![->] | T!['['] | T!['{'] | T!['('], _)) => false,
-            // If followed by a likely binary operator, it's an expression, not a filehandle
-            Some((
-                T![+]
-                | T![-]
-                | T![*]
-                | T![/]
-                | T![%]
-                | T![^]
-                | T![&]
-                | T![|]
-                | T![<]
-                | T![>]
-                | T![=]
-                | T![!=]
-                | T![<=]
-                | T![>=]
-                | SyntaxKind::STR_CMP
-                | T![&&]
-                | T![||],
-                _,
-            )) => false,
+            // If followed by a binary operator, it's part of an expression, not a filehandle.
+            Some((kind, _)) if precedence::get_operator_info(kind).is_some() => false,
             // If followed by something that can start an expression or end of file, treat as filehandle
             Some((kind, _)) if Self::can_start_expression(kind) => true,
             // End of file or other contexts - treat as filehandle

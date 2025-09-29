@@ -1,5 +1,5 @@
 use crate::lexer::QuoteLikeMode;
-use crate::SyntaxKind;
+use crate::{SyntaxKind, T};
 
 use super::super::Parser;
 
@@ -43,91 +43,30 @@ impl Parser<'_> {
         self.skip_whitespace_and_newlines();
     }
 
-    pub fn q_expr(&mut self) {
-        self.parse_q_family_expr(
-            SyntaxKind::Q_EXPR,
-            SyntaxKind::Q_KW,
-            SyntaxKind::LITERAL_STRING,
-        );
-    }
+    /// Parse quote-like expressions (q, qq, qx, m, qr) with a unified interface
+    /// Only requires the keyword kind - derives expression and string types automatically
+    pub fn qlike_expr(&mut self, kw_kind: SyntaxKind) {
+        let (expr_kind, string_kind) = match kw_kind {
+            T![q] => (SyntaxKind::Q_EXPR, SyntaxKind::LITERAL_STRING),
+            T![qq] => (SyntaxKind::QQ_EXPR, SyntaxKind::INTERPOLATED_STRING),
+            T![qx] => (SyntaxKind::QX_EXPR, SyntaxKind::INTERPOLATED_STRING),
+            T![m] => (SyntaxKind::M_EXPR, SyntaxKind::REGEX_PATTERN),
+            T![qr] => (SyntaxKind::QR_EXPR, SyntaxKind::REGEX_PATTERN),
+            _ => unreachable!(
+                "Unexpected keyword for quote-like expression: {:?}",
+                kw_kind
+            ),
+        };
 
-    pub fn qq_expr(&mut self) {
-        self.parse_q_family_expr(
-            SyntaxKind::QQ_EXPR,
-            SyntaxKind::QQ_KW,
-            SyntaxKind::INTERPOLATED_STRING,
-        );
-    }
-
-    pub fn qx_expr(&mut self) {
-        self.parse_q_family_expr(
-            SyntaxKind::QX_EXPR,
-            SyntaxKind::QX_KW,
-            SyntaxKind::INTERPOLATED_STRING,
-        );
-    }
-
-    pub fn m_expr(&mut self) {
-        self.parse_q_family_expr(
-            SyntaxKind::M_EXPR,
-            SyntaxKind::M_KW,
-            SyntaxKind::REGEX_PATTERN,
-        );
-    }
-
-    pub fn qr_expr(&mut self) {
-        self.parse_q_family_expr(
-            SyntaxKind::QR_EXPR,
-            SyntaxKind::QR_KW,
-            SyntaxKind::REGEX_PATTERN,
-        );
-    }
-
-    pub fn s_expr(&mut self) {
-        self.parse_two_part_expr(
-            SyntaxKind::S_EXPR,
-            SyntaxKind::S_KW,
-            SyntaxKind::REGEX_PATTERN,
-            SyntaxKind::INTERPOLATED_STRING,
-            SyntaxKind::S_FLAGS,
-        );
-    }
-
-    pub fn tr_expr(&mut self) {
-        self.parse_two_part_expr(
-            SyntaxKind::TR_EXPR,
-            SyntaxKind::TR_KW,
-            SyntaxKind::TR_SEARCH_LIST,
-            SyntaxKind::TR_REPLACEMENT_LIST,
-            SyntaxKind::TR_FLAGS,
-        );
-    }
-
-    pub fn y_expr(&mut self) {
-        self.parse_two_part_expr(
-            SyntaxKind::TR_EXPR,
-            SyntaxKind::Y_KW,
-            SyntaxKind::TR_SEARCH_LIST,
-            SyntaxKind::TR_REPLACEMENT_LIST,
-            SyntaxKind::TR_FLAGS,
-        );
-    }
-
-    fn parse_q_family_expr(
-        &mut self,
-        expr_kind: SyntaxKind,
-        kw_kind: SyntaxKind,
-        string_kind: SyntaxKind,
-    ) {
         self.builder.start_node(expr_kind.into());
 
-        // "q", "qq", or "qx"
+        // Keyword (e.g., "q", "qq", "qx", "m", "qr")
         self.expect(kw_kind);
         // Begin quote-like lexing BEFORE skipping trivia
         let mode = match kw_kind {
-            SyntaxKind::Q_KW | SyntaxKind::QQ_KW | SyntaxKind::QX_KW => QuoteLikeMode::Q,
-            SyntaxKind::M_KW => QuoteLikeMode::M,
-            SyntaxKind::QR_KW => QuoteLikeMode::QR,
+            T![q] | T![qq] | T![qx] => QuoteLikeMode::Q,
+            T![m] => QuoteLikeMode::M,
+            T![qr] => QuoteLikeMode::QR,
             _ => unreachable!("Unexpected keyword: {:?}", kw_kind),
         };
         self.lexer.begin_quote_like(kw_kind, mode);
@@ -163,6 +102,43 @@ impl Parser<'_> {
         self.skip_whitespace_and_newlines();
     }
 
+    /// Parse two-part quote-like expressions (s, tr, y) with a unified interface
+    /// Only requires the keyword kind - derives all other types automatically
+    pub fn two_part_qlike_expr(&mut self, kw_kind: SyntaxKind) {
+        let (expr_kind, first_part_kind, second_part_kind, flags_kind) = match kw_kind {
+            T![s] => (
+                SyntaxKind::S_EXPR,
+                SyntaxKind::REGEX_PATTERN,
+                SyntaxKind::INTERPOLATED_STRING,
+                SyntaxKind::S_FLAGS,
+            ),
+            T![tr] => (
+                SyntaxKind::TR_EXPR,
+                SyntaxKind::TR_SEARCH_LIST,
+                SyntaxKind::TR_REPLACEMENT_LIST,
+                SyntaxKind::TR_FLAGS,
+            ),
+            T![y] => (
+                SyntaxKind::TR_EXPR,
+                SyntaxKind::TR_SEARCH_LIST,
+                SyntaxKind::TR_REPLACEMENT_LIST,
+                SyntaxKind::TR_FLAGS,
+            ),
+            _ => unreachable!(
+                "Unexpected keyword for two-part quote-like expression: {:?}",
+                kw_kind
+            ),
+        };
+
+        self.parse_two_part_expr(
+            expr_kind,
+            kw_kind,
+            first_part_kind,
+            second_part_kind,
+            flags_kind,
+        );
+    }
+
     fn parse_two_part_expr(
         &mut self,
         expr_kind: SyntaxKind,
@@ -177,8 +153,8 @@ impl Parser<'_> {
         self.expect(kw_kind);
         // Begin quote-like lexing for two-part operators BEFORE skipping trivia
         let mode = match kw_kind {
-            SyntaxKind::S_KW => QuoteLikeMode::S,
-            SyntaxKind::TR_KW | SyntaxKind::Y_KW => QuoteLikeMode::TR,
+            T![s] => QuoteLikeMode::S,
+            T![tr] | T![y] => QuoteLikeMode::TR,
             _ => unreachable!("Unexpected keyword: {:?}", kw_kind),
         };
         self.lexer.begin_quote_like(kw_kind, mode);

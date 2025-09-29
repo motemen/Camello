@@ -5,7 +5,7 @@ pub mod primary;
 pub mod quoted;
 
 use crate::lexer::LexContext;
-use crate::SyntaxKind;
+use crate::{SyntaxKind, T};
 use precedence::{get_operator_info, OperatorInfo, Precedence};
 
 use super::Parser;
@@ -469,58 +469,16 @@ impl Parser<'_> {
                     self.skip_whitespace_and_newlines();
                 }
             }
-            SyntaxKind::Q_KW => {
+            T![q] | T![qq] | T![qx] | T![m] | T![qr] => {
                 if self.should_parse_quote_like() {
-                    self.q_expr();
+                    self.qlike_expr(current_kind);
                 } else {
                     self.parse_ident_like_expr(true);
                 }
             }
-            SyntaxKind::QQ_KW => {
+            T![s] | T![tr] | T![y] => {
                 if self.should_parse_quote_like() {
-                    self.qq_expr();
-                } else {
-                    self.parse_ident_like_expr(true);
-                }
-            }
-            SyntaxKind::QX_KW => {
-                if self.should_parse_quote_like() {
-                    self.qx_expr();
-                } else {
-                    self.parse_ident_like_expr(true);
-                }
-            }
-            SyntaxKind::M_KW => {
-                if self.should_parse_quote_like() {
-                    self.m_expr();
-                } else {
-                    self.parse_ident_like_expr(true);
-                }
-            }
-            SyntaxKind::QR_KW => {
-                if self.should_parse_quote_like() {
-                    self.qr_expr();
-                } else {
-                    self.parse_ident_like_expr(true);
-                }
-            }
-            SyntaxKind::S_KW => {
-                if self.should_parse_quote_like() {
-                    self.s_expr();
-                } else {
-                    self.parse_ident_like_expr(true);
-                }
-            }
-            SyntaxKind::TR_KW => {
-                if self.should_parse_quote_like() {
-                    self.tr_expr();
-                } else {
-                    self.parse_ident_like_expr(true);
-                }
-            }
-            SyntaxKind::Y_KW => {
-                if self.should_parse_quote_like() {
-                    self.y_expr();
+                    self.two_part_qlike_expr(current_kind);
                 } else {
                     self.parse_ident_like_expr(true);
                 }
