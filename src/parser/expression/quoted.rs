@@ -43,46 +43,6 @@ impl Parser<'_> {
         self.skip_whitespace_and_newlines();
     }
 
-    pub fn q_expr(&mut self) {
-        self.parse_q_family_expr(
-            SyntaxKind::Q_EXPR,
-            SyntaxKind::Q_KW,
-            SyntaxKind::LITERAL_STRING,
-        );
-    }
-
-    pub fn qq_expr(&mut self) {
-        self.parse_q_family_expr(
-            SyntaxKind::QQ_EXPR,
-            SyntaxKind::QQ_KW,
-            SyntaxKind::INTERPOLATED_STRING,
-        );
-    }
-
-    pub fn qx_expr(&mut self) {
-        self.parse_q_family_expr(
-            SyntaxKind::QX_EXPR,
-            SyntaxKind::QX_KW,
-            SyntaxKind::INTERPOLATED_STRING,
-        );
-    }
-
-    pub fn m_expr(&mut self) {
-        self.parse_q_family_expr(
-            SyntaxKind::M_EXPR,
-            SyntaxKind::M_KW,
-            SyntaxKind::REGEX_PATTERN,
-        );
-    }
-
-    pub fn qr_expr(&mut self) {
-        self.parse_q_family_expr(
-            SyntaxKind::QR_EXPR,
-            SyntaxKind::QR_KW,
-            SyntaxKind::REGEX_PATTERN,
-        );
-    }
-
     pub fn s_expr(&mut self) {
         self.parse_two_part_expr(
             SyntaxKind::S_EXPR,
@@ -113,15 +73,24 @@ impl Parser<'_> {
         );
     }
 
-    fn parse_q_family_expr(
-        &mut self,
-        expr_kind: SyntaxKind,
-        kw_kind: SyntaxKind,
-        string_kind: SyntaxKind,
-    ) {
+    /// Parse quote-like expressions (q, qq, qx, m, qr) with a unified interface
+    /// Only requires the keyword kind - derives expression and string types automatically
+    pub fn qlike_expr(&mut self, kw_kind: SyntaxKind) {
+        let (expr_kind, string_kind) = match kw_kind {
+            SyntaxKind::Q_KW => (SyntaxKind::Q_EXPR, SyntaxKind::LITERAL_STRING),
+            SyntaxKind::QQ_KW => (SyntaxKind::QQ_EXPR, SyntaxKind::INTERPOLATED_STRING),
+            SyntaxKind::QX_KW => (SyntaxKind::QX_EXPR, SyntaxKind::INTERPOLATED_STRING),
+            SyntaxKind::M_KW => (SyntaxKind::M_EXPR, SyntaxKind::REGEX_PATTERN),
+            SyntaxKind::QR_KW => (SyntaxKind::QR_EXPR, SyntaxKind::REGEX_PATTERN),
+            _ => unreachable!(
+                "Unexpected keyword for quote-like expression: {:?}",
+                kw_kind
+            ),
+        };
+
         self.builder.start_node(expr_kind.into());
 
-        // "q", "qq", or "qx"
+        // Keyword (e.g., "q", "qq", "qx", "m", "qr")
         self.expect(kw_kind);
         // Begin quote-like lexing BEFORE skipping trivia
         let mode = match kw_kind {
