@@ -4,8 +4,8 @@ use crate::T;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
-use super::Parser;
 use super::precedence;
+use super::Parser;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PrototypeArg {
@@ -183,7 +183,11 @@ impl Parser<'_> {
 
     /// Try to parse a block-style function call, e.g., `grep { $_ > 1 } @list`.
     /// Returns true if a block function call was parsed.
-    fn try_parse_block_function_call(&mut self, function_name: &str, start: rowan::Checkpoint) -> bool {
+    fn try_parse_block_function_call(
+        &mut self,
+        function_name: &str,
+        start: rowan::Checkpoint,
+    ) -> bool {
         if self.at(SyntaxKind::L_BRACE)
             && (Self::is_block_function(function_name)
                 || Self::builtin_prototype(function_name).is_some_and(|spec| spec.print_like()))
@@ -222,11 +226,7 @@ impl Parser<'_> {
     }
 
     /// Try to parse an indirect function call (without parentheses), e.g., `foo 1, 2`.
-    fn try_parse_indirect_function_call(
-        &mut self,
-        function_name: &str,
-        start: rowan::Checkpoint,
-    ) {
+    fn try_parse_indirect_function_call(&mut self, function_name: &str, start: rowan::Checkpoint) {
         // Special handling for print-like functions (e.g., print STDOUT "hello")
         if Self::builtin_prototype(function_name).is_some_and(|spec| spec.print_like()) {
             if self.is_at_start_of_expression() {
@@ -248,8 +248,11 @@ impl Parser<'_> {
         }
 
         // Adjust lookahead for ambiguous tokens based on built-in prototypes.
-        next_kind =
-            Self::adjust_ambiguous_next_kind_for_builtin(function_name, next_value_token, next_kind);
+        next_kind = Self::adjust_ambiguous_next_kind_for_builtin(
+            function_name,
+            next_value_token,
+            next_kind,
+        );
 
         if next_kind == Some(SyntaxKind::SLASH)
             && next_value_token.is_some_and(|(kind, _)| kind == SyntaxKind::REGEX_LITERAL)

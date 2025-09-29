@@ -480,23 +480,9 @@ impl Parser<'_> {
                     self.parse_ident_like_expr(true);
                 }
             }
-            SyntaxKind::S_KW => {
+            SyntaxKind::S_KW | SyntaxKind::TR_KW | SyntaxKind::Y_KW => {
                 if self.should_parse_quote_like() {
-                    self.s_expr();
-                } else {
-                    self.parse_ident_like_expr(true);
-                }
-            }
-            SyntaxKind::TR_KW => {
-                if self.should_parse_quote_like() {
-                    self.tr_expr();
-                } else {
-                    self.parse_ident_like_expr(true);
-                }
-            }
-            SyntaxKind::Y_KW => {
-                if self.should_parse_quote_like() {
-                    self.y_expr();
+                    self.two_part_qlike_expr(current_kind);
                 } else {
                     self.parse_ident_like_expr(true);
                 }
