@@ -93,171 +93,179 @@ impl Parser<'_> {
         self.bump();
         self.skip_whitespace_and_newlines();
 
-        // Handle compound variable parsing
         if is_compound {
-            match sigil {
-                SyntaxKind::ARRAY_INDEX_SIGIL => {
-                    // $# variables
-                    match self.current_kind() {
-                        Some(SyntaxKind::IDENT) => {
-                            // $#array_name
-                            self.parse_identifier_or_qualified();
-                        }
-                        Some(SyntaxKind::SCALAR_SIGIL) => {
-                            // $#$var
-                            self.parse_variable();
-                        }
-                        Some(SyntaxKind::L_BRACE) => {
-                            // $#{...}
-                            self.bump(); // consume {
-
-                            if !self.expression() {
-                                self.error("Expected expression in $#{...}");
-                            }
-
-                            if self.at(SyntaxKind::R_BRACE) {
-                                self.bump(); // consume }
-                            } else {
-                                self.error("Expected '}' after expression in $#{...}");
-                            }
-                        }
-                        _ => {
-                            self.error("Expected array name or variable after $#");
-                        }
-                    }
-                }
-                SyntaxKind::SCALAR_SIGIL
-                | SyntaxKind::ARRAY_SIGIL
-                | SyntaxKind::HASH_SIGIL
-                | SyntaxKind::TYPEGLOB_SIGIL => {
-                    // Handle braced variables and dereferencing
-                    match self.current_kind() {
-                        Some(SyntaxKind::L_BRACE) => {
-                            if self.should_parse_braced_block_in_compound_var() {
-                                self.block();
-                                self.skip_whitespace_and_newlines();
-                            } else {
-                                // Braced dereference like @{expr}, %{expr}, ${expr}, *{expr}
-                                let (expr_error, brace_error) =
-                                    if sigil == SyntaxKind::TYPEGLOB_SIGIL {
-                                        (
-                                            "Expected expression inside braces after *",
-                                            "Expected '}' to close typeglob braces",
-                                        )
-                                    } else {
-                                        (
-                                            "Expected expression inside braces",
-                                            "Expected '}' to close braced variable",
-                                        )
-                                    };
-                                self.parse_braced_expression(expr_error, brace_error);
-                            }
-                        }
-                        Some(kind) if Self::should_recurse_into_compound_var(sigil, kind) => {
-                            // Dereferencing like @$ref, %$ref, $$ref or typeglob variants
-                            self.parse_variable();
-                        }
-                        _ => {
-                            // This shouldn't happen due to our lookahead check
-                            let message = if sigil == SyntaxKind::TYPEGLOB_SIGIL {
-                                "Expected '{' or sigil after typeglob '*'"
-                            } else {
-                                "Expected '{' or '$' after compound variable sigil"
-                            };
-                            self.error(message);
-                        }
-                    }
-                }
-                _ => unreachable!(),
-            }
+            self.parse_compound_variable_body(sigil);
         } else {
-            // Standard variable parsing for simple variables
-            match self.current_kind() {
-                Some(SyntaxKind::IDENT) => {
-                    // Regular identifier or qualified identifier (including $_, $_foo, etc.)
-                    self.parse_identifier_or_qualified();
-                }
-                Some(SyntaxKind::NUMBER) => {
-                    // Number like $1, $2, etc. - treat as regular variable name
-                    self.bump();
-                }
-                Some(SyntaxKind::CARET) => {
-                    // Handle $^ or $^X patterns
-                    self.bump(); // consume ^
-
-                    // Check if there's a character after ^
-                    if self.at(SyntaxKind::IDENT) {
-                        // This is $^X pattern where X is an identifier (single char)
-                        self.bump();
-                    }
-                }
-                Some(SyntaxKind::L_BRACE) => {
-                    // Handle ${...} syntax (e.g., ${^NAME}) as simple variables
-                    self.bump(); // consume {
-                    self.skip_whitespace_and_newlines();
-
-                    // Check for ^ inside braces
-                    if self.at(SyntaxKind::CARET) {
-                        self.bump(); // consume ^
-                        self.skip_whitespace_and_newlines();
-                    }
-
-                    // Parse identifier inside braces - accept keywords as identifiers
-                    if self.at(SyntaxKind::IDENT) {
-                        self.bump();
-                    } else if self.current_kind().is_some_and(SyntaxKind::is_keyword) {
-                        self.bump_as(SyntaxKind::IDENT);
-                    } else {
-                        self.error("Expected identifier inside braces");
-                    }
-
-                    self.skip_whitespace_and_newlines();
-                    // Expect closing brace
-                    if self.at(SyntaxKind::R_BRACE) {
-                        self.bump();
-                    } else {
-                        self.error("Expected '}' to close variable name");
-                    }
-                }
-                Some(SyntaxKind::DOUBLE_COLON) => {
-                    // Allow variables like $::foo (root-qualified names)
-                    self.bump(); // consume ::
-                    self.skip_whitespace_and_newlines();
-                    self.parse_identifier_or_qualified();
-                }
-                _ => {
-                    // Check if it's a keyword that should be treated as an identifier
-                    if self.current_kind().is_some_and(SyntaxKind::is_keyword) {
-                        self.bump_as(SyntaxKind::IDENT);
-                    } else if let Some(text) = self.current_text() {
-                        // Accept any ASCII punctuation as a valid special variable name by
-                        // consuming exactly one character, regardless of the lexer's tokenization.
-                        if text
-                            .chars()
-                            .next()
-                            .is_some_and(|ch| ch.is_ascii_punctuation())
-                        {
-                            // Manually consume one character from the lexer and emit it as IDENT.
-                            if let Some((k, t)) = self.lexer.consume_one_char_as_ident() {
-                                self.builder.token(k.into(), t);
-                                self.current_pos += t.len();
-                            } else {
-                                self.error("Unexpected end while reading special variable name");
-                            }
-                        } else {
-                            // Expect an identifier (including qualified identifiers)
-                            self.parse_identifier_or_qualified();
-                        }
-                    } else {
-                        self.error("Expected variable name after sigil");
-                    }
-                }
-            }
+            self.parse_simple_variable_body();
         }
 
         self.builder.finish_node();
 
         self.skip_whitespace_and_newlines();
+    }
+
+    fn parse_simple_variable_body(&mut self) {
+        // Standard variable parsing for simple variables
+        match self.current_kind() {
+            Some(SyntaxKind::IDENT) => {
+                // Regular identifier or qualified identifier (including $_, $_foo, etc.)
+                self.parse_identifier_or_qualified();
+            }
+            Some(SyntaxKind::NUMBER) => {
+                // Number like $1, $2, etc. - treat as regular variable name
+                self.bump();
+            }
+            Some(SyntaxKind::CARET) => {
+                // Handle $^ or $^X patterns
+                self.bump(); // consume ^
+
+                // Check if there's a character after ^
+                if self.at(SyntaxKind::IDENT) {
+                    // This is $^X pattern where X is an identifier (single char)
+                    self.bump();
+                }
+            }
+            Some(SyntaxKind::L_BRACE) => {
+                // Handle ${...} syntax (e.g., ${^NAME}) as simple variables
+                self.bump(); // consume {
+                self.skip_whitespace_and_newlines();
+
+                // Check for ^ inside braces
+                if self.at(SyntaxKind::CARET) {
+                    self.bump(); // consume ^
+                    self.skip_whitespace_and_newlines();
+                }
+
+                // Parse identifier inside braces - accept keywords as identifiers
+                if self.at(SyntaxKind::IDENT) {
+                    self.bump();
+                } else if self.current_kind().is_some_and(SyntaxKind::is_keyword) {
+                    self.bump_as(SyntaxKind::IDENT);
+                } else {
+                    self.error("Expected identifier inside braces");
+                }
+
+                self.skip_whitespace_and_newlines();
+                // Expect closing brace
+                if self.at(SyntaxKind::R_BRACE) {
+                    self.bump();
+                } else {
+                    self.error("Expected '}' to close variable name");
+                }
+            }
+            Some(SyntaxKind::DOUBLE_COLON) => {
+                // Allow variables like $::foo (root-qualified names)
+                self.bump(); // consume ::
+                self.skip_whitespace_and_newlines();
+                self.parse_identifier_or_qualified();
+            }
+            _ => {
+                // Check if it's a keyword that should be treated as an identifier
+                if self.current_kind().is_some_and(SyntaxKind::is_keyword) {
+                    self.bump_as(SyntaxKind::IDENT);
+                } else if let Some(text) = self.current_text() {
+                    // Accept any ASCII punctuation as a valid special variable name by
+                    // consuming exactly one character, regardless of the lexer's tokenization.
+                    if text
+                        .chars()
+                        .next()
+                        .is_some_and(|ch| ch.is_ascii_punctuation())
+                    {
+                        // Manually consume one character from the lexer and emit it as IDENT.
+                        if let Some((k, t)) = self.lexer.consume_one_char_as_ident() {
+                            self.builder.token(k.into(), t);
+                            self.current_pos += t.len();
+                        } else {
+                            self.error("Unexpected end while reading special variable name");
+                        }
+                    } else {
+                        // Expect an identifier (including qualified identifiers)
+                        self.parse_identifier_or_qualified();
+                    }
+                } else {
+                    self.error("Expected variable name after sigil");
+                }
+            }
+        }
+    }
+
+    fn parse_compound_variable_body(&mut self, sigil: SyntaxKind) {
+        // Handle compound variable parsing
+        match sigil {
+            SyntaxKind::ARRAY_INDEX_SIGIL => {
+                // $# variables
+                match self.current_kind() {
+                    Some(SyntaxKind::IDENT) => {
+                        // $#array_name
+                        self.parse_identifier_or_qualified();
+                    }
+                    Some(SyntaxKind::SCALAR_SIGIL) => {
+                        // $#$var
+                        self.parse_variable();
+                    }
+                    Some(SyntaxKind::L_BRACE) => {
+                        // $#{...}
+                        self.bump(); // consume {
+
+                        if !self.expression() {
+                            self.error("Expected expression in $#{...}");
+                        }
+
+                        if self.at(SyntaxKind::R_BRACE) {
+                            self.bump(); // consume }
+                        } else {
+                            self.error("Expected '}' after expression in $#{...}");
+                        }
+                    }
+                    _ => {
+                        self.error("Expected array name or variable after $#");
+                    }
+                }
+            }
+            SyntaxKind::SCALAR_SIGIL
+            | SyntaxKind::ARRAY_SIGIL
+            | SyntaxKind::HASH_SIGIL
+            | SyntaxKind::TYPEGLOB_SIGIL => {
+                // Handle braced variables and dereferencing
+                match self.current_kind() {
+                    Some(SyntaxKind::L_BRACE) => {
+                        if self.should_parse_braced_block_in_compound_var() {
+                            self.block();
+                            self.skip_whitespace_and_newlines();
+                        } else {
+                            // Braced dereference like @{expr}, %{expr}, ${expr}, *{expr}
+                            let (expr_error, brace_error) =
+                                if sigil == SyntaxKind::TYPEGLOB_SIGIL {
+                                    (
+                                        "Expected expression inside braces after *",
+                                        "Expected '}' to close typeglob braces",
+                                    )
+                                } else {
+                                    (
+                                        "Expected expression inside braces",
+                                        "Expected '}' to close braced variable",
+                                    )
+                                };
+                            self.parse_braced_expression(expr_error, brace_error);
+                        }
+                    }
+                    Some(kind) if Self::should_recurse_into_compound_var(sigil, kind) => {
+                        // Dereferencing like @$ref, %$ref, $$ref or typeglob variants
+                        self.parse_variable();
+                    }
+                    _ => {
+                        // This shouldn't happen due to our lookahead check
+                        let message = if sigil == SyntaxKind::TYPEGLOB_SIGIL {
+                            "Expected '{' or sigil after typeglob '*'"
+                        } else {
+                            "Expected '{' or '$' after compound variable sigil"
+                        };
+                        self.error(message);
+                    }
+                }
+            }
+            _ => unreachable!(),
+        }
     }
 
     /// Parses a variable for 'my'/'state' declarations (qualified identifiers are not allowed).  
