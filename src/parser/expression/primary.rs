@@ -253,18 +253,17 @@ impl Parser<'_> {
                             self.skip_whitespace_and_newlines();
                         } else {
                             // Braced dereference like @{expr}, %{expr}, ${expr}, *{expr}
-                            let (expr_error, brace_error) =
-                                if sigil == SyntaxKind::TYPEGLOB_SIGIL {
-                                    (
-                                        "Expected expression inside braces after *",
-                                        "Expected '}' to close typeglob braces",
-                                    )
-                                } else {
-                                    (
-                                        "Expected expression inside braces",
-                                        "Expected '}' to close braced variable",
-                                    )
-                                };
+                            let (expr_error, brace_error) = if sigil == SyntaxKind::TYPEGLOB_SIGIL {
+                                (
+                                    "Expected expression inside braces after *",
+                                    "Expected '}' to close typeglob braces",
+                                )
+                            } else {
+                                (
+                                    "Expected expression inside braces",
+                                    "Expected '}' to close braced variable",
+                                )
+                            };
                             self.parse_braced_expression(expr_error, brace_error);
                         }
                     }

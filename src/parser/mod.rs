@@ -334,7 +334,6 @@ impl<'a> Parser<'a> {
             .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::FAT_COMMA)
     }
 
-
     fn is_at_start_of_expression(&self) -> bool {
         self.current_kind_value().is_some_and(|kind| {
             Self::can_start_expression(kind)

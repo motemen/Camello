@@ -43,36 +43,6 @@ impl Parser<'_> {
         self.skip_whitespace_and_newlines();
     }
 
-    pub fn s_expr(&mut self) {
-        self.parse_two_part_expr(
-            SyntaxKind::S_EXPR,
-            SyntaxKind::S_KW,
-            SyntaxKind::REGEX_PATTERN,
-            SyntaxKind::INTERPOLATED_STRING,
-            SyntaxKind::S_FLAGS,
-        );
-    }
-
-    pub fn tr_expr(&mut self) {
-        self.parse_two_part_expr(
-            SyntaxKind::TR_EXPR,
-            SyntaxKind::TR_KW,
-            SyntaxKind::TR_SEARCH_LIST,
-            SyntaxKind::TR_REPLACEMENT_LIST,
-            SyntaxKind::TR_FLAGS,
-        );
-    }
-
-    pub fn y_expr(&mut self) {
-        self.parse_two_part_expr(
-            SyntaxKind::TR_EXPR,
-            SyntaxKind::Y_KW,
-            SyntaxKind::TR_SEARCH_LIST,
-            SyntaxKind::TR_REPLACEMENT_LIST,
-            SyntaxKind::TR_FLAGS,
-        );
-    }
-
     /// Parse quote-like expressions (q, qq, qx, m, qr) with a unified interface
     /// Only requires the keyword kind - derives expression and string types automatically
     pub fn qlike_expr(&mut self, kw_kind: SyntaxKind) {
@@ -130,6 +100,43 @@ impl Parser<'_> {
 
         // Parser drives context; no lexer default flip.
         self.skip_whitespace_and_newlines();
+    }
+
+    /// Parse two-part quote-like expressions (s, tr, y) with a unified interface
+    /// Only requires the keyword kind - derives all other types automatically
+    pub fn two_part_qlike_expr(&mut self, kw_kind: SyntaxKind) {
+        let (expr_kind, first_part_kind, second_part_kind, flags_kind) = match kw_kind {
+            SyntaxKind::S_KW => (
+                SyntaxKind::S_EXPR,
+                SyntaxKind::REGEX_PATTERN,
+                SyntaxKind::INTERPOLATED_STRING,
+                SyntaxKind::S_FLAGS,
+            ),
+            SyntaxKind::TR_KW => (
+                SyntaxKind::TR_EXPR,
+                SyntaxKind::TR_SEARCH_LIST,
+                SyntaxKind::TR_REPLACEMENT_LIST,
+                SyntaxKind::TR_FLAGS,
+            ),
+            SyntaxKind::Y_KW => (
+                SyntaxKind::TR_EXPR,
+                SyntaxKind::TR_SEARCH_LIST,
+                SyntaxKind::TR_REPLACEMENT_LIST,
+                SyntaxKind::TR_FLAGS,
+            ),
+            _ => unreachable!(
+                "Unexpected keyword for two-part quote-like expression: {:?}",
+                kw_kind
+            ),
+        };
+
+        self.parse_two_part_expr(
+            expr_kind,
+            kw_kind,
+            first_part_kind,
+            second_part_kind,
+            flags_kind,
+        );
     }
 
     fn parse_two_part_expr(
