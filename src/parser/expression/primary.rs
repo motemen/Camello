@@ -104,6 +104,15 @@ impl Parser<'_> {
         self.skip_whitespace_and_newlines();
     }
 
+    /// Parses the body of a simple variable, after the sigil has been consumed.
+    ///
+    /// This handles various forms of simple variables, including:
+    /// - `$foo`, `$_`, `$Foo::bar` (identifiers, qualified identifiers)
+    /// - `$1`, `$2` (numeric captures)
+    /// - `$^A`, `$^T` (special variables with a caret)
+    /// - `${...}` (braced variable names, e.g., `${^GLOBAL_VAR}`)
+    /// - `$::foo` (root-qualified variables)
+    /// - `$;`, `$/` (punctuation-based special variables)
     fn parse_simple_variable_body(&mut self) {
         // Standard variable parsing for simple variables
         match self.current_kind() {
@@ -189,6 +198,16 @@ impl Parser<'_> {
         }
     }
 
+    /// Parses the body of a compound variable, after the initial sigil has been consumed.
+    ///
+    /// This is responsible for parsing complex dereferencing structures. The `sigil`
+    /// parameter is the initial sigil that was already consumed by the caller.
+    ///
+    /// This handles syntax such as:
+    /// - `$#array`, `$#$ref`, `$#{...}` (array last index)
+    /// - `$$ref`, `@$ref`, `%$ref`, `*$ref` (scalar, array, hash, and typeglob dereferencing)
+    /// - `${...}`, `@{...}`, `%{...}`, `*{...}` (braced expression dereferencing)
+    /// - `*foo{BAR}` (typeglob with bareword key, parsed as a block)
     fn parse_compound_variable_body(&mut self, sigil: SyntaxKind) {
         // Handle compound variable parsing
         match sigil {
