@@ -474,9 +474,7 @@ impl Parser<'_> {
     fn lookahead_for_elsif_or_else(&self) -> bool {
         // Use token-based lookahead to check for elsif or else keywords, skipping any trivia
         self.peek_non_trivia_token_with_context(LexContext::Operator)
-            .map_or(false, |(kind, _)| {
-                matches!(kind, SyntaxKind::ELSIF_KW | SyntaxKind::ELSE_KW)
-            })
+            .is_some_and(|(kind, _)| matches!(kind, SyntaxKind::ELSIF_KW | SyntaxKind::ELSE_KW))
     }
 
     fn unless_stmt(&mut self) {
