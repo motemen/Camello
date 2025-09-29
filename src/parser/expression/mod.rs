@@ -5,7 +5,7 @@ pub mod primary;
 pub mod quoted;
 
 use crate::lexer::LexContext;
-use crate::SyntaxKind;
+use crate::{SyntaxKind, T};
 use precedence::{get_operator_info, OperatorInfo, Precedence};
 
 use super::Parser;
@@ -469,18 +469,14 @@ impl Parser<'_> {
                     self.skip_whitespace_and_newlines();
                 }
             }
-            SyntaxKind::Q_KW
-            | SyntaxKind::QQ_KW
-            | SyntaxKind::QX_KW
-            | SyntaxKind::M_KW
-            | SyntaxKind::QR_KW => {
+            T![q] | T![qq] | T![qx] | T![m] | T![qr] => {
                 if self.should_parse_quote_like() {
                     self.qlike_expr(current_kind);
                 } else {
                     self.parse_ident_like_expr(true);
                 }
             }
-            SyntaxKind::S_KW | SyntaxKind::TR_KW | SyntaxKind::Y_KW => {
+            T![s] | T![tr] | T![y] => {
                 if self.should_parse_quote_like() {
                     self.two_part_qlike_expr(current_kind);
                 } else {
