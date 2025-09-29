@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use super::Parser;
+use super::precedence;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PrototypeArg {
@@ -416,27 +417,8 @@ impl Parser<'_> {
         match next_token {
             // If followed by parentheses or method/package separators, it's an expression
             Some((T!['('] | T![::] | T![->], _)) => false,
-            // If followed by a likely binary operator, it's a function call in an expression
-            Some((
-                T![+]
-                | T![-]
-                | T![*]
-                | T![/]
-                | T![%]
-                | T![^]
-                | T![&]
-                | T![|]
-                | T![<]
-                | T![>]
-                | T![=]
-                | T![!=]
-                | T![<=]
-                | T![>=]
-                | SyntaxKind::STR_CMP
-                | T![&&]
-                | T![||],
-                _,
-            )) => false,
+            // If followed by a binary operator, it's part of an expression, not a filehandle.
+            Some((kind, _)) if precedence::get_operator_info(kind).is_some() => false,
             // If followed by something that can start an expression, treat as filehandle
             Some((kind, _)) if Self::can_start_expression(kind) => true,
             // End of file or other contexts - treat as filehandle
@@ -467,27 +449,8 @@ impl Parser<'_> {
         match token_after_var {
             // If followed by postfix operations (arrow, brackets, etc.), it's not a simple filehandle
             Some((T![->] | T!['['] | T!['{'] | T!['('], _)) => false,
-            // If followed by a likely binary operator, it's an expression, not a filehandle
-            Some((
-                T![+]
-                | T![-]
-                | T![*]
-                | T![/]
-                | T![%]
-                | T![^]
-                | T![&]
-                | T![|]
-                | T![<]
-                | T![>]
-                | T![=]
-                | T![!=]
-                | T![<=]
-                | T![>=]
-                | SyntaxKind::STR_CMP
-                | T![&&]
-                | T![||],
-                _,
-            )) => false,
+            // If followed by a binary operator, it's part of an expression, not a filehandle.
+            Some((kind, _)) if precedence::get_operator_info(kind).is_some() => false,
             // If followed by something that can start an expression or end of file, treat as filehandle
             Some((kind, _)) if Self::can_start_expression(kind) => true,
             // End of file or other contexts - treat as filehandle
