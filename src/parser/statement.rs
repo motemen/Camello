@@ -472,8 +472,9 @@ impl Parser<'_> {
 
     /// Look ahead to see if there's an elsif or else keyword after whitespace
     fn lookahead_for_elsif_or_else(&self) -> bool {
-        // Use token-based lookahead to check for elsif or else keywords
-        self.lookahead_for_any(&[SyntaxKind::ELSIF_KW, SyntaxKind::ELSE_KW])
+        // Use token-based lookahead to check for elsif or else keywords, skipping any trivia
+        self.peek_non_trivia_token_with_context(LexContext::Operator)
+            .is_some_and(|(kind, _)| matches!(kind, SyntaxKind::ELSIF_KW | SyntaxKind::ELSE_KW))
     }
 
     fn unless_stmt(&mut self) {

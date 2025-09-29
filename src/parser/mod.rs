@@ -334,11 +334,6 @@ impl<'a> Parser<'a> {
             .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::FAT_COMMA)
     }
 
-    /// Check if any of the given token kinds appears next (skipping trivia)
-    fn lookahead_for_any(&self, target_kinds: &[SyntaxKind]) -> bool {
-        self.lexer.peek_for_any(target_kinds).is_some()
-    }
-
     fn is_at_start_of_expression(&self) -> bool {
         self.current_kind_value().is_some_and(|kind| {
             Self::can_start_expression(kind)
