@@ -665,25 +665,38 @@ impl<'a> Lexer<'a> {
                     }
                 };
 
-                // Handle x followed by digits (e.g., x5 in "abc"x5)
+                // Handle x followed by number literal (e.g., x5, x0xFF in "abc"x5, "abc"x0xFF)
                 // In operator context, split into 'x' operator and number
                 // In value context, keep as identifier (e.g., sub x100, package x1)
                 let mut adjusted_text = text;
                 if matches!(token, Token::Ident)
                     && text.starts_with('x')
                     && text.len() > 1
-                    && text.chars().nth(1).is_some_and(|c| c.is_ascii_digit())
                     && matches!(
                         context,
                         Some(LexContext::Operator | LexContext::AmbiguousValueLookahead)
                     )
                 {
-                    // Split: return 'x' now, push the rest (digits) to pending queue
-                    syntax_kind = SyntaxKind::X;
-                    adjusted_text = &text[..1]; // Just 'x'
-                    let remaining = &text[1..]; // The digits part
-                                                // Push the remaining digits to pending queue as a NUMBER token
-                    self.pending.push_back((SyntaxKind::NUMBER, remaining));
+                    // Validate if the text after 'x' is a valid number literal
+                    // by creating a new Lexer and checking if it produces exactly one NUMBER token
+                    let remaining = &text[1..];
+                    let mut test_lexer = Lexer::new(remaining);
+                    let is_valid_number = if let Some((kind, lexed_text)) = test_lexer.next_token()
+                    {
+                        matches!(kind, SyntaxKind::NUMBER)
+                            && lexed_text == remaining
+                            && test_lexer.next_token().is_none()
+                    } else {
+                        false
+                    };
+
+                    if is_valid_number {
+                        // Split: return 'x' now, push the rest (number literal) to pending queue
+                        syntax_kind = SyntaxKind::X;
+                        adjusted_text = &text[..1]; // Just 'x'
+                                                    // Push the remaining number literal to pending queue as a NUMBER token
+                        self.pending.push_back((SyntaxKind::NUMBER, remaining));
+                    }
                 }
 
                 // Quote-like auto-expansion disabled. Parser triggers begin_quote_like().
