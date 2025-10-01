@@ -1,0 +1,22 @@
+---
+source: src/parser/mod.rs
+expression: render_errors(&errors)
+---
+  × Parse error: Direct hash subscription requires '->' operator (e.g., func()->{key})
+   ╭────
+ 1 │ (H){k};
+   ·    ┬
+   ·    ╰── here
+   ╰────
+  × Parse error: Expected ';' after expression statement
+   ╭────
+ 1 │ (H){k};
+   ·     ┬
+   ·     ╰── here
+   ╰────
+  × Parse error: Expected a statement, but found an unexpected token.
+   ╭────
+ 1 │ (H){k};
+   ·      ┬
+   ·      ╰── here
+   ╰────

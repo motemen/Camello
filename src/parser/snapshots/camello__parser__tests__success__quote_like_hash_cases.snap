@@ -2,7 +2,7 @@
 source: src/parser/mod.rs
 expression: render_success_tree(&syntax)
 ---
-ROOT@0..81
+ROOT@0..83
   STMT@0..11
     BLOCK_STMT@0..11
       L_BRACE@0..1 "{"
@@ -73,28 +73,31 @@ ROOT@0..81
           DELIMITER@55..56 "#"
       R_BRACE@56..57 "}"
   NEWLINE@57..58 "\n"
-  STMT@58..81
-    HASH_SUBSCRIPTION_EXPR@58..81
-      HASH_REF@58..69
-        L_BRACE@58..59 "{"
-        WHITESPACE@59..60 " "
-        EXPR_LIST@60..68
-          IDENT@60..62 "qr"
-          WHITESPACE@62..63 " "
-          FAT_COMMA@63..65 "=>"
-          WHITESPACE@65..66 " "
-          NUMBER@66..67 "1"
-          WHITESPACE@67..68 " "
-        R_BRACE@68..69 "}"
-      NEWLINE@69..70 "\n"
-      L_BRACE@70..71 "{"
-      WHITESPACE@71..72 " "
-      INFIX_EXPR@72..79
-        IDENT@72..73 "s"
-        WHITESPACE@73..74 " "
-        FAT_COMMA@74..76 "=>"
-        WHITESPACE@76..77 " "
-        NUMBER@77..78 "2"
-        WHITESPACE@78..79 " "
-      R_BRACE@79..80 "}"
-      NEWLINE@80..81 "\n"
+  STMT@58..70
+    HASH_REF@58..69
+      L_BRACE@58..59 "{"
+      WHITESPACE@59..60 " "
+      EXPR_LIST@60..68
+        IDENT@60..62 "qr"
+        WHITESPACE@62..63 " "
+        FAT_COMMA@63..65 "=>"
+        WHITESPACE@65..66 " "
+        NUMBER@66..67 "1"
+        WHITESPACE@67..68 " "
+      R_BRACE@68..69 "}"
+    SEMICOLON@69..70 ";"
+  NEWLINE@70..71 "\n"
+  STMT@71..82
+    HASH_REF@71..81
+      L_BRACE@71..72 "{"
+      WHITESPACE@72..73 " "
+      EXPR_LIST@73..80
+        IDENT@73..74 "s"
+        WHITESPACE@74..75 " "
+        FAT_COMMA@75..77 "=>"
+        WHITESPACE@77..78 " "
+        NUMBER@78..79 "2"
+        WHITESPACE@79..80 " "
+      R_BRACE@80..81 "}"
+    SEMICOLON@81..82 ";"
+  NEWLINE@82..83 "\n"
