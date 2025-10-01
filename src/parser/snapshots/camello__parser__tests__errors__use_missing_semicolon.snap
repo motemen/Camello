@@ -1,0 +1,10 @@
+---
+source: src/parser/mod.rs
+expression: render_errors(&errors)
+---
+  × Parse error: Expected ';' after use/no statement
+   ╭────
+ 1 │ use A use X;
+   ·       ─┬─
+   ·        ╰── here
+   ╰────

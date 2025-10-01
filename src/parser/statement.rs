@@ -301,8 +301,19 @@ impl Parser<'_> {
             }
         }
 
-        // Semicolon
-        self.expect(SyntaxKind::SEMICOLON);
+        // Check if semicolon is required
+        // Semicolons are required except for the last statement in a block, end of file, or before data sections
+        if self.at(SyntaxKind::SEMICOLON) {
+            self.bump();
+        } else if self.at_end()
+            || self.at_any(&[SyntaxKind::R_BRACE, SyntaxKind::END_KW, SyntaxKind::DATA_KW])
+        {
+            // Last statement in a block, end of file, or before data section - semicolon is optional
+            // Don't consume tokens here, let the appropriate handler consume them
+        } else {
+            // Semicolon is required but missing
+            self.error("Expected ';' after use/no statement");
+        }
 
         self.builder.finish_node();
     }
@@ -708,8 +719,8 @@ impl Parser<'_> {
         self.skip_whitespace_and_newlines();
 
         loop {
-            let can_start_identifier =
-                self.at(SyntaxKind::IDENT) || self.current_kind().is_some_and(SyntaxKind::is_keyword);
+            let can_start_identifier = self.at(SyntaxKind::IDENT)
+                || self.current_kind().is_some_and(SyntaxKind::is_keyword);
 
             if !can_start_identifier {
                 break;

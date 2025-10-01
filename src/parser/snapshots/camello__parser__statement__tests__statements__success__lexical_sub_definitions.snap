@@ -54,14 +54,14 @@ ROOT@0..78
       COLON@57..58 ":"
       IDENT@58..64 "method"
       WHITESPACE@64..65 " "
-    ATTR@65..73
+    ATTR@65..74
       COLON@65..66 ":"
       IDENT@66..70 "Attr"
       ATTR_ARGS@70..73
         L_PAREN@70..71 "("
         NUMBER@71..72 "1"
         R_PAREN@72..73 ")"
-    WHITESPACE@73..74 " "
+      WHITESPACE@73..74 " "
     BLOCK_STMT@74..77
       L_BRACE@74..75 "{"
       WHITESPACE@75..76 " "
