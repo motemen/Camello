@@ -1,0 +1,29 @@
+# x operator followed immediately by numbers
+my $str1 = "abc"x5;
+my $str2 = 'hello'x10;
+my $str3 = "test"x100;
+
+# x operator with spacing (should work as before)
+my $str4 = "xyz" x 3;
+
+# Identifiers starting with x followed by digits
+sub x100 {
+    return 1;
+}
+
+package x1;
+
+sub x999 {
+    my $value = 42;
+}
+
+package x2::Test;
+
+# Mixed cases
+my $repeated = "foo"x2;
+my $result = x100();
+
+# Edge cases
+my $empty = ""x5;
+my $single = "a"x1;
+my $large = "big"x1000;
