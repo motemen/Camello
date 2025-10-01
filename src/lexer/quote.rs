@@ -310,6 +310,8 @@ impl<'a> Lexer<'a> {
         let mut escaped = false;
         let is_paired = matches!(opening, '(' | '[' | '{' | '<');
         let mut nest: i32 = 0;
+        // When backslash is the delimiter, disable escape handling
+        let escape_enabled = closing != '\\';
 
         // consume until closing
         let mut end_idx: Option<usize> = None;
@@ -319,7 +321,7 @@ impl<'a> Lexer<'a> {
                 continue;
             }
             match c {
-                '\\' => {
+                '\\' if escape_enabled => {
                     escaped = true;
                 }
                 ch if ch == closing => {
