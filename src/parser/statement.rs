@@ -707,16 +707,20 @@ impl Parser<'_> {
         self.expect(SyntaxKind::COLON);
         self.skip_whitespace_and_newlines();
 
-        // Attribute name (qualified identifier allowed); keywords accepted as identifiers
-        let can_start_identifier =
-            self.at(SyntaxKind::IDENT) || self.current_kind().is_some_and(SyntaxKind::is_keyword);
+        loop {
+            let can_start_identifier =
+                self.at(SyntaxKind::IDENT) || self.current_kind().is_some_and(SyntaxKind::is_keyword);
 
-        if can_start_identifier {
+            if !can_start_identifier {
+                break;
+            }
+
             self.parse_identifier_or_qualified();
             self.skip_whitespace_and_newlines();
 
             if self.at(SyntaxKind::L_PAREN) {
                 self.parse_attr_args();
+                self.skip_whitespace_and_newlines();
             }
         }
 
