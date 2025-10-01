@@ -178,6 +178,9 @@ pub const fn get_token_spacing(kind: SyntaxKind) -> TokenSpacing {
         | SyntaxKind::UNLESS_KW
         | SyntaxKind::ELSIF_KW
         | SyntaxKind::ELSE_KW
+        | SyntaxKind::TRY_KW
+        | SyntaxKind::CATCH_KW
+        | SyntaxKind::FINALLY_KW
         | SyntaxKind::PACKAGE_KW
         | SyntaxKind::USE_KW
         | SyntaxKind::NO_KW
@@ -328,7 +331,7 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
         (COMPOUND_VAR, L_PAREN) => Some(false),
         (
             MY_KW | OUR_KW | STATE_KW | LOCAL_KW | FOR_KW | FOREACH_KW | WHILE_KW | UNTIL_KW
-            | IF_KW | UNLESS_KW | ELSIF_KW,
+            | IF_KW | UNLESS_KW | ELSIF_KW | TRY_KW | CATCH_KW,
             L_PAREN,
         ) => Some(true),
 
@@ -361,9 +364,9 @@ fn handle_contextual_spacing(
     current_spacing: &TokenSpacing,
 ) -> bool {
     use SyntaxKind::{
-        COMMA, FOREACH_KW, FOR_KW, IF_KW, POSTFIX_DEREF_ARRAY, POSTFIX_DEREF_ARRAY_LAST_INDEX,
-        POSTFIX_DEREF_CODE, POSTFIX_DEREF_GLOB, POSTFIX_DEREF_HASH, POSTFIX_DEREF_SCALAR,
-        UNLESS_KW,
+        CATCH_KW, COMMA, FINALLY_KW, FOREACH_KW, FOR_KW, IF_KW, POSTFIX_DEREF_ARRAY,
+        POSTFIX_DEREF_ARRAY_LAST_INDEX, POSTFIX_DEREF_CODE, POSTFIX_DEREF_GLOB, POSTFIX_DEREF_HASH,
+        POSTFIX_DEREF_SCALAR, UNLESS_KW,
     };
 
     if prev_spacing.category == TokenCategory::Variable
@@ -392,8 +395,8 @@ fn handle_contextual_spacing(
         (COMMA, _) => true,
         (_, COMMA) => false,
 
-        // Keywords in postfix position (if/unless/for)
-        (_, IF_KW | UNLESS_KW | FOR_KW | FOREACH_KW) => true,
+        // Keywords in postfix position (if/unless/for/catch/finally)
+        (_, IF_KW | UNLESS_KW | FOR_KW | FOREACH_KW | CATCH_KW | FINALLY_KW) => true,
 
         _ => false,
     }

@@ -64,6 +64,7 @@ impl Parser<'_> {
                 self.package_stmt();
                 true
             }
+            Some(SyntaxKind::TRY_KW) => self.try_stmt(),
             Some(SyntaxKind::USE_KW) => {
                 self.use_stmt();
                 true
@@ -121,6 +122,94 @@ impl Parser<'_> {
             }
             None => false, // EOF
         }
+    }
+
+    fn try_stmt(&mut self) -> bool {
+        if !self.options.enable_try_statement {
+            return self.expression_stmt();
+        }
+
+        self.builder.start_node(SyntaxKind::TRY_STMT.into());
+
+        self.expect(SyntaxKind::TRY_KW);
+        self.skip_whitespace_and_newlines();
+
+        if self.at(SyntaxKind::L_BRACE) {
+            self.block();
+        } else {
+            self.error("Expected block after 'try'");
+        }
+
+        self.skip_whitespace_and_newlines();
+
+        if self.at(SyntaxKind::CATCH_KW) {
+            self.parse_catch_clause();
+            self.skip_whitespace_and_newlines();
+        }
+
+        if self.at(SyntaxKind::FINALLY_KW) {
+            self.parse_finally_clause();
+            self.skip_whitespace_and_newlines();
+        }
+
+        if self.at(SyntaxKind::SEMICOLON) {
+            self.bump();
+        }
+
+        self.builder.finish_node();
+        true
+    }
+
+    fn parse_catch_clause(&mut self) {
+        self.builder.start_node(SyntaxKind::CATCH_BLOCK.into());
+
+        self.expect(SyntaxKind::CATCH_KW);
+        self.skip_whitespace_and_newlines();
+
+        if self.at(SyntaxKind::L_PAREN) {
+            self.builder.start_node(SyntaxKind::CATCH_PARAM.into());
+            self.expect_value(SyntaxKind::L_PAREN);
+            self.skip_whitespace_and_newlines();
+
+            if !self.at(SyntaxKind::R_PAREN) {
+                if !self.expression() {
+                    self.error("Expected expression in catch parameter");
+                }
+                self.skip_whitespace_and_newlines();
+            }
+
+            if self.at(SyntaxKind::R_PAREN) {
+                self.expect_op(SyntaxKind::R_PAREN);
+            } else {
+                self.error("Expected ')' after catch parameter");
+            }
+
+            self.builder.finish_node();
+            self.skip_whitespace_and_newlines();
+        }
+
+        if self.at(SyntaxKind::L_BRACE) {
+            self.block();
+        } else {
+            self.error("Expected block after 'catch'");
+        }
+
+        self.builder.finish_node();
+    }
+
+    fn parse_finally_clause(&mut self) {
+        self.builder.start_node(SyntaxKind::FINALLY_BLOCK.into());
+
+        self.expect(SyntaxKind::FINALLY_KW);
+        self.skip_whitespace_and_newlines();
+
+        if self.at(SyntaxKind::L_BRACE) {
+            self.block();
+        } else {
+            self.error("Expected block after 'finally'");
+        }
+
+        self.builder.finish_node();
     }
 
     fn looks_like_sub_definition(&self) -> bool {
@@ -708,8 +797,8 @@ impl Parser<'_> {
         self.skip_whitespace_and_newlines();
 
         loop {
-            let can_start_identifier =
-                self.at(SyntaxKind::IDENT) || self.current_kind().is_some_and(SyntaxKind::is_keyword);
+            let can_start_identifier = self.at(SyntaxKind::IDENT)
+                || self.current_kind().is_some_and(SyntaxKind::is_keyword);
 
             if !can_start_identifier {
                 break;
