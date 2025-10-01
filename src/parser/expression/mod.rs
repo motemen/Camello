@@ -401,6 +401,9 @@ impl Parser<'_> {
                 // require expression (e.g., require v5.14, require local::lib)
                 self.require_expr();
             }
+            SyntaxKind::TRY_KW | SyntaxKind::CATCH_KW | SyntaxKind::FINALLY_KW => {
+                self.parse_ident_like_expr(true);
+            }
             SyntaxKind::IDENT => {
                 self.parse_ident_like_expr(false);
             }

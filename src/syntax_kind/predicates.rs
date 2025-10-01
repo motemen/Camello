@@ -54,6 +54,9 @@ impl SyntaxKind {
                     | SyntaxKind::NEXT_KW
                     | SyntaxKind::LAST_KW
                     | SyntaxKind::REDO_KW
+                    | SyntaxKind::TRY_KW
+                    | SyntaxKind::CATCH_KW
+                    | SyntaxKind::FINALLY_KW
                     | SyntaxKind::NOT_KW
                     | SyntaxKind::AND_KW
                     | SyntaxKind::OR_KW

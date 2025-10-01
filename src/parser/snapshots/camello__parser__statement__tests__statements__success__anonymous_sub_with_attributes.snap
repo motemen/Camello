@@ -1,5 +1,6 @@
 ---
 source: src/parser/statement.rs
+assertion_line: 953
 expression: render_success_tree(&syntax)
 ---
 ROOT@0..36
