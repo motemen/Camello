@@ -1,7 +1,7 @@
 use crate::lexer::LexContext;
 use crate::SyntaxKind;
 
-use super::Parser;
+use super::{Parser, PrimaryResult};
 
 impl Parser<'_> {
     /// Parse a postfix increment or decrement operator
@@ -89,6 +89,7 @@ impl Parser<'_> {
     pub(super) fn parse_postfix_operations_with_checkpoint(
         &mut self,
         initial_checkpoint: rowan::Checkpoint,
+        primary_result: PrimaryResult,
     ) -> bool {
         loop {
             // Always look ahead in Operator context for postfix continuations
@@ -298,6 +299,14 @@ impl Parser<'_> {
                 }
                 SyntaxKind::L_BRACKET => {
                     // Direct array subscription: expr[index]
+                    // Allowed on variables and parenthesized lists
+                    if primary_result == PrimaryResult::Other {
+                        self.error(
+                            "Direct array subscription requires '->' operator (e.g., func()->[0])",
+                        );
+                        break;
+                    }
+
                     self.builder.start_node_at(
                         initial_checkpoint,
                         SyntaxKind::ARRAY_SUBSCRIPTION_EXPR.into(),
@@ -323,6 +332,14 @@ impl Parser<'_> {
                 }
                 SyntaxKind::L_BRACE => {
                     // Direct hash subscription: expr{key}
+                    // Only allowed on variables (not on parenthesized lists)
+                    if primary_result != PrimaryResult::Variable {
+                        self.error(
+                            "Direct hash subscription requires '->' operator (e.g., func()->{key})",
+                        );
+                        break;
+                    }
+
                     self.builder.start_node_at(
                         initial_checkpoint,
                         SyntaxKind::HASH_SUBSCRIPTION_EXPR.into(),
