@@ -1,0 +1,53 @@
+---
+source: src/parser/mod.rs
+expression: render_success_tree(&syntax)
+---
+ROOT@0..76
+  STMT@0..20
+    BLOCK_FUNCTION_CALL_EXPR@0..19
+      IDENT@0..4 "eval"
+      WHITESPACE@4..5 " "
+      BLOCK_STMT@5..19
+        L_BRACE@5..6 "{"
+        WHITESPACE@6..7 " "
+        USE_STMT@7..18
+          USE_KW@7..10 "use"
+          WHITESPACE@10..11 " "
+          IDENT@11..17 "strict"
+          WHITESPACE@17..18 " "
+        R_BRACE@18..19 "}"
+    SEMICOLON@19..20 ";"
+  NEWLINE@20..21 "\n"
+  STMT@21..43
+    BLOCK_FUNCTION_CALL_EXPR@21..42
+      IDENT@21..25 "eval"
+      WHITESPACE@25..26 " "
+      BLOCK_STMT@26..42
+        L_BRACE@26..27 "{"
+        WHITESPACE@27..28 " "
+        USE_STMT@28..41
+          USE_KW@28..31 "use"
+          WHITESPACE@31..32 " "
+          IDENT@32..40 "warnings"
+          WHITESPACE@40..41 " "
+        R_BRACE@41..42 "}"
+    SEMICOLON@42..43 ";"
+  NEWLINE@43..44 "\n"
+  STMT@44..75
+    BLOCK_FUNCTION_CALL_EXPR@44..74
+      IDENT@44..48 "eval"
+      WHITESPACE@48..49 " "
+      BLOCK_STMT@49..74
+        L_BRACE@49..50 "{"
+        NEWLINE@50..51 "\n"
+        WHITESPACE@51..55 "    "
+        USE_STMT@55..73
+          USE_KW@55..58 "use"
+          WHITESPACE@58..59 " "
+          IDENT@59..66 "feature"
+          WHITESPACE@66..67 " "
+          STRING@67..72 "'say'"
+          NEWLINE@72..73 "\n"
+        R_BRACE@73..74 "}"
+    SEMICOLON@74..75 ";"
+  NEWLINE@75..76 "\n"
