@@ -12,7 +12,7 @@ use super::Parser;
 
 /// Result of parsing a primary expression, indicating subscript eligibility
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PrimaryResult {
+enum PostfixSubject {
     /// No primary expression was parsed
     None,
     /// Variable: allows both [] and {} direct subscripts
@@ -189,13 +189,13 @@ impl Parser<'_> {
     fn parse_primary_with_postfix(&mut self) -> bool {
         let checkpoint = self.builder.checkpoint();
 
-        let result = self.primary_expr();
-        if result == PrimaryResult::None {
+        let subject_kind = self.primary_expr();
+        if subject_kind == PostfixSubject::None {
             return false;
         }
 
         // Handle postfix operations
-        self.parse_postfix_operations_with_checkpoint(checkpoint, result)
+        self.parse_postfix_operations_with_checkpoint(checkpoint, subject_kind)
     }
 
     pub fn expression_list(&mut self) -> bool {
@@ -230,11 +230,11 @@ impl Parser<'_> {
         true
     }
 
-    fn primary_expr(&mut self) -> PrimaryResult {
+    fn primary_expr(&mut self) -> PostfixSubject {
         self.skip_whitespace_and_newlines();
 
         let Some(current_kind) = self.current_kind_value() else {
-            return PrimaryResult::None;
+            return PostfixSubject::None;
         };
 
         // Treat bare keywords as identifiers when they appear before fat comma (=>)
@@ -243,7 +243,7 @@ impl Parser<'_> {
             && (self.is_followed_by_fat_comma(0) || self.is_inside_hash_braces())
         {
             self.parse_ident_like_expr(true);
-            return PrimaryResult::Other;
+            return PostfixSubject::Other;
         }
 
         match current_kind {
@@ -274,7 +274,7 @@ impl Parser<'_> {
                 // Consume variable as a value
                 self.bump_value();
                 self.skip_whitespace_and_newlines();
-                return PrimaryResult::Variable;
+                return PostfixSubject::Variable;
             }
             SyntaxKind::BACKSLASH => {
                 // Reference operator as prefix: \expr
@@ -325,7 +325,7 @@ impl Parser<'_> {
             kind if kind.is_sigil() => {
                 // All sigil-based variables are now handled by parse_variable
                 self.parse_variable();
-                return PrimaryResult::Variable;
+                return PostfixSubject::Variable;
             }
             SyntaxKind::PLUS => {
                 // Unary plus prefix operator
@@ -448,7 +448,7 @@ impl Parser<'_> {
                 }
 
                 // Parenthesized expressions (including empty ()) allow [] subscript (list slices)
-                return PrimaryResult::List;
+                return PostfixSubject::List;
             }
             SyntaxKind::L_BRACE => {
                 // In expression context, always treat as hash reference
@@ -527,10 +527,10 @@ impl Parser<'_> {
             }
             _ => {
                 // Should not reach here because is_at_start_of_expression checks this
-                return PrimaryResult::None;
+                return PostfixSubject::None;
             }
         }
-        PrimaryResult::Other
+        PostfixSubject::Other
     }
 
     /// Parse anonymous subroutine expression: sub [PROTO]? [:ATTR]* { ... }
