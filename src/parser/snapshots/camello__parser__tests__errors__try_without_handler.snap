@@ -1,0 +1,9 @@
+---
+source: src/parser/mod.rs
+assertion_line: 531
+expression: render_errors(&errors)
+---
+  × Parse error: Expected 'catch' or 'finally' after 'try' block
+   ╭────
+ 3 │ }
+   ╰────

@@ -57,3 +57,13 @@ for($i=0;;$i++){}
 sub bar {
     if ($x) { ; } else { ; }
 }
+
+try {
+    risky();
+} catch ($err) {
+    warn $err;
+} finally {
+    tidy_up();
+}
+
+my $try_value = try { attempt() } catch { fallback() };

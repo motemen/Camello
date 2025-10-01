@@ -29,17 +29,36 @@ impl ParseError {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ParserOptions {
+    pub enable_try_statement: bool,
+}
+
+impl Default for ParserOptions {
+    fn default() -> Self {
+        Self {
+            enable_try_statement: true,
+        }
+    }
+}
+
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
     builder: GreenNodeBuilder<'static>,
     errors: Vec<ParseError>,
     current_pos: usize,
     source: &'a str,
+    options: ParserOptions,
 }
 
 impl<'a> Parser<'a> {
     #[must_use]
     pub fn new(input: &'a str) -> Self {
+        Self::new_with_options(input, ParserOptions::default())
+    }
+
+    #[must_use]
+    pub fn new_with_options(input: &'a str, options: ParserOptions) -> Self {
         let lexer = Lexer::new(input);
 
         Self {
@@ -48,12 +67,18 @@ impl<'a> Parser<'a> {
             errors: Vec::new(),
             current_pos: 0,
             source: input,
+            options,
         }
     }
 
     #[must_use]
     pub fn parse(input: &str) -> (GreenNode, Vec<ParseError>) {
-        let mut parser = Parser::new(input);
+        Self::parse_with_options(input, ParserOptions::default())
+    }
+
+    #[must_use]
+    pub fn parse_with_options(input: &str, options: ParserOptions) -> (GreenNode, Vec<ParseError>) {
+        let mut parser = Parser::new_with_options(input, options);
         parser.root();
         let green_node = parser.builder.finish();
         (green_node, parser.errors)
@@ -295,6 +320,17 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn error_without_consuming(&mut self, message: &str) {
+        let text_len = self.current_text().map_or(0, str::len);
+        let range = TextRange::new(
+            (self.current_pos as u32).into(),
+            ((self.current_pos + text_len) as u32).into(),
+        );
+
+        self.errors
+            .push(ParseError::new(message.to_string(), range, self.source));
+    }
+
     /// 括弧内のカンマ区切り式をパースするヘルパー関数
     fn parse_parenthesized_list(&mut self) {
         if !self.at(SyntaxKind::R_PAREN) {
@@ -374,6 +410,9 @@ impl<'a> Parser<'a> {
                 | SyntaxKind::NEXT_KW
                 | SyntaxKind::LAST_KW
                 | SyntaxKind::REDO_KW
+                | SyntaxKind::TRY_KW
+                | SyntaxKind::CATCH_KW
+                | SyntaxKind::FINALLY_KW
                 | SyntaxKind::SUB_KW
                 | SyntaxKind::PLUS
                 | SyntaxKind::MINUS
@@ -397,6 +436,11 @@ impl<'a> Parser<'a> {
 #[must_use]
 pub fn parse(input: &str) -> (GreenNode, Vec<ParseError>) {
     Parser::parse(input)
+}
+
+#[must_use]
+pub fn parse_with_options(input: &str, options: ParserOptions) -> (GreenNode, Vec<ParseError>) {
+    Parser::parse_with_options(input, options)
 }
 
 #[cfg(test)]
