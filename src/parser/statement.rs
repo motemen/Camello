@@ -179,6 +179,10 @@ impl Parser<'_> {
             self.expect_value(SyntaxKind::L_PAREN);
             self.skip_whitespace_and_newlines();
 
+            // NOTE: We use expression() here which is permissive and allows any expression,
+            // not just scalar variables. This is intentional - while the current Perl syntax
+            // only allows scalar variables like `catch ($e)`, the syntax might evolve in the
+            // future, so we keep the parser flexible rather than restricting it now.
             if !self.expression() {
                 self.error_without_consuming("Expected expression in catch parameter");
             }
