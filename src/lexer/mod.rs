@@ -678,14 +678,12 @@ impl<'a> Lexer<'a> {
                     )
                 {
                     // Validate if the text after 'x' is a valid number literal
-                    // by creating a new Lexer and checking if it produces exactly one NUMBER token
+                    // by using logos lexer directly on the substring
                     let remaining = &text[1..];
-                    let mut test_lexer = Lexer::new(remaining);
-                    let is_valid_number = if let Some((kind, lexed_text)) = test_lexer.next_token()
-                    {
-                        matches!(kind, SyntaxKind::NUMBER)
-                            && lexed_text == remaining
-                            && test_lexer.next_token().is_none()
+                    let mut logos_lexer = Token::lexer(remaining);
+                    let is_valid_number = if let Some(Ok(Token::Number)) = logos_lexer.next() {
+                        // Ensure the number token consumes the entire remaining string.
+                        logos_lexer.span().end == remaining.len()
                     } else {
                         false
                     };
