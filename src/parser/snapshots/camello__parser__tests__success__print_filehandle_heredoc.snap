@@ -1,0 +1,17 @@
+---
+source: src/parser/mod.rs
+expression: render_success_tree(&syntax)
+---
+ROOT@0..27
+  STMT@0..27
+    FUNCTION_CALL_EXPR@0..27
+      IDENT@0..5 "print"
+      WHITESPACE@5..6 " "
+      SCALAR_VAR@6..10
+        SCALAR_SIGIL@6..7 "$"
+        IDENT@7..9 "FH"
+        WHITESPACE@9..10 " "
+      HEREDOC_START@10..16 "<<HOGE"
+      NEWLINE@16..17 "\n"
+      HEREDOC_CONTENT@17..22 ")))a\n"
+      HEREDOC_END@22..27 "HOGE\n"
