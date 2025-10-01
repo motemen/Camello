@@ -179,14 +179,10 @@ impl Parser<'_> {
             self.expect_value(SyntaxKind::L_PAREN);
             self.skip_whitespace_and_newlines();
 
-            if self.at(SyntaxKind::R_PAREN) {
+            if !self.expression() {
                 self.error_without_consuming("Expected expression in catch parameter");
-            } else {
-                if !self.expression() {
-                    self.error_without_consuming("Expected expression in catch parameter");
-                }
-                self.skip_whitespace_and_newlines();
             }
+            self.skip_whitespace_and_newlines();
 
             if self.at(SyntaxKind::R_PAREN) {
                 self.expect_op(SyntaxKind::R_PAREN);
