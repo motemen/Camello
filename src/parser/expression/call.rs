@@ -455,6 +455,15 @@ impl Parser<'_> {
         let next_token =
             self.peek_nth_non_trivia_token_with_context(LexContext::AmbiguousValueLookahead, 1);
 
+        // If a heredoc start follows, keep treating the preceding ident as a filehandle even
+        // though `<<` ordinarily lexes as a shift operator in ambiguous contexts.
+        if self
+            .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
+            .is_some_and(|(kind, _)| kind == SyntaxKind::HEREDOC_START)
+        {
+            return true;
+        }
+
         match next_token {
             // If followed by parentheses or method/package separators, it's an expression
             Some((T!['('] | T![::] | T![->], _)) => false,
@@ -486,6 +495,17 @@ impl Parser<'_> {
         // Now check what follows the $IDENT pattern
         let token_after_var =
             self.peek_nth_non_trivia_token_with_context(LexContext::AmbiguousValueLookahead, 2);
+
+        // Similar to the bareword case, a heredoc start should keep the scalar in filehandle
+        // position textually attached to `print` even though `<<` looks like SHIFT_LEFT in
+        // operator-aware contexts. Value-context lookahead recognizes the heredoc token and
+        // lets the parser build the correct tree.
+        if self
+            .peek_nth_non_trivia_token_with_context(LexContext::Value, 2)
+            .is_some_and(|(kind, _)| kind == SyntaxKind::HEREDOC_START)
+        {
+            return true;
+        }
 
         match token_after_var {
             // If followed by postfix operations (arrow, brackets, etc.), it's not a simple filehandle
