@@ -656,7 +656,7 @@ impl<'a> Lexer<'a> {
             Some(Ok(token)) => {
                 let text = self.logos_lexer.slice();
                 // Decide mapping strategy based on token kind and text via a single disambiguator
-                let syntax_kind = {
+                let mut syntax_kind = {
                     // If previous token was a sigil, force IDENT for following identifier
                     if let Some(ctx) = context {
                         self.disambiguate(&token, text, ctx)
@@ -665,16 +665,37 @@ impl<'a> Lexer<'a> {
                     }
                 };
 
+                // Handle x followed by digits (e.g., x5 in "abc"x5)
+                // In operator context, split into 'x' operator and number
+                // In value context, keep as identifier (e.g., sub x100, package x1)
+                let mut adjusted_text = text;
+                if matches!(token, Token::Ident)
+                    && text.starts_with('x')
+                    && text.len() > 1
+                    && text.chars().nth(1).is_some_and(|c| c.is_ascii_digit())
+                    && matches!(
+                        context,
+                        Some(LexContext::Operator | LexContext::AmbiguousValueLookahead)
+                    )
+                {
+                    // Split: return 'x' now, push the rest (digits) to pending queue
+                    syntax_kind = SyntaxKind::X;
+                    adjusted_text = &text[..1]; // Just 'x'
+                    let remaining = &text[1..]; // The digits part
+                                                // Push the remaining digits to pending queue as a NUMBER token
+                    self.pending.push_back((SyntaxKind::NUMBER, remaining));
+                }
+
                 // Quote-like auto-expansion disabled. Parser triggers begin_quote_like().
 
                 // Special handling for __END__ and __DATA__: consume everything remaining as data section
                 if matches!(syntax_kind, SyntaxKind::END_KW | SyntaxKind::DATA_KW) {
-                    return Some((syntax_kind, text));
+                    return Some((syntax_kind, adjusted_text));
                 }
 
                 // Track line position for POD detection
-                self.update_line_position(text);
-                Some((syntax_kind, text))
+                self.update_line_position(adjusted_text);
+                Some((syntax_kind, adjusted_text))
             }
             Some(Err(())) => {
                 // エラートークンとして処理
