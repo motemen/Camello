@@ -1,5 +1,6 @@
 ---
 source: src/formatter/tests.rs
+assertion_line: 51
 expression: formatted
 ---
 warn 1
@@ -75,3 +76,13 @@ sub bar {
         ;
     }
 }
+
+try {
+    risky();
+} catch ($err) {
+    warn $err;
+} finally {
+    tidy_up();
+}
+
+my $try_value = try { attempt() } catch { fallback() };
