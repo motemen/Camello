@@ -230,6 +230,31 @@ impl Parser<'_> {
         true
     }
 
+    fn parse_io_expr(&mut self) {
+        self.builder.start_node(SyntaxKind::IO_EXPR.into());
+
+        self.bump_value(); // <
+        self.skip_whitespace_and_newlines();
+
+        while !self.at(SyntaxKind::GT) && !self.at_end() {
+            if self.current_kind_value().is_none() {
+                break;
+            }
+
+            self.bump_value();
+            self.skip_whitespace_and_newlines();
+        }
+
+        if self.at(SyntaxKind::GT) {
+            self.bump_value();
+        } else {
+            self.error("Expected '>' to close I/O operator");
+        }
+
+        self.builder.finish_node();
+        self.skip_whitespace_and_newlines();
+    }
+
     fn primary_expr(&mut self) -> PostfixSubject {
         self.skip_whitespace_and_newlines();
 
@@ -265,6 +290,9 @@ impl Parser<'_> {
                 self.bump_value();
                 self.builder.finish_node();
                 self.skip_whitespace_and_newlines();
+            }
+            SyntaxKind::LT if self.looks_like_io_operator() => {
+                self.parse_io_expr();
             }
             SyntaxKind::HEREDOC_START => {
                 self.bump_value();

@@ -243,6 +243,10 @@ impl Parser<'_> {
             .peek_non_trivia_token_with_context(LexContext::AmbiguousValueLookahead)
             .map(|(kind, _)| kind);
 
+        if self.looks_like_io_operator() {
+            next_kind = Some(SyntaxKind::IO_EXPR);
+        }
+
         if next_value_token.is_some_and(|(kind, _)| kind == SyntaxKind::HEREDOC_START) {
             next_kind = Some(SyntaxKind::HEREDOC_START);
         }
@@ -465,6 +469,7 @@ impl Parser<'_> {
         }
 
         match next_token {
+            _ if self.looks_like_io_operator_at_offset(1) => true,
             // If followed by parentheses or method/package separators, it's an expression
             Some((T!['('] | T![::] | T![->], _)) => false,
             // If followed by a binary operator, it's part of an expression, not a filehandle.
@@ -495,6 +500,10 @@ impl Parser<'_> {
         // Now check what follows the $IDENT pattern
         let token_after_var =
             self.peek_nth_non_trivia_token_with_context(LexContext::AmbiguousValueLookahead, 2);
+
+        if self.looks_like_io_operator_at_offset(2) {
+            return true;
+        }
 
         // Similar to the bareword case, a heredoc start should keep the scalar in filehandle
         // position textually attached to `print` even though `<<` looks like SHIFT_LEFT in
@@ -567,10 +576,8 @@ impl Parser<'_> {
                                 return Some(SyntaxKind::REGEX_LITERAL);
                             }
                         }
-                        if next_kind == Some(SyntaxKind::LT) {
-                            if let Some((SyntaxKind::IO_EXPR, _)) = next_value_token {
-                                return Some(SyntaxKind::IO_EXPR);
-                            }
+                        if next_kind == Some(SyntaxKind::IO_EXPR) {
+                            return Some(SyntaxKind::IO_EXPR);
                         }
                     }
                     PrototypeArg::Block | PrototypeArg::Filehandle => {}

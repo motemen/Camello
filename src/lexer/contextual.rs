@@ -28,12 +28,6 @@ impl<'a> Lexer<'a> {
             self.update_line_position(t);
             return Some((k, t));
         }
-        // 5) IO operator like <...>
-        if let Some(result) = self.try_consume_io_operator() {
-            let (k, t) = result;
-            self.update_line_position(t);
-            return Some((k, t));
-        }
         None
     }
 
@@ -317,36 +311,6 @@ impl<'a> Lexer<'a> {
             strip_indent,
         });
         Some((SyntaxKind::HEREDOC_START, text))
-    }
-
-    fn try_consume_io_operator(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        let remainder = self.logos_lexer.remainder();
-
-        if !remainder.starts_with('<') {
-            return None;
-        }
-
-        let mut closing_angle_pos: Option<usize> = None;
-
-        // Find the closing '>'
-        for (i, c) in remainder.char_indices().skip(1) {
-            match c {
-                '>' => {
-                    closing_angle_pos = Some(i);
-                    break;
-                }
-                '\n' => return None, // I/O operators don't span lines
-                _ => {}
-            }
-        }
-
-        if let Some(pos) = closing_angle_pos {
-            let text = &remainder[..=pos];
-            self.logos_lexer.bump(text.len());
-            return Some((SyntaxKind::IO_EXPR, text));
-        }
-
-        None
     }
 
     fn try_consume_file_test_op(&mut self) -> Option<(SyntaxKind, &'a str)> {

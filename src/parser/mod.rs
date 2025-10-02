@@ -370,9 +370,45 @@ impl<'a> Parser<'a> {
             .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::FAT_COMMA)
     }
 
+    fn looks_like_io_operator(&self) -> bool {
+        self.looks_like_io_operator_at_offset(0)
+    }
+
+    fn looks_like_io_operator_at_offset(&self, offset: usize) -> bool {
+        let Some((kind, _)) =
+            self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset)
+        else {
+            return false;
+        };
+
+        if kind != SyntaxKind::LT {
+            return false;
+        }
+
+        let mut lookahead = offset + 1;
+
+        while let Some((next_kind, _)) =
+            self.peek_nth_non_trivia_token_with_context(LexContext::Value, lookahead)
+        {
+            match next_kind {
+                SyntaxKind::GT => return true,
+                SyntaxKind::ARROW
+                | SyntaxKind::SEMICOLON
+                | SyntaxKind::COMMA
+                | SyntaxKind::R_PAREN
+                | SyntaxKind::R_BRACE
+                | SyntaxKind::R_BRACKET => return false,
+                _ => lookahead += 1,
+            }
+        }
+
+        false
+    }
+
     fn is_at_start_of_expression(&self) -> bool {
         self.current_kind_value().is_some_and(|kind| {
             Self::can_start_expression(kind)
+                || (kind == SyntaxKind::LT && self.looks_like_io_operator())
                 || (kind.is_keyword() && self.is_followed_by_fat_comma(0))
         })
     }
