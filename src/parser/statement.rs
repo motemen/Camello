@@ -129,7 +129,18 @@ impl Parser<'_> {
             return self.expression_stmt();
         }
 
-        self.builder.start_node(SyntaxKind::TRY_STMT.into());
+        // Check if this looks like a function-style try (e.g., from Try::Tiny)
+        // by looking ahead to see if there's a catch/finally clause
+        let checkpoint = self.builder.checkpoint();
+        let has_handler = self.peek_for_try_handler();
+
+        // If there's no handler (catch/finally), treat it as a function call
+        if !has_handler {
+            return self.expression_stmt();
+        }
+
+        self.builder
+            .start_node_at(checkpoint, SyntaxKind::TRY_STMT.into());
 
         self.expect(SyntaxKind::TRY_KW);
         self.skip_whitespace_and_newlines();
@@ -142,22 +153,14 @@ impl Parser<'_> {
 
         self.skip_whitespace_and_newlines();
 
-        let mut has_handler = false;
-
         if self.at(SyntaxKind::CATCH_KW) {
-            has_handler = true;
             self.parse_catch_clause();
             self.skip_whitespace_and_newlines();
         }
 
         if self.at(SyntaxKind::FINALLY_KW) {
-            has_handler = true;
             self.parse_finally_clause();
             self.skip_whitespace_and_newlines();
-        }
-
-        if !has_handler {
-            self.error_without_consuming("Expected 'catch' or 'finally' after 'try' block");
         }
 
         if self.at(SyntaxKind::SEMICOLON) {
@@ -166,6 +169,54 @@ impl Parser<'_> {
 
         self.builder.finish_node();
         true
+    }
+
+    /// Peek ahead to see if there's a catch or finally clause after the try block
+    fn peek_for_try_handler(&mut self) -> bool {
+        let mut cloned_lexer = self.lexer.clone();
+
+        // Skip the 'try' keyword
+        if cloned_lexer.next_token().is_none() {
+            return false;
+        }
+
+        // Skip whitespace and find the opening brace
+        loop {
+            match cloned_lexer.peek_token() {
+                Some((SyntaxKind::L_BRACE, _)) => break,
+                Some((kind, _)) if kind.is_trivia() => {
+                    cloned_lexer.next_token();
+                }
+                _ => return false, // Unexpected token or EOF
+            }
+        }
+
+        // Consume the opening brace
+        cloned_lexer.next_token();
+        let mut depth = 1;
+
+        // Skip the block by counting braces
+        while depth > 0 {
+            match cloned_lexer.next_token() {
+                Some((SyntaxKind::L_BRACE, _)) => depth += 1,
+                Some((SyntaxKind::R_BRACE, _)) => depth -= 1,
+                Some(_) => {}
+                None => return false,
+            }
+        }
+
+        // Now check what comes after the block
+        loop {
+            match cloned_lexer.peek_token() {
+                Some((SyntaxKind::CATCH_KW, _)) | Some((SyntaxKind::FINALLY_KW, _)) => {
+                    return true;
+                }
+                Some((kind, _)) if kind.is_trivia() => {
+                    cloned_lexer.next_token();
+                }
+                _ => return false, // Something else follows or EOF
+            }
+        }
     }
 
     fn parse_catch_clause(&mut self) {
