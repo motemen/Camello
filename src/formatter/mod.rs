@@ -383,6 +383,11 @@ impl Formatter {
                 return;
             }
 
+            SyntaxKind::IO_EXPR => {
+                self.format_io_expr(node);
+                return;
+            }
+
             SyntaxKind::DATA_SECTION => {
                 self.format_data_section(node);
                 return;
@@ -1305,6 +1310,33 @@ impl Formatter {
                             self.format_token(&token);
                         }
                     }
+                }
+            }
+        }
+    }
+
+    fn format_io_expr(&mut self, node: &PerlNode) {
+        // IO expressions like <STDIN> or <$filehandle> should not have spaces inside
+        // but need normal spacing before the opening <
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(child_node) => {
+                    self.format_node(&child_node);
+                }
+                NodeOrToken::Token(token) => {
+                    let kind = token.kind();
+
+                    // Add spacing before the opening <, but not inside the IO_EXPR
+                    if kind == SyntaxKind::LT {
+                        self.handle_spacing_before(kind);
+                    }
+
+                    if self.at_line_start && !kind.is_trivia() {
+                        self.add_indent();
+                        self.at_line_start = false;
+                    }
+                    self.write(&token);
+                    self.remember_token(&token);
                 }
             }
         }

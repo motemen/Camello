@@ -386,18 +386,63 @@ impl<'a> Parser<'a> {
         }
 
         let mut lookahead = offset + 1;
+        let mut token_count = 0;
 
         while let Some((next_kind, _)) =
             self.peek_nth_non_trivia_token_with_context(LexContext::Value, lookahead)
         {
             match next_kind {
-                SyntaxKind::GT => return true,
+                SyntaxKind::GT => {
+                    // Check what follows the >
+                    // If it's followed by another value token (number, variable, etc.),
+                    // this is likely a chained comparison like: foo < $h > 1_000
+                    if let Some((after_gt, _)) =
+                        self.peek_nth_non_trivia_token_with_context(LexContext::Operator, lookahead + 1)
+                    {
+                        match after_gt {
+                            // These tokens suggest continuation of an expression (comparison chain)
+                            SyntaxKind::NUMBER
+                            | SyntaxKind::SCALAR_SIGIL
+                            | SyntaxKind::ARRAY_SIGIL
+                            | SyntaxKind::HASH_SIGIL
+                            | SyntaxKind::STRING
+                            | SyntaxKind::L_PAREN => return false,
+                            _ => {}
+                        }
+                    }
+                    // Valid glob if we haven't seen too many tokens
+                    return token_count <= 2;
+                }
                 SyntaxKind::ARROW
                 | SyntaxKind::SEMICOLON
                 | SyntaxKind::COMMA
                 | SyntaxKind::R_PAREN
                 | SyntaxKind::R_BRACE
                 | SyntaxKind::R_BRACKET => return false,
+                // Identifier is valid in glob
+                SyntaxKind::IDENT => {
+                    token_count += 1;
+                    lookahead += 1;
+                }
+                // Scalar sigil is valid (for variables like $filehandle)
+                SyntaxKind::SCALAR_SIGIL => {
+                    token_count += 1;
+                    lookahead += 1;
+                }
+                // Block is valid for globs like <{expr}>
+                SyntaxKind::L_BRACE => {
+                    token_count += 1;
+                    lookahead += 1;
+                }
+                // Numbers, operators, or other sigils indicate this is not a glob
+                SyntaxKind::NUMBER
+                | SyntaxKind::ARRAY_SIGIL
+                | SyntaxKind::HASH_SIGIL
+                | SyntaxKind::LT
+                | SyntaxKind::PLUS
+                | SyntaxKind::MINUS
+                | SyntaxKind::STAR
+                | SyntaxKind::SLASH => return false,
                 _ => lookahead += 1,
             }
         }
