@@ -1,6 +1,6 @@
 use crate::{lexer::LexContext, SyntaxKind};
 
-use super::Parser;
+use super::{expression::PostfixSubject, Parser};
 
 impl Parser<'_> {
     pub fn statement(&mut self) -> bool {
@@ -129,13 +129,13 @@ impl Parser<'_> {
             return self.expression_stmt();
         }
 
-        // Create two checkpoints at the same position for cover syntax approach:
-        // - outer: will wrap as either TRY_STMT or STMT (for expression statement)
-        // - inner: will wrap as BLOCK_FUNCTION_CALL_EXPR if it's function-style
-        let outer_checkpoint = self.builder.checkpoint();
-        let inner_checkpoint = self.builder.checkpoint();
+        // Create two checkpoints:
+        // - stmt_checkpoint: will wrap as either TRY_STMT or STMT (for expression statement)
+        // - expr_checkpoint: will wrap as BLOCK_FUNCTION_CALL_EXPR if it's function-style
+        let stmt_checkpoint = self.builder.checkpoint();
+        let expr_checkpoint = self.builder.checkpoint();
 
-        // Parse 'try' keyword and block (consume tokens without deciding node type yet)
+        // Parse 'try' keyword and block
         self.bump(); // consume TRY_KW
         self.skip_whitespace_and_newlines();
 
@@ -151,7 +151,7 @@ impl Parser<'_> {
         if self.at(SyntaxKind::CATCH_KW) || self.at(SyntaxKind::FINALLY_KW) {
             // Statement-style: try { ... } catch { ... }
             self.builder
-                .start_node_at(outer_checkpoint, SyntaxKind::TRY_STMT.into());
+                .start_node_at(stmt_checkpoint, SyntaxKind::TRY_STMT.into());
 
             if self.at(SyntaxKind::CATCH_KW) {
                 self.parse_catch_clause();
@@ -170,22 +170,41 @@ impl Parser<'_> {
             self.builder.finish_node();
             true
         } else {
-            // Function-style: try { ... }; (e.g., Try::Tiny)
-            // First, wrap try+block as BLOCK_FUNCTION_CALL_EXPR
-            self.builder.start_node_at(
-                inner_checkpoint,
-                SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into(),
-            );
-            self.builder.finish_node();
+            // Function-style: try { ... } (e.g., Try::Tiny)
+            // Wrap try+block as BLOCK_FUNCTION_CALL_EXPR
+            self.builder
+                .start_node_at(expr_checkpoint, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());
 
-            // Consume semicolon if present
-            if self.at(SyntaxKind::SEMICOLON) {
-                self.bump();
+            // Parse additional arguments if present (e.g., try { } $x, $y)
+            if self.is_at_start_of_expression() {
+                self.expression_list();
             }
 
-            // Then wrap everything as STMT
+            self.builder.finish_node();
+
+            // Handle postfix operations (e.g., try { }->method())
+            self.parse_postfix_operations_with_checkpoint(expr_checkpoint, PostfixSubject::Other);
+
+            self.skip_whitespace_and_newlines();
+
+            // Handle postfix modifiers (e.g., try { } if $condition)
+            self.parse_optional_postfix_modifier();
+
+            // Check if semicolon is required
+            if self.at(SyntaxKind::SEMICOLON) {
+                self.bump();
+            } else if self.at_end()
+                || self.at_any(&[SyntaxKind::R_BRACE, SyntaxKind::END_KW, SyntaxKind::DATA_KW])
+            {
+                // Last statement in a block, end of file, or before data section - semicolon is optional
+            } else {
+                // Semicolon is required but missing
+                self.error("Expected ';' after expression statement");
+            }
+
+            // Wrap everything as STMT
             self.builder
-                .start_node_at(outer_checkpoint, SyntaxKind::STMT.into());
+                .start_node_at(stmt_checkpoint, SyntaxKind::STMT.into());
             self.builder.finish_node();
 
             true
