@@ -5,7 +5,7 @@ expression: render_success_tree(&syntax)
 ROOT@0..28
   STMT@0..28
     BLOCK_FUNCTION_CALL_EXPR@0..28
-      IDENT@0..3 "try"
+      TRY_KW@0..3 "try"
       WHITESPACE@3..4 " "
       BLOCK_STMT@4..27
         L_BRACE@4..5 "{"
