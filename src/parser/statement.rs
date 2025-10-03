@@ -185,22 +185,8 @@ impl Parser<'_> {
             // Handle postfix operations (e.g., try { }->method())
             self.parse_postfix_operations_with_checkpoint(expr_checkpoint, PostfixSubject::Other);
 
-            self.skip_whitespace_and_newlines();
-
-            // Handle postfix modifiers (e.g., try { } if $condition)
-            self.parse_optional_postfix_modifier();
-
-            // Check if semicolon is required
-            if self.at(SyntaxKind::SEMICOLON) {
-                self.bump();
-            } else if self.at_end()
-                || self.at_any(&[SyntaxKind::R_BRACE, SyntaxKind::END_KW, SyntaxKind::DATA_KW])
-            {
-                // Last statement in a block, end of file, or before data section - semicolon is optional
-            } else {
-                // Semicolon is required but missing
-                self.error("Expected ';' after expression statement");
-            }
+            // Handle postfix modifiers and trailing semicolon
+            self.handle_postfix_and_semicolon();
 
             // Wrap everything as STMT
             self.builder
@@ -710,24 +696,8 @@ impl Parser<'_> {
             return true; // Consumed as an error, so return true.
         }
 
-        self.skip_whitespace_and_newlines();
-
-        // Check for postfix modifiers (if/unless/for)
-        self.parse_optional_postfix_modifier();
-
-        // Check if semicolon is required
-        // Semicolons are required except for the last statement in a block, end of file, or before data sections
-        if self.at(SyntaxKind::SEMICOLON) {
-            self.bump();
-        } else if self.at_end()
-            || self.at_any(&[SyntaxKind::R_BRACE, SyntaxKind::END_KW, SyntaxKind::DATA_KW])
-        {
-            // Last statement in a block, end of file, or before data section - semicolon is optional
-            // Don't consume tokens here, let the appropriate handler consume them
-        } else {
-            // Semicolon is required but missing
-            self.error("Expected ';' after expression statement");
-        }
+        // Handle postfix modifiers and trailing semicolon
+        self.handle_postfix_and_semicolon();
 
         self.builder.finish_node();
         true
@@ -830,6 +800,26 @@ impl Parser<'_> {
         }
 
         self.builder.finish_node();
+    }
+
+    /// Helper function to handle postfix modifiers and trailing semicolon for expression statements
+    fn handle_postfix_and_semicolon(&mut self) {
+        self.skip_whitespace_and_newlines();
+
+        // Handle postfix modifiers (if/unless/for/while/until)
+        self.parse_optional_postfix_modifier();
+
+        // Check if semicolon is required
+        if self.at(SyntaxKind::SEMICOLON) {
+            self.bump();
+        } else if self.at_end()
+            || self.at_any(&[SyntaxKind::R_BRACE, SyntaxKind::END_KW, SyntaxKind::DATA_KW])
+        {
+            // Last statement in a block, end of file, or before data section - semicolon is optional
+        } else {
+            // Semicolon is required but missing
+            self.error("Expected ';' after expression statement");
+        }
     }
 
     pub(crate) fn parse_sub_tail(&mut self) {
