@@ -375,38 +375,43 @@ impl<'a> Parser<'a> {
     }
 
     fn looks_like_io_operator_at_offset(&self, offset: usize) -> bool {
-        let Some((kind, _)) =
-            self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset)
-        else {
-            return false;
+        let mut cloned_lexer = self.lexer.clone();
+
+        // Helper to get next non-trivia token from the cloned lexer
+        let mut next_token = |ctx: LexContext| -> Option<(SyntaxKind, &'a str)> {
+            loop {
+                match cloned_lexer.next_token_with_context(ctx) {
+                    Some((k, _)) if k.is_trivia() => continue,
+                    Some(token) => return Some(token),
+                    None => return None,
+                }
+            }
         };
 
-        if kind != SyntaxKind::LT {
+        // Skip `offset` non-trivia tokens
+        for _ in 0..offset {
+            if next_token(LexContext::Value).is_none() {
+                return false;
+            }
+        }
+
+        // Check if the current token is `<`
+        if next_token(LexContext::Value).map(|(k, _)| k) != Some(SyntaxKind::LT) {
             return false;
         }
 
-        // Find the matching > and check what follows it
-        let mut lookahead = offset + 1;
+        // Find the matching `>`
         let mut depth = 1;
-
-        while let Some((next_kind, _)) =
-            self.peek_nth_non_trivia_token_with_context(LexContext::Value, lookahead)
-        {
+        while let Some((next_kind, _)) = next_token(LexContext::Value) {
             match next_kind {
                 SyntaxKind::LT => {
                     depth += 1;
-                    lookahead += 1;
                 }
                 SyntaxKind::GT => {
                     depth -= 1;
                     if depth == 0 {
                         // Found matching >. Check what follows.
-                        if let Some((after_gt, _)) =
-                            self.peek_nth_non_trivia_token_with_context(
-                                LexContext::Operator,
-                                lookahead + 1,
-                            )
-                        {
+                        if let Some((after_gt, _)) = next_token(LexContext::Operator) {
                             // If followed by a primary value token, this is a comparison chain
                             // like: foo < $h > 1_000
                             match after_gt {
@@ -423,14 +428,13 @@ impl<'a> Parser<'a> {
                         // No token after >, assume it's a glob
                         return true;
                     }
-                    lookahead += 1;
                 }
                 // Statement/expression terminators mean we won't find a matching >
                 SyntaxKind::SEMICOLON
                 | SyntaxKind::R_PAREN
                 | SyntaxKind::R_BRACE
                 | SyntaxKind::R_BRACKET => return false,
-                _ => lookahead += 1,
+                _ => {}
             }
         }
 
