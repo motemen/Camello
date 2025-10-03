@@ -6,7 +6,7 @@ ROOT@0..296
   COMMENT@0..43 "# try as a function ( ..."
   STMT@43..71
     BLOCK_FUNCTION_CALL_EXPR@43..70
-      IDENT@43..46 "try"
+      TRY_KW@43..46 "try"
       WHITESPACE@46..47 " "
       BLOCK_STMT@47..70
         L_BRACE@47..48 "{"
@@ -94,7 +94,7 @@ ROOT@0..296
   COMMENT@221..261 "# try function with m ..."
   STMT@261..295
     BLOCK_FUNCTION_CALL_EXPR@261..294
-      IDENT@261..264 "try"
+      TRY_KW@261..264 "try"
       WHITESPACE@264..265 " "
       BLOCK_STMT@265..294
         L_BRACE@265..266 "{"

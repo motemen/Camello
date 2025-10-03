@@ -129,93 +129,66 @@ impl Parser<'_> {
             return self.expression_stmt();
         }
 
-        // Check if this looks like a function-style try (e.g., from Try::Tiny)
-        // by looking ahead to see if there's a catch/finally clause
-        let checkpoint = self.builder.checkpoint();
-        let has_handler = self.peek_for_try_handler();
+        // Create two checkpoints at the same position for cover syntax approach:
+        // - outer: will wrap as either TRY_STMT or STMT (for expression statement)
+        // - inner: will wrap as BLOCK_FUNCTION_CALL_EXPR if it's function-style
+        let outer_checkpoint = self.builder.checkpoint();
+        let inner_checkpoint = self.builder.checkpoint();
 
-        // If there's no handler (catch/finally), treat it as a function call
-        if !has_handler {
-            return self.expression_stmt();
-        }
-
-        self.builder
-            .start_node_at(checkpoint, SyntaxKind::TRY_STMT.into());
-
-        self.expect(SyntaxKind::TRY_KW);
+        // Parse 'try' keyword and block (consume tokens without deciding node type yet)
+        self.bump(); // consume TRY_KW
         self.skip_whitespace_and_newlines();
 
-        if self.at(SyntaxKind::L_BRACE) {
-            self.block();
-        } else {
+        if !self.at(SyntaxKind::L_BRACE) {
             self.error("Expected block after 'try'");
-        }
-
-        self.skip_whitespace_and_newlines();
-
-        if self.at(SyntaxKind::CATCH_KW) {
-            self.parse_catch_clause();
-            self.skip_whitespace_and_newlines();
-        }
-
-        if self.at(SyntaxKind::FINALLY_KW) {
-            self.parse_finally_clause();
-            self.skip_whitespace_and_newlines();
-        }
-
-        if self.at(SyntaxKind::SEMICOLON) {
-            self.bump();
-        }
-
-        self.builder.finish_node();
-        true
-    }
-
-    /// Peek ahead to see if there's a catch or finally clause after the try block
-    fn peek_for_try_handler(&mut self) -> bool {
-        let mut cloned_lexer = self.lexer.clone();
-
-        // Skip the 'try' keyword
-        if cloned_lexer.next_token().is_none() {
             return false;
         }
 
-        // Skip whitespace and find the opening brace
-        loop {
-            match cloned_lexer.peek_token() {
-                Some((SyntaxKind::L_BRACE, _)) => break,
-                Some((kind, _)) if kind.is_trivia() => {
-                    cloned_lexer.next_token();
-                }
-                _ => return false, // Unexpected token or EOF
-            }
-        }
+        self.block();
+        self.skip_whitespace_and_newlines();
 
-        // Consume the opening brace
-        cloned_lexer.next_token();
-        let mut depth = 1;
+        // Now decide which syntax this is based on what follows
+        if self.at(SyntaxKind::CATCH_KW) || self.at(SyntaxKind::FINALLY_KW) {
+            // Statement-style: try { ... } catch { ... }
+            self.builder
+                .start_node_at(outer_checkpoint, SyntaxKind::TRY_STMT.into());
 
-        // Skip the block by counting braces
-        while depth > 0 {
-            match cloned_lexer.next_token() {
-                Some((SyntaxKind::L_BRACE, _)) => depth += 1,
-                Some((SyntaxKind::R_BRACE, _)) => depth -= 1,
-                Some(_) => {}
-                None => return false,
+            if self.at(SyntaxKind::CATCH_KW) {
+                self.parse_catch_clause();
+                self.skip_whitespace_and_newlines();
             }
-        }
 
-        // Now check what comes after the block
-        loop {
-            match cloned_lexer.peek_token() {
-                Some((SyntaxKind::CATCH_KW, _)) | Some((SyntaxKind::FINALLY_KW, _)) => {
-                    return true;
-                }
-                Some((kind, _)) if kind.is_trivia() => {
-                    cloned_lexer.next_token();
-                }
-                _ => return false, // Something else follows or EOF
+            if self.at(SyntaxKind::FINALLY_KW) {
+                self.parse_finally_clause();
+                self.skip_whitespace_and_newlines();
             }
+
+            if self.at(SyntaxKind::SEMICOLON) {
+                self.bump();
+            }
+
+            self.builder.finish_node();
+            true
+        } else {
+            // Function-style: try { ... }; (e.g., Try::Tiny)
+            // First, wrap try+block as BLOCK_FUNCTION_CALL_EXPR
+            self.builder.start_node_at(
+                inner_checkpoint,
+                SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into(),
+            );
+            self.builder.finish_node();
+
+            // Consume semicolon if present
+            if self.at(SyntaxKind::SEMICOLON) {
+                self.bump();
+            }
+
+            // Then wrap everything as STMT
+            self.builder
+                .start_node_at(outer_checkpoint, SyntaxKind::STMT.into());
+            self.builder.finish_node();
+
+            true
         }
     }
 
