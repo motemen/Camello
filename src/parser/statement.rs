@@ -1,6 +1,6 @@
 use crate::{lexer::LexContext, SyntaxKind};
 
-use super::Parser;
+use super::{expression::PostfixSubject, Parser};
 
 impl Parser<'_> {
     pub fn statement(&mut self) -> bool {
@@ -129,43 +129,72 @@ impl Parser<'_> {
             return self.expression_stmt();
         }
 
-        self.builder.start_node(SyntaxKind::TRY_STMT.into());
+        // Create two checkpoints:
+        // - stmt_checkpoint: will wrap as either TRY_STMT or STMT (for expression statement)
+        // - expr_checkpoint: will wrap as BLOCK_FUNCTION_CALL_EXPR if it's function-style
+        let stmt_checkpoint = self.builder.checkpoint();
+        let expr_checkpoint = self.builder.checkpoint();
 
-        self.expect(SyntaxKind::TRY_KW);
+        // Parse 'try' keyword and block
+        self.bump(); // consume TRY_KW
         self.skip_whitespace_and_newlines();
 
-        if self.at(SyntaxKind::L_BRACE) {
-            self.block();
-        } else {
+        if !self.at(SyntaxKind::L_BRACE) {
             self.error("Expected block after 'try'");
+            return false;
         }
 
+        self.block();
         self.skip_whitespace_and_newlines();
 
-        let mut has_handler = false;
+        // Now decide which syntax this is based on what follows
+        if self.at(SyntaxKind::CATCH_KW) || self.at(SyntaxKind::FINALLY_KW) {
+            // Statement-style: try { ... } catch { ... }
+            self.builder
+                .start_node_at(stmt_checkpoint, SyntaxKind::TRY_STMT.into());
 
-        if self.at(SyntaxKind::CATCH_KW) {
-            has_handler = true;
-            self.parse_catch_clause();
-            self.skip_whitespace_and_newlines();
+            if self.at(SyntaxKind::CATCH_KW) {
+                self.parse_catch_clause();
+                self.skip_whitespace_and_newlines();
+            }
+
+            if self.at(SyntaxKind::FINALLY_KW) {
+                self.parse_finally_clause();
+                self.skip_whitespace_and_newlines();
+            }
+
+            if self.at(SyntaxKind::SEMICOLON) {
+                self.bump();
+            }
+
+            self.builder.finish_node();
+            true
+        } else {
+            // Function-style: try { ... } (e.g., Try::Tiny)
+            // Wrap try+block as BLOCK_FUNCTION_CALL_EXPR
+            self.builder
+                .start_node_at(expr_checkpoint, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());
+
+            // Parse additional arguments if present (e.g., try { } $x, $y)
+            if self.is_at_start_of_expression() {
+                self.expression_list();
+            }
+
+            self.builder.finish_node();
+
+            // Handle postfix operations (e.g., try { }->method())
+            self.parse_postfix_operations_with_checkpoint(expr_checkpoint, PostfixSubject::Other);
+
+            // Handle postfix modifiers and trailing semicolon
+            self.handle_postfix_and_semicolon();
+
+            // Wrap everything as STMT
+            self.builder
+                .start_node_at(stmt_checkpoint, SyntaxKind::STMT.into());
+            self.builder.finish_node();
+
+            true
         }
-
-        if self.at(SyntaxKind::FINALLY_KW) {
-            has_handler = true;
-            self.parse_finally_clause();
-            self.skip_whitespace_and_newlines();
-        }
-
-        if !has_handler {
-            self.error_without_consuming("Expected 'catch' or 'finally' after 'try' block");
-        }
-
-        if self.at(SyntaxKind::SEMICOLON) {
-            self.bump();
-        }
-
-        self.builder.finish_node();
-        true
     }
 
     fn parse_catch_clause(&mut self) {
@@ -667,24 +696,8 @@ impl Parser<'_> {
             return true; // Consumed as an error, so return true.
         }
 
-        self.skip_whitespace_and_newlines();
-
-        // Check for postfix modifiers (if/unless/for)
-        self.parse_optional_postfix_modifier();
-
-        // Check if semicolon is required
-        // Semicolons are required except for the last statement in a block, end of file, or before data sections
-        if self.at(SyntaxKind::SEMICOLON) {
-            self.bump();
-        } else if self.at_end()
-            || self.at_any(&[SyntaxKind::R_BRACE, SyntaxKind::END_KW, SyntaxKind::DATA_KW])
-        {
-            // Last statement in a block, end of file, or before data section - semicolon is optional
-            // Don't consume tokens here, let the appropriate handler consume them
-        } else {
-            // Semicolon is required but missing
-            self.error("Expected ';' after expression statement");
-        }
+        // Handle postfix modifiers and trailing semicolon
+        self.handle_postfix_and_semicolon();
 
         self.builder.finish_node();
         true
@@ -787,6 +800,26 @@ impl Parser<'_> {
         }
 
         self.builder.finish_node();
+    }
+
+    /// Helper function to handle postfix modifiers and trailing semicolon for expression statements
+    fn handle_postfix_and_semicolon(&mut self) {
+        self.skip_whitespace_and_newlines();
+
+        // Handle postfix modifiers (if/unless/for/while/until)
+        self.parse_optional_postfix_modifier();
+
+        // Check if semicolon is required
+        if self.at(SyntaxKind::SEMICOLON) {
+            self.bump();
+        } else if self.at_end()
+            || self.at_any(&[SyntaxKind::R_BRACE, SyntaxKind::END_KW, SyntaxKind::DATA_KW])
+        {
+            // Last statement in a block, end of file, or before data section - semicolon is optional
+        } else {
+            // Semicolon is required but missing
+            self.error("Expected ';' after expression statement");
+        }
     }
 
     pub(crate) fn parse_sub_tail(&mut self) {

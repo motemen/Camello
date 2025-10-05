@@ -1,0 +1,120 @@
+---
+source: src/parser/statement.rs
+expression: render_success_tree(&syntax)
+---
+ROOT@0..296
+  COMMENT@0..43 "# try as a function ( ..."
+  STMT@43..71
+    BLOCK_FUNCTION_CALL_EXPR@43..70
+      TRY_KW@43..46 "try"
+      WHITESPACE@46..47 " "
+      BLOCK_STMT@47..70
+        L_BRACE@47..48 "{"
+        NEWLINE@48..49 "\n"
+        WHITESPACE@49..53 "    "
+        STMT@53..68
+          FUNCTION_CALL_EXPR@53..67
+            IDENT@53..65 "do_something"
+            L_PAREN@65..66 "("
+            R_PAREN@66..67 ")"
+          SEMICOLON@67..68 ";"
+        NEWLINE@68..69 "\n"
+        R_BRACE@69..70 "}"
+    SEMICOLON@70..71 ";"
+  NEWLINE@71..72 "\n"
+  NEWLINE@72..73 "\n"
+  COMMENT@73..99 "# try function with c ..."
+  TRY_STMT@99..152
+    TRY_KW@99..102 "try"
+    WHITESPACE@102..103 " "
+    BLOCK_STMT@103..119
+      L_BRACE@103..104 "{"
+      NEWLINE@104..105 "\n"
+      WHITESPACE@105..109 "    "
+      STMT@109..117
+        FUNCTION_CALL_EXPR@109..116
+          IDENT@109..114 "risky"
+          L_PAREN@114..115 "("
+          R_PAREN@115..116 ")"
+        SEMICOLON@116..117 ";"
+      NEWLINE@117..118 "\n"
+      R_BRACE@118..119 "}"
+    WHITESPACE@119..120 " "
+    CATCH_BLOCK@120..151
+      CATCH_KW@120..125 "catch"
+      WHITESPACE@125..126 " "
+      BLOCK_STMT@126..151
+        L_BRACE@126..127 "{"
+        NEWLINE@127..128 "\n"
+        WHITESPACE@128..132 "    "
+        STMT@132..149
+          FUNCTION_CALL_EXPR@132..148
+            IDENT@132..144 "handle_error"
+            L_PAREN@144..145 "("
+            SCALAR_VAR@145..147
+              SCALAR_SIGIL@145..146 "$"
+              IDENT@146..147 "_"
+            R_PAREN@147..148 ")"
+          SEMICOLON@148..149 ";"
+        NEWLINE@149..150 "\n"
+        R_BRACE@150..151 "}"
+    SEMICOLON@151..152 ";"
+  NEWLINE@152..153 "\n"
+  NEWLINE@153..154 "\n"
+  COMMENT@154..183 "# try function in ass ..."
+  STMT@183..219
+    VAR_DECL@183..218
+      MY_KW@183..185 "my"
+      WHITESPACE@185..186 " "
+      INFIX_EXPR@186..218
+        SCALAR_VAR@186..194
+          SCALAR_SIGIL@186..187 "$"
+          IDENT@187..193 "result"
+          WHITESPACE@193..194 " "
+        EQ@194..195 "="
+        WHITESPACE@195..196 " "
+        BLOCK_FUNCTION_CALL_EXPR@196..218
+          IDENT@196..199 "try"
+          WHITESPACE@199..200 " "
+          BLOCK_STMT@200..218
+            L_BRACE@200..201 "{"
+            NEWLINE@201..202 "\n"
+            WHITESPACE@202..206 "    "
+            STMT@206..216
+              FUNCTION_CALL_EXPR@206..215
+                IDENT@206..213 "compute"
+                L_PAREN@213..214 "("
+                R_PAREN@214..215 ")"
+              SEMICOLON@215..216 ";"
+            NEWLINE@216..217 "\n"
+            R_BRACE@217..218 "}"
+    SEMICOLON@218..219 ";"
+  NEWLINE@219..220 "\n"
+  NEWLINE@220..221 "\n"
+  COMMENT@221..261 "# try function with m ..."
+  STMT@261..295
+    BLOCK_FUNCTION_CALL_EXPR@261..294
+      TRY_KW@261..264 "try"
+      WHITESPACE@264..265 " "
+      BLOCK_STMT@265..294
+        L_BRACE@265..266 "{"
+        NEWLINE@266..267 "\n"
+        WHITESPACE@267..271 "    "
+        STMT@271..279
+          FUNCTION_CALL_EXPR@271..278
+            IDENT@271..276 "step1"
+            L_PAREN@276..277 "("
+            R_PAREN@277..278 ")"
+          SEMICOLON@278..279 ";"
+        NEWLINE@279..280 "\n"
+        WHITESPACE@280..284 "    "
+        STMT@284..292
+          FUNCTION_CALL_EXPR@284..291
+            IDENT@284..289 "step2"
+            L_PAREN@289..290 "("
+            R_PAREN@290..291 ")"
+          SEMICOLON@291..292 ";"
+        NEWLINE@292..293 "\n"
+        R_BRACE@293..294 "}"
+    SEMICOLON@294..295 ";"
+  NEWLINE@295..296 "\n"
