@@ -236,18 +236,27 @@ impl Parser<'_> {
         self.bump_value(); // <
         self.skip_whitespace_and_newlines();
 
-        while !self.at(SyntaxKind::GT) && !self.at_end() {
+        let mut depth = 1;
+        while depth > 0 && !self.at_end() {
             if self.current_kind_value().is_none() {
                 break;
+            }
+
+            match self.current_kind_value() {
+                Some(SyntaxKind::LT) => {
+                    depth += 1;
+                }
+                Some(SyntaxKind::GT) => {
+                    depth -= 1;
+                }
+                _ => {}
             }
 
             self.bump_value();
             self.skip_whitespace_and_newlines();
         }
 
-        if self.at(SyntaxKind::GT) {
-            self.bump_value();
-        } else {
+        if depth > 0 {
             self.error("Expected '>' to close I/O operator");
         }
 

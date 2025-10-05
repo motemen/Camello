@@ -10,6 +10,10 @@ foo < $h > 1_000;
 bar < $b > $c;
 baz < $x > 0;
 
+# Comparison chains with barewords (should NOT be parsed as IO operator)
+foo < h > bar;
+test < a > b;
+
 # Valid glob operators (for comparison)
 my $fh = <STDIN>;
 my @lines = <$filehandle>;

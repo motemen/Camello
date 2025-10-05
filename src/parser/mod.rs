@@ -412,18 +412,13 @@ impl<'a> Parser<'a> {
                     if depth == 0 {
                         // Found matching >. Check what follows.
                         if let Some((after_gt, _)) = next_token(LexContext::Operator) {
-                            // If followed by a primary value token, this is a comparison chain
-                            // like: foo < $h > 1_000
-                            match after_gt {
-                                SyntaxKind::NUMBER
-                                | SyntaxKind::SCALAR_SIGIL
-                                | SyntaxKind::ARRAY_SIGIL
-                                | SyntaxKind::HASH_SIGIL
-                                | SyntaxKind::STRING
-                                | SyntaxKind::L_PAREN => return false,
-                                // Otherwise it's likely a glob
-                                _ => return true,
+                            // If followed by a token that can start an expression, this is a comparison chain
+                            // like: foo < $h > 1_000 or foo < h > bar
+                            if Self::can_start_expression(after_gt) {
+                                return false;
                             }
+                            // Otherwise it's likely a glob
+                            return true;
                         }
                         // No token after >, assume it's a glob
                         return true;
