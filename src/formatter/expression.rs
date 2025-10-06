@@ -434,9 +434,9 @@ impl Formatter {
                             // Skip whitespace inside prototypes to ensure compact formatting
                         }
                         SyntaxKind::L_PAREN => {
-                            if self.at_line_start {
+                            if self.at_line_start() {
                                 self.add_indent();
-                                self.at_line_start = false;
+                                self.set_at_line_start(false);
                             }
 
                             // Subroutine prototypes always get a space before opening paren
