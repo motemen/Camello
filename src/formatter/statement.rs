@@ -160,13 +160,11 @@ impl Formatter {
                             let has_existing_empty_line =
                                 self.pending_empty_lines > 0 || self.ends_with_double_newline();
 
-                            if !has_existing_empty_line {
-                                if !self.is_output_empty() {
-                                    if !self.ends_with_newline() {
-                                        self.handle_formatter_newline();
-                                    }
-                                    self.writer.push_empty_line();
+                            if !has_existing_empty_line && !self.is_output_empty() {
+                                if !self.ends_with_newline() {
+                                    self.handle_formatter_newline();
                                 }
+                                self.writer.push_empty_line();
                             }
                         }
                     }
