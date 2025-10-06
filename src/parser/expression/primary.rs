@@ -169,32 +169,37 @@ impl Parser<'_> {
                 self.parse_identifier_or_qualified();
             }
             _ => {
-                // Check if it's a keyword that should be treated as an identifier
-                if self.current_kind().is_some_and(SyntaxKind::is_keyword) {
-                    self.bump_as(SyntaxKind::IDENT);
-                } else if let Some(text) = self.current_text() {
-                    // Accept any ASCII punctuation as a valid special variable name by
-                    // consuming exactly one character, regardless of the lexer's tokenization.
-                    if text
-                        .chars()
-                        .next()
-                        .is_some_and(|ch| ch.is_ascii_punctuation())
-                    {
-                        // Manually consume one character from the lexer and emit it as IDENT.
-                        if let Some((k, t)) = self.lexer.consume_one_char_as_ident() {
-                            self.builder.token(k.into(), t);
-                            self.current_pos += t.len();
-                        } else {
-                            self.error("Unexpected end while reading special variable name");
-                        }
-                    } else {
-                        // Expect an identifier (including qualified identifiers)
-                        self.parse_identifier_or_qualified();
-                    }
-                } else {
-                    self.error("Expected variable name after sigil");
-                }
+                self.parse_keyword_or_special_variable();
             }
+        }
+    }
+
+    /// Parses a keyword used as a variable name, or a special punctuation-based variable.
+    fn parse_keyword_or_special_variable(&mut self) {
+        // Check if it's a keyword that should be treated as an identifier
+        if self.current_kind().is_some_and(SyntaxKind::is_keyword) {
+            self.bump_as(SyntaxKind::IDENT);
+        } else if let Some(text) = self.current_text() {
+            // Accept any ASCII punctuation as a valid special variable name by
+            // consuming exactly one character, regardless of the lexer's tokenization.
+            if text
+                .chars()
+                .next()
+                .is_some_and(|ch| ch.is_ascii_punctuation())
+            {
+                // Manually consume one character from the lexer and emit it as IDENT.
+                if let Some((k, t)) = self.lexer.consume_one_char_as_ident() {
+                    self.builder.token(k.into(), t);
+                    self.current_pos += t.len();
+                } else {
+                    self.error("Unexpected end while reading special variable name");
+                }
+            } else {
+                // Expect an identifier (including qualified identifiers)
+                self.parse_identifier_or_qualified();
+            }
+        } else {
+            self.error("Expected variable name after sigil");
         }
     }
 
