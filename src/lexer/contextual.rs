@@ -243,20 +243,11 @@ impl<'a> Lexer<'a> {
                 let mut cloned = self.clone();
                 cloned.logos_lexer.bump(end_pos);
 
-                // Skip whitespace/newlines and get the next token
-                loop {
-                    if let Some((kind, _)) = cloned.next_token_with_context(LexContext::Operator) {
-                        if kind.is_trivia() {
-                            continue;
-                        }
-                        // Check if this token can start an expression
-                        if Self::can_start_expression_token(kind) {
-                            // This looks like a comparison chain like: foo < $h > 1_000
-                            return None;
-                        }
-                        break;
-                    } else {
-                        break;
+                // Get the next non-trivia token using the existing helper
+                if let Some((kind, _)) = cloned.peek_non_trivia_with_context(LexContext::Operator) {
+                    if Self::can_start_expression_token(kind) {
+                        // This looks like a comparison chain like: foo < $h > 1_000
+                        return None;
                     }
                 }
             }
@@ -280,11 +271,33 @@ impl<'a> Lexer<'a> {
                 | SyntaxKind::SCALAR_SIGIL
                 | SyntaxKind::ARRAY_SIGIL
                 | SyntaxKind::HASH_SIGIL
+                | SyntaxKind::CODE_SIGIL
+                | SyntaxKind::TYPEGLOB_SIGIL
+                | SyntaxKind::BACKSLASH
                 | SyntaxKind::L_PAREN
                 | SyntaxKind::L_BRACKET
                 | SyntaxKind::L_BRACE
                 | SyntaxKind::PLUS
                 | SyntaxKind::MINUS
+                | SyntaxKind::LOGICAL_NOT
+                | SyntaxKind::BITWISE_NOT
+                | SyntaxKind::FILE_TEST_OP
+                | SyntaxKind::SUB_KW
+                | SyntaxKind::Q_KW
+                | SyntaxKind::QQ_KW
+                | SyntaxKind::QX_KW
+                | SyntaxKind::QW_KW
+                | SyntaxKind::M_KW
+                | SyntaxKind::QR_KW
+                | SyntaxKind::S_KW
+                | SyntaxKind::TR_KW
+                | SyntaxKind::Y_KW
+                | SyntaxKind::MY_KW
+                | SyntaxKind::OUR_KW
+                | SyntaxKind::STATE_KW
+                | SyntaxKind::LOCAL_KW
+                | SyntaxKind::UNDEF_KW
+                | SyntaxKind::NOT_KW
         )
     }
 

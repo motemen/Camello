@@ -1318,24 +1318,25 @@ impl Formatter {
     fn format_io_expr(&mut self, node: &PerlNode) {
         // IO expressions are formatted to preserve internal spacing, but need normal
         // spacing before the opening delimiter.
+        let mut first_non_trivia_token = true;
+        for element in node.descendants_with_tokens() {
+            if let Some(token) = element.as_token() {
+                let kind = token.kind();
 
-        self.handle_spacing_before(SyntaxKind::LT);
+                if !kind.is_trivia() {
+                    if first_non_trivia_token {
+                        self.handle_spacing_before(kind);
+                        first_non_trivia_token = false;
+                    }
 
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(child_node) => {
-                    self.format_node(&child_node);
-                }
-                NodeOrToken::Token(token) => {
-                    let kind = token.kind();
-
-                    if self.at_line_start && !kind.is_trivia() {
+                    if self.at_line_start {
                         self.add_indent();
                         self.at_line_start = false;
                     }
-                    self.write(&token);
-                    self.remember_token(&token);
                 }
+
+                self.write(&token);
+                self.remember_token(&token);
             }
         }
     }

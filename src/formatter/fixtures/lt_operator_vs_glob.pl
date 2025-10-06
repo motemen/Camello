@@ -10,6 +10,9 @@ baz < $x > 0;
 foo < h > bar;
 test < a > b;
 
+# Comparison with sub expression (should NOT be parsed as IO operator)
+foo < $h > sub { 1 };
+
 # Valid glob operators (for comparison)
 my $fh = <STDIN>;
 my @lines = <$filehandle>;
