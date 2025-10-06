@@ -1,33 +1,24 @@
-use super::{spacing, Formatter, Line, LineBreakSource};
+use super::{spacing, Formatter};
 use crate::{PerlNode, SyntaxKind};
 
 impl Formatter {
-    pub(super) fn handle_newline_from(&mut self, source: LineBreakSource) {
-        let line = std::mem::take(&mut self.current_line);
-        self.lines.push(line);
-        self.at_line_start = true;
-        self.last_line_break = Some(source);
-    }
-
     pub(super) fn handle_user_newline(&mut self) {
-        self.handle_newline_from(LineBreakSource::User);
+        self.writer.handle_user_newline();
     }
 
     pub(super) fn handle_formatter_newline(&mut self) {
-        self.handle_newline_from(LineBreakSource::Formatter);
+        self.writer.handle_formatter_newline();
     }
 
     pub(super) fn add_indent(&mut self) {
-        for _ in 0..self.indent_level {
-            self.current_line.text.push_str(&self.indent_string);
-        }
+        self.writer.add_indent();
     }
 
     pub(super) fn handle_spacing_before(&mut self, current: SyntaxKind) {
         let context = spacing::SpacingContext {
-            prev_token: self.prev_token_kind,
+            prev_token: self.prev_token_kind(),
             current_token: current,
-            at_line_start: self.at_line_start,
+            at_line_start: self.at_line_start(),
         };
 
         if spacing::needs_space_before(&context) {
@@ -127,8 +118,8 @@ impl Formatter {
             if !self.ends_with_newline() {
                 self.handle_formatter_newline();
             }
-            self.lines.push(Line::new());
-            self.at_line_start = true;
+            self.writer.push_empty_line();
+            self.set_at_line_start(true);
         }
     }
 
@@ -139,7 +130,7 @@ impl Formatter {
         }
         // Add one more newline to create an empty line
         if !self.ends_with_double_newline() {
-            self.lines.push(Line::new());
+            self.writer.push_empty_line();
         }
     }
 
@@ -152,10 +143,10 @@ impl Formatter {
             }
             // Add empty lines
             for _ in 0..self.pending_empty_lines {
-                self.lines.push(Line::new());
+                self.writer.push_empty_line();
             }
             self.pending_empty_lines = 0;
-            self.at_line_start = true;
+            self.set_at_line_start(true);
         }
     }
 }

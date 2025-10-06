@@ -1,37 +1,12 @@
+mod delimited;
+mod writer;
+
 use crate::{
     comments::{CommentAnchor, CommentId, CommentOwner, CommentPlacement, CommentRegistry},
     PerlLanguage, PerlNode, SyntaxKind,
 };
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
-
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub(super) struct TokenSpan {
-    kind: SyntaxKind,
-    start_byte: usize,
-    end_byte: usize,
-}
-
-#[derive(Debug, Clone, Default)]
-pub(super) struct Line {
-    text: String,
-    tokens: Vec<TokenSpan>,
-}
-
-impl Line {
-    fn new() -> Self {
-        Self {
-            text: String::new(),
-            tokens: Vec::new(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum LineBreakSource {
-    User,
-    Formatter,
-}
+use writer::{LineBreakSource, Writer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DelimiterTightness {
@@ -139,16 +114,9 @@ impl FormatterOptions {
 }
 
 pub struct Formatter {
-    current_line: Line,
-    lines: Vec<Line>,
-    indent_level: usize,
-    indent_string: String,
-    prev_token_kind: Option<SyntaxKind>,
-    last_significant_token_kind: Option<SyntaxKind>,
-    last_line_break: Option<LineBreakSource>,
-    at_line_start: bool,
-    pending_empty_lines: usize, // Number of empty lines waiting to be output
-    in_multiline_context: bool, // Track when we're in structured multiline formatting
+    writer: Writer,
+    pending_empty_lines: usize,
+    in_multiline_context: bool,
     comment_registry: CommentRegistry,
     options: FormatterOptions,
 }
@@ -162,16 +130,9 @@ impl Formatter {
     #[must_use]
     pub fn with_options(comment_registry: CommentRegistry, options: FormatterOptions) -> Self {
         Self {
-            current_line: Line::new(),
-            lines: Vec::new(),
-            indent_level: 0,
-            indent_string: "    ".to_string(), // 4 spaces
-            prev_token_kind: None,
-            last_significant_token_kind: None,
-            last_line_break: None,
-            at_line_start: true,
             pending_empty_lines: 0,
             in_multiline_context: false,
+            writer: Writer::new(),
             comment_registry,
             options,
         }
@@ -179,68 +140,24 @@ impl Formatter {
 
     pub fn format(&mut self, node: &PerlNode) -> String {
         self.format_node(node);
-        self.lines.push(std::mem::take(&mut self.current_line));
-        std::mem::take(&mut self.lines)
-            .into_iter()
-            .map(|l| l.text)
-            .fold(String::new(), |mut acc, line| {
-                if !acc.is_empty() {
-                    acc.push('\n');
-                }
-                acc.push_str(&line);
-                acc
-            })
+        self.writer.finish()
     }
 
     pub(super) fn write(&mut self, token: &SyntaxToken<PerlLanguage>) {
-        self.write_str(token.text(), Some(token.kind()));
+        self.writer.write_token(token);
     }
 
     pub(super) fn write_str(&mut self, text: &str, kind: Option<SyntaxKind>) {
-        let mut is_first_part = true;
-        for part in text.split('\n') {
-            if is_first_part {
-                is_first_part = false;
-            } else {
-                self.handle_user_newline();
-            }
-
-            if !part.is_empty() {
-                // Only add indentation for content tokens like heredocs and strings
-                // when at line start and not for structural tokens
-                if self.at_line_start && kind.is_some_and(|k| k.is_content_token()) {
-                    self.add_indent();
-                }
-                let start = self.current_line.text.len();
-                self.current_line.text.push_str(part);
-                self.at_line_start = false;
-                if let Some(kind) = kind {
-                    let end = self.current_line.text.len();
-                    self.current_line.tokens.push(TokenSpan {
-                        kind,
-                        start_byte: start,
-                        end_byte: end,
-                    });
-                }
-            }
-        }
+        self.writer.write_str(text, kind);
     }
 
     pub(super) fn write_char(&mut self, ch: char) {
-        if ch == '\n' {
-            self.handle_formatter_newline();
-        } else {
-            self.current_line.text.push(ch);
-        }
+        self.writer.write_char(ch);
     }
 
     fn remember_token(&mut self, token: &SyntaxToken<PerlLanguage>) {
-        self.prev_token_kind = Some(token.kind());
-        self.update_last_significant_token(token);
-    }
-
-    fn update_last_significant_token(&mut self, token: &SyntaxToken<PerlLanguage>) {
         let kind = token.kind();
+        self.writer.set_prev_token_kind(Some(kind));
 
         if kind.is_trivia() {
             return;
@@ -253,32 +170,79 @@ impl Formatter {
                     Some(CommentPlacement::Trailing(_))
                     | Some(CommentPlacement::Dangling(_))
                     | None => {
-                        self.last_significant_token_kind = Some(kind);
+                        self.set_last_significant_token_kind(Some(kind));
                     }
                 }
             } else {
-                self.last_significant_token_kind = Some(kind);
+                self.set_last_significant_token_kind(Some(kind));
             }
         } else {
-            self.last_significant_token_kind = Some(kind);
+            self.set_last_significant_token_kind(Some(kind));
         }
     }
 
+    fn prev_token_kind(&self) -> Option<SyntaxKind> {
+        self.writer.prev_token_kind()
+    }
+
+    fn set_prev_token_kind(&mut self, kind: Option<SyntaxKind>) {
+        self.writer.set_prev_token_kind(kind);
+    }
+
+    fn last_significant_token_kind(&self) -> Option<SyntaxKind> {
+        self.writer.last_significant_token_kind()
+    }
+
+    fn set_last_significant_token_kind(&mut self, kind: Option<SyntaxKind>) {
+        self.writer.set_last_significant_token_kind(kind);
+    }
+
+    fn at_line_start(&self) -> bool {
+        self.writer.at_line_start()
+    }
+
+    fn set_at_line_start(&mut self, value: bool) {
+        self.writer.set_at_line_start(value);
+    }
+
+    fn increase_indent(&mut self) {
+        self.writer.increase_indent();
+    }
+
+    fn decrease_indent(&mut self) {
+        self.writer.decrease_indent();
+    }
+
+    fn indent_level(&self) -> usize {
+        self.writer.indent_level()
+    }
+
+    fn current_line_is_empty(&self) -> bool {
+        self.writer.current_line_is_empty()
+    }
+
+    fn current_line_ends_with_space(&self) -> bool {
+        self.writer.current_line_ends_with_space()
+    }
+
+    fn last_line_break(&self) -> Option<LineBreakSource> {
+        self.writer.last_line_break()
+    }
+
+    fn push_indent_string(&mut self) {
+        self.writer.push_indent_string();
+    }
+
     pub(super) fn is_output_empty(&self) -> bool {
-        self.lines.is_empty() && self.current_line.text.is_empty()
+        self.writer.is_output_empty()
     }
 
     pub(super) fn ends_with_newline(&self) -> bool {
-        self.current_line.text.is_empty()
+        self.writer.ends_with_newline()
     }
 
     pub(super) fn ends_with_double_newline(&self) -> bool {
-        self.current_line.text.is_empty()
-            && self
-                .lines
-                .last()
-                .map(|l| l.text.is_empty())
-                .unwrap_or(false)
+        self.writer.ends_with_double_newline()
     }
 
     fn node_has_leading_comment(&self, node: &PerlNode) -> bool {
@@ -467,7 +431,7 @@ impl Formatter {
         // Special handling after children are processed
         if node.kind().is_variable() {
             // This is the logic from format_variable
-            self.prev_token_kind = Some(node.kind());
+            self.set_prev_token_kind(Some(node.kind()));
         }
     }
 
@@ -570,304 +534,6 @@ impl Formatter {
         })
     }
 
-    fn format_simple_block(&mut self, node: &PerlNode) {
-        // Format a simple block on a single line: { expression }
-        // Always emit spaces around the braces to match inline block style
-
-        let mut has_content = false;
-
-        // First pass: check if the block has any content
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(_) => {
-                    has_content = true;
-                }
-                NodeOrToken::Token(token) => {
-                    match token.kind() {
-                        SyntaxKind::L_BRACE
-                        | SyntaxKind::R_BRACE
-                        | SyntaxKind::WHITESPACE
-                        | SyntaxKind::NEWLINE => {
-                            // These don't count as content
-                        }
-                        _ => {
-                            has_content = true;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Second pass: format with appropriate spacing
-        let brace_tightness = self
-            .options
-            .delimiter_tightness
-            .for_kind(SyntaxKind::L_BRACE);
-        let add_space_for_block = brace_tightness.should_add_space_for_simple_block();
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(child_node) => {
-                    self.format_node(&child_node);
-                }
-                NodeOrToken::Token(token) => {
-                    match token.kind() {
-                        SyntaxKind::L_BRACE => {
-                            self.handle_spacing_before(token.kind());
-                            if self.at_line_start {
-                                self.add_indent();
-                                self.at_line_start = false;
-                            }
-                            self.write(&token);
-                            if add_space_for_block {
-                                self.write_char(' ');
-                            }
-                            self.remember_token(&token);
-                        }
-                        SyntaxKind::R_BRACE => {
-                            if add_space_for_block
-                                && has_content
-                                && self.prev_token_kind != Some(SyntaxKind::L_BRACE)
-                                && !self.current_line.text.ends_with(' ')
-                            {
-                                self.write_char(' ');
-                            }
-                            self.write(&token);
-                            self.remember_token(&token);
-                        }
-                        SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE => {
-                            // Skip trivia in simple blocks
-                        }
-                        _ => {
-                            self.format_token(&token);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fn format_single_line_delimited_children(
-        &mut self,
-        node: &PerlNode,
-        opening: SyntaxKind,
-        closing: SyntaxKind,
-        skip_whitespace: bool,
-    ) {
-        use SyntaxKind::WHITESPACE;
-
-        let children: Vec<_> = node.children_with_tokens().collect();
-
-        let mut stack: Vec<usize> = Vec::new();
-        let mut pairs: Vec<(usize, usize)> = Vec::new();
-
-        for (index, child) in children.iter().enumerate() {
-            if let NodeOrToken::Token(token) = child {
-                match token.kind() {
-                    k if k == opening => stack.push(index),
-                    k if k == closing => {
-                        if let Some(open_index) = stack.pop() {
-                            pairs.push((open_index, index));
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        if pairs.is_empty() {
-            self.format_children(node, skip_whitespace);
-            return;
-        }
-
-        let mut open_spacing: Vec<Option<bool>> = vec![None; children.len()];
-        let mut close_spacing: Vec<Option<bool>> = vec![None; children.len()];
-
-        for (open_index, close_index) in &pairs {
-            if close_index <= open_index {
-                continue;
-            }
-
-            let mut significant_tokens = 0;
-            for child in &children[open_index + 1..*close_index] {
-                match child {
-                    NodeOrToken::Node(inner) => {
-                        for element in inner.descendants_with_tokens() {
-                            if let Some(token) = element.as_token() {
-                                if !token.kind().is_trivia() {
-                                    significant_tokens += 1;
-                                    if significant_tokens >= 2 {
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    NodeOrToken::Token(token) => {
-                        if !token.kind().is_trivia() {
-                            significant_tokens += 1;
-                        }
-                    }
-                }
-
-                if significant_tokens >= 2 {
-                    break;
-                }
-            }
-
-            let tightness = self.options.delimiter_tightness.for_kind(opening);
-            let add_interior_space = tightness.should_add_space(significant_tokens);
-            open_spacing[*open_index] = Some(add_interior_space);
-            close_spacing[*close_index] = Some(add_interior_space);
-        }
-
-        for (index, child) in children.into_iter().enumerate() {
-            match child {
-                NodeOrToken::Node(child_node) => self.format_node(&child_node),
-                NodeOrToken::Token(token) => {
-                    let kind = token.kind();
-
-                    if let Some(add_space) = open_spacing[index] {
-                        self.handle_spacing_before(kind);
-                        if self.at_line_start {
-                            self.add_indent();
-                            self.at_line_start = false;
-                        }
-                        self.write(&token);
-                        if add_space {
-                            self.write_char(' ');
-                        }
-                        self.prev_token_kind = Some(kind);
-                    } else if let Some(add_space) = close_spacing[index] {
-                        if add_space && !self.current_line.text.ends_with(' ') {
-                            if self.at_line_start {
-                                self.add_indent();
-                                self.at_line_start = false;
-                            }
-                            self.write_char(' ');
-                        }
-                        self.write(&token);
-                        self.prev_token_kind = Some(kind);
-                    } else if skip_whitespace && kind == WHITESPACE {
-                        continue;
-                    } else {
-                        self.format_token(&token);
-                    }
-                }
-            }
-        }
-    }
-
-    fn format_multiline_delimited(
-        &mut self,
-        node: &PerlNode,
-        open_delimiter: SyntaxKind,
-        close_delimiter: SyntaxKind,
-    ) {
-        self.format_multiline_delimited_iter(
-            node.children_with_tokens(),
-            open_delimiter,
-            close_delimiter,
-        );
-    }
-
-    fn format_multiline_delimited_iter(
-        &mut self,
-        iter: SyntaxElementChildren<PerlLanguage>,
-        open_delimiter: SyntaxKind,
-        close_delimiter: SyntaxKind,
-    ) {
-        let old_multiline_context = self.in_multiline_context;
-        self.in_multiline_context = true;
-        for child in iter {
-            match child {
-                NodeOrToken::Node(node) => {
-                    let kind = node.kind();
-
-                    match kind {
-                        SyntaxKind::EXPR_LIST => {
-                            // Special handling for expression lists inside delimiters
-                            self.format_expr_list_multiline_iter(node.children_with_tokens());
-                        }
-                        _ => self.format_node(&node),
-                    }
-                }
-                NodeOrToken::Token(token) => {
-                    let kind = token.kind();
-
-                    match kind {
-                        SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE => {
-                            // Skip trivia here - newlines handled in delimiter handlers
-                        }
-                        k if k == open_delimiter => {
-                            self.handle_spacing_before(kind);
-                            if self.at_line_start {
-                                self.add_indent();
-                                self.at_line_start = false;
-                            }
-                            self.handle_multiline_opening_delimiter(&token);
-                        }
-                        k if k == close_delimiter => {
-                            self.handle_multiline_closing_delimiter(&token);
-                        }
-                        _ => {
-                            // その他のトークンは通常通り処理
-                            self.format_token(&token);
-                        }
-                    }
-                }
-            }
-        }
-        self.in_multiline_context = old_multiline_context;
-    }
-
-    fn format_expr_list_multiline_iter(&mut self, iter: SyntaxElementChildren<PerlLanguage>) {
-        let old_multiline_context = self.in_multiline_context;
-        self.in_multiline_context = true;
-        for child in iter {
-            match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
-                NodeOrToken::Token(token) => {
-                    let kind = token.kind();
-
-                    match kind {
-                        SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE => {
-                            // Skip trivia here - newlines handled in the delimiter handlers
-                        }
-                        SyntaxKind::COMMA => {
-                            self.format_token(&token);
-                            self.handle_formatter_newline();
-                        }
-                        _ => {
-                            // その他のトークンは通常通り処理
-                            self.format_token(&token);
-                        }
-                    }
-                }
-            }
-        }
-        self.in_multiline_context = old_multiline_context;
-    }
-
-    fn handle_multiline_opening_delimiter(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
-        self.write(token);
-        self.indent_level += 1;
-        self.handle_formatter_newline();
-        self.remember_token(token);
-    }
-
-    fn handle_multiline_closing_delimiter(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
-        if self.indent_level > 0 {
-            self.indent_level -= 1;
-        }
-        if !self.at_line_start || !self.current_line.text.is_empty() {
-            self.handle_formatter_newline();
-        }
-        self.add_indent();
-        self.write(token);
-        self.at_line_start = false;
-        self.remember_token(token);
-    }
-
     fn should_use_parenthesized_formatter(&self, node: &PerlNode) -> bool {
         if !self.node_contains_parentheses(node) {
             return false;
@@ -956,15 +622,15 @@ impl Formatter {
     }
 
     fn needs_continuation_indent(&self, current: SyntaxKind) -> bool {
-        if !self.at_line_start {
+        if !self.at_line_start() {
             return false;
         }
 
-        if self.last_line_break != Some(LineBreakSource::User) {
+        if self.last_line_break() != Some(LineBreakSource::User) {
             return false;
         }
 
-        let Some(prev_kind) = self.last_significant_token_kind else {
+        let Some(prev_kind) = self.last_significant_token_kind() else {
             return false;
         };
 
@@ -1016,7 +682,7 @@ impl Formatter {
         match kind {
             SyntaxKind::WHITESPACE => {}
             SyntaxKind::NEWLINE => {
-                if self.at_line_start && self.current_line.text.is_empty() {
+                if self.at_line_start() && self.current_line_is_empty() {
                     if self.pending_empty_lines == 0 {
                         self.pending_empty_lines = 1;
                     }
@@ -1032,9 +698,9 @@ impl Formatter {
                 }
 
                 // コメントは保持するが、適切な位置に配置
-                if self.at_line_start {
+                if self.at_line_start() {
                     self.add_indent();
-                    self.at_line_start = false;
+                    self.set_at_line_start(false);
                 } else {
                     // This is an inline comment - add a space before it
                     self.write_char(' ');
@@ -1049,13 +715,13 @@ impl Formatter {
             }
             SyntaxKind::R_BRACE => {
                 // 閉じブレースは特別処理：先にインデントを下げる
-                if self.indent_level > 0 {
-                    self.indent_level -= 1;
+                if self.indent_level() > 0 {
+                    self.decrease_indent();
                 }
 
-                if self.at_line_start {
+                if self.at_line_start() {
                     self.add_indent();
-                    self.at_line_start = false;
+                    self.set_at_line_start(false);
                 }
 
                 self.write(token);
@@ -1086,15 +752,15 @@ impl Formatter {
                 // 通常のトークンの処理
                 self.handle_spacing_before(kind);
 
-                if self.at_line_start && !kind.is_trivia() {
+                if self.at_line_start() && !kind.is_trivia() {
                     self.add_indent();
                     if self.needs_continuation_indent(kind) {
-                        self.current_line.text.push_str(&self.indent_string);
+                        self.push_indent_string();
                     }
-                    self.at_line_start = false;
+                    self.set_at_line_start(false);
                 }
 
-                let prev_token_kind_before = self.prev_token_kind;
+                let prev_token_kind_before = self.prev_token_kind();
                 self.write(token);
                 if matches!(kind, SyntaxKind::UNARY_PLUS | SyntaxKind::UNARY_MINUS)
                     && matches!(
@@ -1131,105 +797,17 @@ impl Formatter {
                 self.handle_formatter_newline();
             }
             SyntaxKind::L_BRACE => {
-                self.indent_level += 1;
+                self.increase_indent();
                 self.handle_formatter_newline();
             }
             _ => {}
         }
     }
 
-    fn format_block(&mut self, node: &PerlNode) {
-        if self.is_simple_block(node) {
-            self.format_simple_block(node);
-            return;
-        }
-
-        // Use a peekable iterator to avoid collecting all children into a Vec,
-        // which improves performance and reduces memory allocation.
-        let mut children = node.children_with_tokens().peekable();
-        let mut prev_node_kind: Option<SyntaxKind> = None;
-
-        while let Some(child) = children.next() {
-            match child {
-                NodeOrToken::Node(child_node) => {
-                    let current_kind = child_node.kind();
-
-                    // Check if we need to add empty line after use/no block
-                    if let Some(prev_kind) = prev_node_kind {
-                        if (prev_kind == SyntaxKind::USE_STMT || prev_kind == SyntaxKind::NO_STMT)
-                            && (current_kind != SyntaxKind::USE_STMT
-                                && current_kind != SyntaxKind::NO_STMT)
-                        {
-                            // We're transitioning from USE_STMT/NO_STMT to a different node type
-                            // Check if there are already empty lines from source or pending
-                            let has_existing_empty_line =
-                                self.pending_empty_lines > 0 || self.ends_with_double_newline();
-
-                            if !has_existing_empty_line {
-                                // Add empty line after use/no block
-                                if !self.is_output_empty() {
-                                    if !self.ends_with_newline() {
-                                        self.handle_formatter_newline();
-                                    }
-                                    self.lines.push(Line::new());
-                                }
-                            }
-                        }
-                    }
-
-                    // Output pending empty lines before processing child nodes
-                    self.output_pending_empty_lines();
-                    self.format_node(&child_node);
-
-                    prev_node_kind = Some(current_kind);
-                }
-                NodeOrToken::Token(token) => match token.kind() {
-                    SyntaxKind::NEWLINE => {
-                        let mut saw_extra_newline = false;
-
-                        while let Some(NodeOrToken::Token(peeked)) = children.peek() {
-                            match peeked.kind() {
-                                SyntaxKind::NEWLINE => {
-                                    children.next();
-                                    saw_extra_newline = true;
-                                }
-                                SyntaxKind::WHITESPACE => {
-                                    children.next();
-                                }
-                                _ => break,
-                            }
-                        }
-
-                        if !self.at_line_start || !self.current_line.text.is_empty() {
-                            self.handle_user_newline();
-                        }
-
-                        if saw_extra_newline || self.prev_token_kind == Some(SyntaxKind::COMMENT) {
-                            self.pending_empty_lines = 1;
-                        }
-                    }
-                    SyntaxKind::WHITESPACE => {
-                        while let Some(NodeOrToken::Token(peeked)) = children.peek() {
-                            if peeked.kind() == SyntaxKind::WHITESPACE {
-                                children.next();
-                            } else {
-                                break;
-                            }
-                        }
-                    }
-                    _ => {
-                        self.output_pending_empty_lines();
-                        self.format_token(&token);
-                    }
-                },
-            }
-        }
-    }
-
     fn format_label(&mut self, node: &PerlNode) {
-        if self.at_line_start {
+        if self.at_line_start() {
             self.add_indent();
-            self.at_line_start = false;
+            self.set_at_line_start(false);
         }
 
         let mut last_token_kind = None;
@@ -1242,70 +820,10 @@ impl Formatter {
             }
         }
 
-        self.prev_token_kind = last_token_kind;
+        self.set_prev_token_kind(last_token_kind);
         if let Some(kind) = last_token_kind {
             if !kind.is_trivia() {
-                self.last_significant_token_kind = Some(kind);
-            }
-        }
-    }
-
-    fn format_labeled_stmt(&mut self, node: &PerlNode) {
-        let mut children = node.children_with_tokens().peekable();
-
-        if let Some(child) = children.next() {
-            match child {
-                NodeOrToken::Node(n) => self.format_node(&n),
-                NodeOrToken::Token(t) => self.format_token(&t),
-            }
-        }
-
-        if let Some(child) = children.peek() {
-            match child {
-                NodeOrToken::Token(t) if t.kind() == SyntaxKind::NEWLINE => {
-                    self.handle_user_newline();
-                    children.next();
-                }
-                NodeOrToken::Token(t) if t.kind() == SyntaxKind::WHITESPACE => {
-                    self.write_char(' ');
-                    self.at_line_start = false;
-                    children.next();
-                }
-                NodeOrToken::Token(_) | NodeOrToken::Node(_) => {
-                    self.write_char(' ');
-                    self.at_line_start = false;
-                }
-            }
-        }
-        self.prev_token_kind = None;
-
-        for child in children {
-            match child {
-                NodeOrToken::Node(n) => self.format_node(&n),
-                NodeOrToken::Token(t) => self.format_token(&t),
-            }
-        }
-    }
-
-    fn format_for_stmt(&mut self, node: &PerlNode) {
-        // Handle FOR statement with special semicolon treatment
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(child_node) => {
-                    self.format_node(&child_node);
-                }
-                NodeOrToken::Token(token) => {
-                    match token.kind() {
-                        SyntaxKind::SEMICOLON => {
-                            // In FOR statements, semicolons are followed by space, not newline
-                            self.write(&token);
-                            self.write_char(' ');
-                        }
-                        _ => {
-                            self.format_token(&token);
-                        }
-                    }
-                }
+                self.set_last_significant_token_kind(Some(kind));
             }
         }
     }
