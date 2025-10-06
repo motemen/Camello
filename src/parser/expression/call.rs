@@ -243,8 +243,9 @@ impl Parser<'_> {
             .peek_non_trivia_token_with_context(LexContext::AmbiguousValueLookahead)
             .map(|(kind, _)| kind);
 
-        if self.looks_like_io_operator() {
-            next_kind = Some(SyntaxKind::ANGLE_BRACKET_EXPR);
+        // Check for glob/IO operator (now handled by lexer as GLOB_CONTENT)
+        if next_value_token.is_some_and(|(kind, _)| kind == SyntaxKind::GLOB_CONTENT) {
+            next_kind = Some(SyntaxKind::GLOB_CONTENT);
         }
 
         if next_value_token.is_some_and(|(kind, _)| kind == SyntaxKind::HEREDOC_START) {
@@ -469,7 +470,7 @@ impl Parser<'_> {
         }
 
         match next_token {
-            _ if self.looks_like_io_operator_at_offset(1) => true,
+            Some((SyntaxKind::GLOB_CONTENT, _)) => true,
             // If followed by parentheses or method/package separators, it's an expression
             Some((T!['('] | T![::] | T![->], _)) => false,
             // If followed by a binary operator, it's part of an expression, not a filehandle.
@@ -501,7 +502,11 @@ impl Parser<'_> {
         let token_after_var =
             self.peek_nth_non_trivia_token_with_context(LexContext::AmbiguousValueLookahead, 2);
 
-        if self.looks_like_io_operator_at_offset(2) {
+        // Check if followed by glob/IO operator
+        if self
+            .peek_nth_non_trivia_token_with_context(LexContext::Value, 2)
+            .is_some_and(|(kind, _)| kind == SyntaxKind::GLOB_CONTENT)
+        {
             return true;
         }
 
@@ -576,8 +581,8 @@ impl Parser<'_> {
                                 return Some(SyntaxKind::REGEX_LITERAL);
                             }
                         }
-                        if next_kind == Some(SyntaxKind::ANGLE_BRACKET_EXPR) {
-                            return Some(SyntaxKind::ANGLE_BRACKET_EXPR);
+                        if next_kind == Some(SyntaxKind::GLOB_CONTENT) {
+                            return Some(SyntaxKind::GLOB_CONTENT);
                         }
                     }
                     PrototypeArg::Block | PrototypeArg::Filehandle => {}

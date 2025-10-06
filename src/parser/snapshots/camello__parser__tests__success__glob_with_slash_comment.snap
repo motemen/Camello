@@ -1,0 +1,10 @@
+---
+source: src/parser/mod.rs
+expression: render_success_tree(&syntax)
+---
+ROOT@0..8
+  STMT@0..8
+    ANGLE_BRACKET_EXPR@0..3
+      GLOB_CONTENT@0..3 "</>"
+    WHITESPACE@3..4 " "
+    COMMENT@4..8 "# /\n"

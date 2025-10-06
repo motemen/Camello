@@ -127,6 +127,9 @@ pub enum Token {
     // RegexLiteral - handled manually via context-sensitive disambiguation
     RegexLiteral,
 
+    // GlobContent - content inside angle brackets <...>
+    GlobContent,
+
     // 記号
     #[token("{")]
     LBrace,
@@ -306,6 +309,7 @@ impl Token {
             Token::Version => SyntaxKind::VERSION,
             Token::BareVersion => SyntaxKind::BARE_VERSION,
             Token::RegexLiteral => SyntaxKind::REGEX_LITERAL,
+            Token::GlobContent => SyntaxKind::GLOB_CONTENT,
             Token::EndKw => SyntaxKind::END_KW,
             Token::DataKw => SyntaxKind::DATA_KW,
             Token::PodCommand => SyntaxKind::POD_CONTENT, // Not used anymore

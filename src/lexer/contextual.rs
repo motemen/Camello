@@ -1,28 +1,34 @@
-use super::{HeredocMarker, Lexer};
+use super::{HeredocMarker, LexContext, Lexer};
 use crate::SyntaxKind;
 
 impl<'a> Lexer<'a> {
     /// Handle special tokens when in Value context
     pub(super) fn try_handle_expecting_value_context(&mut self) -> Option<(SyntaxKind, &'a str)> {
-        // 1) Heredoc start
+        // 1) Glob/IO operator <...> (check before heredoc to handle <<> correctly)
+        if let Some(result) = self.try_consume_glob_content() {
+            let (k, t) = result;
+            self.update_line_position(t);
+            return Some((k, t));
+        }
+        // 2) Heredoc start
         if let Some(result) = self.try_consume_heredoc_start() {
             let (k, t) = result;
             self.update_line_position(t);
             return Some((k, t));
         }
-        // 2) File test operator like -f
+        // 3) File test operator like -f
         if let Some(result) = self.try_consume_file_test_op() {
             let (k, t) = result;
             self.update_line_position(t);
             return Some((k, t));
         }
-        // 3) Regex literal /.../
+        // 4) Regex literal /.../
         if let Some(result) = self.try_consume_regex_literal() {
             let (k, t) = result;
             self.update_line_position(t);
             return Some((k, t));
         }
-        // 4) Backtick command substitution `...`
+        // 5) Backtick command substitution `...`
         if let Some(result) = self.try_consume_backtick_literal() {
             let (k, t) = result;
             self.update_line_position(t);
@@ -180,6 +186,106 @@ impl<'a> Lexer<'a> {
         }
 
         None
+    }
+
+    fn try_consume_glob_content(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        let remainder = self.logos_lexer.remainder();
+
+        if !remainder.starts_with('<') {
+            return None;
+        }
+
+        // Check for heredoc patterns: <<EOF, <<"EOF", <<'EOF', <<~EOF
+        // If we see << followed by a non-< character (excluding whitespace), it's likely a heredoc
+        if remainder.starts_with("<<") {
+            let after_shift = &remainder[2..];
+            // Skip optional whitespace/tilde for heredoc
+            let after_ws = after_shift.trim_start_matches(&[' ', '\t', '~'][..]);
+
+            if !after_ws.is_empty() {
+                let first_char = after_ws.chars().next().unwrap();
+                // If it's not another '<' or '>', it's likely a heredoc
+                if first_char != '<' && first_char != '>' {
+                    return None; // Let heredoc handler deal with it
+                }
+            }
+        }
+
+        let mut depth = 0;
+        let mut closing_gt_pos: Option<usize> = None;
+
+        for (i, ch) in remainder.char_indices() {
+            match ch {
+                '<' => {
+                    depth += 1;
+                }
+                '>' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        closing_gt_pos = Some(i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if let Some(pos) = closing_gt_pos {
+            // Include everything from < to > (inclusive)
+            let end_pos = pos + 1;
+
+            // Check what comes after the closing >
+            // If it's followed by something that can start an expression,
+            // this is a comparison chain, not a glob
+            let after_gt = &remainder[end_pos..];
+            if !after_gt.is_empty() {
+                // Clone the entire lexer and advance past the glob
+                let mut cloned = self.clone();
+                cloned.logos_lexer.bump(end_pos);
+
+                // Skip whitespace/newlines and get the next token
+                loop {
+                    if let Some((kind, _)) = cloned.next_token_with_context(LexContext::Operator) {
+                        if kind.is_trivia() {
+                            continue;
+                        }
+                        // Check if this token can start an expression
+                        if Self::can_start_expression_token(kind) {
+                            // This looks like a comparison chain like: foo < $h > 1_000
+                            return None;
+                        }
+                        break;
+                    } else {
+                        break;
+                    }
+                }
+            }
+
+            let text = &remainder[..end_pos];
+            self.logos_lexer.bump(end_pos);
+            return Some((SyntaxKind::GLOB_CONTENT, text));
+        }
+
+        None
+    }
+
+    /// Check if a token kind can start an expression
+    /// This is a subset of the parser's can_start_expression() method
+    fn can_start_expression_token(kind: SyntaxKind) -> bool {
+        matches!(
+            kind,
+            SyntaxKind::NUMBER
+                | SyntaxKind::STRING
+                | SyntaxKind::IDENT
+                | SyntaxKind::SCALAR_SIGIL
+                | SyntaxKind::ARRAY_SIGIL
+                | SyntaxKind::HASH_SIGIL
+                | SyntaxKind::L_PAREN
+                | SyntaxKind::L_BRACKET
+                | SyntaxKind::L_BRACE
+                | SyntaxKind::PLUS
+                | SyntaxKind::MINUS
+        )
     }
 
     fn try_consume_backtick_literal(&mut self) -> Option<(SyntaxKind, &'a str)> {

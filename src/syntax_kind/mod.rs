@@ -39,6 +39,8 @@ pub enum SyntaxKind {
     VERSION,         // v1.23, v5.008_001
     BARE_VERSION,    // 5.24.1, 5.024_001 (contextually determined)
     REGEX_LITERAL,   // /pattern/flags
+    /// Content inside glob/IO operators: <...>
+    GLOB_CONTENT,
 
     // Keywords
     SUB_KW,

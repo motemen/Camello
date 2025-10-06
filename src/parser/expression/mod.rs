@@ -230,56 +230,6 @@ impl Parser<'_> {
         true
     }
 
-    fn parse_io_expr(&mut self) {
-        self.builder
-            .start_node(SyntaxKind::ANGLE_BRACKET_EXPR.into());
-
-        // Handle initial token: < or << (which might be HEREDOC_START in value context)
-        let initial_kind = self.current_kind_value();
-        let mut depth = match initial_kind {
-            Some(SyntaxKind::LT) => 1,
-            Some(SyntaxKind::SHIFT_LEFT) => 2, // << counts as two < tokens
-            Some(SyntaxKind::HEREDOC_START) => 2, // << in value context
-            _ => unreachable!("parse_io_expr called with an unexpected token"),
-        };
-
-        self.bump_value(); // Consume < or << or HEREDOC_START
-        self.skip_whitespace_and_newlines();
-
-        // Parse content with nesting support for < > and << >>
-        while depth > 0 && !self.at_end() {
-            if self.current_kind_value().is_none() {
-                break;
-            }
-
-            match self.current_kind_value() {
-                Some(SyntaxKind::LT) => {
-                    depth += 1;
-                }
-                Some(SyntaxKind::SHIFT_LEFT) => {
-                    depth += 2; // << adds 2 to depth
-                }
-                Some(SyntaxKind::GT) => {
-                    depth -= 1;
-                }
-                Some(SyntaxKind::SHIFT_RIGHT) => {
-                    depth -= 2; // >> subtracts 2 from depth
-                }
-                _ => {}
-            }
-
-            self.bump_value();
-            self.skip_whitespace_and_newlines();
-        }
-
-        if depth > 0 {
-            self.error("Expected '>' to close I/O operator");
-        }
-
-        self.builder.finish_node();
-        self.skip_whitespace_and_newlines();
-    }
-
     fn primary_expr(&mut self) -> PostfixSubject {
         self.skip_whitespace_and_newlines();
 
@@ -309,23 +259,13 @@ impl Parser<'_> {
                 self.builder.finish_node();
                 self.skip_whitespace_and_newlines();
             }
-            SyntaxKind::ANGLE_BRACKET_EXPR => {
+            SyntaxKind::GLOB_CONTENT => {
                 self.builder
                     .start_node(SyntaxKind::ANGLE_BRACKET_EXPR.into());
-                // Consume I/O expression as a value
+                // Consume glob/IO expression as a value
                 self.bump_value();
                 self.builder.finish_node();
                 self.skip_whitespace_and_newlines();
-            }
-            SyntaxKind::LT if self.looks_like_io_operator() => {
-                self.parse_io_expr();
-            }
-            SyntaxKind::SHIFT_LEFT if self.looks_like_io_operator() => {
-                self.parse_io_expr();
-            }
-            SyntaxKind::HEREDOC_START if self.looks_like_io_operator() => {
-                // In value context, << might be tokenized as HEREDOC_START, but could be a glob
-                self.parse_io_expr();
             }
             SyntaxKind::HEREDOC_START => {
                 self.bump_value();

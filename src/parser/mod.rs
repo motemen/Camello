@@ -370,101 +370,9 @@ impl<'a> Parser<'a> {
             .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::FAT_COMMA)
     }
 
-    fn looks_like_io_operator(&self) -> bool {
-        self.looks_like_io_operator_at_offset(0)
-    }
-
-    fn looks_like_io_operator_at_offset(&self, offset: usize) -> bool {
-        let mut cloned_lexer = self.lexer.clone();
-
-        // Helper to get next non-trivia token from the cloned lexer
-        // Note: We use Operator context to avoid <<  being treated as HEREDOC_START
-        let mut next_token = |ctx: LexContext| -> Option<(SyntaxKind, &'a str)> {
-            loop {
-                match cloned_lexer.next_token_with_context(ctx) {
-                    Some((k, _)) if k.is_trivia() => continue,
-                    Some(token) => return Some(token),
-                    None => return None,
-                }
-            }
-        };
-
-        // Skip `offset` non-trivia tokens (using Operator context to get raw tokens)
-        for _ in 0..offset {
-            if next_token(LexContext::Operator).is_none() {
-                return false;
-            }
-        }
-
-        // Get the first token and set initial depth based on whether it's < or <<
-        // Use Operator context to get SHIFT_LEFT instead of HEREDOC_START
-        let Some(initial_token) = next_token(LexContext::Operator) else {
-            return false;
-        };
-        let mut depth = match initial_token.0 {
-            SyntaxKind::LT => 1,
-            SyntaxKind::SHIFT_LEFT => 2, // << counts as two < tokens
-            _ => return false,
-        };
-
-        // Find the matching `>` by tracking nesting depth
-        // Continue using Operator context to get raw << and >> tokens
-        while let Some((next_kind, _)) = next_token(LexContext::Operator) {
-            match next_kind {
-                SyntaxKind::LT => {
-                    depth += 1;
-                }
-                SyntaxKind::SHIFT_LEFT => {
-                    depth += 2; // << adds 2 to depth
-                }
-                SyntaxKind::GT => {
-                    depth -= 1;
-                    if depth == 0 {
-                        // Found matching >. Check what follows.
-                        if let Some((after_gt, _)) = next_token(LexContext::Operator) {
-                            // If followed by a token that can start an expression, this is a comparison chain
-                            // like: foo < $h > 1_000 or foo < h > bar
-                            if Self::can_start_expression(after_gt) {
-                                return false;
-                            }
-                            // Otherwise it's likely a glob
-                            return true;
-                        }
-                        // No token after >, assume it's a glob
-                        return true;
-                    }
-                }
-                SyntaxKind::SHIFT_RIGHT => {
-                    depth -= 2; // >> subtracts 2 from depth
-                    if depth <= 0 {
-                        // Found matching > or >>. Check what follows.
-                        if let Some((after_gt, _)) = next_token(LexContext::Operator) {
-                            // If followed by a token that can start an expression, this is a comparison chain
-                            if Self::can_start_expression(after_gt) {
-                                return false;
-                            }
-                            // Otherwise it's likely a glob
-                            return true;
-                        }
-                        // No token after >, assume it's a glob
-                        return true;
-                    }
-                }
-                // Don't check for terminators - allow them inside globs
-                // The user wants <<>;> to work, which has ; inside
-                _ => {}
-            }
-        }
-
-        false
-    }
-
     fn is_at_start_of_expression(&self) -> bool {
         self.current_kind_value().is_some_and(|kind| {
             Self::can_start_expression(kind)
-                || (kind == SyntaxKind::LT && self.looks_like_io_operator())
-                || (kind == SyntaxKind::SHIFT_LEFT && self.looks_like_io_operator())
-                || (kind == SyntaxKind::HEREDOC_START && self.looks_like_io_operator())  // <<  in value context might be a glob
                 || (kind.is_keyword() && self.is_followed_by_fat_comma(0))
         })
     }
@@ -477,7 +385,7 @@ impl<'a> Parser<'a> {
                 | SyntaxKind::BACKTICK_STRING
                 | SyntaxKind::REGEX_LITERAL
                 | SyntaxKind::SLASH
-                | SyntaxKind::ANGLE_BRACKET_EXPR
+                | SyntaxKind::GLOB_CONTENT
                 | SyntaxKind::HEREDOC_START
                 | SyntaxKind::IDENT
                 | SyntaxKind::L_PAREN
