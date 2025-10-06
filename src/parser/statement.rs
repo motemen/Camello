@@ -412,21 +412,7 @@ impl Parser<'_> {
 
         // Option: import list (e.g., qw()) or comma-separated expressions (x => 1, y => 2)
         if self.is_at_start_of_expression() {
-            // Parse first expression
-            self.expression();
-
-            // Handle additional comma-separated expressions
-            while self.at(SyntaxKind::COMMA) {
-                self.bump(); // consume comma
-                self.skip_whitespace_and_newlines();
-
-                if self.is_at_start_of_expression() {
-                    self.expression();
-                } else {
-                    // Allow trailing comma
-                    break;
-                }
-            }
+            self.expression_list();
         }
 
         // Check if semicolon is required
