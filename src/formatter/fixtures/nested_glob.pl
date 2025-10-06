@@ -1,0 +1,6 @@
+# Test nested angle brackets in glob/IO operators
+
+# These should parse as glob (IO) operators with nesting
+my $x = <<>;>;
+my $y = < < file.txt > >;
+warn <<>;>;

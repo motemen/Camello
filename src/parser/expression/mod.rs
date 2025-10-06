@@ -233,10 +233,19 @@ impl Parser<'_> {
     fn parse_io_expr(&mut self) {
         self.builder.start_node(SyntaxKind::IO_EXPR.into());
 
-        self.bump_value(); // <
+        // Handle initial token: < or << (which might be HEREDOC_START in value context)
+        let initial_kind = self.current_kind_value();
+        let mut depth = match initial_kind {
+            Some(SyntaxKind::LT) => 1,
+            Some(SyntaxKind::SHIFT_LEFT) => 2, // << counts as two < tokens
+            Some(SyntaxKind::HEREDOC_START) => 2, // << in value context
+            _ => 1,                            // fallback, shouldn't happen
+        };
+
+        self.bump_value(); // Consume < or << or HEREDOC_START
         self.skip_whitespace_and_newlines();
 
-        let mut depth = 1;
+        // Parse content with nesting support for < > and << >>
         while depth > 0 && !self.at_end() {
             if self.current_kind_value().is_none() {
                 break;
@@ -246,8 +255,14 @@ impl Parser<'_> {
                 Some(SyntaxKind::LT) => {
                     depth += 1;
                 }
+                Some(SyntaxKind::SHIFT_LEFT) => {
+                    depth += 2; // << adds 2 to depth
+                }
                 Some(SyntaxKind::GT) => {
                     depth -= 1;
+                }
+                Some(SyntaxKind::SHIFT_RIGHT) => {
+                    depth -= 2; // >> subtracts 2 from depth
                 }
                 _ => {}
             }
@@ -301,6 +316,13 @@ impl Parser<'_> {
                 self.skip_whitespace_and_newlines();
             }
             SyntaxKind::LT if self.looks_like_io_operator() => {
+                self.parse_io_expr();
+            }
+            SyntaxKind::SHIFT_LEFT if self.looks_like_io_operator() => {
+                self.parse_io_expr();
+            }
+            SyntaxKind::HEREDOC_START if self.looks_like_io_operator() => {
+                // In value context, << might be tokenized as HEREDOC_START, but could be a glob
                 self.parse_io_expr();
             }
             SyntaxKind::HEREDOC_START => {

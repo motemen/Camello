@@ -378,6 +378,7 @@ impl<'a> Parser<'a> {
         let mut cloned_lexer = self.lexer.clone();
 
         // Helper to get next non-trivia token from the cloned lexer
+        // Note: We use Operator context to avoid <<  being treated as HEREDOC_START
         let mut next_token = |ctx: LexContext| -> Option<(SyntaxKind, &'a str)> {
             loop {
                 match cloned_lexer.next_token_with_context(ctx) {
@@ -388,24 +389,33 @@ impl<'a> Parser<'a> {
             }
         };
 
-        // Skip `offset` non-trivia tokens
+        // Skip `offset` non-trivia tokens (using Operator context to get raw tokens)
         for _ in 0..offset {
-            if next_token(LexContext::Value).is_none() {
+            if next_token(LexContext::Operator).is_none() {
                 return false;
             }
         }
 
-        // Check if the current token is `<`
-        if next_token(LexContext::Value).map(|(k, _)| k) != Some(SyntaxKind::LT) {
+        // Get the first token and set initial depth based on whether it's < or <<
+        // Use Operator context to get SHIFT_LEFT instead of HEREDOC_START
+        let Some(initial_token) = next_token(LexContext::Operator) else {
             return false;
-        }
+        };
+        let mut depth = match initial_token.0 {
+            SyntaxKind::LT => 1,
+            SyntaxKind::SHIFT_LEFT => 2, // << counts as two < tokens
+            _ => return false,
+        };
 
-        // Find the matching `>`
-        let mut depth = 1;
-        while let Some((next_kind, _)) = next_token(LexContext::Value) {
+        // Find the matching `>` by tracking nesting depth
+        // Continue using Operator context to get raw << and >> tokens
+        while let Some((next_kind, _)) = next_token(LexContext::Operator) {
             match next_kind {
                 SyntaxKind::LT => {
                     depth += 1;
+                }
+                SyntaxKind::SHIFT_LEFT => {
+                    depth += 2; // << adds 2 to depth
                 }
                 SyntaxKind::GT => {
                     depth -= 1;
@@ -424,11 +434,24 @@ impl<'a> Parser<'a> {
                         return true;
                     }
                 }
-                // Statement/expression terminators mean we won't find a matching >
-                SyntaxKind::SEMICOLON
-                | SyntaxKind::R_PAREN
-                | SyntaxKind::R_BRACE
-                | SyntaxKind::R_BRACKET => return false,
+                SyntaxKind::SHIFT_RIGHT => {
+                    depth -= 2; // >> subtracts 2 from depth
+                    if depth <= 0 {
+                        // Found matching > or >>. Check what follows.
+                        if let Some((after_gt, _)) = next_token(LexContext::Operator) {
+                            // If followed by a token that can start an expression, this is a comparison chain
+                            if Self::can_start_expression(after_gt) {
+                                return false;
+                            }
+                            // Otherwise it's likely a glob
+                            return true;
+                        }
+                        // No token after >, assume it's a glob
+                        return true;
+                    }
+                }
+                // Don't check for terminators - allow them inside globs
+                // The user wants <<>;> to work, which has ; inside
                 _ => {}
             }
         }
@@ -440,6 +463,8 @@ impl<'a> Parser<'a> {
         self.current_kind_value().is_some_and(|kind| {
             Self::can_start_expression(kind)
                 || (kind == SyntaxKind::LT && self.looks_like_io_operator())
+                || (kind == SyntaxKind::SHIFT_LEFT && self.looks_like_io_operator())
+                || (kind == SyntaxKind::HEREDOC_START && self.looks_like_io_operator())  // <<  in value context might be a glob
                 || (kind.is_keyword() && self.is_followed_by_fat_comma(0))
         })
     }
