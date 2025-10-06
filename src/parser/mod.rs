@@ -477,7 +477,7 @@ impl<'a> Parser<'a> {
                 | SyntaxKind::BACKTICK_STRING
                 | SyntaxKind::REGEX_LITERAL
                 | SyntaxKind::SLASH
-                | SyntaxKind::IO_EXPR
+                | SyntaxKind::ANGLE_BRACKET_EXPR
                 | SyntaxKind::HEREDOC_START
                 | SyntaxKind::IDENT
                 | SyntaxKind::L_PAREN

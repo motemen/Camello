@@ -231,7 +231,8 @@ impl Parser<'_> {
     }
 
     fn parse_io_expr(&mut self) {
-        self.builder.start_node(SyntaxKind::IO_EXPR.into());
+        self.builder
+            .start_node(SyntaxKind::ANGLE_BRACKET_EXPR.into());
 
         // Handle initial token: < or << (which might be HEREDOC_START in value context)
         let initial_kind = self.current_kind_value();
@@ -308,8 +309,9 @@ impl Parser<'_> {
                 self.builder.finish_node();
                 self.skip_whitespace_and_newlines();
             }
-            SyntaxKind::IO_EXPR => {
-                self.builder.start_node(SyntaxKind::IO_EXPR.into());
+            SyntaxKind::ANGLE_BRACKET_EXPR => {
+                self.builder
+                    .start_node(SyntaxKind::ANGLE_BRACKET_EXPR.into());
                 // Consume I/O expression as a value
                 self.bump_value();
                 self.builder.finish_node();

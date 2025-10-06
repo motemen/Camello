@@ -194,7 +194,7 @@ impl SyntaxKind {
                 | SyntaxKind::VERSION
                 | SyntaxKind::BARE_VERSION
                 | SyntaxKind::REGEX_LITERAL
-                | SyntaxKind::IO_EXPR
+                | SyntaxKind::ANGLE_BRACKET_EXPR
                 | SyntaxKind::LITERAL_STRING
                 | SyntaxKind::INTERPOLATED_STRING
                 | SyntaxKind::REGEX_PATTERN

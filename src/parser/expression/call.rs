@@ -244,7 +244,7 @@ impl Parser<'_> {
             .map(|(kind, _)| kind);
 
         if self.looks_like_io_operator() {
-            next_kind = Some(SyntaxKind::IO_EXPR);
+            next_kind = Some(SyntaxKind::ANGLE_BRACKET_EXPR);
         }
 
         if next_value_token.is_some_and(|(kind, _)| kind == SyntaxKind::HEREDOC_START) {
@@ -576,8 +576,8 @@ impl Parser<'_> {
                                 return Some(SyntaxKind::REGEX_LITERAL);
                             }
                         }
-                        if next_kind == Some(SyntaxKind::IO_EXPR) {
-                            return Some(SyntaxKind::IO_EXPR);
+                        if next_kind == Some(SyntaxKind::ANGLE_BRACKET_EXPR) {
+                            return Some(SyntaxKind::ANGLE_BRACKET_EXPR);
                         }
                     }
                     PrototypeArg::Block | PrototypeArg::Filehandle => {}

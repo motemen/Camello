@@ -383,7 +383,7 @@ impl Formatter {
                 return;
             }
 
-            SyntaxKind::IO_EXPR => {
+            SyntaxKind::ANGLE_BRACKET_EXPR => {
                 self.format_io_expr(node);
                 return;
             }

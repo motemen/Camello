@@ -277,7 +277,7 @@ pub enum SyntaxKind {
     REGEX_EXPR,   // Regex expression (e.g., $str =~ "pattern")
     REFERENCE_EXPR, // Reference expression (e.g., \$scalar, \@array, \%hash, \&code)
     FUNCTION_REF, // Function reference (e.g., &function)
-    IO_EXPR,      // I/O expression (e.g., <STDIN>, <>, <$fh>)
+    ANGLE_BRACKET_EXPR, // Angle bracket expression (I/O or glob, e.g., <STDIN>, <>, <$fh>, <*.pl>)
     ANON_SUB_EXPR, // Anonymous subroutine expression (e.g., sub { ... })
     FILE_TEST_EXPR, // File test expression (e.g., -f $file)
     POSTFIX_DEREF_EXPR, // Postfix dereference expression (e.g., $ref->@*, $ref->%*, $ref->$*, $ref->$#*)
