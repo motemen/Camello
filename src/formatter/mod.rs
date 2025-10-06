@@ -1316,9 +1316,11 @@ impl Formatter {
     }
 
     fn format_io_expr(&mut self, node: &PerlNode) {
-        // IO expressions like <STDIN> or <$filehandle> should not have spaces inside
-        // but need normal spacing before the opening <
-        let mut first_angle_bracket = true;
+        // IO expressions are formatted to preserve internal spacing, but need normal
+        // spacing before the opening delimiter.
+
+        self.handle_spacing_before(SyntaxKind::LT);
+
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(child_node) => {
@@ -1326,14 +1328,6 @@ impl Formatter {
                 }
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
-
-                    // Add spacing before the opening < or <<, but not inside the IO_EXPR
-                    if (kind == SyntaxKind::LT || kind == SyntaxKind::SHIFT_LEFT)
-                        && first_angle_bracket
-                    {
-                        self.handle_spacing_before(kind);
-                        first_angle_bracket = false;
-                    }
 
                     if self.at_line_start && !kind.is_trivia() {
                         self.add_indent();

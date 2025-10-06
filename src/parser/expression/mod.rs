@@ -239,7 +239,7 @@ impl Parser<'_> {
             Some(SyntaxKind::LT) => 1,
             Some(SyntaxKind::SHIFT_LEFT) => 2, // << counts as two < tokens
             Some(SyntaxKind::HEREDOC_START) => 2, // << in value context
-            _ => 1,                            // fallback, shouldn't happen
+            _ => unreachable!("parse_io_expr called with an unexpected token"),
         };
 
         self.bump_value(); // Consume < or << or HEREDOC_START
