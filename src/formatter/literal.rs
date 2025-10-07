@@ -99,9 +99,9 @@ impl Formatter {
                             }
                         }
                         SyntaxKind::QW_STRING => {
-                            if self.at_line_start {
+                            if self.at_line_start() {
                                 self.add_indent();
-                                self.at_line_start = false;
+                                self.set_at_line_start(false);
                             }
                             self.write(&token);
                             if !self.ends_with_newline() {

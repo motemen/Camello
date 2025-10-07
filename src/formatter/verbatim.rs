@@ -8,7 +8,7 @@ impl Formatter {
     /// Data sections should be preserved exactly as-is without any formatting changes
     pub fn format_data_section(&mut self, node: &PerlNode) {
         // Ensure we're on a new line before the data section
-        if !self.at_line_start {
+        if !self.at_line_start() {
             self.handle_formatter_newline();
         }
 
@@ -43,7 +43,7 @@ impl Formatter {
     /// POD blocks should be preserved exactly as-is without any formatting changes
     pub fn format_pod_block(&mut self, node: &PerlNode) {
         // Ensure we're on a new line before the POD block
-        if !self.at_line_start {
+        if !self.at_line_start() {
             self.handle_formatter_newline();
         }
 

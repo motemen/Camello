@@ -12,7 +12,7 @@ use super::Parser;
 
 /// Result of parsing a primary expression, indicating subscript eligibility
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PostfixSubject {
+pub(crate) enum PostfixSubject {
     /// No primary expression was parsed
     None,
     /// Variable: allows both [] and {} direct subscripts

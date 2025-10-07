@@ -86,7 +86,7 @@ impl Parser<'_> {
     }
 
     /// Parse all postfix operations (method calls, subscripts, etc.)
-    pub(super) fn parse_postfix_operations_with_checkpoint(
+    pub(crate) fn parse_postfix_operations_with_checkpoint(
         &mut self,
         initial_checkpoint: rowan::Checkpoint,
         initial_subject: PostfixSubject,

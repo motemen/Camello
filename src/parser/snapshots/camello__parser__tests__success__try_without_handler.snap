@@ -1,0 +1,22 @@
+---
+source: src/parser/mod.rs
+expression: render_success_tree(&syntax)
+---
+ROOT@0..28
+  STMT@0..28
+    BLOCK_FUNCTION_CALL_EXPR@0..28
+      TRY_KW@0..3 "try"
+      WHITESPACE@3..4 " "
+      BLOCK_STMT@4..27
+        L_BRACE@4..5 "{"
+        NEWLINE@5..6 "\n"
+        WHITESPACE@6..10 "    "
+        STMT@10..25
+          FUNCTION_CALL_EXPR@10..24
+            IDENT@10..22 "do_something"
+            L_PAREN@22..23 "("
+            R_PAREN@23..24 ")"
+          SEMICOLON@24..25 ";"
+        NEWLINE@25..26 "\n"
+        R_BRACE@26..27 "}"
+      NEWLINE@27..28 "\n"
