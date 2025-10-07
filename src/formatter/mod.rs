@@ -847,9 +847,9 @@ impl Formatter {
                         first_non_trivia_token = false;
                     }
 
-                    if self.at_line_start {
+                    if self.at_line_start() {
                         self.add_indent();
-                        self.at_line_start = false;
+                        self.set_at_line_start(false);
                     }
                 }
 
