@@ -427,6 +427,7 @@ impl<'a> Parser<'a> {
                 | SyntaxKind::NOT_KW
                 | SyntaxKind::FILE_TEST_OP
                 | SyntaxKind::X
+                | SyntaxKind::DOUBLE_COLON
                 | SyntaxKind::CODE_SIGIL
         ) || kind.is_variable()
             || kind.is_sigil()
