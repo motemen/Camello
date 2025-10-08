@@ -472,6 +472,9 @@ impl Parser<'_> {
             SyntaxKind::IDENT => {
                 self.parse_ident_like_expr(false);
             }
+            SyntaxKind::DOUBLE_COLON => {
+                self.parse_ident_like_expr(false);
+            }
             SyntaxKind::CARET => {
                 // Handle caret followed by identifier: ^MATCH
                 // Just consume as separate tokens
