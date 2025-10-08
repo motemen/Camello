@@ -6,22 +6,23 @@ impl Parser<'_> {
     pub fn statement(&mut self) -> bool {
         self.skip_whitespace_and_newlines();
 
-        // Check for labeled statement: IDENT followed by ':'
-        if self.at(SyntaxKind::IDENT) {
-            if let Some((next_kind, _)) =
-                self.peek_nth_non_trivia_token_with_context(LexContext::Operator, 1)
-            {
-                if next_kind == SyntaxKind::COLON {
-                    self.labeled_stmt();
-                    return true;
-                }
-            }
-        }
-
         match self.current_kind() {
+            Some(SyntaxKind::IDENT) => {
+                // Check for labeled statement: IDENT followed by ':'
+                if let Some((next_kind, _)) =
+                    self.peek_nth_non_trivia_token_with_context(LexContext::Operator, 1)
+                {
+                    if next_kind == SyntaxKind::COLON {
+                        self.labeled_stmt();
+                        return true;
+                    }
+                }
+                // Not a label, parse as expression statement
+                self.expression_stmt()
+            }
             Some(kind @ (SyntaxKind::MY_KW | SyntaxKind::OUR_KW | SyntaxKind::STATE_KW)) => {
                 if self.looks_like_lexical_sub_definition() {
-                    self.lexical_sub_def(kind);
+                    self.sub_def_with_modifier(Some(kind));
                     true
                 } else {
                     // Route through expression system for prefix operator handling
@@ -34,7 +35,7 @@ impl Parser<'_> {
             }
             Some(SyntaxKind::SUB_KW) => {
                 if self.looks_like_sub_definition() {
-                    self.sub_def();
+                    self.sub_def_with_modifier(None);
                     true
                 } else {
                     self.expression_stmt()
@@ -66,11 +67,11 @@ impl Parser<'_> {
             }
             Some(SyntaxKind::TRY_KW) => self.try_stmt(),
             Some(SyntaxKind::USE_KW) => {
-                self.use_stmt();
+                self.use_or_no_stmt(true);
                 true
             }
             Some(SyntaxKind::NO_KW) => {
-                self.no_stmt();
+                self.use_or_no_stmt(false);
                 true
             }
             Some(kind) if kind.is_phase_block_kw() => {
@@ -284,14 +285,6 @@ impl Parser<'_> {
         self.builder.finish_node();
     }
 
-    fn sub_def(&mut self) {
-        self.sub_def_with_modifier(None);
-    }
-
-    fn lexical_sub_def(&mut self, modifier_kind: SyntaxKind) {
-        self.sub_def_with_modifier(Some(modifier_kind));
-    }
-
     fn sub_def_with_modifier(&mut self, modifier_kind: Option<SyntaxKind>) {
         self.builder.start_node(SyntaxKind::SUB_DEF.into());
 
@@ -419,14 +412,6 @@ impl Parser<'_> {
         self.expect_optional_semicolon("use/no statement");
 
         self.builder.finish_node();
-    }
-
-    fn use_stmt(&mut self) {
-        self.use_or_no_stmt(true);
-    }
-
-    fn no_stmt(&mut self) {
-        self.use_or_no_stmt(false);
     }
 
     fn for_stmt(&mut self) {
