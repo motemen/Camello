@@ -148,54 +148,66 @@ impl Parser<'_> {
         self.block();
         self.skip_whitespace_and_newlines();
 
-        // Now decide which syntax this is based on what follows
+        // Dispatch based on what follows the try block
         if self.at(SyntaxKind::CATCH_KW) || self.at(SyntaxKind::FINALLY_KW) {
-            // Statement-style: try { ... } catch { ... }
-            self.builder
-                .start_node_at(stmt_checkpoint, SyntaxKind::TRY_STMT.into());
-
-            if self.at(SyntaxKind::CATCH_KW) {
-                self.parse_catch_clause();
-                self.skip_whitespace_and_newlines();
-            }
-
-            if self.at(SyntaxKind::FINALLY_KW) {
-                self.parse_finally_clause();
-                self.skip_whitespace_and_newlines();
-            }
-
-            if self.at(SyntaxKind::SEMICOLON) {
-                self.bump();
-            }
-
-            self.builder.finish_node();
-            true
+            self.parse_try_catch_statement(stmt_checkpoint)
         } else {
-            // Function-style: try { ... } (e.g., Try::Tiny)
-            // Wrap try+block as BLOCK_FUNCTION_CALL_EXPR
-            self.builder
-                .start_node_at(expr_checkpoint, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());
-
-            // Parse additional arguments if present (e.g., try { } $x, $y)
-            if self.is_at_start_of_expression() {
-                self.expression_list();
-            }
-
-            self.builder.finish_node();
-
-            // Handle postfix operations (e.g., try { }->method())
-            self.parse_postfix_operations_with_checkpoint(expr_checkpoint, PostfixSubject::Other);
-
-            // Handle postfix modifiers and trailing semicolon
-            self.handle_postfix_and_semicolon();
-
-            // Wrap everything as STMT
-            self.builder
-                .start_node_at(stmt_checkpoint, SyntaxKind::STMT.into());
-            self.builder.finish_node();
-
-            true
+            self.parse_try_function_expression(stmt_checkpoint, expr_checkpoint)
         }
+    }
+
+    /// Parse statement-style try/catch: try { ... } catch { ... }
+    fn parse_try_catch_statement(&mut self, stmt_checkpoint: rowan::Checkpoint) -> bool {
+        self.builder
+            .start_node_at(stmt_checkpoint, SyntaxKind::TRY_STMT.into());
+
+        if self.at(SyntaxKind::CATCH_KW) {
+            self.parse_catch_clause();
+            self.skip_whitespace_and_newlines();
+        }
+
+        if self.at(SyntaxKind::FINALLY_KW) {
+            self.parse_finally_clause();
+            self.skip_whitespace_and_newlines();
+        }
+
+        if self.at(SyntaxKind::SEMICOLON) {
+            self.bump();
+        }
+
+        self.builder.finish_node();
+        true
+    }
+
+    /// Parse function-style try: try { ... } (e.g., Try::Tiny)
+    fn parse_try_function_expression(
+        &mut self,
+        stmt_checkpoint: rowan::Checkpoint,
+        expr_checkpoint: rowan::Checkpoint,
+    ) -> bool {
+        // Wrap try+block as BLOCK_FUNCTION_CALL_EXPR
+        self.builder
+            .start_node_at(expr_checkpoint, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());
+
+        // Parse additional arguments if present (e.g., try { } $x, $y)
+        if self.is_at_start_of_expression() {
+            self.expression_list();
+        }
+
+        self.builder.finish_node();
+
+        // Handle postfix operations (e.g., try { }->method())
+        self.parse_postfix_operations_with_checkpoint(expr_checkpoint, PostfixSubject::Other);
+
+        // Handle postfix modifiers and trailing semicolon
+        self.handle_postfix_and_semicolon();
+
+        // Wrap everything as STMT
+        self.builder
+            .start_node_at(stmt_checkpoint, SyntaxKind::STMT.into());
+        self.builder.finish_node();
+
+        true
     }
 
     fn parse_catch_clause(&mut self) {
@@ -419,6 +431,7 @@ impl Parser<'_> {
         self.bump_value(); // consume "for"
         self.skip_whitespace_and_newlines();
 
+        // Dispatch based on whether we have a left parenthesis
         if self.current_kind() == Some(SyntaxKind::L_PAREN) {
             self.bump_value(); // consume "("
             self.skip_whitespace_and_newlines();
@@ -428,28 +441,9 @@ impl Parser<'_> {
                 self.error("Expected expression in for initializer");
             }
 
-            // Check if this is C-style (has semicolon)
+            // Check if this is C-style (has semicolon) or Perl-style with parentheses
             if self.current_kind() == Some(SyntaxKind::SEMICOLON) {
-                // C-style for loop: for (init; condition; increment)
-                self.bump_value(); // consume first semicolon
-                self.skip_whitespace_and_newlines();
-
-                // Parse condition (optional)
-                if self.current_kind() != Some(SyntaxKind::SEMICOLON) {
-                    self.expression();
-                }
-
-                self.skip_whitespace_and_newlines();
-                // Expect second semicolon
-                if self.current_kind() == Some(SyntaxKind::SEMICOLON) {
-                    self.bump_value();
-                }
-
-                self.skip_whitespace_and_newlines();
-                // Parse increment (optional)
-                if self.current_kind() != Some(SyntaxKind::R_PAREN) {
-                    self.expression();
-                }
+                self.parse_c_style_for_loop();
             }
             // else: Perl-style for loop with parentheses - expression already parsed
 
@@ -459,28 +453,7 @@ impl Parser<'_> {
                 self.bump_value();
             }
         } else {
-            // Perl-style for loop without parentheses: for VAR (LIST) BLOCK
-            // Use existing parse_for_variable function for this case
-            self.parse_for_variable();
-            self.skip_whitespace_and_newlines();
-
-            // List expression in parentheses: (LIST)
-            if self.current_kind() == Some(SyntaxKind::L_PAREN) {
-                self.bump_value(); // consume "("
-                self.skip_whitespace_and_newlines();
-
-                // Parse the list expression - can be multiple expressions separated by commas
-                if !self.expression_list() {
-                    self.error("Expected expression in for list");
-                }
-
-                self.skip_whitespace_and_newlines();
-                if self.current_kind() == Some(SyntaxKind::R_PAREN) {
-                    self.bump_value();
-                }
-            } else {
-                self.error("Expected '(' after for variable");
-            }
+            self.parse_perl_style_for_loop();
         }
 
         self.skip_whitespace_and_newlines();
@@ -489,6 +462,56 @@ impl Parser<'_> {
         self.block();
 
         self.builder.finish_node();
+    }
+
+    /// Parse the C-style for loop components: condition; increment
+    /// Expects to be positioned right before the first semicolon
+    fn parse_c_style_for_loop(&mut self) {
+        // C-style for loop: for (init; condition; increment)
+        self.bump_value(); // consume first semicolon
+        self.skip_whitespace_and_newlines();
+
+        // Parse condition (optional)
+        if self.current_kind() != Some(SyntaxKind::SEMICOLON) {
+            self.expression();
+        }
+
+        self.skip_whitespace_and_newlines();
+        // Expect second semicolon
+        if self.current_kind() == Some(SyntaxKind::SEMICOLON) {
+            self.bump_value();
+        }
+
+        self.skip_whitespace_and_newlines();
+        // Parse increment (optional)
+        if self.current_kind() != Some(SyntaxKind::R_PAREN) {
+            self.expression();
+        }
+    }
+
+    /// Parse Perl-style for loop without parentheses: for VAR (LIST) BLOCK
+    fn parse_perl_style_for_loop(&mut self) {
+        // Use existing parse_for_variable function for this case
+        self.parse_for_variable();
+        self.skip_whitespace_and_newlines();
+
+        // List expression in parentheses: (LIST)
+        if self.current_kind() == Some(SyntaxKind::L_PAREN) {
+            self.bump_value(); // consume "("
+            self.skip_whitespace_and_newlines();
+
+            // Parse the list expression - can be multiple expressions separated by commas
+            if !self.expression_list() {
+                self.error("Expected expression in for list");
+            }
+
+            self.skip_whitespace_and_newlines();
+            if self.current_kind() == Some(SyntaxKind::R_PAREN) {
+                self.bump_value();
+            }
+        } else {
+            self.error("Expected '(' after for variable");
+        }
     }
 
     /// Parse the variable part of a for loop (my $var, $var)
