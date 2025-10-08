@@ -23,6 +23,12 @@ enum PrototypeProfile {
     Multi(PrototypeArg),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FilehandleCandidate {
+    Bareword,
+    Scalar,
+}
+
 impl PrototypeProfile {
     const fn zero_arity(self) -> bool {
         matches!(self, Self::NoArgs)
@@ -420,21 +426,20 @@ impl Parser<'_> {
     fn parse_print_like_args(&mut self) {
         let mut consumed_filehandle = false;
 
-        // Use lookahead to determine if this is a filehandle pattern:
-        // Only treat IDENT/SCALAR as filehandle if followed by whitespace or end of statement
-        // Otherwise treat as normal function call
-        if self.at(SyntaxKind::IDENT) {
-            // Check if this bareword should be treated as a filehandle
-            if self.should_treat_as_filehandle() {
-                self.bump_value();
-                consumed_filehandle = true;
-                self.skip_whitespace_and_newlines();
-            }
-        } else if self.at(SyntaxKind::SCALAR_SIGIL) {
-            // Check if this scalar should be treated as a filehandle
-            if self.should_treat_scalar_as_filehandle() {
-                self.parse_variable();
-                consumed_filehandle = true;
+        // Use lookahead to determine if this is a filehandle pattern. Only treat IDENT/SCALAR as
+        // filehandle if followed by whitespace or end of statement. Otherwise treat as regular
+        // expression arguments.
+        if let Some(candidate) = self.filehandle_candidate_to_consume() {
+            match candidate {
+                FilehandleCandidate::Bareword => {
+                    self.bump_value();
+                    consumed_filehandle = true;
+                    self.skip_whitespace_and_newlines();
+                }
+                FilehandleCandidate::Scalar => {
+                    self.parse_variable();
+                    consumed_filehandle = true;
+                }
             }
         }
 
@@ -448,71 +453,70 @@ impl Parser<'_> {
         }
     }
 
-    /// Check if a bareword (IDENT) should be treated as a filehandle.
-    /// Only treat as filehandle if followed by whitespace or end of statement.
-    fn should_treat_as_filehandle(&self) -> bool {
-        // Look ahead to see what follows the IDENT. Use Operator context to help disambiguate.
-        let next_token =
-            self.peek_nth_non_trivia_token_with_context(LexContext::AmbiguousValueLookahead, 1);
+    fn filehandle_candidate_to_consume(&self) -> Option<FilehandleCandidate> {
+        let candidate = if self.at(SyntaxKind::IDENT) {
+            FilehandleCandidate::Bareword
+        } else if self.at(SyntaxKind::SCALAR_SIGIL) {
+            let next_after_dollar =
+                self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1);
 
-        // If a heredoc start follows, keep treating the preceding ident as a filehandle even
+            if !matches!(next_after_dollar, Some((SyntaxKind::IDENT, _))) {
+                return None;
+            }
+            FilehandleCandidate::Scalar
+        } else {
+            return None;
+        };
+
+        // If a heredoc start follows, keep treating the preceding token as a filehandle even
         // though `<<` ordinarily lexes as a shift operator in ambiguous contexts.
+        let heredoc_offset = match candidate {
+            FilehandleCandidate::Bareword => 1,
+            FilehandleCandidate::Scalar => 2,
+        };
+
         if self
-            .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
+            .peek_nth_non_trivia_token_with_context(LexContext::Value, heredoc_offset)
             .is_some_and(|(kind, _)| kind == SyntaxKind::HEREDOC_START)
         {
-            return true;
+            return Some(candidate);
         }
 
-        match next_token {
-            // If followed by parentheses or method/package separators, it's an expression
-            Some((T!['('] | T![::] | T![->], _)) => false,
-            // If followed by a binary operator, it's part of an expression, not a filehandle.
-            Some((kind, _)) if precedence::get_operator_info(kind).is_some() => false,
-            // If followed by something that can start an expression, treat as filehandle
-            Some((kind, _)) if Self::can_start_expression(kind) => true,
-            // End of file or other contexts - treat as filehandle
-            None => true,
-            // Other tokens (comma, semicolon, etc.) - treat as filehandle
-            _ => true,
+        match candidate {
+            FilehandleCandidate::Bareword => {
+                // Look ahead to see what follows the IDENT. Use Operator context to help disambiguate.
+                let next_token = self
+                    .peek_nth_non_trivia_token_with_context(LexContext::AmbiguousValueLookahead, 1);
+
+                // If followed by parentheses or method/package separators, it's an expression
+                match next_token {
+                    Some((T!['('] | T![::] | T![->], _)) => None,
+                    _ => self.is_filehandle_context(next_token).then_some(candidate),
+                }
+            }
+            FilehandleCandidate::Scalar => {
+                // Now check what follows the $IDENT pattern
+                let token_after_var = self
+                    .peek_nth_non_trivia_token_with_context(LexContext::AmbiguousValueLookahead, 2);
+
+                // If followed by postfix operations (arrow, brackets, etc.), it's not a simple filehandle
+                match token_after_var {
+                    Some((T![->] | T!['['] | T!['{'] | T!['('], _)) => None,
+                    _ => self
+                        .is_filehandle_context(token_after_var)
+                        .then_some(candidate),
+                }
+            }
         }
     }
 
-    /// Check if a scalar variable should be treated as a filehandle.
-    /// Only treat as filehandle if it's a simple variable followed by whitespace or end of statement.
-    fn should_treat_scalar_as_filehandle(&self) -> bool {
-        // Look ahead past the $IDENT to see what follows
-        // First, check if we have $IDENT pattern
-        if !self.at(SyntaxKind::SCALAR_SIGIL) {
-            return false;
-        }
-
-        let next_after_dollar = self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1);
-        if !matches!(next_after_dollar, Some((SyntaxKind::IDENT, _))) {
-            return false;
-        }
-
-        // Now check what follows the $IDENT pattern
-        let token_after_var =
-            self.peek_nth_non_trivia_token_with_context(LexContext::AmbiguousValueLookahead, 2);
-
-        // Similar to the bareword case, a heredoc start should keep the scalar in filehandle
-        // position textually attached to `print` even though `<<` looks like SHIFT_LEFT in
-        // operator-aware contexts. Value-context lookahead recognizes the heredoc token and
-        // lets the parser build the correct tree.
-        if self
-            .peek_nth_non_trivia_token_with_context(LexContext::Value, 2)
-            .is_some_and(|(kind, _)| kind == SyntaxKind::HEREDOC_START)
-        {
-            return true;
-        }
-
-        match token_after_var {
-            // If followed by postfix operations (arrow, brackets, etc.), it's not a simple filehandle
-            Some((T![->] | T!['['] | T!['{'] | T!['('], _)) => false,
+    /// Common logic to determine if the token following a potential filehandle indicates
+    /// that it should be treated as such.
+    fn is_filehandle_context(&self, token: Option<(SyntaxKind, &str)>) -> bool {
+        match token {
             // If followed by a binary operator, it's part of an expression, not a filehandle.
             Some((kind, _)) if precedence::get_operator_info(kind).is_some() => false,
-            // If followed by something that can start an expression or end of file, treat as filehandle
+            // If followed by something that can start an expression, treat as filehandle
             Some((kind, _)) if Self::can_start_expression(kind) => true,
             // End of file or other contexts - treat as filehandle
             None => true,
