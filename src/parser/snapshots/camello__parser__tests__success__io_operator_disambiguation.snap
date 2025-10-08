@@ -1,0 +1,205 @@
+---
+source: src/parser/mod.rs
+expression: render_success_tree(&syntax)
+---
+ROOT@0..762
+  COMMENT@0..49 "# IO operator vs comp ..."
+  NEWLINE@49..50 "\n"
+  COMMENT@50..106 "# Case 1: IO operator ..."
+  STMT@106..119
+    FUNCTION_CALL_EXPR@106..118
+      IDENT@106..112 "decode"
+      WHITESPACE@112..113 " "
+      IO_EXPR@113..118
+        IO_EXPR@113..118 "<$fh>"
+    SEMICOLON@118..119 ";"
+  NEWLINE@119..120 "\n"
+  NEWLINE@120..121 "\n"
+  COMMENT@121..156 "# Case 2: Valid chain ..."
+  STMT@156..177
+    INFIX_EXPR@156..176
+      SCALAR_VAR@156..164
+        SCALAR_SIGIL@156..157 "$"
+        IDENT@157..163 "result"
+        WHITESPACE@163..164 " "
+      EQ@164..165 "="
+      WHITESPACE@165..166 " "
+      INFIX_EXPR@166..176
+        INFIX_EXPR@166..173
+          IDENT@166..167 "f"
+          WHITESPACE@167..168 " "
+          LT@168..169 "<"
+          WHITESPACE@169..170 " "
+          SCALAR_VAR@170..173
+            SCALAR_SIGIL@170..171 "$"
+            IDENT@171..172 "x"
+            WHITESPACE@172..173 " "
+        GT@173..174 ">"
+        WHITESPACE@174..175 " "
+        NUMBER@175..176 "1"
+    SEMICOLON@176..177 ";"
+  NEWLINE@177..178 "\n"
+  NEWLINE@178..179 "\n"
+  COMMENT@179..208 "# Case 3: Simple IO o ..."
+  STMT@208..224
+    INFIX_EXPR@208..223
+      SCALAR_VAR@208..214
+        SCALAR_SIGIL@208..209 "$"
+        IDENT@209..213 "line"
+        WHITESPACE@213..214 " "
+      EQ@214..215 "="
+      WHITESPACE@215..216 " "
+      IO_EXPR@216..223
+        IO_EXPR@216..223 "<STDIN>"
+    SEMICOLON@223..224 ";"
+  NEWLINE@224..225 "\n"
+  NEWLINE@225..226 "\n"
+  COMMENT@226..272 "# Case 4: Empty IO op ..."
+  STMT@272..283
+    INFIX_EXPR@272..282
+      SCALAR_VAR@272..278
+        SCALAR_SIGIL@272..273 "$"
+        IDENT@273..277 "line"
+        WHITESPACE@277..278 " "
+      EQ@278..279 "="
+      WHITESPACE@279..280 " "
+      IO_EXPR@280..282
+        IO_EXPR@280..282 "<>"
+    SEMICOLON@282..283 ";"
+  NEWLINE@283..284 "\n"
+  NEWLINE@284..285 "\n"
+  COMMENT@285..332 "# Case 5: IO operator ..."
+  STMT@332..350
+    INFIX_EXPR@332..349
+      SCALAR_VAR@332..338
+        SCALAR_SIGIL@332..333 "$"
+        IDENT@333..337 "data"
+        WHITESPACE@337..338 " "
+      EQ@338..339 "="
+      WHITESPACE@339..340 " "
+      IO_EXPR@340..349
+        IO_EXPR@340..349 "<$handle>"
+    SEMICOLON@349..350 ";"
+  NEWLINE@350..351 "\n"
+  NEWLINE@351..352 "\n"
+  COMMENT@352..396 "# Case 6: Multiple IO ..."
+  WHILE_STMT@396..435
+    WHILE_KW@396..401 "while"
+    WHITESPACE@401..402 " "
+    L_PAREN@402..403 "("
+    IO_EXPR@403..408
+      IO_EXPR@403..408 "<$fh>"
+    R_PAREN@408..409 ")"
+    WHITESPACE@409..410 " "
+    BLOCK_STMT@410..435
+      L_BRACE@410..411 "{"
+      NEWLINE@411..412 "\n"
+      WHITESPACE@412..416 "    "
+      STMT@416..433
+        FUNCTION_CALL_EXPR@416..432
+          IDENT@416..423 "process"
+          WHITESPACE@423..424 " "
+          IO_EXPR@424..432
+            IO_EXPR@424..432 "<STDERR>"
+        SEMICOLON@432..433 ";"
+      NEWLINE@433..434 "\n"
+      R_BRACE@434..435 "}"
+  NEWLINE@435..436 "\n"
+  NEWLINE@436..437 "\n"
+  COMMENT@437..500 "# Case 7: IO operator ..."
+  STMT@500..523
+    FUNCTION_CALL_EXPR@500..522
+      IDENT@500..507 "process"
+      WHITESPACE@507..508 " "
+      EXPR_LIST@508..522
+        IO_EXPR@508..513
+          IO_EXPR@508..513 "<$in>"
+        COMMA@513..514 ","
+        WHITESPACE@514..515 " "
+        SCALAR_VAR@515..522
+          SCALAR_SIGIL@515..516 "$"
+          IDENT@516..522 "output"
+    SEMICOLON@522..523 ";"
+  NEWLINE@523..524 "\n"
+  NEWLINE@524..525 "\n"
+  COMMENT@525..579 "# Case 8: Comparison  ..."
+  IF_STMT@579..624
+    IF_KW@579..581 "if"
+    WHITESPACE@581..582 " "
+    L_PAREN@582..583 "("
+    INFIX_EXPR@583..601
+      INFIX_EXPR@583..591
+        SCALAR_VAR@583..586
+          SCALAR_SIGIL@583..584 "$"
+          IDENT@584..585 "a"
+          WHITESPACE@585..586 " "
+        LT@586..587 "<"
+        WHITESPACE@587..588 " "
+        SCALAR_VAR@588..591
+          SCALAR_SIGIL@588..589 "$"
+          IDENT@589..590 "b"
+          WHITESPACE@590..591 " "
+      LOGICAL_AND@591..593 "&&"
+      WHITESPACE@593..594 " "
+      INFIX_EXPR@594..601
+        SCALAR_VAR@594..597
+          SCALAR_SIGIL@594..595 "$"
+          IDENT@595..596 "c"
+          WHITESPACE@596..597 " "
+        GT@597..598 ">"
+        WHITESPACE@598..599 " "
+        SCALAR_VAR@599..601
+          SCALAR_SIGIL@599..600 "$"
+          IDENT@600..601 "d"
+    R_PAREN@601..602 ")"
+    WHITESPACE@602..603 " "
+    BLOCK_STMT@603..624
+      L_BRACE@603..604 "{"
+      NEWLINE@604..605 "\n"
+      WHITESPACE@605..609 "    "
+      STMT@609..622
+        FUNCTION_CALL_EXPR@609..621
+          IDENT@609..614 "print"
+          WHITESPACE@614..615 " "
+          STRING@615..621 "\"ok\\n\""
+        SEMICOLON@621..622 ";"
+      NEWLINE@622..623 "\n"
+      R_BRACE@623..624 "}"
+  NEWLINE@624..625 "\n"
+  NEWLINE@625..626 "\n"
+  COMMENT@626..679 "# Case 9: Chained com ..."
+  STMT@679..699
+    INFIX_EXPR@679..698
+      SCALAR_VAR@679..685
+        SCALAR_SIGIL@679..680 "$"
+        IDENT@680..684 "test"
+        WHITESPACE@684..685 " "
+      EQ@685..686 "="
+      WHITESPACE@686..687 " "
+      INFIX_EXPR@687..698
+        INFIX_EXPR@687..695
+          SCALAR_VAR@687..690
+            SCALAR_SIGIL@687..688 "$"
+            IDENT@688..689 "a"
+            WHITESPACE@689..690 " "
+          LT@690..691 "<"
+          WHITESPACE@691..692 " "
+          SCALAR_VAR@692..695
+            SCALAR_SIGIL@692..693 "$"
+            IDENT@693..694 "b"
+            WHITESPACE@694..695 " "
+        GT@695..696 ">"
+        WHITESPACE@696..697 " "
+        NUMBER@697..698 "0"
+    SEMICOLON@698..699 ";"
+  NEWLINE@699..700 "\n"
+  NEWLINE@700..701 "\n"
+  COMMENT@701..748 "# Case 10: IO operato ..."
+  STMT@748..761
+    FUNCTION_CALL_EXPR@748..760
+      IDENT@748..753 "print"
+      WHITESPACE@753..754 " "
+      IO_EXPR@754..760
+        IO_EXPR@754..760 "<DATA>"
+    SEMICOLON@760..761 ";"
+  NEWLINE@761..762 "\n"
