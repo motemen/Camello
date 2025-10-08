@@ -164,8 +164,7 @@ impl Parser<'_> {
             }
             Some(SyntaxKind::DOUBLE_COLON) => {
                 // Allow variables like $::foo (root-qualified names)
-                self.bump(); // consume ::
-                self.skip_whitespace_and_newlines();
+                // Do not consume '::' here. Let parse_identifier_or_qualified handle it.
                 self.parse_identifier_or_qualified();
             }
             _ => {
