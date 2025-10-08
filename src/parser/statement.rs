@@ -416,18 +416,7 @@ impl Parser<'_> {
         }
 
         // Check if semicolon is required
-        // Semicolons are required except for the last statement in a block, end of file, or before data sections
-        if self.at(SyntaxKind::SEMICOLON) {
-            self.bump();
-        } else if self.at_end()
-            || self.at_any(&[SyntaxKind::R_BRACE, SyntaxKind::END_KW, SyntaxKind::DATA_KW])
-        {
-            // Last statement in a block, end of file, or before data section - semicolon is optional
-            // Don't consume tokens here, let the appropriate handler consume them
-        } else {
-            // Semicolon is required but missing
-            self.error("Expected ';' after use/no statement");
-        }
+        self.expect_optional_semicolon("use/no statement");
 
         self.builder.finish_node();
     }
@@ -714,15 +703,7 @@ impl Parser<'_> {
         self.bump(); // consume '...'
         self.skip_whitespace_and_newlines();
 
-        if self.at(SyntaxKind::SEMICOLON) {
-            self.bump();
-        } else if self.at_end()
-            || self.at_any(&[SyntaxKind::R_BRACE, SyntaxKind::END_KW, SyntaxKind::DATA_KW])
-        {
-            // semicolon optional
-        } else {
-            self.error("Expected ';' after ellipsis statement");
-        }
+        self.expect_optional_semicolon("ellipsis statement");
 
         self.builder.finish_node();
     }
@@ -796,16 +777,7 @@ impl Parser<'_> {
         self.parse_optional_postfix_modifier();
 
         // Check if semicolon is required
-        if self.at(SyntaxKind::SEMICOLON) {
-            self.bump();
-        } else if self.at_end()
-            || self.at_any(&[SyntaxKind::R_BRACE, SyntaxKind::END_KW, SyntaxKind::DATA_KW])
-        {
-            // Last statement in a block, end of file, or before data section - semicolon is optional
-        } else {
-            // Semicolon is required but missing
-            self.error("Expected ';' after expression statement");
-        }
+        self.expect_optional_semicolon("expression statement");
     }
 
     pub(crate) fn parse_sub_tail(&mut self) {

@@ -331,6 +331,27 @@ impl<'a> Parser<'a> {
             .push(ParseError::new(message.to_string(), range, self.source));
     }
 
+    /// Helper function to handle optional or required semicolons at the end of statements.
+    ///
+    /// A semicolon is optional when:
+    /// - We're at the end of the file
+    /// - The next token is a closing brace (last statement in a block)
+    /// - The next token is END_KW or DATA_KW (before data sections)
+    ///
+    /// Otherwise, a semicolon is required.
+    fn expect_optional_semicolon(&mut self, statement_name: &str) {
+        if self.at(SyntaxKind::SEMICOLON) {
+            self.bump();
+        } else if self.at_end()
+            || self.at_any(&[SyntaxKind::R_BRACE, SyntaxKind::END_KW, SyntaxKind::DATA_KW])
+        {
+            // Semicolon is optional in these contexts
+        } else {
+            // Semicolon is required but missing
+            self.error(&format!("Expected ';' after {statement_name}"));
+        }
+    }
+
     /// 括弧内のカンマ区切り式をパースするヘルパー関数
     fn parse_parenthesized_list(&mut self) {
         if !self.at(SyntaxKind::R_PAREN) {
