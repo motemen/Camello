@@ -449,9 +449,7 @@ impl Parser<'_> {
 
             self.skip_whitespace_and_newlines();
             // Expect closing parenthesis
-            if self.current_kind() == Some(SyntaxKind::R_PAREN) {
-                self.bump_value();
-            }
+            self.expect_op(SyntaxKind::R_PAREN);
         } else {
             self.parse_perl_style_for_loop();
         }
@@ -478,9 +476,7 @@ impl Parser<'_> {
 
         self.skip_whitespace_and_newlines();
         // Expect second semicolon
-        if self.current_kind() == Some(SyntaxKind::SEMICOLON) {
-            self.bump_value();
-        }
+        self.expect_value(SyntaxKind::SEMICOLON);
 
         self.skip_whitespace_and_newlines();
         // Parse increment (optional)
