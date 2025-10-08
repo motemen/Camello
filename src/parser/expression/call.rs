@@ -163,87 +163,129 @@ impl Parser<'_> {
         // Capture name before consuming, for prototype lookups.
         let function_name = self.peek_block_function_basename().unwrap_or_default();
 
+        // Check if this is a builtin with special parsing requirements
+        if let Some(prototype) = Self::builtin_prototype(&function_name) {
+            // Zero-arity builtins should just be parsed as identifiers (they can participate in expressions)
+            if !prototype.zero_arity() {
+                // Delegate to specialized builtin handler
+                self.parse_builtin_function_call(
+                    &function_name,
+                    prototype,
+                    start,
+                    coerce_current_to_ident,
+                );
+                return;
+            }
+        }
+
+        // Not a special builtin - parse as regular identifier
         if coerce_current_to_ident {
             self.bump_as(SyntaxKind::IDENT);
         } else {
-            // Might be a qualified identifier, so use parse_identifier_or_qualified
             self.parse_identifier_or_qualified();
         }
         self.skip_whitespace_and_newlines();
 
-        // Dispatch to different parsing helpers based on the next token.
-        if self.try_parse_block_function_call(&function_name, start) {
+        // Handle block-style calls for non-builtins
+        if self.at(SyntaxKind::L_BRACE) && Self::is_block_function(&function_name) {
+            self.builder
+                .start_node_at(start, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());
+            self.parse_block_function_args(&function_name);
+            self.builder.finish_node();
             return;
         }
 
-        if self.try_parse_parenthesized_function_call(&function_name, start) {
-            // Parenthesized calls are handled by the postfix parser,
-            // or by try_parse_parenthesized_special_function_call.
-            // Either way, our work here is done.
+        // Handle parenthesized calls (leave for postfix parser)
+        if self.at(SyntaxKind::L_PAREN) {
             return;
         }
 
-        // If it's not a block or parenthesized call, try parsing it as an indirect call.
-        self.try_parse_indirect_function_call(&function_name, start);
+        // Handle indirect function calls for non-builtins
+        self.parse_non_builtin_indirect_call(&function_name, start);
     }
 
-    /// Try to parse a block-style function call, e.g., `grep { $_ > 1 } @list`.
-    /// Returns true if a block function call was parsed.
-    fn try_parse_block_function_call(
+    /// Parse a builtin function call with specialized handling based on its prototype.
+    /// This method consolidates all builtin-specific parsing logic.
+    fn parse_builtin_function_call(
         &mut self,
         function_name: &str,
+        prototype: &PrototypeProfile,
         start: rowan::Checkpoint,
-    ) -> bool {
-        if self.at(SyntaxKind::L_BRACE)
-            && (Self::is_block_function(function_name)
-                || Self::builtin_prototype(function_name).is_some_and(|spec| spec.print_like()))
-        {
+        coerce_current_to_ident: bool,
+    ) {
+        // First, consume the function name
+        if coerce_current_to_ident {
+            self.bump_as(SyntaxKind::IDENT);
+        } else {
+            self.parse_identifier_or_qualified();
+        }
+        self.skip_whitespace_and_newlines();
+
+        // Dispatch based on what follows and the function's prototype
+        if self.at(SyntaxKind::L_BRACE) && prototype.takes_block() {
+            // Block-style call for builtins that take blocks (e.g., grep { ... } @list)
             self.builder
                 .start_node_at(start, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());
             self.parse_block_function_args(function_name);
             self.builder.finish_node();
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Try to parse a parenthesized function call, e.g., `foo(1, 2)`.
-    /// This handles both special built-in functions and regular function calls.
-    /// Returns true if a parenthesized call was found (even if it's left for the postfix parser).
-    fn try_parse_parenthesized_function_call(
-        &mut self,
-        function_name: &str,
-        start: rowan::Checkpoint,
-    ) -> bool {
-        if !self.at(SyntaxKind::L_PAREN) {
-            return false;
-        }
-
-        // Handle special cases for built-ins like `grep` or `print` inside parentheses.
-        if self.try_parse_parenthesized_special_function_call(function_name, start) {
-            return true;
-        }
-
-        // For regular parenthesized calls, we don't consume them here.
-        // We just signal that we've seen the `(`, and the postfix expression parser
-        // will handle it as a `FUNCTION_CALL_EXPR`.
-        true
-    }
-
-    /// Try to parse an indirect function call (without parentheses), e.g., `foo 1, 2`.
-    fn try_parse_indirect_function_call(&mut self, function_name: &str, start: rowan::Checkpoint) {
-        // Special handling for print-like functions (e.g., print STDOUT "hello")
-        if Self::builtin_prototype(function_name).is_some_and(|spec| spec.print_like()) {
+        } else if self.at(SyntaxKind::L_PAREN) {
+            // Parenthesized call
+            self.parse_builtin_parenthesized_call(function_name, prototype, start);
+        } else if prototype.print_like() {
+            // Print-like functions without parentheses (e.g., print "hello")
             if self.is_at_start_of_expression() {
                 self.builder
                     .start_node_at(start, SyntaxKind::FUNCTION_CALL_EXPR.into());
                 self.parse_print_like_args();
                 self.builder.finish_node();
             }
-            return;
+        } else {
+            // Indirect call for other builtins (e.g., shift @array)
+            self.parse_builtin_indirect_call(function_name, prototype, start);
         }
+    }
 
+    /// Handle parenthesized builtin function calls.
+    fn parse_builtin_parenthesized_call(
+        &mut self,
+        function_name: &str,
+        prototype: &PrototypeProfile,
+        start: rowan::Checkpoint,
+    ) {
+        // Check for special parenthesized patterns
+        if prototype.takes_block()
+            && self
+                .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
+                .is_some_and(|(kind, _)| kind == SyntaxKind::L_BRACE)
+            && !self.looks_like_hash_ref_at_offset(1)
+        {
+            // Block inside parentheses: grep({ ... } @list)
+            self.parse_parenthesized_special_call(
+                start,
+                SyntaxKind::BLOCK_FUNCTION_CALL_EXPR,
+                "Expected ')' after block arguments",
+                |parser| parser.parse_block_function_args(function_name),
+            );
+        } else if prototype.print_like() {
+            // Print-like with parentheses: print("hello")
+            self.parse_parenthesized_special_call(
+                start,
+                SyntaxKind::FUNCTION_CALL_EXPR,
+                "Expected ')' after print arguments",
+                |parser| parser.parse_print_like_args(),
+            );
+        }
+        // Otherwise, leave for postfix parser to handle as regular function call
+    }
+
+    /// Handle indirect builtin function calls (no parentheses).
+    fn parse_builtin_indirect_call(
+        &mut self,
+        function_name: &str,
+        _prototype: &PrototypeProfile,
+        start: rowan::Checkpoint,
+    ) {
+        // Check if we have arguments following
         let next_value_token = self.peek_non_trivia_token_with_context(LexContext::Value);
         let mut next_kind = self
             .peek_non_trivia_token_with_context(LexContext::AmbiguousValueLookahead)
@@ -260,11 +302,39 @@ impl Parser<'_> {
             next_kind,
         );
 
+        // If the next token can start an expression, parse it as a list of arguments.
+        if let Some(kind) = next_kind {
+            if Self::can_start_expression(kind)
+                || (kind.is_keyword() && self.is_followed_by_fat_comma(0))
+            {
+                self.builder
+                    .start_node_at(start, SyntaxKind::FUNCTION_CALL_EXPR.into());
+                self.expression_list();
+                self.builder.finish_node();
+            }
+        }
+    }
+
+    /// Handle indirect function calls for non-builtin identifiers (no parentheses).
+    fn parse_non_builtin_indirect_call(&mut self, function_name: &str, start: rowan::Checkpoint) {
+        let next_value_token = self.peek_non_trivia_token_with_context(LexContext::Value);
+        let mut next_kind = self
+            .peek_non_trivia_token_with_context(LexContext::AmbiguousValueLookahead)
+            .map(|(kind, _)| kind);
+
+        if next_value_token.is_some_and(|(kind, _)| kind == SyntaxKind::HEREDOC_START) {
+            next_kind = Some(SyntaxKind::HEREDOC_START);
+        }
+
+        // Adjust for zero-arity builtins (e.g., fork, wait, time) - they don't take arguments
+        if Self::builtin_prototype(function_name).is_some_and(|spec| spec.zero_arity()) {
+            return;
+        }
+
+        // For non-builtins, treat `/` as division operator instead of forcing regex
         if next_kind == Some(SyntaxKind::SLASH)
             && next_value_token.is_some_and(|(kind, _)| kind == SyntaxKind::REGEX_LITERAL)
-            && Self::builtin_prototype(function_name).is_none()
         {
-            // Treat `/` as division for unknown barewords instead of forcing a regex literal
             next_kind = None;
         }
 
@@ -305,43 +375,6 @@ impl Parser<'_> {
         }
 
         self.builder.finish_node();
-    }
-
-    fn try_parse_parenthesized_special_function_call(
-        &mut self,
-        function_name: &str,
-        start: rowan::Checkpoint,
-    ) -> bool {
-        if !self.at(SyntaxKind::L_PAREN) {
-            return false;
-        }
-
-        if Self::builtin_prototype(function_name).is_some_and(|spec| spec.takes_block())
-            && self
-                .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
-                .is_some_and(|(kind, _)| kind == SyntaxKind::L_BRACE)
-            && !self.looks_like_hash_ref_at_offset(1)
-        {
-            self.parse_parenthesized_special_call(
-                start,
-                SyntaxKind::BLOCK_FUNCTION_CALL_EXPR,
-                "Expected ')' after block arguments",
-                |parser| parser.parse_block_function_args(function_name),
-            );
-            return true;
-        }
-
-        if Self::builtin_prototype(function_name).is_some_and(|spec| spec.print_like()) {
-            self.parse_parenthesized_special_call(
-                start,
-                SyntaxKind::FUNCTION_CALL_EXPR,
-                "Expected ')' after print arguments",
-                |parser| parser.parse_print_like_args(),
-            );
-            return true;
-        }
-
-        false
     }
 
     // Parse block function arguments: block + optional additional arguments
