@@ -164,8 +164,7 @@ impl Parser<'_> {
             }
             Some(SyntaxKind::DOUBLE_COLON) => {
                 // Allow variables like $::foo (root-qualified names)
-                self.bump(); // consume ::
-                self.skip_whitespace_and_newlines();
+                // Do not consume '::' here. Let parse_identifier_or_qualified handle it.
                 self.parse_identifier_or_qualified();
             }
             _ => {
@@ -430,50 +429,69 @@ impl Parser<'_> {
 
     // This function is no longer needed - compound variables are now handled in parse_variable()
 
+    fn bump_identifier_segment(&mut self) -> bool {
+        if self.at(SyntaxKind::IDENT) {
+            self.bump();
+            true
+        } else if self.current_kind().is_some_and(SyntaxKind::is_keyword) {
+            self.bump_as(SyntaxKind::IDENT);
+            true
+        } else if self.try_bump_digit_prefixed_ident() {
+            true
+        } else if self.at(SyntaxKind::NUMBER) {
+            self.bump_as(SyntaxKind::IDENT);
+            true
+        } else {
+            false
+        }
+    }
+
     /// Parses a regular identifier or qualified identifier, accepting keywords as identifiers
     /// in identifier-expected positions. Examples: Foo, Foo::Bar, Foo::Bar::Baz, and keywords
     /// like `else` when grammar expects an identifier (e.g., `sub else {}` or `use if`).
-    /// Also supports package names with digits after :: (e.g., Foo::123, Foo::123ABC).
+    /// Also supports package names with digits after :: (e.g., Foo::123, Foo::123ABC) and
+    /// leading `::` for root-qualified names (e.g., `::diag`).
     pub fn parse_identifier_or_qualified(&mut self) {
-        // Accept IDENT or coerce a keyword into IDENT at identifier positions
         let checkpoint = self.builder.checkpoint();
-        if self.at(SyntaxKind::IDENT) {
-            self.bump(); // First identifier
-        } else if self.current_kind().is_some_and(SyntaxKind::is_keyword) {
-            self.bump_as(SyntaxKind::IDENT);
+        let mut started_qualified = false;
+        let mut saw_segment = false;
+
+        if self.at(SyntaxKind::DOUBLE_COLON) {
+            started_qualified = true;
+            self.builder
+                .start_node_at(checkpoint, SyntaxKind::QUALIFIED_IDENT.into());
+        } else if self.bump_identifier_segment() {
+            saw_segment = true;
+            self.skip_whitespace_and_newlines();
         } else {
             self.error("Expected identifier");
             return;
         }
-        self.skip_whitespace_and_newlines();
 
-        // Check for package qualifiers (::)
-        if self.at(SyntaxKind::DOUBLE_COLON) {
+        if !started_qualified && self.at(SyntaxKind::DOUBLE_COLON) {
+            started_qualified = true;
             self.builder
                 .start_node_at(checkpoint, SyntaxKind::QUALIFIED_IDENT.into());
+        }
 
+        if started_qualified {
             while self.at(SyntaxKind::DOUBLE_COLON) {
-                self.bump(); // ::
+                self.bump();
                 self.skip_whitespace_and_newlines();
 
-                if self.at(SyntaxKind::IDENT)
-                    || self.current_kind().is_some_and(SyntaxKind::is_keyword)
-                {
-                    // Coerce subsequent segments to IDENT as needed
-                    self.bump_as(SyntaxKind::IDENT);
-                } else if self.try_bump_digit_prefixed_ident() {
-                    // Successfully consumed a digit-prefixed identifier (e.g., 123ABC)
-                    // Nothing more to do here
-                } else if self.at(SyntaxKind::NUMBER) {
-                    // Allow pure numbers after :: (e.g., Foo::123) as fallback
-                    self.bump_as(SyntaxKind::IDENT);
+                if self.bump_identifier_segment() {
+                    saw_segment = true;
                 } else {
-                    // A trailing `::` is valid, so we don't report an error, just stop parsing the qualified name.
                     break;
                 }
             }
+
+            if !saw_segment {
+                self.error("Expected identifier after '::'");
+            }
+
             self.builder.finish_node();
-            self.skip_whitespace_and_newlines(); // Skip trivia after QUALIFIED_IDENT is complete
+            self.skip_whitespace_and_newlines();
         }
     }
 
