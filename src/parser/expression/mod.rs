@@ -37,6 +37,48 @@ impl Parser<'_> {
             .is_none_or(|(k, _)| k != SyntaxKind::FAT_COMMA)
     }
 
+    /// Check if a `<` token in operator position should be treated as an IO operator.
+    ///
+    /// This implements the "cover syntax" approach to disambiguate between:
+    /// - `<` as a less-than comparison operator (e.g., `f < $x > 1`)
+    /// - `<...>` as an IO operator (e.g., `decode <$fh>`)
+    ///
+    /// Strategy:
+    /// 1. In Value context, the lexer would tokenize `<...>` as IO_EXPR
+    /// 2. Check if there's a valid expression after the closing `>`
+    /// 3. If there IS a valid RHS, it's a comparison (e.g., `f < $x > 1`)
+    /// 4. If there is NO valid RHS, it's an IO operator (e.g., `decode <$fh>`)
+    fn is_lt_an_io_operator(&self) -> bool {
+        // First check: can this be tokenized as IO_EXPR in Value context?
+        let Some((SyntaxKind::IO_EXPR, _io_text)) =
+            self.peek_non_trivia_token_with_context(LexContext::Value)
+        else {
+            return false; // Not an IO operator pattern
+        };
+
+        // Second check: is there a valid expression after the IO_EXPR?
+        // Clone the lexer and consume the IO_EXPR to see what follows
+        let mut cloned = self.lexer.clone();
+        cloned.next_token_with_context(LexContext::Value); // consume IO_EXPR
+
+        // Check what comes after
+        let after_io = cloned.peek_non_trivia_with_context(LexContext::Value);
+
+        // If there's a valid expression starter after the IO pattern, this is actually
+        // a comparison with a valid RHS (e.g., `< $x > 1`)
+        // Otherwise it's an IO operator (e.g., `<$fh>;` or `<$fh>,`)
+        match after_io {
+            Some((kind, _)) if Self::can_start_expression(kind) => {
+                // There's a valid RHS expression, so this is a comparison, not an IO operator
+                false
+            }
+            _ => {
+                // No valid RHS expression, so this is an IO operator
+                true
+            }
+        }
+    }
+
     pub fn expression(&mut self) -> bool {
         self.parse_expression_with_precedence(Precedence::LOWEST)
     }
@@ -59,6 +101,29 @@ impl Parser<'_> {
             else {
                 break;
             };
+
+            // Cover syntax: disambiguate `<` as comparison operator vs IO operator
+            // This handles cases like:
+            // - `decode <$fh>` - IO operator (argument to decode function)
+            // - `f < $x > 1` - chained comparison operators
+            if current_kind == SyntaxKind::LT && self.is_lt_an_io_operator() {
+                // This is an IO operator pattern like `decode <$fh>`, not a comparison.
+                // Restructure the CST to treat the LHS as a function call with the IO expr as an argument.
+
+                self.builder
+                    .start_node_at(checkpoint, SyntaxKind::FUNCTION_CALL_EXPR.into());
+
+                // Parse the argument list
+                // When expression_list parses in value context, the lexer will tokenize
+                // `<...>` as a single IO_EXPR token (not as separate LT and GT tokens)
+                self.skip_whitespace_and_newlines();
+                self.expression_list();
+
+                self.builder.finish_node();
+
+                // We've consumed the IO operator and restructured the tree
+                return true;
+            }
 
             // Handle ternary operator specially
             if current_kind == SyntaxKind::QUESTION_MARK {
