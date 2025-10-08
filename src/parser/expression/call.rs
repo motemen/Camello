@@ -460,11 +460,10 @@ impl Parser<'_> {
             let next_after_dollar =
                 self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1);
 
-            if matches!(next_after_dollar, Some((SyntaxKind::IDENT, _))) {
-                FilehandleCandidate::Scalar
-            } else {
+            if !matches!(next_after_dollar, Some((SyntaxKind::IDENT, _))) {
                 return None;
             }
+            FilehandleCandidate::Scalar
         } else {
             return None;
         };
@@ -486,40 +485,26 @@ impl Parser<'_> {
         match candidate {
             FilehandleCandidate::Bareword => {
                 // Look ahead to see what follows the IDENT. Use Operator context to help disambiguate.
-                let next_token = self.peek_nth_non_trivia_token_with_context(
-                    LexContext::AmbiguousValueLookahead,
-                    1,
-                );
+                let next_token = self
+                    .peek_nth_non_trivia_token_with_context(LexContext::AmbiguousValueLookahead, 1);
 
+                // If followed by parentheses or method/package separators, it's an expression
                 match next_token {
-                    // If followed by parentheses or method/package separators, it's an expression
                     Some((T!['('] | T![::] | T![->], _)) => None,
-                    _ => {
-                        if self.is_filehandle_context(next_token) {
-                            Some(candidate)
-                        } else {
-                            None
-                        }
-                    }
+                    _ => self.is_filehandle_context(next_token).then_some(candidate),
                 }
             }
             FilehandleCandidate::Scalar => {
                 // Now check what follows the $IDENT pattern
-                let token_after_var = self.peek_nth_non_trivia_token_with_context(
-                    LexContext::AmbiguousValueLookahead,
-                    2,
-                );
+                let token_after_var = self
+                    .peek_nth_non_trivia_token_with_context(LexContext::AmbiguousValueLookahead, 2);
 
+                // If followed by postfix operations (arrow, brackets, etc.), it's not a simple filehandle
                 match token_after_var {
-                    // If followed by postfix operations (arrow, brackets, etc.), it's not a simple filehandle
                     Some((T![->] | T!['['] | T!['{'] | T!['('], _)) => None,
-                    _ => {
-                        if self.is_filehandle_context(token_after_var) {
-                            Some(candidate)
-                        } else {
-                            None
-                        }
-                    }
+                    _ => self
+                        .is_filehandle_context(token_after_var)
+                        .then_some(candidate),
                 }
             }
         }
