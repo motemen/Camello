@@ -506,9 +506,7 @@ impl Parser<'_> {
             }
 
             self.skip_whitespace_and_newlines();
-            if self.current_kind() == Some(SyntaxKind::R_PAREN) {
-                self.bump_value();
-            }
+            self.expect_op(SyntaxKind::R_PAREN);
         } else {
             self.error("Expected '(' after for variable");
         }
