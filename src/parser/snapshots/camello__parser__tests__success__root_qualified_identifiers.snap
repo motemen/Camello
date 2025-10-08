@@ -32,8 +32,8 @@ ROOT@0..87
         WHITESPACE@33..34 " "
         SCALAR_VAR@34..45
           SCALAR_SIGIL@34..35 "$"
-          DOUBLE_COLON@35..37 "::"
-          QUALIFIED_IDENT@37..45
+          QUALIFIED_IDENT@35..45
+            DOUBLE_COLON@35..37 "::"
             IDENT@37..40 "foo"
             DOUBLE_COLON@40..42 "::"
             IDENT@42..45 "bar"
@@ -52,8 +52,8 @@ ROOT@0..87
         WHITESPACE@60..61 " "
         SCALAR_VAR@61..74
           SCALAR_SIGIL@61..62 "$"
-          DOUBLE_COLON@62..64 "::"
-          QUALIFIED_IDENT@64..74
+          QUALIFIED_IDENT@62..74
+            DOUBLE_COLON@62..64 "::"
             IDENT@64..68 "Root"
             DOUBLE_COLON@68..70 "::"
             IDENT@70..74 "leaf"
