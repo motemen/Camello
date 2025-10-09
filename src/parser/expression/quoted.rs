@@ -8,10 +8,9 @@ impl Parser<'_> {
         self.builder.start_node(SyntaxKind::QW_EXPR.into());
 
         // "qw"
-        self.expect(SyntaxKind::QW_KW);
+        self.expect(T![qw]);
         // Begin quote-like lexing for qw BEFORE skipping trivia so '#' etc. are treated as delimiters
-        self.lexer
-            .begin_quote_like(SyntaxKind::QW_KW, QuoteLikeMode::QW);
+        self.lexer.begin_quote_like(T![qw], QuoteLikeMode::QW);
         self.skip_whitespace_and_newlines();
         // Opening delimiter
         if !self.at(SyntaxKind::DELIMITER) {

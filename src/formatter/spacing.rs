@@ -1,4 +1,4 @@
-use crate::SyntaxKind;
+use crate::{SyntaxKind, T};
 
 /// Represents the spacing behavior of a token
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,28 +90,26 @@ pub const fn get_token_spacing(kind: SyntaxKind) -> TokenSpacing {
 
     match kind {
         // Arrow operator (highest priority - never spaces)
-        SyntaxKind::ARROW => TokenSpacing::new(Never, Never, BinaryOperator),
+        T![->] => TokenSpacing::new(Never, Never, BinaryOperator),
 
         // Ternary operators
-        SyntaxKind::QUESTION_MARK | SyntaxKind::COLON => {
-            TokenSpacing::new(Always, Never, BinaryOperator)
-        }
+        T![?] | T![:] => TokenSpacing::new(Always, Never, BinaryOperator),
 
         // Binary operators that always need spaces
-        SyntaxKind::EQ
-        | SyntaxKind::PLUS
-        | SyntaxKind::MINUS
-        | SyntaxKind::DOT
-        | SyntaxKind::FAT_COMMA
-        | SyntaxKind::STAR
-        | SyntaxKind::SLASH
-        | SyntaxKind::MODULO
-        | SyntaxKind::X
-        | SyntaxKind::EXPONENT
-        | SyntaxKind::SHIFT_LEFT
-        | SyntaxKind::SHIFT_RIGHT
-        | SyntaxKind::RANGE
-        | SyntaxKind::RANGE_EXCLUSIVE => TokenSpacing::binary_op(),
+        T![=]
+        | T![+]
+        | T![-]
+        | T![.]
+        | T![=>]
+        | T![*]
+        | T![/]
+        | T![%]
+        | T![x]
+        | T![**]
+        | T![<<]
+        | T![>>]
+        | T![..]
+        | T![...] => TokenSpacing::binary_op(),
 
         // Unary operators (prefix/postfix)
         SyntaxKind::UNARY_PLUS | SyntaxKind::UNARY_MINUS => TokenSpacing::prefix_op(),
@@ -125,36 +123,32 @@ pub const fn get_token_spacing(kind: SyntaxKind) -> TokenSpacing {
         | SyntaxKind::POSTFIX_DEREF_GLOB => TokenSpacing::postfix_op(),
 
         // Comparison operators
-        SyntaxKind::GT
-        | SyntaxKind::LT
-        | SyntaxKind::GE
-        | SyntaxKind::LE
-        | SyntaxKind::EQ_EQ
-        | SyntaxKind::NE
-        | SyntaxKind::STR_EQ
-        | SyntaxKind::STR_NE
-        | SyntaxKind::STR_GT
-        | SyntaxKind::STR_LT
-        | SyntaxKind::STR_GE
-        | SyntaxKind::STR_LE
-        | SyntaxKind::STR_CMP
-        | SyntaxKind::SPACESHIP => TokenSpacing::binary_op(),
+        T![>]
+        | T![<]
+        | T![>=]
+        | T![<=]
+        | T![==]
+        | T![!=]
+        | T![eq]
+        | T![ne]
+        | T![gt]
+        | T![lt]
+        | T![ge]
+        | T![le]
+        | T![cmp]
+        | T![<=>] => TokenSpacing::binary_op(),
 
         // Regex operators
-        SyntaxKind::REGEX_MATCH | SyntaxKind::REGEX_NOT_MATCH => TokenSpacing::binary_op(),
+        T![=~] | T![!~] => TokenSpacing::binary_op(),
 
         // Logical operators
-        SyntaxKind::LOGICAL_AND | SyntaxKind::LOGICAL_OR => TokenSpacing::binary_op(),
-        SyntaxKind::LOGICAL_NOT | SyntaxKind::BITWISE_NOT => TokenSpacing::prefix_op(),
-        SyntaxKind::NOT_KW | SyntaxKind::AND_KW | SyntaxKind::OR_KW | SyntaxKind::XOR_KW => {
-            TokenSpacing::binary_op()
-        }
-        SyntaxKind::DEFINED_OR => TokenSpacing::binary_op(),
+        T![&&] | T![||] => TokenSpacing::binary_op(),
+        T![!] | T![~] => TokenSpacing::prefix_op(),
+        T![not] | T![and] | T![or] | T![xor] => TokenSpacing::binary_op(),
+        T!["//"] => TokenSpacing::binary_op(),
 
         // Bitwise operators
-        SyntaxKind::BITWISE_AND | SyntaxKind::BITWISE_OR | SyntaxKind::BITWISE_XOR => {
-            TokenSpacing::binary_op()
-        }
+        T![&] | T![|] | T![^] => TokenSpacing::binary_op(),
 
         SyntaxKind::FILE_TEST_OP => TokenSpacing::new(
             SpaceRule::Contextual,
@@ -163,55 +157,55 @@ pub const fn get_token_spacing(kind: SyntaxKind) -> TokenSpacing {
         ),
 
         // Comma: no space before, space after
-        SyntaxKind::COMMA => TokenSpacing::new(Never, Always, Punctuation),
+        T![,] => TokenSpacing::new(Never, Always, Punctuation),
 
         // Keywords that need space after
-        SyntaxKind::MY_KW
-        | SyntaxKind::OUR_KW
-        | SyntaxKind::STATE_KW
-        | SyntaxKind::LOCAL_KW
-        | SyntaxKind::FOR_KW
-        | SyntaxKind::FOREACH_KW
-        | SyntaxKind::WHILE_KW
-        | SyntaxKind::UNTIL_KW
-        | SyntaxKind::IF_KW
-        | SyntaxKind::UNLESS_KW
-        | SyntaxKind::ELSIF_KW
-        | SyntaxKind::ELSE_KW
-        | SyntaxKind::CATCH_KW
-        | SyntaxKind::FINALLY_KW
-        | SyntaxKind::PACKAGE_KW
-        | SyntaxKind::USE_KW
-        | SyntaxKind::NO_KW
-        | SyntaxKind::REQUIRE_KW
-        | SyntaxKind::SUB_KW => TokenSpacing::keyword(),
+        T![my]
+        | T![our]
+        | T![state]
+        | T![local]
+        | T![for]
+        | T![foreach]
+        | T![while]
+        | T![until]
+        | T![if]
+        | T![unless]
+        | T![elsif]
+        | T![else]
+        | T![catch]
+        | T![finally]
+        | T![package]
+        | T![use]
+        | T![no]
+        | T![require]
+        | T![sub] => TokenSpacing::keyword(),
 
         // RETURN_KW and loop control keywords: contextual spacing (no space before semicolon)
-        SyntaxKind::RETURN_KW | SyntaxKind::NEXT_KW | SyntaxKind::LAST_KW | SyntaxKind::REDO_KW => {
+        T![return] | T![next] | T![last] | T![redo] => {
             TokenSpacing::new(Contextual, Contextual, Keyword)
         }
 
         // Delimiters
-        SyntaxKind::L_BRACE => TokenSpacing::new(Always, Never, Delimiter),
-        SyntaxKind::R_BRACE => TokenSpacing::new(Never, Contextual, Delimiter),
-        SyntaxKind::L_PAREN => TokenSpacing::new(Contextual, Never, Delimiter),
-        SyntaxKind::R_PAREN => TokenSpacing::new(Never, Contextual, Delimiter),
-        SyntaxKind::L_BRACKET => TokenSpacing::new(Contextual, Never, Delimiter),
-        SyntaxKind::R_BRACKET => TokenSpacing::new(Never, Contextual, Delimiter),
+        T!['{'] => TokenSpacing::new(Always, Never, Delimiter),
+        T!['}'] => TokenSpacing::new(Never, Contextual, Delimiter),
+        T!['('] => TokenSpacing::new(Contextual, Never, Delimiter),
+        T![')'] => TokenSpacing::new(Never, Contextual, Delimiter),
+        T!['['] => TokenSpacing::new(Contextual, Never, Delimiter),
+        T![']'] => TokenSpacing::new(Never, Contextual, Delimiter),
         SyntaxKind::DELIMITER => TokenSpacing::new(Never, Never, Delimiter),
 
         // Semicolon: no space before, contextual after
-        SyntaxKind::SEMICOLON => TokenSpacing::new(Never, Contextual, Punctuation),
+        T![;] => TokenSpacing::new(Never, Contextual, Punctuation),
 
         // Double colon: no spaces around
-        SyntaxKind::DOUBLE_COLON => TokenSpacing::new(Never, Never, Punctuation),
+        T![::] => TokenSpacing::new(Never, Never, Punctuation),
 
         // Sigils: no space after sigil
         SyntaxKind::SCALAR_SIGIL
         | SyntaxKind::ARRAY_SIGIL
         | SyntaxKind::HASH_SIGIL
         | SyntaxKind::TYPEGLOB_SIGIL
-        | SyntaxKind::BACKSLASH
+        | T!['\\']
         | SyntaxKind::CODE_SIGIL => TokenSpacing::new(Contextual, Never, PrefixOperator),
 
         // Identifiers and variables

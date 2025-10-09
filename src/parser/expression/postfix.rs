@@ -1,5 +1,5 @@
 use crate::lexer::LexContext;
-use crate::SyntaxKind;
+use crate::{SyntaxKind, T};
 
 use super::{Parser, PostfixSubject};
 
@@ -42,18 +42,10 @@ impl Parser<'_> {
             self.skip_whitespace_and_newlines();
         } else {
             let message = match (sigil_kind, opening) {
-                (SyntaxKind::ARRAY_SIGIL, SyntaxKind::L_BRACKET) => {
-                    "Expected '[' after '@' in postfix slice"
-                }
-                (SyntaxKind::ARRAY_SIGIL, SyntaxKind::L_BRACE) => {
-                    "Expected '{' after '@' in postfix slice"
-                }
-                (SyntaxKind::HASH_SIGIL, SyntaxKind::L_BRACKET) => {
-                    "Expected '[' after '%' in postfix slice"
-                }
-                (SyntaxKind::HASH_SIGIL, SyntaxKind::L_BRACE) => {
-                    "Expected '{' after '%' in postfix slice"
-                }
+                (SyntaxKind::ARRAY_SIGIL, T!['[']) => "Expected '[' after '@' in postfix slice",
+                (SyntaxKind::ARRAY_SIGIL, T!['{']) => "Expected '{' after '@' in postfix slice",
+                (SyntaxKind::HASH_SIGIL, T!['[']) => "Expected '[' after '%' in postfix slice",
+                (SyntaxKind::HASH_SIGIL, T!['{']) => "Expected '{' after '%' in postfix slice",
                 _ => "Expected slice delimiter after sigil",
             };
             self.error(message);
@@ -75,8 +67,8 @@ impl Parser<'_> {
             self.skip_whitespace_and_newlines();
         } else {
             let message = match closing {
-                SyntaxKind::R_BRACKET => "Expected ']' after postfix slice expression",
-                SyntaxKind::R_BRACE => "Expected '}' after postfix slice expression",
+                T![']'] => "Expected ']' after postfix slice expression",
+                T!['}'] => "Expected '}' after postfix slice expression",
                 _ => "Expected closing delimiter after postfix slice expression",
             };
             self.error(message);
@@ -107,19 +99,19 @@ impl Parser<'_> {
             self.skip_whitespace_and_newlines();
 
             match next_kind_op {
-                SyntaxKind::INCREMENT => {
+                T![++] => {
                     self.parse_postfix_op(initial_checkpoint, SyntaxKind::POSTFIX_INCREMENT);
                 }
-                SyntaxKind::DECREMENT => {
+                T![--] => {
                     self.parse_postfix_op(initial_checkpoint, SyntaxKind::POSTFIX_DECREMENT);
                 }
-                SyntaxKind::ARROW => {
+                T![->] => {
                     // After '->', the next token is a value (method name, '{', '(', etc.)
                     self.bump_value(); // ->
                     self.skip_whitespace_and_newlines();
 
                     match self.current_kind() {
-                        Some(SyntaxKind::L_BRACE) => {
+                        Some(T!['{']) => {
                             // Hash reference access: expr->{key}
                             self.builder.start_node_at(
                                 initial_checkpoint,
@@ -133,7 +125,7 @@ impl Parser<'_> {
                                 self.error("Expected expression in hash reference access");
                             }
 
-                            if self.at(SyntaxKind::R_BRACE) {
+                            if self.at(T!['}']) {
                                 // After '}', expect an operator
                                 self.bump_op(); // }
                                 self.skip_whitespace_and_newlines();
@@ -144,7 +136,7 @@ impl Parser<'_> {
                             self.builder.finish_node();
                             current_subject = PostfixSubject::Variable;
                         }
-                        Some(SyntaxKind::L_BRACKET) => {
+                        Some(T!['[']) => {
                             // Array reference access: expr->[index]
                             self.builder.start_node_at(
                                 initial_checkpoint,
@@ -158,7 +150,7 @@ impl Parser<'_> {
                                 self.error("Expected expression in array reference access");
                             }
 
-                            if self.at(SyntaxKind::R_BRACKET) {
+                            if self.at(T![']']) {
                                 // After ']', expect an operator
                                 self.bump_op(); // ]
                                 self.skip_whitespace_and_newlines();
@@ -169,7 +161,7 @@ impl Parser<'_> {
                             self.builder.finish_node();
                             current_subject = PostfixSubject::Variable;
                         }
-                        Some(SyntaxKind::L_PAREN) => {
+                        Some(T!['(']) => {
                             // Code reference call: expr->(args)
                             self.builder.start_node_at(
                                 initial_checkpoint,
@@ -184,7 +176,7 @@ impl Parser<'_> {
                             // Allow newlines or other trivia before closing ')'
                             self.skip_whitespace_and_newlines();
 
-                            if self.at(SyntaxKind::R_PAREN) {
+                            if self.at(T![')']) {
                                 // After ')', expect an operator
                                 self.bump_op(); // )
                                 self.skip_whitespace_and_newlines();
@@ -200,14 +192,14 @@ impl Parser<'_> {
                                 || SyntaxKind::is_keyword(kind)
                                 || matches!(
                                     kind,
-                                    SyntaxKind::STR_EQ
-                                        | SyntaxKind::STR_NE
-                                        | SyntaxKind::STR_GT
-                                        | SyntaxKind::STR_LT
-                                        | SyntaxKind::STR_GE
-                                        | SyntaxKind::STR_LE
-                                        | SyntaxKind::STR_CMP
-                                        | SyntaxKind::X
+                                    T![eq]
+                                        | T![ne]
+                                        | T![gt]
+                                        | T![lt]
+                                        | T![ge]
+                                        | T![le]
+                                        | T![cmp]
+                                        | T![x]
                                 ) =>
                         {
                             // Method call: expr->method()
@@ -232,27 +224,22 @@ impl Parser<'_> {
                                     .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
                                     .map(|(k, _)| k);
 
-                                handled_slice = if let Some(
-                                    opening @ (SyntaxKind::L_BRACKET | SyntaxKind::L_BRACE),
-                                ) = next_token
-                                {
-                                    let closing = if opening == SyntaxKind::L_BRACKET {
-                                        SyntaxKind::R_BRACKET
-                                    } else {
-                                        SyntaxKind::R_BRACE
-                                    };
+                                handled_slice =
+                                    if let Some(opening @ (T!['['] | T!['{'])) = next_token {
+                                        let closing =
+                                            if opening == T!['['] { T![']'] } else { T!['}'] };
 
-                                    self.parse_postfix_slice_expr(
-                                        initial_checkpoint,
-                                        kind,
-                                        opening,
-                                        closing,
-                                    );
-                                    current_subject = PostfixSubject::Other;
-                                    true
-                                } else {
-                                    false
-                                };
+                                        self.parse_postfix_slice_expr(
+                                            initial_checkpoint,
+                                            kind,
+                                            opening,
+                                            closing,
+                                        );
+                                        current_subject = PostfixSubject::Other;
+                                        true
+                                    } else {
+                                        false
+                                    };
                             }
 
                             if handled_slice {
@@ -281,7 +268,7 @@ impl Parser<'_> {
                         }
                     }
                 }
-                SyntaxKind::L_PAREN => {
+                T!['('] => {
                     // Function call: expr(args)
                     self.builder
                         .start_node_at(initial_checkpoint, SyntaxKind::FUNCTION_CALL_EXPR.into());
@@ -294,7 +281,7 @@ impl Parser<'_> {
                     // Allow newlines or other trivia before closing ')'
                     self.skip_whitespace_and_newlines();
 
-                    if self.at(SyntaxKind::R_PAREN) {
+                    if self.at(T![')']) {
                         // After ')', expect an operator
                         self.bump_op(); // )
                         self.skip_whitespace_and_newlines();
@@ -305,7 +292,7 @@ impl Parser<'_> {
                     self.builder.finish_node();
                     current_subject = PostfixSubject::Other;
                 }
-                SyntaxKind::L_BRACKET => {
+                T!['['] => {
                     // Direct array subscription: expr[index]
                     // Allowed on variables and parenthesized lists
                     if current_subject == PostfixSubject::Other {
@@ -328,7 +315,7 @@ impl Parser<'_> {
 
                     self.skip_whitespace_and_newlines();
 
-                    if self.at(SyntaxKind::R_BRACKET) {
+                    if self.at(T![']']) {
                         // After ']', expect an operator
                         self.bump_op(); // ]
                         self.skip_whitespace_and_newlines();
@@ -339,7 +326,7 @@ impl Parser<'_> {
                     self.builder.finish_node();
                     current_subject = PostfixSubject::Variable;
                 }
-                SyntaxKind::L_BRACE => {
+                T!['{'] => {
                     // Direct hash subscription: expr{key}
                     // Only allowed on variables (not on parenthesized lists)
                     if current_subject != PostfixSubject::Variable {
@@ -362,7 +349,7 @@ impl Parser<'_> {
 
                     self.skip_whitespace_and_newlines();
 
-                    if self.at(SyntaxKind::R_BRACE) {
+                    if self.at(T!['}']) {
                         // After '}', expect an operator
                         self.bump_op(); // }
                         self.skip_whitespace_and_newlines();

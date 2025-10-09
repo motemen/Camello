@@ -1,4 +1,4 @@
-use crate::SyntaxKind;
+use crate::{SyntaxKind, T};
 use logos::Logos;
 use std::collections::VecDeque;
 
@@ -291,14 +291,14 @@ impl Token {
             Token::DollarHash => SyntaxKind::ARRAY_INDEX_SIGIL,
             Token::Dollar => SyntaxKind::SCALAR_SIGIL,
             Token::At => SyntaxKind::ARRAY_SIGIL,
-            Token::Backslash => SyntaxKind::BACKSLASH,
+            Token::Backslash => T!['\\'],
             Token::Ampersand => SyntaxKind::CODE_SIGIL, // Will be disambiguated
-            Token::RequireKw => SyntaxKind::REQUIRE_KW,
-            Token::BeginKw => SyntaxKind::BEGIN_KW,
-            Token::EndBlockKw => SyntaxKind::END_BLOCK_KW,
-            Token::InitKw => SyntaxKind::INIT_KW,
-            Token::CheckKw => SyntaxKind::CHECK_KW,
-            Token::UnitcheckKw => SyntaxKind::UNITCHECK_KW,
+            Token::RequireKw => T![require],
+            Token::BeginKw => T![BEGIN],
+            Token::EndBlockKw => T![END],
+            Token::InitKw => T![INIT],
+            Token::CheckKw => T![CHECK],
+            Token::UnitcheckKw => T![UNITCHECK],
             Token::Ident => SyntaxKind::IDENT,
             Token::Number => SyntaxKind::NUMBER,
             Token::String => SyntaxKind::STRING,
@@ -306,52 +306,52 @@ impl Token {
             Token::Version => SyntaxKind::VERSION,
             Token::BareVersion => SyntaxKind::BARE_VERSION,
             Token::RegexLiteral => SyntaxKind::REGEX_LITERAL,
-            Token::EndKw => SyntaxKind::END_KW,
-            Token::DataKw => SyntaxKind::DATA_KW,
+            Token::EndKw => T![__END__],
+            Token::DataKw => T![__DATA__],
             Token::PodCommand => SyntaxKind::POD_CONTENT, // Not used anymore
-            Token::LBrace => SyntaxKind::L_BRACE,
-            Token::RBrace => SyntaxKind::R_BRACE,
-            Token::LParen => SyntaxKind::L_PAREN,
-            Token::RParen => SyntaxKind::R_PAREN,
-            Token::LBracket => SyntaxKind::L_BRACKET,
-            Token::RBracket => SyntaxKind::R_BRACKET,
-            Token::Semicolon => SyntaxKind::SEMICOLON,
-            Token::Comma => SyntaxKind::COMMA,
-            Token::DoubleColon => SyntaxKind::DOUBLE_COLON,
-            Token::QuestionMark => SyntaxKind::QUESTION_MARK,
-            Token::Colon => SyntaxKind::COLON,
-            Token::Eq => SyntaxKind::EQ,
-            Token::Increment => SyntaxKind::INCREMENT,
-            Token::Decrement => SyntaxKind::DECREMENT,
-            Token::Plus => SyntaxKind::PLUS,
-            Token::Minus => SyntaxKind::MINUS,
-            Token::DotDotDot => SyntaxKind::RANGE_EXCLUSIVE,
-            Token::DotDot => SyntaxKind::RANGE,
-            Token::Dot => SyntaxKind::DOT,
-            Token::Arrow => SyntaxKind::ARROW,
-            Token::FatComma => SyntaxKind::FAT_COMMA,
-            Token::Exponent => SyntaxKind::EXPONENT,
-            Token::Star => SyntaxKind::STAR,
-            Token::Slash => SyntaxKind::SLASH,
-            Token::Percent => SyntaxKind::MODULO,
-            Token::Greater => SyntaxKind::GT,
-            Token::Less => SyntaxKind::LT,
-            Token::ShiftLeft => SyntaxKind::SHIFT_LEFT,
-            Token::ShiftRight => SyntaxKind::SHIFT_RIGHT,
+            Token::LBrace => T!['{'],
+            Token::RBrace => T!['}'],
+            Token::LParen => T!['('],
+            Token::RParen => T![')'],
+            Token::LBracket => T!['['],
+            Token::RBracket => T![']'],
+            Token::Semicolon => T![;],
+            Token::Comma => T![,],
+            Token::DoubleColon => T![::],
+            Token::QuestionMark => T![?],
+            Token::Colon => T![:],
+            Token::Eq => T![=],
+            Token::Increment => T![++],
+            Token::Decrement => T![--],
+            Token::Plus => T![+],
+            Token::Minus => T![-],
+            Token::DotDotDot => T![...],
+            Token::DotDot => T![..],
+            Token::Dot => T![.],
+            Token::Arrow => T![->],
+            Token::FatComma => T![=>],
+            Token::Exponent => T![**],
+            Token::Star => T![*],
+            Token::Slash => T![/],
+            Token::Percent => T![%],
+            Token::Greater => T![>],
+            Token::Less => T![<],
+            Token::ShiftLeft => T![<<],
+            Token::ShiftRight => T![>>],
             Token::Caret => SyntaxKind::CARET, // Will be disambiguated
-            Token::Pipe => SyntaxKind::BITWISE_OR,
-            Token::GreaterEqual => SyntaxKind::GE,
-            Token::LessEqual => SyntaxKind::LE,
-            Token::EqualEqual => SyntaxKind::EQ_EQ,
-            Token::NotEqual => SyntaxKind::NE,
-            Token::RegexMatch => SyntaxKind::REGEX_MATCH,
-            Token::RegexNotMatch => SyntaxKind::REGEX_NOT_MATCH,
-            Token::LogicalAnd => SyntaxKind::LOGICAL_AND,
-            Token::LogicalOr => SyntaxKind::LOGICAL_OR,
-            Token::LogicalNot => SyntaxKind::LOGICAL_NOT,
-            Token::Tilde => SyntaxKind::BITWISE_NOT,
-            Token::DefinedOr => SyntaxKind::DEFINED_OR,
-            Token::Spaceship => SyntaxKind::SPACESHIP,
+            Token::Pipe => T![|],
+            Token::GreaterEqual => T![>=],
+            Token::LessEqual => T![<=],
+            Token::EqualEqual => T![==],
+            Token::NotEqual => T![!=],
+            Token::RegexMatch => T![=~],
+            Token::RegexNotMatch => T![!~],
+            Token::LogicalAnd => T![&&],
+            Token::LogicalOr => T![||],
+            Token::LogicalNot => T![!],
+            Token::Tilde => T![~],
+            Token::DefinedOr => T!["//"],
+            Token::Spaceship => T![<=>],
             Token::Whitespace => SyntaxKind::WHITESPACE,
             Token::Newline => SyntaxKind::NEWLINE,
             Token::Comment => SyntaxKind::COMMENT,
@@ -412,12 +412,12 @@ impl QuoteLikeMode {
     /// Get QuoteLikeMode from keyword SyntaxKind
     pub fn from_keyword(kind: SyntaxKind) -> Self {
         match kind {
-            SyntaxKind::Q_KW | SyntaxKind::QQ_KW | SyntaxKind::QX_KW => Self::Q,
-            SyntaxKind::QW_KW => Self::QW,
-            SyntaxKind::M_KW => Self::M,
-            SyntaxKind::QR_KW => Self::QR,
-            SyntaxKind::S_KW => Self::S,
-            SyntaxKind::TR_KW | SyntaxKind::Y_KW => Self::TR,
+            T![q] | T![qq] | T![qx] => Self::Q,
+            T![qw] => Self::QW,
+            T![m] => Self::M,
+            T![qr] => Self::QR,
+            T![s] => Self::S,
+            T![tr] | T![y] => Self::TR,
             _ => panic!("Invalid quote-like keyword: {:?}", kind),
         }
     }
@@ -657,7 +657,7 @@ impl<'a> Lexer<'a> {
 
                     if is_valid_number {
                         // Split: return 'x' now, push the rest (number literal) to pending queue
-                        syntax_kind = SyntaxKind::X;
+                        syntax_kind = T![x];
                         adjusted_text = &text[..1]; // Just 'x'
                                                     // Push the remaining number literal to pending queue as a NUMBER token
                         self.pending.push_back((SyntaxKind::NUMBER, remaining));
@@ -667,7 +667,7 @@ impl<'a> Lexer<'a> {
                 // Quote-like auto-expansion disabled. Parser triggers begin_quote_like().
 
                 // Special handling for __END__ and __DATA__: consume everything remaining as data section
-                if matches!(syntax_kind, SyntaxKind::END_KW | SyntaxKind::DATA_KW) {
+                if matches!(syntax_kind, T![__END__] | T![__DATA__]) {
                     return Some((syntax_kind, adjusted_text));
                 }
 
@@ -704,20 +704,20 @@ impl<'a> Lexer<'a> {
                 // Word operators in operator context; otherwise identifiers
                 "eq" | "ne" | "gt" | "lt" | "ge" | "le" | "cmp" => match ctx {
                     LexContext::Operator | LexContext::AmbiguousValueLookahead => match text {
-                        "eq" => SyntaxKind::STR_EQ,
-                        "ne" => SyntaxKind::STR_NE,
-                        "gt" => SyntaxKind::STR_GT,
-                        "lt" => SyntaxKind::STR_LT,
-                        "ge" => SyntaxKind::STR_GE,
-                        "le" => SyntaxKind::STR_LE,
-                        "cmp" => SyntaxKind::STR_CMP,
+                        "eq" => T![eq],
+                        "ne" => T![ne],
+                        "gt" => T![gt],
+                        "lt" => T![lt],
+                        "ge" => T![ge],
+                        "le" => T![le],
+                        "cmp" => T![cmp],
                         _ => unreachable!(),
                     },
                     LexContext::Value => SyntaxKind::IDENT,
                 },
                 // Repetition operator vs identifier
                 "x" => match ctx {
-                    LexContext::Operator | LexContext::AmbiguousValueLookahead => SyntaxKind::X,
+                    LexContext::Operator | LexContext::AmbiguousValueLookahead => T![x],
                     LexContext::Value => SyntaxKind::IDENT,
                 },
                 _ => {
@@ -741,51 +741,51 @@ impl<'a> Lexer<'a> {
             // Ambiguous symbol tokens depending on context
             Token::Percent => match ctx {
                 LexContext::Value => SyntaxKind::HASH_SIGIL,
-                LexContext::Operator => SyntaxKind::MODULO,
+                LexContext::Operator => T![%],
                 LexContext::AmbiguousValueLookahead => {
                     if self.ambiguous_remainder_starts_sigil_target() {
                         SyntaxKind::HASH_SIGIL
                     } else {
-                        SyntaxKind::MODULO
+                        T![%]
                     }
                 }
             },
             Token::Star => match ctx {
                 LexContext::Value => SyntaxKind::TYPEGLOB_SIGIL,
-                LexContext::Operator => SyntaxKind::STAR,
+                LexContext::Operator => T![*],
                 LexContext::AmbiguousValueLookahead => {
                     if self.ambiguous_remainder_starts_sigil_target() {
                         SyntaxKind::TYPEGLOB_SIGIL
                     } else {
-                        SyntaxKind::STAR
+                        T![*]
                     }
                 }
             },
             Token::DotDotDot => match ctx {
                 LexContext::Operator | LexContext::AmbiguousValueLookahead => {
-                    SyntaxKind::RANGE_EXCLUSIVE
+                    T![...]
                 }
                 LexContext::Value => SyntaxKind::ELLIPSIS,
             },
-            Token::Slash => SyntaxKind::SLASH, // regex literals handled elsewhere
+            Token::Slash => T![/], // regex literals handled elsewhere
             Token::Ampersand => match ctx {
                 LexContext::Value => SyntaxKind::CODE_SIGIL,
-                LexContext::Operator => SyntaxKind::BITWISE_AND,
+                LexContext::Operator => T![&],
                 LexContext::AmbiguousValueLookahead => {
                     if self.ambiguous_remainder_starts_sigil_target() {
                         SyntaxKind::CODE_SIGIL
                     } else {
-                        SyntaxKind::BITWISE_AND
+                        T![&]
                     }
                 }
             },
             Token::Caret => match ctx {
                 LexContext::Value => SyntaxKind::CARET,
                 LexContext::Operator | LexContext::AmbiguousValueLookahead => {
-                    SyntaxKind::BITWISE_XOR
+                    T![^]
                 }
             },
-            Token::Pipe => SyntaxKind::BITWISE_OR,
+            Token::Pipe => T![|],
             // Everything else: direct mapping
             _ => token.to_syntax_kind(),
         }
@@ -830,46 +830,46 @@ impl<'a> Lexer<'a> {
     fn map_ident_keyword(text: &str) -> Option<SyntaxKind> {
         Some(match text {
             // Control/decl keywords
-            "sub" => SyntaxKind::SUB_KW,
-            "my" => SyntaxKind::MY_KW,
-            "our" => SyntaxKind::OUR_KW,
-            "state" => SyntaxKind::STATE_KW,
-            "local" => SyntaxKind::LOCAL_KW,
-            "if" => SyntaxKind::IF_KW,
-            "unless" => SyntaxKind::UNLESS_KW,
-            "elsif" => SyntaxKind::ELSIF_KW,
-            "else" => SyntaxKind::ELSE_KW,
-            "for" => SyntaxKind::FOR_KW,
-            "foreach" => SyntaxKind::FOREACH_KW,
-            "while" => SyntaxKind::WHILE_KW,
-            "until" => SyntaxKind::UNTIL_KW,
-            "package" => SyntaxKind::PACKAGE_KW,
-            "use" => SyntaxKind::USE_KW,
-            "no" => SyntaxKind::NO_KW,
-            "require" => SyntaxKind::REQUIRE_KW,
-            "return" => SyntaxKind::RETURN_KW,
-            "undef" => SyntaxKind::UNDEF_KW,
-            "next" => SyntaxKind::NEXT_KW,
-            "last" => SyntaxKind::LAST_KW,
-            "redo" => SyntaxKind::REDO_KW,
-            "try" => SyntaxKind::TRY_KW,
-            "catch" => SyntaxKind::CATCH_KW,
-            "finally" => SyntaxKind::FINALLY_KW,
+            "sub" => T![sub],
+            "my" => T![my],
+            "our" => T![our],
+            "state" => T![state],
+            "local" => T![local],
+            "if" => T![if],
+            "unless" => T![unless],
+            "elsif" => T![elsif],
+            "else" => T![else],
+            "for" => T![for],
+            "foreach" => T![foreach],
+            "while" => T![while],
+            "until" => T![until],
+            "package" => T![package],
+            "use" => T![use],
+            "no" => T![no],
+            "require" => T![require],
+            "return" => T![return],
+            "undef" => T![undef],
+            "next" => T![next],
+            "last" => T![last],
+            "redo" => T![redo],
+            "try" => T![try],
+            "catch" => T![catch],
+            "finally" => T![finally],
             // Quote-like starters (treated as keywords regardless of context)
-            "q" => SyntaxKind::Q_KW,
-            "qq" => SyntaxKind::QQ_KW,
-            "qr" => SyntaxKind::QR_KW,
-            "qx" => SyntaxKind::QX_KW,
-            "qw" => SyntaxKind::QW_KW,
-            "m" => SyntaxKind::M_KW,
-            "s" => SyntaxKind::S_KW,
-            "tr" => SyntaxKind::TR_KW,
-            "y" => SyntaxKind::Y_KW,
+            "q" => T![q],
+            "qq" => T![qq],
+            "qr" => T![qr],
+            "qx" => T![qx],
+            "qw" => T![qw],
+            "m" => T![m],
+            "s" => T![s],
+            "tr" => T![tr],
+            "y" => T![y],
             // Logical word operators as keywords
-            "not" => SyntaxKind::NOT_KW,
-            "and" => SyntaxKind::AND_KW,
-            "or" => SyntaxKind::OR_KW,
-            "xor" => SyntaxKind::XOR_KW,
+            "not" => T![not],
+            "and" => T![and],
+            "or" => T![or],
+            "xor" => T![xor],
             _ => return None,
         })
     }
