@@ -163,19 +163,18 @@ impl Parser<'_> {
         // Capture name before consuming, for prototype lookups.
         let function_name = self.peek_block_function_basename().unwrap_or_default();
 
-        // Check if this is a builtin with special parsing requirements
-        if let Some(prototype) = Self::builtin_prototype(&function_name) {
-            // Zero-arity builtins should just be parsed as identifiers (they can participate in expressions)
-            if !prototype.zero_arity() {
-                // Delegate to specialized builtin handler
-                self.parse_builtin_function_call(&function_name, prototype, start);
-                return;
-            }
-        }
-
-        // Not a special builtin - parse as regular identifier
+        // Always parse the identifier first.
         self.parse_identifier_or_qualified();
         self.skip_whitespace_and_newlines();
+
+        // Check if it's a built-in. If so, delegate and return.
+        if let Some(prototype) = Self::builtin_prototype(&function_name) {
+            self.parse_builtin_function_call(&function_name, prototype, start);
+            return;
+        }
+
+        // It's not a built-in, so handle other call styles.
+        // The identifier is already parsed.
 
         // Handle block-style calls for non-builtins
         if self.at(SyntaxKind::L_BRACE) && Self::is_block_function(&function_name) {
@@ -203,9 +202,12 @@ impl Parser<'_> {
         prototype: &PrototypeProfile,
         start: rowan::Checkpoint,
     ) {
-        // First, consume the function name
-        self.parse_identifier_or_qualified();
-        self.skip_whitespace_and_newlines();
+        // The function name has already been parsed by the caller.
+
+        // Handle zero-arity builtins: they take no arguments, so we're done.
+        if prototype.zero_arity() {
+            return;
+        }
 
         // Dispatch based on what follows and the function's prototype
         if self.at(SyntaxKind::L_BRACE) && prototype.takes_block() {
@@ -302,7 +304,7 @@ impl Parser<'_> {
     }
 
     /// Handle indirect function calls for non-builtin identifiers (no parentheses).
-    fn parse_non_builtin_indirect_call(&mut self, function_name: &str, start: rowan::Checkpoint) {
+    fn parse_non_builtin_indirect_call(&mut self, _function_name: &str, start: rowan::Checkpoint) {
         let next_value_token = self.peek_non_trivia_token_with_context(LexContext::Value);
         let mut next_kind = self
             .peek_non_trivia_token_with_context(LexContext::AmbiguousValueLookahead)
@@ -310,11 +312,6 @@ impl Parser<'_> {
 
         if next_value_token.is_some_and(|(kind, _)| kind == SyntaxKind::HEREDOC_START) {
             next_kind = Some(SyntaxKind::HEREDOC_START);
-        }
-
-        // Adjust for zero-arity builtins (e.g., fork, wait, time) - they don't take arguments
-        if Self::builtin_prototype(function_name).is_some_and(|spec| spec.zero_arity()) {
-            return;
         }
 
         // For non-builtins, treat `/` as division operator instead of forcing regex
