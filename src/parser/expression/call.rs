@@ -157,7 +157,7 @@ impl Parser<'_> {
 
     /// Parse an identifier-like expression (including cases where a keyword is coerced to IDENT)
     /// and handle possible function calls (regular or block).
-    pub(super) fn parse_ident_like_expr(&mut self, coerce_current_to_ident: bool) {
+    pub(super) fn parse_ident_like_expr(&mut self) {
         let start = self.builder.checkpoint();
 
         // Capture name before consuming, for prototype lookups.
@@ -168,22 +168,13 @@ impl Parser<'_> {
             // Zero-arity builtins should just be parsed as identifiers (they can participate in expressions)
             if !prototype.zero_arity() {
                 // Delegate to specialized builtin handler
-                self.parse_builtin_function_call(
-                    &function_name,
-                    prototype,
-                    start,
-                    coerce_current_to_ident,
-                );
+                self.parse_builtin_function_call(&function_name, prototype, start);
                 return;
             }
         }
 
         // Not a special builtin - parse as regular identifier
-        if coerce_current_to_ident {
-            self.bump_as(SyntaxKind::IDENT);
-        } else {
-            self.parse_identifier_or_qualified();
-        }
+        self.parse_identifier_or_qualified();
         self.skip_whitespace_and_newlines();
 
         // Handle block-style calls for non-builtins
@@ -211,14 +202,9 @@ impl Parser<'_> {
         function_name: &str,
         prototype: &PrototypeProfile,
         start: rowan::Checkpoint,
-        coerce_current_to_ident: bool,
     ) {
         // First, consume the function name
-        if coerce_current_to_ident {
-            self.bump_as(SyntaxKind::IDENT);
-        } else {
-            self.parse_identifier_or_qualified();
-        }
+        self.parse_identifier_or_qualified();
         self.skip_whitespace_and_newlines();
 
         // Dispatch based on what follows and the function's prototype
