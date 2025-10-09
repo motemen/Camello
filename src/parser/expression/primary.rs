@@ -1,4 +1,4 @@
-use crate::SyntaxKind;
+use crate::{SyntaxKind, T};
 
 use super::super::Parser;
 
@@ -7,17 +7,17 @@ impl Parser<'_> {
         self.builder.start_node(SyntaxKind::HASH_REF.into());
 
         // Opening '{' of anonymous hash; inside expects values
-        self.expect_value(SyntaxKind::L_BRACE);
+        self.expect_value(T!['{']);
         self.skip_whitespace_and_newlines();
 
         // Parse expressions inside braces - could be key => value pairs or a simple expression list
-        if !self.at(SyntaxKind::R_BRACE) {
+        if !self.at(T!['}']) {
             self.expression_list();
         }
 
         self.skip_whitespace_and_newlines();
         // After closing '}', expect an operator
-        self.expect_op(SyntaxKind::R_BRACE);
+        self.expect_op(T!['}']);
         self.skip_whitespace(); // 改行ではなくスペースのみをスキップ
         self.builder.finish_node();
     }
@@ -26,17 +26,17 @@ impl Parser<'_> {
         self.builder.start_node(SyntaxKind::ARRAY_REF.into());
 
         // Opening '[' of anonymous array; inside expects values
-        self.expect_value(SyntaxKind::L_BRACKET);
+        self.expect_value(T!['[']);
         self.skip_whitespace_and_newlines();
 
         // Parse expression list inside brackets (supports trailing comma)
-        if !self.at(SyntaxKind::R_BRACKET) {
+        if !self.at(T![']']) {
             self.expression_list();
         }
 
         self.skip_whitespace_and_newlines();
         // After closing ']', expect an operator
-        self.expect_op(SyntaxKind::R_BRACKET);
+        self.expect_op(T![']']);
         self.skip_whitespace_and_newlines();
         self.builder.finish_node();
     }
@@ -53,7 +53,7 @@ impl Parser<'_> {
             SyntaxKind::ARRAY_INDEX_SIGIL => true, // $# variables are always compound
             SyntaxKind::SCALAR_SIGIL | SyntaxKind::ARRAY_SIGIL | SyntaxKind::HASH_SIGIL => {
                 match next_token_kind {
-                    Some(SyntaxKind::L_BRACE) => true, // @{expr}, %{expr}, ${expr}
+                    Some(T!['{']) => true, // @{expr}, %{expr}, ${expr}
                     Some(SyntaxKind::SCALAR_SIGIL) => {
                         // Peek the third token to ensure a valid variable name follows
                         // to avoid misclassifying special variables like "$$;" as dereferencing
@@ -68,7 +68,7 @@ impl Parser<'_> {
                 }
             }
             SyntaxKind::TYPEGLOB_SIGIL => match next_token_kind {
-                Some(SyntaxKind::L_BRACE) => true,     // *{expr}
+                Some(T!['{']) => true,                 // *{expr}
                 Some(kind) if kind.is_sigil() => true, // *$name, *@name, etc.
                 _ => false,
             },
@@ -134,7 +134,7 @@ impl Parser<'_> {
                     self.bump();
                 }
             }
-            Some(SyntaxKind::L_BRACE) => {
+            Some(T!['{']) => {
                 // Handle ${...} syntax (e.g., ${^NAME}) as simple variables
                 self.bump(); // consume {
                 self.skip_whitespace_and_newlines();
@@ -156,13 +156,13 @@ impl Parser<'_> {
 
                 self.skip_whitespace_and_newlines();
                 // Expect closing brace
-                if self.at(SyntaxKind::R_BRACE) {
+                if self.at(T!['}']) {
                     self.bump();
                 } else {
                     self.error("Expected '}' to close variable name");
                 }
             }
-            Some(SyntaxKind::DOUBLE_COLON) => {
+            Some(T![::]) => {
                 // Allow variables like $::foo (root-qualified names)
                 // Do not consume '::' here. Let parse_identifier_or_qualified handle it.
                 self.parse_identifier_or_qualified();
@@ -226,7 +226,7 @@ impl Parser<'_> {
                         // $#$var
                         self.parse_variable();
                     }
-                    Some(SyntaxKind::L_BRACE) => {
+                    Some(T!['{']) => {
                         // $#{...}
                         self.bump(); // consume {
 
@@ -234,7 +234,7 @@ impl Parser<'_> {
                             self.error("Expected expression in $#{...}");
                         }
 
-                        if self.at(SyntaxKind::R_BRACE) {
+                        if self.at(T!['}']) {
                             self.bump(); // consume }
                         } else {
                             self.error("Expected '}' after expression in $#{...}");
@@ -251,7 +251,7 @@ impl Parser<'_> {
             | SyntaxKind::TYPEGLOB_SIGIL => {
                 // Handle braced variables and dereferencing
                 match self.current_kind() {
-                    Some(SyntaxKind::L_BRACE) => {
+                    Some(T!['{']) => {
                         if self.should_parse_braced_block_in_compound_var() {
                             self.block();
                             self.skip_whitespace_and_newlines();
@@ -317,7 +317,7 @@ impl Parser<'_> {
         }
 
         // Check for :: after identifier - if found, it's a package-qualified name which is not allowed for my/state
-        if self.at(SyntaxKind::DOUBLE_COLON) {
+        if self.at(T![::]) {
             self.error("Package-qualified variable names are not allowed with 'my' or 'state' declarations");
         }
 
@@ -365,7 +365,7 @@ impl Parser<'_> {
         // Use token-based lookahead to check if next non-trivia token is a dollar sigil or brace
         // Valid dereference patterns are of the form: @$ref, %$ref, $$ref, @{expr}, %{expr}, ${expr}
         match self.peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 1) {
-            Some((SyntaxKind::L_BRACE, _)) => true,
+            Some((T!['{'], _)) => true,
             Some((SyntaxKind::SCALAR_SIGIL, _)) => {
                 // Peek the third token to ensure a valid variable name follows; avoid misclassifying
                 // special variables like "$$;" as dereferencing.
@@ -384,8 +384,8 @@ impl Parser<'_> {
             Some(kind) => {
                 kind == SyntaxKind::IDENT
                     || kind == SyntaxKind::NUMBER
-                    || kind == SyntaxKind::L_BRACE
-                    || kind == SyntaxKind::DOUBLE_COLON  // for qualified names like $::foo
+                    || kind == T!['{']
+                    || kind == T![::]  // for qualified names like $::foo
                     || kind.is_keyword() // keywords can be used as variable names
             }
             None => false,
@@ -424,7 +424,7 @@ impl Parser<'_> {
         // Check if we have closing brace next (possibly after whitespace/newlines)
         // This suggests we're a single token inside braces, which is typically a hash key
         self.peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 1)
-            .is_some_and(|(kind, _)| kind == SyntaxKind::R_BRACE)
+            .is_some_and(|(kind, _)| kind == T!['}'])
     }
 
     // This function is no longer needed - compound variables are now handled in parse_variable()
@@ -456,7 +456,7 @@ impl Parser<'_> {
         let mut started_qualified = false;
         let mut saw_segment = false;
 
-        if self.at(SyntaxKind::DOUBLE_COLON) {
+        if self.at(T![::]) {
             started_qualified = true;
             self.builder
                 .start_node_at(checkpoint, SyntaxKind::QUALIFIED_IDENT.into());
@@ -468,14 +468,14 @@ impl Parser<'_> {
             return;
         }
 
-        if !started_qualified && self.at(SyntaxKind::DOUBLE_COLON) {
+        if !started_qualified && self.at(T![::]) {
             started_qualified = true;
             self.builder
                 .start_node_at(checkpoint, SyntaxKind::QUALIFIED_IDENT.into());
         }
 
         if started_qualified {
-            while self.at(SyntaxKind::DOUBLE_COLON) {
+            while self.at(T![::]) {
                 self.bump();
                 self.skip_whitespace_and_newlines();
 
@@ -505,7 +505,7 @@ impl Parser<'_> {
         }
 
         self.skip_whitespace_and_newlines();
-        if self.at(SyntaxKind::R_BRACE) {
+        if self.at(T!['}']) {
             self.bump(); // consume }
         } else {
             self.error(brace_error);

@@ -1,6 +1,6 @@
 use rowan::{NodeOrToken, SyntaxElementChildren};
 
-use crate::{PerlLanguage, PerlNode, SyntaxKind};
+use crate::{PerlLanguage, PerlNode, SyntaxKind, T};
 
 use super::Formatter;
 
@@ -89,9 +89,9 @@ impl Formatter {
                 match child {
                     NodeOrToken::Node(child_node) => self.format_node(&child_node),
                     NodeOrToken::Token(token) => {
-                        if token.kind() == SyntaxKind::L_PAREN {
+                        if token.kind() == T!['('] {
                             // Force no space before this L_PAREN by writing it directly
-                            self.write_str("(", Some(SyntaxKind::L_PAREN));
+                            self.write_str("(", Some(T!['(']));
                             self.remember_token(&token);
                         } else {
                             self.format_token(&token);
@@ -140,15 +140,10 @@ impl Formatter {
         // Check if the parenthesized expression contains newlines
         if self.has_newline_before_first_value(node) {
             // Use multiline formatting for expressions with newlines
-            self.format_multiline_delimited(node, SyntaxKind::L_PAREN, SyntaxKind::R_PAREN);
+            self.format_multiline_delimited(node, T!['('], T![')']);
         } else {
             // Use single-line formatting with contextual spacing for compact expressions
-            self.format_single_line_delimited_children(
-                node,
-                SyntaxKind::L_PAREN,
-                SyntaxKind::R_PAREN,
-                true,
-            );
+            self.format_single_line_delimited_children(node, T!['('], T![')'], true);
         }
     }
 
@@ -172,11 +167,7 @@ impl Formatter {
                             self.format_simple_block(&child_node);
                         } else {
                             // Consistently use multiline formatting for complex blocks
-                            self.format_multiline_delimited(
-                                &child_node,
-                                SyntaxKind::L_BRACE,
-                                SyntaxKind::R_BRACE,
-                            );
+                            self.format_multiline_delimited(&child_node, T!['{'], T!['}']);
                         }
                     } else {
                         self.format_node(&child_node);
@@ -206,7 +197,7 @@ impl Formatter {
             break;
         }
         // Use multiline formatting for the parenthesized arguments
-        self.format_subscription_iter(children, SyntaxKind::L_PAREN, SyntaxKind::R_PAREN);
+        self.format_subscription_iter(children, T!['('], T![')']);
     }
 
     fn format_until_arrow_iter(&mut self, iter: &mut SyntaxElementChildren<PerlLanguage>) {
@@ -218,7 +209,7 @@ impl Formatter {
                     // Use format_token to ensure proper spacing is applied
                     self.format_token(&token);
 
-                    if token.kind() == SyntaxKind::ARROW {
+                    if token.kind() == T![->] {
                         break;
                     }
                 }
@@ -288,28 +279,28 @@ impl Formatter {
         }
 
         let mut opening = if sigil_kind == SyntaxKind::HASH_SIGIL {
-            SyntaxKind::L_BRACE
+            T!['{']
         } else {
-            SyntaxKind::L_BRACKET
+            T!['[']
         };
         let mut closing = if sigil_kind == SyntaxKind::HASH_SIGIL {
-            SyntaxKind::R_BRACE
+            T!['}']
         } else {
-            SyntaxKind::R_BRACKET
+            T![']']
         };
 
         for element in children.clone() {
             match element {
                 NodeOrToken::Token(token) => match token.kind() {
                     SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE | SyntaxKind::COMMENT => continue,
-                    SyntaxKind::L_BRACE => {
-                        opening = SyntaxKind::L_BRACE;
-                        closing = SyntaxKind::R_BRACE;
+                    T!['{'] => {
+                        opening = T!['{'];
+                        closing = T!['}'];
                         break;
                     }
-                    SyntaxKind::L_BRACKET => {
-                        opening = SyntaxKind::L_BRACKET;
-                        closing = SyntaxKind::R_BRACKET;
+                    T!['['] => {
+                        opening = T!['['];
+                        closing = T![']'];
                         break;
                     }
                     _ => break,
@@ -322,15 +313,15 @@ impl Formatter {
     }
 
     pub(super) fn format_hash_ref_access(&mut self, node: &PerlNode) {
-        self.format_ref_access_expr(node, SyntaxKind::L_BRACE, SyntaxKind::R_BRACE);
+        self.format_ref_access_expr(node, T!['{'], T!['}']);
     }
 
     pub(super) fn format_array_ref_access(&mut self, node: &PerlNode) {
-        self.format_ref_access_expr(node, SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET);
+        self.format_ref_access_expr(node, T!['['], T![']']);
     }
 
     pub(super) fn format_code_ref_call(&mut self, node: &PerlNode) {
-        self.format_ref_access_expr(node, SyntaxKind::L_PAREN, SyntaxKind::R_PAREN);
+        self.format_ref_access_expr(node, T!['('], T![')']);
     }
 
     pub(super) fn format_compound_var(&mut self, node: &PerlNode) {
@@ -347,11 +338,7 @@ impl Formatter {
                             .children()
                             .any(|grandchild| grandchild.kind() == SyntaxKind::STMT)
                         {
-                            self.format_multiline_delimited(
-                                &child_node,
-                                SyntaxKind::L_BRACE,
-                                SyntaxKind::R_BRACE,
-                            );
+                            self.format_multiline_delimited(&child_node, T!['{'], T!['}']);
                         } else {
                             self.format_node(&child_node);
                         }
@@ -364,7 +351,7 @@ impl Formatter {
                         SyntaxKind::WHITESPACE => {
                             // Skip whitespace to ensure compact formatting.
                         }
-                        SyntaxKind::L_BRACE | SyntaxKind::R_BRACE => {
+                        T!['{'] | T!['}'] => {
                             // Format braces without extra spacing or newlines
                             self.write(&token);
                             self.remember_token(&token);
@@ -389,7 +376,7 @@ impl Formatter {
                         SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE => {
                             // Skip trivia to keep the block tight inside compound variables.
                         }
-                        SyntaxKind::L_BRACE | SyntaxKind::R_BRACE => {
+                        T!['{'] | T!['}'] => {
                             self.write(&token);
                             self.remember_token(&token);
                         }
@@ -413,11 +400,11 @@ impl Formatter {
     }
 
     pub(super) fn format_hash_subscription(&mut self, node: &PerlNode) {
-        self.format_subscription_expr(node, SyntaxKind::L_BRACE, SyntaxKind::R_BRACE);
+        self.format_subscription_expr(node, T!['{'], T!['}']);
     }
 
     pub(super) fn format_array_subscription(&mut self, node: &PerlNode) {
-        self.format_subscription_expr(node, SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET);
+        self.format_subscription_expr(node, T!['['], T![']']);
     }
 
     pub(super) fn format_sub_prototype(&mut self, node: &PerlNode) {
@@ -433,7 +420,7 @@ impl Formatter {
                         SyntaxKind::WHITESPACE => {
                             // Skip whitespace inside prototypes to ensure compact formatting
                         }
-                        SyntaxKind::L_PAREN => {
+                        T!['('] => {
                             if self.at_line_start() {
                                 self.add_indent();
                                 self.set_at_line_start(false);

@@ -1,5 +1,47 @@
 #[macro_export]
 macro_rules! T {
+    [++] => {
+        $crate::SyntaxKind::INCREMENT
+    };
+    [--] => {
+        $crate::SyntaxKind::DECREMENT
+    };
+    [**] => {
+        $crate::SyntaxKind::EXPONENT
+    };
+    [=~] => {
+        $crate::SyntaxKind::REGEX_MATCH
+    };
+    [!~] => {
+        $crate::SyntaxKind::REGEX_NOT_MATCH
+    };
+    [<=>] => {
+        $crate::SyntaxKind::SPACESHIP
+    };
+    [=cut] => {
+        $crate::SyntaxKind::CUT_KW
+    };
+    [eq] => {
+        $crate::SyntaxKind::STR_EQ
+    };
+    [ne] => {
+        $crate::SyntaxKind::STR_NE
+    };
+    [gt] => {
+        $crate::SyntaxKind::STR_GT
+    };
+    [lt] => {
+        $crate::SyntaxKind::STR_LT
+    };
+    [ge] => {
+        $crate::SyntaxKind::STR_GE
+    };
+    [le] => {
+        $crate::SyntaxKind::STR_LE
+    };
+    [cmp] => {
+        $crate::SyntaxKind::STR_CMP
+    };
     [$token:tt] => {
         $crate::__syntax_kind_token!($token)
     };
@@ -127,9 +169,6 @@ macro_rules! __syntax_kind_token {
     };
     (^) => {
         $crate::SyntaxKind::BITWISE_XOR
-    };
-    (caret_token) => {
-        $crate::SyntaxKind::CARET
     };
     (=~) => {
         $crate::SyntaxKind::REGEX_MATCH

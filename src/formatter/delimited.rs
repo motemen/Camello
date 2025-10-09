@@ -1,4 +1,4 @@
-use crate::{PerlLanguage, PerlNode, SyntaxKind};
+use crate::{PerlLanguage, PerlNode, SyntaxKind, T};
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
 
 use super::Formatter;
@@ -191,7 +191,7 @@ impl Formatter {
                         SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE => {
                             // Skip trivia here - newlines handled in the delimiter handlers
                         }
-                        SyntaxKind::COMMA => {
+                        T![,] => {
                             self.format_token(&token);
                             self.handle_formatter_newline();
                         }

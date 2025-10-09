@@ -1,5 +1,5 @@
 use super::Lexer;
-use crate::SyntaxKind;
+use crate::{SyntaxKind, T};
 
 impl<'a> Lexer<'a> {
     /// Try to consume entire POD block (=identifier to =cut or EOF)
@@ -79,14 +79,14 @@ impl<'a> Lexer<'a> {
                     // Consume the =cut line including newline
                     let cut_text = &remainder[..=line_end];
                     self.logos_lexer.bump(cut_text.len());
-                    return Some((SyntaxKind::CUT_KW, cut_text));
+                    return Some((T![=cut], cut_text));
                 }
             }
         } else if remainder.starts_with("=cut") {
             // =cut at EOF
             if remainder.len() == 4 || !remainder.chars().nth(4).unwrap().is_alphanumeric() {
                 self.logos_lexer.bump(remainder.len());
-                return Some((SyntaxKind::CUT_KW, remainder));
+                return Some((T![=cut], remainder));
             }
         }
 

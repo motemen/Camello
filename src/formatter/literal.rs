@@ -1,16 +1,16 @@
 use rowan::NodeOrToken;
 
-use crate::{PerlNode, SyntaxKind};
+use crate::{PerlNode, SyntaxKind, T};
 
 use super::Formatter;
 
 impl Formatter {
     pub(super) fn format_hash_ref(&mut self, node: &PerlNode) {
-        self.format_delimited_literal(node, SyntaxKind::L_BRACE, SyntaxKind::R_BRACE);
+        self.format_delimited_literal(node, T!['{'], T!['}']);
     }
 
     pub(super) fn format_array_ref(&mut self, node: &PerlNode) {
-        self.format_delimited_literal(node, SyntaxKind::L_BRACKET, SyntaxKind::R_BRACKET);
+        self.format_delimited_literal(node, T!['['], T![']']);
     }
 
     fn format_single_line_delimited_literal(
@@ -122,31 +122,31 @@ impl Formatter {
     }
 
     pub(super) fn format_q_expr(&mut self, node: &PerlNode) {
-        self.format_q_family_expr(node, SyntaxKind::Q_KW, SyntaxKind::LITERAL_STRING);
+        self.format_q_family_expr(node, T![q], SyntaxKind::LITERAL_STRING);
     }
 
     pub(super) fn format_qq_expr(&mut self, node: &PerlNode) {
-        self.format_q_family_expr(node, SyntaxKind::QQ_KW, SyntaxKind::INTERPOLATED_STRING);
+        self.format_q_family_expr(node, T![qq], SyntaxKind::INTERPOLATED_STRING);
     }
 
     pub(super) fn format_qx_expr(&mut self, node: &PerlNode) {
-        self.format_q_family_expr(node, SyntaxKind::QX_KW, SyntaxKind::INTERPOLATED_STRING);
+        self.format_q_family_expr(node, T![qx], SyntaxKind::INTERPOLATED_STRING);
     }
 
     pub(super) fn format_m_expr(&mut self, node: &PerlNode) {
-        self.format_q_family_expr(node, SyntaxKind::M_KW, SyntaxKind::REGEX_PATTERN);
+        self.format_q_family_expr(node, T![m], SyntaxKind::REGEX_PATTERN);
     }
 
     pub(super) fn format_qr_expr(&mut self, node: &PerlNode) {
-        self.format_q_family_expr(node, SyntaxKind::QR_KW, SyntaxKind::REGEX_PATTERN);
+        self.format_q_family_expr(node, T![qr], SyntaxKind::REGEX_PATTERN);
     }
 
     pub(super) fn format_s_expr(&mut self, node: &PerlNode) {
-        self.format_regex_like_expr(node, &[SyntaxKind::S_KW]);
+        self.format_regex_like_expr(node, &[T![s]]);
     }
 
     pub(super) fn format_tr_expr(&mut self, node: &PerlNode) {
-        self.format_regex_like_expr(node, &[SyntaxKind::TR_KW, SyntaxKind::Y_KW]);
+        self.format_regex_like_expr(node, &[T![tr], T![y]]);
     }
 
     fn format_regex_like_expr(&mut self, node: &PerlNode, kw_kinds: &[SyntaxKind]) {
@@ -189,10 +189,7 @@ impl Formatter {
                         k if k == kw_kind => {
                             self.format_token(&token);
                         }
-                        SyntaxKind::L_PAREN
-                        | SyntaxKind::L_BRACKET
-                        | SyntaxKind::SLASH
-                        | SyntaxKind::DELIMITER => {
+                        T!['('] | T!['['] | T![/] | SyntaxKind::DELIMITER => {
                             self.write(&token);
                             self.remember_token(&token);
                         }
@@ -200,7 +197,7 @@ impl Formatter {
                             self.write(&token);
                             self.remember_token(&token);
                         }
-                        SyntaxKind::R_PAREN | SyntaxKind::R_BRACKET | SyntaxKind::R_BRACE => {
+                        T![')'] | T![']'] | T!['}'] => {
                             self.write(&token);
                             self.remember_token(&token);
                         }
