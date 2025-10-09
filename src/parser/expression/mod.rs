@@ -307,7 +307,7 @@ impl Parser<'_> {
         if current_kind.is_keyword()
             && (self.is_followed_by_fat_comma(0) || self.is_inside_hash_braces())
         {
-            self.parse_ident_like_expr(true);
+            self.parse_ident_like_expr();
             return PostfixSubject::Other;
         }
 
@@ -450,7 +450,7 @@ impl Parser<'_> {
                 if let Some((kind, _)) = next_token {
                     if Self::can_start_expression(kind) {
                         // This is a function call: undef $x
-                        self.parse_ident_like_expr(true);
+                        self.parse_ident_like_expr();
                     } else {
                         // This is a literal: undef by itself
                         self.bump_value();
@@ -467,13 +467,13 @@ impl Parser<'_> {
                 self.require_expr();
             }
             SyntaxKind::TRY_KW | SyntaxKind::CATCH_KW | SyntaxKind::FINALLY_KW => {
-                self.parse_ident_like_expr(true);
+                self.parse_ident_like_expr();
             }
             SyntaxKind::IDENT => {
-                self.parse_ident_like_expr(false);
+                self.parse_ident_like_expr();
             }
             SyntaxKind::DOUBLE_COLON => {
-                self.parse_ident_like_expr(false);
+                self.parse_ident_like_expr();
             }
             SyntaxKind::CARET => {
                 // Handle caret followed by identifier: ^MATCH
@@ -534,7 +534,7 @@ impl Parser<'_> {
                 if self.should_parse_quote_like() {
                     self.qw_expr();
                 } else {
-                    self.parse_ident_like_expr(true);
+                    self.parse_ident_like_expr();
                 }
             }
             SyntaxKind::RETURN_KW => {
@@ -563,14 +563,14 @@ impl Parser<'_> {
                 if self.should_parse_quote_like() {
                     self.qlike_expr(current_kind);
                 } else {
-                    self.parse_ident_like_expr(true);
+                    self.parse_ident_like_expr();
                 }
             }
             T![s] | T![tr] | T![y] => {
                 if self.should_parse_quote_like() {
                     self.two_part_qlike_expr(current_kind);
                 } else {
-                    self.parse_ident_like_expr(true);
+                    self.parse_ident_like_expr();
                 }
             }
             SyntaxKind::SUB_KW => {
