@@ -143,18 +143,6 @@ impl Formatter {
         self.writer.finish()
     }
 
-    pub(super) fn write(&mut self, token: &SyntaxToken<PerlLanguage>) {
-        self.writer.write_token(token);
-    }
-
-    pub(super) fn write_str(&mut self, text: &str, kind: Option<SyntaxKind>) {
-        self.writer.write_str(text, kind);
-    }
-
-    pub(super) fn write_char(&mut self, ch: char) {
-        self.writer.write_char(ch);
-    }
-
     fn remember_token(&mut self, token: &SyntaxToken<PerlLanguage>) {
         let kind = token.kind();
         self.writer.set_prev_token_kind(Some(kind));
@@ -170,79 +158,15 @@ impl Formatter {
                     Some(CommentPlacement::Trailing(_))
                     | Some(CommentPlacement::Dangling(_))
                     | None => {
-                        self.set_last_significant_token_kind(Some(kind));
+                        self.writer.set_last_significant_token_kind(Some(kind));
                     }
                 }
             } else {
-                self.set_last_significant_token_kind(Some(kind));
+                self.writer.set_last_significant_token_kind(Some(kind));
             }
         } else {
-            self.set_last_significant_token_kind(Some(kind));
+            self.writer.set_last_significant_token_kind(Some(kind));
         }
-    }
-
-    fn prev_token_kind(&self) -> Option<SyntaxKind> {
-        self.writer.prev_token_kind()
-    }
-
-    fn set_prev_token_kind(&mut self, kind: Option<SyntaxKind>) {
-        self.writer.set_prev_token_kind(kind);
-    }
-
-    fn last_significant_token_kind(&self) -> Option<SyntaxKind> {
-        self.writer.last_significant_token_kind()
-    }
-
-    fn set_last_significant_token_kind(&mut self, kind: Option<SyntaxKind>) {
-        self.writer.set_last_significant_token_kind(kind);
-    }
-
-    fn at_line_start(&self) -> bool {
-        self.writer.at_line_start()
-    }
-
-    fn set_at_line_start(&mut self, value: bool) {
-        self.writer.set_at_line_start(value);
-    }
-
-    fn increase_indent(&mut self) {
-        self.writer.increase_indent();
-    }
-
-    fn decrease_indent(&mut self) {
-        self.writer.decrease_indent();
-    }
-
-    fn indent_level(&self) -> usize {
-        self.writer.indent_level()
-    }
-
-    fn current_line_is_empty(&self) -> bool {
-        self.writer.current_line_is_empty()
-    }
-
-    fn current_line_ends_with_space(&self) -> bool {
-        self.writer.current_line_ends_with_space()
-    }
-
-    fn last_line_break(&self) -> Option<LineBreakSource> {
-        self.writer.last_line_break()
-    }
-
-    fn push_indent_string(&mut self) {
-        self.writer.push_indent_string();
-    }
-
-    pub(super) fn is_output_empty(&self) -> bool {
-        self.writer.is_output_empty()
-    }
-
-    pub(super) fn ends_with_newline(&self) -> bool {
-        self.writer.ends_with_newline()
-    }
-
-    pub(super) fn ends_with_double_newline(&self) -> bool {
-        self.writer.ends_with_double_newline()
     }
 
     fn node_has_leading_comment(&self, node: &PerlNode) -> bool {
@@ -431,7 +355,7 @@ impl Formatter {
         // Special handling after children are processed
         if node.kind().is_variable() {
             // This is the logic from format_variable
-            self.set_prev_token_kind(Some(node.kind()));
+            self.writer.set_prev_token_kind(Some(node.kind()));
         }
     }
 
@@ -614,15 +538,15 @@ impl Formatter {
     }
 
     fn needs_continuation_indent(&self, current: SyntaxKind) -> bool {
-        if !self.at_line_start() {
+        if !self.writer.at_line_start() {
             return false;
         }
 
-        if self.last_line_break() != Some(LineBreakSource::User) {
+        if self.writer.last_line_break() != Some(LineBreakSource::User) {
             return false;
         }
 
-        let Some(prev_kind) = self.last_significant_token_kind() else {
+        let Some(prev_kind) = self.writer.last_significant_token_kind() else {
             return false;
         };
 
@@ -674,12 +598,12 @@ impl Formatter {
         match kind {
             SyntaxKind::WHITESPACE => {}
             SyntaxKind::NEWLINE => {
-                if self.at_line_start() && self.current_line_is_empty() {
+                if self.writer.at_line_start() && self.writer.current_line_is_empty() {
                     if self.pending_empty_lines == 0 {
                         self.pending_empty_lines = 1;
                     }
                 } else {
-                    self.handle_user_newline();
+                    self.writer.handle_user_newline();
                 }
             }
             SyntaxKind::COMMENT => {
@@ -690,40 +614,40 @@ impl Formatter {
                 }
 
                 // コメントは保持するが、適切な位置に配置
-                if self.at_line_start() {
-                    self.add_indent();
-                    self.set_at_line_start(false);
+                if self.writer.at_line_start() {
+                    self.writer.add_indent();
+                    self.writer.set_at_line_start(false);
                 } else {
                     // This is an inline comment - add a space before it
-                    self.write_char(' ');
+                    self.writer.write_char(' ');
                 }
-                self.write_str(text.trim(), Some(kind));
-                self.handle_user_newline();
+                self.writer.write_str(text.trim(), Some(kind));
+                self.writer.handle_user_newline();
                 self.remember_token(token);
             }
             SyntaxKind::HEREDOC_CONTENT | SyntaxKind::HEREDOC_END => {
-                self.write_str(text, Some(kind));
+                self.writer.write_str(text, Some(kind));
                 self.remember_token(token);
             }
             T!['}'] => {
                 // 閉じブレースは特別処理：先にインデントを下げる
-                if self.indent_level() > 0 {
-                    self.decrease_indent();
+                if self.writer.indent_level() > 0 {
+                    self.writer.decrease_indent();
                 }
 
-                if self.at_line_start() {
-                    self.add_indent();
-                    self.set_at_line_start(false);
+                if self.writer.at_line_start() {
+                    self.writer.add_indent();
+                    self.writer.set_at_line_start(false);
                 }
 
-                self.write(token);
+                self.writer.write_token(token);
 
                 let next_kind = Self::next_significant_token(token).map(|t| t.kind());
                 if !matches!(
                     next_kind,
                     Some(T![elsif] | T![else] | T![catch] | T![finally] | T![;] | T!['('])
                 ) {
-                    self.handle_formatter_newline();
+                    self.writer.handle_formatter_newline();
                 }
 
                 self.remember_token(token);
@@ -737,16 +661,16 @@ impl Formatter {
                 // 通常のトークンの処理
                 self.handle_spacing_before(kind);
 
-                if self.at_line_start() && !kind.is_trivia() {
-                    self.add_indent();
+                if self.writer.at_line_start() && !kind.is_trivia() {
+                    self.writer.add_indent();
                     if self.needs_continuation_indent(kind) {
-                        self.push_indent_string();
+                        self.writer.push_indent_string();
                     }
-                    self.set_at_line_start(false);
+                    self.writer.set_at_line_start(false);
                 }
 
-                let prev_token_kind_before = self.prev_token_kind();
-                self.write(token);
+                let prev_token_kind_before = self.writer.prev_token_kind();
+                self.writer.write_token(token);
                 if matches!(kind, SyntaxKind::UNARY_PLUS | SyntaxKind::UNARY_MINUS)
                     && matches!(
                         prev_token_kind_before,
@@ -755,7 +679,7 @@ impl Formatter {
                 {
                     if let Some(next_token) = Self::next_significant_token(token) {
                         if next_token.kind() == T!['{'] {
-                            self.write_char(' ');
+                            self.writer.write_char(' ');
                         }
                     }
                 }
@@ -779,36 +703,36 @@ impl Formatter {
                         return;
                     }
                 }
-                self.handle_formatter_newline();
+                self.writer.handle_formatter_newline();
             }
             T!['{'] => {
-                self.increase_indent();
-                self.handle_formatter_newline();
+                self.writer.increase_indent();
+                self.writer.handle_formatter_newline();
             }
             _ => {}
         }
     }
 
     fn format_label(&mut self, node: &PerlNode) {
-        if self.at_line_start() {
-            self.add_indent();
-            self.set_at_line_start(false);
+        if self.writer.at_line_start() {
+            self.writer.add_indent();
+            self.writer.set_at_line_start(false);
         }
 
         let mut last_token_kind = None;
         for child in node.children_with_tokens() {
             if let NodeOrToken::Token(token) = child {
                 if !token.kind().is_trivia() {
-                    self.write(&token);
+                    self.writer.write_token(&token);
                     last_token_kind = Some(token.kind());
                 }
             }
         }
 
-        self.set_prev_token_kind(last_token_kind);
+        self.writer.set_prev_token_kind(last_token_kind);
         if let Some(kind) = last_token_kind {
             if !kind.is_trivia() {
-                self.set_last_significant_token_kind(Some(kind));
+                self.writer.set_last_significant_token_kind(Some(kind));
             }
         }
     }

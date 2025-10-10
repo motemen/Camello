@@ -65,9 +65,9 @@ impl Formatter {
                         SyntaxKind::QW_STRING => {
                             // Add spaces between QW_STRING tokens
                             if !first_word {
-                                self.write_char(' ');
+                                self.writer.write_char(' ');
                             }
-                            self.write(&token);
+                            self.writer.write_token(&token);
                             first_word = false;
                             self.remember_token(&token);
                         }
@@ -99,13 +99,13 @@ impl Formatter {
                             }
                         }
                         SyntaxKind::QW_STRING => {
-                            if self.at_line_start() {
-                                self.add_indent();
-                                self.set_at_line_start(false);
+                            if self.writer.at_line_start() {
+                                self.writer.add_indent();
+                                self.writer.set_at_line_start(false);
                             }
-                            self.write(&token);
-                            if !self.ends_with_newline() {
-                                self.handle_formatter_newline();
+                            self.writer.write_token(&token);
+                            if !self.writer.ends_with_newline() {
+                                self.writer.handle_formatter_newline();
                             }
                             self.remember_token(&token);
                         }
@@ -161,10 +161,10 @@ impl Formatter {
                         }
                         SyntaxKind::WHITESPACE => {
                             // Preserve whitespace inside these expressions
-                            self.write(&token);
+                            self.writer.write_token(&token);
                         }
                         _ => {
-                            self.write(&token);
+                            self.writer.write_token(&token);
                             self.remember_token(&token);
                         }
                     }
@@ -190,24 +190,24 @@ impl Formatter {
                             self.format_token(&token);
                         }
                         T!['('] | T!['['] | T![/] | SyntaxKind::DELIMITER => {
-                            self.write(&token);
+                            self.writer.write_token(&token);
                             self.remember_token(&token);
                         }
                         k if k == string_kind => {
-                            self.write(&token);
+                            self.writer.write_token(&token);
                             self.remember_token(&token);
                         }
                         T![')'] | T![']'] | T!['}'] => {
-                            self.write(&token);
+                            self.writer.write_token(&token);
                             self.remember_token(&token);
                         }
                         SyntaxKind::WHITESPACE => {
                             // Special handling: preserve whitespace inside q-family strings
-                            self.write(&token);
+                            self.writer.write_token(&token);
                         }
                         _ => {
                             // Handle any remaining tokens (including closing slash) directly
-                            self.write(&token);
+                            self.writer.write_token(&token);
                             self.remember_token(&token);
                         }
                     }

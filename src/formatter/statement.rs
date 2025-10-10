@@ -48,7 +48,7 @@ impl Formatter {
                 if let Some(last_token) = last_token {
                     if let Some(next_token) = Self::next_significant_token(&last_token) {
                         if next_token.kind() == T!['('] {
-                            self.write_char(' ');
+                            self.writer.write_char(' ');
                         }
                     }
                 }
@@ -66,7 +66,7 @@ impl Formatter {
                             next_token.kind(),
                             crate::SyntaxKind::IDENT | T!['('] | T![qw]
                         ) {
-                            self.write_char(' ');
+                            self.writer.write_char(' ');
                         }
                     }
                 }
@@ -100,25 +100,25 @@ impl Formatter {
                 NodeOrToken::Token(token) => match token.kind() {
                     T!['{'] => {
                         self.handle_spacing_before(token.kind());
-                        if self.at_line_start() {
-                            self.add_indent();
-                            self.set_at_line_start(false);
+                        if self.writer.at_line_start() {
+                            self.writer.add_indent();
+                            self.writer.set_at_line_start(false);
                         }
-                        self.write(&token);
+                        self.writer.write_token(&token);
                         if add_space_for_block {
-                            self.write_char(' ');
+                            self.writer.write_char(' ');
                         }
                         self.remember_token(&token);
                     }
                     T!['}'] => {
                         if add_space_for_block
                             && has_content
-                            && self.prev_token_kind() != Some(T!['{'])
-                            && !self.current_line_ends_with_space()
+                            && self.writer.prev_token_kind() != Some(T!['{'])
+                            && !self.writer.current_line_ends_with_space()
                         {
-                            self.write_char(' ');
+                            self.writer.write_char(' ');
                         }
-                        self.write(&token);
+                        self.writer.write_token(&token);
                         self.remember_token(&token);
                     }
                     SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE => {}
@@ -150,11 +150,12 @@ impl Formatter {
                                 && current_kind != SyntaxKind::NO_STMT)
                         {
                             let has_existing_empty_line =
-                                self.pending_empty_lines > 0 || self.ends_with_double_newline();
+                                self.pending_empty_lines > 0
+                                    || self.writer.ends_with_double_newline();
 
-                            if !has_existing_empty_line && !self.is_output_empty() {
-                                if !self.ends_with_newline() {
-                                    self.handle_formatter_newline();
+                            if !has_existing_empty_line && !self.writer.is_output_empty() {
+                                if !self.writer.ends_with_newline() {
+                                    self.writer.handle_formatter_newline();
                                 }
                                 self.writer.push_empty_line();
                             }
@@ -183,11 +184,12 @@ impl Formatter {
                             }
                         }
 
-                        if !self.at_line_start() || !self.current_line_is_empty() {
-                            self.handle_user_newline();
+                        if !self.writer.at_line_start() || !self.writer.current_line_is_empty() {
+                            self.writer.handle_user_newline();
                         }
 
-                        if saw_extra_newline || self.prev_token_kind() == Some(SyntaxKind::COMMENT)
+                        if saw_extra_newline
+                            || self.writer.prev_token_kind() == Some(SyntaxKind::COMMENT)
                         {
                             self.pending_empty_lines = 1;
                         }
@@ -223,21 +225,21 @@ impl Formatter {
         if let Some(child) = children.peek() {
             match child {
                 NodeOrToken::Token(t) if t.kind() == SyntaxKind::NEWLINE => {
-                    self.handle_user_newline();
+                    self.writer.handle_user_newline();
                     children.next();
                 }
                 NodeOrToken::Token(t) if t.kind() == SyntaxKind::WHITESPACE => {
-                    self.write_char(' ');
-                    self.set_at_line_start(false);
+                    self.writer.write_char(' ');
+                    self.writer.set_at_line_start(false);
                     children.next();
                 }
                 NodeOrToken::Token(_) | NodeOrToken::Node(_) => {
-                    self.write_char(' ');
-                    self.set_at_line_start(false);
+                    self.writer.write_char(' ');
+                    self.writer.set_at_line_start(false);
                 }
             }
         }
-        self.set_prev_token_kind(None);
+        self.writer.set_prev_token_kind(None);
 
         for child in children {
             match child {
@@ -255,8 +257,8 @@ impl Formatter {
                 }
                 NodeOrToken::Token(token) => match token.kind() {
                     T![;] => {
-                        self.write(&token);
-                        self.write_char(' ');
+                        self.writer.write_token(&token);
+                        self.writer.write_char(' ');
                     }
                     _ => {
                         self.format_token(&token);

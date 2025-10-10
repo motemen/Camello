@@ -91,7 +91,7 @@ impl Formatter {
                     NodeOrToken::Token(token) => {
                         if token.kind() == T!['('] {
                             // Force no space before this L_PAREN by writing it directly
-                            self.write_str("(", Some(T!['(']));
+                            self.writer.write_str("(", Some(T!['(']));
                             self.remember_token(&token);
                         } else {
                             self.format_token(&token);
@@ -235,7 +235,7 @@ impl Formatter {
 
                         match kind {
                             _ if kind == opening || kind == closing => {
-                                self.write(&token);
+                                self.writer.write_token(&token);
                                 self.remember_token(&token);
                             }
                             _ => {
@@ -353,7 +353,7 @@ impl Formatter {
                         }
                         T!['{'] | T!['}'] => {
                             // Format braces without extra spacing or newlines
-                            self.write(&token);
+                            self.writer.write_token(&token);
                             self.remember_token(&token);
                         }
                         _ => {
@@ -377,7 +377,7 @@ impl Formatter {
                             // Skip trivia to keep the block tight inside compound variables.
                         }
                         T!['{'] | T!['}'] => {
-                            self.write(&token);
+                            self.writer.write_token(&token);
                             self.remember_token(&token);
                         }
                         _ => {
@@ -421,19 +421,19 @@ impl Formatter {
                             // Skip whitespace inside prototypes to ensure compact formatting
                         }
                         T!['('] => {
-                            if self.at_line_start() {
-                                self.add_indent();
-                                self.set_at_line_start(false);
+                            if self.writer.at_line_start() {
+                                self.writer.add_indent();
+                                self.writer.set_at_line_start(false);
                             }
 
                             // Subroutine prototypes always get a space before opening paren
-                            self.write_char(' ');
-                            self.write(&token);
+                            self.writer.write_char(' ');
+                            self.writer.write_token(&token);
                             self.remember_token(&token);
                         }
                         _ => {
                             // R_PAREN and prototype symbols: no spacing, just output them directly
-                            self.write(&token);
+                            self.writer.write_token(&token);
                             self.remember_token(&token);
                         }
                     }
