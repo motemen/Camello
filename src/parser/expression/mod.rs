@@ -34,7 +34,7 @@ impl Parser<'_> {
     /// unless the next token is a fat comma (=>), in which case it's likely a bareword key.
     fn should_parse_quote_like(&self) -> bool {
         self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
-            .is_none_or(|(k, _)| k != SyntaxKind::FAT_COMMA)
+            .is_none_or(|(k, _)| k != T![=>])
     }
 
     /// Check if a `<` token in operator position should be treated as an IO operator.
@@ -106,7 +106,7 @@ impl Parser<'_> {
             // This handles cases like:
             // - `decode <$fh>` - IO operator (argument to decode function)
             // - `f < $x > 1` - chained comparison operators
-            if current_kind == SyntaxKind::LT && self.is_lt_an_io_operator() {
+            if current_kind == T![<] && self.is_lt_an_io_operator() {
                 // This is an IO operator pattern like `decode <$fh>`, not a comparison.
                 // Restructure the CST to treat the LHS as a function call with the IO expr as an argument.
 
@@ -126,7 +126,7 @@ impl Parser<'_> {
             }
 
             // Handle ternary operator specially
-            if current_kind == SyntaxKind::QUESTION_MARK {
+            if current_kind == T![?] {
                 let ternary_precedence = crate::parser::expression::precedence::Precedence::TERNARY;
 
                 // If ternary precedence is too low, stop here
@@ -152,8 +152,8 @@ impl Parser<'_> {
                 let colon_found = self
                     .peek_non_trivia_token_with_context(LexContext::Operator)
                     .map(|(k, _)| k)
-                    == Some(SyntaxKind::COLON)
-                    || self.current_kind() == Some(SyntaxKind::COLON);
+                    == Some(T![:])
+                    || self.current_kind() == Some(T![:]);
 
                 if colon_found {
                     // Consume ':' as Operator; next will be Value
@@ -176,7 +176,7 @@ impl Parser<'_> {
             let is_compound_assignment = current_kind.is_compoundable_operator() && {
                 // Look ahead to see if there's an '=' after the current operator
                 self.peek_nth_non_trivia_token_with_context(LexContext::Operator, 1)
-                    .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::EQ)
+                    .is_some_and(|(next_kind, _)| next_kind == T![=])
             };
 
             let op_info = if is_compound_assignment {
@@ -231,10 +231,8 @@ impl Parser<'_> {
             let parsed_rhs = self.parse_expression_with_precedence(next_min_precedence);
             if !parsed_rhs {
                 // Check if this is a trailing comma or fat comma
-                if (current_kind == SyntaxKind::COMMA || current_kind == SyntaxKind::FAT_COMMA)
-                    && (self.at(SyntaxKind::R_BRACE)
-                        || self.at(SyntaxKind::SEMICOLON)
-                        || self.at_end())
+                if (current_kind == T![,] || current_kind == T![=>])
+                    && (self.at(T!['}']) || self.at(T![;]) || self.at_end())
                 {
                     // This is a trailing comma/fat comma - that's OK, just finish the node
                     self.builder.finish_node();
@@ -271,11 +269,11 @@ impl Parser<'_> {
         }
 
         // If we have comma-separated expressions, wrap them in a single EXPR_LIST node
-        if self.at_any(&[SyntaxKind::COMMA, SyntaxKind::FAT_COMMA]) {
+        if self.at_any(&[T![,], T![=>]]) {
             self.builder
                 .start_node_at(start, SyntaxKind::EXPR_LIST.into());
 
-            while self.at_any(&[SyntaxKind::COMMA, SyntaxKind::FAT_COMMA]) {
+            while self.at_any(&[T![,], T![=>]]) {
                 // After a separator, next should be a value
                 self.bump_value(); // , or =>
                 self.skip_whitespace_and_newlines();
@@ -341,7 +339,7 @@ impl Parser<'_> {
                 self.skip_whitespace_and_newlines();
                 return PostfixSubject::Variable;
             }
-            SyntaxKind::BACKSLASH => {
+            T!['\\'] => {
                 // Reference operator as prefix: \expr
                 self.parse_standard_prefix_expr("\\", Precedence::PREFIX, None);
             }
@@ -349,7 +347,7 @@ impl Parser<'_> {
                 // Check if this is a complex code reference like &{expr} or &$var
                 let next_token = self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1);
                 match next_token {
-                    Some((SyntaxKind::L_BRACE, _)) => {
+                    Some((T!['{'], _)) => {
                         // Complex code reference: &{$coderef}, &{"package::method"}, etc.
                         self.builder.start_node(SyntaxKind::COMPOUND_VAR.into());
                         self.bump(); // consume &
@@ -363,7 +361,7 @@ impl Parser<'_> {
                         }
 
                         self.skip_whitespace_and_newlines();
-                        if self.at(SyntaxKind::R_BRACE) {
+                        if self.at(T!['}']) {
                             self.bump(); // consume }
                         } else {
                             self.error("Expected '}' to close code reference");
@@ -392,7 +390,7 @@ impl Parser<'_> {
                 self.parse_variable();
                 return PostfixSubject::Variable;
             }
-            SyntaxKind::PLUS => {
+            T![+] => {
                 // Unary plus prefix operator
                 self.parse_standard_prefix_expr(
                     "+",
@@ -400,7 +398,7 @@ impl Parser<'_> {
                     Some(SyntaxKind::UNARY_PLUS),
                 );
             }
-            SyntaxKind::MINUS => {
+            T![-] => {
                 // Unary minus prefix operator
                 self.parse_standard_prefix_expr(
                     "-",
@@ -408,7 +406,7 @@ impl Parser<'_> {
                     Some(SyntaxKind::UNARY_MINUS),
                 );
             }
-            SyntaxKind::INCREMENT => {
+            T![++] => {
                 // Prefix increment operator
                 self.parse_standard_prefix_expr(
                     "++",
@@ -416,7 +414,7 @@ impl Parser<'_> {
                     Some(SyntaxKind::PREFIX_INCREMENT),
                 );
             }
-            SyntaxKind::DECREMENT => {
+            T![--] => {
                 // Prefix decrement operator
                 self.parse_standard_prefix_expr(
                     "--",
@@ -424,26 +422,23 @@ impl Parser<'_> {
                     Some(SyntaxKind::PREFIX_DECREMENT),
                 );
             }
-            SyntaxKind::LOGICAL_NOT => {
+            T![!] => {
                 // Logical NOT prefix operator
                 self.parse_standard_prefix_expr("!", Precedence::PREFIX, None);
             }
-            SyntaxKind::BITWISE_NOT => {
+            T![~] => {
                 // Bitwise NOT prefix operator
                 self.parse_standard_prefix_expr("~", Precedence::PREFIX, None);
             }
-            SyntaxKind::NOT_KW => {
+            T![not] => {
                 // NOT keyword prefix operator
                 self.parse_standard_prefix_expr("not", Precedence::LOGICAL_NOT_KW, None);
             }
-            SyntaxKind::MY_KW
-            | SyntaxKind::OUR_KW
-            | SyntaxKind::STATE_KW
-            | SyntaxKind::LOCAL_KW => {
+            T![my] | T![our] | T![state] | T![local] => {
                 // Variable declaration as prefix operator
                 self.parse_var_decl_prefix();
             }
-            SyntaxKind::UNDEF_KW => {
+            T![undef] => {
                 // undef can be used both as a literal and as a function call
                 // Check if it's followed by an expression (function call) or not (literal)
                 let next_token = self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1);
@@ -462,17 +457,17 @@ impl Parser<'_> {
                     self.skip_whitespace_and_newlines();
                 }
             }
-            SyntaxKind::REQUIRE_KW => {
+            T![require] => {
                 // require expression (e.g., require v5.14, require local::lib)
                 self.require_expr();
             }
-            SyntaxKind::TRY_KW | SyntaxKind::CATCH_KW | SyntaxKind::FINALLY_KW => {
+            T![try] | T![catch] | T![finally] => {
                 self.parse_ident_like_expr();
             }
             SyntaxKind::IDENT => {
                 self.parse_ident_like_expr();
             }
-            SyntaxKind::DOUBLE_COLON => {
+            T![::] => {
                 self.parse_ident_like_expr();
             }
             SyntaxKind::CARET => {
@@ -492,14 +487,14 @@ impl Parser<'_> {
 
                 self.skip_whitespace_and_newlines();
             }
-            SyntaxKind::X => {
+            T![x] => {
                 // Handle 'x' as an identifier when it appears at the start of expressions
                 // This allows expressions like "x => 1" in use statements
                 // Consume 'x' as a value in this context
                 self.bump_value();
                 self.skip_whitespace_and_newlines();
             }
-            SyntaxKind::L_PAREN => {
+            T!['('] => {
                 // Parenthesized expression
                 // Inside parens, expect a value
                 self.bump_value(); // (
@@ -510,7 +505,7 @@ impl Parser<'_> {
 
                 self.skip_whitespace_and_newlines();
 
-                if self.at(SyntaxKind::R_PAREN) {
+                if self.at(T![')']) {
                     // After ')', expect an operator
                     self.bump_op(); // )
                     self.skip_whitespace_and_newlines();
@@ -521,15 +516,15 @@ impl Parser<'_> {
                 // Parenthesized expressions (including empty ()) allow [] subscript (list slices)
                 return PostfixSubject::List;
             }
-            SyntaxKind::L_BRACE => {
+            T!['{'] => {
                 // In expression context, always treat as hash reference
                 self.hash_ref();
             }
-            SyntaxKind::L_BRACKET => {
+            T!['['] => {
                 // Array reference (anonymous array): []
                 self.array_ref();
             }
-            SyntaxKind::QW_KW => {
+            T![qw] => {
                 // qw() expression or bareword 'qw'
                 if self.should_parse_quote_like() {
                     self.qw_expr();
@@ -537,7 +532,7 @@ impl Parser<'_> {
                     self.parse_ident_like_expr();
                 }
             }
-            SyntaxKind::RETURN_KW => {
+            T![return] => {
                 // return statement (handled as a keyword)
                 // After 'return', if an expression follows, it is a value
                 self.bump_value(); // consume return
@@ -548,7 +543,7 @@ impl Parser<'_> {
                     self.expression_list();
                 }
             }
-            SyntaxKind::NEXT_KW | SyntaxKind::LAST_KW | SyntaxKind::REDO_KW => {
+            T![next] | T![last] | T![redo] => {
                 // loop control statements with optional label
                 self.bump_value(); // consume keyword
                 self.skip_whitespace_and_newlines();
@@ -573,7 +568,7 @@ impl Parser<'_> {
                     self.parse_ident_like_expr();
                 }
             }
-            SyntaxKind::SUB_KW => {
+            T![sub] => {
                 // Anonymous subroutine expression: sub { ... }
                 self.anon_sub_expr();
             }
@@ -609,7 +604,7 @@ impl Parser<'_> {
         self.builder.start_node(SyntaxKind::ANON_SUB_EXPR.into());
 
         // Consume 'sub' keyword
-        self.expect(SyntaxKind::SUB_KW);
+        self.expect(T![sub]);
         self.skip_whitespace_and_newlines();
 
         // Parse optional prototype, attributes, and required block shared with named subs
@@ -622,7 +617,7 @@ impl Parser<'_> {
         self.builder.start_node(SyntaxKind::REQUIRE_EXPR.into());
 
         // "require"
-        self.expect(SyntaxKind::REQUIRE_KW);
+        self.expect(T![require]);
         self.skip_whitespace_and_newlines();
 
         // VERSION literal, module name (qualified identifier), or general expression

@@ -3,7 +3,7 @@ mod writer;
 
 use crate::{
     comments::{CommentAnchor, CommentId, CommentOwner, CommentPlacement, CommentRegistry},
-    PerlLanguage, PerlNode, SyntaxKind,
+    PerlLanguage, PerlNode, SyntaxKind, T,
 };
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
 use writer::{LineBreakSource, Writer};
@@ -82,9 +82,9 @@ impl DelimiterTightnessConfig {
 
     fn for_kind(&self, kind: SyntaxKind) -> DelimiterTightness {
         match kind {
-            SyntaxKind::L_PAREN | SyntaxKind::R_PAREN => self.parentheses,
-            SyntaxKind::L_BRACKET | SyntaxKind::R_BRACKET => self.brackets,
-            SyntaxKind::L_BRACE | SyntaxKind::R_BRACE => self.braces,
+            T!['('] | T![')'] => self.parentheses,
+            T!['['] | T![']'] => self.brackets,
+            T!['{'] | T!['}'] => self.braces,
             _ => DelimiterTightness::Standard,
         }
     }
@@ -443,12 +443,7 @@ impl Formatter {
         if !children.by_ref().any(|child| {
             matches!(
                 child.as_token().map(rowan::SyntaxToken::kind),
-                Some(
-                    SyntaxKind::L_BRACE
-                        | SyntaxKind::L_BRACKET
-                        | SyntaxKind::L_PAREN
-                        | SyntaxKind::DELIMITER
-                )
+                Some(T!['{'] | T!['['] | T!['('] | SyntaxKind::DELIMITER)
             )
         }) {
             return false;
@@ -482,10 +477,7 @@ impl Formatter {
         for child in iter {
             match child {
                 NodeOrToken::Token(token) => {
-                    if matches!(
-                        token.kind(),
-                        SyntaxKind::L_BRACE | SyntaxKind::L_BRACKET | SyntaxKind::L_PAREN
-                    ) {
+                    if matches!(token.kind(), T!['{'] | T!['['] | T!['(']) {
                         continue;
                     }
                     if token.kind() == SyntaxKind::NEWLINE
@@ -528,9 +520,9 @@ impl Formatter {
         }
 
         !node.descendants_with_tokens().any(|element| {
-            element.as_token().is_some_and(|token| {
-                matches!(token.kind(), SyntaxKind::SEMICOLON | SyntaxKind::COMMENT)
-            })
+            element
+                .as_token()
+                .is_some_and(|token| matches!(token.kind(), T![;] | SyntaxKind::COMMENT))
         })
     }
 
@@ -581,8 +573,8 @@ impl Formatter {
         for element in node.descendants_with_tokens() {
             if let Some(token) = element.as_token() {
                 match token.kind() {
-                    SyntaxKind::L_PAREN => has_open = true,
-                    SyntaxKind::R_PAREN => has_close = true,
+                    T!['('] => has_open = true,
+                    T![')'] => has_close = true,
                     _ => {}
                 }
                 if has_open && has_close {
@@ -640,7 +632,7 @@ impl Formatter {
 
         use SyntaxKind::*;
 
-        if prev_kind == SyntaxKind::PACKAGE_KW {
+        if prev_kind == T![package] {
             return true;
         }
 
@@ -713,7 +705,7 @@ impl Formatter {
                 self.write_str(text, Some(kind));
                 self.remember_token(token);
             }
-            SyntaxKind::R_BRACE => {
+            T!['}'] => {
                 // 閉じブレースは特別処理：先にインデントを下げる
                 if self.indent_level() > 0 {
                     self.decrease_indent();
@@ -729,14 +721,7 @@ impl Formatter {
                 let next_kind = Self::next_significant_token(token).map(|t| t.kind());
                 if !matches!(
                     next_kind,
-                    Some(
-                        SyntaxKind::ELSIF_KW
-                            | SyntaxKind::ELSE_KW
-                            | SyntaxKind::CATCH_KW
-                            | SyntaxKind::FINALLY_KW
-                            | SyntaxKind::SEMICOLON
-                            | SyntaxKind::L_PAREN
-                    )
+                    Some(T![elsif] | T![else] | T![catch] | T![finally] | T![;] | T!['('])
                 ) {
                     self.handle_formatter_newline();
                 }
@@ -769,7 +754,7 @@ impl Formatter {
                     )
                 {
                     if let Some(next_token) = Self::next_significant_token(token) {
-                        if next_token.kind() == SyntaxKind::L_BRACE {
+                        if next_token.kind() == T!['{'] {
                             self.write_char(' ');
                         }
                     }
@@ -786,7 +771,7 @@ impl Formatter {
         token: &SyntaxToken<crate::PerlLanguage>,
     ) {
         match current {
-            SyntaxKind::SEMICOLON => {
+            T![;] => {
                 // Check if the next token (after whitespace) is a comment
                 if let Some(next) = Self::next_token_after_whitespace(token) {
                     if next.kind() == SyntaxKind::COMMENT {
@@ -796,7 +781,7 @@ impl Formatter {
                 }
                 self.handle_formatter_newline();
             }
-            SyntaxKind::L_BRACE => {
+            T!['{'] => {
                 self.increase_indent();
                 self.handle_formatter_newline();
             }

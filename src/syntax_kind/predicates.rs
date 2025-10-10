@@ -1,4 +1,5 @@
 use super::SyntaxKind;
+use crate::T;
 
 impl SyntaxKind {
     #[must_use]
@@ -61,13 +62,13 @@ impl SyntaxKind {
                     | SyntaxKind::AND_KW
                     | SyntaxKind::OR_KW
                     | SyntaxKind::XOR_KW
-                    | SyntaxKind::STR_EQ
-                    | SyntaxKind::STR_NE
-                    | SyntaxKind::STR_GT
-                    | SyntaxKind::STR_LT
-                    | SyntaxKind::STR_GE
-                    | SyntaxKind::STR_LE
-                    | SyntaxKind::STR_CMP
+                    | T![eq]
+                    | T![ne]
+                    | T![gt]
+                    | T![lt]
+                    | T![ge]
+                    | T![le]
+                    | T![cmp]
                     | SyntaxKind::X
                     | SyntaxKind::UNDEF_KW
                     | SyntaxKind::END_KW
@@ -151,13 +152,13 @@ impl SyntaxKind {
                 | SyntaxKind::LE
                 | SyntaxKind::EQ_EQ
                 | SyntaxKind::NE
-                | SyntaxKind::STR_EQ
-                | SyntaxKind::STR_NE
-                | SyntaxKind::STR_GT
-                | SyntaxKind::STR_LT
-                | SyntaxKind::STR_GE
-                | SyntaxKind::STR_LE
-                | SyntaxKind::STR_CMP
+                | T![eq]
+                | T![ne]
+                | T![gt]
+                | T![lt]
+                | T![ge]
+                | T![le]
+                | T![cmp]
                 | SyntaxKind::LOGICAL_AND
                 | SyntaxKind::LOGICAL_OR
                 | SyntaxKind::LOGICAL_NOT

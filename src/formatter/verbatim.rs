@@ -1,4 +1,4 @@
-use crate::{PerlNode, SyntaxKind};
+use crate::{PerlNode, SyntaxKind, T};
 use rowan::NodeOrToken;
 
 use super::Formatter;
@@ -17,7 +17,7 @@ impl Formatter {
             match child {
                 NodeOrToken::Token(token) => {
                     match token.kind() {
-                        SyntaxKind::END_KW | SyntaxKind::DATA_KW => {
+                        T![__END__] | T![__DATA__] => {
                             // Output the keyword exactly as-is; do not force a newline
                             self.write(&token);
                         }

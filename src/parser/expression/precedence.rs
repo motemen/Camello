@@ -1,4 +1,4 @@
-use crate::SyntaxKind;
+use crate::{SyntaxKind, T};
 
 /// Operator precedence levels for Pratt parsing
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -58,131 +58,133 @@ impl OperatorInfo {
 pub fn get_operator_info(kind: SyntaxKind) -> Option<OperatorInfo> {
     match kind {
         // Comma operator (lowest precedence, except for logical operators)
-        SyntaxKind::COMMA => Some(OperatorInfo::new(
+        T![,] => Some(OperatorInfo::new(
             Precedence::COMMA,
             false,
             SyntaxKind::INFIX_EXPR,
         )),
 
         // Fat comma operator (=> for hash pairs) - lowest precedence
-        SyntaxKind::FAT_COMMA => Some(OperatorInfo::new(
+        T![=>] => Some(OperatorInfo::new(
             Precedence::COMMA,
             false,
             SyntaxKind::INFIX_EXPR,
         )),
 
         // Assignment (right associative)
-        SyntaxKind::EQ => Some(OperatorInfo::new(
+        T![=] => Some(OperatorInfo::new(
             Precedence::ASSIGNMENT,
             true,
             SyntaxKind::INFIX_EXPR,
         )),
 
         // Logical OR
-        SyntaxKind::LOGICAL_OR => Some(OperatorInfo::new(
+        T![||] => Some(OperatorInfo::new(
             Precedence::LOGICAL_OR,
             false,
             SyntaxKind::INFIX_EXPR,
         )),
 
         // Logical AND
-        SyntaxKind::LOGICAL_AND => Some(OperatorInfo::new(
+        T![&&] => Some(OperatorInfo::new(
             Precedence::LOGICAL_AND,
             false,
             SyntaxKind::INFIX_EXPR,
         )),
 
         // Comparison operators
-        SyntaxKind::LT
-        | SyntaxKind::GT
-        | SyntaxKind::LE
-        | SyntaxKind::GE
-        | SyntaxKind::EQ_EQ
-        | SyntaxKind::NE
-        | SyntaxKind::STR_EQ
-        | SyntaxKind::STR_NE
-        | SyntaxKind::STR_GT
-        | SyntaxKind::STR_LT
-        | SyntaxKind::STR_GE
-        | SyntaxKind::STR_LE
-        | SyntaxKind::STR_CMP
-        | SyntaxKind::SPACESHIP => Some(OperatorInfo::new(
+        T![<]
+        | T![>]
+        | T![<=]
+        | T![>=]
+        | T![==]
+        | T![!=]
+        | T![eq]
+        | T![ne]
+        | T![gt]
+        | T![lt]
+        | T![ge]
+        | T![le]
+        | T![cmp]
+        | T![<=>] => Some(OperatorInfo::new(
             Precedence::COMPARISON,
             false,
             SyntaxKind::INFIX_EXPR,
         )),
 
         // Regex operators
-        SyntaxKind::REGEX_MATCH | SyntaxKind::REGEX_NOT_MATCH => Some(OperatorInfo::new(
+        T![=~] | T![!~] => Some(OperatorInfo::new(
             Precedence::REGEX_MATCH,
             false,
             SyntaxKind::REGEX_EXPR,
         )),
 
         // Additive operators
-        SyntaxKind::PLUS | SyntaxKind::MINUS | SyntaxKind::DOT => Some(OperatorInfo::new(
+        T![+] | T![-] | T![.] => Some(OperatorInfo::new(
             Precedence::ADDITIVE,
             false,
             SyntaxKind::INFIX_EXPR,
         )),
 
         // Bit shift operators
-        SyntaxKind::SHIFT_LEFT | SyntaxKind::SHIFT_RIGHT => Some(OperatorInfo::new(
+        T![<<] | T![>>] => Some(OperatorInfo::new(
             Precedence::BIT_SHIFT,
             false,
             SyntaxKind::INFIX_EXPR,
         )),
 
         // Multiplicative operators
-        SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::MODULO | SyntaxKind::X => Some(
-            OperatorInfo::new(Precedence::MULTIPLICATIVE, false, SyntaxKind::INFIX_EXPR),
-        ),
+        T![*] | T![/] | T![%] | T![x] => Some(OperatorInfo::new(
+            Precedence::MULTIPLICATIVE,
+            false,
+            SyntaxKind::INFIX_EXPR,
+        )),
 
         // Exponentiation operator (right associative)
-        SyntaxKind::EXPONENT => Some(OperatorInfo::new(
+        T![**] => Some(OperatorInfo::new(
             Precedence::EXPONENT,
             true,
             SyntaxKind::INFIX_EXPR,
         )),
 
         // Bitwise operators (ordered by precedence: &: highest, ^: middle, |: lowest)
-        SyntaxKind::BITWISE_AND => Some(OperatorInfo::new(
+        T![&] => Some(OperatorInfo::new(
             Precedence::BITWISE_AND,
             false,
             SyntaxKind::INFIX_EXPR,
         )),
-        SyntaxKind::BITWISE_XOR => Some(OperatorInfo::new(
+        T![^] => Some(OperatorInfo::new(
             Precedence::BITWISE_XOR,
             false,
             SyntaxKind::INFIX_EXPR,
         )),
-        SyntaxKind::BITWISE_OR => Some(OperatorInfo::new(
+        T![|] => Some(OperatorInfo::new(
             Precedence::BITWISE_OR,
             false,
             SyntaxKind::INFIX_EXPR,
         )),
 
         // Defined-or operator
-        SyntaxKind::DEFINED_OR => Some(OperatorInfo::new(
+        T!["//"] => Some(OperatorInfo::new(
             Precedence::DEFINED_OR,
             false,
             SyntaxKind::INFIX_EXPR,
         )),
 
         // Range operators
-        SyntaxKind::RANGE | SyntaxKind::RANGE_EXCLUSIVE => Some(OperatorInfo::new(
+        T![..] | T![...] => Some(OperatorInfo::new(
             Precedence::RANGE,
             false,
             SyntaxKind::INFIX_EXPR,
         )),
 
         // Low-precedence logical operators (NOT_KW is handled as a prefix operator)
-        SyntaxKind::AND_KW => Some(OperatorInfo::new(
+        T![and] => Some(OperatorInfo::new(
             Precedence::LOGICAL_AND_KW,
             false,
             SyntaxKind::INFIX_EXPR,
         )),
-        SyntaxKind::OR_KW | SyntaxKind::XOR_KW => Some(OperatorInfo::new(
+        T![or] | T![xor] => Some(OperatorInfo::new(
             Precedence::LOGICAL_OR_XOR,
             false,
             SyntaxKind::INFIX_EXPR,

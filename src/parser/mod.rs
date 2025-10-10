@@ -1,6 +1,6 @@
 use crate::{
     lexer::{LexContext, Lexer},
-    SyntaxKind,
+    SyntaxKind, T,
 };
 use miette::{Diagnostic, SourceSpan};
 use rowan::{GreenNode, GreenNodeBuilder, TextRange};
@@ -91,10 +91,7 @@ impl<'a> Parser<'a> {
         self.skip_whitespace_and_newlines();
         while !self.at_end() {
             // Check if we've encountered a data section keyword
-            if matches!(
-                self.current_kind(),
-                Some(SyntaxKind::END_KW | SyntaxKind::DATA_KW)
-            ) {
+            if matches!(self.current_kind(), Some(T![__END__] | T![__DATA__])) {
                 self.data_section();
                 // After data section, everything else is consumed as part of it
                 break;
@@ -340,11 +337,9 @@ impl<'a> Parser<'a> {
     ///
     /// Otherwise, a semicolon is required.
     fn expect_optional_semicolon(&mut self, statement_name: &str) {
-        if self.at(SyntaxKind::SEMICOLON) {
+        if self.at(T![;]) {
             self.bump();
-        } else if self.at_end()
-            || self.at_any(&[SyntaxKind::R_BRACE, SyntaxKind::END_KW, SyntaxKind::DATA_KW])
-        {
+        } else if self.at_end() || self.at_any(&[T!['}'], T![__END__], T![__DATA__]]) {
             // Semicolon is optional in these contexts
         } else {
             // Semicolon is required but missing
@@ -354,7 +349,7 @@ impl<'a> Parser<'a> {
 
     /// 括弧内のカンマ区切り式をパースするヘルパー関数
     fn parse_parenthesized_list(&mut self) {
-        if !self.at(SyntaxKind::R_PAREN) {
+        if !self.at(T![')']) {
             self.expression_list();
         }
     }
@@ -388,7 +383,7 @@ impl<'a> Parser<'a> {
     /// Returns true if the token at `offset` is followed by a fat comma (`=>`).
     fn is_followed_by_fat_comma(&self, offset: usize) -> bool {
         self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset + 1)
-            .is_some_and(|(next_kind, _)| next_kind == SyntaxKind::FAT_COMMA)
+            .is_some_and(|(next_kind, _)| next_kind == T![=>])
     }
 
     fn is_at_start_of_expression(&self) -> bool {
@@ -405,50 +400,50 @@ impl<'a> Parser<'a> {
                 | SyntaxKind::STRING
                 | SyntaxKind::BACKTICK_STRING
                 | SyntaxKind::REGEX_LITERAL
-                | SyntaxKind::SLASH
+                | T![/]
                 | SyntaxKind::IO_EXPR
                 | SyntaxKind::HEREDOC_START
                 | SyntaxKind::IDENT
-                | SyntaxKind::L_PAREN
-                | SyntaxKind::L_BRACE
-                | SyntaxKind::L_BRACKET
-                | SyntaxKind::QW_KW
-                | SyntaxKind::Q_KW
-                | SyntaxKind::QQ_KW
-                | SyntaxKind::QX_KW
-                | SyntaxKind::M_KW
-                | SyntaxKind::QR_KW
-                | SyntaxKind::S_KW
-                | SyntaxKind::TR_KW
-                | SyntaxKind::Y_KW
-                | SyntaxKind::MY_KW
-                | SyntaxKind::OUR_KW
-                | SyntaxKind::STATE_KW
-                | SyntaxKind::LOCAL_KW
-                | SyntaxKind::UNDEF_KW
-                | SyntaxKind::REQUIRE_KW
-                | SyntaxKind::RETURN_KW
-                | SyntaxKind::NEXT_KW
-                | SyntaxKind::LAST_KW
-                | SyntaxKind::REDO_KW
-                | SyntaxKind::TRY_KW
-                | SyntaxKind::CATCH_KW
-                | SyntaxKind::FINALLY_KW
-                | SyntaxKind::SUB_KW
-                | SyntaxKind::PLUS
-                | SyntaxKind::MINUS
+                | T!['(']
+                | T!['{']
+                | T!['[']
+                | T![qw]
+                | T![q]
+                | T![qq]
+                | T![qx]
+                | T![m]
+                | T![qr]
+                | T![s]
+                | T![tr]
+                | T![y]
+                | T![my]
+                | T![our]
+                | T![state]
+                | T![local]
+                | T![undef]
+                | T![require]
+                | T![return]
+                | T![next]
+                | T![last]
+                | T![redo]
+                | T![try]
+                | T![catch]
+                | T![finally]
+                | T![sub]
+                | T![+]
+                | T![-]
                 | SyntaxKind::UNARY_PLUS
                 | SyntaxKind::UNARY_MINUS
-                | SyntaxKind::INCREMENT
-                | SyntaxKind::DECREMENT
+                | T![++]
+                | T![--]
                 | SyntaxKind::PREFIX_INCREMENT
                 | SyntaxKind::PREFIX_DECREMENT
-                | SyntaxKind::LOGICAL_NOT
-                | SyntaxKind::BITWISE_NOT
-                | SyntaxKind::NOT_KW
+                | T![!]
+                | T![~]
+                | T![not]
                 | SyntaxKind::FILE_TEST_OP
-                | SyntaxKind::X
-                | SyntaxKind::DOUBLE_COLON
+                | T![x]
+                | T![::]
                 | SyntaxKind::CODE_SIGIL
         ) || kind.is_variable()
             || kind.is_sigil()
