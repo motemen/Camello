@@ -1,5 +1,6 @@
 ---
-source: src/parser/statement.rs
+source: src/parser/statement/tests.rs
+assertion_line: 48
 expression: render_success_tree(&syntax)
 ---
 ROOT@0..110
@@ -89,10 +90,10 @@ ROOT@0..110
       MY_KW@81..83 "my"
       WHITESPACE@83..84 " "
       INFIX_EXPR@84..95
-        SCALAR_VAR@84..86
+        SCALAR_VAR@84..87
           SCALAR_SIGIL@84..85 "$"
           IDENT@85..86 "y"
-        WHITESPACE@86..87 " "
+          WHITESPACE@86..87 " "
         DEFINED_OR@87..89 "//"
         WHITESPACE@89..90 " "
         STRING@90..95 "'abc'"
