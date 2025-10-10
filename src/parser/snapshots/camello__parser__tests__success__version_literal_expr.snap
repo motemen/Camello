@@ -1,0 +1,28 @@
+---
+source: src/parser/mod.rs
+expression: render_success_tree(&syntax)
+---
+ROOT@0..46
+  USE_STMT@0..45
+    USE_KW@0..3 "use"
+    WHITESPACE@3..4 " "
+    IDENT@4..12 "constant"
+    WHITESPACE@12..13 " "
+    EXPR_LIST@13..44
+      IDENT@13..26 "HAVE_BOOLEANS"
+      WHITESPACE@26..27 " "
+      FAT_COMMA@27..29 "=>"
+      WHITESPACE@29..30 " "
+      L_PAREN@30..31 "("
+      INFIX_EXPR@31..43
+        SCALAR_VAR@31..34
+          SCALAR_SIGIL@31..32 "$"
+          CARET@32..33 "^"
+          IDENT@33..34 "V"
+        WHITESPACE@34..35 " "
+        STR_GE@35..37 "ge"
+        WHITESPACE@37..38 " "
+        VERSION@38..43 "v5.36"
+      R_PAREN@43..44 ")"
+    SEMICOLON@44..45 ";"
+  NEWLINE@45..46 "\n"

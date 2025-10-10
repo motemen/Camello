@@ -310,7 +310,11 @@ impl Parser<'_> {
         }
 
         match current_kind {
-            SyntaxKind::NUMBER | SyntaxKind::STRING | SyntaxKind::REGEX_LITERAL => {
+            SyntaxKind::NUMBER
+            | SyntaxKind::STRING
+            | SyntaxKind::REGEX_LITERAL
+            | SyntaxKind::VERSION
+            | SyntaxKind::BARE_VERSION => {
                 // Consume as a value; let operators be detected on the next step
                 self.bump_value();
                 self.skip_whitespace_and_newlines();
