@@ -7,3 +7,5 @@ map({$_}@list);
 
 grep{$_}@list;
 grep({$_}@list);
+
+print { $fh } "hello";

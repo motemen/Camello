@@ -204,7 +204,7 @@ impl Parser<'_> {
         }
 
         // Dispatch based on what follows and the function's prototype
-        if self.at(T!['{']) && prototype.takes_block() {
+        if self.at(T!['{']) && (prototype.takes_block() || prototype.print_like()) {
             // Block-style call for builtins that take blocks (e.g., grep { ... } @list)
             self.builder
                 .start_node_at(start, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());
