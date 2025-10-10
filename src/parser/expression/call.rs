@@ -171,7 +171,10 @@ impl Parser<'_> {
         // The identifier is already parsed.
 
         // Handle block-style calls for non-builtins
-        if self.at(T!['{']) && Self::is_block_function(&function_name) {
+        if self.at(T!['{'])
+            && Self::is_block_function(&function_name)
+            && !self.looks_like_hash_ref()
+        {
             self.builder
                 .start_node_at(start, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());
             self.parse_block_function_args(&function_name);
