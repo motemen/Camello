@@ -196,8 +196,10 @@ fn read_source(
         let interpreted_code = interpret_escape_sequences(&code);
         return Ok((interpreted_code, "<command-line>".to_string()));
     }
+
+    let enc = get_encoding(encoding)?;
+
     if let Some(path) = path {
-        let enc = get_encoding(encoding)?;
         let bytes = fs::read(&path).into_diagnostic()?;
         let (decoded, _, had_errors) = enc.decode(&bytes);
         if had_errors {
@@ -208,7 +210,6 @@ fn read_source(
         }
         Ok((decoded.into_owned(), path.display().to_string()))
     } else {
-        let enc = get_encoding(encoding)?;
         let mut bytes = Vec::new();
         io::stdin().read_to_end(&mut bytes).into_diagnostic()?;
         let (decoded, _, had_errors) = enc.decode(&bytes);

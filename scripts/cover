@@ -2,6 +2,12 @@
 
 set -euo pipefail
 
+# Check for required dependencies
+if ! command -v nkf &> /dev/null; then
+    echo "Error: 'nkf' command not found. Please install it to use this script." >&2
+    exit 1
+fi
+
 base_dir="$(cd "$(dirname "$0")/.." && pwd)"
 
 ( cd "$base_dir" && cargo build )
@@ -103,7 +109,7 @@ process_directory() {
 
 for target in "$@"; do
 	if [ -d "$target" ]; then
-		process_directory "$target"
+		process_directory "$target" || true
 	elif [ -f "$target" ]; then
 		case "$target" in
 			*.tar.gz|*.tgz|*.zip)
