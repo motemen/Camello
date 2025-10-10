@@ -35,6 +35,20 @@ mod tests {
             Some((SyntaxKind::ARRAY_SIGIL, "@"))
         );
     }
+
+    #[test]
+    fn array_index_variable_allows_quote_keywords_as_names() {
+        let mut lexer = Lexer::new("$#q");
+
+        assert_eq!(
+            lexer.next_token_with_context(LexContext::Value),
+            Some((SyntaxKind::ARRAY_INDEX_SIGIL, "$#"))
+        );
+        assert_eq!(
+            lexer.next_token_with_context(LexContext::Value),
+            Some((SyntaxKind::IDENT, "q"))
+        );
+    }
 }
 
 #[derive(Logos, Debug, PartialEq, Clone)]
@@ -726,7 +740,7 @@ impl<'a> Lexer<'a> {
                     if let Some(keyword_kind) = Self::map_ident_keyword(text) {
                         // Look ahead to see if :: follows
                         let remainder = self.logos_lexer.remainder();
-                        if remainder.starts_with("::") {
+                        if remainder.starts_with("::") || self.ident_follows_sigil() {
                             // This is part of a qualified identifier like local::lib
                             SyntaxKind::IDENT
                         } else {
@@ -824,6 +838,21 @@ impl<'a> Lexer<'a> {
         }
 
         matches!(next, '{') || next.is_ascii_alphanumeric() || next == '_'
+    }
+
+    fn ident_follows_sigil(&self) -> bool {
+        let span = self.logos_lexer.span();
+        if span.start == 0 {
+            return false;
+        }
+
+        let source = self.logos_lexer.source();
+        let mut chars = source[..span.start].chars().rev();
+        match chars.next() {
+            Some('#') => chars.next().is_some_and(|ch| matches!(ch, '$')),
+            Some('$' | '@' | '%' | '*' | '&') => true,
+            _ => false,
+        }
     }
 
     /// Map known identifier keywords and quote-like starters
