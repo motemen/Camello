@@ -1,5 +1,6 @@
 ---
-source: src/parser/statement.rs
+source: src/parser/statement/tests.rs
+assertion_line: 88
 expression: render_errors(&errors)
 ---
   × Parse error: Expected ';' after expression statement
@@ -7,14 +8,4 @@ expression: render_errors(&errors)
  1 │ $x = 1 $y = 2
    ·        ┬
    ·        ╰── here
-   ╰────
-  × Parse error: Expected DELIMITER, found Some(NUMBER)
-   ╭────
- 1 │ $x = 1 $y = 2
-   ·             ┬
-   ·             ╰── here
-   ╰────
-  × Parse error: Expected DELIMITER, found None
-   ╭────
- 1 │ $x = 1 $y = 2
    ╰────
