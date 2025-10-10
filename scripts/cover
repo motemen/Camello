@@ -6,37 +6,126 @@ base_dir="$(cd "$(dirname "$0")/.." && pwd)"
 
 ( cd "$base_dir" && cargo build )
 
-# Takes a list of directories as arguments, runs $base_dir/target/debug/camello dump on them, and displays success rate
+# Takes a list of directories or archive files as arguments, runs $base_dir/target/debug/camello dump on them, and displays success rate.
+# Additionally, when processing directories, if .tar.gz/.tgz/.zip files are found, they are extracted into temporary directories
+# and processed recursively as directories.
 
 total=0
 success=0
 failed_files=()
+temp_dirs=()
 
-for dir in "$@"; do
-	if [ -d "$dir" ]; then
-		echo "Processing directory: $dir"
+# Function to extract archive to temporary directory
+extract_archive() {
+	local archive="$1"
+	local temp_dir
+	
+	temp_dir=$(mktemp -d)
+	temp_dirs+=("$temp_dir")
+	
+	case "$archive" in
+		*.tar.gz|*.tgz)
+			# echo "Extracting tar.gz archive: $archive to $temp_dir" >&2
+			tar -xzf "$archive" -C "$temp_dir"
+			;;
+		*.zip)
+			# echo "Extracting zip archive: $archive to $temp_dir" >&2
+			unzip -q "$archive" -d "$temp_dir"
+			;;
+		*)
+			echo "Unsupported archive format: $archive" >&2
+			rm -rf "$temp_dir"
+			return 1
+			;;
+	esac
+	
+	echo "$temp_dir"
+}
 
-		while IFS= read -r file; do
-			if [ -f "$file" ]; then
-				((total++))
-				if "$base_dir/target/debug/camello" dump -q "$file"; then
-					((success++))
-					/bin/echo -n "." >&2
-				else
-					failed_files+=("$file")
-					/bin/echo -n "F" >&2
-				fi
+# Function to clean up temporary directories
+cleanup() {
+	if [ ${#temp_dirs[@]} -gt 0 ]; then
+		for temp_dir in "${temp_dirs[@]}"; do
+			if [ -d "$temp_dir" ]; then
+				echo "Cleaning up temporary directory: $temp_dir"
+				rm -rf "$temp_dir"
 			fi
-		done < <(find "$dir" -type f \( -name "*.pm" -o -name "*.t" \))
+		done
+	fi
+}
+
+# Function to process an archive: extract then process as a directory
+process_archive() {
+	local archive="$1"
+	local temp_dir
+	temp_dir=$(extract_archive "$archive") || return 1
+	if [ -n "$temp_dir" ] && [ -d "$temp_dir" ]; then
+		process_directory "$temp_dir"
+	fi
+}
+
+# Function to process a directory
+process_directory() {
+	local dir="$1"
+
+	while IFS= read -r file; do
+		if [ -f "$file" ]; then
+			case "$file" in
+				*.tar.gz|*.tgz|*.zip)
+					# Found an archive inside the directory: extract and recurse
+					process_archive "$file" || true
+					;;
+				*.pm|*.t)
+					((total++))
+					encoding=$(nkf -g "$file")
+					if [ "$encoding" = "unknown" ] || [ "$encoding" = "UTF-8" ] || [ "$encoding" = "ASCII" ] || [ "$encoding" = "BINARY" ]; then
+						encoding_flag=""
+					else
+						encoding_flag="--encoding $encoding"
+					fi
+					if "$base_dir/target/debug/camello" dump $encoding_flag -q "$file"; then
+						((success++))
+						/bin/echo -n "." >&2
+					else
+						failed_files+=("$file")
+						/bin/echo -n "F" >&2
+					fi
+					;;
+				*)
+					# Ignore other files
+					;;
+			esac
+		fi
+	done < <(find "$dir" -type f \( -name "*.pm" -o -name "*.t" -o -name "*.tar.gz" -o -name "*.tgz" -o -name "*.zip" \))
+}
+
+for target in "$@"; do
+	if [ -d "$target" ]; then
+		process_directory "$target"
+	elif [ -f "$target" ]; then
+		case "$target" in
+			*.tar.gz|*.tgz|*.zip)
+                process_archive "$target" || true
+				;;
+			*)
+				echo "Unsupported file type: $target (expected directory or .tar.gz/.tgz/.zip archive)" >&2
+				;;
+		esac
+	else
+		echo "Target not found or not accessible: $target" >&2
 	fi
 done
 
 echo >&2
 
-rate=$((success * 100 / total))
+if [ "$total" -eq 0 ]; then
+	rate=0
+else
+	rate=$((success * 100 / total))
+fi
 
 if [ ${#failed_files[@]} -gt 0 ]; then
-	echo "\nFailed files:" >&2
+	echo "Failed files:" >&2
 	for file in "${failed_files[@]}"; do
 		echo "$file" >&2
 	done

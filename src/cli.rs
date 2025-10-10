@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use encoding_rs::Encoding;
 use miette::{IntoDiagnostic, Report, Result};
 use std::fs;
 use std::io::{self, Read, Write};
@@ -48,6 +49,10 @@ pub enum Commands {
         /// Output to file instead of stdout
         #[arg(short, long, help = "Output file path")]
         output: Option<PathBuf>,
+
+        /// Input file encoding (e.g., utf-8, euc-jp, shift_jis)
+        #[arg(long, help = "Input file encoding (default: utf-8)")]
+        encoding: Option<String>,
     },
     /// Dump parsed AST structure
     Dump {
@@ -88,6 +93,10 @@ pub enum Commands {
             help = "Very quiet mode: suppress all output"
         )]
         very_quiet: bool,
+
+        /// Input file encoding (e.g., utf-8, euc-jp, shift_jis)
+        #[arg(long, help = "Input file encoding (default: utf-8)")]
+        encoding: Option<String>,
     },
 }
 /// Function to interpret escape sequences
@@ -145,8 +154,9 @@ pub fn run() -> Result<()> {
             eval_escape,
             check,
             output,
+            encoding,
         } => {
-            format_file(path, eval, eval_escape, check, output)?;
+            format_file(path, eval, eval_escape, check, output, encoding)?;
         }
         Commands::Dump {
             path,
@@ -154,18 +164,30 @@ pub fn run() -> Result<()> {
             eval_escape,
             quiet,
             very_quiet,
+            encoding,
         } => {
-            dump_file(path, eval, eval_escape, quiet, very_quiet)?;
+            dump_file(path, eval, eval_escape, quiet, very_quiet, encoding)?;
         }
     }
 
     Ok(())
 }
 
+/// Get encoding from encoding name string
+fn get_encoding(encoding_name: Option<&String>) -> Result<&'static Encoding> {
+    let encoding = match encoding_name {
+        Some(name) => Encoding::for_label(name.as_bytes())
+            .ok_or_else(|| miette::miette!("Unknown encoding: {}", name))?,
+        None => encoding_rs::UTF_8,
+    };
+    Ok(encoding)
+}
+
 fn read_source(
     path: Option<PathBuf>,
     eval: Option<String>,
     eval_escape: Option<String>,
+    encoding: Option<&String>,
 ) -> Result<(String, String)> {
     if let Some(code) = eval {
         return Ok((code, "<command-line>".to_string()));
@@ -175,12 +197,25 @@ fn read_source(
         return Ok((interpreted_code, "<command-line>".to_string()));
     }
     if let Some(path) = path {
-        let input = fs::read_to_string(&path).into_diagnostic()?;
-        Ok((input, path.display().to_string()))
+        let enc = get_encoding(encoding)?;
+        let bytes = fs::read(&path).into_diagnostic()?;
+        let (decoded, _, had_errors) = enc.decode(&bytes);
+        if had_errors {
+            eprintln!(
+                "Warning: encoding errors detected while reading '{}'",
+                path.display()
+            );
+        }
+        Ok((decoded.into_owned(), path.display().to_string()))
     } else {
-        let mut input = String::new();
-        io::stdin().read_to_string(&mut input).into_diagnostic()?;
-        Ok((input, "<stdin>".to_string()))
+        let enc = get_encoding(encoding)?;
+        let mut bytes = Vec::new();
+        io::stdin().read_to_end(&mut bytes).into_diagnostic()?;
+        let (decoded, _, had_errors) = enc.decode(&bytes);
+        if had_errors {
+            eprintln!("Warning: encoding errors detected while reading from stdin");
+        }
+        Ok((decoded.into_owned(), "<stdin>".to_string()))
     }
 }
 
@@ -190,9 +225,10 @@ fn format_file(
     eval_escape: Option<String>,
     check: bool,
     output: Option<PathBuf>,
+    encoding: Option<String>,
 ) -> Result<()> {
     // Read from file or standard input
-    let (input, source_name) = read_source(path, eval, eval_escape)?;
+    let (input, source_name) = read_source(path, eval, eval_escape, encoding.as_ref())?;
 
     // Execute formatting
     let (formatted, errors) = format_perl(&input);
@@ -236,9 +272,10 @@ fn dump_file(
     eval_escape: Option<String>,
     quiet: bool,
     very_quiet: bool,
+    encoding: Option<String>,
 ) -> Result<()> {
     // Read from file or standard input
-    let (input, source_name) = read_source(path, eval, eval_escape)?;
+    let (input, source_name) = read_source(path, eval, eval_escape, encoding.as_ref())?;
     let (syntax, errors) = parse_perl(&input);
 
     if !errors.is_empty() {
@@ -287,6 +324,7 @@ fn test_format_with_escape_sequences() -> Result<(), Box<dyn std::error::Error>>
         None,
         Some("my$var=1;\\nprint $var;".to_string()),
         false,
+        None,
         None
     )
     .is_ok());
@@ -322,6 +360,7 @@ mod tests {
             None,
             Some("my$var=1;\\nprint $var;".to_string()),
             false,
+            None,
             None
         )
         .is_ok());
@@ -336,7 +375,7 @@ mod tests {
         fs::write(&file_path, "my$var=1;")?;
 
         // Execute formatting (not actually executed, but confirm no errors)
-        assert!(format_file(Some(file_path), None, None, false, None).is_ok());
+        assert!(format_file(Some(file_path), None, None, false, None, None).is_ok());
 
         Ok(())
     }
@@ -344,7 +383,7 @@ mod tests {
     #[test]
     fn test_format_string_to_stdout() -> Result<(), Box<dyn std::error::Error>> {
         // Execute formatting (not actually executed, but confirm no errors)
-        assert!(format_file(None, Some("my$var=1;".to_string()), None, false, None).is_ok());
+        assert!(format_file(None, Some("my$var=1;".to_string()), None, false, None, None).is_ok());
 
         Ok(())
     }
@@ -356,8 +395,89 @@ mod tests {
         fs::write(&file_path, "my $var = 1;\n")?; // Use actual newline, not escaped
 
         // Check that the file is correctly formatted
-        assert!(format_file(Some(file_path), None, None, true, None).is_ok());
+        assert!(format_file(Some(file_path), None, None, true, None, None).is_ok());
 
         Ok(())
+    }
+
+    #[test]
+    fn test_encoding_utf8() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempdir()?;
+        let file_path = dir.path().join("test_utf8.pl");
+
+        // Create a file with UTF-8 content
+        let content = "my $var = \"こんにちは\";";
+        fs::write(&file_path, content)?;
+
+        // Read with UTF-8 encoding
+        assert!(format_file(
+            Some(file_path),
+            None,
+            None,
+            false,
+            None,
+            Some("utf-8".to_string())
+        )
+        .is_ok());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_encoding_eucjp() -> Result<(), Box<dyn std::error::Error>> {
+        use encoding_rs::EUC_JP;
+
+        let dir = tempdir()?;
+        let file_path = dir.path().join("test_eucjp.pl");
+
+        // Create a file with EUC-JP encoded content
+        let text = "my $var = \"こんにちは\";";
+        let (encoded, _, _) = EUC_JP.encode(text);
+        fs::write(&file_path, &*encoded)?;
+
+        // Read with EUC-JP encoding
+        assert!(format_file(
+            Some(file_path),
+            None,
+            None,
+            false,
+            None,
+            Some("euc-jp".to_string())
+        )
+        .is_ok());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_encoding_shiftjis() -> Result<(), Box<dyn std::error::Error>> {
+        use encoding_rs::SHIFT_JIS;
+
+        let dir = tempdir()?;
+        let file_path = dir.path().join("test_sjis.pl");
+
+        // Create a file with Shift_JIS encoded content
+        let text = "my $var = \"こんにちは\";";
+        let (encoded, _, _) = SHIFT_JIS.encode(text);
+        fs::write(&file_path, &*encoded)?;
+
+        // Read with Shift_JIS encoding
+        assert!(format_file(
+            Some(file_path),
+            None,
+            None,
+            false,
+            None,
+            Some("shift_jis".to_string())
+        )
+        .is_ok());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_invalid_encoding() {
+        let result = get_encoding(Some(&"invalid-encoding-name".to_string()));
+        assert!(result.is_err());
     }
 }
