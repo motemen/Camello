@@ -232,7 +232,10 @@ impl Parser<'_> {
             if !parsed_rhs {
                 // Check if this is a trailing comma or fat comma
                 if (current_kind == T![,] || current_kind == T![=>])
-                    && (self.at(T!['}']) || self.at(T![;]) || self.at_end())
+                    && (self.at(T!['}'])
+                        || self.at(T![;])
+                        || self.at_end()
+                        || self.is_at_postfix_modifier_keyword())
                 {
                     // This is a trailing comma/fat comma - that's OK, just finish the node
                     self.builder.finish_node();
@@ -291,6 +294,17 @@ impl Parser<'_> {
         }
 
         true
+    }
+
+    fn is_at_postfix_modifier_keyword(&self) -> bool {
+        self.at_any(&[
+            T![if],
+            T![unless],
+            T![while],
+            T![until],
+            T![for],
+            T![foreach],
+        ])
     }
 
     fn primary_expr(&mut self) -> PostfixSubject {
