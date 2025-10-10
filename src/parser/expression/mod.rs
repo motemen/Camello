@@ -532,6 +532,8 @@ impl Parser<'_> {
                 // qw() expression or bareword 'qw'
                 if self.should_parse_quote_like() {
                     self.qw_expr();
+                    // qw() returns a list, so allow direct array subscripts like qw(...)[0]
+                    return PostfixSubject::List;
                 } else {
                     self.parse_ident_like_expr();
                 }
