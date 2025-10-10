@@ -397,6 +397,8 @@ impl<'a> Parser<'a> {
         matches!(
             kind,
             SyntaxKind::NUMBER
+                | SyntaxKind::VERSION
+                | SyntaxKind::BARE_VERSION
                 | SyntaxKind::STRING
                 | SyntaxKind::BACKTICK_STRING
                 | SyntaxKind::REGEX_LITERAL
