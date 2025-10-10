@@ -95,7 +95,7 @@ impl Parser<'_> {
     fn looks_like_hash_ref_at_offset(&self, brace_offset: usize) -> bool {
         if self
             .peek_nth_non_trivia_token_with_context(LexContext::Value, brace_offset)
-            .is_none_or(|(kind, _)| kind != SyntaxKind::L_BRACE)
+            .is_none_or(|(kind, _)| kind != T!['{'])
         {
             return false;
         }
@@ -118,23 +118,20 @@ impl Parser<'_> {
 
         match first_token {
             // Empty braces: {} - treat as block in statement context
-            Some((SyntaxKind::R_BRACE, _)) => false,
+            Some((T!['}'], _)) => false,
 
             // Number followed by comma or fat arrow: {1, or {1=> - hash reference
             Some((SyntaxKind::NUMBER, _)) => {
                 let next_token =
                     self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset + 1);
-                matches!(
-                    next_token,
-                    Some((SyntaxKind::COMMA | SyntaxKind::FAT_COMMA, _))
-                )
+                matches!(next_token, Some((T![,] | T![=>], _)))
             }
 
             // Identifier followed by fat arrow: {a=> - hash reference (bareword as hash key)
             Some((SyntaxKind::IDENT, _)) => {
                 let next_token =
                     self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset + 1);
-                matches!(next_token, Some((SyntaxKind::FAT_COMMA, _)))
+                matches!(next_token, Some((T![=>], _)))
             }
 
             // Keyword followed by fat arrow: {if=> - hash reference (keyword as hash key)
@@ -144,10 +141,7 @@ impl Parser<'_> {
             Some((SyntaxKind::STRING, _)) => {
                 let next_token =
                     self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset + 1);
-                matches!(
-                    next_token,
-                    Some((SyntaxKind::FAT_COMMA | SyntaxKind::COMMA, _))
-                )
+                matches!(next_token, Some((T![=>] | T![,], _)))
             }
 
             // Everything else is a block
@@ -177,7 +171,7 @@ impl Parser<'_> {
         // The identifier is already parsed.
 
         // Handle block-style calls for non-builtins
-        if self.at(SyntaxKind::L_BRACE) && Self::is_block_function(&function_name) {
+        if self.at(T!['{']) && Self::is_block_function(&function_name) {
             self.builder
                 .start_node_at(start, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());
             self.parse_block_function_args(&function_name);
@@ -186,7 +180,7 @@ impl Parser<'_> {
         }
 
         // Handle parenthesized calls (leave for postfix parser)
-        if self.at(SyntaxKind::L_PAREN) {
+        if self.at(T!['(']) {
             return;
         }
 
@@ -210,13 +204,13 @@ impl Parser<'_> {
         }
 
         // Dispatch based on what follows and the function's prototype
-        if self.at(SyntaxKind::L_BRACE) && prototype.takes_block() {
+        if self.at(T!['{']) && prototype.takes_block() {
             // Block-style call for builtins that take blocks (e.g., grep { ... } @list)
             self.builder
                 .start_node_at(start, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());
             self.parse_block_function_args(function_name);
             self.builder.finish_node();
-        } else if self.at(SyntaxKind::L_PAREN) {
+        } else if self.at(T!['(']) {
             // Parenthesized call
             self.parse_builtin_parenthesized_call(function_name, prototype, start);
         } else if prototype.print_like() {
@@ -244,7 +238,7 @@ impl Parser<'_> {
         if prototype.takes_block()
             && self
                 .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
-                .is_some_and(|(kind, _)| kind == SyntaxKind::L_BRACE)
+                .is_some_and(|(kind, _)| kind == T!['{'])
             && !self.looks_like_hash_ref_at_offset(1)
         {
             // Block inside parentheses: grep({ ... } @list)
@@ -315,7 +309,7 @@ impl Parser<'_> {
         }
 
         // For non-builtins, treat `/` as division operator instead of forcing regex
-        if next_kind == Some(SyntaxKind::SLASH)
+        if next_kind == Some(T![/])
             && next_value_token.is_some_and(|(kind, _)| kind == SyntaxKind::REGEX_LITERAL)
         {
             next_kind = None;
@@ -350,7 +344,7 @@ impl Parser<'_> {
 
         self.skip_whitespace_and_newlines();
 
-        if self.at(SyntaxKind::R_PAREN) {
+        if self.at(T![')']) {
             self.bump_op(); // )
             self.skip_whitespace_and_newlines();
         } else {
@@ -363,14 +357,14 @@ impl Parser<'_> {
     // Parse block function arguments: block + optional additional arguments
     fn parse_block_function_args(&mut self, function_name: &str) {
         // Parse the block (which should be at L_BRACE)
-        if self.at(SyntaxKind::L_BRACE) {
+        if self.at(T!['{']) {
             self.builder.start_node(SyntaxKind::BLOCK_STMT.into());
             // Entering a block; next should expect a Value
             self.bump_value(); // {
             self.skip_whitespace_and_newlines();
 
             // Parse statements inside the block
-            while !self.at(SyntaxKind::R_BRACE) && !self.at_end() {
+            while !self.at(T!['}']) && !self.at_end() {
                 if !self.statement() {
                     // If we can't parse a statement, try to recover
                     self.error("Expected statement in block");
@@ -381,7 +375,7 @@ impl Parser<'_> {
                 self.skip_whitespace_and_newlines();
             }
 
-            self.expect(SyntaxKind::R_BRACE);
+            self.expect(T!['}']);
             self.builder.finish_node();
             self.skip_whitespace_and_newlines();
         }
@@ -417,7 +411,7 @@ impl Parser<'_> {
         while let Some((kind, _)) =
             self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset)
         {
-            if kind != SyntaxKind::DOUBLE_COLON {
+            if kind != T![::] {
                 break;
             }
 
@@ -567,7 +561,7 @@ impl Parser<'_> {
                         }
                         if let Some((SyntaxKind::REGEX_LITERAL, literal)) = next_value_token {
                             if literal == "//" {
-                                return Some(SyntaxKind::DEFINED_OR);
+                                return Some(T!["//"]);
                             }
                         }
                     }
@@ -582,12 +576,12 @@ impl Parser<'_> {
                         }
                     }
                     PrototypeArg::Any => {
-                        if next_kind == Some(SyntaxKind::DEFINED_OR) {
+                        if next_kind == Some(T!["//"]) {
                             if let Some((SyntaxKind::REGEX_LITERAL, _)) = next_value_token {
                                 return Some(SyntaxKind::REGEX_LITERAL);
                             }
                         }
-                        if next_kind == Some(SyntaxKind::LT) {
+                        if next_kind == Some(T![<]) {
                             if let Some((SyntaxKind::IO_EXPR, _)) = next_value_token {
                                 return Some(SyntaxKind::IO_EXPR);
                             }
@@ -607,7 +601,7 @@ impl Parser<'_> {
 
     /// Parse method arguments if parentheses are present
     pub(super) fn parse_method_arguments(&mut self) {
-        if self.at(SyntaxKind::L_PAREN) {
+        if self.at(T!['(']) {
             // Inside method args, expect values
             self.bump_value(); // (
             self.skip_whitespace_and_newlines();
@@ -617,7 +611,7 @@ impl Parser<'_> {
             // Allow newlines or other trivia before closing ')'
             self.skip_whitespace_and_newlines();
 
-            if self.at(SyntaxKind::R_PAREN) {
+            if self.at(T![')']) {
                 // After ')', expect an operator
                 self.bump_op(); // )
                 self.skip_whitespace_and_newlines();

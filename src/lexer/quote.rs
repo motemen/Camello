@@ -1,7 +1,7 @@
 //! Quote-like handling for the lexer (parser-driven begin).
 
 use super::{DelimiterPhase, DelimiterType, Lexer, LexerMode, QuoteLikeMode, QuoteLikeState};
-use crate::SyntaxKind;
+use crate::{SyntaxKind, T};
 
 impl<'a> Lexer<'a> {
     /// Called by the parser after consuming q/qq/qx/qw/m/qr/s/tr/y.
@@ -228,8 +228,8 @@ impl<'a> Lexer<'a> {
 
     fn get_q_mode_content_kind(&self, prefix: SyntaxKind) -> SyntaxKind {
         match prefix {
-            SyntaxKind::Q_KW => SyntaxKind::LITERAL_STRING,
-            SyntaxKind::QQ_KW | SyntaxKind::QX_KW => SyntaxKind::INTERPOLATED_STRING,
+            T![q] => SyntaxKind::LITERAL_STRING,
+            T![qq] | T![qx] => SyntaxKind::INTERPOLATED_STRING,
             _ => SyntaxKind::LITERAL_STRING,
         }
     }

@@ -1,6 +1,6 @@
 use rowan::NodeOrToken;
 
-use crate::{PerlNode, SyntaxKind};
+use crate::{PerlNode, SyntaxKind, T};
 
 use super::Formatter;
 
@@ -47,7 +47,7 @@ impl Formatter {
                 };
                 if let Some(last_token) = last_token {
                     if let Some(next_token) = Self::next_significant_token(&last_token) {
-                        if next_token.kind() == crate::SyntaxKind::L_PAREN {
+                        if next_token.kind() == T!['('] {
                             self.write_char(' ');
                         }
                     }
@@ -64,9 +64,7 @@ impl Formatter {
                     if let Some(next_token) = Self::next_significant_token(&last_token) {
                         if matches!(
                             next_token.kind(),
-                            crate::SyntaxKind::IDENT
-                                | crate::SyntaxKind::L_PAREN
-                                | crate::SyntaxKind::QW_KW
+                            crate::SyntaxKind::IDENT | T!['('] | T![qw]
                         ) {
                             self.write_char(' ');
                         }
@@ -85,10 +83,7 @@ impl Formatter {
                     has_content = true;
                 }
                 NodeOrToken::Token(token) => match token.kind() {
-                    SyntaxKind::L_BRACE
-                    | SyntaxKind::R_BRACE
-                    | SyntaxKind::WHITESPACE
-                    | SyntaxKind::NEWLINE => {}
+                    T!['{'] | T!['}'] | SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE => {}
                     _ => {
                         has_content = true;
                     }
@@ -96,17 +91,14 @@ impl Formatter {
             }
         }
 
-        let brace_tightness = self
-            .options
-            .delimiter_tightness
-            .for_kind(SyntaxKind::L_BRACE);
+        let brace_tightness = self.options.delimiter_tightness.for_kind(T!['{']);
         let add_space_for_block = brace_tightness.should_add_space_for_simple_block();
 
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(child_node) => self.format_node(&child_node),
                 NodeOrToken::Token(token) => match token.kind() {
-                    SyntaxKind::L_BRACE => {
+                    T!['{'] => {
                         self.handle_spacing_before(token.kind());
                         if self.at_line_start() {
                             self.add_indent();
@@ -118,10 +110,10 @@ impl Formatter {
                         }
                         self.remember_token(&token);
                     }
-                    SyntaxKind::R_BRACE => {
+                    T!['}'] => {
                         if add_space_for_block
                             && has_content
-                            && self.prev_token_kind() != Some(SyntaxKind::L_BRACE)
+                            && self.prev_token_kind() != Some(T!['{'])
                             && !self.current_line_ends_with_space()
                         {
                             self.write_char(' ');
@@ -262,7 +254,7 @@ impl Formatter {
                     self.format_node(&child_node);
                 }
                 NodeOrToken::Token(token) => match token.kind() {
-                    SyntaxKind::SEMICOLON => {
+                    T![;] => {
                         self.write(&token);
                         self.write_char(' ');
                     }

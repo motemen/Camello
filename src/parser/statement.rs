@@ -1,4 +1,4 @@
-use crate::{lexer::LexContext, SyntaxKind};
+use crate::{lexer::LexContext, SyntaxKind, T};
 
 use super::{expression::PostfixSubject, Parser};
 
@@ -12,7 +12,7 @@ impl Parser<'_> {
                 if let Some((next_kind, _)) =
                     self.peek_nth_non_trivia_token_with_context(LexContext::Operator, 1)
                 {
-                    if next_kind == SyntaxKind::COLON {
+                    if next_kind == T![:] {
                         self.labeled_stmt();
                         return true;
                     }
@@ -20,7 +20,7 @@ impl Parser<'_> {
                 // Not a label, parse as expression statement
                 self.expression_stmt()
             }
-            Some(kind @ (SyntaxKind::MY_KW | SyntaxKind::OUR_KW | SyntaxKind::STATE_KW)) => {
+            Some(kind @ (T![my] | T![our] | T![state])) => {
                 if self.looks_like_lexical_sub_definition() {
                     self.sub_def_with_modifier(Some(kind));
                     true
@@ -29,11 +29,11 @@ impl Parser<'_> {
                     self.expression_stmt()
                 }
             }
-            Some(SyntaxKind::LOCAL_KW) => {
+            Some(T![local]) => {
                 // Route through expression system for prefix operator handling
                 self.expression_stmt()
             }
-            Some(SyntaxKind::SUB_KW) => {
+            Some(T![sub]) => {
                 if self.looks_like_sub_definition() {
                     self.sub_def_with_modifier(None);
                     true
@@ -41,36 +41,36 @@ impl Parser<'_> {
                     self.expression_stmt()
                 }
             }
-            Some(SyntaxKind::IF_KW) => {
+            Some(T![if]) => {
                 self.if_stmt();
                 true
             }
-            Some(SyntaxKind::UNLESS_KW) => {
+            Some(T![unless]) => {
                 self.unless_stmt();
                 true
             }
-            Some(SyntaxKind::FOR_KW | SyntaxKind::FOREACH_KW) => {
+            Some(T![for] | T![foreach]) => {
                 self.for_stmt();
                 true
             }
-            Some(SyntaxKind::WHILE_KW) => {
+            Some(T![while]) => {
                 self.while_stmt();
                 true
             }
-            Some(SyntaxKind::UNTIL_KW) => {
+            Some(T![until]) => {
                 self.until_stmt();
                 true
             }
-            Some(SyntaxKind::PACKAGE_KW) => {
+            Some(T![package]) => {
                 self.package_stmt();
                 true
             }
-            Some(SyntaxKind::TRY_KW) => self.try_stmt(),
-            Some(SyntaxKind::USE_KW) => {
+            Some(T![try]) => self.try_stmt(),
+            Some(T![use]) => {
                 self.use_or_no_stmt(true);
                 true
             }
-            Some(SyntaxKind::NO_KW) => {
+            Some(T![no]) => {
                 self.use_or_no_stmt(false);
                 true
             }
@@ -78,7 +78,7 @@ impl Parser<'_> {
                 self.phase_block_stmt(kind);
                 true
             }
-            Some(SyntaxKind::END_KW | SyntaxKind::DATA_KW) => {
+            Some(T![__END__] | T![__DATA__]) => {
                 self.data_section();
                 true
             }
@@ -86,13 +86,13 @@ impl Parser<'_> {
                 self.pod_block();
                 true
             }
-            Some(SyntaxKind::CUT_KW) => {
+            Some(T![=cut]) => {
                 // =cut without a preceding POD block is an error
                 self.error("Found =cut without a preceding POD command");
                 self.bump(); // Consume the =cut token
                 true
             }
-            Some(SyntaxKind::R_BRACE) => {
+            Some(T!['}']) => {
                 // End of block, notify the caller.
                 false
             }
@@ -100,11 +100,11 @@ impl Parser<'_> {
                 self.ellipsis_stmt();
                 true
             }
-            Some(SyntaxKind::SEMICOLON) => {
+            Some(T![;]) => {
                 self.empty_stmt();
                 true
             }
-            Some(SyntaxKind::L_BRACE) => {
+            Some(T!['{']) => {
                 // Check if this looks like a hash reference based on content only
                 if self.looks_like_hash_ref() {
                     // This is likely a hash reference expression, parse as expression statement
@@ -140,7 +140,7 @@ impl Parser<'_> {
         self.bump(); // consume TRY_KW
         self.skip_whitespace_and_newlines();
 
-        if !self.at(SyntaxKind::L_BRACE) {
+        if !self.at(T!['{']) {
             self.error("Expected block after 'try'");
             return false;
         }
@@ -149,7 +149,7 @@ impl Parser<'_> {
         self.skip_whitespace_and_newlines();
 
         // Dispatch based on what follows the try block
-        if self.at(SyntaxKind::CATCH_KW) || self.at(SyntaxKind::FINALLY_KW) {
+        if self.at(T![catch]) || self.at(T![finally]) {
             self.parse_try_catch_statement(stmt_checkpoint)
         } else {
             self.parse_try_function_expression(stmt_checkpoint, expr_checkpoint)
@@ -161,17 +161,17 @@ impl Parser<'_> {
         self.builder
             .start_node_at(stmt_checkpoint, SyntaxKind::TRY_STMT.into());
 
-        if self.at(SyntaxKind::CATCH_KW) {
+        if self.at(T![catch]) {
             self.parse_catch_clause();
             self.skip_whitespace_and_newlines();
         }
 
-        if self.at(SyntaxKind::FINALLY_KW) {
+        if self.at(T![finally]) {
             self.parse_finally_clause();
             self.skip_whitespace_and_newlines();
         }
 
-        if self.at(SyntaxKind::SEMICOLON) {
+        if self.at(T![;]) {
             self.bump();
         }
 
@@ -213,12 +213,12 @@ impl Parser<'_> {
     fn parse_catch_clause(&mut self) {
         self.builder.start_node(SyntaxKind::CATCH_BLOCK.into());
 
-        self.expect(SyntaxKind::CATCH_KW);
+        self.expect(T![catch]);
         self.skip_whitespace_and_newlines();
 
-        if self.at(SyntaxKind::L_PAREN) {
+        if self.at(T!['(']) {
             self.builder.start_node(SyntaxKind::CATCH_PARAM.into());
-            self.expect_value(SyntaxKind::L_PAREN);
+            self.expect_value(T!['(']);
             self.skip_whitespace_and_newlines();
 
             // NOTE: We use expression() here which is permissive and allows any expression,
@@ -230,8 +230,8 @@ impl Parser<'_> {
             }
             self.skip_whitespace_and_newlines();
 
-            if self.at(SyntaxKind::R_PAREN) {
-                self.expect_op(SyntaxKind::R_PAREN);
+            if self.at(T![')']) {
+                self.expect_op(T![')']);
             } else {
                 self.error("Expected ')' after catch parameter");
             }
@@ -240,7 +240,7 @@ impl Parser<'_> {
             self.skip_whitespace_and_newlines();
         }
 
-        if self.at(SyntaxKind::L_BRACE) {
+        if self.at(T!['{']) {
             self.block();
         } else {
             self.error("Expected block after 'catch'");
@@ -252,10 +252,10 @@ impl Parser<'_> {
     fn parse_finally_clause(&mut self) {
         self.builder.start_node(SyntaxKind::FINALLY_BLOCK.into());
 
-        self.expect(SyntaxKind::FINALLY_KW);
+        self.expect(T![finally]);
         self.skip_whitespace_and_newlines();
 
-        if self.at(SyntaxKind::L_BRACE) {
+        if self.at(T!['{']) {
             self.block();
         } else {
             self.error("Expected block after 'finally'");
@@ -266,16 +266,14 @@ impl Parser<'_> {
 
     fn looks_like_sub_definition(&self) -> bool {
         match self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1) {
-            Some((next, _)) => {
-                next == SyntaxKind::DOUBLE_COLON || next == SyntaxKind::IDENT || next.is_keyword()
-            }
+            Some((next, _)) => next == T![::] || next == SyntaxKind::IDENT || next.is_keyword(),
             None => false,
         }
     }
 
     fn looks_like_lexical_sub_definition(&self) -> bool {
         self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
-            .is_some_and(|(next, _)| next == SyntaxKind::SUB_KW)
+            .is_some_and(|(next, _)| next == T![sub])
     }
 
     fn labeled_stmt(&mut self) {
@@ -285,7 +283,7 @@ impl Parser<'_> {
         self.builder.start_node(SyntaxKind::LABEL.into());
         self.expect(SyntaxKind::IDENT);
         self.skip_whitespace_and_newlines();
-        self.expect(SyntaxKind::COLON);
+        self.expect(T![:]);
         self.builder.finish_node();
 
         self.skip_whitespace_and_newlines();
@@ -305,7 +303,7 @@ impl Parser<'_> {
             self.skip_whitespace_and_newlines();
         }
 
-        self.expect(SyntaxKind::SUB_KW);
+        self.expect(T![sub]);
         self.skip_whitespace_and_newlines();
 
         // Subroutine name (qualified identifier also allowed); keywords accepted as identifiers
@@ -319,11 +317,11 @@ impl Parser<'_> {
 
     fn phase_block_stmt(&mut self, keyword_kind: SyntaxKind) {
         let name = match keyword_kind {
-            SyntaxKind::BEGIN_KW => "BEGIN",
-            SyntaxKind::END_BLOCK_KW => "END",
-            SyntaxKind::INIT_KW => "INIT",
-            SyntaxKind::CHECK_KW => "CHECK",
-            SyntaxKind::UNITCHECK_KW => "UNITCHECK",
+            T![BEGIN] => "BEGIN",
+            T![END] => "END",
+            T![INIT] => "INIT",
+            T![CHECK] => "CHECK",
+            T![UNITCHECK] => "UNITCHECK",
             _ => unreachable!("invalid phase block keyword"),
         };
 
@@ -332,7 +330,7 @@ impl Parser<'_> {
         self.expect(keyword_kind);
         self.skip_whitespace_and_newlines();
 
-        if self.at(SyntaxKind::L_BRACE) {
+        if self.at(T!['{']) {
             self.block();
         } else {
             self.error(&format!("Expected block after {name}"));
@@ -345,7 +343,7 @@ impl Parser<'_> {
         self.builder.start_node(SyntaxKind::PACKAGE_STMT.into());
 
         // "package"
-        self.expect(SyntaxKind::PACKAGE_KW);
+        self.expect(T![package]);
         self.skip_whitespace_and_newlines();
 
         // Package name (qualified identifier); allow keywords as identifiers
@@ -364,9 +362,9 @@ impl Parser<'_> {
 
         // After the package name and optional version, allow either a terminating semicolon
         // or a block to introduce a scoped package
-        if self.at(SyntaxKind::SEMICOLON) {
+        if self.at(T![;]) {
             self.bump();
-        } else if self.at(SyntaxKind::L_BRACE) {
+        } else if self.at(T!['{']) {
             // package Foo::Bar { ... }
             self.block();
         } else {
@@ -379,9 +377,9 @@ impl Parser<'_> {
 
     fn use_or_no_stmt(&mut self, is_use: bool) {
         let (keyword_kind, stmt_kind) = if is_use {
-            (SyntaxKind::USE_KW, SyntaxKind::USE_STMT)
+            (T![use], SyntaxKind::USE_STMT)
         } else {
-            (SyntaxKind::NO_KW, SyntaxKind::NO_STMT)
+            (T![no], SyntaxKind::NO_STMT)
         };
 
         self.builder.start_node(stmt_kind.into());
@@ -432,24 +430,24 @@ impl Parser<'_> {
         self.skip_whitespace_and_newlines();
 
         // Dispatch based on whether we have a left parenthesis
-        if self.current_kind() == Some(SyntaxKind::L_PAREN) {
+        if self.current_kind() == Some(T!['(']) {
             self.bump_value(); // consume "("
             self.skip_whitespace_and_newlines();
 
             // Parse first expression or expression list
-            if self.current_kind() != Some(SyntaxKind::SEMICOLON) && !self.expression_list() {
+            if self.current_kind() != Some(T![;]) && !self.expression_list() {
                 self.error("Expected expression in for initializer");
             }
 
             // Check if this is C-style (has semicolon) or Perl-style with parentheses
-            if self.current_kind() == Some(SyntaxKind::SEMICOLON) {
+            if self.current_kind() == Some(T![;]) {
                 self.parse_c_style_for_loop();
             }
             // else: Perl-style for loop with parentheses - expression already parsed
 
             self.skip_whitespace_and_newlines();
             // Expect closing parenthesis
-            self.expect_op(SyntaxKind::R_PAREN);
+            self.expect_op(T![')']);
         } else {
             self.parse_perl_style_for_loop();
         }
@@ -470,17 +468,17 @@ impl Parser<'_> {
         self.skip_whitespace_and_newlines();
 
         // Parse condition (optional)
-        if self.current_kind() != Some(SyntaxKind::SEMICOLON) {
+        if self.current_kind() != Some(T![;]) {
             self.expression();
         }
 
         self.skip_whitespace_and_newlines();
         // Expect second semicolon
-        self.expect_value(SyntaxKind::SEMICOLON);
+        self.expect_value(T![;]);
 
         self.skip_whitespace_and_newlines();
         // Parse increment (optional)
-        if self.current_kind() != Some(SyntaxKind::R_PAREN) {
+        if self.current_kind() != Some(T![')']) {
             self.expression();
         }
     }
@@ -492,7 +490,7 @@ impl Parser<'_> {
         self.skip_whitespace_and_newlines();
 
         // List expression in parentheses: (LIST)
-        if self.current_kind() == Some(SyntaxKind::L_PAREN) {
+        if self.current_kind() == Some(T!['(']) {
             self.bump_value(); // consume "("
             self.skip_whitespace_and_newlines();
 
@@ -502,7 +500,7 @@ impl Parser<'_> {
             }
 
             self.skip_whitespace_and_newlines();
-            self.expect_op(SyntaxKind::R_PAREN);
+            self.expect_op(T![')']);
         } else {
             self.error("Expected '(' after for variable");
         }
@@ -512,12 +510,7 @@ impl Parser<'_> {
     fn parse_for_variable(&mut self) {
         if matches!(
             self.current_kind(),
-            Some(
-                SyntaxKind::MY_KW
-                    | SyntaxKind::OUR_KW
-                    | SyntaxKind::STATE_KW
-                    | SyntaxKind::LOCAL_KW
-            )
+            Some(T![my] | T![our] | T![state] | T![local])
         ) {
             // Variable declaration case - parse as a variable declaration
             self.builder.start_node(SyntaxKind::VAR_DECL.into());
@@ -529,7 +522,7 @@ impl Parser<'_> {
             // Parse the variable - must be a scalar
             if self.current_kind() == Some(SyntaxKind::SCALAR_SIGIL) {
                 // Use qualified parsing for our/local, simple for my/state
-                if matches!(decl_kind, SyntaxKind::OUR_KW | SyntaxKind::LOCAL_KW) {
+                if matches!(decl_kind, T![our] | T![local]) {
                     self.parse_variable_qualified();
                 } else {
                     self.parse_variable_simple();
@@ -550,11 +543,11 @@ impl Parser<'_> {
     }
 
     fn while_stmt(&mut self) {
-        self.parse_loop_statement(SyntaxKind::WHILE_STMT, SyntaxKind::WHILE_KW, "while", true);
+        self.parse_loop_statement(SyntaxKind::WHILE_STMT, T![while], "while", true);
     }
 
     fn until_stmt(&mut self) {
-        self.parse_loop_statement(SyntaxKind::UNTIL_STMT, SyntaxKind::UNTIL_KW, "until", false);
+        self.parse_loop_statement(SyntaxKind::UNTIL_STMT, T![until], "until", false);
     }
 
     /// Helper function to parse loop statements like while/until
@@ -583,18 +576,18 @@ impl Parser<'_> {
     }
 
     fn if_stmt(&mut self) {
-        self.parse_conditional_stmt(SyntaxKind::IF_STMT, SyntaxKind::IF_KW, "if");
+        self.parse_conditional_stmt(SyntaxKind::IF_STMT, T![if], "if");
     }
 
     /// Look ahead to see if there's an elsif or else keyword after whitespace
     fn lookahead_for_elsif_or_else(&self) -> bool {
         // Use token-based lookahead to check for elsif or else keywords, skipping any trivia
         self.peek_non_trivia_token_with_context(LexContext::Operator)
-            .is_some_and(|(kind, _)| matches!(kind, SyntaxKind::ELSIF_KW | SyntaxKind::ELSE_KW))
+            .is_some_and(|(kind, _)| matches!(kind, T![elsif] | T![else]))
     }
 
     fn unless_stmt(&mut self) {
-        self.parse_conditional_stmt(SyntaxKind::UNLESS_STMT, SyntaxKind::UNLESS_KW, "unless");
+        self.parse_conditional_stmt(SyntaxKind::UNLESS_STMT, T![unless], "unless");
     }
 
     fn parse_conditional_stmt(
@@ -626,7 +619,7 @@ impl Parser<'_> {
             self.skip_whitespace_and_newlines();
         }
 
-        while self.at(SyntaxKind::ELSIF_KW) {
+        while self.at(T![elsif]) {
             self.bump(); // elsif
             self.skip_whitespace_and_newlines();
 
@@ -644,7 +637,7 @@ impl Parser<'_> {
         }
 
         // "else"
-        if self.at(SyntaxKind::ELSE_KW) {
+        if self.at(T![else]) {
             self.bump(); // else
             self.skip_whitespace_and_newlines();
 
@@ -684,10 +677,10 @@ impl Parser<'_> {
         self.builder.start_node(SyntaxKind::BLOCK_STMT.into());
 
         // Entering a block; inside expects statements/values
-        self.expect_value(SyntaxKind::L_BRACE);
+        self.expect_value(T!['{']);
         self.skip_whitespace_and_newlines();
 
-        while !self.at(SyntaxKind::R_BRACE) && !self.at_end() {
+        while !self.at(T!['}']) && !self.at_end() {
             if !self.statement() {
                 self.error("Expected a statement in block, but found an unexpected token.");
             }
@@ -695,7 +688,7 @@ impl Parser<'_> {
         }
 
         // After closing '}', expect an operator/statement boundary
-        self.expect_op(SyntaxKind::R_BRACE);
+        self.expect_op(T!['}']);
 
         self.builder.finish_node();
     }
@@ -717,13 +710,9 @@ impl Parser<'_> {
     }
 
     fn parse_optional_postfix_modifier(&mut self) {
-        if self.at(SyntaxKind::IF_KW)
-            || self.at(SyntaxKind::UNLESS_KW)
-            || self.at(SyntaxKind::WHILE_KW)
-            || self.at(SyntaxKind::UNTIL_KW)
-        {
+        if self.at(T![if]) || self.at(T![unless]) || self.at(T![while]) || self.at(T![until]) {
             self.parse_postfix_conditional();
-        } else if self.at(SyntaxKind::FOR_KW) || self.at(SyntaxKind::FOREACH_KW) {
+        } else if self.at(T![for]) || self.at(T![foreach]) {
             self.parse_postfix_for();
         }
     }
@@ -733,10 +722,10 @@ impl Parser<'_> {
             .current_kind()
             .expect("Current token should be if/unless/while/until keyword");
         let modifier_kind = match keyword_kind {
-            SyntaxKind::IF_KW => SyntaxKind::IF_MODIFIER,
-            SyntaxKind::UNLESS_KW => SyntaxKind::UNLESS_MODIFIER,
-            SyntaxKind::WHILE_KW => SyntaxKind::WHILE_MODIFIER,
-            SyntaxKind::UNTIL_KW => SyntaxKind::UNTIL_MODIFIER,
+            T![if] => SyntaxKind::IF_MODIFIER,
+            T![unless] => SyntaxKind::UNLESS_MODIFIER,
+            T![while] => SyntaxKind::WHILE_MODIFIER,
+            T![until] => SyntaxKind::UNTIL_MODIFIER,
             _ => {
                 self.error("Unexpected keyword in postfix conditional");
                 return;
@@ -783,21 +772,21 @@ impl Parser<'_> {
     }
 
     pub(crate) fn parse_sub_tail(&mut self) {
-        if self.at(SyntaxKind::L_PAREN) {
+        if self.at(T!['(']) {
             self.parse_sub_prototype();
             self.skip_whitespace_and_newlines();
         }
 
-        while self.at(SyntaxKind::COLON) {
+        while self.at(T![:]) {
             self.parse_sub_attribute();
             self.skip_whitespace_and_newlines();
         }
 
         self.skip_whitespace_and_newlines();
 
-        if self.at(SyntaxKind::SEMICOLON) {
+        if self.at(T![;]) {
             self.bump();
-        } else if self.at(SyntaxKind::L_BRACE) {
+        } else if self.at(T!['{']) {
             self.block();
         } else {
             self.error("Expected block or ';' after subroutine declaration");
@@ -807,7 +796,7 @@ impl Parser<'_> {
     pub(crate) fn parse_sub_attribute(&mut self) {
         self.builder.start_node(SyntaxKind::ATTR.into());
 
-        self.expect(SyntaxKind::COLON);
+        self.expect(T![:]);
         self.skip_whitespace_and_newlines();
 
         loop {
@@ -821,7 +810,7 @@ impl Parser<'_> {
             self.parse_identifier_or_qualified();
             self.skip_whitespace_and_newlines();
 
-            if self.at(SyntaxKind::L_PAREN) {
+            if self.at(T!['(']) {
                 self.parse_attr_args();
                 self.skip_whitespace_and_newlines();
             }
@@ -833,30 +822,30 @@ impl Parser<'_> {
     fn parse_attr_args(&mut self) {
         self.builder.start_node(SyntaxKind::ATTR_ARGS.into());
 
-        self.expect(SyntaxKind::L_PAREN);
+        self.expect(T!['(']);
         self.skip_whitespace_and_newlines();
 
-        if !self.at(SyntaxKind::R_PAREN) {
+        if !self.at(T![')']) {
             if !self.expression_list() {
                 self.error("Expected expression list in attribute arguments");
             }
             self.skip_whitespace_and_newlines();
         }
 
-        self.expect_op(SyntaxKind::R_PAREN);
+        self.expect_op(T![')']);
 
         self.builder.finish_node();
     }
 
     /// Helper function to parse parenthesized conditions for if/unless/while/until/elsif statements
     fn parse_parenthesized_condition(&mut self, construct_name: &str, allow_empty_condition: bool) {
-        if self.at(SyntaxKind::L_PAREN) {
+        if self.at(T!['(']) {
             // Inside condition parens, expect values
             self.bump_value(); // (
             self.skip_whitespace_and_newlines();
 
             // Parse the condition
-            let has_condition = if self.at(SyntaxKind::R_PAREN) {
+            let has_condition = if self.at(T![')']) {
                 false
             } else {
                 self.expression_list()
@@ -870,7 +859,7 @@ impl Parser<'_> {
 
             self.skip_whitespace_and_newlines();
             // After ')', expect operator/statement boundary
-            self.expect_op(SyntaxKind::R_PAREN);
+            self.expect_op(T![')']);
         } else {
             self.error(&format!("Expected '(' after '{construct_name}'"));
         }
@@ -881,25 +870,25 @@ impl Parser<'_> {
         use crate::lexer::LexContext;
         self.builder.start_node(SyntaxKind::SUB_PROTOTYPE.into());
 
-        self.expect(SyntaxKind::L_PAREN);
+        self.expect(T!['(']);
         self.skip_whitespace_and_newlines();
 
         while let Some((kind, _)) = self.peek_non_trivia_token_with_context(LexContext::Value) {
-            if kind == SyntaxKind::R_PAREN {
+            if kind == T![')'] {
                 break;
             }
             match kind {
-                SyntaxKind::BACKSLASH
+                T!['\\']
                 | SyntaxKind::ARRAY_SIGIL
                 | SyntaxKind::HASH_SIGIL
                 | SyntaxKind::SCALAR_SIGIL
                 | SyntaxKind::CODE_SIGIL
                 | SyntaxKind::TYPEGLOB_SIGIL
-                | SyntaxKind::SEMICOLON
-                | SyntaxKind::L_BRACKET
-                | SyntaxKind::R_BRACKET
-                | SyntaxKind::L_PAREN
-                | SyntaxKind::R_PAREN => {
+                | T![;]
+                | T!['[']
+                | T![']']
+                | T!['(']
+                | T![')'] => {
                     self.bump_with_context(LexContext::Value);
                     self.skip_whitespace_and_newlines();
                 }
@@ -910,7 +899,7 @@ impl Parser<'_> {
             }
         }
 
-        self.expect(SyntaxKind::R_PAREN);
+        self.expect(T![')']);
         self.builder.finish_node();
     }
 }
@@ -918,7 +907,7 @@ impl Parser<'_> {
 #[cfg(test)]
 mod tests {
     use crate::parser::test_utils::*;
-    use crate::{parse, PerlNode, SyntaxKind};
+    use crate::{parse, PerlNode, SyntaxKind, T};
     use std::fs;
     use std::path::PathBuf;
 
@@ -1028,7 +1017,7 @@ mod tests {
 
         // Test the realistic scenario - positioned after a closing brace, looking for elsif/else
         let parser = crate::parser::Parser::new("} elsif");
-        assert_eq!(parser.current_kind(), Some(SyntaxKind::R_BRACE));
+        assert_eq!(parser.current_kind(), Some(T!['}']));
         let mut parser = parser;
         parser.bump();
         assert!(
