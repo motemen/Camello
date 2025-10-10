@@ -13,16 +13,14 @@ base_dir="$(cd "$(dirname "$0")/.." && pwd)"
 total=0
 success=0
 failed_files=()
-temp_dirs=()
 
 # Function to extract archive to temporary directory
 extract_archive() {
 	local archive="$1"
 	local temp_dir
-	
+
 	temp_dir=$(mktemp -d)
-	temp_dirs+=("$temp_dir")
-	
+
 	case "$archive" in
 		*.tar.gz|*.tgz)
 			# echo "Extracting tar.gz archive: $archive to $temp_dir" >&2
@@ -38,42 +36,43 @@ extract_archive() {
 			return 1
 			;;
 	esac
-	
-	echo "$temp_dir"
-}
 
-# Function to clean up temporary directories
-cleanup() {
-	if [ ${#temp_dirs[@]} -gt 0 ]; then
-		for temp_dir in "${temp_dirs[@]}"; do
-			if [ -d "$temp_dir" ]; then
-				echo "Cleaning up temporary directory: $temp_dir"
-				rm -rf "$temp_dir"
-			fi
-		done
-	fi
+	echo "$temp_dir"
 }
 
 # Function to process an archive: extract then process as a directory
 process_archive() {
 	local archive="$1"
 	local temp_dir
+	local archive_failed=0
+
 	temp_dir=$(extract_archive "$archive") || return 1
 	if [ -n "$temp_dir" ] && [ -d "$temp_dir" ]; then
-		process_directory "$temp_dir"
+		process_directory "$temp_dir" || archive_failed=1
+
+		# Clean up temp directory only if all processing succeeded
+		if [ "$archive_failed" -eq 0 ]; then
+			rm -rf "$temp_dir"
+		else
+			echo "Some files failed to process. Keeping temporary directory: $temp_dir" >&2
+		fi
 	fi
+
+	return "$archive_failed"
 }
 
 # Function to process a directory
+# Returns 1 if any file failed to process, 0 otherwise
 process_directory() {
 	local dir="$1"
+	local dir_failed=0
 
 	while IFS= read -r file; do
 		if [ -f "$file" ]; then
 			case "$file" in
 				*.tar.gz|*.tgz|*.zip)
 					# Found an archive inside the directory: extract and recurse
-					process_archive "$file" || true
+					process_archive "$file" || dir_failed=1
 					;;
 				*.pm|*.t)
 					((total++))
@@ -89,6 +88,7 @@ process_directory() {
 					else
 						failed_files+=("$file")
 						/bin/echo -n "F" >&2
+						dir_failed=1
 					fi
 					;;
 				*)
@@ -97,6 +97,8 @@ process_directory() {
 			esac
 		fi
 	done < <(find "$dir" -type f \( -name "*.pm" -o -name "*.t" -o -name "*.tar.gz" -o -name "*.tgz" -o -name "*.zip" \))
+
+	return "$dir_failed"
 }
 
 for target in "$@"; do
