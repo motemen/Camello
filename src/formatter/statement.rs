@@ -149,9 +149,8 @@ impl Formatter {
                             && (current_kind != SyntaxKind::USE_STMT
                                 && current_kind != SyntaxKind::NO_STMT)
                         {
-                            let has_existing_empty_line =
-                                self.pending_empty_lines > 0
-                                    || self.writer.ends_with_double_newline();
+                            let has_existing_empty_line = self.pending_empty_lines > 0
+                                || self.writer.ends_with_double_newline();
 
                             if !has_existing_empty_line && !self.writer.is_output_empty() {
                                 if !self.writer.ends_with_newline() {
