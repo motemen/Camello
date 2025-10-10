@@ -172,8 +172,8 @@ impl Parser<'_> {
 
         // Handle block-style calls for non-builtins
         if self.at(T!['{'])
-            && !self.looks_like_hash_ref()
             && Self::is_block_function(&function_name)
+            && !self.looks_like_hash_ref()
         {
             self.builder
                 .start_node_at(start, SyntaxKind::BLOCK_FUNCTION_CALL_EXPR.into());
