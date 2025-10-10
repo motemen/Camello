@@ -86,25 +86,25 @@ impl Formatter {
 
                     if let Some(add_space) = open_spacing[index] {
                         self.handle_spacing_before(kind);
-                        if self.at_line_start() {
-                            self.add_indent();
-                            self.set_at_line_start(false);
+                        if self.writer.at_line_start() {
+                            self.writer.add_indent();
+                            self.writer.set_at_line_start(false);
                         }
-                        self.write(&token);
+                        self.writer.write_token(&token);
                         if add_space {
-                            self.write_char(' ');
+                            self.writer.write_char(' ');
                         }
-                        self.set_prev_token_kind(Some(kind));
+                        self.writer.set_prev_token_kind(Some(kind));
                     } else if let Some(add_space) = close_spacing[index] {
-                        if add_space && !self.current_line_ends_with_space() {
-                            if self.at_line_start() {
-                                self.add_indent();
-                                self.set_at_line_start(false);
+                        if add_space && !self.writer.current_line_ends_with_space() {
+                            if self.writer.at_line_start() {
+                                self.writer.add_indent();
+                                self.writer.set_at_line_start(false);
                             }
-                            self.write_char(' ');
+                            self.writer.write_char(' ');
                         }
-                        self.write(&token);
-                        self.set_prev_token_kind(Some(kind));
+                        self.writer.write_token(&token);
+                        self.writer.set_prev_token_kind(Some(kind));
                     } else if skip_whitespace && kind == WHITESPACE {
                         continue;
                     } else {
@@ -158,9 +158,9 @@ impl Formatter {
                         }
                         k if k == open_delimiter => {
                             self.handle_spacing_before(kind);
-                            if self.at_line_start() {
-                                self.add_indent();
-                                self.set_at_line_start(false);
+                            if self.writer.at_line_start() {
+                                self.writer.add_indent();
+                                self.writer.set_at_line_start(false);
                             }
                             self.handle_multiline_opening_delimiter(&token);
                         }
@@ -193,7 +193,7 @@ impl Formatter {
                         }
                         T![,] => {
                             self.format_token(&token);
-                            self.handle_formatter_newline();
+                            self.writer.handle_formatter_newline();
                         }
                         _ => {
                             // その他のトークンは通常通り処理
@@ -207,20 +207,20 @@ impl Formatter {
     }
 
     pub(super) fn handle_multiline_opening_delimiter(&mut self, token: &SyntaxToken<PerlLanguage>) {
-        self.write(token);
-        self.increase_indent();
-        self.handle_formatter_newline();
+        self.writer.write_token(token);
+        self.writer.increase_indent();
+        self.writer.handle_formatter_newline();
         self.remember_token(token);
     }
 
     pub(super) fn handle_multiline_closing_delimiter(&mut self, token: &SyntaxToken<PerlLanguage>) {
-        self.decrease_indent();
-        if !self.at_line_start() || !self.current_line_is_empty() {
-            self.handle_formatter_newline();
+        self.writer.decrease_indent();
+        if !self.writer.at_line_start() || !self.writer.current_line_is_empty() {
+            self.writer.handle_formatter_newline();
         }
-        self.add_indent();
-        self.write(token);
-        self.set_at_line_start(false);
+        self.writer.add_indent();
+        self.writer.write_token(token);
+        self.writer.set_at_line_start(false);
         self.remember_token(token);
     }
 }

@@ -2,27 +2,15 @@ use super::{spacing, Formatter};
 use crate::{PerlNode, SyntaxKind};
 
 impl Formatter {
-    pub(super) fn handle_user_newline(&mut self) {
-        self.writer.handle_user_newline();
-    }
-
-    pub(super) fn handle_formatter_newline(&mut self) {
-        self.writer.handle_formatter_newline();
-    }
-
-    pub(super) fn add_indent(&mut self) {
-        self.writer.add_indent();
-    }
-
     pub(super) fn handle_spacing_before(&mut self, current: SyntaxKind) {
         let context = spacing::SpacingContext {
-            prev_token: self.prev_token_kind(),
+            prev_token: self.writer.prev_token_kind(),
             current_token: current,
-            at_line_start: self.at_line_start(),
+            at_line_start: self.writer.at_line_start(),
         };
 
         if spacing::needs_space_before(&context) {
-            self.write_char(' ');
+            self.writer.write_char(' ');
         }
     }
 
@@ -114,22 +102,22 @@ impl Formatter {
 
     pub(super) fn add_empty_line_before(&mut self) {
         // Only add empty line if this is not the first node and we don't already have one
-        if !self.is_output_empty() && !self.ends_with_double_newline() {
-            if !self.ends_with_newline() {
-                self.handle_formatter_newline();
+        if !self.writer.is_output_empty() && !self.writer.ends_with_double_newline() {
+            if !self.writer.ends_with_newline() {
+                self.writer.handle_formatter_newline();
             }
             self.writer.push_empty_line();
-            self.set_at_line_start(true);
+            self.writer.set_at_line_start(true);
         }
     }
 
     pub(super) fn add_empty_line_after(&mut self) {
         // Force at least one empty line after the node
-        if !self.ends_with_newline() {
-            self.handle_formatter_newline();
+        if !self.writer.ends_with_newline() {
+            self.writer.handle_formatter_newline();
         }
         // Add one more newline to create an empty line
-        if !self.ends_with_double_newline() {
+        if !self.writer.ends_with_double_newline() {
             self.writer.push_empty_line();
         }
     }
@@ -138,15 +126,15 @@ impl Formatter {
     pub(super) fn output_pending_empty_lines(&mut self) {
         if self.pending_empty_lines > 0 {
             // Ensure we're on a new line first
-            if !self.ends_with_newline() {
-                self.handle_user_newline();
+            if !self.writer.ends_with_newline() {
+                self.writer.handle_user_newline();
             }
             // Add empty lines
             for _ in 0..self.pending_empty_lines {
                 self.writer.push_empty_line();
             }
             self.pending_empty_lines = 0;
-            self.set_at_line_start(true);
+            self.writer.set_at_line_start(true);
         }
     }
 }
