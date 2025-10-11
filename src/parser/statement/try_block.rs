@@ -19,11 +19,6 @@ impl Parser<'_> {
         self.bump(); // consume TRY_KW
         self.skip_whitespace_and_newlines();
 
-        if !self.at(T!['{']) {
-            self.error("Expected block after 'try'");
-            return false;
-        }
-
         self.block();
         self.skip_whitespace_and_newlines();
 
