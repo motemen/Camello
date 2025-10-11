@@ -4,9 +4,10 @@ use rowan::Checkpoint;
 
 impl Parser<'_> {
     pub(super) fn try_stmt(&mut self) -> bool {
-        if !self.options.enable_try_statement {
-            return self.expression_stmt();
-        }
+        assert!(
+            self.options.enable_try_statement,
+            "try_stmt called without try statement support enabled"
+        );
 
         // Create two checkpoints:
         // - stmt_checkpoint: will wrap as either TRY_STMT or STMT (for expression statement)
@@ -17,11 +18,6 @@ impl Parser<'_> {
         // Parse 'try' keyword and block
         self.bump(); // consume TRY_KW
         self.skip_whitespace_and_newlines();
-
-        if !self.at(T!['{']) {
-            self.error("Expected block after 'try'");
-            return false;
-        }
 
         self.block();
         self.skip_whitespace_and_newlines();

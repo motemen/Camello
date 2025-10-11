@@ -74,7 +74,17 @@ impl Parser<'_> {
                 self.package_stmt();
                 true
             }
-            Some(T![try]) => self.try_stmt(),
+            Some(T![try]) => {
+                if self.options.enable_try_statement
+                    && self
+                        .peek_nth_non_trivia_token_with_context(LexContext::Value, 1)
+                        .is_some_and(|(next_kind, _)| next_kind == T!['{'])
+                {
+                    self.try_stmt()
+                } else {
+                    self.expression_stmt()
+                }
+            }
             Some(T![use]) => {
                 self.use_or_no_stmt(true);
                 true
