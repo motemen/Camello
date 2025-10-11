@@ -180,6 +180,9 @@ pub enum Token {
     #[token("=~")]
     RegexMatch,
 
+    #[token("~~")]
+    SmartMatch,
+
     #[token("!~")]
     RegexNotMatch,
 
@@ -359,6 +362,7 @@ impl Token {
             Token::EqualEqual => T![==],
             Token::NotEqual => T![!=],
             Token::RegexMatch => T![=~],
+            Token::SmartMatch => T![~~],
             Token::RegexNotMatch => T![!~],
             Token::LogicalAnd => T![&&],
             Token::LogicalOr => T![||],
