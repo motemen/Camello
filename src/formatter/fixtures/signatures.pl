@@ -1,0 +1,13 @@
+use feature 'signatures';
+
+sub greet($name,$greeting="Hello"){ "$greeting, $name!" }
+
+sub flexible ($first,$,$third//=3,@rest){
+my $total=$first;
+$total+=$_ for @rest;
+return $total;
+}
+
+my $anon=sub ($value ||=10,%opts){
+return $opts{scale}?$value*$opts{scale}:$value;
+};

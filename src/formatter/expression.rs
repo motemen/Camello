@@ -459,4 +459,44 @@ impl Formatter {
             }
         }
     }
+
+    pub(super) fn format_sub_signature(&mut self, node: &PerlNode) {
+        use SyntaxKind::WHITESPACE;
+
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(child_node) => {
+                    self.format_node(&child_node);
+                }
+                NodeOrToken::Token(token) => match token.kind() {
+                    WHITESPACE | SyntaxKind::NEWLINE => {
+                        // Skip trivia and let formatter control spacing
+                    }
+                    T!['('] => {
+                        if self.writer.at_line_start() {
+                            self.writer.add_indent();
+                            self.writer.set_at_line_start(false);
+                        }
+
+                        if !self.writer.current_line_ends_with_space() {
+                            self.writer.write_char(' ');
+                        }
+                        self.writer.write_token(&token);
+                        self.remember_token(&token);
+                    }
+                    _ => {
+                        self.format_token(&token);
+                    }
+                },
+            }
+        }
+    }
+
+    pub(super) fn format_signature_param(&mut self, node: &PerlNode) {
+        self.format_children(node, true);
+    }
+
+    pub(super) fn format_signature_param_default(&mut self, node: &PerlNode) {
+        self.format_children(node, true);
+    }
 }
