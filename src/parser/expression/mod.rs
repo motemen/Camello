@@ -728,24 +728,16 @@ impl Parser<'_> {
 
         // After attributes, allow an optional assignment or compound assignment inside the
         // declaration node so the tree matches non-attribute declarations.
-        let mut is_compound_assignment = false;
-        let should_parse_assignment = match self.current_kind() {
-            Some(kind) if kind == T![=] => true,
-            Some(kind) if kind.is_compoundable_operator() => {
-                if self
-                    .peek_nth_non_trivia_token_with_context(LexContext::Operator, 1)
-                    .is_some_and(|(next_kind, _)| next_kind == T![=])
-                {
-                    is_compound_assignment = true;
-                    true
-                } else {
-                    false
-                }
-            }
-            _ => false,
+        let assignment_kind = match self.current_kind() {
+            Some(kind) if kind == T![=] => Some(false),
+            Some(kind) if kind.is_compoundable_operator() => self
+                .peek_nth_non_trivia_token_with_context(LexContext::Operator, 1)
+                .filter(|(next_kind, _)| *next_kind == T![=])
+                .map(|_| true),
+            _ => None,
         };
 
-        if should_parse_assignment {
+        if let Some(is_compound_assignment) = assignment_kind {
             self.builder
                 .start_node_at(expr_checkpoint, SyntaxKind::INFIX_EXPR.into());
 
