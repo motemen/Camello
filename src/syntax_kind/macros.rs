@@ -9,6 +9,9 @@ macro_rules! T {
     [**] => {
         $crate::SyntaxKind::EXPONENT
     };
+    [~~] => {
+        $crate::SyntaxKind::SMART_MATCH
+    };
     [=~] => {
         $crate::SyntaxKind::REGEX_MATCH
     };
@@ -109,6 +112,9 @@ macro_rules! __syntax_kind_token {
     };
     (!=) => {
         $crate::SyntaxKind::NE
+    };
+    (~~) => {
+        $crate::SyntaxKind::SMART_MATCH
     };
     (>=) => {
         $crate::SyntaxKind::GE
