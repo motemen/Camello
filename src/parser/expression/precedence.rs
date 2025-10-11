@@ -99,6 +99,7 @@ pub fn get_operator_info(kind: SyntaxKind) -> Option<OperatorInfo> {
         | T![>=]
         | T![==]
         | T![!=]
+        | T![~~]
         | T![eq]
         | T![ne]
         | T![gt]

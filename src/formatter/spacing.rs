@@ -129,6 +129,7 @@ pub const fn get_token_spacing(kind: SyntaxKind) -> TokenSpacing {
         | T![<=]
         | T![==]
         | T![!=]
+        | T![~~]
         | T![eq]
         | T![ne]
         | T![gt]
@@ -340,9 +341,9 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
         (
             DELIMITER,
             X | PLUS | MINUS | STAR | SLASH | MODULO | DOT | EQ | LT | GT | LE | GE | EQ_EQ | NE
-            | STR_EQ | STR_NE | STR_GT | STR_LT | STR_GE | STR_LE | STR_CMP | SPACESHIP
-            | LOGICAL_AND | LOGICAL_OR | REGEX_MATCH | REGEX_NOT_MATCH | AND_KW | OR_KW | XOR_KW
-            | BITWISE_AND | BITWISE_OR | BITWISE_XOR | EXPONENT | SHIFT_LEFT | SHIFT_RIGHT,
+            | SMART_MATCH | STR_EQ | STR_NE | STR_GT | STR_LT | STR_GE | STR_LE | STR_CMP
+            | SPACESHIP | LOGICAL_AND | LOGICAL_OR | REGEX_MATCH | REGEX_NOT_MATCH | AND_KW | OR_KW
+            | XOR_KW | BITWISE_AND | BITWISE_OR | BITWISE_XOR | EXPONENT | SHIFT_LEFT | SHIFT_RIGHT,
         ) => Some(true),
 
         _ => None,

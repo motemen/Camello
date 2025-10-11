@@ -152,6 +152,7 @@ impl SyntaxKind {
                 | SyntaxKind::LE
                 | SyntaxKind::EQ_EQ
                 | SyntaxKind::NE
+                | SyntaxKind::SMART_MATCH
                 | T![eq]
                 | T![ne]
                 | T![gt]

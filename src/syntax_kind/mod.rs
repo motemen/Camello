@@ -160,19 +160,20 @@ pub enum SyntaxKind {
     SHIFT_RIGHT, // >>
 
     // Comparison operators
-    GT,      // >
-    LT,      // <
-    GE,      // >=
-    LE,      // <=
-    EQ_EQ,   // ==
-    NE,      // !=
-    STR_EQ,  // eq
-    STR_NE,  // ne
-    STR_GT,  // gt
-    STR_LT,  // lt
-    STR_GE,  // ge
-    STR_LE,  // le
-    STR_CMP, // cmp
+    GT,          // >
+    LT,          // <
+    GE,          // >=
+    LE,          // <=
+    EQ_EQ,       // ==
+    NE,          // !=
+    SMART_MATCH, // ~~
+    STR_EQ,      // eq
+    STR_NE,      // ne
+    STR_GT,      // gt
+    STR_LT,      // lt
+    STR_GE,      // ge
+    STR_LE,      // le
+    STR_CMP,     // cmp
 
     // Regex operators
     REGEX_MATCH,     // =~
