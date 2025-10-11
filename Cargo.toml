@@ -20,6 +20,9 @@ smol_str = "0.2"
 miette = { version = "7.0", features = ["fancy"] }
 thiserror = "1.0"
 
+# Character encoding conversion
+encoding_rs = "0.8"
+
 [dev-dependencies]
 # スナップショットテスト
 insta = "1.0"
