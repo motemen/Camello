@@ -116,7 +116,7 @@ impl Parser<'_> {
         // Check the first non-trivia token inside braces
         let first_token = self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset);
 
-        match first_token {
+        let looks_like_hash = match first_token {
             // Empty braces: {} - treat as block in statement context
             Some((T!['}'], _)) => false,
 
@@ -146,7 +146,39 @@ impl Parser<'_> {
 
             // Everything else is a block
             _ => false,
+        };
+
+        // If it looks like a hash reference based on the first token, we need to scan deeper
+        // to check for semicolons, which would definitively make it a block.
+        if looks_like_hash {
+            // Use the iterator helper to avoid O(N²) complexity
+            // Scan the contents looking for a semicolon
+            if let Some(iter) =
+                self.iter_non_trivia_tokens_from(LexContext::Value, brace_offset + 1)
+            {
+                let mut brace_depth = 0;
+
+                for (kind, _) in iter {
+                    match kind {
+                        T!['{'] => brace_depth += 1,
+                        T!['}'] => {
+                            if brace_depth == 0 {
+                                // Found the closing brace at the same level - no semicolon found
+                                break;
+                            }
+                            brace_depth -= 1;
+                        }
+                        T![;] if brace_depth == 0 => {
+                            // Found a semicolon at the top level inside the braces - it's a block!
+                            return false;
+                        }
+                        _ => {}
+                    }
+                }
+            }
         }
+
+        looks_like_hash
     }
 
     /// Parse an identifier-like expression (including cases where a keyword is coerced to IDENT)
