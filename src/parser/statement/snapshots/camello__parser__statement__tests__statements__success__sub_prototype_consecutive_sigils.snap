@@ -1,0 +1,115 @@
+---
+source: src/parser/statement/tests.rs
+expression: render_success_tree(&syntax)
+---
+ROOT@0..210
+  COMMENT@0..88 "# Prototypes with con ..."
+  SUB_DEF@88..103
+    SUB_KW@88..91 "sub"
+    WHITESPACE@91..92 " "
+    IDENT@92..95 "foo"
+    SUB_PROTOTYPE@95..99
+      L_PAREN@95..96 "("
+      SCALAR_SIGIL@96..97 "$"
+      SCALAR_SIGIL@97..98 "$"
+      R_PAREN@98..99 ")"
+    WHITESPACE@99..100 " "
+    BLOCK_STMT@100..103
+      L_BRACE@100..101 "{"
+      WHITESPACE@101..102 " "
+      R_BRACE@102..103 "}"
+  NEWLINE@103..104 "\n"
+  SUB_DEF@104..119
+    SUB_KW@104..107 "sub"
+    WHITESPACE@107..108 " "
+    IDENT@108..111 "bar"
+    SUB_PROTOTYPE@111..115
+      L_PAREN@111..112 "("
+      SCALAR_SIGIL@112..113 "$"
+      ARRAY_SIGIL@113..114 "@"
+      R_PAREN@114..115 ")"
+    WHITESPACE@115..116 " "
+    BLOCK_STMT@116..119
+      L_BRACE@116..117 "{"
+      WHITESPACE@117..118 " "
+      R_BRACE@118..119 "}"
+  NEWLINE@119..120 "\n"
+  SUB_DEF@120..135
+    SUB_KW@120..123 "sub"
+    WHITESPACE@123..124 " "
+    IDENT@124..127 "baz"
+    SUB_PROTOTYPE@127..131
+      L_PAREN@127..128 "("
+      ARRAY_SIGIL@128..129 "@"
+      SCALAR_SIGIL@129..130 "$"
+      R_PAREN@130..131 ")"
+    WHITESPACE@131..132 " "
+    BLOCK_STMT@132..135
+      L_BRACE@132..133 "{"
+      WHITESPACE@133..134 " "
+      R_BRACE@134..135 "}"
+  NEWLINE@135..136 "\n"
+  SUB_DEF@136..152
+    SUB_KW@136..139 "sub"
+    WHITESPACE@139..140 " "
+    IDENT@140..143 "qux"
+    SUB_PROTOTYPE@143..148
+      L_PAREN@143..144 "("
+      SCALAR_SIGIL@144..145 "$"
+      SCALAR_SIGIL@145..146 "$"
+      ARRAY_SIGIL@146..147 "@"
+      R_PAREN@147..148 ")"
+    WHITESPACE@148..149 " "
+    BLOCK_STMT@149..152
+      L_BRACE@149..150 "{"
+      WHITESPACE@150..151 " "
+      R_BRACE@151..152 "}"
+  NEWLINE@152..153 "\n"
+  SUB_DEF@153..170
+    SUB_KW@153..156 "sub"
+    WHITESPACE@156..157 " "
+    IDENT@157..161 "quux"
+    SUB_PROTOTYPE@161..166
+      L_PAREN@161..162 "("
+      SCALAR_SIGIL@162..163 "$"
+      SCALAR_SIGIL@163..164 "$"
+      SCALAR_SIGIL@164..165 "$"
+      R_PAREN@165..166 ")"
+    WHITESPACE@166..167 " "
+    BLOCK_STMT@167..170
+      L_BRACE@167..168 "{"
+      WHITESPACE@168..169 " "
+      R_BRACE@169..170 "}"
+  NEWLINE@170..171 "\n"
+  SUB_DEF@171..189
+    SUB_KW@171..174 "sub"
+    WHITESPACE@174..175 " "
+    IDENT@175..180 "corge"
+    SUB_PROTOTYPE@180..185
+      L_PAREN@180..181 "("
+      BACKSLASH@181..182 "\\"
+      ARRAY_SIGIL@182..183 "@"
+      ARRAY_SIGIL@183..184 "@"
+      R_PAREN@184..185 ")"
+    WHITESPACE@185..186 " "
+    BLOCK_STMT@186..189
+      L_BRACE@186..187 "{"
+      WHITESPACE@187..188 " "
+      R_BRACE@188..189 "}"
+  NEWLINE@189..190 "\n"
+  SUB_DEF@190..209
+    SUB_KW@190..193 "sub"
+    WHITESPACE@193..194 " "
+    IDENT@194..200 "grault"
+    SUB_PROTOTYPE@200..205
+      L_PAREN@200..201 "("
+      BACKSLASH@201..202 "\\"
+      ARRAY_SIGIL@202..203 "@"
+      SCALAR_SIGIL@203..204 "$"
+      R_PAREN@204..205 ")"
+    WHITESPACE@205..206 " "
+    BLOCK_STMT@206..209
+      L_BRACE@206..207 "{"
+      WHITESPACE@207..208 " "
+      R_BRACE@208..209 "}"
+  NEWLINE@209..210 "\n"

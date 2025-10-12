@@ -190,6 +190,10 @@ impl Parser<'_> {
                 }
                 SyntaxKind::SCALAR_SIGIL | SyntaxKind::ARRAY_SIGIL | SyntaxKind::HASH_SIGIL => {
                     if depth == 0 {
+                        if prev_was_sigil {
+                            // Two sigils in a row, e.g. `($$)`, is a prototype.
+                            return false;
+                        }
                         prev_was_sigil = true;
                         // Check if this is a placeholder parameter (sigil followed by comma or closing paren)
                         if let Some((next_kind, _)) = self
@@ -210,6 +214,13 @@ impl Parser<'_> {
                 _ if kind.is_keyword() => {
                     if depth == 0 && prev_was_sigil {
                         saw_signature_token = true;
+                    }
+                    prev_was_sigil = false;
+                }
+                T![;] => {
+                    if depth == 0 {
+                        // Semicolons are only valid in prototypes.
+                        return false;
                     }
                     prev_was_sigil = false;
                 }
