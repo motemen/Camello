@@ -144,3 +144,30 @@ fn test_elsif_else_lookahead_functionality() {
         .any(|node| node.kind() == SyntaxKind::IF_STMT);
     assert!(has_if, "Expected IF_STMT in parsed tree");
 }
+
+#[test]
+fn labeled_statement_allows_keyword_identifier() {
+    let source = "END: say 'done';";
+    let (green, errors) = parse(source);
+    assert!(
+        errors.is_empty(),
+        "Parse errors for labeled keyword: {:?}",
+        errors
+    );
+
+    let syntax = PerlNode::new_root(green);
+    let labeled_stmt = syntax
+        .descendants()
+        .find(|node| node.kind() == SyntaxKind::LABELED_STMT)
+        .expect("Expected labeled statement");
+    let label_node = labeled_stmt
+        .children()
+        .find(|node| node.kind() == SyntaxKind::LABEL)
+        .expect("Expected label node");
+
+    let ident_token = label_node
+        .first_token()
+        .expect("Label should contain identifier token");
+    assert_eq!(ident_token.kind(), SyntaxKind::IDENT);
+    assert_eq!(ident_token.text(), "END");
+}
