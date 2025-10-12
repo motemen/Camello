@@ -650,10 +650,56 @@ impl<'a> Lexer<'a> {
                     }
                 };
 
+                let mut adjusted_text = text;
+
+                if matches!(token, Token::Number) {
+                    if let Some(stripped) = text.strip_suffix('.') {
+                        if !stripped.is_empty()
+                            && (stripped.starts_with("0x")
+                                || stripped.starts_with("0b")
+                                || stripped.starts_with("0o"))
+                        {
+                            let span = self.logos_lexer.span();
+                            let source = self.logos_lexer.source();
+
+                            let mut extra_dot_chars = 0usize;
+                            let mut bump_bytes = 0usize;
+                            for ch in self.logos_lexer.remainder().chars().take(2) {
+                                if ch == '.' {
+                                    extra_dot_chars += 1;
+                                    bump_bytes += ch.len_utf8();
+                                } else {
+                                    break;
+                                }
+                            }
+
+                            let total_dots = 1 + extra_dot_chars;
+                            let pending_token = match total_dots {
+                                3 => Some((T![...], 3, bump_bytes)),
+                                2 => Some((T![..], 2, bump_bytes)),
+                                1 => Some((T![.], 1, 0)),
+                                _ => None,
+                            };
+
+                            if let Some((pending_kind, op_len, bump_len)) = pending_token {
+                                adjusted_text = stripped;
+
+                                if bump_len > 0 {
+                                    self.logos_lexer.bump(bump_len);
+                                }
+
+                                let op_start = span.end - 1;
+                                let op_end = op_start + op_len;
+                                let op_text = &source[op_start..op_end];
+                                self.pending.push_back((pending_kind, op_text));
+                            }
+                        }
+                    }
+                }
+
                 // Handle x followed by number literal (e.g., x5, x0xFF in "abc"x5, "abc"x0xFF)
                 // In operator context, split into 'x' operator and number
                 // In value context, keep as identifier (e.g., sub x100, package x1)
-                let mut adjusted_text = text;
                 if matches!(token, Token::Ident)
                     && text.starts_with('x')
                     && text.len() > 1
