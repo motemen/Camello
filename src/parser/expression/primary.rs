@@ -166,16 +166,11 @@ impl Parser<'_> {
                 // Allow variables like $::foo (root-qualified names)
                 // and special root package variables like %:: without a trailing segment.
                 let next_kind = self
-                    .peek_nth_non_trivia_token_with_context(
-                        crate::lexer::LexContext::Value,
-                        1,
-                    )
+                    .peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 1)
                     .map(|(kind, _)| kind);
 
                 let has_segment = next_kind.is_some_and(|kind| {
-                    kind == SyntaxKind::IDENT
-                        || kind == SyntaxKind::NUMBER
-                        || kind.is_keyword()
+                    kind == SyntaxKind::IDENT || kind == SyntaxKind::NUMBER || kind.is_keyword()
                 });
 
                 if has_segment {
