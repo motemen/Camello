@@ -191,6 +191,12 @@ impl Parser<'_> {
                 SyntaxKind::SCALAR_SIGIL | SyntaxKind::ARRAY_SIGIL | SyntaxKind::HASH_SIGIL => {
                     if depth == 0 {
                         prev_was_sigil = true;
+                        // Check if this is a placeholder parameter (sigil followed by comma or closing paren)
+                        if let Some((next_kind, _)) = self.peek_nth_non_trivia_token_with_context(LexContext::Value, index + 1) {
+                            if matches!(next_kind, T![,] | T![')']) {
+                                saw_signature_token = true;
+                            }
+                        }
                     }
                 }
                 SyntaxKind::IDENT => {

@@ -1,0 +1,145 @@
+---
+source: src/parser/statement/tests.rs
+expression: render_success_tree(&syntax)
+---
+ROOT@0..299
+  COMMENT@0..39 "# Placeholder paramet ..."
+  SUB_DEF@39..81
+    SUB_KW@39..42 "sub"
+    WHITESPACE@42..43 " "
+    IDENT@43..46 "foo"
+    SUB_SIGNATURE@46..49
+      L_PAREN@46..47 "("
+      SIGNATURE_PARAM@47..48
+        SCALAR_SIGIL@47..48 "$"
+      R_PAREN@48..49 ")"
+    WHITESPACE@49..50 " "
+    BLOCK_STMT@50..81
+      L_BRACE@50..51 "{"
+      NEWLINE@51..52 "\n"
+      WHITESPACE@52..56 "    "
+      STMT@56..79
+        FUNCTION_CALL_EXPR@56..78
+          IDENT@56..60 "warn"
+          WHITESPACE@60..61 " "
+          STRING@61..78 "\"one placeholder\""
+        SEMICOLON@78..79 ";"
+      NEWLINE@79..80 "\n"
+      R_BRACE@80..81 "}"
+  NEWLINE@81..82 "\n"
+  NEWLINE@82..83 "\n"
+  SUB_DEF@83..139
+    SUB_KW@83..86 "sub"
+    WHITESPACE@86..87 " "
+    IDENT@87..90 "bar"
+    SUB_SIGNATURE@90..97
+      L_PAREN@90..91 "("
+      SIGNATURE_PARAM@91..92
+        SCALAR_SIGIL@91..92 "$"
+      COMMA@92..93 ","
+      WHITESPACE@93..94 " "
+      SIGNATURE_PARAM@94..96
+        SCALAR_SIGIL@94..95 "$"
+        IDENT@95..96 "x"
+      R_PAREN@96..97 ")"
+    WHITESPACE@97..98 " "
+    BLOCK_STMT@98..139
+      L_BRACE@98..99 "{"
+      NEWLINE@99..100 "\n"
+      WHITESPACE@100..104 "    "
+      STMT@104..137
+        FUNCTION_CALL_EXPR@104..136
+          IDENT@104..108 "warn"
+          WHITESPACE@108..109 " "
+          STRING@109..136 "\"placeholder and name ..."
+        SEMICOLON@136..137 ";"
+      NEWLINE@137..138 "\n"
+      R_BRACE@138..139 "}"
+  NEWLINE@139..140 "\n"
+  NEWLINE@140..141 "\n"
+  SUB_DEF@141..188
+    SUB_KW@141..144 "sub"
+    WHITESPACE@144..145 " "
+    IDENT@145..148 "baz"
+    SUB_SIGNATURE@148..159
+      L_PAREN@148..149 "("
+      SIGNATURE_PARAM@149..151
+        SCALAR_SIGIL@149..150 "$"
+        IDENT@150..151 "x"
+      COMMA@151..152 ","
+      WHITESPACE@152..153 " "
+      SIGNATURE_PARAM@153..154
+        SCALAR_SIGIL@153..154 "$"
+      COMMA@154..155 ","
+      WHITESPACE@155..156 " "
+      SIGNATURE_PARAM@156..158
+        SCALAR_SIGIL@156..157 "$"
+        IDENT@157..158 "y"
+      R_PAREN@158..159 ")"
+    WHITESPACE@159..160 " "
+    BLOCK_STMT@160..188
+      L_BRACE@160..161 "{"
+      NEWLINE@161..162 "\n"
+      WHITESPACE@162..166 "    "
+      STMT@166..186
+        FUNCTION_CALL_EXPR@166..185
+          IDENT@166..170 "warn"
+          WHITESPACE@170..171 " "
+          STRING@171..185 "\"mixed: $x $y\""
+        SEMICOLON@185..186 ";"
+      NEWLINE@186..187 "\n"
+      R_BRACE@187..188 "}"
+  NEWLINE@188..189 "\n"
+  NEWLINE@189..190 "\n"
+  SUB_DEF@190..234
+    SUB_KW@190..193 "sub"
+    WHITESPACE@193..194 " "
+    IDENT@194..197 "qux"
+    SUB_SIGNATURE@197..200
+      L_PAREN@197..198 "("
+      SIGNATURE_PARAM@198..199
+        ARRAY_SIGIL@198..199 "@"
+      R_PAREN@199..200 ")"
+    WHITESPACE@200..201 " "
+    BLOCK_STMT@201..234
+      L_BRACE@201..202 "{"
+      NEWLINE@202..203 "\n"
+      WHITESPACE@203..207 "    "
+      STMT@207..232
+        FUNCTION_CALL_EXPR@207..231
+          IDENT@207..211 "warn"
+          WHITESPACE@211..212 " "
+          STRING@212..231 "\"array placeholder\""
+        SEMICOLON@231..232 ";"
+      NEWLINE@232..233 "\n"
+      R_BRACE@233..234 "}"
+  NEWLINE@234..235 "\n"
+  NEWLINE@235..236 "\n"
+  SUB_DEF@236..298
+    SUB_KW@236..239 "sub"
+    WHITESPACE@239..240 " "
+    IDENT@240..244 "quux"
+    SUB_SIGNATURE@244..251
+      L_PAREN@244..245 "("
+      SIGNATURE_PARAM@245..246
+        HASH_SIGIL@245..246 "%"
+      COMMA@246..247 ","
+      WHITESPACE@247..248 " "
+      SIGNATURE_PARAM@248..250
+        SCALAR_SIGIL@248..249 "$"
+        IDENT@249..250 "x"
+      R_PAREN@250..251 ")"
+    WHITESPACE@251..252 " "
+    BLOCK_STMT@252..298
+      L_BRACE@252..253 "{"
+      NEWLINE@253..254 "\n"
+      WHITESPACE@254..258 "    "
+      STMT@258..296
+        FUNCTION_CALL_EXPR@258..295
+          IDENT@258..262 "warn"
+          WHITESPACE@262..263 " "
+          STRING@263..295 "\"hash placeholder and ..."
+        SEMICOLON@295..296 ";"
+      NEWLINE@296..297 "\n"
+      R_BRACE@297..298 "}"
+  NEWLINE@298..299 "\n"
