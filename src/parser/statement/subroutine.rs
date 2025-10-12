@@ -192,7 +192,9 @@ impl Parser<'_> {
                     if depth == 0 {
                         prev_was_sigil = true;
                         // Check if this is a placeholder parameter (sigil followed by comma or closing paren)
-                        if let Some((next_kind, _)) = self.peek_nth_non_trivia_token_with_context(LexContext::Value, index + 1) {
+                        if let Some((next_kind, _)) = self
+                            .peek_nth_non_trivia_token_with_context(LexContext::Value, index + 1)
+                        {
                             if matches!(next_kind, T![,] | T![')']) {
                                 saw_signature_token = true;
                             }
@@ -363,10 +365,7 @@ impl Parser<'_> {
         if self.at(SyntaxKind::IDENT) {
             self.bump();
             true
-        } else if self
-            .current_kind()
-            .is_some_and(SyntaxKind::is_keyword)
-        {
+        } else if self.current_kind().is_some_and(SyntaxKind::is_keyword) {
             self.bump_as(SyntaxKind::IDENT);
             true
         } else {
