@@ -185,7 +185,9 @@ impl Parser<'_> {
                             }
 
                             self.builder.finish_node();
-                            current_subject = PostfixSubject::Other;
+                            // Code reference calls behave like parenthesized lists, so allow
+                            // direct array subscriptions on the result (e.g., $code->()[0]).
+                            current_subject = PostfixSubject::List;
                         }
                         Some(kind)
                             if kind == SyntaxKind::IDENT
