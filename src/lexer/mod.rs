@@ -675,13 +675,13 @@ impl<'a> Lexer<'a> {
 
                             let total_dots = 1 + extra_dot_chars;
                             let pending_token = match total_dots {
-                                3 => Some((T![...], 3, bump_bytes)),
-                                2 => Some((T![..], 2, bump_bytes)),
-                                1 => Some((T![.], 1, 0)),
+                                3 => Some((T![...], bump_bytes)),
+                                2 => Some((T![..], bump_bytes)),
+                                1 => Some((T![.], 0)),
                                 _ => None,
                             };
 
-                            if let Some((pending_kind, op_len, bump_len)) = pending_token {
+                            if let Some((pending_kind, bump_len)) = pending_token {
                                 adjusted_text = stripped;
 
                                 if bump_len > 0 {
@@ -689,7 +689,8 @@ impl<'a> Lexer<'a> {
                                 }
 
                                 let op_start = span.end - 1;
-                                let op_end = op_start + op_len;
+                                let op_byte_len = 1 + bump_len;
+                                let op_end = op_start + op_byte_len;
                                 let op_text = &source[op_start..op_end];
                                 self.pending.push_back((pending_kind, op_text));
                             }
