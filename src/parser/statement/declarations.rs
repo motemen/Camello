@@ -7,7 +7,7 @@ impl Parser<'_> {
 
         // Label node: IDENT ':'
         self.builder.start_node(SyntaxKind::LABEL.into());
-        self.expect(SyntaxKind::IDENT);
+        self.bump_label_identifier();
         self.skip_whitespace_and_newlines();
         self.expect(T![:]);
         self.builder.finish_node();

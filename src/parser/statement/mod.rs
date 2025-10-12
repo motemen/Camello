@@ -16,18 +16,14 @@ impl Parser<'_> {
         self.skip_whitespace_and_newlines();
 
         match self.current_kind() {
-            Some(SyntaxKind::IDENT) => {
-                // Check for labeled statement: IDENT followed by ':'
-                if let Some((next_kind, _)) =
-                    self.peek_nth_non_trivia_token_with_context(LexContext::Operator, 1)
-                {
-                    if next_kind == T![:] {
-                        self.labeled_stmt();
-                        return true;
-                    }
-                }
-                // Not a label, parse as expression statement
-                self.expression_stmt()
+            Some(kind)
+                if Self::is_label_identifier_kind(kind)
+                    && self
+                        .peek_nth_non_trivia_token_with_context(LexContext::Operator, 1)
+                        .is_some_and(|(next_kind, _)| next_kind == T![:]) =>
+            {
+                self.labeled_stmt();
+                true
             }
             Some(kind @ (T![my] | T![our] | T![state])) => {
                 if self.looks_like_lexical_sub_definition() {
@@ -141,6 +137,32 @@ impl Parser<'_> {
                 self.expression_stmt()
             }
             None => false, // EOF
+        }
+    }
+
+    fn is_label_identifier_kind(kind: SyntaxKind) -> bool {
+        matches!(
+            kind,
+            SyntaxKind::IDENT
+                | SyntaxKind::BEGIN_KW
+                | SyntaxKind::END_BLOCK_KW
+                | SyntaxKind::INIT_KW
+                | SyntaxKind::CHECK_KW
+                | SyntaxKind::UNITCHECK_KW
+        )
+    }
+
+    pub(super) fn bump_label_identifier(&mut self) {
+        match self.current_kind() {
+            Some(SyntaxKind::IDENT) => self.bump(),
+            Some(kind) if Self::is_label_identifier_kind(kind) => {
+                self.bump_as(SyntaxKind::IDENT);
+            }
+            Some(_) => {
+                self.error("Expected label identifier");
+                self.bump();
+            }
+            None => self.error("Expected label identifier"),
         }
     }
 
