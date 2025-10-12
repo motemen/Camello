@@ -1,0 +1,49 @@
+---
+source: src/parser/statement/tests.rs
+expression: render_errors(&errors)
+---
+  × Parse error: Expected R_PAREN, found Some(OR_KW)
+   ╭─[4:15]
+ 3 │ # Invalid: 'or' has lower precedence than assignment
+ 4 │ sub f ($x = 1 or 2) {}
+   ·               ─┬
+   ·                ╰── here
+ 5 │ 
+   ╰────
+  × Parse error: Expected block or ';' after subroutine declaration
+   ╭─[4:18]
+ 3 │ # Invalid: 'or' has lower precedence than assignment
+ 4 │ sub f ($x = 1 or 2) {}
+   ·                  ┬
+   ·                  ╰── here
+ 5 │ 
+   ╰────
+  × Parse error: Expected a statement, but found an unexpected token.
+   ╭─[4:19]
+ 3 │ # Invalid: 'or' has lower precedence than assignment
+ 4 │ sub f ($x = 1 or 2) {}
+   ·                   ┬
+   ·                   ╰── here
+ 5 │ 
+   ╰────
+  × Parse error: Expected R_PAREN, found Some(AND_KW)
+   ╭─[7:15]
+ 6 │ # Invalid: 'and' has lower precedence than assignment
+ 7 │ sub g ($x = 1 and 2) {}
+   ·               ─┬─
+   ·                ╰── here
+   ╰────
+  × Parse error: Expected block or ';' after subroutine declaration
+   ╭─[7:19]
+ 6 │ # Invalid: 'and' has lower precedence than assignment
+ 7 │ sub g ($x = 1 and 2) {}
+   ·                   ┬
+   ·                   ╰── here
+   ╰────
+  × Parse error: Expected a statement, but found an unexpected token.
+   ╭─[7:20]
+ 6 │ # Invalid: 'and' has lower precedence than assignment
+ 7 │ sub g ($x = 1 and 2) {}
+   ·                    ┬
+   ·                    ╰── here
+   ╰────

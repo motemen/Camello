@@ -1,0 +1,129 @@
+---
+source: src/parser/statement/tests.rs
+expression: render_success_tree(&syntax)
+---
+ROOT@0..259
+  USE_STMT@0..25
+    USE_KW@0..3 "use"
+    WHITESPACE@3..4 " "
+    IDENT@4..11 "feature"
+    WHITESPACE@11..12 " "
+    STRING@12..24 "'signatures'"
+    SEMICOLON@24..25 ";"
+  NEWLINE@25..26 "\n"
+  NEWLINE@26..27 "\n"
+  COMMENT@27..77 "# Valid: || has highe ..."
+  SUB_DEF@77..99
+    SUB_KW@77..80 "sub"
+    WHITESPACE@80..81 " "
+    IDENT@81..82 "f"
+    WHITESPACE@82..83 " "
+    SUB_SIGNATURE@83..96
+      L_PAREN@83..84 "("
+      SIGNATURE_PARAM@84..95
+        SCALAR_SIGIL@84..85 "$"
+        IDENT@85..86 "x"
+        WHITESPACE@86..87 " "
+        SIGNATURE_PARAM_DEFAULT@87..95
+          EQ@87..88 "="
+          WHITESPACE@88..89 " "
+          INFIX_EXPR@89..95
+            NUMBER@89..90 "1"
+            WHITESPACE@90..91 " "
+            LOGICAL_OR@91..93 "||"
+            WHITESPACE@93..94 " "
+            NUMBER@94..95 "2"
+      R_PAREN@95..96 ")"
+    WHITESPACE@96..97 " "
+    BLOCK_STMT@97..99
+      L_BRACE@97..98 "{"
+      R_BRACE@98..99 "}"
+  NEWLINE@99..100 "\n"
+  SUB_DEF@100..124
+    SUB_KW@100..103 "sub"
+    WHITESPACE@103..104 " "
+    IDENT@104..105 "g"
+    WHITESPACE@105..106 " "
+    SUB_SIGNATURE@106..121
+      L_PAREN@106..107 "("
+      SIGNATURE_PARAM@107..120
+        SCALAR_SIGIL@107..108 "$"
+        IDENT@108..109 "x"
+        WHITESPACE@109..110 " "
+        SIGNATURE_PARAM_DEFAULT@110..120
+          EQ@110..111 "="
+          WHITESPACE@111..112 " "
+          INFIX_EXPR@112..120
+            SCALAR_VAR@112..115
+              SCALAR_SIGIL@112..113 "$"
+              IDENT@113..114 "a"
+              WHITESPACE@114..115 " "
+            LOGICAL_OR@115..117 "||"
+            WHITESPACE@117..118 " "
+            SCALAR_VAR@118..120
+              SCALAR_SIGIL@118..119 "$"
+              IDENT@119..120 "b"
+      R_PAREN@120..121 ")"
+    WHITESPACE@121..122 " "
+    BLOCK_STMT@122..124
+      L_BRACE@122..123 "{"
+      R_BRACE@123..124 "}"
+  NEWLINE@124..125 "\n"
+  NEWLINE@125..126 "\n"
+  COMMENT@126..176 "# Valid: && has highe ..."
+  SUB_DEF@176..198
+    SUB_KW@176..179 "sub"
+    WHITESPACE@179..180 " "
+    IDENT@180..181 "h"
+    WHITESPACE@181..182 " "
+    SUB_SIGNATURE@182..195
+      L_PAREN@182..183 "("
+      SIGNATURE_PARAM@183..194
+        SCALAR_SIGIL@183..184 "$"
+        IDENT@184..185 "x"
+        WHITESPACE@185..186 " "
+        SIGNATURE_PARAM_DEFAULT@186..194
+          EQ@186..187 "="
+          WHITESPACE@187..188 " "
+          INFIX_EXPR@188..194
+            NUMBER@188..189 "1"
+            WHITESPACE@189..190 " "
+            LOGICAL_AND@190..192 "&&"
+            WHITESPACE@192..193 " "
+            NUMBER@193..194 "2"
+      R_PAREN@194..195 ")"
+    WHITESPACE@195..196 " "
+    BLOCK_STMT@196..198
+      L_BRACE@196..197 "{"
+      R_BRACE@197..198 "}"
+  NEWLINE@198..199 "\n"
+  NEWLINE@199..200 "\n"
+  COMMENT@200..234 "# Valid: parenthesize ..."
+  SUB_DEF@234..258
+    SUB_KW@234..237 "sub"
+    WHITESPACE@237..238 " "
+    IDENT@238..239 "i"
+    WHITESPACE@239..240 " "
+    SUB_SIGNATURE@240..255
+      L_PAREN@240..241 "("
+      SIGNATURE_PARAM@241..254
+        SCALAR_SIGIL@241..242 "$"
+        IDENT@242..243 "x"
+        WHITESPACE@243..244 " "
+        SIGNATURE_PARAM_DEFAULT@244..254
+          EQ@244..245 "="
+          WHITESPACE@245..246 " "
+          L_PAREN@246..247 "("
+          INFIX_EXPR@247..253
+            NUMBER@247..248 "1"
+            WHITESPACE@248..249 " "
+            OR_KW@249..251 "or"
+            WHITESPACE@251..252 " "
+            NUMBER@252..253 "2"
+          R_PAREN@253..254 ")"
+      R_PAREN@254..255 ")"
+    WHITESPACE@255..256 " "
+    BLOCK_STMT@256..258
+      L_BRACE@256..257 "{"
+      R_BRACE@257..258 "}"
+  NEWLINE@258..259 "\n"

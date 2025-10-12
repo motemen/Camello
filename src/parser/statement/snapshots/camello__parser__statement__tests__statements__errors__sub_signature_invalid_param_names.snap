@@ -1,0 +1,36 @@
+---
+source: src/parser/statement/tests.rs
+expression: render_errors(&errors)
+---
+  × Parse error: Expected R_PAREN, found Some(NUMBER)
+   ╭─[4:9]
+ 3 │ # Invalid: numbers as parameter names
+ 4 │ sub f ($1) {}
+   ·         ┬
+   ·         ╰── here
+ 5 │ sub g ($123) {}
+   ╰────
+  × Parse error: Expected block or ';' after subroutine declaration
+   ╭─[4:10]
+ 3 │ # Invalid: numbers as parameter names
+ 4 │ sub f ($1) {}
+   ·          ┬
+   ·          ╰── here
+ 5 │ sub g ($123) {}
+   ╰────
+  × Parse error: Expected R_PAREN, found Some(NUMBER)
+   ╭─[5:9]
+ 4 │ sub f ($1) {}
+ 5 │ sub g ($123) {}
+   ·         ─┬─
+   ·          ╰── here
+ 6 │ 
+   ╰────
+  × Parse error: Expected block or ';' after subroutine declaration
+   ╭─[5:12]
+ 4 │ sub f ($1) {}
+ 5 │ sub g ($123) {}
+   ·            ┬
+   ·            ╰── here
+ 6 │ 
+   ╰────

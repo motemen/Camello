@@ -363,11 +363,6 @@ impl Parser<'_> {
         {
             self.bump_as(SyntaxKind::IDENT);
             true
-        } else if self.try_bump_digit_prefixed_ident() {
-            true
-        } else if self.at(SyntaxKind::NUMBER) {
-            self.bump_as(SyntaxKind::IDENT);
-            true
         } else {
             false
         }
