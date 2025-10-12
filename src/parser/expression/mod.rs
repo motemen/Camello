@@ -729,7 +729,7 @@ impl Parser<'_> {
         // After attributes, allow an optional assignment or compound assignment inside the
         // declaration node so the tree matches non-attribute declarations.
         let assignment_kind = match self.current_kind() {
-            Some(kind) if kind == T![=] => Some(false),
+            Some(T![=]) => Some(false),
             Some(kind) if kind.is_compoundable_operator() => self
                 .peek_nth_non_trivia_token_with_context(LexContext::Operator, 1)
                 .filter(|(next_kind, _)| *next_kind == T![=])
