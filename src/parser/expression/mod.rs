@@ -710,11 +710,55 @@ impl Parser<'_> {
         self.bump_value(); // consume the keyword
         self.skip_whitespace_and_newlines();
 
-        // Parse the variable and any assignment with minimum precedence
-        // Use LIST_ITEM precedence so a trailing comma in contexts like func(my $a,)
-        // doesn't get treated as part of the declaration expression.
+        // Parse the variable portion with LIST_ITEM precedence so a trailing comma in contexts
+        // like func(my $a,) doesn't get treated as part of the declaration expression.
+        let expr_checkpoint = self.builder.checkpoint();
+
         if !self.parse_expression_with_precedence(Precedence::LIST_ITEM) {
             self.error("Expected expression after variable declaration keyword");
+        }
+
+        self.skip_whitespace_and_newlines();
+
+        // Handle optional attribute annotations (e.g., my $x :shared)
+        while self.at(T![:]) {
+            self.parse_attribute();
+            self.skip_whitespace_and_newlines();
+        }
+
+        // After attributes, allow an optional assignment or compound assignment inside the
+        // declaration node so the tree matches non-attribute declarations.
+        let assignment_kind = match self.current_kind() {
+            Some(T![=]) => Some(false),
+            Some(kind) if kind.is_compoundable_operator() => self
+                .peek_nth_non_trivia_token_with_context(LexContext::Operator, 1)
+                .filter(|(next_kind, _)| *next_kind == T![=])
+                .map(|_| true),
+            _ => None,
+        };
+
+        if let Some(is_compound_assignment) = assignment_kind {
+            self.builder
+                .start_node_at(expr_checkpoint, SyntaxKind::INFIX_EXPR.into());
+
+            let op_checkpoint = self.builder.checkpoint();
+
+            self.bump_op();
+
+            if is_compound_assignment {
+                self.builder
+                    .start_node_at(op_checkpoint, SyntaxKind::COMPOUND_ASSIGNMENT.into());
+                self.bump_op();
+                self.builder.finish_node();
+            }
+
+            self.skip_whitespace_and_newlines();
+
+            if !self.parse_expression_with_precedence(Precedence::ASSIGNMENT) {
+                self.error("Expected expression after assignment in variable declaration");
+            }
+
+            self.builder.finish_node();
         }
 
         self.builder.finish_node();

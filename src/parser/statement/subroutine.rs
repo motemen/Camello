@@ -41,7 +41,7 @@ impl Parser<'_> {
         }
 
         while self.at(T![:]) {
-            self.parse_sub_attribute();
+            self.parse_attribute();
             self.skip_whitespace_and_newlines();
         }
 
@@ -56,7 +56,7 @@ impl Parser<'_> {
         }
     }
 
-    pub(crate) fn parse_sub_attribute(&mut self) {
+    pub(crate) fn parse_attribute(&mut self) {
         self.builder.start_node(SyntaxKind::ATTR.into());
 
         self.expect(T![:]);
