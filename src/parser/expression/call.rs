@@ -101,19 +101,10 @@ impl Parser<'_> {
         }
 
         // Look ahead to see what's inside the braces
-        let mut offset = brace_offset + 1; // Skip the opening brace
-
-        // Skip any whitespace after opening brace
-        while let Some((kind, _)) =
-            self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset)
-        {
-            if !kind.is_trivia() {
-                break;
-            }
-            offset += 1;
-        }
+        let offset = brace_offset + 1; // Skip the opening brace
 
         // Check the first non-trivia token inside braces
+        // (peek_nth_non_trivia_token_with_context already skips trivia)
         let first_token = self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset);
 
         let looks_like_hash = match first_token {
@@ -441,28 +432,25 @@ impl Parser<'_> {
     /// consuming tokens. This is used to drive block-function heuristics before we parse the name.
     fn peek_block_function_basename(&self) -> Option<String> {
         let mut name = self.current_text_value()?.to_string();
-        let mut offset = 1;
 
-        while let Some((kind, _)) =
-            self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset)
-        {
-            if kind != T![::] {
+        // Use iterator helper to avoid O(N²) complexity
+        if let Some(mut iter) = self.iter_non_trivia_tokens_from(LexContext::Value, 1) {
+            while let Some((kind, _)) = iter.next() {
+                if kind != T![::] {
+                    break;
+                }
+
+                let Some((next_kind, next_text)) = iter.next() else {
+                    break;
+                };
+
+                if next_kind == SyntaxKind::IDENT || next_kind.is_keyword() {
+                    name = next_text.to_string();
+                    continue;
+                }
+
                 break;
             }
-
-            let Some((next_kind, next_text)) =
-                self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset + 1)
-            else {
-                break;
-            };
-
-            if next_kind == SyntaxKind::IDENT || next_kind.is_keyword() {
-                name = next_text.to_string();
-                offset += 2;
-                continue;
-            }
-
-            break;
         }
 
         Some(name)
