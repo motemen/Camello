@@ -151,29 +151,30 @@ impl Parser<'_> {
         // If it looks like a hash reference based on the first token, we need to scan deeper
         // to check for semicolons, which would definitively make it a block.
         if looks_like_hash {
+            // Use the iterator helper to avoid O(N²) complexity
             // Scan the contents looking for a semicolon
-            let mut scan_offset = brace_offset + 1;
-            let mut brace_depth = 0;
-
-            while let Some((kind, _)) =
-                self.peek_nth_non_trivia_token_with_context(LexContext::Value, scan_offset)
+            if let Some(iter) =
+                self.iter_non_trivia_tokens_from(LexContext::Value, brace_offset + 1)
             {
-                match kind {
-                    T!['{'] => brace_depth += 1,
-                    T!['}'] => {
-                        if brace_depth == 0 {
-                            // Found the closing brace at the same level - no semicolon found
-                            break;
+                let mut brace_depth = 0;
+
+                for (kind, _) in iter {
+                    match kind {
+                        T!['{'] => brace_depth += 1,
+                        T!['}'] => {
+                            if brace_depth == 0 {
+                                // Found the closing brace at the same level - no semicolon found
+                                break;
+                            }
+                            brace_depth -= 1;
                         }
-                        brace_depth -= 1;
+                        T![;] if brace_depth == 0 => {
+                            // Found a semicolon at the top level inside the braces - it's a block!
+                            return false;
+                        }
+                        _ => {}
                     }
-                    T![;] if brace_depth == 0 => {
-                        // Found a semicolon at the top level inside the braces - it's a block!
-                        return false;
-                    }
-                    _ => {}
                 }
-                scan_offset += 1;
             }
         }
 
