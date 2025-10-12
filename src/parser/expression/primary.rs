@@ -164,8 +164,22 @@ impl Parser<'_> {
             }
             Some(T![::]) => {
                 // Allow variables like $::foo (root-qualified names)
-                // Do not consume '::' here. Let parse_identifier_or_qualified handle it.
-                self.parse_identifier_or_qualified();
+                // and special root package variables like %:: without a trailing segment.
+                let next_kind = self
+                    .peek_nth_non_trivia_token_with_context(crate::lexer::LexContext::Value, 1)
+                    .map(|(kind, _)| kind);
+
+                let has_segment = next_kind.is_some_and(|kind| {
+                    kind == SyntaxKind::IDENT || kind == SyntaxKind::NUMBER || kind.is_keyword()
+                });
+
+                if has_segment {
+                    // Do not consume '::' here. Let parse_identifier_or_qualified handle it.
+                    self.parse_identifier_or_qualified();
+                } else {
+                    // Treat the bare '::' as the variable name (e.g. %::)
+                    self.bump_as(SyntaxKind::IDENT);
+                }
             }
             _ => {
                 self.parse_keyword_or_special_variable();
