@@ -255,15 +255,14 @@ fn format_file(
     if !errors.is_empty() {
         eprintln!("Parse error in '{source_name}':");
         if stop_on_error {
-            if let Some(error) = errors.first() {
-                eprintln!("{:?}", Report::new(error.clone()));
-            }
+            let error = errors.into_iter().next().unwrap();
+            eprintln!("{:?}", Report::new(error));
             std::process::exit(2);
         } else {
-            for e in errors.iter() {
-                eprintln!("{:?}", Report::new(e.clone()));
+            for e in errors {
+                eprintln!("{:?}", Report::new(e));
             }
-            eprintln!("Proceeding with best-effort formatting...\\n");
+            eprintln!("Proceeding with best-effort formatting...\n");
         }
     }
 
