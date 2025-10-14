@@ -67,4 +67,4 @@ END { }
 
 sub attr_test : bar : baz { }
 
-sub attr_args : bar(1, 2) { }
+sub attr_args : bar(1,2) { }

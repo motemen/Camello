@@ -1,6 +1,5 @@
 ---
 source: src/parser/statement/tests.rs
-assertion_line: 48
 expression: render_success_tree(&syntax)
 ---
 ROOT@0..87
@@ -53,11 +52,7 @@ ROOT@0..87
         IDENT@48..51 "Foo"
         ATTR_ARGS@51..57
           L_PAREN@51..52 "("
-          EXPR_LIST@52..56
-            NUMBER@52..53 "1"
-            COMMA@53..54 ","
-            WHITESPACE@54..55 " "
-            NUMBER@55..56 "2"
+          RAW_STRING@52..56 "1, 2"
           R_PAREN@56..57 ")"
     SEMICOLON@57..58 ";"
   NEWLINE@58..59 "\n"
