@@ -88,7 +88,8 @@ impl Parser<'_> {
         let checkpoint = self.builder.checkpoint();
 
         // Parse left-hand side (primary expression with postfix operations)
-        if !self.parse_primary_with_postfix() {
+        let primary_role = self.parse_primary_with_postfix();
+        if primary_role == PrimaryRole::None {
             return false;
         }
 
@@ -107,7 +108,7 @@ impl Parser<'_> {
             // - `decode <$fh>` - IO operator (argument to decode function)
             // - `f < $x > 1` - chained comparison operators
             if current_kind == T![<]
-                && self.last_primary_role == PrimaryRole::Bareword
+                && primary_role == PrimaryRole::Bareword
                 && self.is_lt_an_io_operator()
             {
                 // This is an IO operator pattern like `decode <$fh>`, not a comparison.
@@ -125,12 +126,8 @@ impl Parser<'_> {
                 self.builder.finish_node();
 
                 // We've consumed the IO operator and restructured the tree
-                self.last_primary_role = PrimaryRole::Other;
                 return true;
             }
-
-            // Once we start handling operators explicitly, do not treat the LHS as a bareword call target.
-            self.last_primary_role = PrimaryRole::Other;
 
             // Handle ternary operator specially
             if current_kind == T![?] {
@@ -259,16 +256,23 @@ impl Parser<'_> {
     }
 
     /// Parse primary expression with postfix operations
-    fn parse_primary_with_postfix(&mut self) -> bool {
+    fn parse_primary_with_postfix(&mut self) -> PrimaryRole {
         let checkpoint = self.builder.checkpoint();
 
-        let subject_kind = self.primary_expr();
+        let (subject_kind, role) = self.primary_expr();
         if subject_kind == PostfixSubject::None {
-            return false;
+            return PrimaryRole::None;
         }
 
         // Handle postfix operations
-        self.parse_postfix_operations_with_checkpoint(checkpoint, subject_kind)
+        let consumed_postfix = self.parse_postfix_operations_with_checkpoint(checkpoint, subject_kind);
+
+        // If postfix operations were consumed, the primary role is no longer relevant
+        if consumed_postfix {
+            PrimaryRole::Other
+        } else {
+            role
+        }
     }
 
     pub fn expression_list(&mut self) -> bool {
@@ -314,14 +318,11 @@ impl Parser<'_> {
         ])
     }
 
-    fn primary_expr(&mut self) -> PostfixSubject {
+    fn primary_expr(&mut self) -> (PostfixSubject, PrimaryRole) {
         self.skip_whitespace_and_newlines();
 
-        // Reset primary role tracking; specific branches will update as needed.
-        self.last_primary_role = PrimaryRole::Other;
-
         let Some(current_kind) = self.current_kind_value() else {
-            return PostfixSubject::None;
+            return (PostfixSubject::None, PrimaryRole::None);
         };
 
         // Treat bare keywords as identifiers when they appear before fat comma (=>)
@@ -330,9 +331,11 @@ impl Parser<'_> {
             && (self.is_followed_by_fat_comma(0) || self.is_inside_hash_braces())
         {
             self.parse_ident_like_expr();
-            self.last_primary_role = PrimaryRole::Bareword;
-            return PostfixSubject::Other;
+            return (PostfixSubject::Other, PrimaryRole::Bareword);
         }
+
+        // Track the primary role for bareword identification
+        let mut role = PrimaryRole::Other;
 
         match current_kind {
             SyntaxKind::NUMBER
@@ -366,8 +369,7 @@ impl Parser<'_> {
                 // Consume variable as a value
                 self.bump_value();
                 self.skip_whitespace_and_newlines();
-                self.last_primary_role = PrimaryRole::Variable;
-                return PostfixSubject::Variable;
+                return (PostfixSubject::Variable, PrimaryRole::Variable);
             }
             T!['\\'] => {
                 // Reference operator as prefix: \expr
@@ -417,9 +419,8 @@ impl Parser<'_> {
             }
             kind if kind.is_sigil() => {
                 // All sigil-based variables are now handled by parse_variable
-                self.last_primary_role = PrimaryRole::Variable;
                 self.parse_variable();
-                return PostfixSubject::Variable;
+                return (PostfixSubject::Variable, PrimaryRole::Variable);
             }
             T![+] => {
                 // Unary plus prefix operator
@@ -473,18 +474,15 @@ impl Parser<'_> {
                 // undef can be used both as a literal and as a function call
                 // Check if it's followed by an expression (function call) or not (literal)
                 let next_token = self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1);
-                if let Some((kind, _)) = next_token {
-                    if Self::can_start_expression(kind) {
-                        // This is a function call: undef $x
-                        self.last_primary_role = PrimaryRole::Bareword;
-                        self.parse_ident_like_expr();
-                    } else {
-                        // This is a literal: undef by itself
-                        self.bump_value();
-                        self.skip_whitespace_and_newlines();
-                    }
+                let is_function_call = next_token
+                    .is_some_and(|(kind, _)| Self::can_start_expression(kind));
+
+                if is_function_call {
+                    // This is a function call: undef $x
+                    self.parse_ident_like_expr();
+                    role = PrimaryRole::Bareword;
                 } else {
-                    // No next token, treat as literal
+                    // This is a literal: undef by itself
                     self.bump_value();
                     self.skip_whitespace_and_newlines();
                 }
@@ -494,16 +492,16 @@ impl Parser<'_> {
                 self.require_expr();
             }
             T![try] | T![catch] | T![finally] => {
-                self.last_primary_role = PrimaryRole::Bareword;
                 self.parse_ident_like_expr();
+                role = PrimaryRole::Bareword;
             }
             SyntaxKind::IDENT => {
-                self.last_primary_role = PrimaryRole::Bareword;
                 self.parse_ident_like_expr();
+                role = PrimaryRole::Bareword;
             }
             T![::] => {
-                self.last_primary_role = PrimaryRole::Bareword;
                 self.parse_ident_like_expr();
+                role = PrimaryRole::Bareword;
             }
             SyntaxKind::CARET => {
                 // Handle caret followed by identifier: ^MATCH
@@ -549,7 +547,7 @@ impl Parser<'_> {
                 }
 
                 // Parenthesized expressions (including empty ()) allow [] subscript (list slices)
-                return PostfixSubject::List;
+                return (PostfixSubject::List, PrimaryRole::Other);
             }
             T!['{'] => {
                 // In expression context, always treat as hash reference
@@ -564,10 +562,10 @@ impl Parser<'_> {
                 if self.should_parse_quote_like() {
                     self.qw_expr();
                     // qw() returns a list, so allow direct array subscripts like qw(...)[0]
-                    return PostfixSubject::List;
+                    return (PostfixSubject::List, PrimaryRole::Other);
                 } else {
-                    self.last_primary_role = PrimaryRole::Bareword;
                     self.parse_ident_like_expr();
+                    role = PrimaryRole::Bareword;
                 }
             }
             T![return] => {
@@ -596,16 +594,16 @@ impl Parser<'_> {
                 if self.should_parse_quote_like() {
                     self.qlike_expr(current_kind);
                 } else {
-                    self.last_primary_role = PrimaryRole::Bareword;
                     self.parse_ident_like_expr();
+                    role = PrimaryRole::Bareword;
                 }
             }
             T![s] | T![tr] | T![y] => {
                 if self.should_parse_quote_like() {
                     self.two_part_qlike_expr(current_kind);
                 } else {
-                    self.last_primary_role = PrimaryRole::Bareword;
                     self.parse_ident_like_expr();
+                    role = PrimaryRole::Bareword;
                 }
             }
             T![sub] => {
@@ -633,10 +631,10 @@ impl Parser<'_> {
             }
             _ => {
                 // Should not reach here because is_at_start_of_expression checks this
-                return PostfixSubject::None;
+                return (PostfixSubject::None, PrimaryRole::None);
             }
         }
-        PostfixSubject::Other
+        (PostfixSubject::Other, role)
     }
 
     /// Parse anonymous subroutine expression: sub [PROTO]? [:ATTR]* { ... }

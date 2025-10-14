@@ -49,7 +49,6 @@ pub struct Parser<'a> {
     current_pos: usize,
     source: &'a str,
     options: ParserOptions,
-    last_primary_role: PrimaryRole,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,7 +76,6 @@ impl<'a> Parser<'a> {
             current_pos: 0,
             source: input,
             options,
-            last_primary_role: PrimaryRole::None,
         }
     }
 

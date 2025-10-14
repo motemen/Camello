@@ -1,7 +1,7 @@
 use crate::lexer::LexContext;
 use crate::{SyntaxKind, T};
 
-use super::{Parser, PostfixSubject, PrimaryRole};
+use super::{Parser, PostfixSubject};
 
 impl Parser<'_> {
     /// Parse a postfix increment or decrement operator
@@ -391,9 +391,6 @@ impl Parser<'_> {
                 }
             }
         }
-        if consumed_postfix {
-            self.last_primary_role = PrimaryRole::Other;
-        }
-        true
+        consumed_postfix
     }
 }
