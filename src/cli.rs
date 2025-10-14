@@ -46,6 +46,13 @@ pub enum Commands {
         #[arg(long, help = "Check if file is already formatted")]
         check: bool,
 
+        /// Stop formatting after the first parse error is reported
+        #[arg(
+            long = "stop-on-first-error",
+            help = "Stop after reporting the first parse error"
+        )]
+        stop_on_first_error: bool,
+
         /// Output to file instead of stdout
         #[arg(short, long, help = "Output file path")]
         output: Option<PathBuf>,
@@ -93,6 +100,13 @@ pub enum Commands {
             help = "Very quiet mode: suppress all output"
         )]
         very_quiet: bool,
+
+        /// Stop dumping after the first parse error is reported
+        #[arg(
+            long = "stop-on-first-error",
+            help = "Stop after reporting the first parse error"
+        )]
+        stop_on_first_error: bool,
 
         /// Input file encoding (e.g., utf-8, euc-jp, shift_jis)
         #[arg(long, help = "Input file encoding (default: utf-8)")]
@@ -153,10 +167,19 @@ pub fn run() -> Result<()> {
             eval,
             eval_escape,
             check,
+            stop_on_first_error,
             output,
             encoding,
         } => {
-            format_file(path, eval, eval_escape, check, output, encoding)?;
+            format_file(
+                path,
+                eval,
+                eval_escape,
+                check,
+                stop_on_first_error,
+                output,
+                encoding,
+            )?;
         }
         Commands::Dump {
             path,
@@ -164,9 +187,18 @@ pub fn run() -> Result<()> {
             eval_escape,
             quiet,
             very_quiet,
+            stop_on_first_error,
             encoding,
         } => {
-            dump_file(path, eval, eval_escape, quiet, very_quiet, encoding)?;
+            dump_file(
+                path,
+                eval,
+                eval_escape,
+                quiet,
+                very_quiet,
+                stop_on_first_error,
+                encoding,
+            )?;
         }
     }
 
@@ -225,6 +257,7 @@ fn format_file(
     eval: Option<String>,
     eval_escape: Option<String>,
     check: bool,
+    stop_on_first_error: bool,
     output: Option<PathBuf>,
     encoding: Option<String>,
 ) -> Result<()> {
@@ -234,13 +267,19 @@ fn format_file(
     // Execute formatting
     let (formatted, errors) = format_perl(&input);
 
-    // If there are errors, display them, but continue processing
+    // If there are errors, display them, and optionally stop immediately
     if !errors.is_empty() {
         eprintln!("Parse error in '{source_name}':");
-        for e in errors.iter() {
-            eprintln!("{:?}", Report::new(e.clone()));
+        if stop_on_first_error {
+            let error = errors.into_iter().next().unwrap();
+            eprintln!("{:?}", Report::new(error));
+            std::process::exit(2);
+        } else {
+            for e in errors {
+                eprintln!("{:?}", Report::new(e));
+            }
+            eprintln!("Proceeding with best-effort formatting...\n");
         }
-        eprintln!("Proceeding with best-effort formatting...\\n");
     }
 
     if check {
@@ -273,6 +312,7 @@ fn dump_file(
     eval_escape: Option<String>,
     quiet: bool,
     very_quiet: bool,
+    stop_on_first_error: bool,
     encoding: Option<String>,
 ) -> Result<()> {
     // Read from file or standard input
@@ -282,8 +322,13 @@ fn dump_file(
     if !errors.is_empty() {
         if !very_quiet {
             eprintln!("Parse errors in '{source_name}':");
-            for error in errors {
+            if stop_on_first_error {
+                let error = errors.into_iter().next().unwrap();
                 eprintln!("{:?}", Report::new(error));
+            } else {
+                for error in errors {
+                    eprintln!("{:?}", Report::new(error));
+                }
             }
             // Still dump the parsed AST for debugging, but exit with code 2.
             if !quiet {
@@ -325,6 +370,7 @@ fn test_format_with_escape_sequences() -> Result<(), Box<dyn std::error::Error>>
         None,
         Some("my$var=1;\\nprint $var;".to_string()),
         false,
+        false,
         None,
         None
     )
@@ -361,6 +407,7 @@ mod tests {
             None,
             Some("my$var=1;\\nprint $var;".to_string()),
             false,
+            false,
             None,
             None
         )
@@ -376,7 +423,7 @@ mod tests {
         fs::write(&file_path, "my$var=1;")?;
 
         // Execute formatting (not actually executed, but confirm no errors)
-        assert!(format_file(Some(file_path), None, None, false, None, None).is_ok());
+        assert!(format_file(Some(file_path), None, None, false, false, None, None).is_ok());
 
         Ok(())
     }
@@ -384,7 +431,16 @@ mod tests {
     #[test]
     fn test_format_string_to_stdout() -> Result<(), Box<dyn std::error::Error>> {
         // Execute formatting (not actually executed, but confirm no errors)
-        assert!(format_file(None, Some("my$var=1;".to_string()), None, false, None, None).is_ok());
+        assert!(format_file(
+            None,
+            Some("my$var=1;".to_string()),
+            None,
+            false,
+            false,
+            None,
+            None
+        )
+        .is_ok());
 
         Ok(())
     }
@@ -396,7 +452,7 @@ mod tests {
         fs::write(&file_path, "my $var = 1;\n")?; // Use actual newline, not escaped
 
         // Check that the file is correctly formatted
-        assert!(format_file(Some(file_path), None, None, true, None, None).is_ok());
+        assert!(format_file(Some(file_path), None, None, true, false, None, None).is_ok());
 
         Ok(())
     }
@@ -415,6 +471,7 @@ mod tests {
             Some(file_path),
             None,
             None,
+            false,
             false,
             None,
             Some("utf-8".to_string())
@@ -442,6 +499,7 @@ mod tests {
             None,
             None,
             false,
+            false,
             None,
             Some("euc-jp".to_string())
         )
@@ -467,6 +525,7 @@ mod tests {
             Some(file_path),
             None,
             None,
+            false,
             false,
             None,
             Some("shift_jis".to_string())
