@@ -86,16 +86,17 @@ impl Parser<'_> {
         self.builder.start_node(SyntaxKind::ATTR_ARGS.into());
 
         self.expect(T!['(']);
-        self.skip_whitespace_and_newlines();
 
-        if !self.at(T![')']) {
-            if !self.expression_list() {
-                self.error("Expected expression list in attribute arguments");
-            }
-            self.skip_whitespace_and_newlines();
+        // Attribute arguments only check for balanced parentheses, not expression validity
+        // See perlsub: "They may have a parameter list appended, which is only checked
+        // for whether its parentheses ('(',')') nest properly."
+        // The lexer handles consuming balanced parentheses as a single RAW_STRING token.
+        if let Some((kind, text)) = self.lexer.consume_balanced_parens() {
+            self.builder.token(kind.into(), text);
+            self.current_pos += text.len();
         }
 
-        self.expect_op(T![')']);
+        self.expect(T![')']);
 
         self.builder.finish_node();
     }

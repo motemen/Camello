@@ -1,6 +1,5 @@
 ---
-source: src/parser/statement.rs
-assertion_line: 953
+source: src/parser/statement/tests.rs
 expression: render_success_tree(&syntax)
 ---
 ROOT@0..78
@@ -60,7 +59,7 @@ ROOT@0..78
       IDENT@66..70 "Attr"
       ATTR_ARGS@70..73
         L_PAREN@70..71 "("
-        NUMBER@71..72 "1"
+        RAW_STRING@71..72 "1"
         R_PAREN@72..73 ")"
       WHITESPACE@73..74 " "
     BLOCK_STMT@74..77
