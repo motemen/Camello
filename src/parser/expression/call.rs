@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use super::precedence;
+use super::precedence::Precedence;
 use super::Parser;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -247,6 +248,12 @@ impl Parser<'_> {
                 self.parse_print_like_args();
                 self.builder.finish_node();
             }
+        } else if function_name == "sort" && self.is_at_start_of_expression() {
+            // sort allows a comparator expression without a separating comma before the list
+            self.builder
+                .start_node_at(start, SyntaxKind::FUNCTION_CALL_EXPR.into());
+            self.parse_sort_args();
+            self.builder.finish_node();
         } else {
             // Indirect call for other builtins (e.g., shift @array)
             self.parse_builtin_indirect_call(function_name, prototype, start);
@@ -412,6 +419,24 @@ impl Parser<'_> {
             Self::builtin_prototype(function_name).is_none_or(|spec| spec.allows_trailing_list());
 
         if allow_more_args && self.is_at_start_of_expression() {
+            self.expression_list();
+        }
+    }
+
+    fn parse_sort_args(&mut self) {
+        if !self.parse_expression_with_precedence(Precedence::LIST_ITEM) {
+            return;
+        }
+
+        self.skip_whitespace_and_newlines();
+
+        // Optionally consume a comma to support both `sort $cmp @list` and `sort $cmp, @list`
+        if self.at(T![,]) {
+            self.bump_value();
+            self.skip_whitespace_and_newlines();
+        }
+
+        if self.is_at_start_of_expression() {
             self.expression_list();
         }
     }
