@@ -1,0 +1,59 @@
+---
+source: src/parser/statement/tests.rs
+expression: render_errors(&errors)
+---
+  × Parse error: Signature parameter names must start with a letter or underscore
+   ╭─[1:18]
+ 1 │ sub bad_number ($1) {
+   ·                  ┬
+   ·                  ╰── here
+ 2 │     return;
+   ╰────
+  × Parse error: Signature parameter names must start with a letter or underscore
+   ╭─[5:18]
+ 4 │ 
+ 5 │ sub bad_digits ($123) {
+   ·                  ─┬─
+   ·                   ╰── here
+ 6 │     return;
+   ╰────
+  × Parse error: Invalid character in signature parameter name
+    ╭─[9:16]
+  8 │ 
+  9 │ sub bad_dash ($-foo) {
+    ·                ┬
+    ·                ╰── here
+ 10 │     return;
+    ╰────
+  × Parse error: Expected ',' between signature parameters
+    ╭─[13:32]
+ 12 │ 
+ 13 │ sub bad_low_precedence ($x = 1 or 2) {
+    ·                                ─┬
+    ·                                 ╰── here
+ 14 │     return $x;
+    ╰────
+  × Parse error: Expected signature parameter
+    ╭─[13:32]
+ 12 │ 
+ 13 │ sub bad_low_precedence ($x = 1 or 2) {
+    ·                                ─┬
+    ·                                 ╰── here
+ 14 │     return $x;
+    ╰────
+  × Parse error: Expected ',' between signature parameters
+    ╭─[13:35]
+ 12 │ 
+ 13 │ sub bad_low_precedence ($x = 1 or 2) {
+    ·                                   ┬
+    ·                                   ╰── here
+ 14 │     return $x;
+    ╰────
+  × Parse error: Expected signature parameter
+    ╭─[13:35]
+ 12 │ 
+ 13 │ sub bad_low_precedence ($x = 1 or 2) {
+    ·                                   ┬
+    ·                                   ╰── here
+ 14 │     return $x;
+    ╰────

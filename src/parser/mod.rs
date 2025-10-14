@@ -241,10 +241,17 @@ impl<'a> Parser<'a> {
 
     /// Expect a token and consume it, specifying the lexical context for the next token
     fn expect_with_context(&mut self, expected: SyntaxKind, context: LexContext) {
-        if self.at(expected) {
+        if self
+            .peek_non_trivia_token_with_context(context)
+            .is_some_and(|(kind, _)| kind == expected)
+        {
             self.bump_with_context(context);
         } else {
-            let msg = format!("Expected {:?}, found {:?}", expected, self.current_kind());
+            let found = self
+                .peek_non_trivia_token_with_context(context)
+                .map(|(kind, _)| kind)
+                .or_else(|| self.current_kind());
+            let msg = format!("Expected {:?}, found {:?}", expected, found);
             self.error(&msg);
         }
     }

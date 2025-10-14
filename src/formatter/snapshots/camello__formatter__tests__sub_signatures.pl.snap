@@ -1,0 +1,51 @@
+---
+source: src/formatter/tests.rs
+expression: formatted
+---
+# Subroutine signatures formatting tests
+
+# Basic named parameters with default
+sub greet ($name, $greeting = "Hello") { "$greeting, $name!" }
+
+# Placeholder and slurpy parameters with defaults
+sub flexible ($first, $, $third //= 3, @rest) {
+    $first + @rest;
+}
+
+# Anonymous subroutine signature
+my $anon = sub ($value ||= 10, %opts) {
+    $opts{scale} ? $value * $opts{scale} : $value;
+};
+
+# Complex default expression
+sub defaults ($value = $a || $b) {
+    return $value;
+}
+
+# All placeholder sigils
+sub placeholders ($, @, %) {
+    return scalar @_;
+}
+
+# Placeholder with simple default
+sub placeholder_default ($thing, $= 1) {
+    return $thing;
+}
+
+# Slurpy parameters
+sub slurpy (
+    $head,
+    @rest,
+    %opts
+) {
+    return ($head, scalar @rest, scalar keys %opts);
+}
+
+# Multiline signature with trailing comma
+sub multiline (
+    $first,
+    $second = compute_default(),
+    @rest,
+) {
+    return $first + @rest;
+}

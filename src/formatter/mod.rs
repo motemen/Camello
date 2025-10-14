@@ -291,6 +291,10 @@ impl Formatter {
                 self.format_sub_prototype(node);
                 return;
             }
+            SyntaxKind::SUB_SIGNATURE => {
+                self.format_sub_signature(node);
+                return;
+            }
             SyntaxKind::FOR_STMT => {
                 self.format_for_stmt(node);
                 return;

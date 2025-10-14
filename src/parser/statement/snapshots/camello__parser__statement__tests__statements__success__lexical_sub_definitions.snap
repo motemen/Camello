@@ -24,9 +24,10 @@ ROOT@0..78
     SUB_KW@24..27 "sub"
     WHITESPACE@27..28 " "
     IDENT@28..31 "bar"
-    SUB_PROTOTYPE@31..34
+    SUB_SIGNATURE@31..34
       L_PAREN@31..32 "("
-      SCALAR_SIGIL@32..33 "$"
+      SIGNATURE_PARAM@32..33
+        SCALAR_SIGIL@32..33 "$"
       R_PAREN@33..34 ")"
     WHITESPACE@34..35 " "
     BLOCK_STMT@35..44

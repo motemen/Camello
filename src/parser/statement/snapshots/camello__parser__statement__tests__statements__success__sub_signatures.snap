@@ -1,0 +1,394 @@
+---
+source: src/parser/statement/tests.rs
+expression: render_success_tree(&syntax)
+---
+ROOT@0..605
+  SUB_DEF@0..66
+    SUB_KW@0..3 "sub"
+    WHITESPACE@3..4 " "
+    IDENT@4..9 "greet"
+    WHITESPACE@9..10 " "
+    SUB_SIGNATURE@10..38
+      L_PAREN@10..11 "("
+      SIGNATURE_PARAM@11..16
+        SCALAR_SIGIL@11..12 "$"
+        IDENT@12..16 "name"
+      COMMA@16..17 ","
+      WHITESPACE@17..18 " "
+      SIGNATURE_PARAM@18..37
+        SCALAR_SIGIL@18..19 "$"
+        IDENT@19..27 "greeting"
+        WHITESPACE@27..28 " "
+        SIGNATURE_DEFAULT@28..37
+          EQ@28..29 "="
+          WHITESPACE@29..30 " "
+          STRING@30..37 "\"Hello\""
+      R_PAREN@37..38 ")"
+    WHITESPACE@38..39 " "
+    BLOCK_STMT@39..66
+      L_BRACE@39..40 "{"
+      NEWLINE@40..41 "\n"
+      WHITESPACE@41..45 "    "
+      STMT@45..65
+        STRING@45..64 "\"$greeting, $name!\""
+        NEWLINE@64..65 "\n"
+      R_BRACE@65..66 "}"
+  NEWLINE@66..67 "\n"
+  NEWLINE@67..68 "\n"
+  SUB_DEF@68..137
+    SUB_KW@68..71 "sub"
+    WHITESPACE@71..72 " "
+    IDENT@72..80 "flexible"
+    WHITESPACE@80..81 " "
+    SUB_SIGNATURE@81..113
+      L_PAREN@81..82 "("
+      SIGNATURE_PARAM@82..88
+        SCALAR_SIGIL@82..83 "$"
+        IDENT@83..88 "first"
+      COMMA@88..89 ","
+      WHITESPACE@89..90 " "
+      SIGNATURE_PARAM@90..91
+        SCALAR_SIGIL@90..91 "$"
+      COMMA@91..92 ","
+      WHITESPACE@92..93 " "
+      SIGNATURE_PARAM@93..105
+        SCALAR_SIGIL@93..94 "$"
+        IDENT@94..99 "third"
+        WHITESPACE@99..100 " "
+        SIGNATURE_DEFAULT@100..105
+          DEFINED_OR@100..102 "//"
+          EQ@102..103 "="
+          WHITESPACE@103..104 " "
+          NUMBER@104..105 "3"
+      COMMA@105..106 ","
+      WHITESPACE@106..107 " "
+      SIGNATURE_PARAM@107..112
+        ARRAY_SIGIL@107..108 "@"
+        IDENT@108..112 "rest"
+      R_PAREN@112..113 ")"
+    WHITESPACE@113..114 " "
+    BLOCK_STMT@114..137
+      L_BRACE@114..115 "{"
+      NEWLINE@115..116 "\n"
+      WHITESPACE@116..120 "    "
+      STMT@120..135
+        INFIX_EXPR@120..134
+          SCALAR_VAR@120..127
+            SCALAR_SIGIL@120..121 "$"
+            IDENT@121..126 "first"
+            WHITESPACE@126..127 " "
+          PLUS@127..128 "+"
+          WHITESPACE@128..129 " "
+          ARRAY_VAR@129..134
+            ARRAY_SIGIL@129..130 "@"
+            IDENT@130..134 "rest"
+        SEMICOLON@134..135 ";"
+      NEWLINE@135..136 "\n"
+      R_BRACE@136..137 "}"
+  NEWLINE@137..138 "\n"
+  NEWLINE@138..139 "\n"
+  STMT@139..232
+    VAR_DECL@139..231
+      MY_KW@139..141 "my"
+      WHITESPACE@141..142 " "
+      INFIX_EXPR@142..231
+        SCALAR_VAR@142..148
+          SCALAR_SIGIL@142..143 "$"
+          IDENT@143..147 "anon"
+          WHITESPACE@147..148 " "
+        EQ@148..149 "="
+        WHITESPACE@149..150 " "
+        ANON_SUB_EXPR@150..231
+          SUB_KW@150..153 "sub"
+          WHITESPACE@153..154 " "
+          SUB_SIGNATURE@154..176
+            L_PAREN@154..155 "("
+            SIGNATURE_PARAM@155..168
+              SCALAR_SIGIL@155..156 "$"
+              IDENT@156..161 "value"
+              WHITESPACE@161..162 " "
+              SIGNATURE_DEFAULT@162..168
+                LOGICAL_OR@162..164 "||"
+                EQ@164..165 "="
+                WHITESPACE@165..166 " "
+                NUMBER@166..168 "10"
+            COMMA@168..169 ","
+            WHITESPACE@169..170 " "
+            SIGNATURE_PARAM@170..175
+              HASH_SIGIL@170..171 "%"
+              IDENT@171..175 "opts"
+            R_PAREN@175..176 ")"
+          WHITESPACE@176..177 " "
+          BLOCK_STMT@177..231
+            L_BRACE@177..178 "{"
+            NEWLINE@178..179 "\n"
+            WHITESPACE@179..183 "    "
+            STMT@183..229
+              TERNARY_EXPR@183..228
+                HASH_SUBSCRIPTION_EXPR@183..196
+                  SCALAR_VAR@183..188
+                    SCALAR_SIGIL@183..184 "$"
+                    IDENT@184..188 "opts"
+                  L_BRACE@188..189 "{"
+                  IDENT@189..194 "scale"
+                  R_BRACE@194..195 "}"
+                  WHITESPACE@195..196 " "
+                QUESTION_MARK@196..197 "?"
+                WHITESPACE@197..198 " "
+                INFIX_EXPR@198..220
+                  SCALAR_VAR@198..205
+                    SCALAR_SIGIL@198..199 "$"
+                    IDENT@199..204 "value"
+                    WHITESPACE@204..205 " "
+                  STAR@205..206 "*"
+                  WHITESPACE@206..207 " "
+                  HASH_SUBSCRIPTION_EXPR@207..220
+                    SCALAR_VAR@207..212
+                      SCALAR_SIGIL@207..208 "$"
+                      IDENT@208..212 "opts"
+                    L_BRACE@212..213 "{"
+                    IDENT@213..218 "scale"
+                    R_BRACE@218..219 "}"
+                    WHITESPACE@219..220 " "
+                COLON@220..221 ":"
+                WHITESPACE@221..222 " "
+                SCALAR_VAR@222..228
+                  SCALAR_SIGIL@222..223 "$"
+                  IDENT@223..228 "value"
+              SEMICOLON@228..229 ";"
+            NEWLINE@229..230 "\n"
+            R_BRACE@230..231 "}"
+    SEMICOLON@231..232 ";"
+  NEWLINE@232..233 "\n"
+  NEWLINE@233..234 "\n"
+  SUB_DEF@234..289
+    SUB_KW@234..237 "sub"
+    WHITESPACE@237..238 " "
+    IDENT@238..246 "defaults"
+    WHITESPACE@246..247 " "
+    SUB_SIGNATURE@247..266
+      L_PAREN@247..248 "("
+      SIGNATURE_PARAM@248..265
+        SCALAR_SIGIL@248..249 "$"
+        IDENT@249..254 "value"
+        WHITESPACE@254..255 " "
+        SIGNATURE_DEFAULT@255..265
+          EQ@255..256 "="
+          WHITESPACE@256..257 " "
+          INFIX_EXPR@257..265
+            SCALAR_VAR@257..260
+              SCALAR_SIGIL@257..258 "$"
+              IDENT@258..259 "a"
+              WHITESPACE@259..260 " "
+            LOGICAL_OR@260..262 "||"
+            WHITESPACE@262..263 " "
+            SCALAR_VAR@263..265
+              SCALAR_SIGIL@263..264 "$"
+              IDENT@264..265 "b"
+      R_PAREN@265..266 ")"
+    WHITESPACE@266..267 " "
+    BLOCK_STMT@267..289
+      L_BRACE@267..268 "{"
+      NEWLINE@268..269 "\n"
+      WHITESPACE@269..273 "    "
+      STMT@273..287
+        RETURN_KW@273..279 "return"
+        WHITESPACE@279..280 " "
+        SCALAR_VAR@280..286
+          SCALAR_SIGIL@280..281 "$"
+          IDENT@281..286 "value"
+        SEMICOLON@286..287 ";"
+      NEWLINE@287..288 "\n"
+      R_BRACE@288..289 "}"
+  NEWLINE@289..290 "\n"
+  NEWLINE@290..291 "\n"
+  SUB_DEF@291..343
+    SUB_KW@291..294 "sub"
+    WHITESPACE@294..295 " "
+    IDENT@295..307 "placeholders"
+    WHITESPACE@307..308 " "
+    SUB_SIGNATURE@308..317
+      L_PAREN@308..309 "("
+      SIGNATURE_PARAM@309..310
+        SCALAR_SIGIL@309..310 "$"
+      COMMA@310..311 ","
+      WHITESPACE@311..312 " "
+      SIGNATURE_PARAM@312..313
+        ARRAY_SIGIL@312..313 "@"
+      COMMA@313..314 ","
+      WHITESPACE@314..315 " "
+      SIGNATURE_PARAM@315..316
+        HASH_SIGIL@315..316 "%"
+      R_PAREN@316..317 ")"
+    WHITESPACE@317..318 " "
+    BLOCK_STMT@318..343
+      L_BRACE@318..319 "{"
+      NEWLINE@319..320 "\n"
+      WHITESPACE@320..324 "    "
+      STMT@324..341
+        RETURN_KW@324..330 "return"
+        WHITESPACE@330..331 " "
+        FUNCTION_CALL_EXPR@331..340
+          IDENT@331..337 "scalar"
+          WHITESPACE@337..338 " "
+          ARRAY_VAR@338..340
+            ARRAY_SIGIL@338..339 "@"
+            IDENT@339..340 "_"
+        SEMICOLON@340..341 ";"
+      NEWLINE@341..342 "\n"
+      R_BRACE@342..343 "}"
+  NEWLINE@343..344 "\n"
+  NEWLINE@344..345 "\n"
+  SUB_DEF@345..434
+    SUB_KW@345..348 "sub"
+    WHITESPACE@348..349 " "
+    IDENT@349..355 "slurpy"
+    WHITESPACE@355..356 " "
+    SUB_SIGNATURE@356..377
+      L_PAREN@356..357 "("
+      SIGNATURE_PARAM@357..362
+        SCALAR_SIGIL@357..358 "$"
+        IDENT@358..362 "head"
+      COMMA@362..363 ","
+      WHITESPACE@363..364 " "
+      SIGNATURE_PARAM@364..369
+        ARRAY_SIGIL@364..365 "@"
+        IDENT@365..369 "rest"
+      COMMA@369..370 ","
+      WHITESPACE@370..371 " "
+      SIGNATURE_PARAM@371..376
+        HASH_SIGIL@371..372 "%"
+        IDENT@372..376 "opts"
+      R_PAREN@376..377 ")"
+    WHITESPACE@377..378 " "
+    BLOCK_STMT@378..434
+      L_BRACE@378..379 "{"
+      NEWLINE@379..380 "\n"
+      WHITESPACE@380..384 "    "
+      STMT@384..432
+        RETURN_KW@384..390 "return"
+        WHITESPACE@390..391 " "
+        L_PAREN@391..392 "("
+        EXPR_LIST@392..430
+          SCALAR_VAR@392..397
+            SCALAR_SIGIL@392..393 "$"
+            IDENT@393..397 "head"
+          COMMA@397..398 ","
+          WHITESPACE@398..399 " "
+          FUNCTION_CALL_EXPR@399..430
+            IDENT@399..405 "scalar"
+            WHITESPACE@405..406 " "
+            EXPR_LIST@406..430
+              ARRAY_VAR@406..411
+                ARRAY_SIGIL@406..407 "@"
+                IDENT@407..411 "rest"
+              COMMA@411..412 ","
+              WHITESPACE@412..413 " "
+              FUNCTION_CALL_EXPR@413..430
+                IDENT@413..419 "scalar"
+                WHITESPACE@419..420 " "
+                FUNCTION_CALL_EXPR@420..430
+                  IDENT@420..424 "keys"
+                  WHITESPACE@424..425 " "
+                  HASH_VAR@425..430
+                    HASH_SIGIL@425..426 "%"
+                    IDENT@426..430 "opts"
+        R_PAREN@430..431 ")"
+        SEMICOLON@431..432 ";"
+      NEWLINE@432..433 "\n"
+      R_BRACE@433..434 "}"
+  NEWLINE@434..435 "\n"
+  NEWLINE@435..436 "\n"
+  SUB_DEF@436..498
+    SUB_KW@436..439 "sub"
+    WHITESPACE@439..440 " "
+    IDENT@440..459 "placeholder_default"
+    WHITESPACE@459..460 " "
+    SUB_SIGNATURE@460..475
+      L_PAREN@460..461 "("
+      SIGNATURE_PARAM@461..467
+        SCALAR_SIGIL@461..462 "$"
+        IDENT@462..467 "thing"
+      COMMA@467..468 ","
+      WHITESPACE@468..469 " "
+      SIGNATURE_PARAM@469..474
+        SCALAR_SIGIL@469..470 "$"
+        WHITESPACE@470..471 " "
+        SIGNATURE_DEFAULT@471..474
+          EQ@471..472 "="
+          WHITESPACE@472..473 " "
+          NUMBER@473..474 "1"
+      R_PAREN@474..475 ")"
+    WHITESPACE@475..476 " "
+    BLOCK_STMT@476..498
+      L_BRACE@476..477 "{"
+      NEWLINE@477..478 "\n"
+      WHITESPACE@478..482 "    "
+      STMT@482..496
+        RETURN_KW@482..488 "return"
+        WHITESPACE@488..489 " "
+        SCALAR_VAR@489..495
+          SCALAR_SIGIL@489..490 "$"
+          IDENT@490..495 "thing"
+        SEMICOLON@495..496 ";"
+      NEWLINE@496..497 "\n"
+      R_BRACE@497..498 "}"
+  NEWLINE@498..499 "\n"
+  NEWLINE@499..500 "\n"
+  SUB_DEF@500..604
+    SUB_KW@500..503 "sub"
+    WHITESPACE@503..504 " "
+    IDENT@504..513 "multiline"
+    WHITESPACE@513..514 " "
+    SUB_SIGNATURE@514..573
+      L_PAREN@514..515 "("
+      NEWLINE@515..516 "\n"
+      WHITESPACE@516..520 "    "
+      SIGNATURE_PARAM@520..526
+        SCALAR_SIGIL@520..521 "$"
+        IDENT@521..526 "first"
+      COMMA@526..527 ","
+      NEWLINE@527..528 "\n"
+      WHITESPACE@528..532 "    "
+      SIGNATURE_PARAM@532..559
+        SCALAR_SIGIL@532..533 "$"
+        IDENT@533..539 "second"
+        WHITESPACE@539..540 " "
+        SIGNATURE_DEFAULT@540..559
+          EQ@540..541 "="
+          WHITESPACE@541..542 " "
+          FUNCTION_CALL_EXPR@542..559
+            IDENT@542..557 "compute_default"
+            L_PAREN@557..558 "("
+            R_PAREN@558..559 ")"
+      COMMA@559..560 ","
+      NEWLINE@560..561 "\n"
+      WHITESPACE@561..565 "    "
+      SIGNATURE_PARAM@565..570
+        ARRAY_SIGIL@565..566 "@"
+        IDENT@566..570 "rest"
+      COMMA@570..571 ","
+      NEWLINE@571..572 "\n"
+      R_PAREN@572..573 ")"
+    WHITESPACE@573..574 " "
+    BLOCK_STMT@574..604
+      L_BRACE@574..575 "{"
+      NEWLINE@575..576 "\n"
+      WHITESPACE@576..580 "    "
+      STMT@580..602
+        RETURN_KW@580..586 "return"
+        WHITESPACE@586..587 " "
+        INFIX_EXPR@587..601
+          SCALAR_VAR@587..594
+            SCALAR_SIGIL@587..588 "$"
+            IDENT@588..593 "first"
+            WHITESPACE@593..594 " "
+          PLUS@594..595 "+"
+          WHITESPACE@595..596 " "
+          ARRAY_VAR@596..601
+            ARRAY_SIGIL@596..597 "@"
+            IDENT@597..601 "rest"
+        SEMICOLON@601..602 ";"
+      NEWLINE@602..603 "\n"
+      R_BRACE@603..604 "}"
+  NEWLINE@604..605 "\n"

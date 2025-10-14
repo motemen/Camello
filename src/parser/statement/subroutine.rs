@@ -1,3 +1,4 @@
+use crate::parser::expression::precedence::Precedence;
 use crate::parser::Parser;
 use crate::{lexer::LexContext, SyntaxKind, T};
 
@@ -36,7 +37,11 @@ impl Parser<'_> {
 
     pub(crate) fn parse_sub_tail(&mut self) {
         if self.at(T!['(']) {
-            self.parse_sub_prototype();
+            if self.looks_like_sub_signature_parens() {
+                self.parse_sub_signature();
+            } else {
+                self.parse_sub_prototype();
+            }
             self.skip_whitespace_and_newlines();
         }
 
@@ -135,6 +140,184 @@ impl Parser<'_> {
         }
 
         self.expect(T![')']);
+        self.builder.finish_node();
+    }
+
+    fn looks_like_sub_signature_parens(&self) -> bool {
+        if !self.at(T!['(']) {
+            return false;
+        }
+
+        let mut offset = 1;
+        let mut saw_placeholder = false;
+
+        while let Some((kind, _)) =
+            self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset)
+        {
+            match kind {
+                T![')'] => return saw_placeholder,
+                T![;] => return false,
+                SyntaxKind::SCALAR_SIGIL | SyntaxKind::ARRAY_SIGIL | SyntaxKind::HASH_SIGIL => {
+                    let Some((next_kind, _)) =
+                        self.peek_nth_non_trivia_token_with_context(LexContext::Value, offset + 1)
+                    else {
+                        return false;
+                    };
+
+                    match next_kind {
+                        SyntaxKind::IDENT => return true,
+                        k if k.is_keyword() => return true,
+                        SyntaxKind::NUMBER => return true,
+                        T![=] => return true,
+                        SyntaxKind::DEFINED_OR | T![||] => {
+                            let eq_offset = offset + 2;
+                            if self
+                                .peek_nth_non_trivia_token_with_context(
+                                    LexContext::Operator,
+                                    eq_offset,
+                                )
+                                .is_some_and(|(k, _)| k == T![=])
+                            {
+                                return true;
+                            }
+                        }
+                        T![,] => {
+                            saw_placeholder = true;
+                            offset += 2;
+                            continue;
+                        }
+                        T![')'] => return true,
+                        T![;] => return false,
+                        SyntaxKind::SCALAR_SIGIL
+                        | SyntaxKind::ARRAY_SIGIL
+                        | SyntaxKind::HASH_SIGIL
+                        | SyntaxKind::CODE_SIGIL
+                        | SyntaxKind::TYPEGLOB_SIGIL
+                        | SyntaxKind::ARRAY_INDEX_SIGIL
+                        | T!['[']
+                        | T!['('] => return false,
+                        _ => return true,
+                    }
+                }
+                _ => return false,
+            }
+        }
+
+        false
+    }
+
+    fn parse_sub_signature(&mut self) {
+        self.builder.start_node(SyntaxKind::SUB_SIGNATURE.into());
+
+        self.expect(T!['(']);
+        self.skip_whitespace_and_newlines();
+
+        let mut first_param = true;
+        while !self.at_end() && !self.at(T![')']) {
+            if !first_param {
+                if self.at(T![,]) {
+                    self.bump();
+                    self.skip_whitespace_and_newlines();
+
+                    if self.at(T![')']) {
+                        break;
+                    }
+                } else {
+                    self.error_without_consuming("Expected ',' between signature parameters");
+                }
+            }
+
+            self.parse_signature_param();
+            self.skip_whitespace_and_newlines();
+            first_param = false;
+        }
+
+        self.expect(T![')']);
+        self.builder.finish_node();
+    }
+
+    fn parse_signature_param(&mut self) {
+        self.builder.start_node(SyntaxKind::SIGNATURE_PARAM.into());
+
+        match self.current_kind() {
+            Some(SyntaxKind::SCALAR_SIGIL | SyntaxKind::ARRAY_SIGIL | SyntaxKind::HASH_SIGIL) => {
+                self.bump();
+            }
+            _ => {
+                self.error("Expected signature parameter");
+                self.builder.finish_node();
+                return;
+            }
+        }
+
+        self.skip_whitespace_and_newlines();
+
+        if self.at(SyntaxKind::IDENT) {
+            self.bump();
+        } else if self.current_kind().is_some_and(SyntaxKind::is_keyword) {
+            self.bump_as(SyntaxKind::IDENT);
+        } else if self.at(SyntaxKind::NUMBER) {
+            self.error("Signature parameter names must start with a letter or underscore");
+        } else if self.at(T![-]) {
+            self.error("Invalid character in signature parameter name");
+            if self.at(SyntaxKind::IDENT) {
+                self.bump();
+            }
+        }
+
+        self.skip_whitespace_and_newlines();
+        self.parse_signature_param_default();
+
+        self.builder.finish_node();
+    }
+
+    fn parse_signature_param_default(&mut self) {
+        let Some((operator_kind, _)) =
+            self.peek_non_trivia_token_with_context(LexContext::Operator)
+        else {
+            return;
+        };
+
+        enum DefaultKind {
+            Simple,
+            DefinedOr,
+            LogicalOr,
+        }
+
+        let default_kind = match operator_kind {
+            T![=] => Some(DefaultKind::Simple),
+            SyntaxKind::DEFINED_OR => Some(DefaultKind::DefinedOr),
+            T![||] => Some(DefaultKind::LogicalOr),
+            _ => None,
+        };
+
+        let Some(kind) = default_kind else {
+            return;
+        };
+
+        self.builder
+            .start_node(SyntaxKind::SIGNATURE_DEFAULT.into());
+
+        match kind {
+            DefaultKind::Simple => {
+                self.expect_op(T![=]);
+            }
+            DefaultKind::DefinedOr => {
+                self.expect_op(SyntaxKind::DEFINED_OR);
+                self.expect_op(T![=]);
+            }
+            DefaultKind::LogicalOr => {
+                self.expect_op(T![||]);
+                self.expect_op(T![=]);
+            }
+        }
+
+        self.skip_whitespace_and_newlines();
+
+        if !self.parse_expression_with_precedence(Precedence::ASSIGNMENT) {
+            self.error_without_consuming("Expected default value expression");
+        }
+
         self.builder.finish_node();
     }
 }
