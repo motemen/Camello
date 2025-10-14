@@ -48,10 +48,10 @@ pub enum Commands {
 
         /// Stop formatting after the first parse error is reported
         #[arg(
-            long = "stop-on-error",
+            long = "stop-on-first-error",
             help = "Stop after reporting the first parse error"
         )]
-        stop_on_error: bool,
+        stop_on_first_error: bool,
 
         /// Output to file instead of stdout
         #[arg(short, long, help = "Output file path")]
@@ -100,6 +100,13 @@ pub enum Commands {
             help = "Very quiet mode: suppress all output"
         )]
         very_quiet: bool,
+
+        /// Stop dumping after the first parse error is reported
+        #[arg(
+            long = "stop-on-first-error",
+            help = "Stop after reporting the first parse error"
+        )]
+        stop_on_first_error: bool,
 
         /// Input file encoding (e.g., utf-8, euc-jp, shift_jis)
         #[arg(long, help = "Input file encoding (default: utf-8)")]
@@ -160,7 +167,7 @@ pub fn run() -> Result<()> {
             eval,
             eval_escape,
             check,
-            stop_on_error,
+            stop_on_first_error,
             output,
             encoding,
         } => {
@@ -169,7 +176,7 @@ pub fn run() -> Result<()> {
                 eval,
                 eval_escape,
                 check,
-                stop_on_error,
+                stop_on_first_error,
                 output,
                 encoding,
             )?;
@@ -180,9 +187,18 @@ pub fn run() -> Result<()> {
             eval_escape,
             quiet,
             very_quiet,
+            stop_on_first_error,
             encoding,
         } => {
-            dump_file(path, eval, eval_escape, quiet, very_quiet, encoding)?;
+            dump_file(
+                path,
+                eval,
+                eval_escape,
+                quiet,
+                very_quiet,
+                stop_on_first_error,
+                encoding,
+            )?;
         }
     }
 
@@ -241,7 +257,7 @@ fn format_file(
     eval: Option<String>,
     eval_escape: Option<String>,
     check: bool,
-    stop_on_error: bool,
+    stop_on_first_error: bool,
     output: Option<PathBuf>,
     encoding: Option<String>,
 ) -> Result<()> {
@@ -254,7 +270,7 @@ fn format_file(
     // If there are errors, display them, and optionally stop immediately
     if !errors.is_empty() {
         eprintln!("Parse error in '{source_name}':");
-        if stop_on_error {
+        if stop_on_first_error {
             let error = errors.into_iter().next().unwrap();
             eprintln!("{:?}", Report::new(error));
             std::process::exit(2);
@@ -296,6 +312,7 @@ fn dump_file(
     eval_escape: Option<String>,
     quiet: bool,
     very_quiet: bool,
+    stop_on_first_error: bool,
     encoding: Option<String>,
 ) -> Result<()> {
     // Read from file or standard input
@@ -305,8 +322,13 @@ fn dump_file(
     if !errors.is_empty() {
         if !very_quiet {
             eprintln!("Parse errors in '{source_name}':");
-            for error in errors {
+            if stop_on_first_error {
+                let error = errors.into_iter().next().unwrap();
                 eprintln!("{:?}", Report::new(error));
+            } else {
+                for error in errors {
+                    eprintln!("{:?}", Report::new(error));
+                }
             }
             // Still dump the parsed AST for debugging, but exit with code 2.
             if !quiet {

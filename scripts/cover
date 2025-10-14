@@ -88,7 +88,7 @@ process_directory() {
 					else
 						encoding_flag="--encoding $encoding"
 					fi
-					if "$base_dir/target/debug/camello" dump $encoding_flag -q "$file"; then
+					if "$base_dir/target/debug/camello" dump $encoding_flag --stop-on-first-error -q "$file"; then
 						((success++))
 						/bin/echo -n "." >&2
 					else
