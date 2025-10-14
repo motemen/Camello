@@ -51,6 +51,14 @@ pub struct Parser<'a> {
     options: ParserOptions,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PrimaryRole {
+    None,
+    Bareword,
+    Variable,
+    Other,
+}
+
 impl<'a> Parser<'a> {
     #[must_use]
     pub fn new(input: &'a str) -> Self {
