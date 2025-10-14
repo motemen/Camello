@@ -442,6 +442,120 @@ impl Formatter {
         }
     }
 
+    pub(super) fn format_sub_signature(&mut self, node: &PerlNode) {
+        use SyntaxKind::{NEWLINE, WHITESPACE};
+
+        let mut children = node.children_with_tokens().peekable();
+
+        while let Some(child) = children.next() {
+            match child {
+                NodeOrToken::Node(child_node) => match child_node.kind() {
+                    SyntaxKind::SIGNATURE_PARAM => self.format_signature_param(&child_node),
+                    SyntaxKind::SIGNATURE_DEFAULT => {
+                        self.format_signature_default(&child_node);
+                    }
+                    _ => self.format_node(&child_node),
+                },
+                NodeOrToken::Token(token) => {
+                    let kind = token.kind();
+                    match kind {
+                        WHITESPACE => {}
+                        NEWLINE => self.format_token(&token),
+                        T!['('] => {
+                            if self.writer.at_line_start() {
+                                self.writer.add_indent();
+                                self.writer.set_at_line_start(false);
+                            } else if !self.writer.current_line_ends_with_space() {
+                                self.writer.write_char(' ');
+                            }
+                            self.writer.write_token(&token);
+                            self.remember_token(&token);
+                        }
+                        T![,] => {
+                            self.writer.write_token(&token);
+                            self.remember_token(&token);
+                        }
+                        T![')'] => {
+                            if self.writer.at_line_start() {
+                                self.writer.add_indent();
+                                self.writer.set_at_line_start(false);
+                            }
+                            self.writer.write_token(&token);
+                            self.remember_token(&token);
+                        }
+                        _ => self.format_token(&token),
+                    }
+                }
+            }
+        }
+    }
+
+    fn format_signature_param(&mut self, node: &PerlNode) {
+        use SyntaxKind::{NEWLINE, SIGNATURE_DEFAULT, WHITESPACE};
+
+        let mut children = node.children_with_tokens().peekable();
+
+        while let Some(child) = children.next() {
+            match child {
+                NodeOrToken::Node(child_node) => {
+                    if child_node.kind() == SIGNATURE_DEFAULT {
+                        self.format_signature_default(&child_node);
+                    } else {
+                        self.format_node(&child_node);
+                    }
+                }
+                NodeOrToken::Token(token) => match token.kind() {
+                    WHITESPACE => {}
+                    NEWLINE => self.format_token(&token),
+                    _ => self.format_token(&token),
+                },
+            }
+        }
+    }
+
+    fn format_signature_default(&mut self, node: &PerlNode) {
+        use SyntaxKind::{DEFINED_OR, LOGICAL_OR, NEWLINE, WHITESPACE};
+
+        let mut children = node.children_with_tokens().peekable();
+
+        while let Some(child) = children.next() {
+            match child {
+                NodeOrToken::Node(child_node) => self.format_node(&child_node),
+                NodeOrToken::Token(token) => match token.kind() {
+                    WHITESPACE => {}
+                    NEWLINE => self.format_token(&token),
+                    DEFINED_OR | LOGICAL_OR => {
+                        if self.writer.at_line_start() {
+                            self.writer.add_indent();
+                            self.writer.set_at_line_start(false);
+                        } else if !self.writer.current_line_ends_with_space() {
+                            self.writer.write_char(' ');
+                        }
+                        self.writer.write_token(&token);
+                        self.remember_token(&token);
+                    }
+                    T![=] => {
+                        if self.writer.at_line_start() {
+                            self.writer.add_indent();
+                            self.writer.set_at_line_start(false);
+                        }
+                        if !self.writer.current_line_ends_with_space()
+                            && !matches!(
+                                self.writer.prev_token_kind(),
+                                Some(DEFINED_OR | LOGICAL_OR)
+                            )
+                        {
+                            self.writer.write_char(' ');
+                        }
+                        self.writer.write_token(&token);
+                        self.remember_token(&token);
+                    }
+                    _ => self.format_token(&token),
+                },
+            }
+        }
+    }
+
     pub(super) fn format_children(&mut self, node: &PerlNode, skip_whitespace: bool) {
         for child in node.children_with_tokens() {
             match child {

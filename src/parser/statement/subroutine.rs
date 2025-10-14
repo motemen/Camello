@@ -1,3 +1,4 @@
+use crate::parser::expression::precedence::Precedence;
 use crate::parser::Parser;
 use crate::{lexer::LexContext, SyntaxKind, T};
 
@@ -36,7 +37,11 @@ impl Parser<'_> {
 
     pub(crate) fn parse_sub_tail(&mut self) {
         if self.at(T!['(']) {
-            self.parse_sub_prototype();
+            if self.looks_like_sub_signature_parens() {
+                self.parse_sub_signature();
+            } else {
+                self.parse_sub_prototype();
+            }
             self.skip_whitespace_and_newlines();
         }
 
@@ -137,4 +142,204 @@ impl Parser<'_> {
         self.expect(T![')']);
         self.builder.finish_node();
     }
+
+    pub(crate) fn looks_like_sub_signature_parens(&self) -> bool {
+        let mut iter = match self.iter_non_trivia_tokens_from(LexContext::Value, 0) {
+            Some(iter) => iter.peekable(),
+            None => return false,
+        };
+
+        match iter.next() {
+            Some((T!['('], _)) => {}
+            _ => return false,
+        }
+
+        while let Some((kind, _text)) = iter.next() {
+            match kind {
+                T![')'] => break,
+                T![,] => continue,
+                T![;] | T!['\\'] | T!['['] | T![']'] => return false,
+                SyntaxKind::CODE_SIGIL | SyntaxKind::TYPEGLOB_SIGIL => return false,
+                SyntaxKind::SCALAR_SIGIL | SyntaxKind::ARRAY_SIGIL | SyntaxKind::HASH_SIGIL => {
+                    if let Some(&(next_kind, _next_text)) = iter.peek() {
+                        match next_kind {
+                            SyntaxKind::IDENT => return true,
+                            _ if next_kind.is_keyword() => return true,
+                            SyntaxKind::NUMBER => return true,
+                            T![,] | T![')'] => return true,
+                            T![=] => return true,
+                            SyntaxKind::DEFINED_OR | SyntaxKind::LOGICAL_OR => return true,
+                            SyntaxKind::SCALAR_SIGIL
+                            | SyntaxKind::ARRAY_SIGIL
+                            | SyntaxKind::HASH_SIGIL
+                            | SyntaxKind::CODE_SIGIL
+                            | SyntaxKind::TYPEGLOB_SIGIL
+                            | T!['\\'] => return false,
+                            T![;] => return false,
+                            _ => {}
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        false
+    }
+
+    fn parse_sub_signature(&mut self) {
+        self.builder.start_node(SyntaxKind::SUB_SIGNATURE.into());
+
+        self.expect(T!['(']);
+        self.skip_whitespace_and_newlines();
+
+        if !self.at(T![')']) {
+            loop {
+                self.parse_signature_param();
+                self.skip_whitespace_and_newlines();
+
+                if self.at(T![,]) {
+                    self.bump();
+                    self.skip_whitespace_and_newlines();
+
+                    if self.at(T![')']) {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+
+        self.expect(T![')']);
+        self.builder.finish_node();
+    }
+
+    fn parse_signature_param(&mut self) {
+        self.builder.start_node(SyntaxKind::SIGNATURE_PARAM.into());
+
+        if !self.current_kind().is_some_and(|kind| {
+            matches!(
+                kind,
+                SyntaxKind::SCALAR_SIGIL | SyntaxKind::ARRAY_SIGIL | SyntaxKind::HASH_SIGIL
+            )
+        }) {
+            self.error("Expected parameter sigil in subroutine signature");
+            while !self.at_end() && !self.at(T![,]) && !self.at(T![')']) {
+                self.bump();
+            }
+            self.builder.finish_node();
+            return;
+        }
+
+        self.bump();
+        self.skip_whitespace_and_newlines();
+
+        if let Some(kind) = self.current_kind() {
+            if Self::is_signature_placeholder_boundary(kind) {
+                // Placeholder parameter (e.g., $ or @)
+            } else if kind == SyntaxKind::NUMBER {
+                self.error_without_consuming("Invalid parameter name in signature");
+                self.bump();
+            } else if kind == T![-] {
+                self.error_without_consuming("Invalid parameter name in signature");
+                self.bump();
+                self.skip_whitespace_and_newlines();
+                if self
+                    .current_kind()
+                    .is_some_and(|next| next == SyntaxKind::IDENT || next.is_keyword())
+                {
+                    self.bump();
+                }
+            } else if kind == SyntaxKind::IDENT || kind.is_keyword() {
+                let ident_text = self.current_text().unwrap_or("");
+                if Self::is_valid_signature_identifier(ident_text) {
+                    self.bump();
+                } else {
+                    self.error_without_consuming("Invalid parameter name in signature");
+                    self.bump();
+                }
+            }
+        }
+
+        self.skip_whitespace_and_newlines();
+
+        let mut default_operator = None;
+
+        if let Some((op_kind, _)) = self.peek_non_trivia_token_with_context(LexContext::Operator) {
+            if op_kind == T![=] {
+                default_operator = Some(SignatureDefaultOperator::Simple);
+            } else if op_kind.is_compoundable_operator()
+                && self
+                    .peek_nth_non_trivia_token_with_context(LexContext::Operator, 1)
+                    .is_some_and(|(next_kind, _)| next_kind == T![=])
+            {
+                default_operator = Some(SignatureDefaultOperator::Compound(op_kind));
+            }
+        }
+
+        if let Some(SignatureDefaultOperator::Compound(kind)) = default_operator {
+            if kind != SyntaxKind::DEFINED_OR && kind != SyntaxKind::LOGICAL_OR {
+                self.error_without_consuming(
+                    "Only '=', '//=', and '||=' defaults are supported in subroutine signatures",
+                );
+            }
+        }
+
+        if let Some(operator) = default_operator {
+            self.parse_signature_default(operator);
+        }
+
+        self.skip_whitespace_and_newlines();
+
+        self.builder.finish_node();
+    }
+
+    fn parse_signature_default(&mut self, operator: SignatureDefaultOperator) {
+        self.builder
+            .start_node(SyntaxKind::SIGNATURE_DEFAULT.into());
+
+        match operator {
+            SignatureDefaultOperator::Simple => {
+                self.bump_with_context(LexContext::Operator);
+            }
+            SignatureDefaultOperator::Compound(_) => {
+                self.bump_with_context(LexContext::Operator);
+                self.skip_whitespace_and_newlines();
+                self.expect_with_context(T![=], LexContext::Operator);
+            }
+        }
+
+        self.skip_whitespace_and_newlines();
+
+        if !self.parse_expression_with_precedence(Precedence::ASSIGNMENT) {
+            self.error("Expected default value expression in signature parameter");
+        }
+
+        self.builder.finish_node();
+    }
+
+    fn is_signature_placeholder_boundary(kind: SyntaxKind) -> bool {
+        matches!(
+            kind,
+            T![,] | T![')'] | T![=] | SyntaxKind::DEFINED_OR | SyntaxKind::LOGICAL_OR
+        )
+    }
+
+    fn is_valid_signature_identifier(name: &str) -> bool {
+        let mut chars = name.chars();
+        match chars.next() {
+            Some(first) if first == '_' || first.is_ascii_alphabetic() => {
+                chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
+            }
+            _ => false,
+        }
+    }
+}
+
+enum SignatureDefaultOperator {
+    Simple,
+    Compound(SyntaxKind),
 }
