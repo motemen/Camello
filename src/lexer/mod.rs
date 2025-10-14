@@ -762,6 +762,40 @@ impl<'a> Lexer<'a> {
         Some((SyntaxKind::RAW_STRING, data_text))
     }
 
+    /// Consume tokens until a closing parenthesis is found at depth 0.
+    /// Returns the text of all consumed tokens as a RAW_STRING, excluding the closing paren.
+    /// Used for attribute arguments where only parenthesis balance is checked.
+    pub fn consume_balanced_parens(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        let start_pos = self.logos_lexer.span().end;
+        let source = self.logos_lexer.source();
+        let mut paren_depth = 0;
+        let mut end_pos = start_pos;
+
+        // Manually scan for balanced parentheses
+        let remainder = self.logos_lexer.remainder();
+        for ch in remainder.chars() {
+            if ch == ')' && paren_depth == 0 {
+                break;
+            }
+            if ch == '(' {
+                paren_depth += 1;
+            } else if ch == ')' {
+                paren_depth -= 1;
+            }
+            end_pos += ch.len_utf8();
+        }
+
+        let content_len = end_pos - start_pos;
+        if content_len == 0 {
+            return None;
+        }
+
+        let content = &source[start_pos..end_pos];
+        self.logos_lexer.bump(content_len);
+
+        Some((SyntaxKind::RAW_STRING, content))
+    }
+
     fn disambiguate(&self, token: &Token, text: &str, ctx: LexContext) -> SyntaxKind {
         match token {
             // Identifier words: operators, quote-like starters, or keywords
