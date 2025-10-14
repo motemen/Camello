@@ -439,6 +439,12 @@ impl Parser<'_> {
 
         self.skip_whitespace_and_newlines();
 
+        // Optionally consume a comma to support both `sort $cmp @list` and `sort $cmp, @list`
+        if self.at(T![,]) {
+            self.bump_value();
+            self.skip_whitespace_and_newlines();
+        }
+
         if self.is_at_start_of_expression() {
             self.expression_list();
         }
