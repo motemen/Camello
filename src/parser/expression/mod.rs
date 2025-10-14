@@ -265,7 +265,8 @@ impl Parser<'_> {
         }
 
         // Handle postfix operations
-        let consumed_postfix = self.parse_postfix_operations_with_checkpoint(checkpoint, subject_kind);
+        let consumed_postfix =
+            self.parse_postfix_operations_with_checkpoint(checkpoint, subject_kind);
 
         // If postfix operations were consumed, the primary role is no longer relevant
         if consumed_postfix {
@@ -474,8 +475,8 @@ impl Parser<'_> {
                 // undef can be used both as a literal and as a function call
                 // Check if it's followed by an expression (function call) or not (literal)
                 let next_token = self.peek_nth_non_trivia_token_with_context(LexContext::Value, 1);
-                let is_function_call = next_token
-                    .is_some_and(|(kind, _)| Self::can_start_expression(kind));
+                let is_function_call =
+                    next_token.is_some_and(|(kind, _)| Self::can_start_expression(kind));
 
                 if is_function_call {
                     // This is a function call: undef $x
@@ -491,15 +492,7 @@ impl Parser<'_> {
                 // require expression (e.g., require v5.14, require local::lib)
                 self.require_expr();
             }
-            T![try] | T![catch] | T![finally] => {
-                self.parse_ident_like_expr();
-                role = PrimaryRole::Bareword;
-            }
-            SyntaxKind::IDENT => {
-                self.parse_ident_like_expr();
-                role = PrimaryRole::Bareword;
-            }
-            T![::] => {
+            T![try] | T![catch] | T![finally] | SyntaxKind::IDENT | T![::] => {
                 self.parse_ident_like_expr();
                 role = PrimaryRole::Bareword;
             }
