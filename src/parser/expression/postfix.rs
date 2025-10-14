@@ -1,7 +1,7 @@
 use crate::lexer::LexContext;
 use crate::{SyntaxKind, T};
 
-use super::{Parser, PostfixSubject};
+use super::{Parser, PostfixSubject, PrimaryRole};
 
 impl Parser<'_> {
     /// Parse a postfix increment or decrement operator
@@ -84,6 +84,7 @@ impl Parser<'_> {
         initial_subject: PostfixSubject,
     ) -> bool {
         let mut current_subject = initial_subject;
+        let mut consumed_postfix = false;
         loop {
             // Always look ahead in Operator context for postfix continuations
             let Some(next_kind_op) = self
@@ -100,12 +101,15 @@ impl Parser<'_> {
 
             match next_kind_op {
                 T![++] => {
+                    consumed_postfix = true;
                     self.parse_postfix_op(initial_checkpoint, SyntaxKind::POSTFIX_INCREMENT);
                 }
                 T![--] => {
+                    consumed_postfix = true;
                     self.parse_postfix_op(initial_checkpoint, SyntaxKind::POSTFIX_DECREMENT);
                 }
                 T![->] => {
+                    consumed_postfix = true;
                     // After '->', the next token is a value (method name, '{', '(', etc.)
                     self.bump_value(); // ->
                     self.skip_whitespace_and_newlines();
@@ -271,6 +275,7 @@ impl Parser<'_> {
                     }
                 }
                 T!['('] => {
+                    consumed_postfix = true;
                     // Function call: expr(args)
                     self.builder
                         .start_node_at(initial_checkpoint, SyntaxKind::FUNCTION_CALL_EXPR.into());
@@ -295,6 +300,7 @@ impl Parser<'_> {
                     current_subject = PostfixSubject::Other;
                 }
                 T!['['] => {
+                    consumed_postfix = true;
                     // Direct array subscription: expr[index]
                     // Allowed on variables and parenthesized lists
                     if current_subject == PostfixSubject::Other {
@@ -329,6 +335,7 @@ impl Parser<'_> {
                     current_subject = PostfixSubject::Variable;
                 }
                 T!['{'] => {
+                    consumed_postfix = true;
                     // Direct hash subscription: expr{key}
                     // Only allowed on variables (not on parenthesized lists)
                     if current_subject != PostfixSubject::Variable {
@@ -368,6 +375,7 @@ impl Parser<'_> {
                 | SyntaxKind::POSTFIX_DEREF_ARRAY_LAST_INDEX
                 | SyntaxKind::POSTFIX_DEREF_CODE
                 | SyntaxKind::POSTFIX_DEREF_GLOB => {
+                    consumed_postfix = true;
                     // Postfix dereference: expr->@*, expr->%*, expr->$*, expr->$#*, expr->&*, expr->**
                     self.builder
                         .start_node_at(initial_checkpoint, SyntaxKind::POSTFIX_DEREF_EXPR.into());
@@ -382,6 +390,9 @@ impl Parser<'_> {
                     break;
                 }
             }
+        }
+        if consumed_postfix {
+            self.last_primary_role = PrimaryRole::Other;
         }
         true
     }
