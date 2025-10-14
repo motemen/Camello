@@ -90,49 +90,15 @@ impl Parser<'_> {
         // Attribute arguments only check for balanced parentheses, not expression validity
         // See perlsub: "They may have a parameter list appended, which is only checked
         // for whether its parentheses ('(',')') nest properly."
-        // We consume the balanced content as a single RAW_STRING token.
-        let content = self.consume_balanced_parens();
-        if !content.is_empty() {
-            self.builder.token(SyntaxKind::RAW_STRING.into(), &content);
+        // The lexer handles consuming balanced parentheses as a single RAW_STRING token.
+        if let Some((kind, text)) = self.lexer.consume_balanced_parens() {
+            self.builder.token(kind.into(), text);
+            self.current_pos += text.len();
         }
 
         self.expect(T![')']);
 
         self.builder.finish_node();
-    }
-
-    /// Consume tokens until we find a closing parenthesis at depth 0,
-    /// returning the concatenated text of all consumed tokens.
-    fn consume_balanced_parens(&mut self) -> String {
-        let mut content = String::new();
-        let mut paren_depth = 0;
-
-        loop {
-            let Some(kind) = self.current_kind() else {
-                self.error("Unexpected end of file in balanced parentheses");
-                break;
-            };
-
-            if kind == T![')'] && paren_depth == 0 {
-                break;
-            }
-
-            // Get the token and consume it
-            if let Some((tok_kind, text)) = self.lexer.next_token() {
-                content.push_str(text);
-                self.current_pos += text.len();
-
-                if tok_kind == T!['('] {
-                    paren_depth += 1;
-                } else if tok_kind == T![')'] {
-                    paren_depth -= 1;
-                }
-            } else {
-                break;
-            }
-        }
-
-        content
     }
 
     /// Parse subroutine prototype like (\@@), ($@), (\@$@), etc.
