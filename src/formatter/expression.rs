@@ -449,10 +449,6 @@ impl Formatter {
         use SyntaxKind::{NEWLINE, WHITESPACE};
 
         if self.has_newline_before_first_value(node) {
-            // Multiline formatting: use the pattern from format_multiline_delimited
-            let old_multiline_context = self.in_multiline_context;
-            self.in_multiline_context = true;
-
             for child in node.children_with_tokens() {
                 match child {
                     NodeOrToken::Node(child_node) => {
@@ -477,18 +473,22 @@ impl Formatter {
                                 self.handle_multiline_closing_delimiter(&token);
                             }
                             T![,] => {
-                                self.format_token(&token);
+                                self.format_token_with_context(
+                                    &token,
+                                    super::FormatContext::default().with_multiline_context(),
+                                );
                                 self.writer.handle_formatter_newline();
                             }
                             _ => {
-                                self.format_token(&token);
+                                self.format_token_with_context(
+                                    &token,
+                                    super::FormatContext::default().with_multiline_context(),
+                                );
                             }
                         }
                     }
                 }
             }
-
-            self.in_multiline_context = old_multiline_context;
         } else {
             // Single-line formatting
             for child in node.children_with_tokens() {
