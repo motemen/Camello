@@ -12,7 +12,7 @@ sub flexible ($first, $, $third //= 3, @rest) {
 
 sub configure
 (
-$debug ||= 0,
+    $debug ||= 0,
     %opts
 )
 {
@@ -31,7 +31,7 @@ my $anon = sub ($value ||= 10, %opts) {
 };
 
 sub multiline (
-$alpha,
+    $alpha,
     $beta ||= compute_default(),
     %extra,
 ) {

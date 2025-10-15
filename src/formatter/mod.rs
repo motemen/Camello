@@ -295,6 +295,13 @@ impl Formatter {
                 self.format_sub_signature(node);
                 return;
             }
+            SyntaxKind::SIGNATURE_PARAM => {
+                // Use default child iteration - spacing managed by general rules
+            }
+            SyntaxKind::SIGNATURE_DEFAULT => {
+                self.format_signature_default(node);
+                return;
+            }
             SyntaxKind::FOR_STMT => {
                 self.format_for_stmt(node);
                 return;

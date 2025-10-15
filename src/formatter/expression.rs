@@ -445,113 +445,123 @@ impl Formatter {
     pub(super) fn format_sub_signature(&mut self, node: &PerlNode) {
         use SyntaxKind::{NEWLINE, WHITESPACE};
 
-        let mut children = node.children_with_tokens().peekable();
+        if self.has_newline_before_first_value(node) {
+            // Multiline formatting: use the pattern from format_multiline_delimited
+            let old_multiline_context = self.in_multiline_context;
+            self.in_multiline_context = true;
 
-        while let Some(child) = children.next() {
-            match child {
-                NodeOrToken::Node(child_node) => match child_node.kind() {
-                    SyntaxKind::SIGNATURE_PARAM => self.format_signature_param(&child_node),
-                    SyntaxKind::SIGNATURE_DEFAULT => {
-                        self.format_signature_default(&child_node);
+            for child in node.children_with_tokens() {
+                match child {
+                    NodeOrToken::Node(child_node) => {
+                        self.format_node(&child_node);
                     }
-                    _ => self.format_node(&child_node),
-                },
+                    NodeOrToken::Token(token) => {
+                        let kind = token.kind();
+                        match kind {
+                            WHITESPACE | NEWLINE => {
+                                // Skip trivia
+                            }
+                            T!['('] => {
+                                // Add space before opening paren for signature style: sub foo ($x)
+                                if !self.writer.at_line_start()
+                                    && !self.writer.current_line_ends_with_space()
+                                {
+                                    self.writer.write_char(' ');
+                                }
+                                self.handle_multiline_opening_delimiter(&token);
+                            }
+                            T![')'] => {
+                                self.handle_multiline_closing_delimiter(&token);
+                            }
+                            T![,] => {
+                                self.format_token(&token);
+                                self.writer.handle_formatter_newline();
+                            }
+                            _ => {
+                                self.format_token(&token);
+                            }
+                        }
+                    }
+                }
+            }
+
+            self.in_multiline_context = old_multiline_context;
+        } else {
+            // Single-line formatting
+            for child in node.children_with_tokens() {
+                match child {
+                    NodeOrToken::Node(child_node) => {
+                        self.format_node(&child_node);
+                    }
+                    NodeOrToken::Token(token) => {
+                        let kind = token.kind();
+                        match kind {
+                            WHITESPACE => {
+                                // Skip whitespace
+                            }
+                            T!['('] => {
+                                // Add space before opening paren for signature style: sub foo ($x)
+                                if !self.writer.at_line_start()
+                                    && !self.writer.current_line_ends_with_space()
+                                {
+                                    self.writer.write_char(' ');
+                                }
+                                self.writer.write_token(&token);
+                                self.remember_token(&token);
+                            }
+                            _ => {
+                                self.format_token(&token);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pub(super) fn format_signature_default(&mut self, node: &PerlNode) {
+        use SyntaxKind::{DEFINED_OR, LOGICAL_OR, WHITESPACE};
+
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(child_node) => self.format_node(&child_node),
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
                     match kind {
-                        WHITESPACE => {}
-                        NEWLINE => self.format_token(&token),
-                        T!['('] => {
-                            if self.writer.at_line_start() {
-                                self.writer.add_indent();
-                                self.writer.set_at_line_start(false);
-                            } else if !self.writer.current_line_ends_with_space() {
+                        WHITESPACE => {
+                            // Skip whitespace - spacing will be added by the rules below
+                        }
+                        T![=] => {
+                            // Always add space before = in signature defaults
+                            // This handles cases like "$ = 1" where $ is a placeholder
+                            if !self.writer.current_line_ends_with_space()
+                                && !matches!(
+                                    self.writer.prev_token_kind(),
+                                    Some(DEFINED_OR | LOGICAL_OR)
+                                )
+                            {
                                 self.writer.write_char(' ');
                             }
+                            // Write token directly without calling format_token
+                            // to avoid double spacing from handle_spacing_before
                             self.writer.write_token(&token);
                             self.remember_token(&token);
                         }
-                        T![,] => {
-                            self.writer.write_token(&token);
-                            self.remember_token(&token);
-                        }
-                        T![')'] => {
-                            if self.writer.at_line_start() {
-                                self.writer.add_indent();
-                                self.writer.set_at_line_start(false);
+                        DEFINED_OR | LOGICAL_OR => {
+                            // Add space before // and || in signature defaults
+                            if !self.writer.current_line_ends_with_space() {
+                                self.writer.write_char(' ');
                             }
+                            // Write token directly without calling format_token
+                            // to avoid double spacing from handle_spacing_before
                             self.writer.write_token(&token);
                             self.remember_token(&token);
                         }
-                        _ => self.format_token(&token),
+                        _ => {
+                            self.format_token(&token);
+                        }
                     }
                 }
-            }
-        }
-    }
-
-    fn format_signature_param(&mut self, node: &PerlNode) {
-        use SyntaxKind::{NEWLINE, SIGNATURE_DEFAULT, WHITESPACE};
-
-        let mut children = node.children_with_tokens().peekable();
-
-        while let Some(child) = children.next() {
-            match child {
-                NodeOrToken::Node(child_node) => {
-                    if child_node.kind() == SIGNATURE_DEFAULT {
-                        self.format_signature_default(&child_node);
-                    } else {
-                        self.format_node(&child_node);
-                    }
-                }
-                NodeOrToken::Token(token) => match token.kind() {
-                    WHITESPACE => {}
-                    NEWLINE => self.format_token(&token),
-                    _ => self.format_token(&token),
-                },
-            }
-        }
-    }
-
-    fn format_signature_default(&mut self, node: &PerlNode) {
-        use SyntaxKind::{DEFINED_OR, LOGICAL_OR, NEWLINE, WHITESPACE};
-
-        let mut children = node.children_with_tokens().peekable();
-
-        while let Some(child) = children.next() {
-            match child {
-                NodeOrToken::Node(child_node) => self.format_node(&child_node),
-                NodeOrToken::Token(token) => match token.kind() {
-                    WHITESPACE => {}
-                    NEWLINE => self.format_token(&token),
-                    DEFINED_OR | LOGICAL_OR => {
-                        if self.writer.at_line_start() {
-                            self.writer.add_indent();
-                            self.writer.set_at_line_start(false);
-                        } else if !self.writer.current_line_ends_with_space() {
-                            self.writer.write_char(' ');
-                        }
-                        self.writer.write_token(&token);
-                        self.remember_token(&token);
-                    }
-                    T![=] => {
-                        if self.writer.at_line_start() {
-                            self.writer.add_indent();
-                            self.writer.set_at_line_start(false);
-                        }
-                        if !self.writer.current_line_ends_with_space()
-                            && !matches!(
-                                self.writer.prev_token_kind(),
-                                Some(DEFINED_OR | LOGICAL_OR)
-                            )
-                        {
-                            self.writer.write_char(' ');
-                        }
-                        self.writer.write_token(&token);
-                        self.remember_token(&token);
-                    }
-                    _ => self.format_token(&token),
-                },
             }
         }
     }
