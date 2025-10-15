@@ -94,9 +94,12 @@ impl Formatter {
         let brace_tightness = self.options.delimiter_tightness.for_kind(T!['{']);
         let add_space_for_block = brace_tightness.should_add_space_for_simple_block();
 
+        // Use context with suppress_newlines enabled for simple blocks
+        let ctx = super::FormatContext::default().with_suppress_newlines();
+
         for child in node.children_with_tokens() {
             match child {
-                NodeOrToken::Node(child_node) => self.format_node(&child_node),
+                NodeOrToken::Node(child_node) => self.format_node_with_context(&child_node, ctx),
                 NodeOrToken::Token(token) => match token.kind() {
                     T!['{'] => {
                         self.handle_spacing_before(token.kind());
@@ -123,7 +126,7 @@ impl Formatter {
                     }
                     SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE => {}
                     _ => {
-                        self.format_token(&token);
+                        self.format_token_with_context(&token, ctx);
                     }
                 },
             }
