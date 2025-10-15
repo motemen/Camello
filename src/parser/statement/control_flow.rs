@@ -253,4 +253,75 @@ impl Parser<'_> {
             self.error(&format!("Expected '(' after '{construct_name}'"));
         }
     }
+
+    pub(super) fn given_stmt(&mut self) {
+        self.builder.start_node(SyntaxKind::GIVEN_STATEMENT.into());
+
+        // "given"
+        self.expect(T![given]);
+        self.skip_whitespace_and_newlines();
+
+        // Parse parenthesized expression
+        self.parse_parenthesized_condition("given", false);
+
+        self.skip_whitespace_and_newlines();
+
+        // Parse the main block containing when/default clauses
+        if self.at(T!['{']) {
+            self.bump_value(); // consume '{'
+            self.skip_whitespace_and_newlines();
+
+            // Parse when/default clauses and other statements within the block
+            while !self.at(T!['}']) && !self.at_end() {
+                if self.at(T![when]) {
+                    self.when_clause();
+                } else if self.at(T![default]) {
+                    self.default_clause();
+                } else {
+                    // Parse regular statements within the given block
+                    if !self.statement() {
+                        break;
+                    }
+                }
+                self.skip_whitespace_and_newlines();
+            }
+
+            self.expect_op(T!['}']);
+        } else {
+            self.error("Expected '{' after given condition");
+        }
+
+        self.builder.finish_node();
+    }
+
+    fn when_clause(&mut self) {
+        self.builder.start_node(SyntaxKind::WHEN_CLAUSE.into());
+
+        // "when"
+        self.expect(T![when]);
+        self.skip_whitespace_and_newlines();
+
+        // Parse the when condition - always use parenthesized form
+        self.parse_parenthesized_condition("when", false);
+
+        self.skip_whitespace_and_newlines();
+
+        // Parse the when block
+        self.block();
+
+        self.builder.finish_node();
+    }
+
+    fn default_clause(&mut self) {
+        self.builder.start_node(SyntaxKind::DEFAULT_CLAUSE.into());
+
+        // "default"
+        self.expect(T![default]);
+        self.skip_whitespace_and_newlines();
+
+        // Parse the default block
+        self.block();
+
+        self.builder.finish_node();
+    }
 }

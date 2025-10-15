@@ -1,0 +1,97 @@
+---
+source: src/parser/statement/tests.rs
+expression: render_success_tree(&syntax)
+---
+ROOT@0..195
+  USE_STMT@0..10
+    USE_KW@0..3 "use"
+    WHITESPACE@3..4 " "
+    VERSION@4..9 "v5.14"
+    SEMICOLON@9..10 ";"
+  NEWLINE@10..11 "\n"
+  GIVEN_STATEMENT@11..194
+    GIVEN_KW@11..16 "given"
+    L_PAREN@16..17 "("
+    SCALAR_VAR@17..22
+      SCALAR_SIGIL@17..18 "$"
+      IDENT@18..22 "item"
+    R_PAREN@22..23 ")"
+    WHITESPACE@23..24 " "
+    L_BRACE@24..25 "{"
+    NEWLINE@25..26 "\n"
+    WHITESPACE@26..30 "    "
+    WHEN_CLAUSE@30..71
+      WHEN_KW@30..34 "when"
+      WHITESPACE@34..35 " "
+      L_PAREN@35..36 "("
+      UNDEF_KW@36..41 "undef"
+      R_PAREN@41..42 ")"
+      WHITESPACE@42..43 " "
+      BLOCK_STMT@43..71
+        L_BRACE@43..44 "{"
+        WHITESPACE@44..45 " "
+        STMT@45..69
+          FUNCTION_CALL_EXPR@45..68
+            IDENT@45..48 "say"
+            WHITESPACE@48..49 " "
+            STRING@49..68 "\"Item is undefined\""
+          SEMICOLON@68..69 ";"
+        WHITESPACE@69..70 " "
+        R_BRACE@70..71 "}"
+    NEWLINE@71..72 "\n"
+    WHITESPACE@72..76 "    "
+    WHEN_CLAUSE@76..122
+      WHEN_KW@76..80 "when"
+      WHITESPACE@80..81 " "
+      L_PAREN@81..82 "("
+      ARRAY_REF@82..91
+        L_BRACKET@82..83 "["
+        EXPR_LIST@83..90
+          NUMBER@83..84 "1"
+          COMMA@84..85 ","
+          WHITESPACE@85..86 " "
+          NUMBER@86..87 "3"
+          COMMA@87..88 ","
+          WHITESPACE@88..89 " "
+          NUMBER@89..90 "5"
+        R_BRACKET@90..91 "]"
+      R_PAREN@91..92 ")"
+      WHITESPACE@92..93 " "
+      BLOCK_STMT@93..122
+        L_BRACE@93..94 "{"
+        WHITESPACE@94..95 " "
+        STMT@95..120
+          FUNCTION_CALL_EXPR@95..119
+            IDENT@95..98 "say"
+            WHITESPACE@98..99 " "
+            STRING@99..119 "\"Item is 1, 3, or 5\""
+          SEMICOLON@119..120 ";"
+        WHITESPACE@120..121 " "
+        R_BRACE@121..122 "}"
+    NEWLINE@122..123 "\n"
+    WHITESPACE@123..127 "    "
+    WHEN_CLAUSE@127..192
+      WHEN_KW@127..131 "when"
+      WHITESPACE@131..132 " "
+      L_PAREN@132..133 "("
+      QR_EXPR@133..145
+        QR_KW@133..135 "qr"
+        DELIMITER@135..136 "/"
+        REGEX_PATTERN@136..144 "^[a-z]+$"
+        DELIMITER@144..145 "/"
+      R_PAREN@145..146 ")"
+      WHITESPACE@146..147 " "
+      BLOCK_STMT@147..192
+        L_BRACE@147..148 "{"
+        WHITESPACE@148..149 " "
+        STMT@149..190
+          FUNCTION_CALL_EXPR@149..189
+            IDENT@149..152 "say"
+            WHITESPACE@152..153 " "
+            STRING@153..189 "\"Item consists of low ..."
+          SEMICOLON@189..190 ";"
+        WHITESPACE@190..191 " "
+        R_BRACE@191..192 "}"
+    NEWLINE@192..193 "\n"
+    R_BRACE@193..194 "}"
+  NEWLINE@194..195 "\n"
