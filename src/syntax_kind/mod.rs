@@ -80,6 +80,9 @@ pub enum SyntaxKind {
     TRY_KW,     // try keyword
     CATCH_KW,   // catch keyword
     FINALLY_KW, // finally keyword
+    GIVEN_KW,   // given keyword
+    WHEN_KW,    // when keyword
+    DEFAULT_KW, // default keyword
 
     // Data section
     END_KW,  // __END__
@@ -246,6 +249,9 @@ pub enum SyntaxKind {
     CATCH_BLOCK,   // catch block (with optional parameter)
     CATCH_PARAM,   // catch parameter binding
     FINALLY_BLOCK, // finally block
+    GIVEN_STATEMENT, // given statement
+    WHEN_CLAUSE,   // when clause
+    DEFAULT_CLAUSE, // default clause
 
     // Data section (content after __END__ / __DATA__)
     DATA_SECTION,
@@ -299,6 +305,7 @@ pub enum SyntaxKind {
     WHILE_MODIFIER,  // Postfix while modifier (e.g., print $i++ while $i < 10;)
     UNTIL_MODIFIER,  // Postfix until modifier (e.g., $i++ until $i == 10;)
     FOR_MODIFIER,    // Postfix for modifier (e.g., say for @items;)
+    WHEN_MODIFIER,   // Postfix when modifier (e.g., say "Found it!" when $_ ~~ /pattern/;)
 
     // Other statements
     ELLIPSIS_STMT, // Ellipsis statement placeholder
