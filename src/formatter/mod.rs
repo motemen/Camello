@@ -8,6 +8,19 @@ use crate::{
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
 use writer::{LineBreakSource, Writer};
 
+#[derive(Clone, Copy, Default)]
+struct FormatContext {
+    suppress_newlines: bool,
+}
+
+impl FormatContext {
+    fn with_suppress_newlines(self) -> Self {
+        Self {
+            suppress_newlines: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DelimiterTightness {
     /// Keep delimiters tight with no interior spacing.
@@ -214,6 +227,10 @@ impl Formatter {
     }
 
     fn format_node(&mut self, node: &PerlNode) {
+        self.format_node_with_context(node, FormatContext::default())
+    }
+
+    fn format_node_with_context(&mut self, node: &PerlNode, ctx: FormatContext) {
         // Add empty line before subs, use statements, and regular statements when appropriate
         // This preserves existing behavior for simple cases while also handling statement spacing
         if node.kind().is_phase_block_stmt()
@@ -347,9 +364,9 @@ impl Formatter {
                     {
                         self.output_pending_empty_lines();
                     }
-                    self.format_node(&child_node);
+                    self.format_node_with_context(&child_node, ctx);
                 }
-                NodeOrToken::Token(token) => self.format_token(&token),
+                NodeOrToken::Token(token) => self.format_token_with_context(&token, ctx),
             }
         }
 
@@ -604,13 +621,23 @@ impl Formatter {
     }
 
     fn format_token(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
+        self.format_token_with_context(token, FormatContext::default())
+    }
+
+    fn format_token_with_context(
+        &mut self,
+        token: &SyntaxToken<crate::PerlLanguage>,
+        ctx: FormatContext,
+    ) {
         let kind = token.kind();
         let text = token.text();
 
         match kind {
             SyntaxKind::WHITESPACE => {}
             SyntaxKind::NEWLINE => {
-                if self.writer.at_line_start() && self.writer.current_line_is_empty() {
+                if ctx.suppress_newlines {
+                    // Suppress newlines when formatting simple blocks
+                } else if self.writer.at_line_start() && self.writer.current_line_is_empty() {
                     if self.pending_empty_lines == 0 {
                         self.pending_empty_lines = 1;
                     }

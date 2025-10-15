@@ -366,10 +366,13 @@ impl Formatter {
     }
 
     fn format_compound_var_simple_block(&mut self, node: &PerlNode) {
+        // Use context with suppress_newlines enabled for simple blocks
+        let ctx = super::FormatContext::default().with_suppress_newlines();
+
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(child_node) => {
-                    self.format_node(&child_node);
+                    self.format_node_with_context(&child_node, ctx);
                 }
                 NodeOrToken::Token(token) => {
                     match token.kind() {
@@ -381,7 +384,7 @@ impl Formatter {
                             self.remember_token(&token);
                         }
                         _ => {
-                            self.format_token(&token);
+                            self.format_token_with_context(&token, ctx);
                         }
                     }
                 }
