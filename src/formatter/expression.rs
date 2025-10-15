@@ -366,10 +366,13 @@ impl Formatter {
     }
 
     fn format_compound_var_simple_block(&mut self, node: &PerlNode) {
+        // Use context with suppress_newlines enabled for simple blocks
+        let ctx = super::FormatContext::default().with_suppress_newlines();
+
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(child_node) => {
-                    self.format_node(&child_node);
+                    self.format_node_with_context(&child_node, ctx);
                 }
                 NodeOrToken::Token(token) => {
                     match token.kind() {
@@ -381,7 +384,7 @@ impl Formatter {
                             self.remember_token(&token);
                         }
                         _ => {
-                            self.format_token(&token);
+                            self.format_token_with_context(&token, ctx);
                         }
                     }
                 }
@@ -435,6 +438,126 @@ impl Formatter {
                             // R_PAREN and prototype symbols: no spacing, just output them directly
                             self.writer.write_token(&token);
                             self.remember_token(&token);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pub(super) fn format_sub_signature(&mut self, node: &PerlNode) {
+        use SyntaxKind::{NEWLINE, WHITESPACE};
+
+        let ctx = super::FormatContext::default().with_multiline_context();
+
+        if self.has_newline_before_first_value(node) {
+            for child in node.children_with_tokens() {
+                match child {
+                    NodeOrToken::Node(child_node) => {
+                        self.format_node_with_context(&child_node, ctx);
+                    }
+                    NodeOrToken::Token(token) => {
+                        let kind = token.kind();
+                        match kind {
+                            WHITESPACE | NEWLINE => {
+                                // Skip trivia
+                            }
+                            T!['('] => {
+                                // Add space before opening paren for signature style: sub foo ($x)
+                                if !self.writer.at_line_start()
+                                    && !self.writer.current_line_ends_with_space()
+                                {
+                                    self.writer.write_char(' ');
+                                }
+                                self.handle_multiline_opening_delimiter(&token);
+                            }
+                            T![')'] => {
+                                self.handle_multiline_closing_delimiter(&token);
+                            }
+                            T![,] => {
+                                self.format_token_with_context(&token, ctx);
+                                self.writer.handle_formatter_newline();
+                            }
+                            _ => {
+                                self.format_token_with_context(&token, ctx);
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // Single-line formatting
+            for child in node.children_with_tokens() {
+                match child {
+                    NodeOrToken::Node(child_node) => {
+                        self.format_node(&child_node);
+                    }
+                    NodeOrToken::Token(token) => {
+                        let kind = token.kind();
+                        match kind {
+                            WHITESPACE => {
+                                // Skip whitespace
+                            }
+                            T!['('] => {
+                                // Add space before opening paren for signature style: sub foo ($x)
+                                if !self.writer.at_line_start()
+                                    && !self.writer.current_line_ends_with_space()
+                                {
+                                    self.writer.write_char(' ');
+                                }
+                                self.writer.write_token(&token);
+                                self.remember_token(&token);
+                            }
+                            _ => {
+                                self.format_token(&token);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pub(super) fn format_signature_default(&mut self, node: &PerlNode) {
+        use SyntaxKind::{DEFINED_OR, LOGICAL_OR, WHITESPACE};
+
+        for child in node.children_with_tokens() {
+            match child {
+                NodeOrToken::Node(child_node) => self.format_node(&child_node),
+                NodeOrToken::Token(token) => {
+                    let kind = token.kind();
+                    match kind {
+                        WHITESPACE => {
+                            // Skip whitespace - spacing will be added by the rules below
+                        }
+                        T![=] => {
+                            // Always add space before = in signature defaults
+                            // This handles cases like "$ = 1" where $ is a placeholder
+                            if !self.writer.current_line_ends_with_space()
+                                && !matches!(
+                                    self.writer.prev_token_kind(),
+                                    Some(DEFINED_OR | LOGICAL_OR)
+                                )
+                            {
+                                self.writer.write_char(' ');
+                            }
+                            // Write token directly without calling format_token
+                            // to avoid double spacing from handle_spacing_before
+                            self.writer.write_token(&token);
+                            self.remember_token(&token);
+                        }
+                        DEFINED_OR | LOGICAL_OR => {
+                            // Add space before // and || in signature defaults
+                            if !self.writer.current_line_ends_with_space() {
+                                self.writer.write_char(' ');
+                            }
+                            // Write token directly without calling format_token
+                            // to avoid double spacing from handle_spacing_before
+                            self.writer.write_token(&token);
+                            self.remember_token(&token);
+                        }
+                        _ => {
+                            self.format_token(&token);
                         }
                     }
                 }

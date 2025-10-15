@@ -219,15 +219,18 @@ pub enum SyntaxKind {
     POSTFIX_DEREF_GLOB,             // ->**
 
     // ===== Node Level (composite structures) =====
-    ROOT,             // File root
-    SUB_DEF,          // Subroutine definition
-    SUB_PROTOTYPE,    // Subroutine prototype (e.g., (\\@@), ($@), etc.)
-    ATTR,             // Attribute (e.g., :method)
-    ATTR_ARGS,        // Attribute arguments (e.g., (1, 2))
-    BLOCK_STMT,       // Block statement
-    PHASE_BLOCK_STMT, // Phase block statement (BEGIN/UNITCHECK/CHECK/INIT/END)
-    LABELED_STMT,     // Labeled statement
-    LABEL,            // Statement label
+    ROOT,              // File root
+    SUB_DEF,           // Subroutine definition
+    SUB_PROTOTYPE,     // Subroutine prototype (e.g., (\\@@), ($@), etc.)
+    SUB_SIGNATURE,     // Subroutine signature (e.g., ($x, @rest, %opts))
+    SIGNATURE_PARAM,   // Parameter inside a subroutine signature
+    SIGNATURE_DEFAULT, // Default value expression for a signature parameter
+    ATTR,              // Attribute (e.g., :method)
+    ATTR_ARGS,         // Attribute arguments (e.g., (1, 2))
+    BLOCK_STMT,        // Block statement
+    PHASE_BLOCK_STMT,  // Phase block statement (BEGIN/UNITCHECK/CHECK/INIT/END)
+    LABELED_STMT,      // Labeled statement
+    LABEL,             // Statement label
 
     // Declarations
     VAR_DECL,      // Variable declaration (my, our, state, etc.)
