@@ -11,12 +11,21 @@ use writer::{LineBreakSource, Writer};
 #[derive(Clone, Copy, Default)]
 struct FormatContext {
     suppress_newlines: bool,
+    in_multiline_context: bool,
 }
 
 impl FormatContext {
     fn with_suppress_newlines(self) -> Self {
         Self {
             suppress_newlines: true,
+            ..self
+        }
+    }
+
+    fn with_multiline_context(self) -> Self {
+        Self {
+            in_multiline_context: true,
+            ..self
         }
     }
 }
@@ -129,7 +138,6 @@ impl FormatterOptions {
 pub struct Formatter {
     writer: Writer,
     pending_empty_lines: usize,
-    in_multiline_context: bool,
     comment_registry: CommentRegistry,
     options: FormatterOptions,
 }
@@ -144,7 +152,6 @@ impl Formatter {
     pub fn with_options(comment_registry: CommentRegistry, options: FormatterOptions) -> Self {
         Self {
             pending_empty_lines: 0,
-            in_multiline_context: false,
             writer: Writer::new(),
             comment_registry,
             options,
@@ -566,7 +573,7 @@ impl Formatter {
         None
     }
 
-    fn needs_continuation_indent(&self, current: SyntaxKind) -> bool {
+    fn needs_continuation_indent(&self, current: SyntaxKind, ctx: FormatContext) -> bool {
         if !self.writer.at_line_start() {
             return false;
         }
@@ -613,7 +620,7 @@ impl Formatter {
             return true;
         }
 
-        if !self.in_multiline_context && matches!(prev_kind, COMMA | FAT_COMMA) {
+        if !ctx.in_multiline_context && matches!(prev_kind, COMMA | FAT_COMMA) {
             return true;
         }
 
@@ -702,7 +709,7 @@ impl Formatter {
 
                 if self.writer.at_line_start() && !kind.is_trivia() {
                     self.writer.add_indent();
-                    if self.needs_continuation_indent(kind) {
+                    if self.needs_continuation_indent(kind, ctx) {
                         self.writer.push_indent_string();
                     }
                     self.writer.set_at_line_start(false);

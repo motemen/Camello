@@ -134,8 +134,7 @@ impl Formatter {
         open_delimiter: SyntaxKind,
         close_delimiter: SyntaxKind,
     ) {
-        let old_multiline_context = self.in_multiline_context;
-        self.in_multiline_context = true;
+        let ctx = super::FormatContext::default().with_multiline_context();
         for child in iter {
             match child {
                 NodeOrToken::Node(node) => {
@@ -146,7 +145,7 @@ impl Formatter {
                             // Special handling for expression lists inside delimiters
                             self.format_expr_list_multiline_iter(node.children_with_tokens());
                         }
-                        _ => self.format_node(&node),
+                        _ => self.format_node_with_context(&node, ctx),
                     }
                 }
                 NodeOrToken::Token(token) => {
@@ -169,21 +168,19 @@ impl Formatter {
                         }
                         _ => {
                             // その他のトークンは通常通り処理
-                            self.format_token(&token);
+                            self.format_token_with_context(&token, ctx);
                         }
                     }
                 }
             }
         }
-        self.in_multiline_context = old_multiline_context;
     }
 
     fn format_expr_list_multiline_iter(&mut self, iter: SyntaxElementChildren<PerlLanguage>) {
-        let old_multiline_context = self.in_multiline_context;
-        self.in_multiline_context = true;
+        let ctx = super::FormatContext::default().with_multiline_context();
         for child in iter {
             match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Node(node) => self.format_node_with_context(&node, ctx),
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
 
@@ -192,18 +189,17 @@ impl Formatter {
                             // Skip trivia here - newlines handled in the delimiter handlers
                         }
                         T![,] => {
-                            self.format_token(&token);
+                            self.format_token_with_context(&token, ctx);
                             self.writer.handle_formatter_newline();
                         }
                         _ => {
                             // その他のトークンは通常通り処理
-                            self.format_token(&token);
+                            self.format_token_with_context(&token, ctx);
                         }
                     }
                 }
             }
         }
-        self.in_multiline_context = old_multiline_context;
     }
 
     pub(super) fn handle_multiline_opening_delimiter(&mut self, token: &SyntaxToken<PerlLanguage>) {
