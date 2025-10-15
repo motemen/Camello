@@ -8,6 +8,28 @@ use crate::{
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
 use writer::{LineBreakSource, Writer};
 
+#[derive(Clone, Copy, Default)]
+struct FormatContext {
+    suppress_newlines: bool,
+    in_multiline_context: bool,
+}
+
+impl FormatContext {
+    fn with_suppress_newlines(self) -> Self {
+        Self {
+            suppress_newlines: true,
+            ..self
+        }
+    }
+
+    fn with_multiline_context(self) -> Self {
+        Self {
+            in_multiline_context: true,
+            ..self
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DelimiterTightness {
     /// Keep delimiters tight with no interior spacing.
@@ -116,7 +138,6 @@ impl FormatterOptions {
 pub struct Formatter {
     writer: Writer,
     pending_empty_lines: usize,
-    in_multiline_context: bool,
     comment_registry: CommentRegistry,
     options: FormatterOptions,
 }
@@ -131,7 +152,6 @@ impl Formatter {
     pub fn with_options(comment_registry: CommentRegistry, options: FormatterOptions) -> Self {
         Self {
             pending_empty_lines: 0,
-            in_multiline_context: false,
             writer: Writer::new(),
             comment_registry,
             options,
@@ -214,6 +234,10 @@ impl Formatter {
     }
 
     fn format_node(&mut self, node: &PerlNode) {
+        self.format_node_with_context(node, FormatContext::default())
+    }
+
+    fn format_node_with_context(&mut self, node: &PerlNode, ctx: FormatContext) {
         // Add empty line before subs, use statements, and regular statements when appropriate
         // This preserves existing behavior for simple cases while also handling statement spacing
         if node.kind().is_phase_block_stmt()
@@ -291,6 +315,17 @@ impl Formatter {
                 self.format_sub_prototype(node);
                 return;
             }
+            SyntaxKind::SUB_SIGNATURE => {
+                self.format_sub_signature(node);
+                return;
+            }
+            SyntaxKind::SIGNATURE_PARAM => {
+                // Use default child iteration - spacing managed by general rules
+            }
+            SyntaxKind::SIGNATURE_DEFAULT => {
+                self.format_signature_default(node);
+                return;
+            }
             SyntaxKind::FOR_STMT => {
                 self.format_for_stmt(node);
                 return;
@@ -336,9 +371,9 @@ impl Formatter {
                     {
                         self.output_pending_empty_lines();
                     }
-                    self.format_node(&child_node);
+                    self.format_node_with_context(&child_node, ctx);
                 }
-                NodeOrToken::Token(token) => self.format_token(&token),
+                NodeOrToken::Token(token) => self.format_token_with_context(&token, ctx),
             }
         }
 
@@ -474,6 +509,7 @@ impl Formatter {
                 | POSTFIX_ARRAY_SLICE_EXPR
                 | POSTFIX_HASH_SLICE_EXPR
                 | SUB_PROTOTYPE
+                | SUB_SIGNATURE
                 | ATTR_ARGS
                 | USE_STMT
                 | NO_STMT
@@ -537,7 +573,7 @@ impl Formatter {
         None
     }
 
-    fn needs_continuation_indent(&self, current: SyntaxKind) -> bool {
+    fn needs_continuation_indent(&self, current: SyntaxKind, ctx: FormatContext) -> bool {
         if !self.writer.at_line_start() {
             return false;
         }
@@ -584,7 +620,7 @@ impl Formatter {
             return true;
         }
 
-        if !self.in_multiline_context && matches!(prev_kind, COMMA | FAT_COMMA) {
+        if !ctx.in_multiline_context && matches!(prev_kind, COMMA | FAT_COMMA) {
             return true;
         }
 
@@ -592,13 +628,23 @@ impl Formatter {
     }
 
     fn format_token(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
+        self.format_token_with_context(token, FormatContext::default())
+    }
+
+    fn format_token_with_context(
+        &mut self,
+        token: &SyntaxToken<crate::PerlLanguage>,
+        ctx: FormatContext,
+    ) {
         let kind = token.kind();
         let text = token.text();
 
         match kind {
             SyntaxKind::WHITESPACE => {}
             SyntaxKind::NEWLINE => {
-                if self.writer.at_line_start() && self.writer.current_line_is_empty() {
+                if ctx.suppress_newlines {
+                    // Suppress newlines when formatting simple blocks
+                } else if self.writer.at_line_start() && self.writer.current_line_is_empty() {
                     if self.pending_empty_lines == 0 {
                         self.pending_empty_lines = 1;
                     }
@@ -663,7 +709,7 @@ impl Formatter {
 
                 if self.writer.at_line_start() && !kind.is_trivia() {
                     self.writer.add_indent();
-                    if self.needs_continuation_indent(kind) {
+                    if self.needs_continuation_indent(kind, ctx) {
                         self.writer.push_indent_string();
                     }
                     self.writer.set_at_line_start(false);

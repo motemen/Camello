@@ -13,9 +13,10 @@ ROOT@0..69
     SUB_KW@9..12 "sub"
     WHITESPACE@12..13 " "
     IDENT@13..16 "bar"
-    SUB_PROTOTYPE@16..19
+    SUB_SIGNATURE@16..19
       L_PAREN@16..17 "("
-      SCALAR_SIGIL@17..18 "$"
+      SIGNATURE_PARAM@17..18
+        SCALAR_SIGIL@17..18 "$"
       R_PAREN@18..19 ")"
     SEMICOLON@19..20 ";"
   NEWLINE@20..21 "\n"
@@ -34,9 +35,10 @@ ROOT@0..69
     WHITESPACE@41..42 " "
     IDENT@42..46 "quux"
     WHITESPACE@46..47 " "
-    SUB_PROTOTYPE@47..50
+    SUB_SIGNATURE@47..50
       L_PAREN@47..48 "("
-      SCALAR_SIGIL@48..49 "$"
+      SIGNATURE_PARAM@48..49
+        SCALAR_SIGIL@48..49 "$"
       R_PAREN@49..50 ")"
     WHITESPACE@50..51 " "
     ATTR@51..59
