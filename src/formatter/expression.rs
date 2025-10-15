@@ -448,11 +448,13 @@ impl Formatter {
     pub(super) fn format_sub_signature(&mut self, node: &PerlNode) {
         use SyntaxKind::{NEWLINE, WHITESPACE};
 
+        let ctx = super::FormatContext::default().with_multiline_context();
+
         if self.has_newline_before_first_value(node) {
             for child in node.children_with_tokens() {
                 match child {
                     NodeOrToken::Node(child_node) => {
-                        self.format_node(&child_node);
+                        self.format_node_with_context(&child_node, ctx);
                     }
                     NodeOrToken::Token(token) => {
                         let kind = token.kind();
@@ -473,17 +475,11 @@ impl Formatter {
                                 self.handle_multiline_closing_delimiter(&token);
                             }
                             T![,] => {
-                                self.format_token_with_context(
-                                    &token,
-                                    super::FormatContext::default().with_multiline_context(),
-                                );
+                                self.format_token_with_context(&token, ctx);
                                 self.writer.handle_formatter_newline();
                             }
                             _ => {
-                                self.format_token_with_context(
-                                    &token,
-                                    super::FormatContext::default().with_multiline_context(),
-                                );
+                                self.format_token_with_context(&token, ctx);
                             }
                         }
                     }
