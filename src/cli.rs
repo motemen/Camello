@@ -3,7 +3,7 @@ use encoding_rs::Encoding;
 use miette::{IntoDiagnostic, Report, Result};
 use std::fs;
 use std::io::{self, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::{format_perl, parse_perl};
 
@@ -45,6 +45,16 @@ pub enum Commands {
         /// Check if file is already formatted without making changes
         #[arg(long, help = "Check if file is already formatted")]
         check: bool,
+
+        /// Overwrite the input file with the formatted result
+        #[arg(
+            short = 'w',
+            long = "write",
+            help = "Overwrite the input file with the formatted result",
+            requires = "path",
+            conflicts_with_all = ["check", "output"]
+        )]
+        write: bool,
 
         /// Stop formatting after the first parse error is reported
         #[arg(
@@ -167,6 +177,7 @@ pub fn run() -> Result<()> {
             eval,
             eval_escape,
             check,
+            write,
             stop_on_first_error,
             output,
             encoding,
@@ -176,6 +187,7 @@ pub fn run() -> Result<()> {
                 eval,
                 eval_escape,
                 check,
+                write,
                 stop_on_first_error,
                 output,
                 encoding,
@@ -216,10 +228,10 @@ fn get_encoding(encoding_name: Option<&String>) -> Result<&'static Encoding> {
 }
 
 fn read_source(
-    path: Option<PathBuf>,
+    path: Option<&Path>,
     eval: Option<String>,
     eval_escape: Option<String>,
-    encoding: Option<&String>,
+    encoding: &'static Encoding,
 ) -> Result<(String, String)> {
     if let Some(code) = eval {
         return Ok((code, "<command-line>".to_string()));
@@ -229,11 +241,9 @@ fn read_source(
         return Ok((interpreted_code, "<command-line>".to_string()));
     }
 
-    let enc = get_encoding(encoding)?;
-
     if let Some(path) = path {
-        let bytes = fs::read(&path).into_diagnostic()?;
-        let (decoded, _, had_errors) = enc.decode(&bytes);
+        let bytes = fs::read(path).into_diagnostic()?;
+        let (decoded, _, had_errors) = encoding.decode(&bytes);
         if had_errors {
             eprintln!(
                 "Warning: encoding errors detected while reading '{}'",
@@ -244,7 +254,7 @@ fn read_source(
     } else {
         let mut bytes = Vec::new();
         io::stdin().read_to_end(&mut bytes).into_diagnostic()?;
-        let (decoded, _, had_errors) = enc.decode(&bytes);
+        let (decoded, _, had_errors) = encoding.decode(&bytes);
         if had_errors {
             eprintln!("Warning: encoding errors detected while reading from stdin");
         }
@@ -252,17 +262,48 @@ fn read_source(
     }
 }
 
+fn encode_to_vec(contents: &str, encoding: &'static Encoding) -> Result<Vec<u8>> {
+    if std::ptr::eq(encoding, encoding_rs::UTF_8) {
+        return Ok(contents.as_bytes().to_vec());
+    }
+
+    let (encoded, _, had_errors) = encoding.encode(contents);
+    if had_errors {
+        return Err(miette::miette!(
+            "Unable to encode formatted output using {}",
+            encoding.name()
+        ));
+    }
+
+    Ok(encoded.into_owned())
+}
+
+fn write_with_encoding(path: &Path, contents: &str, encoding: &'static Encoding) -> Result<()> {
+    let encoded = encode_to_vec(contents, encoding)?;
+    fs::write(path, encoded).into_diagnostic()
+}
+
+#[allow(clippy::too_many_arguments)]
 fn format_file(
     path: Option<PathBuf>,
     eval: Option<String>,
     eval_escape: Option<String>,
     check: bool,
+    write: bool,
     stop_on_first_error: bool,
     output: Option<PathBuf>,
     encoding: Option<String>,
 ) -> Result<()> {
+    if write && path.is_none() {
+        return Err(miette::miette!(
+            "The --write option requires a file path to be provided"
+        ));
+    }
+
+    let encoding = get_encoding(encoding.as_ref())?;
+
     // Read from file or standard input
-    let (input, source_name) = read_source(path, eval, eval_escape, encoding.as_ref())?;
+    let (input, source_name) = read_source(path.as_deref(), eval, eval_escape, encoding)?;
 
     // Execute formatting
     let (formatted, errors) = format_perl(&input);
@@ -284,20 +325,24 @@ fn format_file(
 
     if check {
         // Check mode: check if already formatted
-        if input.trim() == formatted.trim() {
+        if input == formatted {
             println!("Source '{source_name}' is already formatted");
         } else {
             eprintln!("Source '{source_name}' is not formatted");
             std::process::exit(1);
         }
+    } else if write {
+        let path = path.expect("path should be present when write is enabled");
+        write_with_encoding(path.as_path(), &formatted, encoding)?;
+        println!("Formatted code written to '{}'", path.display());
     } else {
         // Format mode: output the result
         if let Some(output_path) = output {
             // Write to file
-            fs::write(&output_path, formatted).into_diagnostic()?;
+            write_with_encoding(output_path.as_path(), &formatted, encoding)?;
             println!("Formatted code written to '{}'", output_path.display());
         } else {
-            // Write to standard output
+            // Write to standard output using UTF-8 as before
             print!("{formatted}");
             io::stdout().flush().into_diagnostic()?;
         }
@@ -315,8 +360,10 @@ fn dump_file(
     stop_on_first_error: bool,
     encoding: Option<String>,
 ) -> Result<()> {
+    let encoding = get_encoding(encoding.as_ref())?;
+
     // Read from file or standard input
-    let (input, source_name) = read_source(path, eval, eval_escape, encoding.as_ref())?;
+    let (input, source_name) = read_source(path.as_deref(), eval, eval_escape, encoding)?;
     let (syntax, errors) = parse_perl(&input);
 
     if !errors.is_empty() {
@@ -371,6 +418,7 @@ fn test_format_with_escape_sequences() -> Result<(), Box<dyn std::error::Error>>
         Some("my$var=1;\\nprint $var;".to_string()),
         false,
         false,
+        false,
         None,
         None
     )
@@ -408,6 +456,7 @@ mod tests {
             Some("my$var=1;\\nprint $var;".to_string()),
             false,
             false,
+            false,
             None,
             None
         )
@@ -423,7 +472,7 @@ mod tests {
         fs::write(&file_path, "my$var=1;")?;
 
         // Execute formatting (not actually executed, but confirm no errors)
-        assert!(format_file(Some(file_path), None, None, false, false, None, None).is_ok());
+        assert!(format_file(Some(file_path), None, None, false, false, false, None, None).is_ok());
 
         Ok(())
     }
@@ -437,6 +486,7 @@ mod tests {
             None,
             false,
             false,
+            false,
             None,
             None
         )
@@ -446,13 +496,73 @@ mod tests {
     }
 
     #[test]
+    fn test_format_write_to_same_file() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempdir()?;
+        let file_path = dir.path().join("write_test.pl");
+        fs::write(&file_path, "my$var=1;")?;
+
+        format_file(
+            Some(file_path.clone()),
+            None,
+            None,
+            false,
+            true,
+            false,
+            None,
+            None,
+        )?;
+
+        let written = fs::read_to_string(&file_path)?;
+        let (expected, _) = format_perl("my$var=1;");
+        assert_eq!(written, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_format_write_preserves_encoding() -> Result<(), Box<dyn std::error::Error>> {
+        use encoding_rs::SHIFT_JIS;
+
+        let dir = tempdir()?;
+        let file_path = dir.path().join("write_encoding_test.pl");
+        let text = "my $var = \"こんにちは\";";
+        let (encoded, _, _) = SHIFT_JIS.encode(text);
+        fs::write(&file_path, &*encoded)?;
+
+        format_file(
+            Some(file_path.clone()),
+            None,
+            None,
+            false,
+            true,
+            false,
+            None,
+            Some("shift_jis".to_string()),
+        )?;
+
+        let bytes = fs::read(&file_path)?;
+        let (decoded, _, had_errors) = SHIFT_JIS.decode(&bytes);
+        assert!(!had_errors);
+        let (expected, _) = format_perl(text);
+        assert_eq!(decoded.into_owned(), expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_format_write_requires_path() {
+        let result = format_file(None, None, None, false, true, false, None, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_check_mode() -> Result<(), Box<dyn std::error::Error>> {
         let dir = tempdir()?;
         let file_path = dir.path().join("formatted.pl");
         fs::write(&file_path, "my $var = 1;\n")?; // Use actual newline, not escaped
 
         // Check that the file is correctly formatted
-        assert!(format_file(Some(file_path), None, None, true, false, None, None).is_ok());
+        assert!(format_file(Some(file_path), None, None, true, false, false, None, None).is_ok());
 
         Ok(())
     }
@@ -471,6 +581,7 @@ mod tests {
             Some(file_path),
             None,
             None,
+            false,
             false,
             false,
             None,
@@ -500,6 +611,7 @@ mod tests {
             None,
             false,
             false,
+            false,
             None,
             Some("euc-jp".to_string())
         )
@@ -525,6 +637,7 @@ mod tests {
             Some(file_path),
             None,
             None,
+            false,
             false,
             false,
             None,
