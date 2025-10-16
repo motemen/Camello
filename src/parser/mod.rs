@@ -653,10 +653,10 @@ fn test_sub_with_quote_like_name() {
 #[test]
 fn test_sub_with_control_flow_keyword_names() {
     use crate::PerlNode;
-    
+
     // Test given, when, default as subroutine names
     let test_cases = ["sub given {}", "sub when {}", "sub default {}"];
-    
+
     for input in test_cases {
         let (green, errors) = parse(input);
         assert!(
