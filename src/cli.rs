@@ -342,9 +342,8 @@ fn format_file(
             write_with_encoding(output_path.as_path(), &formatted, encoding)?;
             println!("Formatted code written to '{}'", output_path.display());
         } else {
-            // Write to standard output
-            let encoded = encode_to_vec(&formatted, encoding)?;
-            io::stdout().write_all(&encoded).into_diagnostic()?;
+            // Write to standard output using UTF-8 as before
+            print!("{formatted}");
             io::stdout().flush().into_diagnostic()?;
         }
     }
