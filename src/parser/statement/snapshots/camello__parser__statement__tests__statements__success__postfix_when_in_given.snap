@@ -12,32 +12,33 @@ ROOT@0..67
       IDENT@8..13 "value"
     R_PAREN@13..14 ")"
     WHITESPACE@14..15 " "
-    L_BRACE@15..16 "{"
-    NEWLINE@16..17 "\n"
-    WHITESPACE@17..21 "    "
-    STMT@21..64
-      FUNCTION_CALL_EXPR@21..47
-        IDENT@21..24 "say"
-        WHITESPACE@24..25 " "
-        STRING@25..46 "\"It's an even number\""
-        WHITESPACE@46..47 " "
-      WHEN_MODIFIER@47..63
-        WHEN_KW@47..51 "when"
-        WHITESPACE@51..52 " "
-        INFIX_EXPR@52..63
-          INFIX_EXPR@52..59
-            SCALAR_VAR@52..55
-              SCALAR_SIGIL@52..53 "$"
-              IDENT@53..54 "_"
-              WHITESPACE@54..55 " "
-            MODULO@55..56 "%"
-            WHITESPACE@56..57 " "
-            NUMBER@57..58 "2"
-            WHITESPACE@58..59 " "
-          EQ_EQ@59..61 "=="
-          WHITESPACE@61..62 " "
-          NUMBER@62..63 "0"
-      SEMICOLON@63..64 ";"
-    NEWLINE@64..65 "\n"
-    R_BRACE@65..66 "}"
+    BLOCK_STMT@15..66
+      L_BRACE@15..16 "{"
+      NEWLINE@16..17 "\n"
+      WHITESPACE@17..21 "    "
+      STMT@21..64
+        FUNCTION_CALL_EXPR@21..47
+          IDENT@21..24 "say"
+          WHITESPACE@24..25 " "
+          STRING@25..46 "\"It's an even number\""
+          WHITESPACE@46..47 " "
+        WHEN_MODIFIER@47..63
+          WHEN_KW@47..51 "when"
+          WHITESPACE@51..52 " "
+          INFIX_EXPR@52..63
+            INFIX_EXPR@52..59
+              SCALAR_VAR@52..55
+                SCALAR_SIGIL@52..53 "$"
+                IDENT@53..54 "_"
+                WHITESPACE@54..55 " "
+              MODULO@55..56 "%"
+              WHITESPACE@56..57 " "
+              NUMBER@57..58 "2"
+              WHITESPACE@58..59 " "
+            EQ_EQ@59..61 "=="
+            WHITESPACE@61..62 " "
+            NUMBER@62..63 "0"
+        SEMICOLON@63..64 ";"
+      NEWLINE@64..65 "\n"
+      R_BRACE@65..66 "}"
   NEWLINE@66..67 "\n"
