@@ -236,22 +236,22 @@ pub enum SyntaxKind {
     LABEL,             // Statement label
 
     // Declarations
-    VAR_DECL,      // Variable declaration (my, our, state, etc.)
-    PACKAGE_STMT,  // Package declaration (package Foo::Bar)
-    USE_STMT,      // use statement (use warnings qw(all);)
-    NO_STMT,       // no statement (no warnings qw(all);)
-    FOR_STMT,      // for statement (Perl-style)
-    WHILE_STMT,    // while statement
-    UNTIL_STMT,    // until statement
-    IF_STMT,       // if statement
-    UNLESS_STMT,   // unless statement
-    TRY_STMT,      // try statement
-    CATCH_BLOCK,   // catch block (with optional parameter)
-    CATCH_PARAM,   // catch parameter binding
-    FINALLY_BLOCK, // finally block
+    VAR_DECL,        // Variable declaration (my, our, state, etc.)
+    PACKAGE_STMT,    // Package declaration (package Foo::Bar)
+    USE_STMT,        // use statement (use warnings qw(all);)
+    NO_STMT,         // no statement (no warnings qw(all);)
+    FOR_STMT,        // for statement (Perl-style)
+    WHILE_STMT,      // while statement
+    UNTIL_STMT,      // until statement
+    IF_STMT,         // if statement
+    UNLESS_STMT,     // unless statement
+    TRY_STMT,        // try statement
+    CATCH_BLOCK,     // catch block (with optional parameter)
+    CATCH_PARAM,     // catch parameter binding
+    FINALLY_BLOCK,   // finally block
     GIVEN_STATEMENT, // given statement
-    WHEN_CLAUSE,   // when clause
-    DEFAULT_CLAUSE, // default clause
+    WHEN_CLAUSE,     // when clause
+    DEFAULT_CLAUSE,  // default clause
 
     // Data section (content after __END__ / __DATA__)
     DATA_SECTION,

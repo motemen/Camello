@@ -694,7 +694,16 @@ impl Formatter {
                 let next_kind = Self::next_significant_token(token).map(|t| t.kind());
                 if !matches!(
                     next_kind,
-                    Some(T![elsif] | T![else] | T![catch] | T![finally] | T![when] | T![default] | T![;] | T!['('])
+                    Some(
+                        T![elsif]
+                            | T![else]
+                            | T![catch]
+                            | T![finally]
+                            | T![when]
+                            | T![default]
+                            | T![;]
+                            | T!['(']
+                    )
                 ) {
                     self.writer.handle_formatter_newline();
                 }

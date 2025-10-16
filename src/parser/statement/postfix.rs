@@ -13,7 +13,12 @@ impl Parser<'_> {
     }
 
     fn parse_optional_postfix_modifier(&mut self) {
-        if self.at(T![if]) || self.at(T![unless]) || self.at(T![while]) || self.at(T![until]) || self.at(T![when]) {
+        if self.at(T![if])
+            || self.at(T![unless])
+            || self.at(T![while])
+            || self.at(T![until])
+            || self.at(T![when])
+        {
             self.parse_postfix_conditional();
         } else if self.at(T![for]) || self.at(T![foreach]) {
             self.parse_postfix_for();
