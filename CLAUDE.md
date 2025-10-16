@@ -177,13 +177,15 @@ Our testing strategy prioritizes end-to-end correctness and maintainability usin
 ### Adding New Syntax Support
 
 1. Add new variants to the `SyntaxKind` enum in `src/syntax_kind.rs`.
-2. Update the lexer in `src/lexer/mod.rs`. This may involve adding a new `Token` variant, updating regexes, or extending `Lexer::disambiguate` with new contextual rules.
-3. Add parsing logic to the appropriate parser function in `src/parser/`. For expressions, this may involve adding a new `OperatorInfo` in `src/parser/expression/precedence.rs`.
-4. Update the formatter in `src/formatter/` by adding a new `format_...` function to handle the new syntax node.
-5. Create fixture files in `src/formatter/fixtures/` and `src/parser/fixtures/` to test the new syntax:
+2. **If adding a new keyword**, update the `SyntaxKind::is_keyword` method in `src/syntax_kind/predicates.rs` to include the new keyword(s). This ensures that keywords can be used as subroutine names (e.g., `sub when {}`) or package names.
+3. Update the lexer in `src/lexer/mod.rs`. This may involve adding a new `Token` variant, updating regexes, or extending `Lexer::disambiguate` with new contextual rules.
+4. Add parsing logic to the appropriate parser function in `src/parser/`. For expressions, this may involve adding a new `OperatorInfo` in `src/parser/expression/precedence.rs`.
+5. Update the formatter in `src/formatter/` by adding a new `format_...` function to handle the new syntax node.
+6. Create fixture files in `src/formatter/fixtures/` and `src/parser/fixtures/` to test the new syntax:
    - Add `.pl` files with examples of the new syntax to appropriate fixture directories
    - Run tests to generate corresponding snapshots using `insta`
    - Ensure both successful parsing and error cases are covered with appropriate fixtures
+7. **If adding a new keyword**, add tests that verify the keyword can be used as an identifier in valid contexts (e.g., as a subroutine name or package name).
 
 ### Parser Function Pattern
 
