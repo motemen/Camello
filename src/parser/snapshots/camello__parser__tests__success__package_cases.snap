@@ -2,7 +2,7 @@
 source: src/parser/mod.rs
 expression: render_success_tree(&syntax)
 ---
-ROOT@0..502
+ROOT@0..542
   PACKAGE_STMT@0..22
     PACKAGE_KW@0..7 "package"
     WHITESPACE@7..8 " "
@@ -272,3 +272,30 @@ ROOT@0..502
     IDENT@498..500 "tr"
     SEMICOLON@500..501 ";"
   NEWLINE@501..502 "\n"
+  SUB_DEF@502..514
+    SUB_KW@502..505 "sub"
+    WHITESPACE@505..506 " "
+    IDENT@506..511 "given"
+    WHITESPACE@511..512 " "
+    BLOCK_STMT@512..514
+      L_BRACE@512..513 "{"
+      R_BRACE@513..514 "}"
+  NEWLINE@514..515 "\n"
+  SUB_DEF@515..526
+    SUB_KW@515..518 "sub"
+    WHITESPACE@518..519 " "
+    IDENT@519..523 "when"
+    WHITESPACE@523..524 " "
+    BLOCK_STMT@524..526
+      L_BRACE@524..525 "{"
+      R_BRACE@525..526 "}"
+  NEWLINE@526..527 "\n"
+  SUB_DEF@527..541
+    SUB_KW@527..530 "sub"
+    WHITESPACE@530..531 " "
+    IDENT@531..538 "default"
+    WHITESPACE@538..539 " "
+    BLOCK_STMT@539..541
+      L_BRACE@539..540 "{"
+      R_BRACE@540..541 "}"
+  NEWLINE@541..542 "\n"

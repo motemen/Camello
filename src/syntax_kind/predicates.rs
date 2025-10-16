@@ -58,6 +58,9 @@ impl SyntaxKind {
                     | SyntaxKind::TRY_KW
                     | SyntaxKind::CATCH_KW
                     | SyntaxKind::FINALLY_KW
+                    | SyntaxKind::GIVEN_KW
+                    | SyntaxKind::WHEN_KW
+                    | SyntaxKind::DEFAULT_KW
                     | SyntaxKind::NOT_KW
                     | SyntaxKind::AND_KW
                     | SyntaxKind::OR_KW

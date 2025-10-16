@@ -1,0 +1,11 @@
+given ($var) {
+    when (/^foo/) {
+        say "starts with foo";
+    }
+    when (/^bar/) {
+        say "starts with bar";
+    }
+    default {
+        say "default case";
+    }
+}

@@ -308,6 +308,15 @@ macro_rules! __syntax_kind_token {
     (finally) => {
         $crate::SyntaxKind::FINALLY_KW
     };
+    (given) => {
+        $crate::SyntaxKind::GIVEN_KW
+    };
+    (when) => {
+        $crate::SyntaxKind::WHEN_KW
+    };
+    (default) => {
+        $crate::SyntaxKind::DEFAULT_KW
+    };
     (not) => {
         $crate::SyntaxKind::NOT_KW
     };

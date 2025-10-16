@@ -175,6 +175,9 @@ pub const fn get_token_spacing(kind: SyntaxKind) -> TokenSpacing {
         | T![else]
         | T![catch]
         | T![finally]
+        | T![given]
+        | T![when]
+        | T![default]
         | T![package]
         | T![use]
         | T![no]
@@ -325,7 +328,7 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
         (COMPOUND_VAR, L_PAREN) => Some(false),
         (
             MY_KW | OUR_KW | STATE_KW | LOCAL_KW | FOR_KW | FOREACH_KW | WHILE_KW | UNTIL_KW
-            | IF_KW | UNLESS_KW | ELSIF_KW | CATCH_KW,
+            | IF_KW | UNLESS_KW | ELSIF_KW | CATCH_KW | GIVEN_KW | WHEN_KW,
             L_PAREN,
         ) => Some(true),
 
@@ -360,7 +363,7 @@ fn handle_contextual_spacing(
     use SyntaxKind::{
         CATCH_KW, COMMA, FINALLY_KW, FOREACH_KW, FOR_KW, IF_KW, POSTFIX_DEREF_ARRAY,
         POSTFIX_DEREF_ARRAY_LAST_INDEX, POSTFIX_DEREF_CODE, POSTFIX_DEREF_GLOB, POSTFIX_DEREF_HASH,
-        POSTFIX_DEREF_SCALAR, UNLESS_KW,
+        POSTFIX_DEREF_SCALAR, UNLESS_KW, WHEN_KW,
     };
 
     if prev_spacing.category == TokenCategory::Variable
@@ -389,8 +392,8 @@ fn handle_contextual_spacing(
         (COMMA, _) => true,
         (_, COMMA) => false,
 
-        // Keywords in postfix position (if/unless/for/catch/finally)
-        (_, IF_KW | UNLESS_KW | FOR_KW | FOREACH_KW | CATCH_KW | FINALLY_KW) => true,
+        // Keywords in postfix position (if/unless/for/catch/finally/when)
+        (_, IF_KW | UNLESS_KW | FOR_KW | FOREACH_KW | CATCH_KW | FINALLY_KW | WHEN_KW) => true,
 
         _ => false,
     }
