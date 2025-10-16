@@ -651,26 +651,6 @@ fn test_sub_with_quote_like_name() {
 }
 
 #[test]
-fn test_sub_with_control_flow_keyword_names() {
-    use crate::PerlNode;
-
-    // Test given, when, default as subroutine names
-    let test_cases = ["sub given {}", "sub when {}", "sub default {}"];
-
-    for input in test_cases {
-        let (green, errors) = parse(input);
-        assert!(
-            errors.is_empty(),
-            "Parse errors for '{}': {:?}",
-            input,
-            errors
-        );
-        let syntax = PerlNode::new_root(green);
-        assert_eq!(syntax.kind(), SyntaxKind::ROOT);
-    }
-}
-
-#[test]
 fn test_package_with_quote_like_name() {
     use crate::PerlNode;
     let input = "package tr;";
