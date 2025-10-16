@@ -46,6 +46,16 @@ pub enum Commands {
         #[arg(long, help = "Check if file is already formatted")]
         check: bool,
 
+        /// Overwrite the input file with the formatted result
+        #[arg(
+            short = 'w',
+            long = "write",
+            help = "Overwrite the input file with the formatted result",
+            requires = "path",
+            conflicts_with_all = ["check", "output"]
+        )]
+        write: bool,
+
         /// Stop formatting after the first parse error is reported
         #[arg(
             long = "stop-on-first-error",
@@ -167,6 +177,7 @@ pub fn run() -> Result<()> {
             eval,
             eval_escape,
             check,
+            write,
             stop_on_first_error,
             output,
             encoding,
@@ -176,6 +187,7 @@ pub fn run() -> Result<()> {
                 eval,
                 eval_escape,
                 check,
+                write,
                 stop_on_first_error,
                 output,
                 encoding,
@@ -257,12 +269,19 @@ fn format_file(
     eval: Option<String>,
     eval_escape: Option<String>,
     check: bool,
+    write: bool,
     stop_on_first_error: bool,
     output: Option<PathBuf>,
     encoding: Option<String>,
 ) -> Result<()> {
+    if write && path.is_none() {
+        return Err(miette::miette!(
+            "The --write option requires a file path to be provided"
+        ));
+    }
+
     // Read from file or standard input
-    let (input, source_name) = read_source(path, eval, eval_escape, encoding.as_ref())?;
+    let (input, source_name) = read_source(path.clone(), eval, eval_escape, encoding.as_ref())?;
 
     // Execute formatting
     let (formatted, errors) = format_perl(&input);
@@ -290,6 +309,10 @@ fn format_file(
             eprintln!("Source '{source_name}' is not formatted");
             std::process::exit(1);
         }
+    } else if write {
+        let path = path.expect("path should be present when write is enabled");
+        fs::write(&path, formatted).into_diagnostic()?;
+        println!("Formatted code written to '{}'", path.display());
     } else {
         // Format mode: output the result
         if let Some(output_path) = output {
@@ -371,6 +394,7 @@ fn test_format_with_escape_sequences() -> Result<(), Box<dyn std::error::Error>>
         Some("my$var=1;\\nprint $var;".to_string()),
         false,
         false,
+        false,
         None,
         None
     )
@@ -408,6 +432,7 @@ mod tests {
             Some("my$var=1;\\nprint $var;".to_string()),
             false,
             false,
+            false,
             None,
             None
         )
@@ -423,7 +448,9 @@ mod tests {
         fs::write(&file_path, "my$var=1;")?;
 
         // Execute formatting (not actually executed, but confirm no errors)
-        assert!(format_file(Some(file_path), None, None, false, false, None, None).is_ok());
+        assert!(
+            format_file(Some(file_path), None, None, false, false, false, None, None).is_ok()
+        );
 
         Ok(())
     }
@@ -437,6 +464,7 @@ mod tests {
             None,
             false,
             false,
+            false,
             None,
             None
         )
@@ -446,13 +474,52 @@ mod tests {
     }
 
     #[test]
+    fn test_format_write_to_same_file() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempdir()?;
+        let file_path = dir.path().join("write_test.pl");
+        fs::write(&file_path, "my$var=1;")?;
+
+        format_file(
+            Some(file_path.clone()),
+            None,
+            None,
+            false,
+            true,
+            false,
+            None,
+            None,
+        )?;
+
+        let written = fs::read_to_string(&file_path)?;
+        let (expected, _) = format_perl("my$var=1;");
+        assert_eq!(written, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_format_write_requires_path() {
+        let result = format_file(
+            None,
+            None,
+            None,
+            false,
+            true,
+            false,
+            None,
+            None,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_check_mode() -> Result<(), Box<dyn std::error::Error>> {
         let dir = tempdir()?;
         let file_path = dir.path().join("formatted.pl");
         fs::write(&file_path, "my $var = 1;\n")?; // Use actual newline, not escaped
 
         // Check that the file is correctly formatted
-        assert!(format_file(Some(file_path), None, None, true, false, None, None).is_ok());
+        assert!(format_file(Some(file_path), None, None, true, false, false, None, None).is_ok());
 
         Ok(())
     }
@@ -471,6 +538,7 @@ mod tests {
             Some(file_path),
             None,
             None,
+            false,
             false,
             false,
             None,
@@ -500,6 +568,7 @@ mod tests {
             None,
             false,
             false,
+            false,
             None,
             Some("euc-jp".to_string())
         )
@@ -525,6 +594,7 @@ mod tests {
             Some(file_path),
             None,
             None,
+            false,
             false,
             false,
             None,
