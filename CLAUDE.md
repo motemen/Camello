@@ -173,6 +173,7 @@ Our testing strategy prioritizes end-to-end correctness and maintainability usin
 - Test cases stored as `.pl` files are easier to read, edit, and maintain than inline strings
 - Fixtures can be organized hierarchically in subdirectories for better categorization
 - When adding new syntax support, create corresponding fixture files to ensure comprehensive coverage
+- **Avoid inline test functions in `src/parser/mod.rs`**: Instead, add test cases to existing fixture files when appropriate. For example, tests verifying that keywords can be used as identifiers (e.g., `sub given {}`, `package tr;`) should be added to `src/parser/fixtures/success/package_cases.pl` rather than creating separate inline test functions
 
 ### Adding New Syntax Support
 
