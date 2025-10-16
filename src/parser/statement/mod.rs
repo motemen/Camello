@@ -66,6 +66,10 @@ impl Parser<'_> {
                 self.until_stmt();
                 true
             }
+            Some(T![given]) => {
+                self.given_stmt();
+                true
+            }
             Some(T![package]) => {
                 self.package_stmt();
                 true

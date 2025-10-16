@@ -1,0 +1,5 @@
+---
+source: src/formatter/tests.rs
+expression: formatted
+---
+say "Found it!" when $_ ~~ /pattern/;

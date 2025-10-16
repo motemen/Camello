@@ -18,3 +18,6 @@ package Bar::456DEF v1.0;
 package Foo::123ABC::B::456DEF;
 sub tr {}
 package tr;
+sub given {}
+sub when {}
+sub default {}

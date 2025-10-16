@@ -969,6 +969,9 @@ impl<'a> Lexer<'a> {
             "try" => T![try],
             "catch" => T![catch],
             "finally" => T![finally],
+            "given" => T![given],
+            "when" => T![when],
+            "default" => T![default],
             // Quote-like starters (treated as keywords regardless of context)
             "q" => T![q],
             "qq" => T![qq],
