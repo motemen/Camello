@@ -3,7 +3,6 @@ source: src/formatter/tests.rs
 expression: formatted
 ---
 given ($var) {
-
     when (/^foo/) {
         say "starts with foo";
     }

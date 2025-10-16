@@ -363,7 +363,7 @@ fn handle_contextual_spacing(
     use SyntaxKind::{
         CATCH_KW, COMMA, FINALLY_KW, FOREACH_KW, FOR_KW, IF_KW, POSTFIX_DEREF_ARRAY,
         POSTFIX_DEREF_ARRAY_LAST_INDEX, POSTFIX_DEREF_CODE, POSTFIX_DEREF_GLOB, POSTFIX_DEREF_HASH,
-        POSTFIX_DEREF_SCALAR, UNLESS_KW,
+        POSTFIX_DEREF_SCALAR, UNLESS_KW, WHEN_KW,
     };
 
     if prev_spacing.category == TokenCategory::Variable
@@ -392,8 +392,8 @@ fn handle_contextual_spacing(
         (COMMA, _) => true,
         (_, COMMA) => false,
 
-        // Keywords in postfix position (if/unless/for/catch/finally)
-        (_, IF_KW | UNLESS_KW | FOR_KW | FOREACH_KW | CATCH_KW | FINALLY_KW) => true,
+        // Keywords in postfix position (if/unless/for/catch/finally/when)
+        (_, IF_KW | UNLESS_KW | FOR_KW | FOREACH_KW | CATCH_KW | FINALLY_KW | WHEN_KW) => true,
 
         _ => false,
     }

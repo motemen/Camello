@@ -267,6 +267,14 @@ impl Parser<'_> {
         self.skip_whitespace_and_newlines();
 
         // Parse the main block containing when/default clauses
+        self.parse_given_block();
+
+        self.builder.finish_node();
+    }
+
+    fn parse_given_block(&mut self) {
+        self.builder.start_node(SyntaxKind::BLOCK_STMT.into());
+
         if self.at(T!['{']) {
             self.bump_value(); // consume '{'
             self.skip_whitespace_and_newlines();

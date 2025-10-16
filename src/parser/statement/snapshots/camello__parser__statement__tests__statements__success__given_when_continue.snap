@@ -12,39 +12,40 @@ ROOT@0..112
       IDENT@8..16 "variable"
     R_PAREN@16..17 ")"
     WHITESPACE@17..18 " "
-    L_BRACE@18..19 "{"
-    NEWLINE@19..20 "\n"
-    WHITESPACE@20..24 "    "
-    WHEN_CLAUSE@24..68
-      WHEN_KW@24..28 "when"
-      WHITESPACE@28..29 " "
-      L_PAREN@29..30 "("
-      STRING@30..35 "'foo'"
-      R_PAREN@35..36 ")"
-      WHITESPACE@36..37 " "
-      BLOCK_STMT@37..68
-        L_BRACE@37..38 "{"
-        WHITESPACE@38..39 " "
-        STMT@39..56
-          FUNCTION_CALL_EXPR@39..55
-            IDENT@39..42 "say"
-            WHITESPACE@42..43 " "
-            STRING@43..55 "'It was foo'"
-          SEMICOLON@55..56 ";"
-        WHITESPACE@56..57 " "
-        STMT@57..66
-          IDENT@57..65 "continue"
-          SEMICOLON@65..66 ";"
-        WHITESPACE@66..67 " "
-        R_BRACE@67..68 "}"
-    NEWLINE@68..69 "\n"
-    WHITESPACE@69..73 "    "
-    STMT@73..109
-      FUNCTION_CALL_EXPR@73..108
-        IDENT@73..76 "say"
-        WHITESPACE@76..77 " "
-        STRING@77..108 "'This is not reached  ..."
-      SEMICOLON@108..109 ";"
-    NEWLINE@109..110 "\n"
-    R_BRACE@110..111 "}"
+    BLOCK_STMT@18..111
+      L_BRACE@18..19 "{"
+      NEWLINE@19..20 "\n"
+      WHITESPACE@20..24 "    "
+      WHEN_CLAUSE@24..68
+        WHEN_KW@24..28 "when"
+        WHITESPACE@28..29 " "
+        L_PAREN@29..30 "("
+        STRING@30..35 "'foo'"
+        R_PAREN@35..36 ")"
+        WHITESPACE@36..37 " "
+        BLOCK_STMT@37..68
+          L_BRACE@37..38 "{"
+          WHITESPACE@38..39 " "
+          STMT@39..56
+            FUNCTION_CALL_EXPR@39..55
+              IDENT@39..42 "say"
+              WHITESPACE@42..43 " "
+              STRING@43..55 "'It was foo'"
+            SEMICOLON@55..56 ";"
+          WHITESPACE@56..57 " "
+          STMT@57..66
+            IDENT@57..65 "continue"
+            SEMICOLON@65..66 ";"
+          WHITESPACE@66..67 " "
+          R_BRACE@67..68 "}"
+      NEWLINE@68..69 "\n"
+      WHITESPACE@69..73 "    "
+      STMT@73..109
+        FUNCTION_CALL_EXPR@73..108
+          IDENT@73..76 "say"
+          WHITESPACE@76..77 " "
+          STRING@77..108 "'This is not reached  ..."
+        SEMICOLON@108..109 ";"
+      NEWLINE@109..110 "\n"
+      R_BRACE@110..111 "}"
   NEWLINE@111..112 "\n"
