@@ -254,7 +254,7 @@ impl Parser<'_> {
                 return BinaryOperatorOutcome::Break;
             }
 
-            self.error("Expected expression after binary operator");
+            self.error_without_consuming("Expected expression after binary operator");
         }
 
         self.builder.finish_node();
