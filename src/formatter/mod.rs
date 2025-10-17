@@ -238,6 +238,18 @@ impl Formatter {
     }
 
     fn format_node_with_context(&mut self, node: &PerlNode, ctx: FormatContext) {
+        self.prepare_node_spacing(node);
+
+        let handled = self.dispatch_special_formatter(node);
+
+        if !handled {
+            self.format_node_children_with_context(node, ctx);
+        }
+
+        self.finalize_node_spacing(node);
+    }
+
+    pub(super) fn prepare_node_spacing(&mut self, node: &PerlNode) {
         // Add empty line before subs, use statements, and regular statements when appropriate
         // This preserves existing behavior for simple cases while also handling statement spacing
         if node.kind().is_phase_block_stmt()
@@ -255,17 +267,35 @@ impl Formatter {
         {
             self.add_empty_line_before_if_needed(node);
         }
+    }
 
-        // Node types that require special handling
+    pub(super) fn finalize_node_spacing(&mut self, node: &PerlNode) {
+        // Add empty line after subs, use, and no statements, but only if there are siblings
+        if node.kind().is_phase_block_stmt()
+            || matches!(
+                node.kind(),
+                SyntaxKind::SUB_DEF | SyntaxKind::USE_STMT | SyntaxKind::NO_STMT
+            )
+        {
+            self.add_empty_line_after_if_needed(node);
+        }
+
+        if node.kind().is_variable() {
+            // This is the logic from format_variable
+            self.writer.set_prev_token_kind(Some(node.kind()));
+        }
+    }
+
+    fn dispatch_special_formatter(&mut self, node: &PerlNode) -> bool {
         match node.kind() {
             SyntaxKind::ROOT => {
                 // Use the same empty line detection logic as BLOCK_STMT for root-level statements
                 self.format_block(node);
-                return;
+                true
             }
             SyntaxKind::USE_STMT | SyntaxKind::NO_STMT => {
                 self.format_use_no_stmt(node);
-                return;
+                true
             }
             SyntaxKind::EMPTY_STMT => {
                 // Empty statements are just a semicolon, format with default handling
@@ -274,14 +304,15 @@ impl Formatter {
                     self.output_pending_empty_lines();
                 }
                 // Default child iteration will handle the semicolon token
+                false
             }
             SyntaxKind::HASH_REF => {
                 self.format_hash_ref(node);
-                return;
+                true
             }
             SyntaxKind::ARRAY_REF => {
                 self.format_array_ref(node);
-                return;
+                true
             }
             SyntaxKind::QW_EXPR
             | SyntaxKind::Q_EXPR
@@ -292,43 +323,44 @@ impl Formatter {
             | SyntaxKind::S_EXPR
             | SyntaxKind::TR_EXPR => {
                 self.format_quote_like(node);
-                return;
+                true
             }
 
             SyntaxKind::DATA_SECTION => {
                 self.format_data_section(node);
-                return;
+                true
             }
             SyntaxKind::LABELED_STMT => {
                 self.format_labeled_stmt(node);
-                return;
+                true
             }
             SyntaxKind::LABEL => {
                 self.format_label(node);
-                return;
+                true
             }
             SyntaxKind::POD_BLOCK => {
                 self.format_pod_block(node);
-                return;
+                true
             }
             SyntaxKind::SUB_PROTOTYPE => {
                 self.format_sub_prototype(node);
-                return;
+                true
             }
             SyntaxKind::SUB_SIGNATURE => {
                 self.format_sub_signature(node);
-                return;
+                true
             }
             SyntaxKind::SIGNATURE_PARAM => {
                 // Use default child iteration - spacing managed by general rules
+                false
             }
             SyntaxKind::SIGNATURE_DEFAULT => {
                 self.format_signature_default(node);
-                return;
+                true
             }
             SyntaxKind::FOR_STMT => {
                 self.format_for_stmt(node);
-                return;
+                true
             }
             SyntaxKind::ANON_SUB_EXPR
             | SyntaxKind::FUNCTION_CALL_EXPR
@@ -345,22 +377,25 @@ impl Formatter {
             | SyntaxKind::REGEX_EXPR
             | SyntaxKind::BACKTICK_EXPR => {
                 self.format_expr(node);
-                return;
+                true
             }
             SyntaxKind::BLOCK_STMT => {
                 // Special handling for BLOCK_STMT: detect empty lines between statements
                 self.format_block(node);
-                return;
+                true
             }
             _ => {
                 if self.should_use_parenthesized_formatter(node) {
                     self.format_parenthesized_expr(node);
-                    return;
+                    true
+                } else {
+                    false
                 }
             }
         }
+    }
 
-        // Default child iteration
+    fn format_node_children_with_context(&mut self, node: &PerlNode, ctx: FormatContext) {
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(child_node) => {
@@ -375,22 +410,6 @@ impl Formatter {
                 }
                 NodeOrToken::Token(token) => self.format_token_with_context(&token, ctx),
             }
-        }
-
-        // Add empty line after subs, use, and no statements, but only if there are siblings
-        if node.kind().is_phase_block_stmt()
-            || matches!(
-                node.kind(),
-                SyntaxKind::SUB_DEF | SyntaxKind::USE_STMT | SyntaxKind::NO_STMT
-            )
-        {
-            self.add_empty_line_after_if_needed(node);
-        }
-
-        // Special handling after children are processed
-        if node.kind().is_variable() {
-            // This is the logic from format_variable
-            self.writer.set_prev_token_kind(Some(node.kind()));
         }
     }
 
