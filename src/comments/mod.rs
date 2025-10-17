@@ -530,6 +530,24 @@ impl PendingCommentBlock {
     }
 }
 
+/// Helper to finalize a pending comment block and add it to summaries.
+///
+/// This function is only used within `build_comment_blocks` to avoid code duplication.
+fn finalize_pending_block(
+    pending_block: &mut PendingCommentBlock,
+    last_significant: Option<TokenKey>,
+    registry: &mut CommentRegistry,
+    summaries: &mut Vec<BlockSummary>,
+    waiting_for_next: &mut VecDeque<usize>,
+) {
+    if let Some((comments, had_newline_before)) = pending_block.take() {
+        let block = registry.add_block(comments);
+        let summary = BlockSummary::new(block, last_significant, had_newline_before);
+        summaries.push(summary);
+        waiting_for_next.push_back(summaries.len() - 1);
+    }
+}
+
 fn build_comment_blocks(
     root: &SyntaxNode<PerlLanguage>,
     registry: &mut CommentRegistry,
@@ -555,13 +573,13 @@ fn build_comment_blocks(
                     saw_newline_since_significant = true;
                 }
                 _ => {
-                    if let Some((comments, had_newline_before)) = pending_block.take() {
-                        let block = registry.add_block(comments);
-                        let summary =
-                            BlockSummary::new(block, last_significant, had_newline_before);
-                        summaries.push(summary);
-                        waiting_for_next.push_back(summaries.len() - 1);
-                    }
+                    finalize_pending_block(
+                        &mut pending_block,
+                        last_significant,
+                        registry,
+                        &mut summaries,
+                        &mut waiting_for_next,
+                    );
 
                     let token_key = TokenKey::from_token(&token);
                     while let Some(index) = waiting_for_next.pop_front() {
@@ -575,12 +593,13 @@ fn build_comment_blocks(
         }
     }
 
-    if let Some((comments, had_newline_before)) = pending_block.take() {
-        let block = registry.add_block(comments);
-        let summary = BlockSummary::new(block, last_significant, had_newline_before);
-        summaries.push(summary);
-        waiting_for_next.push_back(summaries.len() - 1);
-    }
+    finalize_pending_block(
+        &mut pending_block,
+        last_significant,
+        registry,
+        &mut summaries,
+        &mut waiting_for_next,
+    );
 
     summaries
 }
