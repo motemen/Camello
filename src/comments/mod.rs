@@ -489,12 +489,52 @@ impl CommentRegistry {
     }
 }
 
+/// Represents the state of comment block accumulation during parsing.
+enum PendingCommentBlock {
+    /// No comments are currently being accumulated.
+    Empty,
+    /// Comments are being accumulated. The boolean indicates whether there was
+    /// a newline before the first comment in this block.
+    Active {
+        comments: Vec<CommentId>,
+        had_newline_before: bool,
+    },
+}
+
+impl PendingCommentBlock {
+    /// Adds a comment to the pending block, initializing it if necessary.
+    fn push(&mut self, comment: CommentId, had_newline_before: bool) {
+        match self {
+            Self::Empty => {
+                *self = Self::Active {
+                    comments: vec![comment],
+                    had_newline_before,
+                };
+            }
+            Self::Active { comments, .. } => {
+                comments.push(comment);
+            }
+        }
+    }
+
+    /// Extracts the pending comments and resets to empty state.
+    /// Returns None if the block was already empty.
+    fn take(&mut self) -> Option<(Vec<CommentId>, bool)> {
+        match std::mem::replace(self, Self::Empty) {
+            Self::Empty => None,
+            Self::Active {
+                comments,
+                had_newline_before,
+            } => Some((comments, had_newline_before)),
+        }
+    }
+}
+
 fn build_comment_blocks(
     root: &SyntaxNode<PerlLanguage>,
     registry: &mut CommentRegistry,
 ) -> Vec<BlockSummary> {
-    let mut pending_block: Vec<CommentId> = Vec::new();
-    let mut pending_had_newline_before: Option<bool> = None;
+    let mut pending_block = PendingCommentBlock::Empty;
     let mut last_significant: Option<TokenKey> = None;
     let mut saw_newline_since_significant = false;
     let mut summaries: Vec<BlockSummary> = Vec::new();
@@ -505,10 +545,7 @@ fn build_comment_blocks(
             match token.kind() {
                 SyntaxKind::COMMENT => {
                     if let Some(comment_id) = CommentId::from_token(&token) {
-                        if pending_block.is_empty() {
-                            pending_had_newline_before = Some(saw_newline_since_significant);
-                        }
-                        pending_block.push(comment_id);
+                        pending_block.push(comment_id, saw_newline_since_significant);
                     }
                 }
                 SyntaxKind::WHITESPACE => {
@@ -518,9 +555,7 @@ fn build_comment_blocks(
                     saw_newline_since_significant = true;
                 }
                 _ => {
-                    if !pending_block.is_empty() {
-                        let comments = std::mem::take(&mut pending_block);
-                        let had_newline_before = pending_had_newline_before.take().unwrap_or(false);
+                    if let Some((comments, had_newline_before)) = pending_block.take() {
                         let block = registry.add_block(comments);
                         let summary =
                             BlockSummary::new(block, last_significant, had_newline_before);
@@ -540,9 +575,7 @@ fn build_comment_blocks(
         }
     }
 
-    if !pending_block.is_empty() {
-        let comments = std::mem::take(&mut pending_block);
-        let had_newline_before = pending_had_newline_before.take().unwrap_or(false);
+    if let Some((comments, had_newline_before)) = pending_block.take() {
         let block = registry.add_block(comments);
         let summary = BlockSummary::new(block, last_significant, had_newline_before);
         summaries.push(summary);
