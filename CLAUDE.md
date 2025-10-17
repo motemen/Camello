@@ -104,7 +104,7 @@ The parser implements multiple error recovery strategies:
 cargo fmt
 
 # Run linter
-cargo clippy
+cargo clippy -- -D warnings
 
 # Run all tests
 cargo test -q
