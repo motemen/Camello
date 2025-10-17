@@ -194,8 +194,13 @@ impl Formatter {
                             self.remember_token(&token);
                         }
                         k if k == string_kind => {
-                            self.writer.write_token(&token);
-                            self.remember_token(&token);
+                            if token.text().contains('\n') {
+                                self.writer.write_str(token.text(), None);
+                                self.remember_token(&token);
+                            } else {
+                                self.writer.write_token(&token);
+                                self.remember_token(&token);
+                            }
                         }
                         T![')'] | T![']'] | T!['}'] => {
                             self.writer.write_token(&token);

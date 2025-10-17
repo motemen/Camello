@@ -1,5 +1,6 @@
 ---
 source: src/formatter/tests.rs
+assertion_line: 51
 expression: formatted
 ---
 my $str = <<EOF;
@@ -52,7 +53,7 @@ my $hash = { a => 1, b => 2 };
 my $array = [ 1, 2, 3 ];
 
 ($a
-? [
+    ? [
 ] : {});
 
 ($foo || $bar) && ($x // $y);
