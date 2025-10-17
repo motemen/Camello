@@ -634,6 +634,14 @@ mod tests {
         let result3 = lexer3.consume_digit_prefixed_ident();
         assert_eq!(result3, Some((SyntaxKind::IDENT, "789XYZ123")));
     }
+
+    #[test]
+    fn skip_whitespace_and_newlines_advances_to_token() {
+        let mut parser = Parser::new("   # comment\n\n$var");
+        parser.skip_whitespace_and_newlines();
+        assert_eq!(parser.current_kind(), Some(SyntaxKind::SCALAR_SIGIL));
+        assert_eq!(parser.current_text(), Some("$"));
+    }
 }
 
 mod expression;
