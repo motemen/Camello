@@ -6,6 +6,8 @@ use crate::{
     PerlLanguage, PerlNode, SyntaxKind, T,
 };
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
+use std::collections::VecDeque;
+
 use writer::{LineBreakSource, Writer};
 
 #[derive(Clone, Copy, Default)]
@@ -135,11 +137,31 @@ impl FormatterOptions {
     }
 }
 
+#[derive(Debug, Default)]
+pub(super) struct AssignmentAlignmentState {
+    pads: VecDeque<usize>,
+}
+
+impl AssignmentAlignmentState {
+    fn new(pads: Vec<usize>) -> Self {
+        Self { pads: pads.into() }
+    }
+
+    fn next_pad(&mut self) -> Option<usize> {
+        self.pads.pop_front()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.pads.is_empty()
+    }
+}
+
 pub struct Formatter {
     writer: Writer,
     pending_empty_lines: usize,
     comment_registry: CommentRegistry,
     options: FormatterOptions,
+    assignment_alignment: Option<AssignmentAlignmentState>,
 }
 
 impl Formatter {
@@ -155,6 +177,7 @@ impl Formatter {
             writer: Writer::new(),
             comment_registry,
             options,
+            assignment_alignment: None,
         }
     }
 
@@ -728,6 +751,27 @@ impl Formatter {
                         self.writer.push_indent_string();
                     }
                     self.writer.set_at_line_start(false);
+                }
+
+                if kind == SyntaxKind::EQ {
+                    if let Some(pad) = self
+                        .assignment_alignment
+                        .as_mut()
+                        .and_then(|state| state.next_pad())
+                    {
+                        if pad > 0 {
+                            let spaces = " ".repeat(pad);
+                            self.writer.write_str(&spaces, None);
+                        }
+                    }
+
+                    if self
+                        .assignment_alignment
+                        .as_ref()
+                        .is_some_and(|state| state.is_empty())
+                    {
+                        self.assignment_alignment = None;
+                    }
                 }
 
                 let prev_token_kind_before = self.writer.prev_token_kind();
