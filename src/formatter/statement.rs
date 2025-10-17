@@ -280,10 +280,10 @@ impl Formatter {
         }
 
         let mut nodes = vec![first_node.clone()];
-        let mut lookahead = iter.clone();
+        let lookahead = iter.clone();
         let mut saw_newline = false;
 
-        while let Some(element) = lookahead.next() {
+        for element in lookahead {
             match element {
                 NodeOrToken::Token(token) => match token.kind() {
                     SyntaxKind::WHITESPACE => continue,
@@ -343,7 +343,7 @@ impl Formatter {
 
     fn measure_assignment_prefix(&self, node: &PerlNode) -> Option<usize> {
         let mut formatter =
-            Formatter::with_options(self.comment_registry.clone(), self.options.clone());
+            Formatter::with_options((*self.comment_registry).clone(), self.options.clone());
         let formatted = formatter.format(node);
         let trimmed = formatted.trim_end_matches('\n');
 

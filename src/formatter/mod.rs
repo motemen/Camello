@@ -7,6 +7,7 @@ use crate::{
 };
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
 use std::collections::VecDeque;
+use std::rc::Rc;
 
 use writer::{LineBreakSource, Writer};
 
@@ -159,7 +160,7 @@ impl AssignmentAlignmentState {
 pub struct Formatter {
     writer: Writer,
     pending_empty_lines: usize,
-    comment_registry: CommentRegistry,
+    comment_registry: Rc<CommentRegistry>,
     options: FormatterOptions,
     assignment_alignment: Option<AssignmentAlignmentState>,
 }
@@ -175,7 +176,7 @@ impl Formatter {
         Self {
             pending_empty_lines: 0,
             writer: Writer::new(),
-            comment_registry,
+            comment_registry: Rc::new(comment_registry),
             options,
             assignment_alignment: None,
         }
