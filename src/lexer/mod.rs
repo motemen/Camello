@@ -1,5 +1,6 @@
 use crate::{SyntaxKind, T};
 use logos::Logos;
+use std::cell::RefCell;
 use std::collections::VecDeque;
 
 mod contextual;
@@ -10,6 +11,65 @@ mod quote;
 pub(super) struct HeredocMarker<'a> {
     marker: &'a str,
     strip_indent: bool,
+}
+
+#[derive(Debug, Clone)]
+struct LexerSnapshot<'a> {
+    logos_lexer: logos::Lexer<'a, Token>,
+    at_line_start: bool,
+    mode: LexerMode,
+    pending: VecDeque<(SyntaxKind, &'a str)>,
+    heredoc_queue: VecDeque<HeredocMarker<'a>>,
+}
+
+impl<'a> From<&Lexer<'a>> for LexerSnapshot<'a> {
+    fn from(lexer: &Lexer<'a>) -> Self {
+        Self {
+            logos_lexer: lexer.logos_lexer.clone(),
+            at_line_start: lexer.at_line_start,
+            mode: lexer.mode,
+            pending: lexer.pending.clone(),
+            heredoc_queue: lexer.heredoc_queue.clone(),
+        }
+    }
+}
+
+impl<'a> LexerSnapshot<'a> {
+    fn into_lexer(self) -> Lexer<'a> {
+        Lexer {
+            logos_lexer: self.logos_lexer,
+            at_line_start: self.at_line_start,
+            mode: self.mode,
+            pending: self.pending,
+            heredoc_queue: self.heredoc_queue,
+            lookahead: RefCell::new(VecDeque::new()),
+        }
+    }
+
+    fn next_char(&self) -> Option<char> {
+        self.logos_lexer.remainder().chars().next()
+    }
+}
+
+impl<'a> Lexer<'a> {
+    fn clear_lookahead(&self) {
+        self.lookahead.borrow_mut().clear();
+    }
+
+    fn apply_snapshot(&mut self, snapshot: LexerSnapshot<'a>) {
+        self.logos_lexer = snapshot.logos_lexer;
+        self.at_line_start = snapshot.at_line_start;
+        self.mode = snapshot.mode;
+        self.pending = snapshot.pending;
+        self.heredoc_queue = snapshot.heredoc_queue;
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CachedEntry<'a> {
+    context: LexContext,
+    token: (SyntaxKind, &'a str),
+    state: LexerSnapshot<'a>,
 }
 
 #[cfg(test)]
@@ -48,6 +108,101 @@ mod tests {
             lexer.next_token_with_context(LexContext::Value),
             Some((SyntaxKind::IDENT, "q"))
         );
+    }
+
+    #[test]
+    fn peek_token_caches_result() {
+        let mut lexer = Lexer::new("$foo + 1");
+        assert_eq!(lexer.peek_token(), Some((SyntaxKind::SCALAR_SIGIL, "$")));
+        assert_eq!(lexer.peek_token(), Some((SyntaxKind::SCALAR_SIGIL, "$")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::SCALAR_SIGIL, "$")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "foo")));
+    }
+
+    #[test]
+    fn peek_nth_non_trivia_with_context_is_stable() {
+        let lexer_src = "$foo   + $bar";
+        let mut lexer = Lexer::new(lexer_src);
+
+        assert_eq!(
+            lexer.peek_nth_non_trivia_with_context(LexContext::Value, 0),
+            Some((SyntaxKind::SCALAR_SIGIL, "$"))
+        );
+        assert_eq!(
+            lexer.peek_nth_non_trivia_with_context(LexContext::Value, 1),
+            Some((SyntaxKind::IDENT, "foo"))
+        );
+        assert_eq!(
+            lexer.peek_nth_non_trivia_with_context(LexContext::Value, 2),
+            Some((T![+], "+"))
+        );
+        // Repeating lookahead should produce consistent results
+        assert_eq!(
+            lexer.peek_nth_non_trivia_with_context(LexContext::Value, 1),
+            Some((SyntaxKind::IDENT, "foo"))
+        );
+
+        // Consuming tokens afterwards should follow the peeked sequence
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::SCALAR_SIGIL, "$")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "foo")));
+    }
+
+    #[test]
+    fn peek_context_switch_clears_cached_tokens() {
+        let mut lexer = Lexer::new("/foo/");
+        assert_eq!(
+            lexer
+                .peek_non_trivia_with_context(LexContext::Operator)
+                .map(|(kind, _)| kind),
+            Some(T![/])
+        );
+
+        // Switching to value context should allow regex literal handling
+        assert_eq!(
+            lexer
+                .peek_non_trivia_with_context(LexContext::Value)
+                .map(|(kind, _)| kind),
+            Some(SyntaxKind::REGEX_LITERAL)
+        );
+        assert_eq!(
+            lexer
+                .next_token_with_context(LexContext::Value)
+                .map(|(kind, _)| kind),
+            Some(SyntaxKind::REGEX_LITERAL)
+        );
+    }
+
+    #[test]
+    fn peek_token_and_next_char_handles_hash_delimiter() {
+        let lexer_src = "qq#foo#";
+        let lexer = Lexer::new(lexer_src);
+
+        let (first_kind, first_char) = lexer.peek_token_and_next_char();
+        assert_eq!(first_kind, Some(T![qq]));
+        assert_eq!(first_char, Some('#'));
+
+        // Subsequent peeks should return the same values without consuming
+        let (second_kind, second_char) = lexer.peek_token_and_next_char();
+        assert_eq!(second_kind, Some(T![qq]));
+        assert_eq!(second_char, Some('#'));
+    }
+
+    #[test]
+    fn quote_like_peek_and_consume_flow() {
+        let mut lexer = Lexer::new("qq#foo#");
+
+        // Initial peek should see the keyword without consuming it
+        assert_eq!(lexer.peek_token(), Some((T![qq], "qq")));
+
+        let (kw_kind, _) = lexer
+            .next_token_with_context(LexContext::Value)
+            .expect("expected quote-like keyword");
+        assert_eq!(kw_kind, T![qq]);
+
+        lexer.begin_quote_like(kw_kind, QuoteLikeMode::Q);
+
+        // After entering quote-like mode, the cached lookahead should expose the delimiter
+        assert_eq!(lexer.peek_token(), Some((SyntaxKind::DELIMITER, "#")));
     }
 }
 
@@ -472,6 +627,7 @@ pub struct Lexer<'a> {
     // Pending tokens produced by stateless expansions (e.g., quote-like operators)
     pub(super) pending: VecDeque<(SyntaxKind, &'a str)>,
     pub(super) heredoc_queue: VecDeque<HeredocMarker<'a>>,
+    lookahead: RefCell<VecDeque<CachedEntry<'a>>>,
 }
 
 impl Clone for Lexer<'_> {
@@ -482,6 +638,7 @@ impl Clone for Lexer<'_> {
             mode: self.mode,
             pending: self.pending.clone(),
             heredoc_queue: self.heredoc_queue.clone(),
+            lookahead: RefCell::new(self.lookahead.borrow().clone()),
         }
     }
 }
@@ -494,6 +651,19 @@ impl<'a> Iterator for Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
+    fn consume_cached(&mut self, context: LexContext) -> Option<(SyntaxKind, &'a str)> {
+        let mut cache = self.lookahead.borrow_mut();
+        if cache.front().is_some_and(|entry| entry.context != context) {
+            cache.clear();
+            return None;
+        }
+        let entry = cache.pop_front()?;
+        drop(cache);
+        let token = entry.token;
+        self.apply_snapshot(entry.state);
+        Some(token)
+    }
+
     #[must_use]
     pub fn new(input: &'a str) -> Self {
         let logos_lexer = Token::lexer(input);
@@ -504,6 +674,7 @@ impl<'a> Lexer<'a> {
             mode: LexerMode::Normal,
             pending: VecDeque::new(),
             heredoc_queue: VecDeque::new(),
+            lookahead: RefCell::new(VecDeque::new()),
         }
     }
 
@@ -515,6 +686,7 @@ impl<'a> Lexer<'a> {
     /// Consume exactly one character from the underlying stream and return it as an IDENT token.
     /// This is used by the parser to accept punctuation-named special variables like $", $', $`, etc.
     pub fn consume_one_char_as_ident(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        self.clear_lookahead();
         let remainder = self.logos_lexer.remainder();
         if remainder.is_empty() {
             return None;
@@ -529,6 +701,7 @@ impl<'a> Lexer<'a> {
     /// Consume a digit-prefixed identifier (e.g., "123ABC", "456") from the stream and return it as an IDENT token.
     /// This is used by the parser for package names like Foo::123ABC after :: separators.
     pub fn consume_digit_prefixed_ident(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        self.clear_lookahead();
         let remainder = self.logos_lexer.remainder();
         if remainder.is_empty() {
             return None;
@@ -566,6 +739,14 @@ impl<'a> Lexer<'a> {
         &mut self,
         context: Option<LexContext>,
     ) -> Option<(SyntaxKind, &'a str)> {
+        if let Some(ctx) = context {
+            if let Some(token) = self.consume_cached(ctx) {
+                return Some(token);
+            }
+        } else {
+            self.lookahead.borrow_mut().clear();
+        }
+
         // Serve any pending expanded tokens first
         if let Some((k, t)) = self.pending.pop_front() {
             self.update_line_position(t);
@@ -751,6 +932,7 @@ impl<'a> Lexer<'a> {
 
     /// Consume the entire remaining input as a data section after __END__ or __DATA__
     pub fn consume_data_section(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        self.clear_lookahead();
         let remainder = self.logos_lexer.remainder();
         if remainder.is_empty() {
             return None;
@@ -766,6 +948,7 @@ impl<'a> Lexer<'a> {
     /// Returns the text of all consumed tokens as a RAW_STRING, excluding the closing paren.
     /// Used for attribute arguments where only parenthesis balance is checked.
     pub fn consume_balanced_parens(&mut self) -> Option<(SyntaxKind, &'a str)> {
+        self.clear_lookahead();
         let start_pos = self.logos_lexer.span().end;
         let source = self.logos_lexer.source();
         let mut paren_depth = 0;
@@ -1010,8 +1193,10 @@ impl<'a> Lexer<'a> {
     /// Peek at the next token without consuming it or changing lexer state
     #[must_use]
     pub fn peek_token(&self) -> Option<(SyntaxKind, &'a str)> {
-        let mut cloned = self.clone();
-        cloned.next_token()
+        if !self.ensure_cached(LexContext::Value, 1) {
+            return None;
+        }
+        self.lookahead.borrow().front().map(|entry| entry.token)
     }
 
     /// Peek at the next non-trivia token without consuming it or changing lexer state
@@ -1024,9 +1209,23 @@ impl<'a> Lexer<'a> {
     /// that matches any of the given kinds
     #[must_use]
     pub fn peek_for_any(&self, target_kinds: &[SyntaxKind]) -> Option<(SyntaxKind, &'a str)> {
-        self.clone()
-            .find(|(kind, _)| !kind.is_trivia())
-            .filter(|(kind, _)| target_kinds.contains(kind))
+        let mut index = 0;
+        loop {
+            if !self.ensure_cached(LexContext::Value, index + 1) {
+                return None;
+            }
+            let token = {
+                let cache = self.lookahead.borrow();
+                match cache.get(index) {
+                    Some(entry) => entry.token,
+                    None => return None,
+                }
+            };
+            if !token.0.is_trivia() && target_kinds.contains(&token.0) {
+                return Some(token);
+            }
+            index += 1;
+        }
     }
 
     /// Get the next token using an explicit lexical context for ambiguous cases.
@@ -1038,6 +1237,34 @@ impl<'a> Lexer<'a> {
         self.next_token_internal(Some(context))
     }
 
+    fn ensure_cached(&self, context: LexContext, count: usize) -> bool {
+        let mut cache = self.lookahead.borrow_mut();
+        if cache.front().is_some_and(|entry| entry.context != context) {
+            cache.clear();
+        }
+
+        while cache.len() < count {
+            let base_snapshot = if let Some(last) = cache.back() {
+                last.state.clone()
+            } else {
+                LexerSnapshot::from(self)
+            };
+
+            let mut cursor = base_snapshot.clone().into_lexer();
+            let Some(token) = cursor.next_token_internal(Some(context)) else {
+                return false;
+            };
+            let state = LexerSnapshot::from(&cursor);
+            cache.push_back(CachedEntry {
+                context,
+                token,
+                state,
+            });
+        }
+
+        true
+    }
+
     /// Peek the nth non-trivia token using a given lexical context.
     /// This does not mutate the original lexer state.
     #[must_use]
@@ -1046,21 +1273,28 @@ impl<'a> Lexer<'a> {
         context: LexContext,
         n: usize,
     ) -> Option<(SyntaxKind, &'a str)> {
-        let mut cloned = self.clone();
-        let mut count = 0;
+        let mut index = 0;
+        let mut seen = 0;
         loop {
-            match cloned.next_token_internal(Some(context)) {
-                Some((k, _)) if k.is_trivia() => {
-                    // skip trivia
-                }
-                Some((k, t)) => {
-                    if count == n {
-                        return Some((k, t));
-                    }
-                    count += 1;
-                }
-                None => return None,
+            if !self.ensure_cached(context, index + 1) {
+                return None;
             }
+            let token = {
+                let cache = self.lookahead.borrow();
+                match cache.get(index) {
+                    Some(entry) => entry.token,
+                    None => return None,
+                }
+            };
+            if token.0.is_trivia() {
+                index += 1;
+                continue;
+            }
+            if seen == n {
+                return Some(token);
+            }
+            seen += 1;
+            index += 1;
         }
     }
 
@@ -1070,10 +1304,13 @@ impl<'a> Lexer<'a> {
     /// after the current token, or None if at end of input.
     #[must_use]
     pub fn peek_token_and_next_char(&self) -> (Option<SyntaxKind>, Option<char>) {
-        let mut cloned = self.clone();
-        let current_token = cloned.next_token().map(|(kind, _)| kind);
-        let next_char = cloned.logos_lexer.remainder().chars().next();
-        (current_token, next_char)
+        let current_kind = self.peek_token().map(|(kind, _)| kind);
+        let next_char = self
+            .lookahead
+            .borrow()
+            .front()
+            .and_then(|entry| entry.state.next_char());
+        (current_kind, next_char)
     }
 
     /// Peek the next non-trivia token using a given lexical context.
