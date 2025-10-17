@@ -459,30 +459,33 @@ impl Formatter {
     }
 
     fn is_simple_block(&self, node: &PerlNode) -> bool {
-        if node
-            .children()
-            .any(|child| child.kind().is_phase_block_stmt())
-        {
-            return false;
+        let mut statement_count = 0;
+
+        for element in node.descendants_with_tokens() {
+            match element {
+                NodeOrToken::Node(child) => {
+                    if child.parent().as_ref().is_some_and(|parent| parent == node) {
+                        if child.kind().is_phase_block_stmt() {
+                            return false;
+                        }
+
+                        if matches!(child.kind(), SyntaxKind::STMT | SyntaxKind::VAR_DECL) {
+                            statement_count += 1;
+                            if statement_count > 1 {
+                                return false;
+                            }
+                        }
+                    }
+                }
+                NodeOrToken::Token(token) => {
+                    if matches!(token.kind(), T![;] | SyntaxKind::COMMENT) {
+                        return false;
+                    }
+                }
+            }
         }
 
-        // Check if a block contains only a single expression without semicolon or comments
-
-        let statement_count = node
-            .children()
-            .filter(|child| matches!(child.kind(), SyntaxKind::STMT | SyntaxKind::VAR_DECL))
-            .count();
-
-        // Simple if: 1 or fewer statements AND no semicolons or comments anywhere
-        if statement_count > 1 {
-            return false;
-        }
-
-        !node.descendants_with_tokens().any(|element| {
-            element
-                .as_token()
-                .is_some_and(|token| matches!(token.kind(), T![;] | SyntaxKind::COMMENT))
-        })
+        true
     }
 
     fn should_use_parenthesized_formatter(&self, node: &PerlNode) -> bool {
