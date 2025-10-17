@@ -152,18 +152,11 @@ impl Formatter {
         // Use single-line for simple blocks (single statement, no semicolon)
         // Use multi-line for complex blocks
 
-        // Pre-calculate which blocks are simple to avoid repeated checks
-        let simple_block_ranges: std::collections::HashSet<_> = node
-            .children()
-            .filter(|child| child.kind() == SyntaxKind::BLOCK_STMT && self.is_simple_block(child))
-            .map(|child| child.text_range())
-            .collect();
-
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(child_node) => {
                     if child_node.kind() == SyntaxKind::BLOCK_STMT {
-                        if simple_block_ranges.contains(&child_node.text_range()) {
+                        if self.is_simple_block(&child_node) {
                             self.format_simple_block(&child_node);
                         } else {
                             // Consistently use multiline formatting for complex blocks
