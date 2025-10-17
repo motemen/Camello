@@ -7,6 +7,7 @@ pub mod quoted;
 use crate::lexer::LexContext;
 use crate::{SyntaxKind, T};
 use precedence::{get_operator_info, OperatorInfo, Precedence};
+use rowan::Checkpoint;
 
 use super::{Parser, PrimaryRole};
 
@@ -21,6 +22,31 @@ pub(crate) enum PostfixSubject {
     List,
     /// Other expressions: both [] and {} require ->
     Other,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BinaryOperatorKind {
+    Standard,
+    CompoundAssignment,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BinaryOperatorOutcome {
+    Continue,
+    Break,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TernaryOutcome {
+    NotTernary,
+    Handled,
+    Break,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BinaryOperatorState {
+    info: OperatorInfo,
+    kind: BinaryOperatorKind,
 }
 
 fn is_empty_regex(token: Option<(SyntaxKind, &str)>) -> bool {
@@ -95,7 +121,6 @@ impl Parser<'_> {
 
         // Parse binary operators with precedence climbing
         loop {
-            // Check if we have a binary operator or ternary operator
             let Some(current_kind) = self
                 .peek_non_trivia_token_with_context(LexContext::Operator)
                 .map(|(k, _)| k)
@@ -103,156 +128,193 @@ impl Parser<'_> {
                 break;
             };
 
-            // Cover syntax: disambiguate `<` as comparison operator vs IO operator
-            // This handles cases like:
-            // - `decode <$fh>` - IO operator (argument to decode function)
-            // - `f < $x > 1` - chained comparison operators
-            if current_kind == T![<]
-                && primary_role == PrimaryRole::Bareword
-                && self.is_lt_an_io_operator()
-            {
-                // This is an IO operator pattern like `decode <$fh>`, not a comparison.
-                // Restructure the CST to treat the LHS as a function call with the IO expr as an argument.
-
-                self.builder
-                    .start_node_at(checkpoint, SyntaxKind::FUNCTION_CALL_EXPR.into());
-
-                // Parse the argument list
-                // When expression_list parses in value context, the lexer will tokenize
-                // `<...>` as a single IO_EXPR token (not as separate LT and GT tokens)
-                self.skip_whitespace_and_newlines();
-                self.expression_list();
-
-                self.builder.finish_node();
-
-                // We've consumed the IO operator and restructured the tree
-                return true;
+            if let Some(result) = self.handle_io_operator(primary_role, current_kind, checkpoint) {
+                return result;
             }
 
-            // Handle ternary operator specially
-            if current_kind == T![?] {
-                let ternary_precedence = crate::parser::expression::precedence::Precedence::TERNARY;
-
-                // If ternary precedence is too low, stop here
-                if ternary_precedence < min_precedence {
-                    break;
-                }
-
-                // Start building ternary expression node
-                self.builder
-                    .start_node_at(checkpoint, SyntaxKind::TERNARY_EXPR.into());
-
-                // Consume the ? operator as Operator; RHS will be Value
-                self.bump_op();
-                self.skip_whitespace_and_newlines();
-
-                // Parse the true expression allowing assignment-level precedence
-                if !self.parse_expression_with_precedence(Precedence::ASSIGNMENT) {
-                    self.error("Expected expression after '?'");
-                }
-
-                // Look for the : operator - need to check both contexts
-                self.skip_whitespace_and_newlines();
-                let colon_found = self
-                    .peek_non_trivia_token_with_context(LexContext::Operator)
-                    .map(|(k, _)| k)
-                    == Some(T![:])
-                    || self.current_kind() == Some(T![:]);
-
-                if colon_found {
-                    // Consume ':' as Operator; next will be Value
-                    self.bump_op();
-                    self.skip_whitespace_and_newlines();
-                } else {
-                    self.error("Expected ':' after true expression in ternary operator");
-                }
-
-                // Parse the false expression allowing assignment-level precedence
-                if !self.parse_expression_with_precedence(Precedence::ASSIGNMENT) {
-                    self.error("Expected expression after ':' in ternary operator");
-                }
-
-                self.builder.finish_node();
-                continue;
+            match self.handle_ternary(current_kind, checkpoint, min_precedence) {
+                TernaryOutcome::NotTernary => {}
+                TernaryOutcome::Handled => continue,
+                TernaryOutcome::Break => break,
             }
 
-            // Check if this is a compound assignment operator (e.g., +=, ||=, etc.)
-            let is_compound_assignment = current_kind.is_compoundable_operator() && {
-                // Look ahead to see if there's an '=' after the current operator
-                self.peek_nth_non_trivia_token_with_context(LexContext::Operator, 1)
-                    .is_some_and(|(next_kind, _)| next_kind == T![=])
-            };
-
-            let op_info = if is_compound_assignment {
-                // Use assignment precedence for compound assignment operators
-                Some(OperatorInfo::new(
-                    Precedence::ASSIGNMENT,
-                    true, // Assignment is right associative
-                    SyntaxKind::INFIX_EXPR,
-                ))
-            } else {
-                get_operator_info(current_kind)
-            };
-
-            let Some(op_info) = op_info else {
-                break;
-            };
-
-            // If precedence is too low, stop here
-            if op_info.precedence < min_precedence {
-                break;
+            match self.handle_binary_operator(current_kind, checkpoint, min_precedence) {
+                BinaryOperatorOutcome::Continue => continue,
+                BinaryOperatorOutcome::Break => break,
             }
-
-            // Start building binary expression node
-            self.builder
-                .start_node_at(checkpoint, op_info.node_kind.into());
-
-            let op_checkpoint = self.builder.checkpoint();
-
-            // Consume the operator in Operator context; RHS will be read as Value by default
-            self.bump_op();
-
-            if is_compound_assignment {
-                // Handle compound assignment operators (e.g., +=, ||=, etc.)
-                self.builder
-                    .start_node_at(op_checkpoint, SyntaxKind::COMPOUND_ASSIGNMENT.into());
-                // Consume '=' as an operator; RHS will be read as Value by default
-                self.bump_op();
-                self.builder.finish_node();
-            }
-
-            self.skip_whitespace_and_newlines();
-
-            // Calculate next precedence level
-            let next_min_precedence = if op_info.right_associative {
-                op_info.precedence
-            } else {
-                Precedence(op_info.precedence.0 + 1)
-            };
-
-            // Parse right-hand side
-            // For comma and fat comma, allow trailing operators in appropriate contexts
-            let parsed_rhs = self.parse_expression_with_precedence(next_min_precedence);
-            if !parsed_rhs {
-                // Check if this is a trailing comma or fat comma
-                if (current_kind == T![,] || current_kind == T![=>])
-                    && (self.at(T!['}'])
-                        || self.at(T![;])
-                        || self.at_end()
-                        || self.is_at_postfix_modifier_keyword())
-                {
-                    // This is a trailing comma/fat comma - that's OK, just finish the node
-                    self.builder.finish_node();
-                    break;
-                } else {
-                    self.error("Expected expression after binary operator");
-                }
-            }
-
-            self.builder.finish_node();
         }
 
         true
+    }
+
+    fn handle_io_operator(
+        &mut self,
+        primary_role: PrimaryRole,
+        current_kind: SyntaxKind,
+        checkpoint: Checkpoint,
+    ) -> Option<bool> {
+        if current_kind == T![<]
+            && primary_role == PrimaryRole::Bareword
+            && self.is_lt_an_io_operator()
+        {
+            self.builder
+                .start_node_at(checkpoint, SyntaxKind::FUNCTION_CALL_EXPR.into());
+
+            self.skip_whitespace_and_newlines();
+            self.expression_list();
+            self.builder.finish_node();
+
+            return Some(true);
+        }
+
+        None
+    }
+
+    fn handle_ternary(
+        &mut self,
+        current_kind: SyntaxKind,
+        checkpoint: Checkpoint,
+        min_precedence: Precedence,
+    ) -> TernaryOutcome {
+        if current_kind != T![?] {
+            return TernaryOutcome::NotTernary;
+        }
+
+        let ternary_precedence = Precedence::TERNARY;
+        if ternary_precedence < min_precedence {
+            return TernaryOutcome::Break;
+        }
+
+        self.builder
+            .start_node_at(checkpoint, SyntaxKind::TERNARY_EXPR.into());
+
+        self.bump_op();
+        self.skip_whitespace_and_newlines();
+
+        if !self.parse_expression_with_precedence(Precedence::ASSIGNMENT) {
+            self.error("Expected expression after '?'");
+        }
+
+        self.skip_whitespace_and_newlines();
+        let colon_found = self
+            .peek_non_trivia_token_with_context(LexContext::Operator)
+            .map(|(k, _)| k)
+            == Some(T![:])
+            || self.current_kind() == Some(T![:]);
+
+        if colon_found {
+            self.bump_op();
+            self.skip_whitespace_and_newlines();
+        } else {
+            self.error("Expected ':' after true expression in ternary operator");
+        }
+
+        if !self.parse_expression_with_precedence(Precedence::ASSIGNMENT) {
+            self.error("Expected expression after ':' in ternary operator");
+        }
+
+        self.builder.finish_node();
+        TernaryOutcome::Handled
+    }
+
+    fn handle_binary_operator(
+        &mut self,
+        current_kind: SyntaxKind,
+        checkpoint: Checkpoint,
+        min_precedence: Precedence,
+    ) -> BinaryOperatorOutcome {
+        let Some(operator_state) = self.prepare_binary_operator(current_kind) else {
+            return BinaryOperatorOutcome::Break;
+        };
+
+        if operator_state.info.precedence < min_precedence {
+            return BinaryOperatorOutcome::Break;
+        }
+
+        self.builder
+            .start_node_at(checkpoint, operator_state.info.node_kind.into());
+
+        let op_checkpoint = self.builder.checkpoint();
+        self.bump_op();
+
+        self.handle_compound_assignment(op_checkpoint, operator_state.kind);
+
+        self.skip_whitespace_and_newlines();
+
+        let next_min_precedence = if operator_state.info.right_associative {
+            operator_state.info.precedence
+        } else {
+            Precedence(operator_state.info.precedence.0 + 1)
+        };
+
+        let parsed_rhs = self.parse_expression_with_precedence(next_min_precedence);
+        if !parsed_rhs {
+            if self.allow_trailing_separator(current_kind) {
+                self.builder.finish_node();
+                return BinaryOperatorOutcome::Break;
+            }
+
+            self.error("Expected expression after binary operator");
+        }
+
+        self.builder.finish_node();
+        BinaryOperatorOutcome::Continue
+    }
+
+    fn prepare_binary_operator(&mut self, current_kind: SyntaxKind) -> Option<BinaryOperatorState> {
+        if let Some(state) = self.try_prepare_compound_assignment(current_kind) {
+            return Some(state);
+        }
+
+        get_operator_info(current_kind).map(|info| BinaryOperatorState {
+            info,
+            kind: BinaryOperatorKind::Standard,
+        })
+    }
+
+    fn try_prepare_compound_assignment(
+        &mut self,
+        current_kind: SyntaxKind,
+    ) -> Option<BinaryOperatorState> {
+        if !current_kind.is_compoundable_operator() {
+            return None;
+        }
+
+        let is_followed_by_assignment = self
+            .peek_nth_non_trivia_token_with_context(LexContext::Operator, 1)
+            .is_some_and(|(next_kind, _)| next_kind == T![=]);
+
+        if !is_followed_by_assignment {
+            return None;
+        }
+
+        Some(BinaryOperatorState {
+            info: OperatorInfo::new(Precedence::ASSIGNMENT, true, SyntaxKind::INFIX_EXPR),
+            kind: BinaryOperatorKind::CompoundAssignment,
+        })
+    }
+
+    fn handle_compound_assignment(
+        &mut self,
+        op_checkpoint: Checkpoint,
+        operator_kind: BinaryOperatorKind,
+    ) {
+        if operator_kind != BinaryOperatorKind::CompoundAssignment {
+            return;
+        }
+
+        self.builder
+            .start_node_at(op_checkpoint, SyntaxKind::COMPOUND_ASSIGNMENT.into());
+        self.bump_op();
+        self.builder.finish_node();
+    }
+
+    fn allow_trailing_separator(&mut self, operator_kind: SyntaxKind) -> bool {
+        (operator_kind == T![,] || operator_kind == T![=>])
+            && (self.at(T!['}'])
+                || self.at(T![;])
+                || self.at_end()
+                || self.is_at_postfix_modifier_keyword())
     }
 
     /// Parse primary expression with postfix operations
