@@ -4,6 +4,7 @@ use crate::{
 };
 use miette::{Diagnostic, SourceSpan};
 use rowan::{GreenNode, GreenNodeBuilder, TextRange};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, thiserror::Error, Diagnostic)]
 #[error("Parse error: {message}")]
@@ -11,19 +12,19 @@ pub struct ParseError {
     pub message: String,
     pub range: TextRange,
     #[source_code]
-    pub source_code: String,
+    pub source_code: Arc<str>,
     #[label("here")]
     pub span: SourceSpan,
 }
 
 impl ParseError {
     #[must_use]
-    pub fn new(message: String, range: TextRange, source_code: &str) -> Self {
+    pub fn new(message: String, range: TextRange, source_code: Arc<str>) -> Self {
         let span = SourceSpan::new(usize::from(range.start()).into(), usize::from(range.len()));
         Self {
             message,
             range,
-            source_code: source_code.to_string(),
+            source_code,
             span,
         }
     }
@@ -47,7 +48,7 @@ pub struct Parser<'a> {
     builder: GreenNodeBuilder<'static>,
     errors: Vec<ParseError>,
     current_pos: usize,
-    source: &'a str,
+    source_arc: Arc<str>,
     options: ParserOptions,
 }
 
@@ -68,13 +69,14 @@ impl<'a> Parser<'a> {
     #[must_use]
     pub fn new_with_options(input: &'a str, options: ParserOptions) -> Self {
         let lexer = Lexer::new(input);
+        let source_arc = Arc::<str>::from(input);
 
         Self {
             lexer,
             builder: GreenNodeBuilder::new(),
             errors: Vec::new(),
             current_pos: 0,
-            source: input,
+            source_arc,
             options,
         }
     }
@@ -315,8 +317,11 @@ impl<'a> Parser<'a> {
             ((self.current_pos + text_len) as u32).into(),
         );
 
-        self.errors
-            .push(ParseError::new(message.to_string(), range, self.source));
+        self.errors.push(ParseError::new(
+            message.to_string(),
+            range,
+            Arc::clone(&self.source_arc),
+        ));
 
         // Create error token by consuming one token (if any)
         if let Some((_, text)) = self.lexer.next_token() {
@@ -332,8 +337,11 @@ impl<'a> Parser<'a> {
             ((self.current_pos + text_len) as u32).into(),
         );
 
-        self.errors
-            .push(ParseError::new(message.to_string(), range, self.source));
+        self.errors.push(ParseError::new(
+            message.to_string(),
+            range,
+            Arc::clone(&self.source_arc),
+        ));
     }
 
     /// Helper function to handle optional or required semicolons at the end of statements.
