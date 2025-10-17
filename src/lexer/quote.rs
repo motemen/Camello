@@ -6,6 +6,7 @@ use crate::{SyntaxKind, T};
 impl<'a> Lexer<'a> {
     /// Called by the parser after consuming q/qq/qx/qw/m/qr/s/tr/y.
     pub fn begin_quote_like(&mut self, prefix: SyntaxKind, mode: QuoteLikeMode) {
+        self.clear_lookahead();
         self.mode = LexerMode::QuoteLike {
             prefix,
             mode,
