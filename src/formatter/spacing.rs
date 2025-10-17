@@ -308,11 +308,11 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
 
         // Logical NOT: special handling
         (L_PAREN, LOGICAL_NOT) => Some(false), // No space after (
-        (_, LOGICAL_NOT) => Some(true),        // Space before ! in other cases
         (LOGICAL_NOT, _) => Some(false),       // No space after !
+        (_, LOGICAL_NOT) => Some(true),        // Space before ! in other cases
         (L_PAREN, BITWISE_NOT) => Some(false),
-        (_, BITWISE_NOT) => Some(true),
         (BITWISE_NOT, _) => Some(false),
+        (_, BITWISE_NOT) => Some(true),
 
         // RETURN_KW and loop control keywords: no space before semicolon, but space before other tokens
         (RETURN_KW | NEXT_KW | LAST_KW | REDO_KW, SEMICOLON) => Some(false),
@@ -335,6 +335,13 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
         // After identifier: special rules (exclude R_PAREN to fix function call spacing)
         (IDENT, SEMICOLON | DOUBLE_COLON | L_PAREN | R_PAREN) => Some(false),
         (IDENT, _) => Some(true),
+
+        // Quote-like delimiter followed by postfix keywords (e.g. s{}{} if)
+        (
+            DELIMITER,
+            IF_KW | UNLESS_KW | WHILE_KW | UNTIL_KW | FOR_KW | FOREACH_KW | WHEN_KW | CATCH_KW
+                | FINALLY_KW,
+        ) => Some(true),
 
         // SUB_KW with identifiers
         (SUB_KW, IDENT | QUALIFIED_IDENT) => Some(true),
