@@ -343,7 +343,7 @@ impl Formatter {
 
     fn measure_assignment_prefix(&self, node: &PerlNode) -> Option<usize> {
         let mut formatter =
-            Formatter::with_options((*self.comment_registry).clone(), self.options.clone());
+            Formatter::with_shared_deps(self.comment_registry.clone(), self.options.clone());
         let formatted = formatter.format(node);
         let trimmed = formatted.trim_end_matches('\n');
 

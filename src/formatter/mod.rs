@@ -182,6 +182,16 @@ impl Formatter {
         }
     }
 
+    fn with_shared_deps(comment_registry: Rc<CommentRegistry>, options: FormatterOptions) -> Self {
+        Self {
+            pending_empty_lines: 0,
+            writer: Writer::new(),
+            comment_registry,
+            options,
+            assignment_alignment: None,
+        }
+    }
+
     pub fn format(&mut self, node: &PerlNode) -> String {
         self.format_node(node);
         self.writer.finish()
