@@ -337,11 +337,9 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
         (IDENT, _) => Some(true),
 
         // Quote-like delimiter followed by postfix keywords (e.g. s{}{} if)
-        (
-            DELIMITER,
-            IF_KW | UNLESS_KW | WHILE_KW | UNTIL_KW | FOR_KW | FOREACH_KW | WHEN_KW | CATCH_KW
-                | FINALLY_KW,
-        ) => Some(true),
+        (DELIMITER, IF_KW | UNLESS_KW | WHILE_KW | UNTIL_KW | FOR_KW | FOREACH_KW | WHEN_KW) => {
+            Some(true)
+        }
 
         // SUB_KW with identifiers
         (SUB_KW, IDENT | QUALIFIED_IDENT) => Some(true),
@@ -368,9 +366,9 @@ fn handle_contextual_spacing(
     current_spacing: &TokenSpacing,
 ) -> bool {
     use SyntaxKind::{
-        CATCH_KW, COMMA, FINALLY_KW, FOREACH_KW, FOR_KW, IF_KW, POSTFIX_DEREF_ARRAY,
-        POSTFIX_DEREF_ARRAY_LAST_INDEX, POSTFIX_DEREF_CODE, POSTFIX_DEREF_GLOB, POSTFIX_DEREF_HASH,
-        POSTFIX_DEREF_SCALAR, UNLESS_KW, WHEN_KW,
+        COMMA, FOREACH_KW, FOR_KW, IF_KW, POSTFIX_DEREF_ARRAY, POSTFIX_DEREF_ARRAY_LAST_INDEX,
+        POSTFIX_DEREF_CODE, POSTFIX_DEREF_GLOB, POSTFIX_DEREF_HASH, POSTFIX_DEREF_SCALAR,
+        UNLESS_KW, UNTIL_KW, WHEN_KW, WHILE_KW,
     };
 
     if prev_spacing.category == TokenCategory::Variable
@@ -399,8 +397,8 @@ fn handle_contextual_spacing(
         (COMMA, _) => true,
         (_, COMMA) => false,
 
-        // Keywords in postfix position (if/unless/for/catch/finally/when)
-        (_, IF_KW | UNLESS_KW | FOR_KW | FOREACH_KW | CATCH_KW | FINALLY_KW | WHEN_KW) => true,
+        // Keywords in postfix position (if/unless/while/until/for/foreach/when)
+        (_, IF_KW | UNLESS_KW | WHILE_KW | UNTIL_KW | FOR_KW | FOREACH_KW | WHEN_KW) => true,
 
         _ => false,
     }
