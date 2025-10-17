@@ -1,5 +1,6 @@
 ---
 source: src/formatter/tests.rs
+assertion_line: 51
 expression: formatted
 ---
 # Subroutine attributes tests
@@ -18,8 +19,8 @@ sub complex : attr(foo(bar(baz))) { }
 
 # Multiple attributes on separate lines (should be preserved)
 sub multi
-: lvalue
-: method { }
+    : lvalue
+    : method { }
 
 # Anonymous sub with attributes
 my $sub = sub : lvalue { };

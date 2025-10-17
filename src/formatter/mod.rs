@@ -610,6 +610,13 @@ impl Formatter {
             return true;
         }
 
+        if matches!(prev_kind, IDENT | QUALIFIED_IDENT)
+            && !ctx.in_multiline_context
+            && !matches!(current, SEMICOLON | COMMA)
+        {
+            return true;
+        }
+
         if current.is_operator()
             && !matches!(
                 current,
@@ -705,6 +712,7 @@ impl Formatter {
                             | T![when]
                             | T![default]
                             | T![;]
+                            | T![,]
                             | T!['(']
                     )
                 ) {
