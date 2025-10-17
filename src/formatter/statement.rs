@@ -75,31 +75,20 @@ impl Formatter {
     }
 
     pub(super) fn format_simple_block(&mut self, node: &PerlNode) {
-        let mut has_content = false;
-
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(_) => {
-                    has_content = true;
-                }
-                NodeOrToken::Token(token) => match token.kind() {
-                    T!['{'] | T!['}'] | SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE => {}
-                    _ => {
-                        has_content = true;
-                    }
-                },
-            }
-        }
-
         let brace_tightness = self.options.delimiter_tightness.for_kind(T!['{']);
         let add_space_for_block = brace_tightness.should_add_space_for_simple_block();
 
         // Use context with suppress_newlines enabled for simple blocks
         let ctx = super::FormatContext::default().with_suppress_newlines();
 
+        let mut has_content = false;
+
         for child in node.children_with_tokens() {
             match child {
-                NodeOrToken::Node(child_node) => self.format_node_with_context(&child_node, ctx),
+                NodeOrToken::Node(child_node) => {
+                    has_content = true;
+                    self.format_node_with_context(&child_node, ctx);
+                }
                 NodeOrToken::Token(token) => match token.kind() {
                     T!['{'] => {
                         self.handle_spacing_before(token.kind());
@@ -126,6 +115,7 @@ impl Formatter {
                     }
                     SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE => {}
                     _ => {
+                        has_content = true;
                         self.format_token_with_context(&token, ctx);
                     }
                 },
