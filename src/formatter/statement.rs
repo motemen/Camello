@@ -342,6 +342,10 @@ impl Formatter {
     }
 
     fn measure_assignment_prefix(&self, node: &PerlNode) -> Option<usize> {
+        // Create a temporary formatter to measure the prefix width.
+        // This is efficient: comment_registry.clone() only increments the Rc refcount,
+        // and options.clone() is lightweight. Full formatting is necessary to accurately
+        // measure the width including proper spacing and token formatting.
         let mut formatter =
             Formatter::with_shared_deps(self.comment_registry.clone(), self.options.clone());
         let formatted = formatter.format(node);
