@@ -570,6 +570,13 @@ fn build_comment_blocks(
                     // Keep the current block open across indentation tokens.
                 }
                 SyntaxKind::NEWLINE => {
+                    finalize_pending_block(
+                        &mut pending_block,
+                        last_significant,
+                        registry,
+                        &mut summaries,
+                        &mut waiting_for_next,
+                    );
                     saw_newline_since_significant = true;
                 }
                 _ => {
