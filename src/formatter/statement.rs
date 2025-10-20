@@ -371,73 +371,18 @@ impl Formatter {
         let mut options = self.options.clone();
         options.alignment_strategies.clear();
         let mut formatter = Formatter::with_shared_deps(self.comment_registry.clone(), options);
-        let formatted = formatter.format(node);
-        let trimmed = formatted.trim_end_matches('\n');
+        formatter.format_node(node);
 
-        if trimmed.contains('\n') {
+        if formatter.writer.non_empty_line_count() != 1 {
             return None;
         }
 
-        let token_text = self.first_token_text(node, token_kind)?;
-        let search_text = self.alignment_search_text(token_kind, &token_text);
-        let index = Self::find_token_index_from(trimmed, &search_text, token_kind, 0)?;
-        let prefix = &trimmed[..index];
-        Some(prefix.chars().count())
-    }
-
-    fn first_token_text(&self, node: &PerlNode, token_kind: SyntaxKind) -> Option<String> {
-        node.descendants_with_tokens()
-            .find_map(|element| match element {
-                NodeOrToken::Token(token) if token.kind() == token_kind => {
-                    Some(token.text().to_string())
-                }
-                _ => None,
-            })
-    }
-
-    pub(super) fn alignment_search_text(&self, token_kind: SyntaxKind, token_text: &str) -> String {
-        match token_kind {
-            SyntaxKind::COMMENT => "#".to_string(),
-            _ => token_text.to_string(),
-        }
-    }
-
-    pub(super) fn find_token_index_from(
-        line: &str,
-        token_text: &str,
-        token_kind: SyntaxKind,
-        mut start: usize,
-    ) -> Option<usize> {
-        while let Some(pos) = line[start..].find(token_text) {
-            let absolute = start + pos;
-            if Self::token_match_has_valid_boundaries(line, absolute, token_text.len(), token_kind)
-            {
-                return Some(absolute);
-            }
-            start = absolute + token_text.len();
-        }
-        None
-    }
-
-    fn token_match_has_valid_boundaries(
-        line: &str,
-        start: usize,
-        len: usize,
-        token_kind: SyntaxKind,
-    ) -> bool {
-        if matches!(token_kind, SyntaxKind::IF_KW | SyntaxKind::UNLESS_KW) {
-            let before = line[..start].chars().rev().next();
-            let after = line[start + len..].chars().next();
-            let is_word_char = |c: char| c.is_alphanumeric() || c == '_';
-            if before.is_some_and(is_word_char) {
-                return false;
-            }
-            if after.is_some_and(is_word_char) {
-                return false;
-            }
+        let mut columns = formatter.writer.collect_token_columns(token_kind);
+        if columns.len() != 1 {
+            return None;
         }
 
-        true
+        Some(columns.remove(0).column)
     }
 
     fn alignment_token_kind_for_node(
