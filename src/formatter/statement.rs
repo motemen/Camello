@@ -290,9 +290,7 @@ impl Formatter {
         first_node: &PerlNode,
         iter: &Peekable<SyntaxElementChildren<PerlLanguage>>,
     ) -> Option<AlignmentState> {
-        let Some(token_kind) = self.alignment_token_kind_for_node(strategy, first_node) else {
-            return None;
-        };
+        let token_kind = self.alignment_token_kind_for_node(strategy, first_node)?;
 
         let mut nodes = vec![first_node.clone()];
         let lookahead = iter.clone();
