@@ -1,7 +1,7 @@
 use crate::{PerlLanguage, PerlNode, SyntaxKind, T};
 use rowan::{NodeOrToken, SyntaxElement, SyntaxElementChildren, SyntaxToken};
 
-use super::{AlignmentState, AlignmentStrategy, Formatter};
+use super::{AlignmentState, AlignmentStrategy, FormatContext, Formatter};
 
 impl Formatter {
     pub(super) fn format_single_line_delimited_children(
@@ -10,6 +10,23 @@ impl Formatter {
         opening: SyntaxKind,
         closing: SyntaxKind,
         skip_whitespace: bool,
+    ) {
+        self.format_single_line_delimited_children_with_context(
+            node,
+            opening,
+            closing,
+            skip_whitespace,
+            FormatContext::default(),
+        );
+    }
+
+    pub(super) fn format_single_line_delimited_children_with_context(
+        &mut self,
+        node: &PerlNode,
+        opening: SyntaxKind,
+        closing: SyntaxKind,
+        skip_whitespace: bool,
+        ctx: FormatContext,
     ) {
         use SyntaxKind::WHITESPACE;
 
@@ -33,7 +50,23 @@ impl Formatter {
         }
 
         if pairs.is_empty() {
-            self.format_children(node, skip_whitespace);
+            if ctx.suppress_newlines {
+                for child in node.children_with_tokens() {
+                    match child {
+                        NodeOrToken::Node(child_node) => {
+                            self.format_node_with_context(&child_node, ctx);
+                        }
+                        NodeOrToken::Token(token) => {
+                            if skip_whitespace && token.kind() == WHITESPACE {
+                                continue;
+                            }
+                            self.format_token_with_context(&token, ctx);
+                        }
+                    }
+                }
+            } else {
+                self.format_children(node, skip_whitespace);
+            }
             return;
         }
 
@@ -46,23 +79,26 @@ impl Formatter {
             }
 
             let mut significant_tokens = 0;
+            let mut contains_qw = false;
+
             for child in &children[open_index + 1..*close_index] {
                 match child {
                     NodeOrToken::Node(inner) => {
-                        for element in inner.descendants_with_tokens() {
-                            if let Some(token) = element.as_token() {
-                                if !token.kind().is_trivia() {
-                                    significant_tokens += 1;
-                                    if significant_tokens >= 2 {
-                                        break;
-                                    }
-                                }
-                            }
+                        let remaining = 2usize.saturating_sub(significant_tokens);
+                        if remaining == 0 {
+                            break;
                         }
+                        let (count, has_qw) =
+                            Self::count_significant_tokens_in_node(inner, remaining);
+                        significant_tokens += count;
+                        contains_qw |= has_qw;
                     }
                     NodeOrToken::Token(token) => {
                         if !token.kind().is_trivia() {
                             significant_tokens += 1;
+                            if matches!(token.kind(), SyntaxKind::QW_STRING | SyntaxKind::QW_KW) {
+                                contains_qw = true;
+                            }
                         }
                     }
                 }
@@ -73,14 +109,19 @@ impl Formatter {
             }
 
             let tightness = self.options.delimiter_tightness.for_kind(opening);
-            let add_interior_space = tightness.should_add_space(significant_tokens);
+            let mut add_interior_space = tightness.should_add_space(significant_tokens);
+            if contains_qw {
+                add_interior_space = true;
+            }
             open_spacing[*open_index] = Some(add_interior_space);
             close_spacing[*close_index] = Some(add_interior_space);
         }
 
         for (index, child) in children.into_iter().enumerate() {
             match child {
-                NodeOrToken::Node(child_node) => self.format_node(&child_node),
+                NodeOrToken::Node(child_node) => {
+                    self.format_node_with_context(&child_node, ctx);
+                }
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
 
@@ -108,9 +149,60 @@ impl Formatter {
                     } else if skip_whitespace && kind == WHITESPACE {
                         continue;
                     } else {
-                        self.format_token(&token);
+                        self.format_token_with_context(&token, ctx);
                     }
                 }
+            }
+        }
+    }
+
+    fn count_significant_tokens_in_node(node: &PerlNode, remaining: usize) -> (usize, bool) {
+        use SyntaxKind::{
+            ARRAY_VAR, HASH_VAR, QW_EXPR, QW_KW, QW_STRING, SCALAR_VAR, TYPEGLOB_VAR,
+        };
+
+        if remaining == 0 {
+            return (0, false);
+        }
+
+        match node.kind() {
+            SCALAR_VAR | ARRAY_VAR | HASH_VAR | TYPEGLOB_VAR => (1, false),
+            _ => {
+                let is_qw_expr = node.kind() == QW_EXPR;
+                let mut count = 0;
+                let mut contains_qw = is_qw_expr;
+
+                for child in node.children_with_tokens() {
+                    let rem = remaining.saturating_sub(count);
+                    if rem == 0 {
+                        break;
+                    }
+
+                    match child {
+                        NodeOrToken::Node(inner) => {
+                            let (sub_count, sub_qw) =
+                                Self::count_significant_tokens_in_node(&inner, rem);
+                            count += sub_count;
+                            if !is_qw_expr {
+                                contains_qw |= sub_qw;
+                            }
+                        }
+                        NodeOrToken::Token(token) => {
+                            if !token.kind().is_trivia() {
+                                count += 1;
+                                if !is_qw_expr && matches!(token.kind(), QW_STRING | QW_KW) {
+                                    contains_qw = true;
+                                }
+                            }
+                        }
+                    }
+
+                    if count >= remaining {
+                        break;
+                    }
+                }
+
+                (count.min(remaining), contains_qw)
             }
         }
     }
