@@ -285,9 +285,7 @@ impl<'a> Lexer<'a> {
                     idx += 1;
                 }
 
-                let Some(end_idx) = closing_idx else {
-                    return None;
-                };
+                let end_idx = closing_idx?;
 
                 marker = &remainder[content_start..end_idx];
                 idx = end_idx + 1;
@@ -332,18 +330,17 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        if require_identifier_marker {
-            if marker.is_empty()
+        if require_identifier_marker
+            && (marker.is_empty()
                 || !marker
                     .chars()
                     .next()
                     .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
                 || !marker
                     .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '_')
-            {
-                return None;
-            }
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_'))
+        {
+            return None;
         }
 
         let text = &remainder[..idx];
@@ -446,7 +443,6 @@ impl<'a> Lexer<'a> {
         let HeredocMarker {
             marker,
             strip_indent,
-            ..
         } = self.heredoc_queue.pop_front()?;
         let remainder = self.logos_lexer.remainder();
         let bytes = remainder.as_bytes();
