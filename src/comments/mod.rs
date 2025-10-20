@@ -6,7 +6,7 @@
 //! rendered, but other components (such as future lint passes) can also consume
 //! the same information without depending on formatter internals.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use crate::{PerlLanguage, SyntaxKind};
 use rowan::ast::SyntaxNodePtr;
@@ -158,6 +158,25 @@ impl CommentBlock {
     #[must_use]
     pub fn contains(&self, id: CommentId) -> bool {
         self.comments.contains(&id)
+    }
+}
+
+#[derive(Debug, Clone)]
+struct BlockSummary {
+    block: CommentBlockId,
+    prev_token: Option<TokenKey>,
+    had_newline_before: bool,
+    next_token: Option<TokenKey>,
+}
+
+impl BlockSummary {
+    fn new(block: CommentBlockId, prev_token: Option<TokenKey>, had_newline_before: bool) -> Self {
+        Self {
+            block,
+            prev_token,
+            had_newline_before,
+            next_token: None,
+        }
     }
 }
 
@@ -334,7 +353,7 @@ impl CommentRegistry {
     #[must_use]
     pub fn from_syntax(root: &SyntaxNode<PerlLanguage>) -> Self {
         let mut registry = CommentRegistry::new();
-        build_comment_blocks(root, &mut registry);
+        let summaries = build_comment_blocks(root, &mut registry);
 
         for node in std::iter::once(root.clone()).chain(root.descendants()) {
             if node.kind() == SyntaxKind::SUB_DEF {
@@ -342,7 +361,7 @@ impl CommentRegistry {
             }
         }
 
-        assign_general_comment_placements(root, &mut registry);
+        assign_general_comment_placements(summaries, &mut registry);
 
         registry
     }
@@ -470,37 +489,126 @@ impl CommentRegistry {
     }
 }
 
-fn flush_pending_block(registry: &mut CommentRegistry, pending: &mut Vec<CommentId>) {
-    if pending.is_empty() {
-        return;
-    }
-
-    let comments = std::mem::take(pending);
-    registry.add_block(comments);
+/// Represents the state of comment block accumulation during parsing.
+enum PendingCommentBlock {
+    /// No comments are currently being accumulated.
+    Empty,
+    /// Comments are being accumulated. The boolean indicates whether there was
+    /// a newline before the first comment in this block.
+    Active {
+        comments: Vec<CommentId>,
+        had_newline_before: bool,
+    },
 }
 
-fn build_comment_blocks(root: &SyntaxNode<PerlLanguage>, registry: &mut CommentRegistry) {
-    let mut pending_block: Vec<CommentId> = Vec::new();
+impl PendingCommentBlock {
+    /// Adds a comment to the pending block, initializing it if necessary.
+    fn push(&mut self, comment: CommentId, had_newline_before: bool) {
+        match self {
+            Self::Empty => {
+                *self = Self::Active {
+                    comments: vec![comment],
+                    had_newline_before,
+                };
+            }
+            Self::Active { comments, .. } => {
+                comments.push(comment);
+            }
+        }
+    }
+
+    /// Extracts the pending comments and resets to empty state.
+    /// Returns None if the block was already empty.
+    fn take(&mut self) -> Option<(Vec<CommentId>, bool)> {
+        match std::mem::replace(self, Self::Empty) {
+            Self::Empty => None,
+            Self::Active {
+                comments,
+                had_newline_before,
+            } => Some((comments, had_newline_before)),
+        }
+    }
+}
+
+/// Helper to finalize a pending comment block and add it to summaries.
+///
+/// This function is only used within `build_comment_blocks` to avoid code duplication.
+fn finalize_pending_block(
+    pending_block: &mut PendingCommentBlock,
+    last_significant: Option<TokenKey>,
+    registry: &mut CommentRegistry,
+    summaries: &mut Vec<BlockSummary>,
+    waiting_for_next: &mut VecDeque<usize>,
+) {
+    if let Some((comments, had_newline_before)) = pending_block.take() {
+        let block = registry.add_block(comments);
+        let summary = BlockSummary::new(block, last_significant, had_newline_before);
+        summaries.push(summary);
+        waiting_for_next.push_back(summaries.len() - 1);
+    }
+}
+
+fn build_comment_blocks(
+    root: &SyntaxNode<PerlLanguage>,
+    registry: &mut CommentRegistry,
+) -> Vec<BlockSummary> {
+    let mut pending_block = PendingCommentBlock::Empty;
+    let mut last_significant: Option<TokenKey> = None;
+    let mut saw_newline_since_significant = false;
+    let mut summaries: Vec<BlockSummary> = Vec::new();
+    let mut waiting_for_next: VecDeque<usize> = VecDeque::new();
 
     for event in root.preorder_with_tokens() {
         if let WalkEvent::Enter(NodeOrToken::Token(token)) = event {
             match token.kind() {
                 SyntaxKind::COMMENT => {
                     if let Some(comment_id) = CommentId::from_token(&token) {
-                        pending_block.push(comment_id);
+                        pending_block.push(comment_id, saw_newline_since_significant);
                     }
                 }
                 SyntaxKind::WHITESPACE => {
                     // Keep the current block open across indentation tokens.
                 }
+                SyntaxKind::NEWLINE => {
+                    finalize_pending_block(
+                        &mut pending_block,
+                        last_significant,
+                        registry,
+                        &mut summaries,
+                        &mut waiting_for_next,
+                    );
+                    saw_newline_since_significant = true;
+                }
                 _ => {
-                    flush_pending_block(registry, &mut pending_block);
+                    finalize_pending_block(
+                        &mut pending_block,
+                        last_significant,
+                        registry,
+                        &mut summaries,
+                        &mut waiting_for_next,
+                    );
+
+                    let token_key = TokenKey::from_token(&token);
+                    while let Some(index) = waiting_for_next.pop_front() {
+                        summaries[index].next_token = Some(token_key);
+                    }
+
+                    last_significant = Some(token_key);
+                    saw_newline_since_significant = false;
                 }
             }
         }
     }
 
-    flush_pending_block(registry, &mut pending_block);
+    finalize_pending_block(
+        &mut pending_block,
+        last_significant,
+        registry,
+        &mut summaries,
+        &mut waiting_for_next,
+    );
+
+    summaries
 }
 
 fn collect_leading_function_comments(
@@ -545,119 +653,29 @@ fn collect_leading_function_comments(
     }
 }
 
-fn assign_general_comment_placements(
-    root: &SyntaxNode<PerlLanguage>,
-    registry: &mut CommentRegistry,
-) {
-    let block_ids: Vec<_> = registry.blocks().map(|block| block.id()).collect();
-
-    for block_id in block_ids {
-        if registry.assignment(block_id).is_some() {
+fn assign_general_comment_placements(summaries: Vec<BlockSummary>, registry: &mut CommentRegistry) {
+    for summary in summaries {
+        if registry.assignment(summary.block).is_some() {
             continue;
         }
 
-        let placement = classify_comment_block(root, registry, block_id);
-        registry.set(CommentAssignment::new(block_id, placement));
+        let placement = classify_comment_block(&summary);
+        registry.set(CommentAssignment::new(summary.block, placement));
     }
 }
 
-fn classify_comment_block(
-    root: &SyntaxNode<PerlLanguage>,
-    registry: &CommentRegistry,
-    block_id: CommentBlockId,
-) -> CommentPlacement {
-    let Some(block) = registry.block(block_id) else {
-        return CommentPlacement::Standalone;
-    };
-    let Some(first_comment) = block.first_comment() else {
-        return CommentPlacement::Standalone;
-    };
-    let Some(first_token) = first_comment.resolve(root) else {
-        return CommentPlacement::Standalone;
-    };
-
-    let (prev_token, saw_newline) =
-        find_previous_significant_token(registry, block_id, first_token.prev_token());
-
-    if let Some(prev) = prev_token {
-        if !saw_newline {
-            return CommentPlacement::Trailing(CommentOwner::for_token(&prev));
+fn classify_comment_block(summary: &BlockSummary) -> CommentPlacement {
+    if let Some(prev) = summary.prev_token {
+        if !summary.had_newline_before {
+            return CommentPlacement::Trailing(CommentOwner::from_token_key(prev));
         }
     }
 
-    if let Some(next) = find_next_significant_token(root, registry, block) {
-        return CommentPlacement::Leading(CommentOwner::for_token(&next));
+    if let Some(next) = summary.next_token {
+        return CommentPlacement::Leading(CommentOwner::from_token_key(next));
     }
 
     CommentPlacement::Standalone
-}
-
-fn find_previous_significant_token(
-    registry: &CommentRegistry,
-    block_id: CommentBlockId,
-    mut current: Option<SyntaxToken<PerlLanguage>>,
-) -> (Option<SyntaxToken<PerlLanguage>>, bool) {
-    let mut saw_newline = false;
-
-    while let Some(token) = current {
-        match token.kind() {
-            SyntaxKind::WHITESPACE => {
-                current = token.prev_token();
-            }
-            SyntaxKind::NEWLINE => {
-                saw_newline = true;
-                break;
-            }
-            SyntaxKind::COMMENT => {
-                if comment_belongs_to_block(registry, block_id, &token) {
-                    current = token.prev_token();
-                    continue;
-                }
-                // A comment from another block marks a significant boundary.
-                break;
-            }
-            _ => return (Some(token), saw_newline),
-        }
-    }
-
-    (None, saw_newline)
-}
-
-fn find_next_significant_token(
-    root: &SyntaxNode<PerlLanguage>,
-    registry: &CommentRegistry,
-    block: &CommentBlock,
-) -> Option<SyntaxToken<PerlLanguage>> {
-    let last_comment = block.comments().last().copied()?;
-    let mut current = last_comment.resolve(root)?.next_token();
-
-    while let Some(token) = current {
-        match token.kind() {
-            SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE => {
-                current = token.next_token();
-            }
-            SyntaxKind::COMMENT => {
-                if comment_belongs_to_block(registry, block.id(), &token) {
-                    current = token.next_token();
-                    continue;
-                }
-                break;
-            }
-            _ => return Some(token),
-        }
-    }
-
-    None
-}
-
-fn comment_belongs_to_block(
-    registry: &CommentRegistry,
-    block_id: CommentBlockId,
-    token: &SyntaxToken<PerlLanguage>,
-) -> bool {
-    CommentId::from_token(token)
-        .and_then(|comment| registry.block_of(comment))
-        .is_some_and(|candidate| candidate == block_id)
 }
 
 fn is_line_comment(token: &SyntaxToken<PerlLanguage>) -> bool {
