@@ -361,28 +361,7 @@ impl Formatter {
     fn format_compound_var_simple_block(&mut self, node: &PerlNode) {
         // Use context with suppress_newlines enabled for simple blocks
         let ctx = super::FormatContext::default().with_suppress_newlines();
-
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(child_node) => {
-                    self.format_node_with_context(&child_node, ctx);
-                }
-                NodeOrToken::Token(token) => {
-                    match token.kind() {
-                        SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE => {
-                            // Skip trivia to keep the block tight inside compound variables.
-                        }
-                        T!['{'] | T!['}'] => {
-                            self.writer.write_token(&token);
-                            self.remember_token(&token);
-                        }
-                        _ => {
-                            self.format_token_with_context(&token, ctx);
-                        }
-                    }
-                }
-            }
-        }
+        self.format_single_line_delimited_children_with_context(node, T!['{'], T!['}'], true, ctx);
     }
 
     fn format_subscription_expr(
