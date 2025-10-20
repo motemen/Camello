@@ -1,7 +1,7 @@
 use crate::{PerlLanguage, PerlNode, SyntaxKind, T};
-use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
+use rowan::{NodeOrToken, SyntaxElement, SyntaxElementChildren, SyntaxToken};
 
-use super::Formatter;
+use super::{AlignmentState, AlignmentStrategy, Formatter};
 
 impl Formatter {
     pub(super) fn format_single_line_delimited_children(
@@ -143,7 +143,7 @@ impl Formatter {
                     match kind {
                         SyntaxKind::EXPR_LIST => {
                             // Special handling for expression lists inside delimiters
-                            self.format_expr_list_multiline_iter(node.children_with_tokens());
+                            self.format_expr_list_multiline_iter(&node);
                         }
                         _ => self.format_node_with_context(&node, ctx),
                     }
@@ -176,9 +176,17 @@ impl Formatter {
         }
     }
 
-    fn format_expr_list_multiline_iter(&mut self, iter: SyntaxElementChildren<PerlLanguage>) {
+    fn format_expr_list_multiline_iter(&mut self, list: &PerlNode) {
         let ctx = super::FormatContext::default().with_multiline_context();
-        for child in iter {
+        let elements: Vec<_> = list.children_with_tokens().collect();
+
+        if self.alignment_state.is_none() {
+            if let Some(state) = self.collect_expr_list_alignment_state(list, &elements) {
+                self.alignment_state = Some(state);
+            }
+        }
+
+        for child in elements {
             match child {
                 NodeOrToken::Node(node) => self.format_node_with_context(&node, ctx),
                 NodeOrToken::Token(token) => {
@@ -200,6 +208,70 @@ impl Formatter {
                 }
             }
         }
+    }
+
+    fn collect_expr_list_alignment_state(
+        &self,
+        list: &PerlNode,
+        elements: &[SyntaxElement<PerlLanguage>],
+    ) -> Option<AlignmentState> {
+        if !self
+            .options
+            .alignment_strategies
+            .contains(&AlignmentStrategy::FatCommas)
+        {
+            return None;
+        }
+
+        let mut saw_newline = false;
+        let mut comma_count = 0;
+
+        for element in elements {
+            if let Some(token) = element.as_token() {
+                match token.kind() {
+                    SyntaxKind::FAT_COMMA => comma_count += 1,
+                    SyntaxKind::NEWLINE => saw_newline = true,
+                    _ => {}
+                }
+            }
+        }
+
+        if comma_count < 2 || !saw_newline {
+            return None;
+        }
+
+        let mut options = self.options.clone();
+        options.alignment_strategies.clear();
+        let mut formatter = Formatter::with_shared_deps(self.comment_registry.clone(), options);
+        formatter.format_node(list);
+
+        let columns = formatter
+            .writer
+            .collect_token_columns(SyntaxKind::FAT_COMMA);
+
+        if columns.len() != comma_count {
+            return None;
+        }
+
+        let indent_width = self.writer.indent_level() * self.writer.indent_string_len();
+        let mut widths = Vec::with_capacity(columns.len());
+
+        for column in columns {
+            let content_width = column.column.saturating_sub(column.indent);
+            widths.push(indent_width + content_width);
+        }
+
+        let max_width = widths.iter().copied().max()?;
+        if widths.iter().all(|&width| width == max_width) {
+            return None;
+        }
+
+        let pads = widths
+            .into_iter()
+            .map(|width| max_width - width)
+            .collect::<Vec<_>>();
+
+        Some(AlignmentState::new(SyntaxKind::FAT_COMMA, pads))
     }
 
     pub(super) fn handle_multiline_opening_delimiter(&mut self, token: &SyntaxToken<PerlLanguage>) {

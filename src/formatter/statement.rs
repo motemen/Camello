@@ -2,9 +2,9 @@ use std::iter::Peekable;
 
 use rowan::{NodeOrToken, SyntaxElementChildren};
 
-use crate::{PerlLanguage, PerlNode, SyntaxKind, T};
+use crate::{comments::CommentOwner, PerlLanguage, PerlNode, SyntaxKind, T};
 
-use super::{AssignmentAlignmentState, Formatter};
+use super::{AlignmentState, AlignmentStrategy, Formatter};
 
 impl Formatter {
     pub(super) fn format_use_no_stmt(&mut self, node: &PerlNode) {
@@ -156,11 +156,9 @@ impl Formatter {
                         }
                     }
 
-                    if self.assignment_alignment.is_none() {
-                        if let Some(state) =
-                            self.collect_assignment_alignment_group(&child_node, &children)
-                        {
-                            self.assignment_alignment = Some(state);
+                    if self.alignment_state.is_none() {
+                        if let Some(state) = self.collect_alignment_group(&child_node, &children) {
+                            self.alignment_state = Some(state);
                         }
                     }
 
@@ -270,14 +268,29 @@ impl Formatter {
         }
     }
 
-    fn collect_assignment_alignment_group(
+    fn collect_alignment_group(
         &self,
         first_node: &PerlNode,
         iter: &Peekable<SyntaxElementChildren<PerlLanguage>>,
-    ) -> Option<AssignmentAlignmentState> {
-        if !self.is_assignment_alignment_candidate(first_node) {
-            return None;
+    ) -> Option<AlignmentState> {
+        for &strategy in &self.options.alignment_strategies {
+            if let Some(state) =
+                self.collect_alignment_group_for_strategy(strategy, first_node, iter)
+            {
+                return Some(state);
+            }
         }
+
+        None
+    }
+
+    fn collect_alignment_group_for_strategy(
+        &self,
+        strategy: AlignmentStrategy,
+        first_node: &PerlNode,
+        iter: &Peekable<SyntaxElementChildren<PerlLanguage>>,
+    ) -> Option<AlignmentState> {
+        let token_kind = self.alignment_token_kind_for_node(strategy, first_node)?;
 
         let mut nodes = vec![first_node.clone()];
         let lookahead = iter.clone();
@@ -293,7 +306,13 @@ impl Formatter {
                         }
                         saw_newline = true;
                     }
-                    SyntaxKind::COMMENT => break,
+                    SyntaxKind::COMMENT => {
+                        if !saw_newline {
+                            saw_newline = true;
+                            continue;
+                        }
+                        break;
+                    }
                     _ => break,
                 },
                 NodeOrToken::Node(node) => {
@@ -301,7 +320,7 @@ impl Formatter {
                         break;
                     }
 
-                    if !self.is_assignment_alignment_candidate(&node) {
+                    if self.alignment_token_kind_for_node(strategy, &node) != Some(token_kind) {
                         break;
                     }
 
@@ -315,16 +334,17 @@ impl Formatter {
             return None;
         }
 
-        self.build_assignment_alignment_state(&nodes)
+        self.build_alignment_state(&nodes, token_kind)
     }
 
-    fn build_assignment_alignment_state(
+    fn build_alignment_state(
         &self,
         nodes: &[PerlNode],
-    ) -> Option<AssignmentAlignmentState> {
+        token_kind: SyntaxKind,
+    ) -> Option<AlignmentState> {
         let mut widths = Vec::with_capacity(nodes.len());
         for node in nodes {
-            let width = self.measure_assignment_prefix(node)?;
+            let width = self.measure_alignment_prefix(node, token_kind)?;
             widths.push(width);
         }
 
@@ -338,37 +358,101 @@ impl Formatter {
             .map(|width| max_width - width)
             .collect::<Vec<_>>();
 
-        Some(AssignmentAlignmentState::new(pads))
+        Some(AlignmentState::new(token_kind, pads))
     }
 
-    fn measure_assignment_prefix(&self, node: &PerlNode) -> Option<usize> {
+    fn measure_alignment_prefix(&self, node: &PerlNode, token_kind: SyntaxKind) -> Option<usize> {
         // Create a temporary formatter to measure the prefix width.
         // This is efficient: comment_registry.clone() only increments the Rc refcount,
         // and options.clone() is lightweight. Full formatting is necessary to accurately
         // measure the width including proper spacing and token formatting.
-        let mut formatter =
-            Formatter::with_shared_deps(self.comment_registry.clone(), self.options.clone());
-        let formatted = formatter.format(node);
-        let trimmed = formatted.trim_end_matches('\n');
+        let mut options = self.options.clone();
+        options.alignment_strategies.clear();
+        let mut formatter = Formatter::with_shared_deps(self.comment_registry.clone(), options);
+        formatter.format_node(node);
 
-        if trimmed.contains('\n') {
+        if formatter.writer.non_empty_line_count() != 1 {
             return None;
         }
 
-        let eq_index = trimmed.find('=')?;
-        let prefix = &trimmed[..eq_index];
-        Some(prefix.chars().count())
+        let mut columns = formatter.writer.collect_token_columns(token_kind);
+        if columns.len() != 1 {
+            return None;
+        }
+
+        Some(columns.remove(0).column)
     }
 
-    fn is_assignment_alignment_candidate(&self, node: &PerlNode) -> bool {
-        matches!(node.kind(), SyntaxKind::VAR_DECL | SyntaxKind::STMT)
-            && Self::count_assignment_eq_tokens(node) == 1
+    fn alignment_token_kind_for_node(
+        &self,
+        strategy: AlignmentStrategy,
+        node: &PerlNode,
+    ) -> Option<SyntaxKind> {
+        match strategy {
+            AlignmentStrategy::Assignments => {
+                if matches!(node.kind(), SyntaxKind::VAR_DECL | SyntaxKind::STMT)
+                    && Self::count_tokens_of_kind(node, SyntaxKind::EQ) == 1
+                {
+                    Some(SyntaxKind::EQ)
+                } else {
+                    None
+                }
+            }
+            AlignmentStrategy::FatCommas => {
+                if matches!(node.kind(), SyntaxKind::VAR_DECL | SyntaxKind::STMT)
+                    && Self::count_tokens_of_kind(node, SyntaxKind::FAT_COMMA) == 1
+                {
+                    Some(SyntaxKind::FAT_COMMA)
+                } else {
+                    None
+                }
+            }
+            AlignmentStrategy::PostfixConditionals => {
+                if node.kind() != SyntaxKind::STMT {
+                    return None;
+                }
+
+                if Self::has_child_of_kind(node, SyntaxKind::IF_MODIFIER)
+                    && Self::count_tokens_of_kind(node, SyntaxKind::IF_KW) == 1
+                {
+                    return Some(SyntaxKind::IF_KW);
+                }
+
+                if Self::has_child_of_kind(node, SyntaxKind::UNLESS_MODIFIER)
+                    && Self::count_tokens_of_kind(node, SyntaxKind::UNLESS_KW) == 1
+                {
+                    return Some(SyntaxKind::UNLESS_KW);
+                }
+
+                None
+            }
+            AlignmentStrategy::Comments => {
+                if !matches!(node.kind(), SyntaxKind::VAR_DECL | SyntaxKind::STMT) {
+                    return None;
+                }
+
+                let owner = CommentOwner::for_node(node);
+                if self
+                    .comment_registry
+                    .attached_to(owner)
+                    .any(|assignment| assignment.placement().is_trailing())
+                {
+                    Some(SyntaxKind::COMMENT)
+                } else {
+                    None
+                }
+            }
+        }
     }
 
-    fn count_assignment_eq_tokens(node: &PerlNode) -> usize {
+    fn has_child_of_kind(node: &PerlNode, kind: SyntaxKind) -> bool {
+        node.children().any(|child| child.kind() == kind)
+    }
+
+    fn count_tokens_of_kind(node: &PerlNode, kind: SyntaxKind) -> usize {
         node.descendants_with_tokens()
             .filter(|element| match element {
-                NodeOrToken::Token(token) => token.kind() == SyntaxKind::EQ,
+                NodeOrToken::Token(token) => token.kind() == kind,
                 NodeOrToken::Node(_) => false,
             })
             .count()
