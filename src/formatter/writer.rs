@@ -25,6 +25,13 @@ impl Line {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct TokenColumn {
+    pub(super) line_index: usize,
+    pub(super) column: usize,
+    pub(super) indent: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum LineBreakSource {
     User,
     Formatter,
@@ -203,5 +210,58 @@ impl Writer {
 
     pub(super) fn indent_level(&self) -> usize {
         self.indent_level
+    }
+
+    pub(super) fn indent_string_len(&self) -> usize {
+        self.indent_string.len()
+    }
+
+    pub(super) fn non_empty_line_count(&self) -> usize {
+        let mut count = self
+            .lines
+            .iter()
+            .filter(|line| !line.text.is_empty())
+            .count();
+        if !self.current_line.text.is_empty() {
+            count += 1;
+        }
+        count
+    }
+
+    pub(super) fn collect_token_columns(&self, kind: SyntaxKind) -> Vec<TokenColumn> {
+        let mut columns = Vec::new();
+        for (line_index, line) in self.lines.iter().enumerate() {
+            Self::collect_from_line(&mut columns, line, line_index, kind);
+        }
+
+        if !self.current_line.text.is_empty() || !self.current_line.tokens.is_empty() {
+            let current_index = self.lines.len();
+            Self::collect_from_line(&mut columns, &self.current_line, current_index, kind);
+        }
+
+        columns
+    }
+
+    fn collect_from_line(
+        columns: &mut Vec<TokenColumn>,
+        line: &Line,
+        line_index: usize,
+        kind: SyntaxKind,
+    ) {
+        if line.tokens.is_empty() {
+            return;
+        }
+
+        let indent = line.text.chars().take_while(|c| c.is_whitespace()).count();
+        for span in &line.tokens {
+            if span.kind == kind {
+                let column = line.text[..span.start_byte].chars().count();
+                columns.push(TokenColumn {
+                    line_index,
+                    column,
+                    indent,
+                });
+            }
+        }
     }
 }

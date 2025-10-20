@@ -125,9 +125,32 @@ impl Default for DelimiterTightnessConfig {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AlignmentStrategy {
+    Assignments,
+    FatCommas,
+    PostfixConditionals,
+    Comments,
+}
+
+#[derive(Debug, Clone)]
 pub struct FormatterOptions {
     pub delimiter_tightness: DelimiterTightnessConfig,
+    pub alignment_strategies: Vec<AlignmentStrategy>,
+}
+
+impl Default for FormatterOptions {
+    fn default() -> Self {
+        Self {
+            delimiter_tightness: DelimiterTightnessConfig::default(),
+            alignment_strategies: vec![
+                AlignmentStrategy::Assignments,
+                AlignmentStrategy::FatCommas,
+                AlignmentStrategy::PostfixConditionals,
+                AlignmentStrategy::Comments,
+            ],
+        }
+    }
 }
 
 impl FormatterOptions {
@@ -136,16 +159,30 @@ impl FormatterOptions {
         self.delimiter_tightness = config;
         self
     }
+
+    #[must_use]
+    pub fn with_alignment_strategies(mut self, strategies: Vec<AlignmentStrategy>) -> Self {
+        self.alignment_strategies = strategies;
+        self
+    }
 }
 
-#[derive(Debug, Default)]
-pub(super) struct AssignmentAlignmentState {
+#[derive(Debug)]
+pub(super) struct AlignmentState {
     pads: VecDeque<usize>,
+    token_kind: SyntaxKind,
 }
 
-impl AssignmentAlignmentState {
-    fn new(pads: Vec<usize>) -> Self {
-        Self { pads: pads.into() }
+impl AlignmentState {
+    fn new(token_kind: SyntaxKind, pads: Vec<usize>) -> Self {
+        Self {
+            pads: pads.into(),
+            token_kind,
+        }
+    }
+
+    fn token_kind(&self) -> SyntaxKind {
+        self.token_kind
     }
 
     fn next_pad(&mut self) -> Option<usize> {
@@ -165,7 +202,7 @@ pub struct Formatter {
     /// temporary formatters to measure prefix widths without expensive deep clones.
     comment_registry: Rc<CommentRegistry>,
     options: FormatterOptions,
-    assignment_alignment: Option<AssignmentAlignmentState>,
+    alignment_state: Option<AlignmentState>,
 }
 
 impl Formatter {
@@ -180,10 +217,10 @@ impl Formatter {
             pending_empty_lines: 0,
             writer: Writer::new(),
             // Wrap in Rc to enable cheap cloning when creating temporary formatters
-            // for assignment alignment measurements (see measure_assignment_prefix)
+            // for alignment measurements (see measure_alignment_prefix)
             comment_registry: Rc::new(comment_registry),
             options,
-            assignment_alignment: None,
+            alignment_state: None,
         }
     }
 
@@ -193,7 +230,7 @@ impl Formatter {
             writer: Writer::new(),
             comment_registry,
             options,
-            assignment_alignment: None,
+            alignment_state: None,
         }
     }
 
@@ -683,6 +720,23 @@ impl Formatter {
         self.format_token_with_context(token, FormatContext::default())
     }
 
+    fn apply_alignment_padding(&mut self, kind: SyntaxKind) {
+        if let Some(state) = self.alignment_state.as_mut() {
+            if state.token_kind() == kind {
+                if let Some(pad) = state.next_pad() {
+                    if pad > 0 {
+                        let spaces = " ".repeat(pad);
+                        self.writer.write_str(&spaces, None);
+                    }
+                }
+
+                if state.is_empty() {
+                    self.alignment_state = None;
+                }
+            }
+        }
+    }
+
     fn format_token_with_context(
         &mut self,
         token: &SyntaxToken<crate::PerlLanguage>,
@@ -719,6 +773,7 @@ impl Formatter {
                     // This is an inline comment - add a space before it
                     self.writer.write_char(' ');
                 }
+                self.apply_alignment_padding(kind);
                 self.writer.write_str(text.trim(), Some(kind));
                 self.writer.handle_user_newline();
                 self.remember_token(token);
@@ -777,26 +832,7 @@ impl Formatter {
                     self.writer.set_at_line_start(false);
                 }
 
-                if kind == SyntaxKind::EQ {
-                    if let Some(pad) = self
-                        .assignment_alignment
-                        .as_mut()
-                        .and_then(|state| state.next_pad())
-                    {
-                        if pad > 0 {
-                            let spaces = " ".repeat(pad);
-                            self.writer.write_str(&spaces, None);
-                        }
-                    }
-
-                    if self
-                        .assignment_alignment
-                        .as_ref()
-                        .is_some_and(|state| state.is_empty())
-                    {
-                        self.assignment_alignment = None;
-                    }
-                }
+                self.apply_alignment_padding(kind);
 
                 let prev_token_kind_before = self.writer.prev_token_kind();
                 self.writer.write_token(token);
