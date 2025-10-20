@@ -204,4 +204,8 @@ impl Writer {
     pub(super) fn indent_level(&self) -> usize {
         self.indent_level
     }
+
+    pub(super) fn indent_string_len(&self) -> usize {
+        self.indent_string.len()
+    }
 }
