@@ -1,8 +1,10 @@
-use rowan::NodeOrToken;
+use std::iter::Peekable;
 
-use crate::{PerlNode, SyntaxKind, T};
+use rowan::{NodeOrToken, SyntaxElementChildren};
 
-use super::Formatter;
+use crate::{PerlLanguage, PerlNode, SyntaxKind, T};
+
+use super::{AssignmentAlignmentState, Formatter};
 
 impl Formatter {
     pub(super) fn format_use_no_stmt(&mut self, node: &PerlNode) {
@@ -154,6 +156,14 @@ impl Formatter {
                         }
                     }
 
+                    if self.assignment_alignment.is_none() {
+                        if let Some(state) =
+                            self.collect_assignment_alignment_group(&child_node, &children)
+                        {
+                            self.assignment_alignment = Some(state);
+                        }
+                    }
+
                     self.output_pending_empty_lines();
                     self.format_node(&child_node);
 
@@ -258,5 +268,109 @@ impl Formatter {
                 },
             }
         }
+    }
+
+    fn collect_assignment_alignment_group(
+        &self,
+        first_node: &PerlNode,
+        iter: &Peekable<SyntaxElementChildren<PerlLanguage>>,
+    ) -> Option<AssignmentAlignmentState> {
+        if !self.is_assignment_alignment_candidate(first_node) {
+            return None;
+        }
+
+        let mut nodes = vec![first_node.clone()];
+        let lookahead = iter.clone();
+        let mut saw_newline = false;
+
+        for element in lookahead {
+            match element {
+                NodeOrToken::Token(token) => match token.kind() {
+                    SyntaxKind::WHITESPACE => continue,
+                    SyntaxKind::NEWLINE => {
+                        if saw_newline {
+                            break;
+                        }
+                        saw_newline = true;
+                    }
+                    SyntaxKind::COMMENT => break,
+                    _ => break,
+                },
+                NodeOrToken::Node(node) => {
+                    if !saw_newline {
+                        break;
+                    }
+
+                    if !self.is_assignment_alignment_candidate(&node) {
+                        break;
+                    }
+
+                    nodes.push(node);
+                    saw_newline = false;
+                }
+            }
+        }
+
+        if nodes.len() < 2 {
+            return None;
+        }
+
+        self.build_assignment_alignment_state(&nodes)
+    }
+
+    fn build_assignment_alignment_state(
+        &self,
+        nodes: &[PerlNode],
+    ) -> Option<AssignmentAlignmentState> {
+        let mut widths = Vec::with_capacity(nodes.len());
+        for node in nodes {
+            let width = self.measure_assignment_prefix(node)?;
+            widths.push(width);
+        }
+
+        let max_width = widths.iter().copied().max()?;
+        if widths.iter().all(|&width| width == max_width) {
+            return None;
+        }
+
+        let pads = widths
+            .into_iter()
+            .map(|width| max_width - width)
+            .collect::<Vec<_>>();
+
+        Some(AssignmentAlignmentState::new(pads))
+    }
+
+    fn measure_assignment_prefix(&self, node: &PerlNode) -> Option<usize> {
+        // Create a temporary formatter to measure the prefix width.
+        // This is efficient: comment_registry.clone() only increments the Rc refcount,
+        // and options.clone() is lightweight. Full formatting is necessary to accurately
+        // measure the width including proper spacing and token formatting.
+        let mut formatter =
+            Formatter::with_shared_deps(self.comment_registry.clone(), self.options.clone());
+        let formatted = formatter.format(node);
+        let trimmed = formatted.trim_end_matches('\n');
+
+        if trimmed.contains('\n') {
+            return None;
+        }
+
+        let eq_index = trimmed.find('=')?;
+        let prefix = &trimmed[..eq_index];
+        Some(prefix.chars().count())
+    }
+
+    fn is_assignment_alignment_candidate(&self, node: &PerlNode) -> bool {
+        matches!(node.kind(), SyntaxKind::VAR_DECL | SyntaxKind::STMT)
+            && Self::count_assignment_eq_tokens(node) == 1
+    }
+
+    fn count_assignment_eq_tokens(node: &PerlNode) -> usize {
+        node.descendants_with_tokens()
+            .filter(|element| match element {
+                NodeOrToken::Token(token) => token.kind() == SyntaxKind::EQ,
+                NodeOrToken::Node(_) => false,
+            })
+            .count()
     }
 }
