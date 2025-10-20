@@ -99,6 +99,10 @@ The parser implements multiple error recovery strategies:
 
 ### Pre-commit Checks
 
+- Always run **all** of the following commands, in order, before committing: `cargo fmt` → `cargo clippy -- -D warnings` → `cargo test -q`. Skipping any step is not allowed.
+- If any command fails, keep iterating on fixes and rerun the full sequence until all commands succeed. Only commit once they complete without errors. If you ultimately cannot resolve a failure, state the reason explicitly in your final message and leave the command undone.
+- Report the result of each command in the testing section of your final message, indicating success or failure.
+
 ```bash
 # Format code
 cargo fmt
