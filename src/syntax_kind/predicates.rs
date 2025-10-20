@@ -232,6 +232,13 @@ impl SyntaxKind {
         )
     }
 
+    /// Returns true if this token kind represents any assignment operator.
+    /// This covers both simple assignment (`=`) and compound forms like `+=` or `||=`.
+    #[must_use]
+    pub fn is_assignment_operator(self) -> bool {
+        matches!(self, SyntaxKind::EQ | SyntaxKind::COMPOUND_ASSIGNMENT)
+    }
+
     /// Returns true if this token kind contains content that should be indented
     /// when spanning multiple lines (heredocs, strings, etc.)
     #[must_use]

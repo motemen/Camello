@@ -375,7 +375,11 @@ impl Formatter {
             return None;
         }
 
-        let mut columns = formatter.writer.collect_token_columns(token_kind);
+        let mut columns = if token_kind == SyntaxKind::EQ {
+            formatter.writer.collect_assignment_columns()
+        } else {
+            formatter.writer.collect_token_columns(token_kind)
+        };
         if columns.len() != 1 {
             return None;
         }
@@ -390,9 +394,35 @@ impl Formatter {
     ) -> Option<SyntaxKind> {
         match strategy {
             AlignmentStrategy::Assignments => {
-                if matches!(node.kind(), SyntaxKind::VAR_DECL | SyntaxKind::STMT)
-                    && Self::count_tokens_of_kind(node, SyntaxKind::EQ) == 1
-                {
+                if !matches!(node.kind(), SyntaxKind::VAR_DECL | SyntaxKind::STMT) {
+                    return None;
+                }
+
+                let mut seen_assignment = false;
+                for token in node.descendants_with_tokens().filter_map(|element| {
+                    if let NodeOrToken::Token(token) = element {
+                        Some(token)
+                    } else {
+                        None
+                    }
+                }) {
+                    if token.kind().is_assignment_operator() {
+                        if token
+                            .parent()
+                            .is_some_and(|parent| parent.kind() == SyntaxKind::COMPOUND_ASSIGNMENT)
+                            && !self.options.align_compound_assignments
+                        {
+                            return None;
+                        }
+
+                        if seen_assignment {
+                            return None;
+                        }
+                        seen_assignment = true;
+                    }
+                }
+
+                if seen_assignment {
                     Some(SyntaxKind::EQ)
                 } else {
                     None
