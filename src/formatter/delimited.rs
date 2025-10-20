@@ -224,51 +224,41 @@ impl Formatter {
         }
 
         let mut saw_newline = false;
-        let mut commas: Vec<SyntaxToken<PerlLanguage>> = Vec::new();
+        let mut comma_count = 0;
 
         for element in elements {
             if let Some(token) = element.as_token() {
                 match token.kind() {
-                    SyntaxKind::FAT_COMMA => commas.push(token.clone()),
+                    SyntaxKind::FAT_COMMA => comma_count += 1,
                     SyntaxKind::NEWLINE => saw_newline = true,
                     _ => {}
                 }
             }
         }
 
-        if commas.len() < 2 || !saw_newline {
+        if comma_count < 2 || !saw_newline {
             return None;
         }
 
         let mut options = self.options.clone();
         options.alignment_strategies.clear();
         let mut formatter = Formatter::with_shared_deps(self.comment_registry.clone(), options);
-        let formatted = formatter.format(list);
-        let trimmed = formatted.trim_end_matches('\n');
+        formatter.format_node(list);
 
-        if trimmed.is_empty() {
+        let columns = formatter
+            .writer
+            .collect_token_columns(SyntaxKind::FAT_COMMA);
+
+        if columns.len() != comma_count {
             return None;
         }
 
-        let mut widths = Vec::with_capacity(commas.len());
         let indent_width = self.writer.indent_level() * self.writer.indent_string_len();
-        let mut search_start = 0;
+        let mut widths = Vec::with_capacity(columns.len());
 
-        for token in commas {
-            let token_text = token.text().to_string();
-            let search_text = self.alignment_search_text(SyntaxKind::FAT_COMMA, &token_text);
-            let index = Self::find_token_index_from(
-                trimmed,
-                &search_text,
-                SyntaxKind::FAT_COMMA,
-                search_start,
-            )?;
-            let line_start = trimmed[..index].rfind('\n').map(|pos| pos + 1).unwrap_or(0);
-            let prefix = &trimmed[line_start..index];
-            let measured_indent = prefix.chars().take_while(|c| c.is_whitespace()).count();
-            let content_width = prefix.chars().count() - measured_indent;
+        for column in columns {
+            let content_width = column.column.saturating_sub(column.indent);
             widths.push(indent_width + content_width);
-            search_start = index + search_text.len();
         }
 
         let max_width = widths.iter().copied().max()?;
