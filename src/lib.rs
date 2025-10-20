@@ -6,7 +6,8 @@ pub mod parser;
 pub mod syntax_kind;
 
 pub use formatter::{
-    format, format_with_options, DelimiterTightness, DelimiterTightnessConfig, FormatterOptions,
+    format, format_with_options, AlignmentStrategy, DelimiterTightness, DelimiterTightnessConfig,
+    FormatterOptions,
 };
 pub use parser::{parse, parse_with_options, ParserOptions};
 pub use syntax_kind::SyntaxKind;
