@@ -51,7 +51,6 @@ impl Formatter {
 
         if pairs.is_empty() {
             if ctx.suppress_newlines {
-                let ctx = ctx;
                 for child in node.children_with_tokens() {
                     match child {
                         NodeOrToken::Node(child_node) => {
@@ -168,39 +167,10 @@ impl Formatter {
 
         match node.kind() {
             SCALAR_VAR | ARRAY_VAR | HASH_VAR | TYPEGLOB_VAR => (1, false),
-            QW_EXPR => {
-                let mut count = 0;
-                let contains_qw = true;
-
-                for child in node.children_with_tokens() {
-                    let rem = remaining.saturating_sub(count);
-                    if rem == 0 {
-                        break;
-                    }
-
-                    match child {
-                        NodeOrToken::Node(inner) => {
-                            let (sub_count, _) =
-                                Self::count_significant_tokens_in_node(&inner, rem);
-                            count += sub_count;
-                        }
-                        NodeOrToken::Token(token) => {
-                            if !token.kind().is_trivia() {
-                                count += 1;
-                            }
-                        }
-                    }
-
-                    if count >= remaining {
-                        break;
-                    }
-                }
-
-                (count.min(remaining), contains_qw)
-            }
             _ => {
+                let is_qw_expr = node.kind() == QW_EXPR;
                 let mut count = 0;
-                let mut contains_qw = false;
+                let mut contains_qw = is_qw_expr;
 
                 for child in node.children_with_tokens() {
                     let rem = remaining.saturating_sub(count);
@@ -213,12 +183,14 @@ impl Formatter {
                             let (sub_count, sub_qw) =
                                 Self::count_significant_tokens_in_node(&inner, rem);
                             count += sub_count;
-                            contains_qw |= sub_qw;
+                            if !is_qw_expr {
+                                contains_qw |= sub_qw;
+                            }
                         }
                         NodeOrToken::Token(token) => {
                             if !token.kind().is_trivia() {
                                 count += 1;
-                                if matches!(token.kind(), QW_STRING | QW_KW) {
+                                if !is_qw_expr && matches!(token.kind(), QW_STRING | QW_KW) {
                                     contains_qw = true;
                                 }
                             }
