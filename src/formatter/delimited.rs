@@ -226,8 +226,18 @@ impl Formatter {
         open_delimiter: SyntaxKind,
         close_delimiter: SyntaxKind,
     ) {
+        let elements: Vec<_> = iter.collect();
+        self.format_multiline_delimited_elements(&elements, open_delimiter, close_delimiter);
+    }
+
+    pub(super) fn format_multiline_delimited_elements(
+        &mut self,
+        elements: &[SyntaxElement<PerlLanguage>],
+        open_delimiter: SyntaxKind,
+        close_delimiter: SyntaxKind,
+    ) {
         let ctx = super::FormatContext::default().with_multiline_context();
-        for child in iter {
+        for child in elements {
             match child {
                 NodeOrToken::Node(node) => {
                     let kind = node.kind();
@@ -235,9 +245,9 @@ impl Formatter {
                     match kind {
                         SyntaxKind::EXPR_LIST => {
                             // Special handling for expression lists inside delimiters
-                            self.format_expr_list_multiline_iter(&node);
+                            self.format_expr_list_multiline_iter(node);
                         }
-                        _ => self.format_node_with_context(&node, ctx),
+                        _ => self.format_node_with_context(node, ctx),
                     }
                 }
                 NodeOrToken::Token(token) => {
@@ -253,14 +263,14 @@ impl Formatter {
                                 self.writer.add_indent();
                                 self.writer.set_at_line_start(false);
                             }
-                            self.handle_multiline_opening_delimiter(&token);
+                            self.handle_multiline_opening_delimiter(token);
                         }
                         k if k == close_delimiter => {
-                            self.handle_multiline_closing_delimiter(&token);
+                            self.handle_multiline_closing_delimiter(token);
                         }
                         _ => {
                             // その他のトークンは通常通り処理
-                            self.format_token_with_context(&token, ctx);
+                            self.format_token_with_context(token, ctx);
                         }
                     }
                 }

@@ -1,6 +1,6 @@
 use std::iter::Peekable;
 
-use rowan::{NodeOrToken, SyntaxElementChildren};
+use rowan::{NodeOrToken, SyntaxElement, SyntaxElementChildren};
 
 use crate::{comments::CommentOwner, PerlLanguage, PerlNode, SyntaxKind, T};
 
@@ -15,19 +15,40 @@ impl Formatter {
 
         // Special handling for use/no statements: add space between identifier and parentheses
         // and between version and following expressions
-        for child in node.children_with_tokens() {
-            let is_module_name = match &child {
-                NodeOrToken::Node(n) => n.kind() == crate::SyntaxKind::QUALIFIED_IDENT,
-                NodeOrToken::Token(t) => t.kind() == crate::SyntaxKind::IDENT,
+        let children: Vec<_> = node.children_with_tokens().collect();
+        let mut index = 0;
+
+        while index < children.len() {
+            let child = &children[index];
+
+            if let Some(token) = child.as_token() {
+                if token.kind() == T!['('] {
+                    if let Some((close_index, has_newline)) =
+                        Self::matching_delimiter_range(&children, index, T!['('], T![')'])
+                    {
+                        if has_newline {
+                            self.format_multiline_delimited_elements(
+                                &children[index..=close_index],
+                                T!['('],
+                                T![')'],
+                            );
+                            index = close_index + 1;
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            let is_module_name = match child {
+                NodeOrToken::Node(n) => n.kind() == SyntaxKind::QUALIFIED_IDENT,
+                NodeOrToken::Token(t) => t.kind() == SyntaxKind::IDENT,
             };
 
-            let is_version = match &child {
+            let is_version = match child {
                 NodeOrToken::Token(t) => {
                     matches!(
                         t.kind(),
-                        crate::SyntaxKind::VERSION
-                            | crate::SyntaxKind::BARE_VERSION
-                            | crate::SyntaxKind::NUMBER
+                        SyntaxKind::VERSION | SyntaxKind::BARE_VERSION | SyntaxKind::NUMBER
                     ) && t
                         .text()
                         .chars()
@@ -37,13 +58,13 @@ impl Formatter {
                 _ => false,
             };
 
-            match &child {
+            match child {
                 NodeOrToken::Node(n) => self.format_node(n),
                 NodeOrToken::Token(t) => self.format_token(t),
             }
 
             if is_module_name {
-                let last_token = match &child {
+                let last_token = match child {
                     NodeOrToken::Node(n) => n.last_token(),
                     NodeOrToken::Token(t) => Some(t.clone()),
                 };
@@ -56,23 +77,66 @@ impl Formatter {
                 }
             }
 
-            // Add space after version if followed by an expression
             if is_version {
-                let last_token = match &child {
+                let last_token = match child {
                     NodeOrToken::Token(t) => Some(t.clone()),
                     _ => None,
                 };
                 if let Some(last_token) = last_token {
                     if let Some(next_token) = Self::next_significant_token(&last_token) {
-                        if matches!(
-                            next_token.kind(),
-                            crate::SyntaxKind::IDENT | T!['('] | T![qw]
-                        ) {
+                        if matches!(next_token.kind(), SyntaxKind::IDENT | T!['('] | T![qw]) {
                             self.writer.write_char(' ');
                         }
                     }
                 }
             }
+
+            index += 1;
+        }
+    }
+
+    fn matching_delimiter_range(
+        elements: &[SyntaxElement<PerlLanguage>],
+        start: usize,
+        open: SyntaxKind,
+        close: SyntaxKind,
+    ) -> Option<(usize, bool)> {
+        let mut depth = 0;
+        let mut has_newline = false;
+
+        for (idx, element) in elements.iter().enumerate().skip(start) {
+            if let Some(token) = element.as_token() {
+                let kind = token.kind();
+                if kind == open {
+                    depth += 1;
+                } else if kind == close {
+                    if depth == 0 {
+                        return None;
+                    }
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some((idx, has_newline));
+                    }
+                }
+                if depth > 0 && kind == SyntaxKind::NEWLINE {
+                    has_newline = true;
+                }
+            } else if depth > 0 && Self::element_contains_newline(element) {
+                has_newline = true;
+            }
+        }
+
+        None
+    }
+
+    fn element_contains_newline(element: &SyntaxElement<PerlLanguage>) -> bool {
+        match element {
+            NodeOrToken::Token(token) => token.kind() == SyntaxKind::NEWLINE,
+            NodeOrToken::Node(node) => node.descendants_with_tokens().any(|descendant| {
+                descendant
+                    .as_token()
+                    .is_some_and(|token| token.kind() == SyntaxKind::NEWLINE)
+            }),
         }
     }
 
@@ -399,8 +463,13 @@ impl Formatter {
                 }
             }
             AlignmentStrategy::FatCommas => {
-                if matches!(node.kind(), SyntaxKind::VAR_DECL | SyntaxKind::STMT)
-                    && Self::count_tokens_of_kind(node, SyntaxKind::FAT_COMMA) == 1
+                if matches!(
+                    node.kind(),
+                    SyntaxKind::VAR_DECL
+                        | SyntaxKind::STMT
+                        | SyntaxKind::USE_STMT
+                        | SyntaxKind::NO_STMT
+                ) && Self::count_tokens_of_kind(node, SyntaxKind::FAT_COMMA) == 1
                 {
                     Some(SyntaxKind::FAT_COMMA)
                 } else {
