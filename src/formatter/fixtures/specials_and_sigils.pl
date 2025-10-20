@@ -17,6 +17,16 @@ ${'$var_' . $suffix};
 @{"Package::ARRAY"};
 @{'@array_' . $name};
 
++{%hash};
+
+@{ $hash{key} };
+
+@{ $obj->meth };
+
++{ @{ $obj->meth } };
+
+[$item];
+
 %{$hashref};
 %{$obj->get_hash};
 %{ $hash_table{$key} };

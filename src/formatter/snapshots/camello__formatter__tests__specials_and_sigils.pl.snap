@@ -1,6 +1,5 @@
 ---
 source: src/formatter/tests.rs
-assertion_line: 51
 expression: formatted
 ---
 &{$coderef}(1, 2, 3);
@@ -11,27 +10,37 @@ expression: formatted
 &{'DynamicSub::' . $name};
 
 ${$ref};
-${$hash{key}};
+${ $hash{key} };
 ${$complex_expression};
 ${"dynamic_var"};
 ${'$var_' . $suffix};
 
 @{$arrayref};
-@{$hash{arrays}};
-@{$array_dispatch{$type}};
+@{ $hash{arrays} };
+@{ $array_dispatch{$type} };
 @{"Package::ARRAY"};
 @{'@array_' . $name};
 
++{%hash};
+
+@{ $hash{key} };
+
+@{ $obj->meth };
+
++{ @{ $obj->meth } };
+
+[$item];
+
 %{$hashref};
-%{$obj->get_hash};
-%{$hash_table{$key}};
+%{ $obj->get_hash };
+%{ $hash_table{$key} };
 %{"Package::HASH"};
 %{'%hash_' . $suffix};
 
 &{$handlers{$type || 'default'}};
-${$refs->[0]};
-@{$data->{arrays}->[0]};
-%{$config->{$env}->{hashes}};
+${ $refs->[0] };
+@{ $data->{arrays}->[0] };
+%{ $config->{$env}->{hashes} };
 
 &{$code}();
 &{$dispatch{$method}}(@args);
