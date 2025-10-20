@@ -252,33 +252,71 @@ impl<'a> Lexer<'a> {
             return None;
         }
 
-        let marker_start = idx;
         let marker: &str;
-        let is_quoted;
+        let mut require_identifier_marker = false;
 
         match bytes[idx] {
             b'\'' | b'"' | b'`' => {
-                is_quoted = true;
                 let quote = bytes[idx];
                 idx += 1;
                 let content_start = idx;
+                let mut escaped = false;
+                let mut closing_idx: Option<usize> = None;
+
                 while idx < bytes.len() {
-                    if bytes[idx] == quote {
+                    let byte = bytes[idx];
+                    if escaped {
+                        escaped = false;
+                        idx += 1;
+                        continue;
+                    }
+
+                    if byte == b'\\' {
+                        escaped = true;
+                        idx += 1;
+                        continue;
+                    }
+
+                    if byte == quote {
+                        closing_idx = Some(idx);
                         break;
                     }
+
                     idx += 1;
                 }
+
+                let end_idx = closing_idx?;
+
+                marker = &remainder[content_start..end_idx];
+                idx = end_idx + 1;
+            }
+            b'\\' => {
+                require_identifier_marker = true;
+                idx += 1;
                 if idx >= bytes.len() {
                     return None;
                 }
-                marker = &remainder[content_start..idx];
-                idx += 1;
-            }
-            _ => {
-                is_quoted = false;
                 if !(bytes[idx].is_ascii_alphabetic() || bytes[idx] == b'_') {
                     return None;
                 }
+                let marker_start = idx;
+                idx += 1;
+                while idx < bytes.len() {
+                    let ch = bytes[idx];
+                    if ch.is_ascii_alphanumeric() || ch == b'_' {
+                        idx += 1;
+                    } else {
+                        break;
+                    }
+                }
+                marker = &remainder[marker_start..idx];
+            }
+            _ => {
+                require_identifier_marker = true;
+                if !(bytes[idx].is_ascii_alphabetic() || bytes[idx] == b'_') {
+                    return None;
+                }
+                let marker_start = idx;
                 idx += 1;
                 while idx < bytes.len() {
                     let ch = bytes[idx];
@@ -292,17 +330,12 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        // Only validate marker characters for unquoted markers
-        // Quoted markers can contain any characters
-        if marker.is_empty() {
-            return None;
-        }
-
-        if !is_quoted
-            && (!marker
-                .chars()
-                .next()
-                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        if require_identifier_marker
+            && (marker.is_empty()
+                || !marker
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
                 || !marker
                     .chars()
                     .all(|c| c.is_ascii_alphanumeric() || c == '_'))
