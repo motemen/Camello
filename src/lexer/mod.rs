@@ -204,6 +204,46 @@ mod tests {
         // After entering quote-like mode, the cached lookahead should expose the delimiter
         assert_eq!(lexer.peek_token(), Some((SyntaxKind::DELIMITER, "#")));
     }
+
+    #[test]
+    fn heredoc_marker_variants_are_parsed_correctly() {
+        let cases = [
+            ("<<'EOF'\n", "EOF"),
+            ("<<\"EOF\"\n", "EOF"),
+            ("<<`EOF`\n", "EOF"),
+            ("<<\\EOF\n", "EOF"),
+            ("<<\"\"\n", ""),
+        ];
+
+        for (source, expected_marker) in cases {
+            let mut lexer = Lexer::new(source);
+            let (kind, _) = lexer
+                .next_token_with_context(LexContext::Value)
+                .expect("expected heredoc start");
+            assert_eq!(kind, SyntaxKind::HEREDOC_START);
+
+            let marker = lexer
+                .heredoc_queue
+                .back()
+                .expect("heredoc marker should be queued");
+            assert_eq!(marker.marker, expected_marker);
+        }
+    }
+
+    #[test]
+    fn heredoc_marker_handles_escaped_quotes() {
+        let mut lexer = Lexer::new("<<\"foo\\\"bar\"\n");
+        let (kind, _) = lexer
+            .next_token_with_context(LexContext::Value)
+            .expect("expected heredoc start");
+        assert_eq!(kind, SyntaxKind::HEREDOC_START);
+
+        let marker = lexer
+            .heredoc_queue
+            .back()
+            .expect("heredoc marker should be queued");
+        assert_eq!(marker.marker, "foo\\\"bar");
+    }
 }
 
 #[derive(Logos, Debug, PartialEq, Clone)]
