@@ -1,6 +1,6 @@
 use std::iter::Peekable;
 
-use rowan::{NodeOrToken, SyntaxElementChildren};
+use rowan::{NodeOrToken, SyntaxElement, SyntaxElementChildren};
 
 use crate::{comments::CommentOwner, PerlLanguage, PerlNode, SyntaxKind, T};
 
@@ -15,7 +15,9 @@ impl Formatter {
 
         // Special handling for use/no statements: add space between identifier and parentheses
         // and between version and following expressions
-        for child in node.children_with_tokens() {
+        let mut children = node.children_with_tokens();
+
+        while let Some(child) = children.next() {
             let is_module_name = match &child {
                 NodeOrToken::Node(n) => n.kind() == crate::SyntaxKind::QUALIFIED_IDENT,
                 NodeOrToken::Token(t) => t.kind() == crate::SyntaxKind::IDENT,
@@ -36,6 +38,21 @@ impl Formatter {
                 }
                 _ => false,
             };
+
+            if let NodeOrToken::Token(token) = &child {
+                if token.kind() == T!['('] {
+                    if let Some((take_count, contains_newline)) =
+                        Self::delimited_span_info(children.clone(), T!['('], T![')'])
+                    {
+                        if contains_newline {
+                            let range_iter = std::iter::once(child.clone())
+                                .chain(children.by_ref().take(take_count));
+                            self.format_multiline_delimited_elements(range_iter, T!['('], T![')']);
+                            continue;
+                        }
+                    }
+                }
+            }
 
             match &child {
                 NodeOrToken::Node(n) => self.format_node(n),
@@ -73,6 +90,50 @@ impl Formatter {
                     }
                 }
             }
+        }
+    }
+
+    fn delimited_span_info(
+        iter: SyntaxElementChildren<PerlLanguage>,
+        open: SyntaxKind,
+        close: SyntaxKind,
+    ) -> Option<(usize, bool)> {
+        let mut depth = 1usize;
+        let mut contains_newline = false;
+        let mut count = 0usize;
+
+        for element in iter {
+            count += 1;
+            if Self::element_contains_newline(&element) {
+                contains_newline = true;
+            }
+
+            if let NodeOrToken::Token(token) = &element {
+                if token.kind() == open {
+                    depth += 1;
+                } else if token.kind() == close {
+                    if depth == 0 {
+                        return None;
+                    }
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some((count, contains_newline));
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    fn element_contains_newline(element: &SyntaxElement<PerlLanguage>) -> bool {
+        match element {
+            NodeOrToken::Token(token) => token.kind() == SyntaxKind::NEWLINE,
+            NodeOrToken::Node(node) => node.descendants_with_tokens().any(|descendant| {
+                descendant
+                    .as_token()
+                    .is_some_and(|token| token.kind() == SyntaxKind::NEWLINE)
+            }),
         }
     }
 
