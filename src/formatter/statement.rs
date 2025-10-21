@@ -460,8 +460,13 @@ impl Formatter {
                 }
             }
             AlignmentStrategy::FatCommas => {
-                if matches!(node.kind(), SyntaxKind::VAR_DECL | SyntaxKind::STMT)
-                    && Self::count_tokens_of_kind(node, SyntaxKind::FAT_COMMA) == 1
+                if matches!(
+                    node.kind(),
+                    SyntaxKind::VAR_DECL
+                        | SyntaxKind::STMT
+                        | SyntaxKind::USE_STMT
+                        | SyntaxKind::NO_STMT
+                ) && Self::count_tokens_of_kind(node, SyntaxKind::FAT_COMMA) == 1
                 {
                     Some(SyntaxKind::FAT_COMMA)
                 } else {
