@@ -159,8 +159,8 @@ impl Formatter {
                         if self.is_simple_block(&child_node) {
                             self.format_simple_block(&child_node);
                         } else {
-                            // Consistently use multiline formatting for complex blocks
-                            self.format_multiline_delimited(&child_node, T!['{'], T!['}']);
+                            // Use format_node for complex blocks to preserve empty lines
+                            self.format_node(&child_node);
                         }
                     } else {
                         self.format_node(&child_node);

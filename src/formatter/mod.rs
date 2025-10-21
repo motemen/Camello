@@ -564,6 +564,8 @@ impl Formatter {
 
     fn is_simple_block(&self, node: &PerlNode) -> bool {
         let mut statement_count = 0;
+        let mut consecutive_newlines = 0;
+        let mut has_empty_line = false;
 
         for element in node.descendants_with_tokens() {
             match element {
@@ -582,6 +584,16 @@ impl Formatter {
                     }
                 }
                 NodeOrToken::Token(token) => {
+                    if token.kind() == SyntaxKind::NEWLINE {
+                        consecutive_newlines += 1;
+                        // Two consecutive newlines indicate an empty line
+                        if consecutive_newlines >= 2 {
+                            has_empty_line = true;
+                        }
+                    } else if !matches!(token.kind(), SyntaxKind::WHITESPACE) {
+                        consecutive_newlines = 0;
+                    }
+
                     if matches!(token.kind(), T![;] | SyntaxKind::COMMENT) {
                         return false;
                     }
@@ -589,7 +601,7 @@ impl Formatter {
             }
         }
 
-        true
+        !has_empty_line
     }
 
     fn should_use_parenthesized_formatter(&self, node: &PerlNode) -> bool {
