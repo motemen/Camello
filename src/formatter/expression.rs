@@ -140,7 +140,7 @@ impl Formatter {
         // Check if the parenthesized expression contains newlines
         if self.has_newline_before_first_value(node) {
             // Use multiline formatting for expressions with newlines
-            self.format_multiline_delimited(node, T!['('], T![')']);
+            self.format_multiline_delimited_elements(node.children_with_tokens(), T!['('], T![')']);
         } else {
             // Use single-line formatting with contextual spacing for compact expressions
             self.format_single_line_delimited_children(node, T!['('], T![')'], true);
@@ -218,7 +218,7 @@ impl Formatter {
         closing: SyntaxKind,
     ) {
         if self.has_newline_before_first_value_iter(iter.clone()) {
-            self.format_multiline_delimited_iter(iter, opening, closing);
+            self.format_multiline_delimited_elements(iter, opening, closing);
         } else {
             let elements: Vec<_> = iter.collect();
             self.format_single_line_delimited_elements(elements, opening, closing, true);
@@ -315,7 +315,11 @@ impl Formatter {
                             .children()
                             .any(|grandchild| grandchild.kind() == SyntaxKind::STMT)
                         {
-                            self.format_multiline_delimited(&child_node, T!['{'], T!['}']);
+                            self.format_multiline_delimited_elements(
+                                child_node.children_with_tokens(),
+                                T!['{'],
+                                T!['}'],
+                            );
                         } else {
                             self.format_node(&child_node);
                         }
