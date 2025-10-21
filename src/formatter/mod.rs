@@ -477,16 +477,13 @@ impl Formatter {
     fn format_expr_list_node(&mut self, node: &PerlNode, ctx: FormatContext) {
         let elements: Vec<_> = node.children_with_tokens().collect();
 
-        let set_local_alignment = if self.alignment_state.is_none() {
+        let mut set_local_alignment = false;
+        if self.alignment_state.is_none() {
             if let Some(state) = self.collect_expr_list_alignment_state(node, &elements) {
                 self.alignment_state = Some(state);
-                true
-            } else {
-                false
+                set_local_alignment = true;
             }
-        } else {
-            false
-        };
+        }
 
         for element in elements {
             match element {
