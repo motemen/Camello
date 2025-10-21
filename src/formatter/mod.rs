@@ -477,17 +477,27 @@ impl Formatter {
     fn format_expr_list_node(&mut self, node: &PerlNode, ctx: FormatContext) {
         let elements: Vec<_> = node.children_with_tokens().collect();
 
-        if self.alignment_state.is_none() {
+        let set_local_alignment = if self.alignment_state.is_none() {
             if let Some(state) = self.collect_expr_list_alignment_state(node, &elements) {
                 self.alignment_state = Some(state);
+                true
+            } else {
+                false
             }
-        }
+        } else {
+            false
+        };
 
         for element in elements {
             match element {
                 NodeOrToken::Node(child) => self.format_node_with_context(&child, ctx),
                 NodeOrToken::Token(token) => self.format_token_with_context(&token, ctx),
             }
+        }
+
+        // Reset alignment state only if we set it locally, to prevent it from affecting subsequent nodes
+        if set_local_alignment {
+            self.alignment_state = None;
         }
     }
 
