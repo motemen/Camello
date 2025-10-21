@@ -294,16 +294,12 @@ impl Writer {
                 continue;
             }
 
-            let prefix_column = line.text[..span.start_byte].chars().count();
-            let token_text = &line.text[span.start_byte..span.end_byte];
-            if let Some(eq_index) = token_text.find('=') {
-                let eq_offset = token_text[..eq_index].chars().count();
-                columns.push(TokenColumn {
-                    line_index,
-                    column: prefix_column + eq_offset,
-                    indent,
-                });
-            }
+            let column = line.text[..span.start_byte].chars().count();
+            columns.push(TokenColumn {
+                line_index,
+                column,
+                indent,
+            });
         }
     }
 }

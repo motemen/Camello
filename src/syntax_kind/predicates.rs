@@ -232,8 +232,8 @@ impl SyntaxKind {
         )
     }
 
-    /// Returns true if this token kind represents any assignment operator.
-    /// This covers both simple assignment (`=`) and compound forms like `+=` or `||=`.
+    /// Returns true if this token kind represents the assignment part of an assignment expression.
+    /// This is true for the `=` token in both simple (`=`) and compound (`+=`, `||=`, etc.) assignments.
     #[must_use]
     pub fn is_assignment_operator(self) -> bool {
         self == SyntaxKind::EQ
