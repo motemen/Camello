@@ -75,7 +75,10 @@ static BUILTIN_PROTOTYPES: LazyLock<HashMap<&'static str, PrototypeProfile>> =
             ("warn", PrototypeProfile::Multi(PrototypeArg::Any)),
             ("each", PrototypeProfile::Single(PrototypeArg::HashOrArray)),
             ("keys", PrototypeProfile::Single(PrototypeArg::HashOrArray)),
-            ("values", PrototypeProfile::Single(PrototypeArg::HashOrArray)),
+            (
+                "values",
+                PrototypeProfile::Single(PrototypeArg::HashOrArray),
+            ),
             ("split", PrototypeProfile::Multi(PrototypeArg::Any)),
             ("scalar", PrototypeProfile::Single(PrototypeArg::Any)),
             ("substr", PrototypeProfile::Multi(PrototypeArg::Any)),
