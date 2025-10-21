@@ -268,19 +268,6 @@ impl Formatter {
         }
     }
 
-    pub(super) fn format_multiline_delimited(
-        &mut self,
-        node: &PerlNode,
-        open_delimiter: SyntaxKind,
-        close_delimiter: SyntaxKind,
-    ) {
-        self.format_multiline_delimited_elements(
-            node.children_with_tokens(),
-            open_delimiter,
-            close_delimiter,
-        );
-    }
-
     pub(super) fn format_multiline_delimited_elements(
         &mut self,
         elements: impl IntoIterator<Item = SyntaxElement<PerlLanguage>>,
