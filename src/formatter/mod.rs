@@ -137,6 +137,8 @@ pub enum AlignmentStrategy {
 pub struct FormatterOptions {
     pub delimiter_tightness: DelimiterTightnessConfig,
     pub alignment_strategies: Vec<AlignmentStrategy>,
+    /// Controls whether compound assignment operators are aligned with simple assignments.
+    pub align_compound_assignments: bool,
 }
 
 impl Default for FormatterOptions {
@@ -149,6 +151,7 @@ impl Default for FormatterOptions {
                 AlignmentStrategy::PostfixConditionals,
                 AlignmentStrategy::Comments,
             ],
+            align_compound_assignments: true,
         }
     }
 }
@@ -163,6 +166,12 @@ impl FormatterOptions {
     #[must_use]
     pub fn with_alignment_strategies(mut self, strategies: Vec<AlignmentStrategy>) -> Self {
         self.alignment_strategies = strategies;
+        self
+    }
+
+    #[must_use]
+    pub fn with_align_compound_assignments(mut self, align: bool) -> Self {
+        self.align_compound_assignments = align;
         self
     }
 }
@@ -760,9 +769,28 @@ impl Formatter {
         self.format_token_with_context(token, FormatContext::default())
     }
 
-    fn apply_alignment_padding(&mut self, kind: SyntaxKind) {
+    fn apply_alignment_padding(&mut self, token: &SyntaxToken<PerlLanguage>) {
+        let kind = token.kind();
         if let Some(state) = self.alignment_state.as_mut() {
-            if state.token_kind() == kind {
+            let target_kind = state.token_kind();
+            let matches_target = if target_kind == SyntaxKind::EQ {
+                if kind.is_compoundable_operator() {
+                    Self::next_significant_token(token)
+                        .map(|next| next.kind().is_assignment_operator())
+                        .unwrap_or(false)
+                } else if kind.is_assignment_operator() {
+                    !self
+                        .writer
+                        .prev_token_kind()
+                        .is_some_and(|prev| prev.is_compoundable_operator())
+                } else {
+                    false
+                }
+            } else {
+                target_kind == kind
+            };
+
+            if matches_target {
                 if let Some(pad) = state.next_pad() {
                     if pad > 0 {
                         let spaces = " ".repeat(pad);
@@ -813,7 +841,7 @@ impl Formatter {
                     // This is an inline comment - add a space before it
                     self.writer.write_char(' ');
                 }
-                self.apply_alignment_padding(kind);
+                self.apply_alignment_padding(token);
                 self.writer.write_str(text.trim(), Some(kind));
                 self.writer.handle_user_newline();
                 self.remember_token(token);
@@ -872,7 +900,7 @@ impl Formatter {
                     self.writer.set_at_line_start(false);
                 }
 
-                self.apply_alignment_padding(kind);
+                self.apply_alignment_padding(token);
 
                 let prev_token_kind_before = self.writer.prev_token_kind();
                 self.writer.write_token(token);

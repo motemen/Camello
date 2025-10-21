@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::{format, parse_perl};
+use crate::{format, format_with_options, parse_perl, FormatterOptions};
 
 fn format_and_assert(input: &str) -> String {
     let (syntax, err) = parse_perl(input);
@@ -50,4 +50,16 @@ fn formatter_fixture_snapshots() {
 
         insta::assert_snapshot!(snapshot_name, formatted);
     }
+}
+
+#[test]
+fn compound_assignment_alignment_can_be_disabled() {
+    let source = include_str!("fixtures/compound_assignment_alignment.pl");
+    let (syntax, err) = parse_perl(source);
+    assert!(err.is_empty(), "Parse errors for fixture: {:?}", err);
+
+    let options = FormatterOptions::default().with_align_compound_assignments(false);
+    let formatted = format_with_options(&syntax, options);
+
+    insta::assert_snapshot!("compound_assignment_alignment_disabled", formatted);
 }
