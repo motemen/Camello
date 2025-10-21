@@ -1,5 +1,6 @@
 ---
 source: src/formatter/tests.rs
+assertion_line: 51
 expression: formatted
 ---
 &{$coderef}(1, 2, 3);
@@ -37,7 +38,7 @@ ${'$var_' . $suffix};
 %{"Package::HASH"};
 %{'%hash_' . $suffix};
 
-&{$handlers{$type || 'default'}};
+&{$handlers{ $type || 'default' }};
 ${ $refs->[0] };
 @{ $data->{arrays}->[0] };
 %{ $config->{$env}->{hashes} };
