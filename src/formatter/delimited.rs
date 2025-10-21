@@ -281,11 +281,16 @@ impl Formatter {
         let ctx = super::FormatContext::default().with_multiline_context();
         let elements: Vec<_> = list.children_with_tokens().collect();
 
-        if self.alignment_state.is_none() {
+        let set_local_alignment = if self.alignment_state.is_none() {
             if let Some(state) = self.collect_expr_list_alignment_state(list, &elements) {
                 self.alignment_state = Some(state);
+                true
+            } else {
+                false
             }
-        }
+        } else {
+            false
+        };
 
         for child in elements {
             match child {
@@ -308,6 +313,11 @@ impl Formatter {
                     }
                 }
             }
+        }
+
+        // Reset alignment state only if we set it locally, to prevent it from affecting subsequent nodes
+        if set_local_alignment {
+            self.alignment_state = None;
         }
     }
 
