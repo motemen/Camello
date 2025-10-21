@@ -218,7 +218,7 @@ impl Formatter {
         closing: SyntaxKind,
     ) {
         if self.has_newline_before_first_value_iter(iter.clone()) {
-            self.format_multiline_delimited_iter(iter, opening, closing);
+            self.format_multiline_delimited_elements(iter, opening, closing);
         } else {
             let elements: Vec<_> = iter.collect();
             self.format_single_line_delimited_elements(elements, opening, closing, true);
