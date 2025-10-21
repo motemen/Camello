@@ -242,6 +242,20 @@ impl Writer {
         columns
     }
 
+    pub(super) fn collect_assignment_columns(&self) -> Vec<TokenColumn> {
+        let mut columns = Vec::new();
+        for (line_index, line) in self.lines.iter().enumerate() {
+            Self::collect_assignment_from_line(&mut columns, line, line_index);
+        }
+
+        if !self.current_line.text.is_empty() || !self.current_line.tokens.is_empty() {
+            let current_index = self.lines.len();
+            Self::collect_assignment_from_line(&mut columns, &self.current_line, current_index);
+        }
+
+        columns
+    }
+
     fn collect_from_line(
         columns: &mut Vec<TokenColumn>,
         line: &Line,
@@ -262,6 +276,30 @@ impl Writer {
                     indent,
                 });
             }
+        }
+    }
+
+    fn collect_assignment_from_line(
+        columns: &mut Vec<TokenColumn>,
+        line: &Line,
+        line_index: usize,
+    ) {
+        if line.tokens.is_empty() {
+            return;
+        }
+
+        let indent = line.text.chars().take_while(|c| c.is_whitespace()).count();
+        for span in &line.tokens {
+            if !span.kind.is_assignment_operator() {
+                continue;
+            }
+
+            let column = line.text[..span.start_byte].chars().count();
+            columns.push(TokenColumn {
+                line_index,
+                column,
+                indent,
+            });
         }
     }
 }
