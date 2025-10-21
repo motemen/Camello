@@ -502,4 +502,211 @@ impl<'a> Lexer<'a> {
         }
         None
     }
+
+    /// Disambiguate a token based on its lexical context
+    pub(super) fn disambiguate(
+        &self,
+        token: &super::Token,
+        text: &str,
+        ctx: super::types::LexContext,
+    ) -> SyntaxKind {
+        use super::types::LexContext;
+        use super::Token;
+        use crate::T;
+
+        match token {
+            // Identifier words: operators, quote-like starters, or keywords
+            Token::Ident => match text {
+                // Word operators in operator context; otherwise identifiers
+                "eq" | "ne" | "gt" | "lt" | "ge" | "le" | "cmp" => match ctx {
+                    LexContext::Operator | LexContext::AmbiguousValueLookahead => match text {
+                        "eq" => T![eq],
+                        "ne" => T![ne],
+                        "gt" => T![gt],
+                        "lt" => T![lt],
+                        "ge" => T![ge],
+                        "le" => T![le],
+                        "cmp" => T![cmp],
+                        _ => unreachable!(),
+                    },
+                    LexContext::Value => SyntaxKind::IDENT,
+                },
+                // Repetition operator vs identifier
+                "x" => match ctx {
+                    LexContext::Operator | LexContext::AmbiguousValueLookahead => T![x],
+                    LexContext::Value => SyntaxKind::IDENT,
+                },
+                _ => {
+                    // Check if this might be a keyword followed by ::
+                    // If so, treat it as an identifier to allow qualified names like local::lib
+                    if let Some(keyword_kind) = Self::map_ident_keyword(text) {
+                        // Look ahead to see if :: follows
+                        let remainder = self.logos_lexer.remainder();
+                        if remainder.starts_with("::") || self.ident_follows_sigil() {
+                            // This is part of a qualified identifier like local::lib
+                            SyntaxKind::IDENT
+                        } else {
+                            // This is a standalone keyword
+                            keyword_kind
+                        }
+                    } else {
+                        SyntaxKind::IDENT
+                    }
+                }
+            },
+            // Ambiguous symbol tokens depending on context
+            Token::Percent => match ctx {
+                LexContext::Value => SyntaxKind::HASH_SIGIL,
+                LexContext::Operator => T![%],
+                LexContext::AmbiguousValueLookahead => {
+                    if self.ambiguous_remainder_starts_sigil_target() {
+                        SyntaxKind::HASH_SIGIL
+                    } else {
+                        T![%]
+                    }
+                }
+            },
+            Token::Star => match ctx {
+                LexContext::Value => SyntaxKind::TYPEGLOB_SIGIL,
+                LexContext::Operator => T![*],
+                LexContext::AmbiguousValueLookahead => {
+                    if self.ambiguous_remainder_starts_sigil_target() {
+                        SyntaxKind::TYPEGLOB_SIGIL
+                    } else {
+                        T![*]
+                    }
+                }
+            },
+            Token::DotDotDot => match ctx {
+                LexContext::Operator | LexContext::AmbiguousValueLookahead => {
+                    T![...]
+                }
+                LexContext::Value => SyntaxKind::ELLIPSIS,
+            },
+            Token::Slash => T![/], // regex literals handled elsewhere
+            Token::Ampersand => match ctx {
+                LexContext::Value => SyntaxKind::CODE_SIGIL,
+                LexContext::Operator => T![&],
+                LexContext::AmbiguousValueLookahead => {
+                    if self.ambiguous_remainder_starts_sigil_target() {
+                        SyntaxKind::CODE_SIGIL
+                    } else {
+                        T![&]
+                    }
+                }
+            },
+            Token::Caret => match ctx {
+                LexContext::Value => SyntaxKind::CARET,
+                LexContext::Operator | LexContext::AmbiguousValueLookahead => {
+                    T![^]
+                }
+            },
+            Token::Pipe => T![|],
+            // Everything else: direct mapping
+            _ => token.to_syntax_kind(),
+        }
+    }
+
+    /// While the parser runs [`LexContext::AmbiguousValueLookahead`] we need to decide if a
+    /// `%`, `&`, or `*` token should keep behaving like a sigil or fall back to an infix
+    /// operator. The goal is to keep arguments like `%hash`, `&func`, or `%{...}` available to
+    /// function-call lookahead without accidentally reinterpreting infix operators such as
+    /// `foo % +1`, `foo * { ... }`, or `foo*@_` as sigils.
+    ///
+    /// We therefore only recognize a sigil when the next non-trivia character is either an
+    /// opening brace (for typeglob/hash dereferences) or an identifier start, provided the sigil
+    /// isn't glued directly to a preceding identifier. This keeps `%hash`, `&foo`, or `*STDOUT`
+    /// available to the parser's lookahead while whitespace-delimited operators like `foo % +1`,
+    /// `foo * { ... }`, or `foo*@_` continue to lex as infix.
+    fn ambiguous_remainder_starts_sigil_target(&self) -> bool {
+        let Some(next) = self.logos_lexer.remainder().chars().next() else {
+            return false;
+        };
+
+        if next.is_whitespace() {
+            return false;
+        }
+
+        let span = self.logos_lexer.span();
+        if span.start > 0 {
+            let source = self.logos_lexer.source();
+            if source[..span.start]
+                .chars()
+                .next_back()
+                .is_some_and(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+            {
+                return false;
+            }
+        }
+
+        matches!(next, '{') || next.is_ascii_alphanumeric() || next == '_'
+    }
+
+    fn ident_follows_sigil(&self) -> bool {
+        let span = self.logos_lexer.span();
+        if span.start == 0 {
+            return false;
+        }
+
+        let source = self.logos_lexer.source();
+        let mut chars = source[..span.start].chars().rev();
+        match chars.next() {
+            Some('#') => chars.next().is_some_and(|ch| matches!(ch, '$')),
+            Some('$' | '@' | '%' | '*' | '&') => true,
+            _ => false,
+        }
+    }
+
+    /// Map known identifier keywords and quote-like starters
+    fn map_ident_keyword(text: &str) -> Option<SyntaxKind> {
+        use crate::T;
+
+        Some(match text {
+            // Control/decl keywords
+            "sub" => T![sub],
+            "my" => T![my],
+            "our" => T![our],
+            "state" => T![state],
+            "local" => T![local],
+            "if" => T![if],
+            "unless" => T![unless],
+            "elsif" => T![elsif],
+            "else" => T![else],
+            "for" => T![for],
+            "foreach" => T![foreach],
+            "while" => T![while],
+            "until" => T![until],
+            "package" => T![package],
+            "use" => T![use],
+            "no" => T![no],
+            "require" => T![require],
+            "return" => T![return],
+            "undef" => T![undef],
+            "next" => T![next],
+            "last" => T![last],
+            "redo" => T![redo],
+            "try" => T![try],
+            "catch" => T![catch],
+            "finally" => T![finally],
+            "given" => T![given],
+            "when" => T![when],
+            "default" => T![default],
+            // Quote-like starters (treated as keywords regardless of context)
+            "q" => T![q],
+            "qq" => T![qq],
+            "qr" => T![qr],
+            "qx" => T![qx],
+            "qw" => T![qw],
+            "m" => T![m],
+            "s" => T![s],
+            "tr" => T![tr],
+            "y" => T![y],
+            // Logical word operators as keywords
+            "not" => T![not],
+            "and" => T![and],
+            "or" => T![or],
+            "xor" => T![xor],
+            _ => return None,
+        })
+    }
 }
