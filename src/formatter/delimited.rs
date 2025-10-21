@@ -56,6 +56,7 @@ impl Formatter {
         closing: SyntaxKind,
         skip_whitespace: bool,
     ) {
+        let ctx = FormatContext::default().with_suppress_newlines();
         if let Some((open_spacing, close_spacing)) =
             self.compute_delimited_spacing(&elements, opening, closing)
         {
@@ -64,10 +65,10 @@ impl Formatter {
                 open_spacing,
                 close_spacing,
                 skip_whitespace,
-                FormatContext::default(),
+                ctx,
             );
         } else {
-            self.format_elements_without_pairs(elements, skip_whitespace, FormatContext::default());
+            self.format_elements_without_pairs(elements, skip_whitespace, ctx);
         }
     }
 
