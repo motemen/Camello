@@ -226,8 +226,17 @@ impl Formatter {
         open_delimiter: SyntaxKind,
         close_delimiter: SyntaxKind,
     ) {
+        self.format_multiline_delimited_elements(iter, open_delimiter, close_delimiter);
+    }
+
+    pub(super) fn format_multiline_delimited_elements(
+        &mut self,
+        elements: impl IntoIterator<Item = SyntaxElement<PerlLanguage>>,
+        open_delimiter: SyntaxKind,
+        close_delimiter: SyntaxKind,
+    ) {
         let ctx = super::FormatContext::default().with_multiline_context();
-        for child in iter {
+        for child in elements.into_iter() {
             match child {
                 NodeOrToken::Node(node) => {
                     let kind = node.kind();
