@@ -1,5 +1,5 @@
 use crate::{PerlLanguage, PerlNode, SyntaxKind, T};
-use rowan::{NodeOrToken, SyntaxElement, SyntaxElementChildren, SyntaxToken};
+use rowan::{NodeOrToken, SyntaxElement, SyntaxToken};
 
 use super::{AlignmentState, AlignmentStrategy, FormatContext, Formatter};
 
@@ -266,28 +266,6 @@ impl Formatter {
                 (count.min(remaining), contains_qw)
             }
         }
-    }
-
-    pub(super) fn format_multiline_delimited(
-        &mut self,
-        node: &PerlNode,
-        open_delimiter: SyntaxKind,
-        close_delimiter: SyntaxKind,
-    ) {
-        self.format_multiline_delimited_iter(
-            node.children_with_tokens(),
-            open_delimiter,
-            close_delimiter,
-        );
-    }
-
-    pub(super) fn format_multiline_delimited_iter(
-        &mut self,
-        iter: SyntaxElementChildren<PerlLanguage>,
-        open_delimiter: SyntaxKind,
-        close_delimiter: SyntaxKind,
-    ) {
-        self.format_multiline_delimited_elements(iter, open_delimiter, close_delimiter);
     }
 
     pub(super) fn format_multiline_delimited_elements(

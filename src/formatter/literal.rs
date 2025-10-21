@@ -33,7 +33,7 @@ impl Formatter {
             .any(|element| element.kind() == SyntaxKind::NEWLINE);
 
         if should_multiline {
-            self.format_multiline_delimited(node, opening, closing);
+            self.format_multiline_delimited_elements(node.children_with_tokens(), opening, closing);
         } else {
             self.format_single_line_delimited_literal(node, opening, closing);
         }
