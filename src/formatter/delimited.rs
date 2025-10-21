@@ -311,7 +311,7 @@ impl Formatter {
         }
     }
 
-    fn collect_expr_list_alignment_state(
+    pub(super) fn collect_expr_list_alignment_state(
         &self,
         list: &PerlNode,
         elements: &[SyntaxElement<PerlLanguage>],

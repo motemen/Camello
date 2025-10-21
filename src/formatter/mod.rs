@@ -406,6 +406,10 @@ impl Formatter {
                 self.format_for_stmt(node);
                 return;
             }
+            SyntaxKind::EXPR_LIST => {
+                self.format_expr_list_node(node, ctx);
+                return;
+            }
             SyntaxKind::ANON_SUB_EXPR
             | SyntaxKind::FUNCTION_CALL_EXPR
             | SyntaxKind::BLOCK_FUNCTION_CALL_EXPR
@@ -467,6 +471,23 @@ impl Formatter {
         if node.kind().is_variable() {
             // This is the logic from format_variable
             self.writer.set_prev_token_kind(Some(node.kind()));
+        }
+    }
+
+    fn format_expr_list_node(&mut self, node: &PerlNode, ctx: FormatContext) {
+        let elements: Vec<_> = node.children_with_tokens().collect();
+
+        if self.alignment_state.is_none() {
+            if let Some(state) = self.collect_expr_list_alignment_state(node, &elements) {
+                self.alignment_state = Some(state);
+            }
+        }
+
+        for element in elements {
+            match element {
+                NodeOrToken::Node(child) => self.format_node_with_context(&child, ctx),
+                NodeOrToken::Token(token) => self.format_token_with_context(&token, ctx),
+            }
         }
     }
 
