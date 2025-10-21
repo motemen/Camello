@@ -9,3 +9,8 @@ grep{$_}@list;
 grep({$_}@list);
 
 print { $fh } "hello";
+
+each%$hash;
+each @array;
+values%$hash;
+values @array;

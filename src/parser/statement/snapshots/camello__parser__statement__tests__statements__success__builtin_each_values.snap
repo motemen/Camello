@@ -1,0 +1,45 @@
+---
+source: src/parser/statement/tests.rs
+expression: render_success_tree(&syntax)
+---
+ROOT@0..64
+  STMT@0..12
+    FUNCTION_CALL_EXPR@0..11
+      IDENT@0..4 "each"
+      WHITESPACE@4..5 " "
+      COMPOUND_VAR@5..11
+        HASH_SIGIL@5..6 "%"
+        SCALAR_VAR@6..11
+          SCALAR_SIGIL@6..7 "$"
+          IDENT@7..11 "hash"
+    SEMICOLON@11..12 ";"
+  NEWLINE@12..13 "\n"
+  STMT@13..25
+    FUNCTION_CALL_EXPR@13..24
+      IDENT@13..17 "each"
+      WHITESPACE@17..18 " "
+      ARRAY_VAR@18..24
+        ARRAY_SIGIL@18..19 "@"
+        IDENT@19..24 "array"
+    SEMICOLON@24..25 ";"
+  NEWLINE@25..26 "\n"
+  STMT@26..44
+    FUNCTION_CALL_EXPR@26..43
+      IDENT@26..32 "values"
+      WHITESPACE@32..33 " "
+      COMPOUND_VAR@33..43
+        HASH_SIGIL@33..34 "%"
+        SCALAR_VAR@34..43
+          SCALAR_SIGIL@34..35 "$"
+          IDENT@35..43 "hash_ref"
+    SEMICOLON@43..44 ";"
+  NEWLINE@44..45 "\n"
+  STMT@45..63
+    FUNCTION_CALL_EXPR@45..62
+      IDENT@45..51 "values"
+      WHITESPACE@51..52 " "
+      ARRAY_VAR@52..62
+        ARRAY_SIGIL@52..53 "@"
+        IDENT@53..62 "array_ref"
+    SEMICOLON@62..63 ";"
+  NEWLINE@63..64 "\n"
