@@ -274,6 +274,9 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
     use SyntaxKind::*;
 
     match (prev, current) {
+        // Postfix increment/decrement operators: never add space before them
+        (_, POSTFIX_INCREMENT | POSTFIX_DECREMENT) => Some(false),
+
         // Variables followed by other variables, identifiers, or strings need space (for filehandle syntax)
         (
             SCALAR_VAR | ARRAY_VAR | HASH_VAR | TYPEGLOB_VAR,
