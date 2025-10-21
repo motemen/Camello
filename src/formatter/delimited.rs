@@ -3,6 +3,8 @@ use rowan::{NodeOrToken, SyntaxElement, SyntaxElementChildren, SyntaxToken};
 
 use super::{AlignmentState, AlignmentStrategy, FormatContext, Formatter};
 
+type DelimiterSpacing = (Vec<Option<bool>>, Vec<Option<bool>>);
+
 impl Formatter {
     pub(super) fn format_single_line_delimited_children(
         &mut self,
@@ -28,15 +30,58 @@ impl Formatter {
         skip_whitespace: bool,
         ctx: FormatContext,
     ) {
-        use SyntaxKind::WHITESPACE;
+        let elements: Vec<_> = node.children_with_tokens().collect();
 
-        let children: Vec<_> = node.children_with_tokens().collect();
+        if let Some((open_spacing, close_spacing)) =
+            self.compute_delimited_spacing(&elements, opening, closing)
+        {
+            self.apply_delimited_spacing(
+                elements,
+                open_spacing,
+                close_spacing,
+                skip_whitespace,
+                ctx,
+            );
+        } else if ctx.suppress_newlines {
+            self.format_elements_without_pairs(elements, skip_whitespace, ctx);
+        } else {
+            self.format_children(node, skip_whitespace);
+        }
+    }
 
+    pub(super) fn format_single_line_delimited_elements(
+        &mut self,
+        elements: Vec<SyntaxElement<PerlLanguage>>,
+        opening: SyntaxKind,
+        closing: SyntaxKind,
+        skip_whitespace: bool,
+    ) {
+        if let Some((open_spacing, close_spacing)) =
+            self.compute_delimited_spacing(&elements, opening, closing)
+        {
+            self.apply_delimited_spacing(
+                elements,
+                open_spacing,
+                close_spacing,
+                skip_whitespace,
+                FormatContext::default(),
+            );
+        } else {
+            self.format_elements_without_pairs(elements, skip_whitespace, FormatContext::default());
+        }
+    }
+
+    fn compute_delimited_spacing(
+        &self,
+        elements: &[SyntaxElement<PerlLanguage>],
+        opening: SyntaxKind,
+        closing: SyntaxKind,
+    ) -> Option<DelimiterSpacing> {
         let mut stack: Vec<usize> = Vec::new();
         let mut pairs: Vec<(usize, usize)> = Vec::new();
 
-        for (index, child) in children.iter().enumerate() {
-            if let NodeOrToken::Token(token) = child {
+        for (index, element) in elements.iter().enumerate() {
+            if let Some(token) = element.as_token() {
                 match token.kind() {
                     k if k == opening => stack.push(index),
                     k if k == closing => {
@@ -50,28 +95,11 @@ impl Formatter {
         }
 
         if pairs.is_empty() {
-            if ctx.suppress_newlines {
-                for child in node.children_with_tokens() {
-                    match child {
-                        NodeOrToken::Node(child_node) => {
-                            self.format_node_with_context(&child_node, ctx);
-                        }
-                        NodeOrToken::Token(token) => {
-                            if skip_whitespace && token.kind() == WHITESPACE {
-                                continue;
-                            }
-                            self.format_token_with_context(&token, ctx);
-                        }
-                    }
-                }
-            } else {
-                self.format_children(node, skip_whitespace);
-            }
-            return;
+            return None;
         }
 
-        let mut open_spacing: Vec<Option<bool>> = vec![None; children.len()];
-        let mut close_spacing: Vec<Option<bool>> = vec![None; children.len()];
+        let mut open_spacing: Vec<Option<bool>> = vec![None; elements.len()];
+        let mut close_spacing: Vec<Option<bool>> = vec![None; elements.len()];
 
         for (open_index, close_index) in &pairs {
             if close_index <= open_index {
@@ -81,8 +109,8 @@ impl Formatter {
             let mut significant_tokens = 0;
             let mut contains_qw = false;
 
-            for child in &children[open_index + 1..*close_index] {
-                match child {
+            for element in &elements[open_index + 1..*close_index] {
+                match element {
                     NodeOrToken::Node(inner) => {
                         let remaining = 2usize.saturating_sub(significant_tokens);
                         if remaining == 0 {
@@ -117,10 +145,23 @@ impl Formatter {
             close_spacing[*close_index] = Some(add_interior_space);
         }
 
-        for (index, child) in children.into_iter().enumerate() {
-            match child {
-                NodeOrToken::Node(child_node) => {
-                    self.format_node_with_context(&child_node, ctx);
+        Some((open_spacing, close_spacing))
+    }
+
+    fn apply_delimited_spacing(
+        &mut self,
+        elements: Vec<SyntaxElement<PerlLanguage>>,
+        open_spacing: Vec<Option<bool>>,
+        close_spacing: Vec<Option<bool>>,
+        skip_whitespace: bool,
+        ctx: FormatContext,
+    ) {
+        use SyntaxKind::WHITESPACE;
+
+        for (index, element) in elements.into_iter().enumerate() {
+            match element {
+                NodeOrToken::Node(node) => {
+                    self.format_node_with_context(&node, ctx);
                 }
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
@@ -151,6 +192,25 @@ impl Formatter {
                     } else {
                         self.format_token_with_context(&token, ctx);
                     }
+                }
+            }
+        }
+    }
+
+    fn format_elements_without_pairs(
+        &mut self,
+        elements: Vec<SyntaxElement<PerlLanguage>>,
+        skip_whitespace: bool,
+        ctx: FormatContext,
+    ) {
+        for element in elements {
+            match element {
+                NodeOrToken::Node(node) => self.format_node_with_context(&node, ctx),
+                NodeOrToken::Token(token) => {
+                    if skip_whitespace && token.kind() == SyntaxKind::WHITESPACE {
+                        continue;
+                    }
+                    self.format_token_with_context(&token, ctx);
                 }
             }
         }

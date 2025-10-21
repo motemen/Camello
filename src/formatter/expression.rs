@@ -220,24 +220,8 @@ impl Formatter {
         if self.has_newline_before_first_value_iter(iter.clone()) {
             self.format_multiline_delimited_iter(iter, opening, closing);
         } else {
-            for child in iter {
-                match child {
-                    NodeOrToken::Node(node) => self.format_node(&node),
-                    NodeOrToken::Token(token) => {
-                        let kind = token.kind();
-
-                        match kind {
-                            _ if kind == opening || kind == closing => {
-                                self.writer.write_token(&token);
-                                self.remember_token(&token);
-                            }
-                            _ => {
-                                self.format_token(&token);
-                            }
-                        }
-                    }
-                }
-            }
+            let elements: Vec<_> = iter.collect();
+            self.format_single_line_delimited_elements(elements, opening, closing, true);
         }
     }
 

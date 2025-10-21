@@ -322,6 +322,9 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
         (R_BRACE, kind) if kind != SEMICOLON && kind != R_PAREN => Some(true),
         (R_BRACE, SEMICOLON | R_PAREN) => Some(false),
 
+        // Variables immediately followed by a block/dereference brace should stay tight
+        (SCALAR_VAR | ARRAY_VAR | HASH_VAR | TYPEGLOB_VAR, L_BRACE) => Some(false),
+
         // L_PAREN after certain tokens
         (SCALAR_VAR | ARRAY_VAR | HASH_VAR | TYPEGLOB_VAR, L_PAREN) => Some(true),
         // COMPOUND_VAR followed by L_PAREN should have no space (for function calls like &{$code}())
