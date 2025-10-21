@@ -1,0 +1,16 @@
+---
+source: src/formatter/tests.rs
+assertion_line: 60
+expression: formatted
+---
+$h->{ $o->meth };
+$h->{ $o->meth };
+
+$a->[ $x + $y ];
+$a->[ $x + $y ];
+
+$aref->[ $hashref->{ $key } ];
+$aref->[ $hashref->{ $key } ];
+
+$href->{ $aref->[ $index ] };
+$href->{ $aref->[ $index ] };
