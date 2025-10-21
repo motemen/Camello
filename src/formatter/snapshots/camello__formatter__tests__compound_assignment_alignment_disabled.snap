@@ -1,0 +1,12 @@
+---
+source: src/formatter/tests.rs
+assertion_line: 64
+expression: formatted
+---
+sub compound_alignment {
+    my $simple = 1;
+    my $or ||= 2;
+    my $sum += 3;
+    $flag &&= check();
+    $concat .= value();
+}
