@@ -7,6 +7,7 @@ pub(super) struct TokenSpan {
     pub(super) kind: SyntaxKind,
     pub(super) start_byte: usize,
     pub(super) end_byte: usize,
+    pub(super) token: Option<SyntaxToken<PerlLanguage>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -24,11 +25,12 @@ impl Line {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct TokenColumn {
     pub(super) line_index: usize,
     pub(super) column: usize,
     pub(super) indent: usize,
+    pub(super) token: Option<SyntaxToken<PerlLanguage>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,10 +75,15 @@ impl Writer {
     }
 
     pub(super) fn write_token(&mut self, token: &SyntaxToken<PerlLanguage>) {
-        self.write_str(token.text(), Some(token.kind()));
+        self.write_str(token.text(), Some(token.kind()), Some(token));
     }
 
-    pub(super) fn write_str(&mut self, text: &str, kind: Option<SyntaxKind>) {
+    pub(super) fn write_str(
+        &mut self,
+        text: &str,
+        kind: Option<SyntaxKind>,
+        token: Option<&SyntaxToken<PerlLanguage>>,
+    ) {
         let mut is_first_part = true;
         for part in text.split('\n') {
             if is_first_part {
@@ -103,6 +110,7 @@ impl Writer {
                     kind,
                     start_byte: start,
                     end_byte: end,
+                    token: token.cloned(),
                 });
             }
         }
@@ -198,6 +206,10 @@ impl Writer {
         self.at_line_start = value;
     }
 
+    pub(super) fn set_indent_level(&mut self, level: usize) {
+        self.indent_level = level;
+    }
+
     pub(super) fn increase_indent(&mut self) {
         self.indent_level += 1;
     }
@@ -214,18 +226,6 @@ impl Writer {
 
     pub(super) fn indent_string_len(&self) -> usize {
         self.indent_string.len()
-    }
-
-    pub(super) fn non_empty_line_count(&self) -> usize {
-        let mut count = self
-            .lines
-            .iter()
-            .filter(|line| !line.text.is_empty())
-            .count();
-        if !self.current_line.text.is_empty() {
-            count += 1;
-        }
-        count
     }
 
     pub(super) fn collect_token_columns(&self, kind: SyntaxKind) -> Vec<TokenColumn> {
@@ -274,6 +274,7 @@ impl Writer {
                     line_index,
                     column,
                     indent,
+                    token: span.token.clone(),
                 });
             }
         }
@@ -299,6 +300,7 @@ impl Writer {
                 line_index,
                 column,
                 indent,
+                token: span.token.clone(),
             });
         }
     }
