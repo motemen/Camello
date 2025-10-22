@@ -6,6 +6,7 @@
 //! rendered, but other components (such as future lint passes) can also consume
 //! the same information without depending on formatter internals.
 
+use std::cell::RefCell;
 use std::collections::{hash_map::Entry, HashMap, VecDeque};
 
 use crate::{PerlLanguage, SyntaxKind};
@@ -330,7 +331,7 @@ pub struct CommentRegistry {
     blocks: Vec<Option<CommentBlock>>,
     assignments: Vec<Option<CommentAssignment>>,
     comment_to_block: HashMap<CommentId, CommentBlockId>,
-    token_cache: HashMap<TokenKey, SyntaxToken<PerlLanguage>>,
+    token_cache: RefCell<HashMap<TokenKey, SyntaxToken<PerlLanguage>>>,
     root: SyntaxNode<PerlLanguage>,
 }
 
@@ -341,7 +342,7 @@ impl CommentRegistry {
             blocks: Vec::new(),
             assignments: Vec::new(),
             comment_to_block: HashMap::new(),
-            token_cache: HashMap::new(),
+            token_cache: RefCell::new(HashMap::new()),
             root,
         }
     }
@@ -379,7 +380,7 @@ impl CommentRegistry {
 
     fn cache_token(&mut self, token: &SyntaxToken<PerlLanguage>) {
         let key = TokenKey::from_token(token);
-        if let Entry::Vacant(entry) = self.token_cache.entry(key) {
+        if let Entry::Vacant(entry) = self.token_cache.borrow_mut().entry(key) {
             entry.insert(token.clone());
         }
     }
@@ -389,12 +390,18 @@ impl CommentRegistry {
     pub fn resolve_owner(&self, owner: CommentOwner) -> Option<CommentAnchor> {
         match owner {
             CommentOwner::Node(ptr) => ptr.try_to_node(&self.root).map(CommentAnchor::Node),
-            CommentOwner::Token(key) => self
-                .token_cache
-                .get(&key)
-                .cloned()
-                .map(CommentAnchor::Token)
-                .or_else(|| key.resolve(&self.root).map(CommentAnchor::Token)),
+            CommentOwner::Token(key) => {
+                // Fast path: check cache with only an immutable borrow.
+                if let Some(token) = self.token_cache.borrow().get(&key) {
+                    return Some(CommentAnchor::Token(token.clone()));
+                }
+
+                // Slow path: resolve from tree, then cache the result for next time.
+                key.resolve(&self.root).map(|token| {
+                    self.token_cache.borrow_mut().insert(key, token.clone());
+                    CommentAnchor::Token(token)
+                })
+            }
         }
     }
 
