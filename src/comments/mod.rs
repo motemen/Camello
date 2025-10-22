@@ -325,36 +325,31 @@ impl CommentAssignment {
 }
 
 /// A registry describing all comment blocks and their assignments for a syntax tree.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct CommentRegistry {
     blocks: Vec<Option<CommentBlock>>,
     assignments: Vec<Option<CommentAssignment>>,
     comment_to_block: HashMap<CommentId, CommentBlockId>,
     token_cache: HashMap<TokenKey, SyntaxToken<PerlLanguage>>,
+    root: SyntaxNode<PerlLanguage>,
 }
 
 impl CommentRegistry {
-    /// Creates an empty comment registry.
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Creates an empty registry with pre-allocated capacity.
-    #[must_use]
-    pub fn with_capacity(capacity: usize) -> Self {
+    /// Builds a comment registry for the provided syntax tree.
+    fn new(root: SyntaxNode<PerlLanguage>) -> Self {
         Self {
-            blocks: Vec::with_capacity(capacity),
-            assignments: Vec::with_capacity(capacity),
-            comment_to_block: HashMap::with_capacity(capacity),
-            token_cache: HashMap::with_capacity(capacity),
+            blocks: Vec::new(),
+            assignments: Vec::new(),
+            comment_to_block: HashMap::new(),
+            token_cache: HashMap::new(),
+            root,
         }
     }
 
     /// Builds a comment registry for the provided syntax tree.
     #[must_use]
     pub fn from_syntax(root: &SyntaxNode<PerlLanguage>) -> Self {
-        let mut registry = CommentRegistry::new();
+        let mut registry = CommentRegistry::new(root.clone());
         let summaries = build_comment_blocks(root, &mut registry);
 
         for node in std::iter::once(root.clone()).chain(root.descendants()) {
@@ -389,21 +384,17 @@ impl CommentRegistry {
         }
     }
 
-    /// Resolves the provided owner to the supplied syntax tree, reusing cached tokens when available.
+    /// Resolves the provided owner to a syntax anchor, reusing cached tokens when available.
     #[must_use]
-    pub fn resolve_owner(
-        &self,
-        owner: CommentOwner,
-        root: &SyntaxNode<PerlLanguage>,
-    ) -> Option<CommentAnchor> {
+    pub fn resolve_owner(&self, owner: CommentOwner) -> Option<CommentAnchor> {
         match owner {
-            CommentOwner::Node(ptr) => ptr.try_to_node(root).map(CommentAnchor::Node),
+            CommentOwner::Node(ptr) => ptr.try_to_node(&self.root).map(CommentAnchor::Node),
             CommentOwner::Token(key) => self
                 .token_cache
                 .get(&key)
                 .cloned()
                 .map(CommentAnchor::Token)
-                .or_else(|| key.resolve(root).map(CommentAnchor::Token)),
+                .or_else(|| key.resolve(&self.root).map(CommentAnchor::Token)),
         }
     }
 
@@ -739,7 +730,9 @@ mod tests {
 
     #[test]
     fn registry_insert_and_query() {
-        let mut registry = CommentRegistry::new();
+        let source = "# test\n";
+        let (root, _errors) = parse_perl(source);
+        let mut registry = CommentRegistry::new(root);
         let comment_range = TextRange::new(TextSize::from(0), TextSize::from(10));
         let comment_id =
             CommentId::from_token_key(TokenKey::new(SyntaxKind::COMMENT, comment_range)).unwrap();
@@ -795,10 +788,10 @@ mod tests {
     }
 
     #[test]
-    fn resolve_owner_prefers_cached_tokens() {
+    fn resolve_owner_uses_cached_tokens() {
         let source = "my $x = 1; # trailing\n";
-        let (root_first, _errors) = parse_perl(source);
-        let registry = CommentRegistry::from_syntax(&root_first);
+        let (root, _errors) = parse_perl(source);
+        let registry = CommentRegistry::from_syntax(&root);
 
         let trailing_assignment = registry
             .iter()
@@ -810,10 +803,8 @@ mod tests {
             _ => unreachable!(),
         };
 
-        let (root_second, _errors) = parse_perl(source);
-
         let anchor = registry
-            .resolve_owner(owner, &root_second)
+            .resolve_owner(owner)
             .expect("owner should resolve via cache");
 
         let CommentAnchor::Token(token) = anchor else {
@@ -826,12 +817,8 @@ mod tests {
         }
 
         assert_eq!(
-            token_root, root_first,
-            "token should originate from cached tree"
-        );
-        assert_ne!(
-            token_root, root_second,
-            "cached token should not come from fallback tree"
+            token_root, root,
+            "token should originate from registry's stored tree"
         );
     }
 }

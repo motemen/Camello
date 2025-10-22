@@ -300,22 +300,10 @@ impl Formatter {
             return false;
         };
 
-        let Some(root) = Self::comment_root(token) else {
-            return false;
-        };
-
         matches!(
-            self.comment_registry.resolve_owner(owner, &root),
+            self.comment_registry.resolve_owner(owner),
             Some(CommentAnchor::Node(node)) if node.kind() == SyntaxKind::SUB_DEF
         )
-    }
-
-    fn comment_root(token: &SyntaxToken<PerlLanguage>) -> Option<PerlNode> {
-        let mut node = token.parent()?;
-        while let Some(parent) = node.parent() {
-            node = parent;
-        }
-        Some(node)
     }
 
     fn format_node(&mut self, node: &PerlNode) {
