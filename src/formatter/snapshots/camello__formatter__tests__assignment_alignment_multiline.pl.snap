@@ -3,7 +3,7 @@ source: src/formatter/tests.rs
 expression: formatted
 ---
 sub multiline_assignments {
-    my $a = 1;
+    my $a   = 1;
     my $bbb = [
     ];
     my $c = "";
