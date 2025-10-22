@@ -63,13 +63,30 @@ jobs:
             echo "**Source:** $url" >> all_results.md
             echo "" >> all_results.md
             
-            # Run curl | diff and capture both stdout and stderr separately
-            curl -sf "$url" | ./scripts/diff - > "stdout_$name.txt" 2> "stderr_$name.txt" || :
+            # Download the source and run the formatter diff while tracking the exit status
+            tmp_file="$(mktemp)"
+            if curl -sf "$url" -o "$tmp_file"; then
+              ./scripts/diff "$tmp_file" > "stdout_$name.txt" 2> "stderr_$name.txt"
+              diff_status=$?
+            else
+              diff_status=99
+              : > "stdout_$name.txt"
+              printf 'Failed to download source from %s\n' "$url" > "stderr_$name.txt"
+            fi
+            rm -f "$tmp_file"
 
-            echo "#### 📝 Formatting Differences" >> all_results.md
-            echo '```diff' >> all_results.md
-            cat "stdout_$name.txt" >> all_results.md
-            echo '```' >> all_results.md
+            if [ "$diff_status" -le 1 ]; then
+              echo "#### 📝 Formatting Differences" >> all_results.md
+              echo '```diff' >> all_results.md
+              cat "stdout_$name.txt" >> all_results.md
+              echo '```' >> all_results.md
+              echo "" >> all_results.md
+            else
+              echo "#### ❌ Formatting Failed" >> all_results.md
+              echo "" >> all_results.md
+              echo "_Formatting failed (exit code: $diff_status). See warnings/parse errors below for details._" >> all_results.md
+              echo "" >> all_results.md
+            fi
             
             # Show stderr if any (warnings, parse errors, etc.)
             if [ -s "stderr_$name.txt" ]; then
