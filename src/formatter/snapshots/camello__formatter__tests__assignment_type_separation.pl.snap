@@ -1,0 +1,22 @@
+---
+source: src/formatter/tests.rs
+expression: formatted
+---
+sub test_assignment_types {
+    # Declaration vs plain assignment should not align
+    my $a = 1;
+    $b = 2;
+
+    # Different declarations should align with each other
+    my $c    = 3;
+    our $d   = 4;
+    state $e = 5;
+
+    # List vs scalar should not align
+    my ($x, $y) = @_;
+    my $z = 10;
+
+    # But same types should align
+    my $foo        = 100;
+    my $bar_longer = 200;
+}
