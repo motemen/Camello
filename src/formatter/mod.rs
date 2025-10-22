@@ -863,21 +863,27 @@ impl Formatter {
 
                 self.writer.write_token(token);
 
-                let next_kind = Self::next_significant_token(token).map(|t| t.kind());
-                if !matches!(
-                    next_kind,
-                    Some(
+                let next_token = Self::next_significant_token(token);
+                let should_skip_newline = next_token.as_ref().is_some_and(|t| {
+                    match t.kind() {
                         T![elsif]
-                            | T![else]
-                            | T![catch]
-                            | T![finally]
-                            | T![when]
-                            | T![default]
-                            | T![;]
-                            | T![,]
-                            | T!['(']
-                    )
-                ) {
+                        | T![else]
+                        | T![catch]
+                        | T![finally]
+                        | T![when]
+                        | T![default]
+                        | T![;]
+                        | T![,]
+                        | T!['('] => true,
+                        // Also check for IDENT tokens with specific text for Try::Tiny style
+                        SyntaxKind::IDENT => {
+                            matches!(t.text(), "catch" | "finally")
+                        }
+                        _ => false,
+                    }
+                });
+
+                if !should_skip_newline {
                     self.writer.handle_formatter_newline();
                 }
 
