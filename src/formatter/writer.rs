@@ -228,6 +228,20 @@ impl Writer {
         self.indent_string.len()
     }
 
+    pub(super) fn non_empty_line_count(&self) -> usize {
+        let finished_count = self
+            .lines
+            .iter()
+            .filter(|line| !line.text.is_empty())
+            .count();
+        let current_count = if !self.current_line.text.is_empty() {
+            1
+        } else {
+            0
+        };
+        finished_count + current_count
+    }
+
     pub(super) fn collect_token_columns(&self, kind: SyntaxKind) -> Vec<TokenColumn> {
         let mut columns = Vec::new();
         for (line_index, line) in self.lines.iter().enumerate() {

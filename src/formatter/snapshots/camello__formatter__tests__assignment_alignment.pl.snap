@@ -1,6 +1,5 @@
 ---
 source: src/formatter/tests.rs
-assertion_line: 51
 expression: formatted
 ---
 sub demo_alignment {
@@ -20,7 +19,7 @@ sub demo_alignment {
     $plain               = 7;
     $long_plain_variable = 8;
 
-    $skip_block  = do {
+    $skip_block = do {
         9;
     };
     $after_block = 10;

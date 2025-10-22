@@ -432,6 +432,11 @@ impl Formatter {
         let mut formatter = Formatter::with_shared_deps(self.comment_registry.clone(), options);
         formatter.format_node(node);
 
+        // Only align single-line statements
+        if formatter.writer.non_empty_line_count() != 1 {
+            return None;
+        }
+
         let columns = if token_kind == SyntaxKind::EQ {
             formatter.writer.collect_assignment_columns()
         } else {

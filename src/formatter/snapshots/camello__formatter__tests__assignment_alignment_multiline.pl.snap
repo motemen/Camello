@@ -1,13 +1,12 @@
 ---
 source: src/formatter/tests.rs
-assertion_line: 51
 expression: formatted
 ---
 sub multiline_assignments {
-    my $a   = 1;
+    my $a = 1;
     my $bbb = [
     ];
-    my $c   = "";
+    my $c = "";
 
     my ($a, $b) = @_;
     my $c       = 1;
