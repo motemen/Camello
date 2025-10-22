@@ -353,6 +353,13 @@ impl Formatter {
     ) -> Option<AlignmentState> {
         let token_kind = self.alignment_token_kind_for_node(strategy, first_node)?;
 
+        // For assignment alignment, get the assignment type of the first node
+        let first_assignment_type = if strategy == AlignmentStrategy::Assignments {
+            Self::get_assignment_type(first_node)
+        } else {
+            None
+        };
+
         let mut nodes = vec![first_node.clone()];
         let lookahead = iter.clone();
         let mut saw_newline = false;
@@ -388,6 +395,13 @@ impl Formatter {
                     }
 
                     if self.alignment_token_kind_for_node(strategy, &node) != Some(token_kind) {
+                        break;
+                    }
+
+                    // For assignment alignment, check that the assignment type matches
+                    if strategy == AlignmentStrategy::Assignments
+                        && Self::get_assignment_type(&node) != first_assignment_type
+                    {
                         break;
                     }
 
@@ -564,5 +578,40 @@ impl Formatter {
                 NodeOrToken::Node(_) => false,
             })
             .count()
+    }
+
+    /// Determines the assignment type for alignment purposes.
+    /// Returns a tuple: (is_var_decl, is_list_assignment)
+    fn get_assignment_type(node: &PerlNode) -> Option<(bool, bool)> {
+        let is_var_decl = if node.kind() == SyntaxKind::VAR_DECL {
+            true
+        } else if node.kind() == SyntaxKind::STMT {
+            // Check if the STMT contains a VAR_DECL
+            node.children()
+                .any(|child| child.kind() == SyntaxKind::VAR_DECL)
+        } else {
+            return None;
+        };
+
+        // Find the INFIX_EXPR to check if it's a list assignment
+        let infix_expr = node
+            .descendants()
+            .find(|n| n.kind() == SyntaxKind::INFIX_EXPR)?;
+
+        // Check if the left side starts with L_PAREN (list assignment)
+        let is_list = infix_expr
+            .children_with_tokens()
+            .find(|child| match child {
+                NodeOrToken::Token(t) => {
+                    !matches!(t.kind(), SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE)
+                }
+                NodeOrToken::Node(_) => true,
+            })
+            .is_some_and(|child| match child {
+                NodeOrToken::Token(t) => t.kind() == T!['('],
+                NodeOrToken::Node(_) => false,
+            });
+
+        Some((is_var_decl, is_list))
     }
 }
