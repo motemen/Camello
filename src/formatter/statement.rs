@@ -356,6 +356,7 @@ impl Formatter {
         let mut nodes = vec![first_node.clone()];
         let lookahead = iter.clone();
         let mut saw_newline = false;
+        let mut prev_node_is_multiline = self.node_spans_multiple_lines(first_node);
 
         for element in lookahead {
             match element {
@@ -381,10 +382,16 @@ impl Formatter {
                         break;
                     }
 
+                    // Stop collecting if the previous node was multi-line
+                    if prev_node_is_multiline {
+                        break;
+                    }
+
                     if self.alignment_token_kind_for_node(strategy, &node) != Some(token_kind) {
                         break;
                     }
 
+                    prev_node_is_multiline = self.node_spans_multiple_lines(&node);
                     nodes.push(node);
                     saw_newline = false;
                 }
@@ -422,6 +429,15 @@ impl Formatter {
         Some(AlignmentState::new(token_kind, pads))
     }
 
+    fn node_spans_multiple_lines(&self, node: &PerlNode) -> bool {
+        // Check if a node contains newlines in its source representation
+        node.descendants_with_tokens().any(|element| {
+            element
+                .as_token()
+                .is_some_and(|token| token.kind() == SyntaxKind::NEWLINE)
+        })
+    }
+
     fn measure_alignment_prefix(&self, node: &PerlNode, token_kind: SyntaxKind) -> Option<usize> {
         // Create a temporary formatter to measure the prefix width.
         // This is efficient: comment_registry.clone() only increments the Rc refcount,
@@ -432,11 +448,7 @@ impl Formatter {
         let mut formatter = Formatter::with_shared_deps(self.comment_registry.clone(), options);
         formatter.format_node(node);
 
-        if formatter.writer.non_empty_line_count() != 1 {
-            return None;
-        }
-
-        let mut columns = if token_kind == SyntaxKind::EQ {
+        let columns = if token_kind == SyntaxKind::EQ {
             formatter.writer.collect_assignment_columns()
         } else {
             formatter.writer.collect_token_columns(token_kind)
@@ -445,7 +457,7 @@ impl Formatter {
             return None;
         }
 
-        Some(columns.remove(0).column)
+        columns.into_iter().next().map(|column| column.column)
     }
 
     fn alignment_token_kind_for_node(

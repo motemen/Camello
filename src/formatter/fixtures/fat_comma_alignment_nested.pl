@@ -1,0 +1,17 @@
+sub nested_fat_commas {
+    HTTP::Response->new(
+        code    => 401,
+        message => 'Authorization required',
+        headers => {
+            Content_Type => 'text/plain',
+        },
+    );
+
+    my %hash = (
+        first  => 1,
+        second => {
+            inner_key => 2,
+        },
+        third => 3,
+    );
+}

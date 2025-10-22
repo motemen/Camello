@@ -1,0 +1,10 @@
+sub multiline_assignments {
+    my $a   = 1;
+    my $bbb = [
+    ];
+    my $c   = "";
+
+    my ($a, $b) = @_;
+    my $c       = 1;
+    my $def     = 2;
+}

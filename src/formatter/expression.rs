@@ -91,7 +91,7 @@ impl Formatter {
                     NodeOrToken::Token(token) => {
                         if token.kind() == T!['('] {
                             // Force no space before this L_PAREN by writing it directly
-                            self.writer.write_str("(", Some(T!['(']));
+                            self.writer.write_str("(", Some(T!['(']), None);
                             self.remember_token(&token);
                         } else {
                             self.format_token(&token);
