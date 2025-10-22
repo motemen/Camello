@@ -371,42 +371,59 @@ impl Formatter {
         }
 
         let mut saw_newline = false;
-        let mut comma_count = 0;
+        let mut top_level_commas = Vec::new();
 
         for element in elements {
             if let Some(token) = element.as_token() {
                 match token.kind() {
-                    SyntaxKind::FAT_COMMA => comma_count += 1,
+                    SyntaxKind::FAT_COMMA => top_level_commas.push(token.clone()),
                     SyntaxKind::NEWLINE => saw_newline = true,
                     _ => {}
                 }
             }
         }
 
-        if comma_count < 2 || !saw_newline {
+        if top_level_commas.len() < 2 || !saw_newline {
             return None;
         }
 
         let mut options = self.options.clone();
         options.alignment_strategies.clear();
         let mut formatter = Formatter::with_shared_deps(self.comment_registry.clone(), options);
-        formatter.format_node(list);
-
-        let columns = formatter
+        formatter
             .writer
-            .collect_token_columns(SyntaxKind::FAT_COMMA);
+            .set_indent_level(self.writer.indent_level());
+        formatter.format_node(list);
+        let mut filtered = Vec::new();
+        for column in formatter
+            .writer
+            .collect_token_columns(SyntaxKind::FAT_COMMA)
+        {
+            if let Some(token) = column.token.as_ref() {
+                if let Some(position) = top_level_commas
+                    .iter()
+                    .position(|candidate| candidate == token)
+                {
+                    filtered.push((position, column));
+                }
+            }
+        }
 
-        if columns.len() != comma_count {
+        if filtered.len() != top_level_commas.len() {
             return None;
         }
 
-        let indent_width = self.writer.indent_level() * self.writer.indent_string_len();
-        let mut widths = Vec::with_capacity(columns.len());
+        filtered.sort_by_key(|(position, _)| *position);
+        let columns: Vec<_> = filtered.into_iter().map(|(_, column)| column).collect();
 
-        for column in columns {
-            let content_width = column.column.saturating_sub(column.indent);
-            widths.push(indent_width + content_width);
-        }
+        let indent_width = self.writer.indent_level() * self.writer.indent_string_len();
+        let widths = columns
+            .iter()
+            .map(|column| {
+                let content_width = column.column.saturating_sub(column.indent);
+                indent_width + content_width
+            })
+            .collect::<Vec<_>>();
 
         let max_width = widths.iter().copied().max()?;
         if widths.iter().all(|&width| width == max_width) {
