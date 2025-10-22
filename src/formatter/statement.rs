@@ -598,19 +598,13 @@ impl Formatter {
             .descendants()
             .find(|n| n.kind() == SyntaxKind::INFIX_EXPR)?;
 
-        // Check if the left side starts with L_PAREN (list assignment)
+        // Check if the left side is a list assignment
+        // For list assignments like `my ($a, $b) = @_;`, the INFIX_EXPR starts with L_PAREN
+        // For scalar assignments like `my $z = 10;`, the INFIX_EXPR starts with a variable
         let is_list = infix_expr
             .children_with_tokens()
-            .find(|child| match child {
-                NodeOrToken::Token(t) => {
-                    !matches!(t.kind(), SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE)
-                }
-                NodeOrToken::Node(_) => true,
-            })
-            .is_some_and(|child| match child {
-                NodeOrToken::Token(t) => t.kind() == T!['('],
-                NodeOrToken::Node(_) => false,
-            });
+            .find(|e| !e.kind().is_trivia())
+            .is_some_and(|e| e.kind() == T!['(']);
 
         Some((is_var_decl, is_list))
     }
