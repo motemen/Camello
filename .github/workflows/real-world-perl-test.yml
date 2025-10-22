@@ -44,6 +44,7 @@ jobs:
             ["Plack::Middleware::WebSocket"]="https://raw.githubusercontent.com/motemen/Plack-Middleware-WebSocket/refs/heads/master/lib/Plack/Middleware/WebSocket.pm"
             ["ARGV::JSON"]="https://raw.githubusercontent.com/motemen/perl5-ARGV-JSON/refs/heads/master/lib/ARGV/JSON.pm"
             ["Class::Accessor::Lite::Lazy"]="https://raw.githubusercontent.com/motemen/Class-Accessor-Lite-Lazy/refs/heads/master/lib/Class/Accessor/Lite/Lazy.pm"
+            ["ack 3.9.0"]="https://beyondgrep.com/ack-v3.9.0"
           )
 
           # Initialize result files
