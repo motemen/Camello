@@ -305,7 +305,7 @@ impl Formatter {
         };
 
         matches!(
-            owner.resolve(&root),
+            self.comment_registry.resolve_owner(owner, &root),
             Some(CommentAnchor::Node(node)) if node.kind() == SyntaxKind::SUB_DEF
         )
     }

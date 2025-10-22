@@ -6,7 +6,7 @@
 //! rendered, but other components (such as future lint passes) can also consume
 //! the same information without depending on formatter internals.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{hash_map::Entry, HashMap, VecDeque};
 
 use crate::{PerlLanguage, SyntaxKind};
 use rowan::ast::SyntaxNodePtr;
@@ -330,6 +330,7 @@ pub struct CommentRegistry {
     blocks: Vec<Option<CommentBlock>>,
     assignments: Vec<Option<CommentAssignment>>,
     comment_to_block: HashMap<CommentId, CommentBlockId>,
+    token_cache: HashMap<TokenKey, SyntaxToken<PerlLanguage>>,
 }
 
 impl CommentRegistry {
@@ -346,6 +347,7 @@ impl CommentRegistry {
             blocks: Vec::with_capacity(capacity),
             assignments: Vec::with_capacity(capacity),
             comment_to_block: HashMap::with_capacity(capacity),
+            token_cache: HashMap::with_capacity(capacity),
         }
     }
 
@@ -378,6 +380,31 @@ impl CommentRegistry {
         self.blocks.push(Some(block));
         self.assignments.push(None);
         id
+    }
+
+    fn cache_token(&mut self, token: &SyntaxToken<PerlLanguage>) {
+        let key = TokenKey::from_token(token);
+        if let Entry::Vacant(entry) = self.token_cache.entry(key) {
+            entry.insert(token.clone());
+        }
+    }
+
+    /// Resolves the provided owner to the supplied syntax tree, reusing cached tokens when available.
+    #[must_use]
+    pub fn resolve_owner(
+        &self,
+        owner: CommentOwner,
+        root: &SyntaxNode<PerlLanguage>,
+    ) -> Option<CommentAnchor> {
+        match owner {
+            CommentOwner::Node(ptr) => ptr.try_to_node(root).map(CommentAnchor::Node),
+            CommentOwner::Token(key) => self
+                .token_cache
+                .get(&key)
+                .cloned()
+                .map(CommentAnchor::Token)
+                .or_else(|| key.resolve(root).map(CommentAnchor::Token)),
+        }
     }
 
     /// Returns an iterator over all registered comment blocks in lexical order.
@@ -560,6 +587,7 @@ fn build_comment_blocks(
 
     for event in root.preorder_with_tokens() {
         if let WalkEvent::Enter(NodeOrToken::Token(token)) = event {
+            registry.cache_token(&token);
             match token.kind() {
                 SyntaxKind::COMMENT => {
                     if let Some(comment_id) = CommentId::from_token(&token) {
@@ -624,6 +652,7 @@ fn collect_leading_function_comments(
     let mut current = first_token.prev_token();
 
     while let Some(token) = current {
+        registry.cache_token(&token);
         match token.kind() {
             SyntaxKind::WHITESPACE => {}
             SyntaxKind::NEWLINE => break,
@@ -763,5 +792,46 @@ mod tests {
         assert_eq!(comments.len(), 2);
         assert!(registry.is_first_in_block(comments[0]));
         assert!(!registry.is_first_in_block(comments[1]));
+    }
+
+    #[test]
+    fn resolve_owner_prefers_cached_tokens() {
+        let source = "my $x = 1; # trailing\n";
+        let (root_first, _errors) = parse_perl(source);
+        let registry = CommentRegistry::from_syntax(&root_first);
+
+        let trailing_assignment = registry
+            .iter()
+            .find(|assignment| matches!(assignment.placement(), CommentPlacement::Trailing(_)))
+            .expect("expected trailing comment assignment");
+
+        let owner = match trailing_assignment.placement() {
+            CommentPlacement::Trailing(owner) => owner,
+            _ => unreachable!(),
+        };
+
+        let (root_second, _errors) = parse_perl(source);
+
+        let anchor = registry
+            .resolve_owner(owner, &root_second)
+            .expect("owner should resolve via cache");
+
+        let CommentAnchor::Token(token) = anchor else {
+            panic!("expected token anchor");
+        };
+
+        let mut token_root = token.parent().expect("token should have a parent node");
+        while let Some(parent) = token_root.parent() {
+            token_root = parent;
+        }
+
+        assert_eq!(
+            token_root, root_first,
+            "token should originate from cached tree"
+        );
+        assert_ne!(
+            token_root, root_second,
+            "cached token should not come from fallback tree"
+        );
     }
 }
