@@ -195,7 +195,7 @@ impl Formatter {
                         }
                         k if k == string_kind => {
                             if token.text().contains('\n') {
-                                self.writer.write_str(token.text(), None);
+                                self.writer.write_str(token.text(), None, None);
                                 self.remember_token(&token);
                             } else {
                                 self.writer.write_token(&token);

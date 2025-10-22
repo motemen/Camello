@@ -794,7 +794,7 @@ impl Formatter {
                 if let Some(pad) = state.next_pad() {
                     if pad > 0 {
                         let spaces = " ".repeat(pad);
-                        self.writer.write_str(&spaces, None);
+                        self.writer.write_str(&spaces, None, None);
                     }
                 }
 
@@ -842,12 +842,12 @@ impl Formatter {
                     self.writer.write_char(' ');
                 }
                 self.apply_alignment_padding(token);
-                self.writer.write_str(text.trim(), Some(kind));
+                self.writer.write_str(text.trim(), Some(kind), None);
                 self.writer.handle_user_newline();
                 self.remember_token(token);
             }
             SyntaxKind::HEREDOC_CONTENT | SyntaxKind::HEREDOC_END => {
-                self.writer.write_str(text, Some(kind));
+                self.writer.write_str(text, Some(kind), None);
                 self.remember_token(token);
             }
             T!['}'] => {

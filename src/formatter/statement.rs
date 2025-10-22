@@ -432,11 +432,7 @@ impl Formatter {
         let mut formatter = Formatter::with_shared_deps(self.comment_registry.clone(), options);
         formatter.format_node(node);
 
-        if formatter.writer.non_empty_line_count() != 1 {
-            return None;
-        }
-
-        let mut columns = if token_kind == SyntaxKind::EQ {
+        let columns = if token_kind == SyntaxKind::EQ {
             formatter.writer.collect_assignment_columns()
         } else {
             formatter.writer.collect_token_columns(token_kind)
@@ -445,7 +441,7 @@ impl Formatter {
             return None;
         }
 
-        Some(columns.remove(0).column)
+        columns.into_iter().next().map(|column| column.column)
     }
 
     fn alignment_token_kind_for_node(
