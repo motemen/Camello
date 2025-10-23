@@ -9,9 +9,7 @@ impl Formatter {
             at_line_start: self.writer.at_line_start(),
         };
 
-        if spacing::needs_space_before(&context)
-            && !self.writer.current_line_ends_with_space()
-        {
+        if spacing::needs_space_before(&context) && !self.writer.current_line_ends_with_space() {
             self.writer.write_char(' ');
         }
     }
