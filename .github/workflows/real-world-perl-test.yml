@@ -66,8 +66,11 @@ jobs:
             # Download the source and run the formatter diff while tracking the exit status
             tmp_file="$(mktemp)"
             if curl -sf "$url" -o "$tmp_file"; then
-              ./scripts/diff "$tmp_file" > "stdout_$name.txt" 2> "stderr_$name.txt"
-              diff_status=$?
+              if ./scripts/diff "$tmp_file" > "stdout_$name.txt" 2> "stderr_$name.txt"; then
+                diff_status=0
+              else
+                diff_status=$?
+              fi
             else
               diff_status=99
               : > "stdout_$name.txt"
