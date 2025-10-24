@@ -867,24 +867,35 @@ impl Formatter {
                 self.writer.write_token(token);
 
                 let next_token = Self::next_significant_token(token);
-                let should_skip_newline = next_token.as_ref().is_some_and(|t| {
-                    match t.kind() {
-                        T![elsif]
-                        | T![else]
-                        | T![catch]
-                        | T![finally]
-                        | T![when]
-                        | T![default]
-                        | T![;]
-                        | T![,]
-                        | T!['('] => true,
-                        // Also check for IDENT tokens with specific text for Try::Tiny style
-                        SyntaxKind::IDENT => {
-                            matches!(t.text(), "catch" | "finally")
+
+                // Check if this closing brace is part of a block function call (grep, map, etc.)
+                // where the block is followed by arguments rather than a statement terminator
+                let is_block_function_call = token
+                    .parent()
+                    .and_then(|block| block.parent())
+                    .map(|parent| parent.kind() == SyntaxKind::BLOCK_FUNCTION_CALL_EXPR)
+                    .unwrap_or(false);
+
+                let should_skip_newline = is_block_function_call
+                    || next_token.as_ref().is_some_and(|t| {
+                        match t.kind() {
+                            T![elsif]
+                            | T![else]
+                            | T![catch]
+                            | T![finally]
+                            | T![when]
+                            | T![default]
+                            | T![;]
+                            | T![,]
+                            | T!['(']
+                            | SyntaxKind::COLON => true,
+                            // Also check for IDENT tokens with specific text for Try::Tiny style
+                            SyntaxKind::IDENT => {
+                                matches!(t.text(), "catch" | "finally")
+                            }
+                            _ => false,
                         }
-                        _ => false,
-                    }
-                });
+                    });
 
                 if !should_skip_newline {
                     self.writer.handle_formatter_newline();
