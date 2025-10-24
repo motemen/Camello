@@ -865,22 +865,15 @@ impl Formatter {
 
                 let next_token = Self::next_significant_token(token);
 
-                // Check if this closing brace is part of an expression context
-                let is_expr_context = token
+                // Check if this closing brace is part of a block function call (grep, map, etc.)
+                // where the block is followed by arguments rather than a statement terminator
+                let is_block_function_call = token
                     .parent()
                     .and_then(|block| block.parent())
-                    .map(|parent| {
-                        matches!(
-                            parent.kind(),
-                            SyntaxKind::TERNARY_EXPR
-                                | SyntaxKind::BLOCK_FUNCTION_CALL_EXPR
-                                | SyntaxKind::ANON_SUB_EXPR
-                                | SyntaxKind::INFIX_EXPR
-                        )
-                    })
+                    .map(|parent| parent.kind() == SyntaxKind::BLOCK_FUNCTION_CALL_EXPR)
                     .unwrap_or(false);
 
-                let should_skip_newline = is_expr_context
+                let should_skip_newline = is_block_function_call
                     || next_token.as_ref().is_some_and(|t| {
                         match t.kind() {
                             T![elsif]
