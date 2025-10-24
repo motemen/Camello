@@ -152,10 +152,15 @@ impl Formatter {
         // Use single-line for simple blocks (single statement, no semicolon)
         // Use multi-line for complex blocks
 
-        for child in node.children_with_tokens() {
+        let mut children = node.children_with_tokens();
+
+        while let Some(child) = children.next() {
+            let mut formatted_block = false;
+
             match child {
                 NodeOrToken::Node(child_node) => {
                     if child_node.kind() == SyntaxKind::BLOCK_STMT {
+                        formatted_block = true;
                         if self.is_simple_block(&child_node) {
                             self.format_simple_block(&child_node);
                         } else {
@@ -169,6 +174,10 @@ impl Formatter {
                 NodeOrToken::Token(token) => {
                     self.format_token(&token);
                 }
+            }
+
+            if formatted_block {
+                self.pending_space_after_block_call = true;
             }
         }
     }

@@ -1,8 +1,18 @@
 use super::{spacing, Formatter};
-use crate::{PerlNode, SyntaxKind};
+use crate::{PerlNode, SyntaxKind, T};
 
 impl Formatter {
     pub(super) fn handle_spacing_before(&mut self, current: SyntaxKind) {
+        if self.pending_space_after_block_call {
+            if matches!(current, T!['('] | T!['['] | T!['{'])
+                && !self.writer.at_line_start()
+                && !self.writer.current_line_ends_with_space()
+            {
+                self.writer.write_char(' ');
+            }
+            self.pending_space_after_block_call = false;
+        }
+
         let context = spacing::SpacingContext {
             prev_token: self.writer.prev_token_kind(),
             current_token: current,
