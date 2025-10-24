@@ -206,6 +206,7 @@ impl AlignmentState {
 pub struct Formatter {
     writer: Writer,
     pending_empty_lines: usize,
+    pending_space_after_block_call: bool,
     /// The comment registry is wrapped in `Rc` to allow cheap sharing across multiple
     /// formatter instances. This is critical for assignment alignment, which creates
     /// temporary formatters to measure prefix widths without expensive deep clones.
@@ -224,6 +225,7 @@ impl Formatter {
     pub fn with_options(comment_registry: CommentRegistry, options: FormatterOptions) -> Self {
         Self {
             pending_empty_lines: 0,
+            pending_space_after_block_call: false,
             writer: Writer::new(),
             // Wrap in Rc to enable cheap cloning when creating temporary formatters
             // for alignment measurements (see measure_alignment_prefix)
@@ -236,6 +238,7 @@ impl Formatter {
     fn with_shared_deps(comment_registry: Rc<CommentRegistry>, options: FormatterOptions) -> Self {
         Self {
             pending_empty_lines: 0,
+            pending_space_after_block_call: false,
             writer: Writer::new(),
             comment_registry,
             options,

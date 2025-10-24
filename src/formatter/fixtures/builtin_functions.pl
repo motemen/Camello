@@ -4,6 +4,8 @@ print   STDOUT    "line\n";
 
 map {$_}@list;
 map({$_}@list);
+map {$_}(1,2,3);
+map {$_}[1,2,3];
 
 grep{$_}@list;
 grep({$_}@list);
