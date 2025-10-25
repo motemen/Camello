@@ -181,23 +181,76 @@ impl Formatter {
     }
 
     pub(super) fn format_method_call(&mut self, node: &PerlNode) {
-        let mut children = node.children_with_tokens();
-        self.format_until_arrow_iter(children.by_ref());
-        // Format the method name part
-        for child in children.by_ref() {
+        // Collect all children first to handle trailing newlines
+        let all_children: Vec<_> = node.children_with_tokens().collect();
+        let mut children_iter = all_children.iter();
+
+        // Format until arrow
+        for child in children_iter.by_ref() {
             match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Node(n) => self.format_node(n),
+                NodeOrToken::Token(token) if token.kind() == SyntaxKind::WHITESPACE => {}
+                NodeOrToken::Token(token) => {
+                    self.format_token(token);
+                    if token.kind() == T![->] {
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Format the method name
+        for child in children_iter.by_ref() {
+            match child {
+                NodeOrToken::Node(n) => {
+                    self.format_node(n);
+                    break;
+                }
                 NodeOrToken::Token(token) => {
                     if token.kind() == SyntaxKind::WHITESPACE {
                         continue;
                     }
-                    self.format_token(&token);
+                    self.format_token(token);
+                    break;
                 }
             }
-            break;
         }
-        // Use multiline formatting for the parenthesized arguments
-        self.format_subscription_iter(children, T!['('], T![')']);
+
+        // Find the range for parenthesized arguments
+        let remaining: Vec<_> = children_iter.cloned().collect();
+        let paren_end = remaining
+            .iter()
+            .position(|child| child.as_token().map(|t| t.kind()) == Some(T![')']));
+
+        if let Some(end_idx) = paren_end {
+            // Format parenthesized part
+            let paren_part = remaining[..=end_idx].iter().cloned();
+            if Self::has_newline_in_elements(paren_part.clone()) {
+                self.format_multiline_delimited_elements(paren_part, T!['('], T![')']);
+            } else {
+                self.format_single_line_delimited_elements(
+                    paren_part.collect(),
+                    T!['('],
+                    T![')'],
+                    true,
+                );
+            }
+
+            // Format any remaining elements (newlines after closing paren)
+            for child in &remaining[end_idx + 1..] {
+                match child {
+                    NodeOrToken::Node(n) => self.format_node(n),
+                    NodeOrToken::Token(token) => self.format_token(token),
+                }
+            }
+        }
+    }
+
+    fn has_newline_in_elements<I>(mut iter: I) -> bool
+    where
+        I: Iterator<Item = rowan::SyntaxElement<PerlLanguage>>,
+    {
+        iter.any(|element| element.as_token().map(|t| t.kind()) == Some(SyntaxKind::NEWLINE))
     }
 
     fn format_until_arrow_iter(&mut self, iter: &mut SyntaxElementChildren<PerlLanguage>) {
