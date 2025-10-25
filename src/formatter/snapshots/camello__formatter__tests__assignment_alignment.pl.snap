@@ -1,5 +1,6 @@
 ---
 source: src/formatter/tests.rs
+assertion_line: 51
 expression: formatted
 ---
 sub demo_alignment {
@@ -8,7 +9,7 @@ sub demo_alignment {
     my $gamma      = compute_value(); # trailing comment
 
     my $multiline =
-    some_long_expression();
+        some_long_expression();
 
     my $delta = 3;
     # comment should break grouping

@@ -745,6 +745,11 @@ impl Formatter {
             return true;
         }
 
+        // After operators (including assignment), add continuation indent
+        if prev_kind.is_operator() || prev_kind.is_assignment_operator() {
+            return true;
+        }
+
         if current.is_operator()
             && !matches!(
                 current,
