@@ -1,6 +1,6 @@
 use std::iter::Peekable;
 
-use rowan::{NodeOrToken, SyntaxElement, SyntaxElementChildren};
+use rowan::{NodeOrToken, SyntaxElementChildren};
 
 use crate::{comments::CommentOwner, PerlLanguage, PerlNode, SyntaxKind, T};
 
@@ -41,10 +41,10 @@ impl Formatter {
 
             if let NodeOrToken::Token(token) = &child {
                 if token.kind() == T!['('] {
-                    if let Some((take_count, contains_newline)) =
+                    if let Some((take_count, has_immediate_newline)) =
                         Self::delimited_span_info(children.clone(), T!['('], T![')'])
                     {
-                        if contains_newline {
+                        if has_immediate_newline {
                             let range_iter = std::iter::once(child.clone())
                                 .chain(children.by_ref().take(take_count));
                             self.format_multiline_delimited_elements(range_iter, T!['('], T![')']);
@@ -99,13 +99,28 @@ impl Formatter {
         close: SyntaxKind,
     ) -> Option<(usize, bool)> {
         let mut depth = 1usize;
-        let mut contains_newline = false;
+        let mut has_immediate_newline = false;
         let mut count = 0usize;
+        let mut is_first_after_open = true;
 
         for element in iter {
             count += 1;
-            if Self::element_contains_newline(&element) {
-                contains_newline = true;
+
+            // Check if the first non-whitespace element after opening delimiter is a newline
+            if is_first_after_open {
+                match &element {
+                    NodeOrToken::Token(token) => {
+                        if token.kind() == SyntaxKind::NEWLINE {
+                            has_immediate_newline = true;
+                            is_first_after_open = false;
+                        } else if token.kind() != SyntaxKind::WHITESPACE {
+                            is_first_after_open = false;
+                        }
+                    }
+                    NodeOrToken::Node(_) => {
+                        is_first_after_open = false;
+                    }
+                }
             }
 
             if let NodeOrToken::Token(token) = &element {
@@ -117,24 +132,13 @@ impl Formatter {
                     }
                     depth -= 1;
                     if depth == 0 {
-                        return Some((count, contains_newline));
+                        return Some((count, has_immediate_newline));
                     }
                 }
             }
         }
 
         None
-    }
-
-    fn element_contains_newline(element: &SyntaxElement<PerlLanguage>) -> bool {
-        match element {
-            NodeOrToken::Token(token) => token.kind() == SyntaxKind::NEWLINE,
-            NodeOrToken::Node(node) => node.descendants_with_tokens().any(|descendant| {
-                descendant
-                    .as_token()
-                    .is_some_and(|token| token.kind() == SyntaxKind::NEWLINE)
-            }),
-        }
     }
 
     pub(super) fn format_simple_block(&mut self, node: &PerlNode) {
@@ -310,14 +314,64 @@ impl Formatter {
         }
     }
 
+    pub(super) fn format_control_stmt(&mut self, node: &PerlNode) {
+        let mut children = node.children_with_tokens();
+
+        while let Some(child) = children.next() {
+            // Check for multiline parentheses (newline immediately after opening paren)
+            if let NodeOrToken::Token(token) = &child {
+                if token.kind() == T!['('] {
+                    if let Some((take_count, has_immediate_newline)) =
+                        Self::delimited_span_info(children.clone(), T!['('], T![')'])
+                    {
+                        if has_immediate_newline {
+                            let range_iter = std::iter::once(child.clone())
+                                .chain(children.by_ref().take(take_count));
+                            self.format_multiline_delimited_elements(range_iter, T!['('], T![')']);
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            match child {
+                NodeOrToken::Node(child_node) => {
+                    self.format_node(&child_node);
+                }
+                NodeOrToken::Token(token) => {
+                    self.format_token(&token);
+                }
+            }
+        }
+    }
+
     pub(super) fn format_for_stmt(&mut self, node: &PerlNode) {
-        for child in node.children_with_tokens() {
+        let mut children = node.children_with_tokens();
+
+        while let Some(child) = children.next() {
+            // Check for multiline parentheses (newline immediately after opening paren)
+            if let NodeOrToken::Token(token) = &child {
+                if token.kind() == T!['('] {
+                    if let Some((take_count, has_immediate_newline)) =
+                        Self::delimited_span_info(children.clone(), T!['('], T![')'])
+                    {
+                        if has_immediate_newline {
+                            let range_iter = std::iter::once(child.clone())
+                                .chain(children.by_ref().take(take_count));
+                            self.format_multiline_delimited_elements(range_iter, T!['('], T![')']);
+                            continue;
+                        }
+                    }
+                }
+            }
+
             match child {
                 NodeOrToken::Node(child_node) => {
                     self.format_node(&child_node);
                 }
                 NodeOrToken::Token(token) => match token.kind() {
                     T![;] => {
+                        // C-style for loop: add space after semicolon
                         self.writer.write_token(&token);
                         self.writer.write_char(' ');
                     }
