@@ -418,6 +418,13 @@ impl Formatter {
                 self.format_for_stmt(node);
                 return;
             }
+            SyntaxKind::IF_STMT
+            | SyntaxKind::UNLESS_STMT
+            | SyntaxKind::WHILE_STMT
+            | SyntaxKind::UNTIL_STMT => {
+                self.format_control_stmt(node);
+                return;
+            }
             SyntaxKind::EXPR_LIST => {
                 self.format_expr_list_node(node, ctx);
                 return;
