@@ -275,7 +275,9 @@ impl Formatter {
         close_delimiter: SyntaxKind,
     ) {
         let ctx = super::FormatContext::default().with_multiline_context();
-        for child in elements.into_iter() {
+        let elements_vec: Vec<_> = elements.into_iter().collect();
+
+        for (index, child) in elements_vec.iter().enumerate() {
             match child {
                 NodeOrToken::Node(node) => {
                     let kind = node.kind();
@@ -283,17 +285,21 @@ impl Formatter {
                     match kind {
                         SyntaxKind::EXPR_LIST => {
                             // Special handling for expression lists inside delimiters
-                            self.format_expr_list_multiline_iter(&node);
+                            self.format_expr_list_multiline_iter(node);
                         }
-                        _ => self.format_node_with_context(&node, ctx),
+                        _ => self.format_node_with_context(node, ctx),
                     }
                 }
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
 
                     match kind {
-                        SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE => {
-                            // Skip trivia here - newlines handled in delimiter handlers
+                        SyntaxKind::WHITESPACE => {
+                            // Skip whitespace - spacing is managed by formatter
+                        }
+                        SyntaxKind::NEWLINE => {
+                            // Preserve user-provided newlines
+                            self.format_token_with_context(token, ctx);
                         }
                         k if k == open_delimiter => {
                             self.handle_spacing_before(kind);
@@ -301,14 +307,34 @@ impl Formatter {
                                 self.writer.add_indent();
                                 self.writer.set_at_line_start(false);
                             }
-                            self.handle_multiline_opening_delimiter(&token);
+
+                            // Check if next non-whitespace token is a newline
+                            let has_user_newline_after = elements_vec
+                                .iter()
+                                .skip(index + 1)
+                                .find(|e| {
+                                    !matches!(
+                                        e.as_token().map(|t| t.kind()),
+                                        Some(SyntaxKind::WHITESPACE)
+                                    )
+                                })
+                                .and_then(|e| e.as_token())
+                                .map(|t| t.kind())
+                                == Some(SyntaxKind::NEWLINE);
+
+                            self.writer.write_token(token);
+                            self.writer.increase_indent();
+                            if !has_user_newline_after {
+                                self.writer.handle_formatter_newline();
+                            }
+                            self.remember_token(token);
                         }
                         k if k == close_delimiter => {
-                            self.handle_multiline_closing_delimiter(&token);
+                            self.handle_multiline_closing_delimiter(token);
                         }
                         _ => {
                             // その他のトークンは通常通り処理
-                            self.format_token_with_context(&token, ctx);
+                            self.format_token_with_context(token, ctx);
                         }
                     }
                 }
@@ -328,23 +354,44 @@ impl Formatter {
             }
         }
 
-        for child in elements {
+        for (index, child) in elements.iter().enumerate() {
             match child {
-                NodeOrToken::Node(node) => self.format_node_with_context(&node, ctx),
+                NodeOrToken::Node(node) => self.format_node_with_context(node, ctx),
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
 
                     match kind {
-                        SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE => {
-                            // Skip trivia here - newlines handled in the delimiter handlers
+                        SyntaxKind::WHITESPACE => {
+                            // Skip whitespace - spacing is managed by formatter
+                        }
+                        SyntaxKind::NEWLINE => {
+                            // Preserve user-provided newlines
+                            self.format_token_with_context(token, ctx);
                         }
                         T![,] => {
-                            self.format_token_with_context(&token, ctx);
-                            self.writer.handle_formatter_newline();
+                            self.format_token_with_context(token, ctx);
+
+                            // Only add automatic newline if user hasn't provided one
+                            let has_user_newline_after = elements
+                                .iter()
+                                .skip(index + 1)
+                                .find(|e| {
+                                    !matches!(
+                                        e.as_token().map(|t| t.kind()),
+                                        Some(SyntaxKind::WHITESPACE)
+                                    )
+                                })
+                                .and_then(|e| e.as_token())
+                                .map(|t| t.kind())
+                                != Some(SyntaxKind::NEWLINE);
+
+                            if has_user_newline_after {
+                                self.writer.handle_formatter_newline();
+                            }
                         }
                         _ => {
                             // その他のトークンは通常通り処理
-                            self.format_token_with_context(&token, ctx);
+                            self.format_token_with_context(token, ctx);
                         }
                     }
                 }
