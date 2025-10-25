@@ -738,6 +738,22 @@ impl Formatter {
             return true;
         }
 
+        // Ternary operator colon at line start needs continuation indent
+        if current == COLON {
+            return true;
+        }
+
+        // After opening parenthesis in loops, add continuation indent
+        // This is primarily for cases like: for my $item (\n@list\n)
+        // Skip in multiline context to avoid double indenting function call arguments
+        if prev_kind == L_PAREN
+            && !matches!(current, R_PAREN)
+            && !ctx.in_multiline_context
+            && matches!(current, SyntaxKind::ARRAY_VAR | SyntaxKind::HASH_VAR | SyntaxKind::SCALAR_VAR)
+        {
+            return true;
+        }
+
         if matches!(prev_kind, IDENT | QUALIFIED_IDENT)
             && !ctx.in_multiline_context
             && !matches!(current, SEMICOLON | COMMA)
@@ -746,8 +762,13 @@ impl Formatter {
         }
 
         // After operators (including assignment), add continuation indent
+        // Exception: in multiline context, skip for COMMA (but not for FAT_COMMA or other operators)
         if prev_kind.is_operator() || prev_kind.is_assignment_operator() {
-            return true;
+            if ctx.in_multiline_context && prev_kind == COMMA {
+                // Skip continuation indent for comma in multiline context
+            } else {
+                return true;
+            }
         }
 
         if current.is_operator()
