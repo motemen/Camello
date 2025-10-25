@@ -749,7 +749,10 @@ impl Formatter {
         if prev_kind == L_PAREN
             && !matches!(current, R_PAREN)
             && !ctx.in_multiline_context
-            && matches!(current, SyntaxKind::ARRAY_VAR | SyntaxKind::HASH_VAR | SyntaxKind::SCALAR_VAR)
+            && matches!(
+                current,
+                SyntaxKind::ARRAY_VAR | SyntaxKind::HASH_VAR | SyntaxKind::SCALAR_VAR
+            )
         {
             return true;
         }
