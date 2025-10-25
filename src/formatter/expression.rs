@@ -152,9 +152,7 @@ impl Formatter {
         // Use single-line for simple blocks (single statement, no semicolon)
         // Use multi-line for complex blocks
 
-        let mut children = node.children_with_tokens();
-
-        while let Some(child) = children.next() {
+        for child in node.children_with_tokens() {
             let mut formatted_block = false;
 
             match child {
