@@ -456,17 +456,9 @@ impl Formatter {
         let mut children = node.children_with_tokens();
         while let Some(child) = children.next() {
             match child {
-                NodeOrToken::Token(token) if token.kind() == T!['('] => {
-                    // Check for multiline parentheses (newline immediately after opening paren)
-                    if let Some((take_count, has_immediate_newline)) =
-                        Self::check_delimited_multiline(children.clone(), T!['('], T![')'])
-                    {
-                        if has_immediate_newline {
-                            let range_iter = std::iter::once(NodeOrToken::Token(token.clone()))
-                                .chain(children.by_ref().take(take_count));
-                            self.format_multiline_delimited_elements(range_iter, T!['('], T![')']);
-                            continue;
-                        }
+                NodeOrToken::Token(token) => {
+                    if self.try_format_multiline_parens(&token, &mut children) {
+                        continue;
                     }
                     self.format_token_with_context(&token, ctx);
                 }
@@ -480,7 +472,6 @@ impl Formatter {
                     }
                     self.format_node_with_context(&child_node, ctx);
                 }
-                NodeOrToken::Token(token) => self.format_token_with_context(&token, ctx),
             }
         }
 
@@ -743,6 +734,28 @@ impl Formatter {
         }
 
         None
+    }
+
+    /// Checks for and formats multiline parenthesized expressions.
+    /// Returns `true` if it handled the formatting, `false` otherwise.
+    fn try_format_multiline_parens(
+        &mut self,
+        token: &SyntaxToken<PerlLanguage>,
+        children: &mut SyntaxElementChildren<PerlLanguage>,
+    ) -> bool {
+        if token.kind() == T!['('] {
+            if let Some((take_count, has_immediate_newline)) =
+                Self::check_delimited_multiline(children.clone(), T!['('], T![')'])
+            {
+                if has_immediate_newline {
+                    let range_iter = std::iter::once(NodeOrToken::Token(token.clone()))
+                        .chain(children.by_ref().take(take_count));
+                    self.format_multiline_delimited_elements(range_iter, T!['('], T![')']);
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     fn next_significant_token(
