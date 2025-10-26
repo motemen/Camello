@@ -262,10 +262,13 @@ impl Formatter {
         if kind == SyntaxKind::COMMENT {
             if let Some(comment_id) = CommentId::from_token(token) {
                 match self.comment_registry.placement_of(comment_id) {
-                    Some(CommentPlacement::Leading(_)) | Some(CommentPlacement::Standalone) => {}
-                    Some(CommentPlacement::Trailing(_))
-                    | Some(CommentPlacement::Dangling(_))
-                    | None => {
+                    // Leading, Standalone, and Trailing comments should not update last_significant_token_kind
+                    // to allow continuation indent to work correctly based on the actual code tokens
+                    Some(CommentPlacement::Leading(_))
+                    | Some(CommentPlacement::Standalone)
+                    | Some(CommentPlacement::Trailing(_)) => {}
+                    // Only Dangling comments and unclassified comments update last_significant_token_kind
+                    Some(CommentPlacement::Dangling(_)) | None => {
                         self.writer.set_last_significant_token_kind(Some(kind));
                     }
                 }
