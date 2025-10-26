@@ -36,8 +36,8 @@ my $complex =
 
 # for loop with newlines
 for my $item (
-@list
-    ) {
+    @list
+) {
     process($item);
 }
 
