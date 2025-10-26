@@ -623,23 +623,31 @@ sub { }                      # 空でもスペースあり
 
 **制御構造のブロック**：
 
-制御構造のブロックは、単文ブロックの条件を満たしていても複数行にフォーマットされます（セクション2.4.2参照）。ただし、完全に空のブロック（セミコロンもなし）の場合は例外的に1行になり、`{ }` のようにスペースが入ります。
+制御構造（`if`, `unless`, `while`, `until`, `for`, `foreach`, `given`）のブロックは、単文ブロックの条件を満たしていても**必ず複数行にフォーマットされます**（セクション2.4.2参照）。空のブロックも例外ではありません。
 
 ```perl
-# 完全に空のブロック（例外的に1行）
-if ($x) { }
-while ($condition) { }
+# 空のブロックも複数行
+if ($x) {
+}
 
-# セミコロンがある場合（複数行）
+while ($condition) {
+}
+
+for (; ; ) {
+}
+
+# セミコロンがある場合も複数行
 if ($x) {
     ;
 }
 
-# 内容がある場合（複数行、改行されるためスペースは関係なし）
+# 内容がある場合も複数行（改行されるためスペースは関係なし）
 if ($x) {
     statement;
 }
 ```
+
+**注意**：現在の実装では、空の制御構造ブロックが `if ($x) { }` のように1行になっていますが、これは仕様に合っていません。実装を修正する必要があります。
 
 **設定変更可能**：`DelimiterTightness` 設定で変更可能です。
 
@@ -652,9 +660,12 @@ if ($x) {
 
 ```perl
 # スペースあり
-if ($x) { }
-while ($y) { }
-for my $i (@list) { }
+if ($x) {
+}
+while ($y) {
+}
+for my $i (@list) {
+}
 
 # スペースなし
 $obj->method($arg)
@@ -1116,10 +1127,17 @@ my $x = 1;                           # short comment
 my $very_long_variable_name = 2;     # another comment
 my $z = 3;                           # yet another
 
-# 一部の行のみコメントがある場合も揃える
-my $a = 1;     # has comment
-my $b = 2;
-my $c = 3;     # has comment
+# すべての行にコメントがある場合は揃う
+my $a = 1;  # first comment
+my $b = 2;  # second comment
+my $c = 3;  # third comment
+
+# コメントがない行が現れるとグループ終了
+my $x = 1;  # comment
+my $y = 2;  # comment
+my $z = 3;
+# ↑ $z にはコメントがない → ここでグループ終了
+my $w = 4;  # comment (新しいグループ、xやyとは揃わない)
 
 # TODOなど種類に関わらず揃える
 my $x = 1;     # TODO: fix this
