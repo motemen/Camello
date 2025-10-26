@@ -418,13 +418,6 @@ impl Formatter {
                 self.format_for_stmt(node);
                 return;
             }
-            SyntaxKind::IF_STMT
-            | SyntaxKind::UNLESS_STMT
-            | SyntaxKind::WHILE_STMT
-            | SyntaxKind::UNTIL_STMT => {
-                self.format_control_stmt(node);
-                return;
-            }
             SyntaxKind::EXPR_LIST => {
                 self.format_expr_list_node(node, ctx);
                 return;
@@ -459,9 +452,24 @@ impl Formatter {
             }
         }
 
-        // Default child iteration
-        for child in node.children_with_tokens() {
+        // Default child iteration with automatic multiline parenthesis detection
+        let mut children = node.children_with_tokens();
+        while let Some(child) = children.next() {
             match child {
+                NodeOrToken::Token(token) if token.kind() == T!['('] => {
+                    // Check for multiline parentheses (newline immediately after opening paren)
+                    if let Some((take_count, has_immediate_newline)) =
+                        Self::check_delimited_multiline(children.clone(), T!['('], T![')'])
+                    {
+                        if has_immediate_newline {
+                            let range_iter = std::iter::once(NodeOrToken::Token(token.clone()))
+                                .chain(children.by_ref().take(take_count));
+                            self.format_multiline_delimited_elements(range_iter, T!['('], T![')']);
+                            continue;
+                        }
+                    }
+                    self.format_token_with_context(&token, ctx);
+                }
                 NodeOrToken::Node(child_node) => {
                     // Output pending empty lines before processing child nodes
                     if self.pending_empty_lines > 0
@@ -685,6 +693,56 @@ impl Formatter {
         }
 
         false
+    }
+
+    /// Check if a delimited section (e.g., parentheses) should use multiline formatting.
+    /// Returns (count_to_closing_delimiter, has_immediate_newline_after_opening).
+    fn check_delimited_multiline(
+        iter: SyntaxElementChildren<PerlLanguage>,
+        open: SyntaxKind,
+        close: SyntaxKind,
+    ) -> Option<(usize, bool)> {
+        let mut depth = 1usize;
+        let mut has_immediate_newline = false;
+        let mut count = 0usize;
+        let mut is_first_after_open = true;
+
+        for element in iter {
+            count += 1;
+
+            // Check if the first non-whitespace element after opening delimiter is a newline
+            if is_first_after_open {
+                match &element {
+                    NodeOrToken::Token(token) => {
+                        if token.kind() == SyntaxKind::NEWLINE {
+                            has_immediate_newline = true;
+                            is_first_after_open = false;
+                        } else if token.kind() != SyntaxKind::WHITESPACE {
+                            is_first_after_open = false;
+                        }
+                    }
+                    NodeOrToken::Node(_) => {
+                        is_first_after_open = false;
+                    }
+                }
+            }
+
+            if let NodeOrToken::Token(token) = &element {
+                if token.kind() == open {
+                    depth += 1;
+                } else if token.kind() == close {
+                    if depth == 0 {
+                        return None;
+                    }
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some((count, has_immediate_newline));
+                    }
+                }
+            }
+        }
+
+        None
     }
 
     fn next_significant_token(
