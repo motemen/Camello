@@ -471,6 +471,7 @@ impl Formatter {
         let ctx = super::FormatContext::default().with_multiline_context();
 
         if self.has_newline_before_first_value(node) {
+            // Multiline formatting
             for child in node.children_with_tokens() {
                 match child {
                     NodeOrToken::Node(child_node) => {
@@ -483,7 +484,7 @@ impl Formatter {
                                 // Skip trivia
                             }
                             T!['('] => {
-                                // Add space before opening paren for signature style: sub foo ($x)
+                                // Subroutine signatures need space before opening paren (unlike function calls)
                                 if !self.writer.at_line_start()
                                     && !self.writer.current_line_ends_with_space()
                                 {
@@ -513,13 +514,12 @@ impl Formatter {
                         self.format_node(&child_node);
                     }
                     NodeOrToken::Token(token) => {
-                        let kind = token.kind();
-                        match kind {
+                        match token.kind() {
                             WHITESPACE => {
                                 // Skip whitespace
                             }
                             T!['('] => {
-                                // Add space before opening paren for signature style: sub foo ($x)
+                                // Subroutine signatures need space before opening paren (unlike function calls)
                                 if !self.writer.at_line_start()
                                     && !self.writer.current_line_ends_with_space()
                                 {
@@ -529,6 +529,7 @@ impl Formatter {
                                 self.remember_token(&token);
                             }
                             _ => {
+                                // Use general spacing rules for other tokens
                                 self.format_token(&token);
                             }
                         }
@@ -541,6 +542,8 @@ impl Formatter {
     pub(super) fn format_signature_default(&mut self, node: &PerlNode) {
         use SyntaxKind::{DEFINED_OR, LOGICAL_OR, WHITESPACE};
 
+        // Signature defaults need special spacing for bare placeholders like "$ = 1"
+        // where the general spacing rules would incorrectly apply "no space after sigil"
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(child_node) => self.format_node(&child_node),
@@ -548,11 +551,10 @@ impl Formatter {
                     let kind = token.kind();
                     match kind {
                         WHITESPACE => {
-                            // Skip whitespace - spacing will be added by the rules below
+                            // Skip whitespace - spacing handled below
                         }
                         T![=] => {
-                            // Always add space before = in signature defaults
-                            // This handles cases like "$ = 1" where $ is a placeholder
+                            // Add space before = unless it follows // or || (compound assignment)
                             if !self.writer.current_line_ends_with_space()
                                 && !matches!(
                                     self.writer.prev_token_kind(),
@@ -561,18 +563,14 @@ impl Formatter {
                             {
                                 self.writer.write_char(' ');
                             }
-                            // Write token directly without calling format_token
-                            // to avoid double spacing from handle_spacing_before
                             self.writer.write_token(&token);
                             self.remember_token(&token);
                         }
                         DEFINED_OR | LOGICAL_OR => {
-                            // Add space before // and || in signature defaults
+                            // Add space before // and || operators
                             if !self.writer.current_line_ends_with_space() {
                                 self.writer.write_char(' ');
                             }
-                            // Write token directly without calling format_token
-                            // to avoid double spacing from handle_spacing_before
                             self.writer.write_token(&token);
                             self.remember_token(&token);
                         }
