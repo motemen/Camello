@@ -506,10 +506,18 @@ impl Formatter {
             }
         }
 
-        for element in elements {
+        // Use the original iterator from node for multiline paren detection
+        let mut children = node.children_with_tokens();
+        while let Some(element) = children.next() {
             match element {
                 NodeOrToken::Node(child) => self.format_node_with_context(&child, ctx),
-                NodeOrToken::Token(token) => self.format_token_with_context(&token, ctx),
+                NodeOrToken::Token(token) => {
+                    // Try to format multiline parenthesized expressions
+                    if self.try_format_multiline_parens(&token, &mut children) {
+                        continue;
+                    }
+                    self.format_token_with_context(&token, ctx)
+                }
             }
         }
 

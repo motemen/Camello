@@ -586,7 +586,8 @@ impl Formatter {
     }
 
     pub(super) fn format_children(&mut self, node: &PerlNode, skip_whitespace: bool) {
-        for child in node.children_with_tokens() {
+        let mut children = node.children_with_tokens();
+        while let Some(child) = children.next() {
             match child {
                 NodeOrToken::Node(node) => self.format_node(&node),
                 NodeOrToken::Token(token) => {
@@ -594,6 +595,11 @@ impl Formatter {
 
                     if skip_whitespace && kind == SyntaxKind::WHITESPACE {
                         // Skip whitespace if the flag is set
+                        continue;
+                    }
+
+                    // Try to format multiline parenthesized expressions
+                    if self.try_format_multiline_parens(&token, &mut children) {
                         continue;
                     }
 
