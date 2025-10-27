@@ -693,10 +693,14 @@ local $/ = undef;
 制御構造キーワードの後にはスペースを入れます。
 
 ```perl
-if ($x) { }
-unless ($y) { }
-while ($z) { }
-for my $i (@list) { }
+if ($x) {
+}
+unless ($y) {
+}
+while ($z) {
+}
+for my $i (@list) {
+}
 ```
 
 #### 4.6.3 return および制御キーワード
@@ -1071,10 +1075,12 @@ LABEL: while ($condition) {
 
 ```perl
 # 入力
-LABEL : while ($x) { }
+LABEL : while ($x) {
+}
 
 # 出力
-LABEL: while ($x) { }
+LABEL: while ($x) {
+}
 ```
 
 ## 9. 追加の仕様詳細
@@ -1110,7 +1116,7 @@ my $ref = \&{ $name };      # 式のみ
 # Tight設定による出力
 func($a, $b)
 my $result = ($x + $y) * $z;
-if (($a || $b) && $c) { }
+my $cond = (($a || $b) && $c);
 ```
 
 コンテキスト依存のスペーシング（関数呼び出し vs 数式）は行いません。ユーザー設定で統一します。
