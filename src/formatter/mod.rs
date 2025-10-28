@@ -456,27 +456,7 @@ impl Formatter {
         }
 
         // Default child iteration with automatic multiline parenthesis detection
-        let mut children = node.children_with_tokens();
-        while let Some(child) = children.next() {
-            match child {
-                NodeOrToken::Token(token) => {
-                    if self.try_format_multiline_parens(&token, &mut children) {
-                        continue;
-                    }
-                    self.format_token_with_context(&token, ctx);
-                }
-                NodeOrToken::Node(child_node) => {
-                    // Output pending empty lines before processing child nodes
-                    if self.pending_empty_lines > 0
-                        && (child_node.kind().is_phase_block_stmt()
-                            || matches!(child_node.kind(), SyntaxKind::STMT | SyntaxKind::VAR_DECL))
-                    {
-                        self.output_pending_empty_lines();
-                    }
-                    self.format_node_with_context(&child_node, ctx);
-                }
-            }
-        }
+        self.format_children_with_options(node, ctx, false, true);
 
         // Add empty line after subs, use, and no statements, but only if there are siblings
         if node.kind().is_phase_block_stmt()
@@ -495,6 +475,47 @@ impl Formatter {
         }
     }
 
+    /// Helper method to format children with multiline paren detection.
+    ///
+    /// # Parameters
+    /// - `node`: The node whose children to format
+    /// - `ctx`: The format context
+    /// - `skip_whitespace`: If true, skip whitespace tokens
+    /// - `handle_pending_empty_lines`: If true, output pending empty lines before certain child nodes
+    fn format_children_with_options(
+        &mut self,
+        node: &PerlNode,
+        ctx: FormatContext,
+        skip_whitespace: bool,
+        handle_pending_empty_lines: bool,
+    ) {
+        let mut children = node.children_with_tokens();
+        while let Some(child) = children.next() {
+            match child {
+                NodeOrToken::Token(token) => {
+                    if skip_whitespace && token.kind() == SyntaxKind::WHITESPACE {
+                        continue;
+                    }
+                    if self.try_format_multiline_parens(&token, &mut children) {
+                        continue;
+                    }
+                    self.format_token_with_context(&token, ctx);
+                }
+                NodeOrToken::Node(child_node) => {
+                    // Output pending empty lines before processing child nodes if requested
+                    if handle_pending_empty_lines
+                        && self.pending_empty_lines > 0
+                        && (child_node.kind().is_phase_block_stmt()
+                            || matches!(child_node.kind(), SyntaxKind::STMT | SyntaxKind::VAR_DECL))
+                    {
+                        self.output_pending_empty_lines();
+                    }
+                    self.format_node_with_context(&child_node, ctx);
+                }
+            }
+        }
+    }
+
     fn format_expr_list_node(&mut self, node: &PerlNode, ctx: FormatContext) {
         let elements: Vec<_> = node.children_with_tokens().collect();
 
@@ -506,20 +527,8 @@ impl Formatter {
             }
         }
 
-        // Use the original iterator from node for multiline paren detection
-        let mut children = node.children_with_tokens();
-        while let Some(element) = children.next() {
-            match element {
-                NodeOrToken::Node(child) => self.format_node_with_context(&child, ctx),
-                NodeOrToken::Token(token) => {
-                    // Try to format multiline parenthesized expressions
-                    if self.try_format_multiline_parens(&token, &mut children) {
-                        continue;
-                    }
-                    self.format_token_with_context(&token, ctx)
-                }
-            }
-        }
+        // Use the shared helper for multiline paren detection
+        self.format_children_with_options(node, ctx, false, false);
 
         // Reset alignment state only if we set it locally, to prevent it from affecting subsequent nodes
         if set_local_alignment {
