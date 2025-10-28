@@ -458,13 +458,8 @@ impl Formatter {
         // Default child iteration with automatic multiline parenthesis detection
         self.format_children_with_options(node, ctx, false, true);
 
-        // Add empty line after subs, use, and no statements, but only if there are siblings
-        if node.kind().is_phase_block_stmt()
-            || matches!(
-                node.kind(),
-                SyntaxKind::SUB_DEF | SyntaxKind::USE_STMT | SyntaxKind::NO_STMT
-            )
-        {
+        // Add empty line after subs and phase block statements, but only if there are siblings
+        if node.kind().is_phase_block_stmt() || matches!(node.kind(), SyntaxKind::SUB_DEF) {
             self.add_empty_line_after_if_needed(node);
         }
 
