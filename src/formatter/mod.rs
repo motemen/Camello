@@ -439,7 +439,7 @@ impl Formatter {
             | SyntaxKind::COMPOUND_VAR
             | SyntaxKind::REGEX_EXPR
             | SyntaxKind::BACKTICK_EXPR => {
-                self.format_expr(node);
+                self.format_expr_with_context(node, ctx);
                 return;
             }
             SyntaxKind::BLOCK_STMT => {
@@ -1006,6 +1006,7 @@ impl Formatter {
                             | T![;]
                             | T![,]
                             | T!['(']
+                            | T![')']
                             | SyntaxKind::COLON => true,
                             // Also check for IDENT tokens with specific text for Try::Tiny style
                             SyntaxKind::IDENT => {
