@@ -32,10 +32,23 @@ impl Formatter {
             .descendants_with_tokens()
             .any(|element| element.kind() == SyntaxKind::NEWLINE);
 
+        // Save and clear alignment state only if this is a nested hash/array reference
+        // to prevent parent alignment from affecting nested structures
+        let saved_alignment = if Formatter::is_nested_hash_ref(node) {
+            self.alignment_state.take()
+        } else {
+            None
+        };
+
         if should_multiline {
             self.format_multiline_delimited_elements(node.children_with_tokens(), opening, closing);
         } else {
             self.format_single_line_delimited_literal(node, opening, closing);
+        }
+
+        // Restore alignment state if it was saved
+        if let Some(state) = saved_alignment {
+            self.alignment_state = Some(state);
         }
     }
 

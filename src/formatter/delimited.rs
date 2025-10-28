@@ -347,7 +347,7 @@ impl Formatter {
         let elements: Vec<_> = list.children_with_tokens().collect();
 
         let mut set_local_alignment = false;
-        if self.alignment_state.is_none() {
+        if self.alignment_state.is_none() && !Self::is_nested_hash_ref(list) {
             if let Some(state) = self.collect_expr_list_alignment_state(list, &elements) {
                 self.alignment_state = Some(state);
                 set_local_alignment = true;
@@ -501,5 +501,26 @@ impl Formatter {
         self.writer.write_token(token);
         self.writer.set_at_line_start(false);
         self.remember_token(token);
+    }
+
+    /// Check if a node is nested inside hash reference values.
+    /// Returns true if the node is inside a hash ref that is itself inside another hash ref.
+    /// For HASH_REF nodes, counts the node itself plus parent hash refs.
+    /// For EXPR_LIST nodes, counts only parent hash refs.
+    pub(super) fn is_nested_hash_ref(node: &PerlNode) -> bool {
+        let mut current = Some(node.clone());
+        let mut hash_ref_count = 0;
+
+        while let Some(n) = current {
+            if n.kind() == SyntaxKind::HASH_REF {
+                hash_ref_count += 1;
+                if hash_ref_count >= 2 {
+                    return true;
+                }
+            }
+            current = n.parent();
+        }
+
+        false
     }
 }

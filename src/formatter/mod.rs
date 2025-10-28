@@ -499,7 +499,7 @@ impl Formatter {
         let elements: Vec<_> = node.children_with_tokens().collect();
 
         let mut set_local_alignment = false;
-        if self.alignment_state.is_none() {
+        if self.alignment_state.is_none() && !Self::is_nested_hash_ref(node) {
             if let Some(state) = self.collect_expr_list_alignment_state(node, &elements) {
                 self.alignment_state = Some(state);
                 set_local_alignment = true;
