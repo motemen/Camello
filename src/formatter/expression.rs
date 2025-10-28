@@ -5,11 +5,6 @@ use crate::{PerlLanguage, PerlNode, SyntaxKind, T};
 use super::Formatter;
 
 impl Formatter {
-    #[allow(dead_code)]
-    pub(super) fn format_expr(&mut self, node: &PerlNode) {
-        self.format_expr_with_context(node, super::FormatContext::default())
-    }
-
     pub(super) fn format_expr_with_context(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         match node.kind() {
             SyntaxKind::ANON_SUB_EXPR => {
@@ -112,11 +107,6 @@ impl Formatter {
                 self.format_children(node, false);
             }
         }
-    }
-
-    #[allow(dead_code)]
-    pub(super) fn format_anon_sub_expr(&mut self, node: &PerlNode) {
-        self.format_anon_sub_expr_with_context(node, super::FormatContext::default())
     }
 
     pub(super) fn format_anon_sub_expr_with_context(
