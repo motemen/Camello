@@ -321,8 +321,8 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
         (RETURN_KW | NEXT_KW | LAST_KW | REDO_KW, SEMICOLON) => Some(false),
         (RETURN_KW | NEXT_KW | LAST_KW | REDO_KW, _) => Some(true),
 
-        // Keep consecutive delimiters tight (e.g. }{ in chained hash access)
-        (R_BRACE, T!['{'] | T!['['] | T!['(']) => Some(false),
+        // Keep consecutive delimiters tight (e.g. }{ in chained hash access, ]{ in $_[0]{key})
+        (R_BRACE | R_BRACKET, T!['{'] | T!['['] | T!['(']) => Some(false),
 
         // R_BRACE: space before expressions but not semicolons or closing parentheses
         (R_BRACE, kind) if kind != SEMICOLON && kind != R_PAREN => Some(true),
