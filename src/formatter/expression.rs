@@ -46,17 +46,17 @@ impl Formatter {
             SyntaxKind::REGEX_EXPR => {
                 // Default handling for regex expressions - just format children
                 // The spacing around regex operators is handled in format_token
-                self.format_children(node, false);
+                self.format_children(node, false, ctx);
             }
             SyntaxKind::BACKTICK_EXPR => {
                 // Backtick command substitution: just format children (the backtick string literal)
-                self.format_children(node, false);
+                self.format_children(node, false, ctx);
             }
             _ => {
                 if self.should_use_parenthesized_formatter(node) {
                     self.format_parenthesized_expr(node, ctx);
                 } else {
-                    self.format_children(node, false);
+                    self.format_children(node, false, ctx);
                 }
             }
         }
@@ -596,12 +596,12 @@ impl Formatter {
         }
     }
 
-    pub(super) fn format_children(&mut self, node: &PerlNode, skip_whitespace: bool) {
-        self.format_children_with_options(
-            node,
-            super::FormatContext::default(),
-            skip_whitespace,
-            false,
-        );
+    pub(super) fn format_children(
+        &mut self,
+        node: &PerlNode,
+        skip_whitespace: bool,
+        ctx: super::FormatContext,
+    ) {
+        self.format_children_with_options(node, ctx, skip_whitespace, false);
     }
 }
