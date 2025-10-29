@@ -1010,11 +1010,8 @@ impl Formatter {
             }
             SyntaxKind::HEREDOC_CONTENT | SyntaxKind::HEREDOC_END => {
                 // Heredoc content and end must preserve exact formatting
-                // including all newlines and indentation from the source
-                // Temporarily set indent to 0 to prevent any indentation
-                let saved_indent = self.writer.indent_level();
-                self.writer.set_indent_level(0);
-
+                // including all newlines and indentation from the source.
+                // The `write_raw` method handles writing without adding indentation.
                 for (i, line) in text.split('\n').enumerate() {
                     if i > 0 {
                         self.writer.handle_user_newline();
@@ -1025,8 +1022,6 @@ impl Formatter {
                     }
                 }
 
-                // Restore indent level
-                self.writer.set_indent_level(saved_indent);
                 self.remember_token(token);
             }
             T!['}'] => {
