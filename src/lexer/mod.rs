@@ -188,6 +188,88 @@ mod tests {
             .expect("heredoc marker should be queued");
         assert_eq!(marker.marker, "foo\\\"bar");
     }
+
+    #[test]
+    fn iter_non_trivia_from_basic_iteration() {
+        let lexer = Lexer::new("$a + $b * $c");
+
+        let iter = lexer
+            .iter_non_trivia_from(LexContext::Value, 0)
+            .expect("Should return iterator");
+        let tokens: Vec<_> = iter.take(5).collect();
+
+        assert_eq!(tokens.len(), 5);
+        assert_eq!(tokens[0].0, SyntaxKind::SCALAR_SIGIL);
+        assert_eq!(tokens[1].0, SyntaxKind::IDENT);
+        assert_eq!(tokens[2].0, T![+]);
+        assert_eq!(tokens[3].0, SyntaxKind::SCALAR_SIGIL);
+        assert_eq!(tokens[4].0, SyntaxKind::IDENT);
+
+        let iter2 = lexer
+            .iter_non_trivia_from(LexContext::Value, 2)
+            .expect("Should return iterator");
+        let tokens2: Vec<_> = iter2.take(3).collect();
+
+        assert_eq!(tokens2.len(), 3);
+        assert_eq!(tokens2[0].0, T![+]);
+        assert_eq!(tokens2[1].0, SyntaxKind::SCALAR_SIGIL);
+        assert_eq!(tokens2[2].0, SyntaxKind::IDENT);
+    }
+
+    #[test]
+    fn iter_non_trivia_from_with_braces() {
+        let lexer = Lexer::new("{ a => 1; b => 2 }");
+
+        let iter = lexer
+            .iter_non_trivia_from(LexContext::Value, 1)
+            .expect("Should return iterator");
+
+        let mut found_semicolon = false;
+        let mut brace_depth = 0;
+
+        for (kind, _) in iter {
+            match kind {
+                T!['{'] => brace_depth += 1,
+                T!['}'] => {
+                    if brace_depth == 0 {
+                        break;
+                    }
+                    brace_depth -= 1;
+                }
+                T![;] if brace_depth == 0 => {
+                    found_semicolon = true;
+                    break;
+                }
+                _ => {}
+            }
+        }
+
+        assert!(found_semicolon, "Should find semicolon at top level");
+    }
+
+    #[test]
+    fn iter_non_trivia_from_skips_trivia() {
+        let lexer = Lexer::new("$a   # comment\n  + $b");
+
+        let iter = lexer
+            .iter_non_trivia_from(LexContext::Value, 0)
+            .expect("Should return iterator");
+        let tokens: Vec<_> = iter.take(4).collect();
+
+        assert_eq!(tokens.len(), 4);
+        assert_eq!(tokens[0].0, SyntaxKind::SCALAR_SIGIL);
+        assert_eq!(tokens[1].0, SyntaxKind::IDENT);
+        assert_eq!(tokens[2].0, T![+]);
+        assert_eq!(tokens[3].0, SyntaxKind::SCALAR_SIGIL);
+    }
+
+    #[test]
+    fn iter_non_trivia_from_beyond_end() {
+        let lexer = Lexer::new("$a + $b");
+
+        let iter = lexer.iter_non_trivia_from(LexContext::Value, 100);
+        assert!(iter.is_none(), "Should return None for offset beyond end");
+    }
 }
 
 pub struct Lexer<'a> {
