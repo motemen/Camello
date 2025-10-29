@@ -439,7 +439,7 @@ impl Formatter {
             | SyntaxKind::COMPOUND_VAR
             | SyntaxKind::REGEX_EXPR
             | SyntaxKind::BACKTICK_EXPR => {
-                self.format_expr(node);
+                self.format_expr_with_context(node, ctx);
                 return;
             }
             SyntaxKind::BLOCK_STMT => {
@@ -456,18 +456,50 @@ impl Formatter {
         }
 
         // Default child iteration with automatic multiline parenthesis detection
+        self.format_children_with_options(node, ctx, false, true);
+
+        // Add empty line after subs and phase block statements, but only if there are siblings
+        if node.kind().is_phase_block_stmt() || matches!(node.kind(), SyntaxKind::SUB_DEF) {
+            self.add_empty_line_after_if_needed(node);
+        }
+
+        // Special handling after children are processed
+        if node.kind().is_variable() {
+            // This is the logic from format_variable
+            self.writer.set_prev_token_kind(Some(node.kind()));
+        }
+    }
+
+    /// Helper method to format children with multiline paren detection.
+    ///
+    /// # Parameters
+    /// - `node`: The node whose children to format
+    /// - `ctx`: The format context
+    /// - `skip_whitespace`: If true, skip whitespace tokens
+    /// - `handle_pending_empty_lines`: If true, output pending empty lines before certain child nodes
+    fn format_children_with_options(
+        &mut self,
+        node: &PerlNode,
+        ctx: FormatContext,
+        skip_whitespace: bool,
+        handle_pending_empty_lines: bool,
+    ) {
         let mut children = node.children_with_tokens();
         while let Some(child) = children.next() {
             match child {
                 NodeOrToken::Token(token) => {
+                    if skip_whitespace && token.kind() == SyntaxKind::WHITESPACE {
+                        continue;
+                    }
                     if self.try_format_multiline_parens(&token, &mut children) {
                         continue;
                     }
                     self.format_token_with_context(&token, ctx);
                 }
                 NodeOrToken::Node(child_node) => {
-                    // Output pending empty lines before processing child nodes
-                    if self.pending_empty_lines > 0
+                    // Output pending empty lines before processing child nodes if requested
+                    if handle_pending_empty_lines
+                        && self.pending_empty_lines > 0
                         && (child_node.kind().is_phase_block_stmt()
                             || matches!(child_node.kind(), SyntaxKind::STMT | SyntaxKind::VAR_DECL))
                     {
@@ -476,22 +508,6 @@ impl Formatter {
                     self.format_node_with_context(&child_node, ctx);
                 }
             }
-        }
-
-        // Add empty line after subs, use, and no statements, but only if there are siblings
-        if node.kind().is_phase_block_stmt()
-            || matches!(
-                node.kind(),
-                SyntaxKind::SUB_DEF | SyntaxKind::USE_STMT | SyntaxKind::NO_STMT
-            )
-        {
-            self.add_empty_line_after_if_needed(node);
-        }
-
-        // Special handling after children are processed
-        if node.kind().is_variable() {
-            // This is the logic from format_variable
-            self.writer.set_prev_token_kind(Some(node.kind()));
         }
     }
 
@@ -506,12 +522,8 @@ impl Formatter {
             }
         }
 
-        for element in elements {
-            match element {
-                NodeOrToken::Node(child) => self.format_node_with_context(&child, ctx),
-                NodeOrToken::Token(token) => self.format_token_with_context(&token, ctx),
-            }
-        }
+        // Use the shared helper for multiline paren detection
+        self.format_children_with_options(node, ctx, false, false);
 
         // Reset alignment state only if we set it locally, to prevent it from affecting subsequent nodes
         if set_local_alignment {
@@ -998,6 +1010,7 @@ impl Formatter {
                             | T![;]
                             | T![,]
                             | T!['(']
+                            | T![')']
                             | SyntaxKind::COLON => true,
                             // Also check for IDENT tokens with specific text for Try::Tiny style
                             SyntaxKind::IDENT => {

@@ -1,0 +1,18 @@
+func(
+    1,
+    sub {
+        ;
+    }
+);
+
+my @result = map {
+    $_ * 2;
+} @list;
+
+my $cb = callback(
+    $x,
+    sub {
+        print "hello";
+    },
+    $y
+);
