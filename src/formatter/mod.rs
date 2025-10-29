@@ -627,7 +627,14 @@ impl Formatter {
                         consecutive_newlines = 0;
                     }
 
-                    if matches!(token.kind(), T![;] | SyntaxKind::COMMENT) {
+                    if matches!(
+                        token.kind(),
+                        T![;]
+                            | SyntaxKind::COMMENT
+                            | SyntaxKind::HEREDOC_START
+                            | SyntaxKind::HEREDOC_CONTENT
+                            | SyntaxKind::HEREDOC_END
+                    ) {
                         return false;
                     }
                 }
@@ -947,7 +954,11 @@ impl Formatter {
         match kind {
             SyntaxKind::WHITESPACE => {}
             SyntaxKind::NEWLINE => {
-                if ctx.suppress_newlines {
+                // Heredoc content must start on a new line after the heredoc start marker
+                // Always preserve newlines after HEREDOC_START
+                if self.writer.prev_token_kind() == Some(SyntaxKind::HEREDOC_START) {
+                    self.writer.handle_user_newline();
+                } else if ctx.suppress_newlines {
                     // Suppress newlines when formatting simple blocks
                 } else if self.writer.at_line_start() && self.writer.current_line_is_empty() {
                     if self.pending_empty_lines == 0 {
@@ -977,8 +988,45 @@ impl Formatter {
                 self.writer.handle_user_newline();
                 self.remember_token(token);
             }
+            SyntaxKind::HEREDOC_START => {
+                // Output pending empty lines before heredoc start
+                if self.pending_empty_lines > 0 {
+                    self.output_pending_empty_lines();
+                }
+
+                // Handle spacing and indentation for heredoc start
+                self.handle_spacing_before(kind);
+
+                if self.writer.at_line_start() && !kind.is_trivia() {
+                    self.writer.add_indent();
+                    if self.needs_continuation_indent(kind, ctx) {
+                        self.writer.push_indent_string();
+                    }
+                    self.writer.set_at_line_start(false);
+                }
+
+                self.writer.write_token(token);
+                self.remember_token(token);
+            }
             SyntaxKind::HEREDOC_CONTENT | SyntaxKind::HEREDOC_END => {
-                self.writer.write_str(text, Some(kind), None);
+                // Heredoc content and end must preserve exact formatting
+                // including all newlines and indentation from the source
+                // Temporarily set indent to 0 to prevent any indentation
+                let saved_indent = self.writer.indent_level();
+                self.writer.set_indent_level(0);
+
+                for (i, line) in text.split('\n').enumerate() {
+                    if i > 0 {
+                        self.writer.handle_user_newline();
+                    }
+                    if !line.is_empty() {
+                        // Use write_raw to write without indentation
+                        self.writer.write_raw(line, Some(kind), Some(token));
+                    }
+                }
+
+                // Restore indent level
+                self.writer.set_indent_level(saved_indent);
                 self.remember_token(token);
             }
             T!['}'] => {
