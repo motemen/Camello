@@ -5,12 +5,12 @@ use crate::{PerlNode, SyntaxKind, T};
 use super::Formatter;
 
 impl Formatter {
-    pub(super) fn format_hash_ref(&mut self, node: &PerlNode) {
-        self.format_delimited_literal(node, T!['{'], T!['}']);
+    pub(super) fn format_hash_ref(&mut self, node: &PerlNode, ctx: super::FormatContext) {
+        self.format_delimited_literal(node, T!['{'], T!['}'], ctx);
     }
 
-    pub(super) fn format_array_ref(&mut self, node: &PerlNode) {
-        self.format_delimited_literal(node, T!['['], T![']']);
+    pub(super) fn format_array_ref(&mut self, node: &PerlNode, ctx: super::FormatContext) {
+        self.format_delimited_literal(node, T!['['], T![']'], ctx);
     }
 
     fn format_single_line_delimited_literal(
@@ -27,13 +27,19 @@ impl Formatter {
         node: &PerlNode,
         opening: SyntaxKind,
         closing: SyntaxKind,
+        ctx: super::FormatContext,
     ) {
         let should_multiline = node
             .descendants_with_tokens()
             .any(|element| element.kind() == SyntaxKind::NEWLINE);
 
         if should_multiline {
-            self.format_multiline_delimited_elements(node.children_with_tokens(), opening, closing);
+            self.format_multiline_delimited_elements_with_context(
+                node.children_with_tokens(),
+                opening,
+                closing,
+                ctx,
+            );
         } else {
             self.format_single_line_delimited_literal(node, opening, closing);
         }
