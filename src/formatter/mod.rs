@@ -367,11 +367,11 @@ impl Formatter {
                 // Default child iteration will handle the semicolon token
             }
             SyntaxKind::HASH_REF => {
-                self.format_hash_ref(node);
+                self.format_hash_ref(node, ctx);
                 return;
             }
             SyntaxKind::ARRAY_REF => {
-                self.format_array_ref(node);
+                self.format_array_ref(node, ctx);
                 return;
             }
             SyntaxKind::QW_EXPR

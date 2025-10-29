@@ -286,6 +286,22 @@ impl Formatter {
         close_delimiter: SyntaxKind,
     ) {
         let ctx = super::FormatContext::default().with_multiline_context();
+        self.format_multiline_delimited_elements_with_context(
+            elements,
+            open_delimiter,
+            close_delimiter,
+            ctx,
+        );
+    }
+
+    pub(super) fn format_multiline_delimited_elements_with_context(
+        &mut self,
+        elements: impl IntoIterator<Item = SyntaxElement<PerlLanguage>>,
+        open_delimiter: SyntaxKind,
+        close_delimiter: SyntaxKind,
+        ctx: super::FormatContext,
+    ) {
+        let ctx = ctx.with_multiline_context();
         let elements_vec: Vec<_> = elements.into_iter().collect();
 
         for (index, child) in elements_vec.iter().enumerate() {
@@ -296,7 +312,7 @@ impl Formatter {
                     match kind {
                         SyntaxKind::EXPR_LIST => {
                             // Special handling for expression lists inside delimiters
-                            self.format_expr_list_multiline_iter(node);
+                            self.format_expr_list_multiline_iter_with_context(node, ctx);
                         }
                         _ => self.format_node_with_context(node, ctx),
                     }
@@ -353,8 +369,12 @@ impl Formatter {
         }
     }
 
-    fn format_expr_list_multiline_iter(&mut self, list: &PerlNode) {
-        let ctx = super::FormatContext::default().with_multiline_context();
+    fn format_expr_list_multiline_iter_with_context(
+        &mut self,
+        list: &PerlNode,
+        ctx: super::FormatContext,
+    ) {
+        let ctx = ctx.with_multiline_context();
         let elements: Vec<_> = list.children_with_tokens().collect();
 
         let mut set_local_alignment = false;
