@@ -565,18 +565,21 @@ fn build_comment_blocks(
                     if let Some(comment_id) = CommentId::from_token(&token) {
                         pending_block.push(comment_id, saw_newline_since_significant);
                     }
+                    saw_newline_since_significant = false;
                 }
                 SyntaxKind::WHITESPACE => {
                     // Keep the current block open across indentation tokens.
                 }
                 SyntaxKind::NEWLINE => {
-                    finalize_pending_block(
-                        &mut pending_block,
-                        last_significant,
-                        registry,
-                        &mut summaries,
-                        &mut waiting_for_next,
-                    );
+                    if saw_newline_since_significant {
+                        finalize_pending_block(
+                            &mut pending_block,
+                            last_significant,
+                            registry,
+                            &mut summaries,
+                            &mut waiting_for_next,
+                        );
+                    }
                     saw_newline_since_significant = true;
                 }
                 _ => {
@@ -622,11 +625,19 @@ fn collect_leading_function_comments(
     let owner = CommentOwner::for_node(node);
     let mut blocks: Vec<CommentBlockId> = Vec::new();
     let mut current = first_token.prev_token();
+    let mut saw_line_break = false;
 
     while let Some(token) = current {
         match token.kind() {
             SyntaxKind::WHITESPACE => {}
-            SyntaxKind::NEWLINE => break,
+            SyntaxKind::NEWLINE => {
+                if saw_line_break {
+                    break;
+                }
+                saw_line_break = true;
+                current = token.prev_token();
+                continue;
+            }
             SyntaxKind::COMMENT => {
                 if !is_line_comment(&token) {
                     break;
@@ -638,6 +649,7 @@ fn collect_leading_function_comments(
                         }
                     }
                 }
+                saw_line_break = false;
             }
             _ => break,
         }

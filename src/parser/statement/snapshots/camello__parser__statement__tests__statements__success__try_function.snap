@@ -1,9 +1,11 @@
 ---
-source: src/parser/statement.rs
+source: src/parser/statement/tests.rs
+assertion_line: 48
 expression: render_success_tree(&syntax)
 ---
 ROOT@0..296
-  COMMENT@0..43 "# try as a function ( ..."
+  COMMENT@0..42 "# try as a function ( ..."
+  NEWLINE@42..43 "\n"
   STMT@43..71
     BLOCK_FUNCTION_CALL_EXPR@43..70
       TRY_KW@43..46 "try"
@@ -23,7 +25,8 @@ ROOT@0..296
     SEMICOLON@70..71 ";"
   NEWLINE@71..72 "\n"
   NEWLINE@72..73 "\n"
-  COMMENT@73..99 "# try function with c ..."
+  COMMENT@73..98 "# try function with c ..."
+  NEWLINE@98..99 "\n"
   TRY_STMT@99..152
     TRY_KW@99..102 "try"
     WHITESPACE@102..103 " "
@@ -61,7 +64,8 @@ ROOT@0..296
     SEMICOLON@151..152 ";"
   NEWLINE@152..153 "\n"
   NEWLINE@153..154 "\n"
-  COMMENT@154..183 "# try function in ass ..."
+  COMMENT@154..182 "# try function in ass ..."
+  NEWLINE@182..183 "\n"
   STMT@183..219
     VAR_DECL@183..218
       MY_KW@183..185 "my"
@@ -91,7 +95,8 @@ ROOT@0..296
     SEMICOLON@218..219 ";"
   NEWLINE@219..220 "\n"
   NEWLINE@220..221 "\n"
-  COMMENT@221..261 "# try function with m ..."
+  COMMENT@221..260 "# try function with m ..."
+  NEWLINE@260..261 "\n"
   STMT@261..295
     BLOCK_FUNCTION_CALL_EXPR@261..294
       TRY_KW@261..264 "try"

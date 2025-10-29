@@ -238,7 +238,7 @@ pub enum Token {
     Newline,
 
     // コメント
-    #[regex(r"#[^\r\n]*(?:\r\n|\r|\n)?")]
+    #[regex(r"#[^\r\n]*")]
     Comment,
 
     // データセクション（__END__ / __DATA__ 以降のすべてのテキスト）
