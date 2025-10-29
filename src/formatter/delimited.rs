@@ -463,26 +463,70 @@ impl Formatter {
         filtered.sort_by_key(|(position, _)| *position);
         let columns: Vec<_> = filtered.into_iter().map(|(_, column)| column).collect();
 
-        let indent_width = self.writer.indent_level() * self.writer.indent_string_len();
-        let widths = columns
-            .iter()
-            .map(|column| {
-                let content_width = column.column.saturating_sub(column.indent);
-                indent_width + content_width
-            })
-            .collect::<Vec<_>>();
+        // Break columns into groups where each group contains consecutive lines.
+        // A line break occurs when line_index jumps by more than 1 (indicating a line
+        // without a fat comma in between).
+        let mut groups: Vec<Vec<_>> = Vec::new();
+        let mut current_group = Vec::new();
 
-        let max_width = widths.iter().copied().max()?;
-        if widths.iter().all(|&width| width == max_width) {
+        for (i, column) in columns.iter().enumerate() {
+            if i > 0 && column.line_index > columns[i - 1].line_index + 1 {
+                // Line index jumped - there's a line without a fat comma
+                if !current_group.is_empty() {
+                    groups.push(current_group);
+                    current_group = Vec::new();
+                }
+            }
+            current_group.push(column);
+        }
+        if !current_group.is_empty() {
+            groups.push(current_group);
+        }
+
+        // Filter out groups with fewer than 2 elements
+        let groups: Vec<_> = groups
+            .into_iter()
+            .filter(|group| group.len() >= 2)
+            .collect();
+
+        if groups.is_empty() {
             return None;
         }
 
-        let pads = widths
-            .into_iter()
-            .map(|width| max_width - width)
-            .collect::<Vec<_>>();
+        let indent_width = self.writer.indent_level() * self.writer.indent_string_len();
+        let mut all_pads = Vec::new();
 
-        Some(AlignmentState::new(SyntaxKind::FAT_COMMA, pads))
+        // Calculate padding for each group independently
+        for group in groups {
+            let widths = group
+                .iter()
+                .map(|column| {
+                    let content_width = column.column.saturating_sub(column.indent);
+                    indent_width + content_width
+                })
+                .collect::<Vec<_>>();
+
+            let max_width = widths.iter().copied().max()?;
+
+            // If all widths are the same, no padding needed for this group
+            let group_pads = if widths.iter().all(|&width| width == max_width) {
+                vec![0; widths.len()]
+            } else {
+                widths
+                    .into_iter()
+                    .map(|width| max_width - width)
+                    .collect::<Vec<_>>()
+            };
+
+            all_pads.extend(group_pads);
+        }
+
+        // Return None if no padding is actually needed
+        if all_pads.iter().all(|&pad| pad == 0) {
+            return None;
+        }
+
+        Some(AlignmentState::new(SyntaxKind::FAT_COMMA, all_pads))
     }
 
     pub(super) fn handle_multiline_opening_delimiter(&mut self, token: &SyntaxToken<PerlLanguage>) {
