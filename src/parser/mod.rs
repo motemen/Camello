@@ -381,19 +381,9 @@ impl<'a> Parser<'a> {
         ctx: LexContext,
         n: usize,
     ) -> Option<(SyntaxKind, &'a str)> {
-        let mut cloned = self.lexer.clone();
-
-        // If the current token is a quote-like keyword immediately followed by '#',
-        // configure the cloned lexer for quote-like parsing to handle the delimiter correctly.
-        let (current_token, next_char) = self.lexer.peek_token_and_next_char();
-        if let (Some(current_kind), Some('#')) = (current_token, next_char) {
-            if current_kind.is_quote_like_keyword() {
-                let mode = crate::lexer::QuoteLikeMode::from_keyword(current_kind);
-                cloned.begin_quote_like(current_kind, mode);
-            }
-        }
-
-        cloned.peek_nth_non_trivia_with_context(ctx, n)
+        self.lexer
+            .iter_non_trivia_from(ctx, n)
+            .and_then(|mut i| i.next())
     }
 
     /// Returns true if the token at `offset` is followed by a fat comma (`=>`).
