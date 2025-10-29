@@ -466,21 +466,17 @@ impl Formatter {
         // Break columns into groups where each group contains consecutive lines.
         // A line break occurs when line_index jumps by more than 1 (indicating a line
         // without a fat comma in between).
-        let mut groups: Vec<Vec<_>> = Vec::new();
-        let mut current_group = Vec::new();
-
-        for (i, column) in columns.iter().enumerate() {
-            if i > 0 && column.line_index > columns[i - 1].line_index + 1 {
-                // Line index jumped - there's a line without a fat comma
-                if !current_group.is_empty() {
-                    groups.push(current_group);
-                    current_group = Vec::new();
+        let mut groups = Vec::new();
+        if !columns.is_empty() {
+            let mut start = 0;
+            for i in 1..columns.len() {
+                if columns[i].line_index > columns[i - 1].line_index + 1 {
+                    // Line index jumped - there's a line without a fat comma
+                    groups.push(&columns[start..i]);
+                    start = i;
                 }
             }
-            current_group.push(column);
-        }
-        if !current_group.is_empty() {
-            groups.push(current_group);
+            groups.push(&columns[start..]);
         }
 
         // Filter out groups with fewer than 2 elements
