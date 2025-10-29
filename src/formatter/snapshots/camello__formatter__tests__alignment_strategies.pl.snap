@@ -24,6 +24,8 @@ sub alignment_examples {
     notify $user     unless $quiet;
     log_event $event unless $disabled;
 
-    my $short              = 1; # comment one
+    my $short = 1; # comment one
+
     my $long_variable_name = 2; # comment two
+
 }
