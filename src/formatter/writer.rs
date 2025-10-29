@@ -116,6 +116,33 @@ impl Writer {
         }
     }
 
+    /// Write text directly without any indentation processing
+    /// Used for heredoc content which must preserve exact formatting
+    pub(super) fn write_raw(
+        &mut self,
+        text: &str,
+        kind: Option<SyntaxKind>,
+        token: Option<&SyntaxToken<PerlLanguage>>,
+    ) {
+        if text.is_empty() {
+            return;
+        }
+
+        let start = self.current_line.text.len();
+        self.current_line.text.push_str(text);
+        self.at_line_start = false;
+
+        if let Some(kind) = kind {
+            let end = self.current_line.text.len();
+            self.current_line.tokens.push(TokenSpan {
+                kind,
+                start_byte: start,
+                end_byte: end,
+                token: token.cloned(),
+            });
+        }
+    }
+
     pub(super) fn write_char(&mut self, ch: char) {
         if ch == '\n' {
             self.handle_formatter_newline();
