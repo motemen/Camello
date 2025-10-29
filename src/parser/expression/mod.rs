@@ -312,6 +312,8 @@ impl Parser<'_> {
     fn allow_trailing_separator(&mut self, operator_kind: SyntaxKind) -> bool {
         (operator_kind == T![,] || operator_kind == T![=>])
             && (self.at(T!['}'])
+                || self.at(T![']'])
+                || self.at(T![')'])
                 || self.at(T![;])
                 || self.at_end()
                 || self.is_at_postfix_modifier_keyword())
