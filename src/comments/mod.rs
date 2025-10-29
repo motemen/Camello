@@ -155,6 +155,7 @@ pub struct TriviaTable {
     entries: Vec<TokenTrivia>,
     token_index: HashMap<TokenKey, usize>,
     trivia_index: HashMap<TokenKey, TriviaPosition>,
+    unowned_trivia: Vec<TriviaPiece>,
 }
 
 impl TriviaTable {
@@ -165,6 +166,7 @@ impl TriviaTable {
             entries: Vec::new(),
             token_index: HashMap::new(),
             trivia_index: HashMap::new(),
+            unowned_trivia: Vec::new(),
         };
 
         let mut pending_leading: Vec<TriviaPiece> = Vec::new();
@@ -194,9 +196,7 @@ impl TriviaTable {
             } else {
                 let token_key = TokenKey::from_token(&token);
 
-                if previous_entry.is_none() && !pending_trailing.is_empty() {
-                    pending_leading.append(&mut pending_trailing);
-                } else if let (Some(entry_idx), Some(owner_key)) = (previous_entry, previous_key) {
+                if let (Some(entry_idx), Some(owner_key)) = (previous_entry, previous_key) {
                     table.attach_trailing(entry_idx, owner_key, &mut pending_trailing);
                 }
 
@@ -218,6 +218,10 @@ impl TriviaTable {
                 pending_trailing.append(&mut pending_leading);
             }
             table.attach_trailing(entry_idx, owner_key, &mut pending_trailing);
+        } else {
+            // No non-trivia tokens found - store all pending trivia as unowned
+            table.unowned_trivia.append(&mut pending_leading);
+            table.unowned_trivia.append(&mut pending_trailing);
         }
 
         table
@@ -287,6 +291,15 @@ impl TriviaTable {
         }
         let key = TokenKey::from_token(trivia);
         self.trivia_index.get(&key).copied()
+    }
+
+    /// Returns the unowned trivia pieces (trivia that doesn't belong to any token).
+    ///
+    /// This occurs when a file contains only trivia (comments, whitespace, etc.)
+    /// with no actual code tokens.
+    #[must_use]
+    pub fn unowned_trivia(&self) -> &[TriviaPiece] {
+        &self.unowned_trivia
     }
 }
 
