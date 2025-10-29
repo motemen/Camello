@@ -4,7 +4,8 @@ assertion_line: 48
 expression: render_success_tree(&syntax)
 ---
 ROOT@0..255
-  COMMENT@0..38 "# try used as a regul ..."
+  COMMENT@0..37 "# try used as a regul ..."
+  NEWLINE@37..38 "\n"
   STMT@38..44
     FUNCTION_CALL_EXPR@38..43
       IDENT@38..41 "try"
@@ -31,7 +32,8 @@ ROOT@0..255
     SEMICOLON@63..64 ";"
   NEWLINE@64..65 "\n"
   NEWLINE@65..66 "\n"
-  COMMENT@66..118 "# try as bareword fun ..."
+  COMMENT@66..117 "# try as bareword fun ..."
+  NEWLINE@117..118 "\n"
   STMT@118..130
     FUNCTION_CALL_EXPR@118..129
       IDENT@118..121 "try"
@@ -47,7 +49,8 @@ ROOT@0..255
     SEMICOLON@129..130 ";"
   NEWLINE@130..131 "\n"
   NEWLINE@131..132 "\n"
-  COMMENT@132..220 "# try with block-like ..."
+  COMMENT@132..219 "# try with block-like ..."
+  NEWLINE@219..220 "\n"
   STMT@220..254
     VAR_DECL@220..253
       MY_KW@220..222 "my"
