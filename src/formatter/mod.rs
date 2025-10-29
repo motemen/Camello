@@ -2,7 +2,7 @@ mod delimited;
 mod writer;
 
 use crate::{
-    comments::{CommentAnchor, CommentId, CommentOwner, CommentPlacement, CommentRegistry},
+    comments::{TokenKey, TriviaPosition, TriviaTable},
     PerlLanguage, PerlNode, SyntaxKind, T,
 };
 use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
@@ -207,40 +207,40 @@ pub struct Formatter {
     writer: Writer,
     pending_empty_lines: usize,
     pending_space_after_block_call: bool,
-    /// The comment registry is wrapped in `Rc` to allow cheap sharing across multiple
-    /// formatter instances. This is critical for assignment alignment, which creates
+    /// The trivia table is wrapped in `Rc` to allow cheap sharing across multiple
+    /// formatter instances. This is critical for alignment calculations, which create
     /// temporary formatters to measure prefix widths without expensive deep clones.
-    comment_registry: Rc<CommentRegistry>,
+    trivia_table: Rc<TriviaTable>,
     options: FormatterOptions,
     alignment_state: Option<AlignmentState>,
 }
 
 impl Formatter {
     #[must_use]
-    pub fn new(comment_registry: CommentRegistry) -> Self {
-        Self::with_options(comment_registry, FormatterOptions::default())
+    pub fn new(trivia_table: TriviaTable) -> Self {
+        Self::with_options(trivia_table, FormatterOptions::default())
     }
 
     #[must_use]
-    pub fn with_options(comment_registry: CommentRegistry, options: FormatterOptions) -> Self {
+    pub fn with_options(trivia_table: TriviaTable, options: FormatterOptions) -> Self {
         Self {
             pending_empty_lines: 0,
             pending_space_after_block_call: false,
             writer: Writer::new(),
             // Wrap in Rc to enable cheap cloning when creating temporary formatters
             // for alignment measurements (see measure_alignment_prefix)
-            comment_registry: Rc::new(comment_registry),
+            trivia_table: Rc::new(trivia_table),
             options,
             alignment_state: None,
         }
     }
 
-    fn with_shared_deps(comment_registry: Rc<CommentRegistry>, options: FormatterOptions) -> Self {
+    fn with_shared_deps(trivia_table: Rc<TriviaTable>, options: FormatterOptions) -> Self {
         Self {
             pending_empty_lines: 0,
             pending_space_after_block_call: false,
             writer: Writer::new(),
-            comment_registry,
+            trivia_table,
             options,
             alignment_state: None,
         }
@@ -260,20 +260,9 @@ impl Formatter {
         }
 
         if kind == SyntaxKind::COMMENT {
-            if let Some(comment_id) = CommentId::from_token(token) {
-                match self.comment_registry.placement_of(comment_id) {
-                    // Leading, Standalone, and Trailing comments should not update last_significant_token_kind
-                    // to allow continuation indent to work correctly based on the actual code tokens
-                    Some(CommentPlacement::Leading(_))
-                    | Some(CommentPlacement::Standalone)
-                    | Some(CommentPlacement::Trailing(_)) => {}
-                    // Only Dangling comments and unclassified comments update last_significant_token_kind
-                    Some(CommentPlacement::Dangling(_)) | None => {
-                        self.writer.set_last_significant_token_kind(Some(kind));
-                    }
-                }
-            } else {
-                self.writer.set_last_significant_token_kind(Some(kind));
+            match self.trivia_table.position_of(token) {
+                Some(TriviaPosition::Leading(_)) | Some(TriviaPosition::Trailing(_)) => {}
+                _ => self.writer.set_last_significant_token_kind(Some(kind)),
             }
         } else {
             self.writer.set_last_significant_token_kind(Some(kind));
@@ -281,39 +270,59 @@ impl Formatter {
     }
 
     fn node_has_leading_comment(&self, node: &PerlNode) -> bool {
-        let owner = CommentOwner::for_node(node);
-        self.comment_registry
-            .attached_to(owner)
-            .any(|assignment| assignment.placement().is_leading())
+        let Some(first_token) = node.first_token() else {
+            return false;
+        };
+        self.trivia_table
+            .leading_trivia(&first_token)
+            .iter()
+            .any(|piece| piece.kind() == SyntaxKind::COMMENT)
+    }
+
+    fn node_has_trailing_comment(&self, node: &PerlNode) -> bool {
+        node.descendants_with_tokens()
+            .filter_map(|element| element.into_token())
+            .any(|token| {
+                self.trivia_table
+                    .trailing_trivia(&token)
+                    .iter()
+                    .any(|piece| piece.kind() == SyntaxKind::COMMENT)
+            })
     }
 
     fn should_isolate_comment(&self, token: &SyntaxToken<PerlLanguage>) -> bool {
-        let Some(comment_id) = CommentId::from_token(token) else {
-            return false;
-        };
-
-        if !self.comment_registry.is_first_in_block(comment_id) {
-            return false;
-        }
-
-        let Some(block_id) = self.comment_registry.block_of(comment_id) else {
-            return false;
-        };
-
-        let Some(CommentPlacement::Leading(owner)) =
-            self.comment_registry.placement_of_block(block_id)
-        else {
+        let Some(TriviaPosition::Leading(owner_key)) = self.trivia_table.position_of(token) else {
             return false;
         };
 
         let Some(root) = Self::comment_root(token) else {
             return false;
         };
+        let Some(owner_token) = owner_key.resolve(&root) else {
+            return false;
+        };
 
-        matches!(
-            owner.resolve(&root),
-            Some(CommentAnchor::Node(node)) if node.kind() == SyntaxKind::SUB_DEF
-        )
+        let comment_key = TokenKey::from_token(token);
+        let leading = self.trivia_table.leading_trivia(&owner_token);
+        let first_comment_key = leading
+            .iter()
+            .filter(|piece| piece.kind() == SyntaxKind::COMMENT)
+            .map(|piece| piece.token_key())
+            .next();
+
+        if first_comment_key != Some(comment_key) {
+            return false;
+        }
+
+        let mut current = owner_token.parent();
+        while let Some(node) = current {
+            if node.kind() == SyntaxKind::SUB_DEF {
+                return true;
+            }
+            current = node.parent();
+        }
+
+        false
     }
 
     fn comment_root(token: &SyntaxToken<PerlLanguage>) -> Option<PerlNode> {
@@ -1174,8 +1183,8 @@ pub fn format_with_options(node: &PerlNode, options: FormatterOptions) -> String
     while let Some(parent) = root.parent() {
         root = parent;
     }
-    let comment_registry = CommentRegistry::from_syntax(&root);
-    let mut formatter = Formatter::with_options(comment_registry, options);
+    let trivia_table = TriviaTable::from_syntax(&root);
+    let mut formatter = Formatter::with_options(trivia_table, options);
     formatter.format(node)
 }
 

@@ -1,0 +1,11 @@
+my $x = 1; # inline comment
+# leading doc
+# continues
+sub foo {
+    say $x;
+}
+
+my $y = 2; # trailing comment
+# comment after newline
+# and another
+say $y;

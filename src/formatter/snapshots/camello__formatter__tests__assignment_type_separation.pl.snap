@@ -4,6 +4,7 @@ assertion_line: 51
 expression: formatted
 ---
 sub test_assignment_types {
+
     # Declaration vs plain assignment should not align
 
     my $a = 1;

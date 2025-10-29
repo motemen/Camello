@@ -2,7 +2,7 @@ use std::iter::Peekable;
 
 use rowan::{NodeOrToken, SyntaxElementChildren};
 
-use crate::{comments::CommentOwner, PerlLanguage, PerlNode, SyntaxKind, T};
+use crate::{PerlLanguage, PerlNode, SyntaxKind, T};
 
 use super::{AlignmentState, AlignmentStrategy, Formatter};
 
@@ -421,12 +421,12 @@ impl Formatter {
 
     fn measure_alignment_prefix(&self, node: &PerlNode, token_kind: SyntaxKind) -> Option<usize> {
         // Create a temporary formatter to measure the prefix width.
-        // This is efficient: comment_registry.clone() only increments the Rc refcount,
+        // This is efficient: trivia_table.clone() only increments the Rc refcount,
         // and options.clone() is lightweight. Full formatting is necessary to accurately
         // measure the width including proper spacing and token formatting.
         let mut options = self.options.clone();
         options.alignment_strategies.clear();
-        let mut formatter = Formatter::with_shared_deps(self.comment_registry.clone(), options);
+        let mut formatter = Formatter::with_shared_deps(self.trivia_table.clone(), options);
         formatter.format_node(node);
 
         let columns = if token_kind == SyntaxKind::EQ {
@@ -520,12 +520,7 @@ impl Formatter {
                     return None;
                 }
 
-                let owner = CommentOwner::for_node(node);
-                if self
-                    .comment_registry
-                    .attached_to(owner)
-                    .any(|assignment| assignment.placement().is_trailing())
-                {
+                if self.node_has_trailing_comment(node) {
                     Some(SyntaxKind::COMMENT)
                 } else {
                     None
