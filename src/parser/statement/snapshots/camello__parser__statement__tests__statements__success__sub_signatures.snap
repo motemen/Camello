@@ -1,9 +1,11 @@
 ---
 source: src/parser/statement/tests.rs
+assertion_line: 48
 expression: render_success_tree(&syntax)
 ---
 ROOT@0..1330
-  COMMENT@0..45 "# Basic named paramet ..."
+  COMMENT@0..44 "# Basic named paramet ..."
+  NEWLINE@44..45 "\n"
   SUB_DEF@45..111
     SUB_KW@45..48 "sub"
     WHITESPACE@48..49 " "
@@ -36,7 +38,8 @@ ROOT@0..1330
       R_BRACE@110..111 "}"
   NEWLINE@111..112 "\n"
   NEWLINE@112..113 "\n"
-  COMMENT@113..150 "# Placeholders and sl ..."
+  COMMENT@113..149 "# Placeholders and sl ..."
+  NEWLINE@149..150 "\n"
   SUB_DEF@150..226
     SUB_KW@150..153 "sub"
     WHITESPACE@153..154 " "
@@ -91,7 +94,8 @@ ROOT@0..1330
       R_BRACE@225..226 "}"
   NEWLINE@226..227 "\n"
   NEWLINE@227..228 "\n"
-  COMMENT@228..259 "# Hash slurpy with || ..."
+  COMMENT@228..258 "# Hash slurpy with || ..."
+  NEWLINE@258..259 "\n"
   SUB_DEF@259..333
     SUB_KW@259..262 "sub"
     WHITESPACE@262..263 " "
@@ -141,7 +145,8 @@ ROOT@0..1330
       R_BRACE@332..333 "}"
   NEWLINE@333..334 "\n"
   NEWLINE@334..335 "\n"
-  COMMENT@335..359 "# Explicit placeholders\n"
+  COMMENT@335..358 "# Explicit placeholders"
+  NEWLINE@358..359 "\n"
   SUB_DEF@359..408
     SUB_KW@359..362 "sub"
     WHITESPACE@362..363 " "
@@ -176,7 +181,8 @@ ROOT@0..1330
       R_BRACE@407..408 "}"
   NEWLINE@408..409 "\n"
   NEWLINE@409..410 "\n"
-  COMMENT@410..437 "# Scalar placeholder  ..."
+  COMMENT@410..436 "# Scalar placeholder  ..."
+  NEWLINE@436..437 "\n"
   SUB_DEF@437..482
     SUB_KW@437..440 "sub"
     WHITESPACE@440..441 " "
@@ -201,7 +207,8 @@ ROOT@0..1330
       R_BRACE@481..482 "}"
   NEWLINE@482..483 "\n"
   NEWLINE@483..484 "\n"
-  COMMENT@484..517 "# Placeholder with de ..."
+  COMMENT@484..516 "# Placeholder with de ..."
+  NEWLINE@516..517 "\n"
   SUB_DEF@517..583
     SUB_KW@517..520 "sub"
     WHITESPACE@520..521 " "
@@ -244,7 +251,8 @@ ROOT@0..1330
       R_BRACE@582..583 "}"
   NEWLINE@583..584 "\n"
   NEWLINE@584..585 "\n"
-  COMMENT@585..631 "# Complex default exp ..."
+  COMMENT@585..630 "# Complex default exp ..."
+  NEWLINE@630..631 "\n"
   SUB_DEF@631..706
     SUB_KW@631..634 "sub"
     WHITESPACE@634..635 " "
@@ -286,7 +294,8 @@ ROOT@0..1330
       R_BRACE@705..706 "}"
   NEWLINE@706..707 "\n"
   NEWLINE@707..708 "\n"
-  COMMENT@708..747 "# Parenthesized low-p ..."
+  COMMENT@708..746 "# Parenthesized low-p ..."
+  NEWLINE@746..747 "\n"
   SUB_DEF@747..825
     SUB_KW@747..750 "sub"
     WHITESPACE@750..751 " "
@@ -329,7 +338,8 @@ ROOT@0..1330
       R_BRACE@824..825 "}"
   NEWLINE@825..826 "\n"
   NEWLINE@826..827 "\n"
-  COMMENT@827..874 "# Hash placeholder fo ..."
+  COMMENT@827..873 "# Hash placeholder fo ..."
+  NEWLINE@873..874 "\n"
   SUB_DEF@874..923
     SUB_KW@874..877 "sub"
     WHITESPACE@877..878 " "
@@ -361,7 +371,8 @@ ROOT@0..1330
       R_BRACE@922..923 "}"
   NEWLINE@923..924 "\n"
   NEWLINE@924..925 "\n"
-  COMMENT@925..951 "# Slurpy array at the ..."
+  COMMENT@925..950 "# Slurpy array at the ..."
+  NEWLINE@950..951 "\n"
   SUB_DEF@951..1019
     SUB_KW@951..954 "sub"
     WHITESPACE@954..955 " "
@@ -404,7 +415,8 @@ ROOT@0..1330
       R_BRACE@1018..1019 "}"
   NEWLINE@1019..1020 "\n"
   NEWLINE@1020..1021 "\n"
-  COMMENT@1021..1063 "# Multiline signature ..."
+  COMMENT@1021..1062 "# Multiline signature ..."
+  NEWLINE@1062..1063 "\n"
   SUB_DEF@1063..1189
     SUB_KW@1063..1066 "sub"
     WHITESPACE@1066..1067 " "
@@ -477,7 +489,8 @@ ROOT@0..1330
       R_BRACE@1188..1189 "}"
   NEWLINE@1189..1190 "\n"
   NEWLINE@1190..1191 "\n"
-  COMMENT@1191..1229 "# Anonymous subroutin ..."
+  COMMENT@1191..1228 "# Anonymous subroutin ..."
+  NEWLINE@1228..1229 "\n"
   STMT@1229..1329
     VAR_DECL@1229..1328
       MY_KW@1229..1231 "my"
