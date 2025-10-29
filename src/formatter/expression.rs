@@ -288,9 +288,10 @@ impl Formatter {
         iter: SyntaxElementChildren<PerlLanguage>,
         opening: SyntaxKind,
         closing: SyntaxKind,
+        ctx: super::FormatContext,
     ) {
         if self.has_newline_before_first_value_iter(iter.clone()) {
-            self.format_multiline_delimited_elements(iter, opening, closing);
+            self.format_multiline_delimited_elements_with_context(iter, opening, closing, ctx);
         } else {
             let elements: Vec<_> = iter.collect();
             self.format_single_line_delimited_elements(elements, opening, closing, true);
@@ -306,7 +307,7 @@ impl Formatter {
     ) {
         let mut children = node.children_with_tokens();
         self.format_until_arrow_iter(children.by_ref(), ctx);
-        self.format_subscription_iter(children, opening, closing);
+        self.format_subscription_iter(children, opening, closing, ctx);
     }
 
     fn format_postfix_slice_expr(
@@ -364,7 +365,7 @@ impl Formatter {
             }
         }
 
-        self.format_subscription_iter(children, opening, closing);
+        self.format_subscription_iter(children, opening, closing, ctx);
     }
 
     pub(super) fn format_hash_ref_access(&mut self, node: &PerlNode, ctx: super::FormatContext) {
@@ -430,18 +431,14 @@ impl Formatter {
         self.format_single_line_delimited_children_with_context(node, T!['{'], T!['}'], true, ctx);
     }
 
-    pub(super) fn format_hash_subscription(&mut self, node: &PerlNode, _ctx: super::FormatContext) {
+    pub(super) fn format_hash_subscription(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         let children = node.children_with_tokens();
-        self.format_subscription_iter(children, T!['{'], T!['}']);
+        self.format_subscription_iter(children, T!['{'], T!['}'], ctx);
     }
 
-    pub(super) fn format_array_subscription(
-        &mut self,
-        node: &PerlNode,
-        _ctx: super::FormatContext,
-    ) {
+    pub(super) fn format_array_subscription(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         let children = node.children_with_tokens();
-        self.format_subscription_iter(children, T!['['], T![']']);
+        self.format_subscription_iter(children, T!['['], T![']'], ctx);
     }
 
     pub(super) fn format_sub_prototype(&mut self, node: &PerlNode) {
