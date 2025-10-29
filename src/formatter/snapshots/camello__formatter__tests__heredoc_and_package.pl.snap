@@ -16,7 +16,7 @@ This is
 DIE
     if ($some_var) {
     print <<~EOF;
-            This is a here-doc
+        This is a here-doc
         EOF
 }
 
