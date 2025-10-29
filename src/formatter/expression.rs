@@ -11,34 +11,34 @@ impl Formatter {
                 self.format_anon_sub_expr_with_context(node, ctx);
             }
             SyntaxKind::FUNCTION_CALL_EXPR => {
-                self.format_function_call_expr(node);
+                self.format_function_call_expr(node, ctx);
             }
             SyntaxKind::BLOCK_FUNCTION_CALL_EXPR => {
                 self.format_block_function_call(node);
             }
             SyntaxKind::METHOD_CALL_EXPR => {
-                self.format_method_call(node);
+                self.format_method_call(node, ctx);
             }
             SyntaxKind::HASH_REF_ACCESS_EXPR => {
-                self.format_hash_ref_access(node);
+                self.format_hash_ref_access(node, ctx);
             }
             SyntaxKind::ARRAY_REF_ACCESS_EXPR => {
-                self.format_array_ref_access(node);
+                self.format_array_ref_access(node, ctx);
             }
             SyntaxKind::POSTFIX_ARRAY_SLICE_EXPR => {
-                self.format_postfix_slice_expr(node, SyntaxKind::ARRAY_SIGIL);
+                self.format_postfix_slice_expr(node, SyntaxKind::ARRAY_SIGIL, ctx);
             }
             SyntaxKind::POSTFIX_HASH_SLICE_EXPR => {
-                self.format_postfix_slice_expr(node, SyntaxKind::HASH_SIGIL);
+                self.format_postfix_slice_expr(node, SyntaxKind::HASH_SIGIL, ctx);
             }
             SyntaxKind::CODE_REF_CALL_EXPR => {
-                self.format_code_ref_call(node);
+                self.format_code_ref_call(node, ctx);
             }
             SyntaxKind::HASH_SUBSCRIPTION_EXPR => {
-                self.format_hash_subscription(node);
+                self.format_hash_subscription(node, ctx);
             }
             SyntaxKind::ARRAY_SUBSCRIPTION_EXPR => {
-                self.format_array_subscription(node);
+                self.format_array_subscription(node, ctx);
             }
             SyntaxKind::COMPOUND_VAR => {
                 self.format_compound_var(node);
@@ -54,7 +54,7 @@ impl Formatter {
             }
             _ => {
                 if self.should_use_parenthesized_formatter(node) {
-                    self.format_parenthesized_expr(node);
+                    self.format_parenthesized_expr(node, ctx);
                 } else {
                     self.format_children(node, false);
                 }
@@ -63,7 +63,7 @@ impl Formatter {
     }
 
     /// Format function call expressions, handling special spacing for complex sigil expressions
-    fn format_function_call_expr(&mut self, node: &PerlNode) {
+    fn format_function_call_expr(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         let mut children = node.children_with_tokens();
 
         // Check if the first child is a COMPOUND_VAR starting with CODE_SIGIL
@@ -79,22 +79,26 @@ impl Formatter {
             // Format complex code sigil expressions like &{$coderef}(1,2,3) without space before (
             if let Some(first_child) = first_child {
                 match first_child {
-                    NodeOrToken::Node(child_node) => self.format_node(&child_node),
-                    NodeOrToken::Token(token) => self.format_token(&token),
+                    NodeOrToken::Node(child_node) => {
+                        self.format_node_with_context(&child_node, ctx)
+                    }
+                    NodeOrToken::Token(token) => self.format_token_with_context(&token, ctx),
                 }
             }
 
             // Format the rest without adding spaces before L_PAREN
             for child in children {
                 match child {
-                    NodeOrToken::Node(child_node) => self.format_node(&child_node),
+                    NodeOrToken::Node(child_node) => {
+                        self.format_node_with_context(&child_node, ctx)
+                    }
                     NodeOrToken::Token(token) => {
                         if token.kind() == T!['('] {
                             // Force no space before this L_PAREN by writing it directly
                             self.writer.write_str("(", Some(T!['(']), None);
                             self.remember_token(&token);
                         } else {
-                            self.format_token(&token);
+                            self.format_token_with_context(&token, ctx);
                         }
                     }
                 }
@@ -102,9 +106,9 @@ impl Formatter {
         } else {
             // For regular function calls, use the default parenthesized formatter logic
             if self.should_use_parenthesized_formatter(node) {
-                self.format_parenthesized_expr(node);
+                self.format_parenthesized_expr(node, ctx);
             } else {
-                self.format_children(node, false);
+                self.format_children_with_options(node, ctx, false, false);
             }
         }
     }
@@ -140,11 +144,16 @@ impl Formatter {
             }
         }
     }
-    pub(super) fn format_parenthesized_expr(&mut self, node: &PerlNode) {
+    pub(super) fn format_parenthesized_expr(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         // Check if the parenthesized expression contains newlines
         if self.has_newline_before_first_value(node) {
             // Use multiline formatting for expressions with newlines
-            self.format_multiline_delimited_elements(node.children_with_tokens(), T!['('], T![')']);
+            self.format_multiline_delimited_elements_with_context(
+                node.children_with_tokens(),
+                T!['('],
+                T![')'],
+                ctx,
+            );
         } else {
             // Use single-line formatting with contextual spacing for compact expressions
             self.format_single_line_delimited_children(node, T!['('], T![')'], true);
@@ -184,7 +193,7 @@ impl Formatter {
         }
     }
 
-    pub(super) fn format_method_call(&mut self, node: &PerlNode) {
+    pub(super) fn format_method_call(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         // Collect all children first to handle trailing newlines
         let all_children: Vec<_> = node.children_with_tokens().collect();
         let mut children_iter = all_children.iter();
@@ -192,10 +201,10 @@ impl Formatter {
         // Format until arrow
         for child in children_iter.by_ref() {
             match child {
-                NodeOrToken::Node(n) => self.format_node(n),
+                NodeOrToken::Node(n) => self.format_node_with_context(n, ctx),
                 NodeOrToken::Token(token) if token.kind() == SyntaxKind::WHITESPACE => {}
                 NodeOrToken::Token(token) => {
-                    self.format_token(token);
+                    self.format_token_with_context(token, ctx);
                     if token.kind() == T![->] {
                         break;
                     }
@@ -207,14 +216,14 @@ impl Formatter {
         for child in children_iter.by_ref() {
             match child {
                 NodeOrToken::Node(n) => {
-                    self.format_node(n);
+                    self.format_node_with_context(n, ctx);
                     break;
                 }
                 NodeOrToken::Token(token) => {
                     if token.kind() == SyntaxKind::WHITESPACE {
                         continue;
                     }
-                    self.format_token(token);
+                    self.format_token_with_context(token, ctx);
                     break;
                 }
             }
@@ -243,8 +252,8 @@ impl Formatter {
             // Format any remaining elements (newlines after closing paren)
             for child in &remaining[end_idx + 1..] {
                 match child {
-                    NodeOrToken::Node(n) => self.format_node(n),
-                    NodeOrToken::Token(token) => self.format_token(token),
+                    NodeOrToken::Node(n) => self.format_node_with_context(n, ctx),
+                    NodeOrToken::Token(token) => self.format_token_with_context(token, ctx),
                 }
             }
         }
@@ -257,14 +266,18 @@ impl Formatter {
         iter.any(|element| element.as_token().map(|t| t.kind()) == Some(SyntaxKind::NEWLINE))
     }
 
-    fn format_until_arrow_iter(&mut self, iter: &mut SyntaxElementChildren<PerlLanguage>) {
+    fn format_until_arrow_iter(
+        &mut self,
+        iter: &mut SyntaxElementChildren<PerlLanguage>,
+        ctx: super::FormatContext,
+    ) {
         for child in iter {
             match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Node(node) => self.format_node_with_context(&node, ctx),
                 NodeOrToken::Token(token) if token.kind() == SyntaxKind::WHITESPACE => {}
                 NodeOrToken::Token(token) => {
                     // Use format_token to ensure proper spacing is applied
-                    self.format_token(&token);
+                    self.format_token_with_context(&token, ctx);
 
                     if token.kind() == T![->] {
                         break;
@@ -280,9 +293,10 @@ impl Formatter {
         iter: SyntaxElementChildren<PerlLanguage>,
         opening: SyntaxKind,
         closing: SyntaxKind,
+        ctx: super::FormatContext,
     ) {
         if self.has_newline_before_first_value_iter(iter.clone()) {
-            self.format_multiline_delimited_elements(iter, opening, closing);
+            self.format_multiline_delimited_elements_with_context(iter, opening, closing, ctx);
         } else {
             let elements: Vec<_> = iter.collect();
             self.format_single_line_delimited_elements(elements, opening, closing, true);
@@ -294,15 +308,21 @@ impl Formatter {
         node: &PerlNode,
         opening: SyntaxKind,
         closing: SyntaxKind,
+        ctx: super::FormatContext,
     ) {
         let mut children = node.children_with_tokens();
-        self.format_until_arrow_iter(children.by_ref());
-        self.format_subscription_iter(children, opening, closing);
+        self.format_until_arrow_iter(children.by_ref(), ctx);
+        self.format_subscription_iter(children, opening, closing, ctx);
     }
 
-    fn format_postfix_slice_expr(&mut self, node: &PerlNode, sigil_kind: SyntaxKind) {
+    fn format_postfix_slice_expr(
+        &mut self,
+        node: &PerlNode,
+        sigil_kind: SyntaxKind,
+        ctx: super::FormatContext,
+    ) {
         let mut children = node.children_with_tokens();
-        self.format_until_arrow_iter(children.by_ref());
+        self.format_until_arrow_iter(children.by_ref(), ctx);
 
         for child in children.by_ref() {
             match child {
@@ -310,10 +330,10 @@ impl Formatter {
                     if token.kind() == SyntaxKind::WHITESPACE {
                         continue;
                     }
-                    self.format_token(&token);
+                    self.format_token_with_context(&token, ctx);
                 }
                 NodeOrToken::Node(child_node) => {
-                    self.format_node(&child_node);
+                    self.format_node_with_context(&child_node, ctx);
                 }
             }
             break;
@@ -350,19 +370,19 @@ impl Formatter {
             }
         }
 
-        self.format_subscription_iter(children, opening, closing);
+        self.format_subscription_iter(children, opening, closing, ctx);
     }
 
-    pub(super) fn format_hash_ref_access(&mut self, node: &PerlNode) {
-        self.format_ref_access_expr(node, T!['{'], T!['}']);
+    pub(super) fn format_hash_ref_access(&mut self, node: &PerlNode, ctx: super::FormatContext) {
+        self.format_ref_access_expr(node, T!['{'], T!['}'], ctx);
     }
 
-    pub(super) fn format_array_ref_access(&mut self, node: &PerlNode) {
-        self.format_ref_access_expr(node, T!['['], T![']']);
+    pub(super) fn format_array_ref_access(&mut self, node: &PerlNode, ctx: super::FormatContext) {
+        self.format_ref_access_expr(node, T!['['], T![']'], ctx);
     }
 
-    pub(super) fn format_code_ref_call(&mut self, node: &PerlNode) {
-        self.format_ref_access_expr(node, T!['('], T![')']);
+    pub(super) fn format_code_ref_call(&mut self, node: &PerlNode, ctx: super::FormatContext) {
+        self.format_ref_access_expr(node, T!['('], T![')'], ctx);
     }
 
     pub(super) fn format_compound_var(&mut self, node: &PerlNode) {
@@ -416,22 +436,14 @@ impl Formatter {
         self.format_single_line_delimited_children_with_context(node, T!['{'], T!['}'], true, ctx);
     }
 
-    fn format_subscription_expr(
-        &mut self,
-        node: &PerlNode,
-        opening: SyntaxKind,
-        closing: SyntaxKind,
-    ) {
+    pub(super) fn format_hash_subscription(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         let children = node.children_with_tokens();
-        self.format_subscription_iter(children, opening, closing);
+        self.format_subscription_iter(children, T!['{'], T!['}'], ctx);
     }
 
-    pub(super) fn format_hash_subscription(&mut self, node: &PerlNode) {
-        self.format_subscription_expr(node, T!['{'], T!['}']);
-    }
-
-    pub(super) fn format_array_subscription(&mut self, node: &PerlNode) {
-        self.format_subscription_expr(node, T!['['], T![']']);
+    pub(super) fn format_array_subscription(&mut self, node: &PerlNode, ctx: super::FormatContext) {
+        let children = node.children_with_tokens();
+        self.format_subscription_iter(children, T!['['], T![']'], ctx);
     }
 
     pub(super) fn format_sub_prototype(&mut self, node: &PerlNode) {

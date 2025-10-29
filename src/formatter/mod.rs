@@ -367,11 +367,11 @@ impl Formatter {
                 // Default child iteration will handle the semicolon token
             }
             SyntaxKind::HASH_REF => {
-                self.format_hash_ref(node);
+                self.format_hash_ref(node, ctx);
                 return;
             }
             SyntaxKind::ARRAY_REF => {
-                self.format_array_ref(node);
+                self.format_array_ref(node, ctx);
                 return;
             }
             SyntaxKind::QW_EXPR
@@ -449,7 +449,7 @@ impl Formatter {
             }
             _ => {
                 if self.should_use_parenthesized_formatter(node) {
-                    self.format_parenthesized_expr(node);
+                    self.format_parenthesized_expr(node, ctx);
                     return;
                 }
             }
@@ -491,7 +491,7 @@ impl Formatter {
                     if skip_whitespace && token.kind() == SyntaxKind::WHITESPACE {
                         continue;
                     }
-                    if self.try_format_multiline_parens(&token, &mut children) {
+                    if self.try_format_multiline_parens(&token, &mut children, ctx) {
                         continue;
                     }
                     self.format_token_with_context(&token, ctx);
@@ -757,6 +757,7 @@ impl Formatter {
         &mut self,
         token: &SyntaxToken<PerlLanguage>,
         children: &mut SyntaxElementChildren<PerlLanguage>,
+        ctx: FormatContext,
     ) -> bool {
         if token.kind() == T!['('] {
             if let Some((take_count, has_immediate_newline)) =
@@ -765,7 +766,12 @@ impl Formatter {
                 if has_immediate_newline {
                     let range_iter = std::iter::once(NodeOrToken::Token(token.clone()))
                         .chain(children.by_ref().take(take_count));
-                    self.format_multiline_delimited_elements(range_iter, T!['('], T![')']);
+                    self.format_multiline_delimited_elements_with_context(
+                        range_iter,
+                        T!['('],
+                        T![')'],
+                        ctx,
+                    );
                     return true;
                 }
             }

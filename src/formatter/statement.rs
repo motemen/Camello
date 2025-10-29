@@ -41,7 +41,11 @@ impl Formatter {
 
             // Check for multiline parentheses
             if let NodeOrToken::Token(token) = &child {
-                if self.try_format_multiline_parens(token, &mut children) {
+                if self.try_format_multiline_parens(
+                    token,
+                    &mut children,
+                    super::FormatContext::default(),
+                ) {
                     continue;
                 }
             }
@@ -265,7 +269,11 @@ impl Formatter {
         while let Some(child) = children.next() {
             // Check for multiline parentheses
             if let NodeOrToken::Token(token) = &child {
-                if self.try_format_multiline_parens(token, &mut children) {
+                if self.try_format_multiline_parens(
+                    token,
+                    &mut children,
+                    super::FormatContext::default(),
+                ) {
                     continue;
                 }
             }
