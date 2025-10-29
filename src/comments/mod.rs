@@ -214,10 +214,10 @@ impl TriviaTable {
         }
 
         if let (Some(entry_idx), Some(owner_key)) = (previous_entry, previous_key) {
-            if !pending_leading.is_empty() {
-                pending_trailing.append(&mut pending_leading);
-            }
+            // Attach any trivia on the same line as the last token as trailing.
             table.attach_trailing(entry_idx, owner_key, &mut pending_trailing);
+            // Any trivia after the last token and a newline is unowned.
+            table.unowned_trivia.append(&mut pending_leading);
         } else {
             // No non-trivia tokens found - store all pending trivia as unowned
             table.unowned_trivia.append(&mut pending_leading);
