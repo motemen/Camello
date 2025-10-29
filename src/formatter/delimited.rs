@@ -12,22 +12,6 @@ impl Formatter {
         opening: SyntaxKind,
         closing: SyntaxKind,
         skip_whitespace: bool,
-    ) {
-        self.format_single_line_delimited_children_with_context(
-            node,
-            opening,
-            closing,
-            skip_whitespace,
-            FormatContext::default(),
-        );
-    }
-
-    pub(super) fn format_single_line_delimited_children_with_context(
-        &mut self,
-        node: &PerlNode,
-        opening: SyntaxKind,
-        closing: SyntaxKind,
-        skip_whitespace: bool,
         ctx: FormatContext,
     ) {
         let elements: Vec<_> = node.children_with_tokens().collect();
@@ -162,7 +146,7 @@ impl Formatter {
         for (index, element) in elements.into_iter().enumerate() {
             match element {
                 NodeOrToken::Node(node) => {
-                    self.format_node_with_context(&node, ctx);
+                    self.format_node(&node, ctx);
                 }
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
@@ -191,7 +175,7 @@ impl Formatter {
                     } else if skip_whitespace && kind == WHITESPACE {
                         continue;
                     } else {
-                        self.format_token_with_context(&token, ctx);
+                        self.format_token(&token, ctx);
                     }
                 }
             }
@@ -206,12 +190,12 @@ impl Formatter {
     ) {
         for element in elements {
             match element {
-                NodeOrToken::Node(node) => self.format_node_with_context(&node, ctx),
+                NodeOrToken::Node(node) => self.format_node(&node, ctx),
                 NodeOrToken::Token(token) => {
                     if skip_whitespace && token.kind() == SyntaxKind::WHITESPACE {
                         continue;
                     }
-                    self.format_token_with_context(&token, ctx);
+                    self.format_token(&token, ctx);
                 }
             }
         }
@@ -284,21 +268,6 @@ impl Formatter {
         elements: impl IntoIterator<Item = SyntaxElement<PerlLanguage>>,
         open_delimiter: SyntaxKind,
         close_delimiter: SyntaxKind,
-    ) {
-        let ctx = super::FormatContext::default().with_multiline_context();
-        self.format_multiline_delimited_elements_with_context(
-            elements,
-            open_delimiter,
-            close_delimiter,
-            ctx,
-        );
-    }
-
-    pub(super) fn format_multiline_delimited_elements_with_context(
-        &mut self,
-        elements: impl IntoIterator<Item = SyntaxElement<PerlLanguage>>,
-        open_delimiter: SyntaxKind,
-        close_delimiter: SyntaxKind,
         ctx: super::FormatContext,
     ) {
         let ctx = ctx.with_multiline_context();
@@ -312,9 +281,9 @@ impl Formatter {
                     match kind {
                         SyntaxKind::EXPR_LIST => {
                             // Special handling for expression lists inside delimiters
-                            self.format_expr_list_multiline_iter_with_context(node, ctx);
+                            self.format_expr_list_multiline_iter(node, ctx);
                         }
-                        _ => self.format_node_with_context(node, ctx),
+                        _ => self.format_node(node, ctx),
                     }
                 }
                 NodeOrToken::Token(token) => {
@@ -326,7 +295,7 @@ impl Formatter {
                         }
                         SyntaxKind::NEWLINE => {
                             // Preserve user-provided newlines
-                            self.format_token_with_context(token, ctx);
+                            self.format_token(token, ctx);
                         }
                         k if k == open_delimiter => {
                             self.handle_spacing_before(kind);
@@ -361,7 +330,7 @@ impl Formatter {
                         }
                         _ => {
                             // その他のトークンは通常通り処理
-                            self.format_token_with_context(token, ctx);
+                            self.format_token(token, ctx);
                         }
                     }
                 }
@@ -369,11 +338,7 @@ impl Formatter {
         }
     }
 
-    fn format_expr_list_multiline_iter_with_context(
-        &mut self,
-        list: &PerlNode,
-        ctx: super::FormatContext,
-    ) {
+    fn format_expr_list_multiline_iter(&mut self, list: &PerlNode, ctx: super::FormatContext) {
         let ctx = ctx.with_multiline_context();
         let elements: Vec<_> = list.children_with_tokens().collect();
 
@@ -387,7 +352,7 @@ impl Formatter {
 
         for (index, child) in elements.iter().enumerate() {
             match child {
-                NodeOrToken::Node(node) => self.format_node_with_context(node, ctx),
+                NodeOrToken::Node(node) => self.format_node(node, ctx),
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
 
@@ -397,10 +362,10 @@ impl Formatter {
                         }
                         SyntaxKind::NEWLINE => {
                             // Preserve user-provided newlines
-                            self.format_token_with_context(token, ctx);
+                            self.format_token(token, ctx);
                         }
                         T![,] => {
-                            self.format_token_with_context(token, ctx);
+                            self.format_token(token, ctx);
 
                             // Only add automatic newline if user hasn't provided one
                             let has_user_newline_after = elements
@@ -422,7 +387,7 @@ impl Formatter {
                         }
                         _ => {
                             // その他のトークンは通常通り処理
-                            self.format_token_with_context(token, ctx);
+                            self.format_token(token, ctx);
                         }
                     }
                 }
@@ -471,7 +436,7 @@ impl Formatter {
         formatter
             .writer
             .set_indent_level(self.writer.indent_level());
-        formatter.format_node(list);
+        formatter.format_node(list, FormatContext::default());
         let mut filtered = Vec::new();
         for column in formatter
             .writer
