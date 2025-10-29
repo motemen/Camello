@@ -269,45 +269,33 @@ impl<'a> Parser<'a> {
         self.expect_with_context(expected, LexContext::Operator);
     }
 
-    fn skip_whitespace(&mut self) {
+    fn consume_trivia(&mut self, include_newlines: bool) {
         while let Some((kind, _)) = self.lexer.peek_token() {
-            match kind {
+            let should_consume = matches!(
+                kind,
                 SyntaxKind::WHITESPACE
-                | SyntaxKind::COMMENT
-                | SyntaxKind::HEREDOC_CONTENT
-                | SyntaxKind::HEREDOC_END => {
-                    if let Some((k, t)) = self.lexer.next_token() {
-                        self.builder.token(k.into(), t);
-                        self.current_pos += t.len();
-                    }
-                }
-                _ => break,
+                    | SyntaxKind::COMMENT
+                    | SyntaxKind::HEREDOC_CONTENT
+                    | SyntaxKind::HEREDOC_END
+            ) || (include_newlines && kind == SyntaxKind::NEWLINE);
+
+            if !should_consume {
+                break;
+            }
+
+            if let Some((k, t)) = self.lexer.next_token() {
+                self.builder.token(k.into(), t);
+                self.current_pos += t.len();
             }
         }
     }
 
-    fn skip_newlines(&mut self) {
-        while let Some((kind, _)) = self.lexer.peek_token() {
-            if kind == SyntaxKind::NEWLINE {
-                if let Some((k, t)) = self.lexer.next_token() {
-                    self.builder.token(k.into(), t);
-                    self.current_pos += t.len();
-                }
-            } else {
-                break;
-            }
-        }
+    fn skip_whitespace(&mut self) {
+        self.consume_trivia(false);
     }
 
     fn skip_whitespace_and_newlines(&mut self) {
-        loop {
-            let before = self.current_pos;
-            self.skip_whitespace();
-            self.skip_newlines();
-            if self.current_pos == before {
-                break;
-            }
-        }
+        self.consume_trivia(true);
     }
 
     fn error(&mut self, message: &str) {
