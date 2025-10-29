@@ -12,6 +12,7 @@ sub demo_alignment {
         some_long_expression();
 
     my $delta = 3;
+
     # comment should break grouping
 
     my $epsilon_extra = 4;
