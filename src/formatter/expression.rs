@@ -5,10 +5,10 @@ use crate::{PerlLanguage, PerlNode, SyntaxKind, T};
 use super::Formatter;
 
 impl Formatter {
-    pub(super) fn format_expr(&mut self, node: &PerlNode) {
+    pub(super) fn format_expr_with_context(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         match node.kind() {
             SyntaxKind::ANON_SUB_EXPR => {
-                self.format_anon_sub_expr(node);
+                self.format_anon_sub_expr_with_context(node, ctx);
             }
             SyntaxKind::FUNCTION_CALL_EXPR => {
                 self.format_function_call_expr(node);
@@ -109,7 +109,11 @@ impl Formatter {
         }
     }
 
-    pub(super) fn format_anon_sub_expr(&mut self, node: &PerlNode) {
+    pub(super) fn format_anon_sub_expr_with_context(
+        &mut self,
+        node: &PerlNode,
+        ctx: super::FormatContext,
+    ) {
         // Format anonymous subroutine: sub { ... }
         // Use K&R style like regular subroutines: space before opening brace
 
@@ -131,7 +135,7 @@ impl Formatter {
                     }
                 }
                 NodeOrToken::Token(token) => {
-                    self.format_token(&token);
+                    self.format_token_with_context(&token, ctx);
                 }
             }
         }
@@ -586,20 +590,11 @@ impl Formatter {
     }
 
     pub(super) fn format_children(&mut self, node: &PerlNode, skip_whitespace: bool) {
-        for child in node.children_with_tokens() {
-            match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
-                NodeOrToken::Token(token) => {
-                    let kind = token.kind();
-
-                    if skip_whitespace && kind == SyntaxKind::WHITESPACE {
-                        // Skip whitespace if the flag is set
-                        continue;
-                    }
-
-                    self.format_token(&token);
-                }
-            }
-        }
+        self.format_children_with_options(
+            node,
+            super::FormatContext::default(),
+            skip_whitespace,
+            false,
+        );
     }
 }
