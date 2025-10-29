@@ -240,15 +240,13 @@ impl SyntaxKind {
     }
 
     /// Returns true if this token kind contains content that should be indented
-    /// when spanning multiple lines (heredocs, strings, etc.)
+    /// when spanning multiple lines (strings, etc.)
+    /// Note: HEREDOC_CONTENT is excluded as heredocs must preserve exact formatting
     #[must_use]
     pub fn is_content_token(self) -> bool {
         matches!(
             self,
-            SyntaxKind::HEREDOC_CONTENT
-                | SyntaxKind::STRING
-                | SyntaxKind::LITERAL_STRING
-                | SyntaxKind::INTERPOLATED_STRING
+            SyntaxKind::STRING | SyntaxKind::LITERAL_STRING | SyntaxKind::INTERPOLATED_STRING
         )
     }
 

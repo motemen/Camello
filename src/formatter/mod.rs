@@ -974,10 +974,30 @@ impl Formatter {
                 }
                 self.apply_alignment_padding(token);
                 self.writer.write_str(text.trim(), Some(kind), None);
-                self.writer.handle_user_newline();
+                // Note: Don't emit newline here - NEWLINE tokens now follow COMMENT tokens
                 self.remember_token(token);
             }
-            SyntaxKind::HEREDOC_CONTENT | SyntaxKind::HEREDOC_END => {
+            SyntaxKind::HEREDOC_START => {
+                // Write heredoc start marker
+                self.handle_spacing_before(kind);
+                if self.writer.at_line_start() {
+                    self.writer.add_indent();
+                    self.writer.set_at_line_start(false);
+                }
+                self.writer.write_token(token);
+                self.remember_token(token);
+            }
+            SyntaxKind::HEREDOC_CONTENT => {
+                // Ensure heredoc content starts on a new line
+                if !self.writer.at_line_start() {
+                    self.writer.handle_formatter_newline();
+                }
+                // Write heredoc content verbatim, without any formatting
+                self.writer.write_str(text, Some(kind), None);
+                self.remember_token(token);
+            }
+            SyntaxKind::HEREDOC_END => {
+                // Write heredoc end marker verbatim
                 self.writer.write_str(text, Some(kind), None);
                 self.remember_token(token);
             }
