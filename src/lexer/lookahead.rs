@@ -4,7 +4,7 @@ use super::{types::LexerMode, Lexer, Token};
 use crate::SyntaxKind;
 use std::collections::VecDeque;
 
-use super::types::{HeredocMarker, LexContext};
+use super::types::{HeredocMarker, LexContext, QuoteLikeMode};
 
 #[derive(Debug, Clone)]
 pub(super) struct LexerSnapshot<'a> {
@@ -200,5 +200,57 @@ impl<'a> Lexer<'a> {
         context: LexContext,
     ) -> Option<(SyntaxKind, &'a str)> {
         self.peek_nth_non_trivia_with_context(context, 0)
+    }
+
+    /// Creates an iterator over non-trivia tokens starting from the given offset.
+    ///
+    /// This method clones the lexer only once and iterates linearly, making it
+    /// more efficient than repeatedly peeking with incrementing offsets.
+    pub fn iter_non_trivia_from(
+        &self,
+        context: LexContext,
+        start_offset: usize,
+    ) -> Option<impl Iterator<Item = (SyntaxKind, &'a str)> + 'a> {
+        let mut temp_lexer = self.clone();
+
+        let (current_token, next_char) = self.peek_token_and_next_char();
+        if let (Some(current_kind), Some('#')) = (current_token, next_char) {
+            if current_kind.is_quote_like_keyword() {
+                let mode = QuoteLikeMode::from_keyword(current_kind);
+                temp_lexer.begin_quote_like(current_kind, mode);
+            }
+        }
+
+        let mut iter = NonTriviaIter {
+            lexer: temp_lexer,
+            context,
+        };
+
+        if start_offset > 0 {
+            for _ in 0..start_offset {
+                iter.next()?;
+            }
+        }
+
+        Some(iter)
+    }
+}
+
+struct NonTriviaIter<'a> {
+    lexer: Lexer<'a>,
+    context: LexContext,
+}
+
+impl<'a> Iterator for NonTriviaIter<'a> {
+    type Item = (SyntaxKind, &'a str);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match self.lexer.next_token_with_context(self.context) {
+                Some((kind, text)) if !kind.is_trivia() => return Some((kind, text)),
+                Some(_) => continue,
+                None => return None,
+            }
+        }
     }
 }
