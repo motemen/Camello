@@ -227,7 +227,18 @@ impl Formatter {
         }
 
         match node.kind() {
-            SCALAR_VAR | ARRAY_VAR | HASH_VAR | TYPEGLOB_VAR | PREFIX_EXPR => (1, false),
+            SCALAR_VAR | ARRAY_VAR | HASH_VAR | TYPEGLOB_VAR => (1, false),
+            PREFIX_EXPR => {
+                // A prefix expression is a single "element", but we need to check if it contains `qw`.
+                let contains_qw = node.descendants_with_tokens().any(|el| {
+                    let el_kind = match el {
+                        NodeOrToken::Node(n) => n.kind(),
+                        NodeOrToken::Token(t) => t.kind(),
+                    };
+                    matches!(el_kind, QW_EXPR | QW_KW | QW_STRING)
+                });
+                (1, contains_qw)
+            }
             _ => {
                 let is_qw_expr = node.kind() == QW_EXPR;
                 let mut count = 0;
