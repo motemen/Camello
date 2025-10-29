@@ -54,7 +54,7 @@ impl Formatter {
             }
             _ => {
                 if self.should_use_parenthesized_formatter(node) {
-                    self.format_parenthesized_expr(node);
+                    self.format_parenthesized_expr(node, ctx);
                 } else {
                     self.format_children(node, false);
                 }
@@ -106,7 +106,7 @@ impl Formatter {
         } else {
             // For regular function calls, use the default parenthesized formatter logic
             if self.should_use_parenthesized_formatter(node) {
-                self.format_parenthesized_expr(node);
+                self.format_parenthesized_expr(node, ctx);
             } else {
                 self.format_children_with_options(node, ctx, false, false);
             }
@@ -144,11 +144,16 @@ impl Formatter {
             }
         }
     }
-    pub(super) fn format_parenthesized_expr(&mut self, node: &PerlNode) {
+    pub(super) fn format_parenthesized_expr(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         // Check if the parenthesized expression contains newlines
         if self.has_newline_before_first_value(node) {
             // Use multiline formatting for expressions with newlines
-            self.format_multiline_delimited_elements(node.children_with_tokens(), T!['('], T![')']);
+            self.format_multiline_delimited_elements_with_context(
+                node.children_with_tokens(),
+                T!['('],
+                T![')'],
+                ctx,
+            );
         } else {
             // Use single-line formatting with contextual spacing for compact expressions
             self.format_single_line_delimited_children(node, T!['('], T![')'], true);
