@@ -29,7 +29,7 @@ impl Formatter {
         } else if ctx.suppress_newlines {
             self.format_elements_without_pairs(elements, skip_whitespace, ctx);
         } else {
-            self.format_children(node, skip_whitespace);
+            self.format_children(node, skip_whitespace, ctx);
         }
     }
 
