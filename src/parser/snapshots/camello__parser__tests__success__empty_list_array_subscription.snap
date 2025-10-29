@@ -1,9 +1,11 @@
 ---
 source: src/parser/mod.rs
+assertion_line: 508
 expression: render_success_tree(&syntax)
 ---
 ROOT@0..52
-  COMMENT@0..46 "# Empty list with arr ..."
+  COMMENT@0..45 "# Empty list with arr ..."
+  NEWLINE@45..46 "\n"
   STMT@46..52
     ARRAY_SUBSCRIPTION_EXPR@46..51
       L_PAREN@46..47 "("
