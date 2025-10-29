@@ -1,0 +1,33 @@
+---
+source: src/formatter/tests.rs
+expression: formatted
+---
+# Array slice with trailing comma
+@a[ 1, 2, ];
+@a[ 1, 2, 3, ];
+
+# Hash slice with trailing comma
+@h{ a, b, };
+@h{ key1, key2, key3, };
+
+# Function call with trailing comma
+func(1, 2, );
+func($x, $y, $z, );
+
+# List with trailing comma
+(1, 2,);
+($a, $b, $c,);
+
+# Hash construction with trailing comma
+my %h    = (a => 1, b => 2,);
+my %hash = (
+    foo => 1,
+    bar => 2,
+);
+
+# Array ref with trailing comma
+my $arr   = [ 1, 2, ];
+my $array = [
+    1,
+    2,
+];
