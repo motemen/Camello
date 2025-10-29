@@ -286,6 +286,10 @@ impl<'a> Parser<'a> {
             if let Some((k, t)) = self.lexer.next_token() {
                 self.builder.token(k.into(), t);
                 self.current_pos += t.len();
+            } else {
+                // This case should be unreachable if peek_token() is consistent,
+                // but breaking here prevents a potential infinite loop.
+                unreachable!("peek_token() returned Some but next_token() returned None");
             }
         }
     }
