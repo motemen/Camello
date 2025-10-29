@@ -150,8 +150,9 @@ impl Parser<'_> {
         if looks_like_hash {
             // Use the iterator helper to avoid O(N²) complexity
             // Scan the contents looking for a semicolon
-            if let Some(iter) =
-                self.iter_non_trivia_tokens_from(LexContext::Value, brace_offset + 1)
+            if let Some(iter) = self
+                .lexer
+                .iter_non_trivia_from(LexContext::Value, brace_offset + 1)
             {
                 let mut brace_depth = 0;
 
@@ -464,7 +465,7 @@ impl Parser<'_> {
         let mut name = self.current_text_value()?.to_string();
 
         // Use iterator helper to avoid O(N²) complexity
-        if let Some(mut iter) = self.iter_non_trivia_tokens_from(LexContext::Value, 1) {
+        if let Some(mut iter) = self.lexer.iter_non_trivia_from(LexContext::Value, 1) {
             while let Some((kind, _)) = iter.next() {
                 if kind != T![::] {
                     break;

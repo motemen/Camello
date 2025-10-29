@@ -144,7 +144,7 @@ impl Parser<'_> {
     }
 
     pub(crate) fn looks_like_sub_signature_parens(&self) -> bool {
-        let mut iter = match self.iter_non_trivia_tokens_from(LexContext::Value, 0) {
+        let mut iter = match self.lexer.iter_non_trivia_from(LexContext::Value, 0) {
             Some(iter) => iter.peekable(),
             None => return false,
         };
