@@ -3,6 +3,7 @@ source: src/formatter/tests.rs
 expression: formatted
 ---
 # try as a function (Try::Tiny style)
+
 try {
     do_something();
 };

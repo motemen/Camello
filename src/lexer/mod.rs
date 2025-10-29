@@ -41,6 +41,24 @@ mod tests {
     }
 
     #[test]
+    fn comment_and_newline_are_emitted_separately() {
+        let mut lexer = Lexer::new("# first\n# second\n");
+
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::COMMENT, "# first")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::NEWLINE, "\n")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::COMMENT, "# second")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::NEWLINE, "\n")));
+        assert_eq!(lexer.next_token(), None);
+
+        let mut lexer = Lexer::new("# lone comment");
+        assert_eq!(
+            lexer.next_token(),
+            Some((SyntaxKind::COMMENT, "# lone comment"))
+        );
+        assert_eq!(lexer.next_token(), None);
+    }
+
+    #[test]
     fn array_index_variable_allows_quote_keywords_as_names() {
         let mut lexer = Lexer::new("$#q");
 

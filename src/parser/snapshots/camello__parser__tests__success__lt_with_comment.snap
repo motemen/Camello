@@ -1,5 +1,6 @@
 ---
 source: src/parser/mod.rs
+assertion_line: 508
 expression: render_success_tree(&syntax)
 ---
 ROOT@0..12
@@ -11,4 +12,5 @@ ROOT@0..12
         WHITESPACE@4..5 " "
       LT@5..6 "<"
       IDENT@6..9 "foo"
-      COMMENT@9..12 "#>\n"
+      COMMENT@9..11 "#>"
+      NEWLINE@11..12 "\n"
