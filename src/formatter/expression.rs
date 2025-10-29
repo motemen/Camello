@@ -11,7 +11,7 @@ impl Formatter {
                 self.format_anon_sub_expr_with_context(node, ctx);
             }
             SyntaxKind::FUNCTION_CALL_EXPR => {
-                self.format_function_call_expr(node);
+                self.format_function_call_expr(node, ctx);
             }
             SyntaxKind::BLOCK_FUNCTION_CALL_EXPR => {
                 self.format_block_function_call(node);
@@ -63,7 +63,7 @@ impl Formatter {
     }
 
     /// Format function call expressions, handling special spacing for complex sigil expressions
-    fn format_function_call_expr(&mut self, node: &PerlNode) {
+    fn format_function_call_expr(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         let mut children = node.children_with_tokens();
 
         // Check if the first child is a COMPOUND_VAR starting with CODE_SIGIL
@@ -79,22 +79,26 @@ impl Formatter {
             // Format complex code sigil expressions like &{$coderef}(1,2,3) without space before (
             if let Some(first_child) = first_child {
                 match first_child {
-                    NodeOrToken::Node(child_node) => self.format_node(&child_node),
-                    NodeOrToken::Token(token) => self.format_token(&token),
+                    NodeOrToken::Node(child_node) => {
+                        self.format_node_with_context(&child_node, ctx)
+                    }
+                    NodeOrToken::Token(token) => self.format_token_with_context(&token, ctx),
                 }
             }
 
             // Format the rest without adding spaces before L_PAREN
             for child in children {
                 match child {
-                    NodeOrToken::Node(child_node) => self.format_node(&child_node),
+                    NodeOrToken::Node(child_node) => {
+                        self.format_node_with_context(&child_node, ctx)
+                    }
                     NodeOrToken::Token(token) => {
                         if token.kind() == T!['('] {
                             // Force no space before this L_PAREN by writing it directly
                             self.writer.write_str("(", Some(T!['(']), None);
                             self.remember_token(&token);
                         } else {
-                            self.format_token(&token);
+                            self.format_token_with_context(&token, ctx);
                         }
                     }
                 }
@@ -104,7 +108,7 @@ impl Formatter {
             if self.should_use_parenthesized_formatter(node) {
                 self.format_parenthesized_expr(node);
             } else {
-                self.format_children(node, false);
+                self.format_children_with_options(node, ctx, false, false);
             }
         }
     }
