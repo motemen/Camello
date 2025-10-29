@@ -426,23 +426,18 @@ impl Formatter {
         self.format_single_line_delimited_children_with_context(node, T!['{'], T!['}'], true, ctx);
     }
 
-    fn format_subscription_expr(
+    pub(super) fn format_hash_subscription(&mut self, node: &PerlNode, _ctx: super::FormatContext) {
+        let children = node.children_with_tokens();
+        self.format_subscription_iter(children, T!['{'], T!['}']);
+    }
+
+    pub(super) fn format_array_subscription(
         &mut self,
         node: &PerlNode,
-        opening: SyntaxKind,
-        closing: SyntaxKind,
         _ctx: super::FormatContext,
     ) {
         let children = node.children_with_tokens();
-        self.format_subscription_iter(children, opening, closing);
-    }
-
-    pub(super) fn format_hash_subscription(&mut self, node: &PerlNode, ctx: super::FormatContext) {
-        self.format_subscription_expr(node, T!['{'], T!['}'], ctx);
-    }
-
-    pub(super) fn format_array_subscription(&mut self, node: &PerlNode, ctx: super::FormatContext) {
-        self.format_subscription_expr(node, T!['['], T![']'], ctx);
+        self.format_subscription_iter(children, T!['['], T![']']);
     }
 
     pub(super) fn format_sub_prototype(&mut self, node: &PerlNode) {
