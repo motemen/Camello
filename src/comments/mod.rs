@@ -1,16 +1,17 @@
-//! Comment ownership and placement modeling.
+//! Comment and trivia ownership modeling.
 //!
-//! This module provides reusable data structures that describe how raw comment
-//! tokens in the syntax tree relate to surrounding nodes or tokens.  The
-//! formatter can use these structures to decide where each comment should be
-//! rendered, but other components (such as future lint passes) can also consume
-//! the same information without depending on formatter internals.
+//! This module performs a single linear pass over the token stream to assign
+//! trivia (comments, whitespace, and newlines) to their surrounding tokens. For
+//! each non-trivia token we record the trivia that precedes it (leading trivia)
+//! as well as the trivia that trails it on the same line (trailing trivia). A
+//! newline acts as the split point: trivia before the first newline belongs to
+//! the trailing side of the previous token, while the newline itself and any
+//! following trivia are associated with the leading side of the next token.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 use crate::{PerlLanguage, SyntaxKind};
-use rowan::ast::SyntaxNodePtr;
-use rowan::{NodeOrToken, SyntaxNode, SyntaxToken, TextRange, WalkEvent};
+use rowan::{SyntaxNode, SyntaxToken, TextRange};
 
 /// A stable identifier for a token inside a syntax tree.
 ///
@@ -67,713 +68,311 @@ impl TokenKey {
     }
 }
 
-/// Identifier for a comment token.
+/// A piece of trivia (whitespace, newline, or comment) that belongs to a token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct CommentId(TokenKey);
+pub struct TriviaPiece {
+    key: TokenKey,
+}
 
-impl CommentId {
-    /// Attempts to create a comment identifier from the provided token.
+impl TriviaPiece {
     #[must_use]
-    pub fn from_token(token: &SyntaxToken<PerlLanguage>) -> Option<Self> {
-        if token.kind() == SyntaxKind::COMMENT {
-            Some(Self(TokenKey::from_token(token)))
-        } else {
-            None
-        }
-    }
-
-    /// Attempts to create a comment identifier from a token key.
-    #[must_use]
-    pub fn from_token_key(key: TokenKey) -> Option<Self> {
-        if key.kind == SyntaxKind::COMMENT {
-            Some(Self(key))
-        } else {
-            None
-        }
+    pub fn new(key: TokenKey) -> Self {
+        Self { key }
     }
 
     /// Returns the underlying token key.
     #[must_use]
     pub fn token_key(self) -> TokenKey {
-        self.0
+        self.key
     }
 
-    /// Convenience accessor for the covered text range.
+    /// Returns the kind of trivia represented by this piece.
     #[must_use]
-    pub fn text_range(self) -> TextRange {
-        self.0.text_range()
+    pub fn kind(self) -> SyntaxKind {
+        self.key.kind()
     }
 
-    /// Resolves this identifier back to the concrete comment token.
+    /// Resolves the trivia piece back to the concrete token inside `root`.
     #[must_use]
     pub fn resolve(self, root: &SyntaxNode<PerlLanguage>) -> Option<SyntaxToken<PerlLanguage>> {
-        self.0.resolve(root)
+        self.key.resolve(root)
     }
 }
 
-/// Identifier for a comment block consisting of one or more consecutive comment tokens.
+/// Describes which token owns a trivia piece.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct CommentBlockId(usize);
-
-impl CommentBlockId {
-    /// Returns the underlying index for this block.
-    #[must_use]
-    pub fn as_usize(self) -> usize {
-        self.0
-    }
+pub enum TriviaPosition {
+    Leading(TokenKey),
+    Trailing(TokenKey),
 }
 
-/// A contiguous run of comment tokens that should be treated as a single block.
-#[derive(Debug, Clone)]
-pub struct CommentBlock {
-    id: CommentBlockId,
-    comments: Vec<CommentId>,
-}
-
-impl CommentBlock {
-    fn new(id: CommentBlockId, comments: Vec<CommentId>) -> Self {
-        debug_assert!(!comments.is_empty(), "comment block must contain comments");
-        Self { id, comments }
-    }
-
-    /// Returns the identifier of this block.
+impl TriviaPosition {
+    /// Returns the owning token key.
     #[must_use]
-    pub fn id(&self) -> CommentBlockId {
-        self.id
-    }
-
-    /// Returns the comments contained in this block.
-    #[must_use]
-    pub fn comments(&self) -> &[CommentId] {
-        &self.comments
-    }
-
-    /// Returns the first comment contained in this block.
-    #[must_use]
-    pub fn first_comment(&self) -> Option<CommentId> {
-        self.comments.first().copied()
-    }
-
-    /// Returns `true` if the block contains the specified comment identifier.
-    #[must_use]
-    pub fn contains(&self, id: CommentId) -> bool {
-        self.comments.contains(&id)
-    }
-}
-
-#[derive(Debug, Clone)]
-struct BlockSummary {
-    block: CommentBlockId,
-    prev_token: Option<TokenKey>,
-    had_newline_before: bool,
-    next_token: Option<TokenKey>,
-}
-
-impl BlockSummary {
-    fn new(block: CommentBlockId, prev_token: Option<TokenKey>, had_newline_before: bool) -> Self {
-        Self {
-            block,
-            prev_token,
-            had_newline_before,
-            next_token: None,
-        }
-    }
-}
-
-/// Represents the owner a comment is attached to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum CommentOwner {
-    /// The comment is associated with an entire syntax node.
-    Node(SyntaxNodePtr<PerlLanguage>),
-    /// The comment is associated with an individual token.
-    Token(TokenKey),
-}
-
-impl CommentOwner {
-    /// Creates an owner representing the supplied node.
-    #[must_use]
-    pub fn for_node(node: &SyntaxNode<PerlLanguage>) -> Self {
-        Self::Node(SyntaxNodePtr::new(node))
-    }
-
-    /// Creates an owner from a previously stored pointer.
-    #[must_use]
-    pub fn from_node_ptr(ptr: SyntaxNodePtr<PerlLanguage>) -> Self {
-        Self::Node(ptr)
-    }
-
-    /// Creates an owner representing the supplied token.
-    #[must_use]
-    pub fn for_token(token: &SyntaxToken<PerlLanguage>) -> Self {
-        Self::Token(TokenKey::from_token(token))
-    }
-
-    /// Creates an owner from a token key.
-    #[must_use]
-    pub fn from_token_key(key: TokenKey) -> Self {
-        Self::Token(key)
-    }
-
-    /// Returns the stored node pointer, if any.
-    #[must_use]
-    pub fn node_ptr(self) -> Option<SyntaxNodePtr<PerlLanguage>> {
+    pub fn token_key(self) -> TokenKey {
         match self {
-            Self::Node(ptr) => Some(ptr),
-            Self::Token(_) => None,
+            Self::Leading(key) | Self::Trailing(key) => key,
         }
     }
 
-    /// Returns the stored token key, if any.
-    #[must_use]
-    pub fn token_key(self) -> Option<TokenKey> {
-        match self {
-            Self::Node(_) => None,
-            Self::Token(key) => Some(key),
-        }
-    }
-
-    /// Resolves the owner to the current syntax tree.
-    #[must_use]
-    pub fn resolve(self, root: &SyntaxNode<PerlLanguage>) -> Option<CommentAnchor> {
-        match self {
-            Self::Node(ptr) => ptr.try_to_node(root).map(CommentAnchor::Node),
-            Self::Token(key) => key.resolve(root).map(CommentAnchor::Token),
-        }
-    }
-}
-
-/// Result of resolving a [`CommentOwner`] against a syntax tree.
-#[derive(Debug, Clone)]
-pub enum CommentAnchor {
-    Node(SyntaxNode<PerlLanguage>),
-    Token(SyntaxToken<PerlLanguage>),
-}
-
-/// Describes how a comment relates to its owner (if any).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum CommentPlacement {
-    /// The comment appears before its owner, typically on a separate line.
-    Leading(CommentOwner),
-    /// The comment trails its owner on the same line (inline comment).
-    Trailing(CommentOwner),
-    /// The comment is inside a construct but not directly tied to any child.
-    Dangling(CommentOwner),
-    /// The comment does not have a semantic owner.
-    Standalone,
-}
-
-impl CommentPlacement {
-    /// Returns the owner referenced by this placement, if any.
-    #[must_use]
-    pub fn owner(self) -> Option<CommentOwner> {
-        match self {
-            Self::Leading(owner) | Self::Trailing(owner) | Self::Dangling(owner) => Some(owner),
-            Self::Standalone => None,
-        }
-    }
-
-    /// Convenience helper for `matches!(self, Self::Leading(_))`.
+    /// Returns `true` if the trivia belongs to the leading side of its owner.
     #[must_use]
     pub fn is_leading(self) -> bool {
         matches!(self, Self::Leading(_))
     }
 
-    /// Convenience helper for `matches!(self, Self::Trailing(_))`.
+    /// Returns `true` if the trivia belongs to the trailing side of its owner.
     #[must_use]
     pub fn is_trailing(self) -> bool {
         matches!(self, Self::Trailing(_))
     }
 
-    /// Convenience helper for `matches!(self, Self::Dangling(_))`.
+    /// Resolves the owning token to the current syntax tree.
     #[must_use]
-    pub fn is_dangling(self) -> bool {
-        matches!(self, Self::Dangling(_))
-    }
-
-    /// Convenience helper for `matches!(self, Self::Standalone)`.
-    #[must_use]
-    pub fn is_standalone(self) -> bool {
-        matches!(self, Self::Standalone)
+    pub fn resolve(self, root: &SyntaxNode<PerlLanguage>) -> Option<SyntaxToken<PerlLanguage>> {
+        self.token_key().resolve(root)
     }
 }
 
-/// Mapping between comment blocks and their placement.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct CommentAssignment {
-    block: CommentBlockId,
-    placement: CommentPlacement,
+#[derive(Debug, Clone)]
+struct TokenTrivia {
+    leading: Vec<TriviaPiece>,
+    trailing: Vec<TriviaPiece>,
 }
 
-impl CommentAssignment {
-    /// Creates a new assignment.
-    #[must_use]
-    pub fn new(block: CommentBlockId, placement: CommentPlacement) -> Self {
-        Self { block, placement }
-    }
-
-    /// Returns the associated comment block identifier.
-    #[must_use]
-    pub fn block(self) -> CommentBlockId {
-        self.block
-    }
-
-    /// Returns the stored placement.
-    #[must_use]
-    pub fn placement(self) -> CommentPlacement {
-        self.placement
-    }
-}
-
-/// A registry describing all comment blocks and their assignments for a syntax tree.
-#[derive(Debug, Default, Clone)]
-pub struct CommentRegistry {
-    blocks: Vec<Option<CommentBlock>>,
-    assignments: Vec<Option<CommentAssignment>>,
-    comment_to_block: HashMap<CommentId, CommentBlockId>,
-}
-
-impl CommentRegistry {
-    /// Creates an empty comment registry.
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Creates an empty registry with pre-allocated capacity.
-    #[must_use]
-    pub fn with_capacity(capacity: usize) -> Self {
+impl TokenTrivia {
+    fn new() -> Self {
         Self {
-            blocks: Vec::with_capacity(capacity),
-            assignments: Vec::with_capacity(capacity),
-            comment_to_block: HashMap::with_capacity(capacity),
+            leading: Vec::new(),
+            trailing: Vec::new(),
         }
     }
+}
 
-    /// Builds a comment registry for the provided syntax tree.
+/// Stores trivia ownership information for every token in a syntax tree.
+#[derive(Debug, Default, Clone)]
+pub struct TriviaTable {
+    entries: Vec<TokenTrivia>,
+    token_index: HashMap<TokenKey, usize>,
+    trivia_index: HashMap<TokenKey, TriviaPosition>,
+    unowned_trivia: Vec<TriviaPiece>,
+}
+
+impl TriviaTable {
+    /// Builds a trivia table for the provided syntax tree.
     #[must_use]
     pub fn from_syntax(root: &SyntaxNode<PerlLanguage>) -> Self {
-        let mut registry = CommentRegistry::new();
-        let summaries = build_comment_blocks(root, &mut registry);
+        let mut table = Self {
+            entries: Vec::new(),
+            token_index: HashMap::new(),
+            trivia_index: HashMap::new(),
+            unowned_trivia: Vec::new(),
+        };
 
-        for node in std::iter::once(root.clone()).chain(root.descendants()) {
-            if node.kind() == SyntaxKind::SUB_DEF {
-                collect_leading_function_comments(&node, &mut registry);
+        let mut pending_leading: Vec<TriviaPiece> = Vec::new();
+        let mut pending_trailing: Vec<TriviaPiece> = Vec::new();
+        let mut after_newline = false;
+        let mut previous_entry: Option<usize> = None;
+        let mut previous_key: Option<TokenKey> = None;
+
+        let mut current = root.first_token();
+        while let Some(token) = current {
+            if token.kind().is_trivia() {
+                let piece = TriviaPiece::new(TokenKey::from_token(&token));
+
+                if token.kind() == SyntaxKind::NEWLINE {
+                    if let (Some(entry_idx), Some(owner_key)) = (previous_entry, previous_key) {
+                        table.attach_trailing(entry_idx, owner_key, &mut pending_trailing);
+                    } else {
+                        pending_leading.append(&mut pending_trailing);
+                    }
+                    pending_leading.push(piece);
+                    after_newline = true;
+                } else if after_newline || previous_entry.is_none() {
+                    pending_leading.push(piece);
+                } else {
+                    pending_trailing.push(piece);
+                }
+            } else {
+                let token_key = TokenKey::from_token(&token);
+
+                if let (Some(entry_idx), Some(owner_key)) = (previous_entry, previous_key) {
+                    table.attach_trailing(entry_idx, owner_key, &mut pending_trailing);
+                }
+
+                let entry_idx = table.entries.len();
+                table.entries.push(TokenTrivia::new());
+                table.token_index.insert(token_key, entry_idx);
+                table.attach_leading(entry_idx, token_key, &mut pending_leading);
+
+                previous_entry = Some(entry_idx);
+                previous_key = Some(token_key);
+                after_newline = false;
             }
+
+            current = token.next_token();
         }
 
-        assign_general_comment_placements(summaries, &mut registry);
-
-        registry
-    }
-
-    /// Registers a new comment block with the registry.
-    fn add_block(&mut self, comments: Vec<CommentId>) -> CommentBlockId {
-        debug_assert!(!comments.is_empty(), "cannot register empty comment block");
-        let id = CommentBlockId(self.blocks.len());
-        let block = CommentBlock::new(id, comments);
-        for comment in block.comments() {
-            let previous = self.comment_to_block.insert(*comment, id);
-            debug_assert!(previous.is_none(), "comment assigned to multiple blocks");
+        if let (Some(entry_idx), Some(owner_key)) = (previous_entry, previous_key) {
+            // Attach any trivia on the same line as the last token as trailing.
+            table.attach_trailing(entry_idx, owner_key, &mut pending_trailing);
+            // Any trivia after the last token and a newline is unowned.
+            table.unowned_trivia.append(&mut pending_leading);
+        } else {
+            // No non-trivia tokens found - store all pending trivia as unowned
+            table.unowned_trivia.append(&mut pending_leading);
+            table.unowned_trivia.append(&mut pending_trailing);
         }
-        self.blocks.push(Some(block));
-        self.assignments.push(None);
-        id
+
+        table
     }
 
-    /// Returns an iterator over all registered comment blocks in lexical order.
-    pub fn blocks(&self) -> impl Iterator<Item = &CommentBlock> {
-        self.blocks.iter().filter_map(Option::as_ref)
+    fn attach_leading(
+        &mut self,
+        entry_idx: usize,
+        owner: TokenKey,
+        pending: &mut Vec<TriviaPiece>,
+    ) {
+        if pending.is_empty() {
+            return;
+        }
+        let entry = &mut self.entries[entry_idx];
+        for piece in pending.drain(..) {
+            self.trivia_index
+                .insert(piece.token_key(), TriviaPosition::Leading(owner));
+            entry.leading.push(piece);
+        }
     }
 
-    /// Returns the comment block corresponding to the provided identifier.
+    fn attach_trailing(
+        &mut self,
+        entry_idx: usize,
+        owner: TokenKey,
+        pending: &mut Vec<TriviaPiece>,
+    ) {
+        if pending.is_empty() {
+            return;
+        }
+        let entry = &mut self.entries[entry_idx];
+        for piece in pending.drain(..) {
+            self.trivia_index
+                .insert(piece.token_key(), TriviaPosition::Trailing(owner));
+            entry.trailing.push(piece);
+        }
+    }
+
+    fn entry_for_token_key(&self, key: TokenKey) -> Option<&TokenTrivia> {
+        self.token_index
+            .get(&key)
+            .and_then(|&index| self.entries.get(index))
+    }
+
+    /// Returns the leading trivia pieces for the provided token.
+    pub fn leading_trivia(&self, token: &SyntaxToken<PerlLanguage>) -> &[TriviaPiece] {
+        let key = TokenKey::from_token(token);
+        self.entry_for_token_key(key)
+            .map(|entry| entry.leading.as_slice())
+            .unwrap_or_else(|| &[])
+    }
+
+    /// Returns the trailing trivia pieces for the provided token.
+    pub fn trailing_trivia(&self, token: &SyntaxToken<PerlLanguage>) -> &[TriviaPiece] {
+        let key = TokenKey::from_token(token);
+        self.entry_for_token_key(key)
+            .map(|entry| entry.trailing.as_slice())
+            .unwrap_or_else(|| &[])
+    }
+
+    /// Returns the trivia position for the provided trivia token, if known.
     #[must_use]
-    pub fn block(&self, id: CommentBlockId) -> Option<&CommentBlock> {
-        self.blocks
-            .get(id.as_usize())
-            .and_then(|entry| entry.as_ref())
-    }
-
-    /// Returns the block identifier containing the specified comment.
-    #[must_use]
-    pub fn block_of(&self, comment: CommentId) -> Option<CommentBlockId> {
-        self.comment_to_block.get(&comment).copied()
-    }
-
-    /// Returns the comments that belong to the provided block.
-    #[must_use]
-    pub fn block_comments(&self, id: CommentBlockId) -> Option<&[CommentId]> {
-        self.block(id).map(|block| block.comments())
-    }
-
-    /// Returns `true` if the supplied comment is the first one in its block.
-    #[must_use]
-    pub fn is_first_in_block(&self, comment: CommentId) -> bool {
-        self.block_of(comment)
-            .and_then(|block_id| self.block(block_id))
-            .and_then(|block| block.first_comment())
-            .is_some_and(|first| first == comment)
-    }
-
-    /// Adds or replaces a comment block assignment.
-    ///
-    /// Returns the previous assignment for the same block if it existed.
-    pub fn set(&mut self, assignment: CommentAssignment) -> Option<CommentAssignment> {
-        let index = assignment.block().as_usize();
-        if index >= self.assignments.len() {
-            debug_assert!(false, "assignment references unknown comment block");
+    pub fn position_of(&self, trivia: &SyntaxToken<PerlLanguage>) -> Option<TriviaPosition> {
+        if !trivia.kind().is_trivia() {
             return None;
         }
-        self.assignments[index].replace(assignment)
+        let key = TokenKey::from_token(trivia);
+        self.trivia_index.get(&key).copied()
     }
 
-    /// Returns the assignment associated with the given comment block identifier.
+    /// Returns the unowned trivia pieces (trivia that doesn't belong to any token).
+    ///
+    /// This occurs when a file contains only trivia (comments, whitespace, etc.)
+    /// with no actual code tokens.
     #[must_use]
-    pub fn assignment(&self, block: CommentBlockId) -> Option<&CommentAssignment> {
-        self.assignments
-            .get(block.as_usize())
-            .and_then(|entry| entry.as_ref())
+    pub fn unowned_trivia(&self) -> &[TriviaPiece] {
+        &self.unowned_trivia
     }
-
-    /// Returns the placement associated with the given comment block identifier.
-    #[must_use]
-    pub fn placement_of_block(&self, block: CommentBlockId) -> Option<CommentPlacement> {
-        self.assignment(block).map(|entry| entry.placement())
-    }
-
-    /// Returns the placement associated with the given comment identifier.
-    #[must_use]
-    pub fn placement_of(&self, comment: CommentId) -> Option<CommentPlacement> {
-        self.block_of(comment)
-            .and_then(|block| self.placement_of_block(block))
-    }
-
-    /// Removes the assignment for the provided comment block identifier.
-    pub fn remove(&mut self, block: CommentBlockId) -> Option<CommentAssignment> {
-        self.assignments
-            .get_mut(block.as_usize())
-            .and_then(|entry| entry.take())
-    }
-
-    /// Removes the assignment for the block containing the specified comment identifier.
-    pub fn remove_for_comment(&mut self, comment: CommentId) -> Option<CommentAssignment> {
-        let block = self.block_of(comment)?;
-        self.remove(block)
-    }
-
-    /// Returns an iterator over all assignments in insertion order.
-    pub fn iter(&self) -> impl Iterator<Item = &CommentAssignment> {
-        self.assignments.iter().filter_map(Option::as_ref)
-    }
-
-    /// Returns an iterator over assignments attached to the specified owner.
-    pub fn attached_to(&self, owner: CommentOwner) -> impl Iterator<Item = &CommentAssignment> {
-        self.assignments
-            .iter()
-            .filter_map(Option::as_ref)
-            .filter(move |assignment| assignment.placement.owner() == Some(owner))
-    }
-
-    /// Returns the number of stored assignments.
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.assignments
-            .iter()
-            .filter(|entry| entry.is_some())
-            .count()
-    }
-
-    /// Returns `true` if there are no stored assignments.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.assignments.iter().all(|entry| entry.is_none())
-    }
-}
-
-/// Represents the state of comment block accumulation during parsing.
-enum PendingCommentBlock {
-    /// No comments are currently being accumulated.
-    Empty,
-    /// Comments are being accumulated. The boolean indicates whether there was
-    /// a newline before the first comment in this block.
-    Active {
-        comments: Vec<CommentId>,
-        had_newline_before: bool,
-    },
-}
-
-impl PendingCommentBlock {
-    /// Adds a comment to the pending block, initializing it if necessary.
-    fn push(&mut self, comment: CommentId, had_newline_before: bool) {
-        match self {
-            Self::Empty => {
-                *self = Self::Active {
-                    comments: vec![comment],
-                    had_newline_before,
-                };
-            }
-            Self::Active { comments, .. } => {
-                comments.push(comment);
-            }
-        }
-    }
-
-    /// Extracts the pending comments and resets to empty state.
-    /// Returns None if the block was already empty.
-    fn take(&mut self) -> Option<(Vec<CommentId>, bool)> {
-        match std::mem::replace(self, Self::Empty) {
-            Self::Empty => None,
-            Self::Active {
-                comments,
-                had_newline_before,
-            } => Some((comments, had_newline_before)),
-        }
-    }
-}
-
-/// Helper to finalize a pending comment block and add it to summaries.
-///
-/// This function is only used within `build_comment_blocks` to avoid code duplication.
-fn finalize_pending_block(
-    pending_block: &mut PendingCommentBlock,
-    last_significant: Option<TokenKey>,
-    registry: &mut CommentRegistry,
-    summaries: &mut Vec<BlockSummary>,
-    waiting_for_next: &mut VecDeque<usize>,
-) {
-    if let Some((comments, had_newline_before)) = pending_block.take() {
-        let block = registry.add_block(comments);
-        let summary = BlockSummary::new(block, last_significant, had_newline_before);
-        summaries.push(summary);
-        waiting_for_next.push_back(summaries.len() - 1);
-    }
-}
-
-fn build_comment_blocks(
-    root: &SyntaxNode<PerlLanguage>,
-    registry: &mut CommentRegistry,
-) -> Vec<BlockSummary> {
-    let mut pending_block = PendingCommentBlock::Empty;
-    let mut last_significant: Option<TokenKey> = None;
-    let mut saw_newline_since_significant = false;
-    let mut summaries: Vec<BlockSummary> = Vec::new();
-    let mut waiting_for_next: VecDeque<usize> = VecDeque::new();
-
-    for event in root.preorder_with_tokens() {
-        if let WalkEvent::Enter(NodeOrToken::Token(token)) = event {
-            match token.kind() {
-                SyntaxKind::COMMENT => {
-                    if let Some(comment_id) = CommentId::from_token(&token) {
-                        pending_block.push(comment_id, saw_newline_since_significant);
-                    }
-                    saw_newline_since_significant = false;
-                }
-                SyntaxKind::WHITESPACE => {
-                    // Keep the current block open across indentation tokens.
-                }
-                SyntaxKind::NEWLINE => {
-                    if saw_newline_since_significant {
-                        finalize_pending_block(
-                            &mut pending_block,
-                            last_significant,
-                            registry,
-                            &mut summaries,
-                            &mut waiting_for_next,
-                        );
-                    }
-                    saw_newline_since_significant = true;
-                }
-                _ => {
-                    finalize_pending_block(
-                        &mut pending_block,
-                        last_significant,
-                        registry,
-                        &mut summaries,
-                        &mut waiting_for_next,
-                    );
-
-                    let token_key = TokenKey::from_token(&token);
-                    while let Some(index) = waiting_for_next.pop_front() {
-                        summaries[index].next_token = Some(token_key);
-                    }
-
-                    last_significant = Some(token_key);
-                    saw_newline_since_significant = false;
-                }
-            }
-        }
-    }
-
-    finalize_pending_block(
-        &mut pending_block,
-        last_significant,
-        registry,
-        &mut summaries,
-        &mut waiting_for_next,
-    );
-
-    summaries
-}
-
-fn collect_leading_function_comments(
-    node: &SyntaxNode<PerlLanguage>,
-    registry: &mut CommentRegistry,
-) {
-    let Some(first_token) = node.first_token() else {
-        return;
-    };
-
-    let owner = CommentOwner::for_node(node);
-    let mut blocks: Vec<CommentBlockId> = Vec::new();
-    let mut current = first_token.prev_token();
-    let mut saw_line_break = false;
-
-    while let Some(token) = current {
-        match token.kind() {
-            SyntaxKind::WHITESPACE => {}
-            SyntaxKind::NEWLINE => {
-                if saw_line_break {
-                    break;
-                }
-                saw_line_break = true;
-                current = token.prev_token();
-                continue;
-            }
-            SyntaxKind::COMMENT => {
-                if !is_line_comment(&token) {
-                    break;
-                }
-                if let Some(comment_id) = CommentId::from_token(&token) {
-                    if let Some(block_id) = registry.block_of(comment_id) {
-                        if blocks.last().copied() != Some(block_id) {
-                            blocks.push(block_id);
-                        }
-                    }
-                }
-                saw_line_break = false;
-            }
-            _ => break,
-        }
-
-        current = token.prev_token();
-    }
-
-    for block in blocks.into_iter().rev() {
-        registry.set(CommentAssignment::new(
-            block,
-            CommentPlacement::Leading(owner),
-        ));
-    }
-}
-
-fn assign_general_comment_placements(summaries: Vec<BlockSummary>, registry: &mut CommentRegistry) {
-    for summary in summaries {
-        if registry.assignment(summary.block).is_some() {
-            continue;
-        }
-
-        let placement = classify_comment_block(&summary);
-        registry.set(CommentAssignment::new(summary.block, placement));
-    }
-}
-
-fn classify_comment_block(summary: &BlockSummary) -> CommentPlacement {
-    if let Some(prev) = summary.prev_token {
-        if !summary.had_newline_before {
-            return CommentPlacement::Trailing(CommentOwner::from_token_key(prev));
-        }
-    }
-
-    if let Some(next) = summary.next_token {
-        return CommentPlacement::Leading(CommentOwner::from_token_key(next));
-    }
-
-    CommentPlacement::Standalone
-}
-
-fn is_line_comment(token: &SyntaxToken<PerlLanguage>) -> bool {
-    let mut current = token.prev_token();
-    while let Some(prev) = current {
-        match prev.kind() {
-            SyntaxKind::WHITESPACE => {
-                current = prev.prev_token();
-            }
-            SyntaxKind::NEWLINE | SyntaxKind::COMMENT => return true,
-            _ => return false,
-        }
-    }
-    true
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::parse_perl;
-    use rowan::TextSize;
 
     #[test]
-    fn token_key_basic() {
-        let range = TextRange::new(TextSize::from(0), TextSize::from(7));
-        let key = TokenKey::new(SyntaxKind::COMMENT, range);
-        assert_eq!(key.kind(), SyntaxKind::COMMENT);
-        assert_eq!(key.text_range(), range);
-        let comment_id = CommentId::from_token_key(key).expect("should be a comment");
-        assert_eq!(comment_id.text_range(), range);
-    }
-
-    #[test]
-    fn registry_insert_and_query() {
-        let mut registry = CommentRegistry::new();
-        let comment_range = TextRange::new(TextSize::from(0), TextSize::from(10));
-        let comment_id =
-            CommentId::from_token_key(TokenKey::new(SyntaxKind::COMMENT, comment_range)).unwrap();
-        let owner_key = TokenKey::new(
-            SyntaxKind::IDENT,
-            TextRange::new(TextSize::from(11), TextSize::from(12)),
-        );
-        let owner = CommentOwner::from_token_key(owner_key);
-        let placement = CommentPlacement::Trailing(owner);
-        let block = registry.add_block(vec![comment_id]);
-        let assignment = CommentAssignment::new(block, placement);
-
-        assert!(registry.set(assignment).is_none());
-        assert_eq!(registry.len(), 1);
-        assert!(!registry.is_empty());
-        assert_eq!(registry.placement_of(comment_id), Some(placement));
-        let collected: Vec<_> = registry.attached_to(owner).collect();
-        assert_eq!(collected.len(), 1);
-        assert_eq!(collected[0].block(), block);
-        assert!(registry.is_first_in_block(comment_id));
-        assert_eq!(registry.block_comments(block).unwrap(), &[comment_id]);
-
-        let removed = registry.remove(block).expect("expected removal");
-        assert_eq!(removed.block(), block);
-        assert!(registry.is_empty());
-    }
-
-    #[test]
-    fn leading_comment_block_attached_to_sub() {
-        let source = "my $x = 1;\n# doc one\n# doc two\nsub foo { return $x; }\n";
+    fn inline_comment_attaches_to_trailing_trivia() {
+        let source = "my $x = 1; # inline\n";
         let (root, _errors) = parse_perl(source);
-        let registry = CommentRegistry::from_syntax(&root);
+        let table = TriviaTable::from_syntax(&root);
 
-        let sub = root
-            .descendants()
-            .find(|node| node.kind() == SyntaxKind::SUB_DEF)
-            .expect("expected sub definition");
+        let semicolon = root
+            .descendants_with_tokens()
+            .filter_map(|element| element.into_token())
+            .find(|token| token.text() == ";")
+            .expect("expected semicolon token");
+        let comment = root
+            .descendants_with_tokens()
+            .filter_map(|element| element.into_token())
+            .find(|token| token.kind() == SyntaxKind::COMMENT)
+            .expect("expected comment token");
 
-        let owner = CommentOwner::for_node(&sub);
-        let assignments: Vec<_> = registry.attached_to(owner).collect();
-        assert_eq!(assignments.len(), 1);
+        let trailing = table.trailing_trivia(&semicolon);
+        assert!(
+            trailing
+                .iter()
+                .any(|piece| piece.token_key().text_range() == comment.text_range()),
+            "expected trailing trivia to include the comment"
+        );
+        assert_eq!(
+            table
+                .position_of(&comment)
+                .expect("comment should have owner"),
+            TriviaPosition::Trailing(TokenKey::from_token(&semicolon))
+        );
+    }
 
-        let assignment = assignments[0];
-        assert!(assignment.placement().is_leading());
+    #[test]
+    fn leading_comments_attach_to_following_token() {
+        let source = "my $x = 1;\n# doc one\n# doc two\nsub foo { }\n";
+        let (root, _errors) = parse_perl(source);
+        let table = TriviaTable::from_syntax(&root);
 
-        let block_id = assignment.block();
-        let comments = registry
-            .block_comments(block_id)
-            .expect("block should contain comments");
+        let sub_token = root
+            .descendants_with_tokens()
+            .filter_map(|element| element.into_token())
+            .find(|token| token.text() == "sub")
+            .expect("expected sub token");
+        let comments: Vec<_> = root
+            .descendants_with_tokens()
+            .filter_map(|element| element.into_token())
+            .filter(|token| token.kind() == SyntaxKind::COMMENT)
+            .collect();
         assert_eq!(comments.len(), 2);
-        assert!(registry.is_first_in_block(comments[0]));
-        assert!(!registry.is_first_in_block(comments[1]));
+
+        let leading = table.leading_trivia(&sub_token);
+        let comment_ranges: Vec<_> = comments.iter().map(|c| c.text_range()).collect();
+        let leading_ranges: Vec<_> = leading
+            .iter()
+            .filter(|piece| piece.kind() == SyntaxKind::COMMENT)
+            .map(|piece| piece.token_key().text_range())
+            .collect();
+        assert_eq!(leading_ranges, comment_ranges);
+
+        for comment in comments {
+            let position = table
+                .position_of(&comment)
+                .expect("comment should have owner");
+            assert!(position.is_leading());
+            assert_eq!(position.token_key(), TokenKey::from_token(&sub_token));
+        }
     }
 }
