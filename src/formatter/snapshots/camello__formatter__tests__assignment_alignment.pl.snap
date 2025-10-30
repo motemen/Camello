@@ -1,5 +1,6 @@
 ---
 source: src/formatter/tests.rs
+assertion_line: 51
 expression: formatted
 ---
 sub demo_alignment {
@@ -11,7 +12,6 @@ sub demo_alignment {
         some_long_expression();
 
     my $delta = 3;
-
     # comment should break grouping
     my $epsilon_extra = 4;
     my $zeta          = 5;
