@@ -153,21 +153,8 @@ impl Formatter {
                     let current_kind = child_node.kind();
 
                     if let Some(prev_kind) = prev_node_kind {
-                        // Check if there's a comment immediately before this node (skipping whitespace/newlines)
-                        let has_comment_before = {
-                            let mut prev_elem = child_node.prev_sibling_or_token();
-                            while let Some(ref elem) = prev_elem {
-                                if matches!(
-                                    elem.kind(),
-                                    SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE
-                                ) {
-                                    prev_elem = elem.prev_sibling_or_token();
-                                    continue;
-                                }
-                                break;
-                            }
-                            prev_elem.map(|elem| elem.kind()) == Some(SyntaxKind::COMMENT)
-                        };
+                        let has_comment_before =
+                            Self::node_has_preceding_comment_sibling(&child_node);
 
                         if (prev_kind == SyntaxKind::USE_STMT || prev_kind == SyntaxKind::NO_STMT)
                             && (current_kind != SyntaxKind::USE_STMT

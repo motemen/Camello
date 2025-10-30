@@ -302,6 +302,15 @@ impl Formatter {
             })
     }
 
+    /// Checks if a node has a comment sibling immediately before it (skipping whitespace/newlines)
+    fn node_has_preceding_comment_sibling(node: &PerlNode) -> bool {
+        std::iter::successors(node.prev_sibling_or_token(), |elem| {
+            elem.prev_sibling_or_token()
+        })
+        .find(|elem| !matches!(elem.kind(), SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE))
+        .is_some_and(|elem| elem.kind() == SyntaxKind::COMMENT)
+    }
+
     fn format_node(&mut self, node: &PerlNode, ctx: FormatContext) {
         // Add empty line before subs, use statements, and regular statements when appropriate
         // This preserves existing behavior for simple cases while also handling statement spacing
