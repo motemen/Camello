@@ -1,4 +1,4 @@
-use rowan::{NodeOrToken, SyntaxElementChildren};
+use rowan::{NodeOrToken, SyntaxElement};
 
 use crate::{PerlLanguage, PerlNode, SyntaxKind, T};
 
@@ -233,12 +233,7 @@ impl Formatter {
             if Self::has_newline_in_elements(paren_part.clone()) {
                 self.format_multiline_delimited_elements(paren_part, T!['('], T![')'], ctx);
             } else {
-                self.format_single_line_delimited_elements(
-                    paren_part.collect(),
-                    T!['('],
-                    T![')'],
-                    true,
-                );
+                self.format_single_line_delimited_elements(paren_part, T!['('], T![')'], true);
             }
 
             // Format any remaining elements (newlines after closing paren)
@@ -258,12 +253,12 @@ impl Formatter {
         iter.any(|element| element.as_token().map(|t| t.kind()) == Some(SyntaxKind::NEWLINE))
     }
 
-    fn format_until_arrow_iter(
+    fn format_until_arrow(
         &mut self,
-        iter: &mut SyntaxElementChildren<PerlLanguage>,
+        iter: impl IntoIterator<Item = SyntaxElement<PerlLanguage>>,
         ctx: super::FormatContext,
     ) {
-        for child in iter {
+        for child in iter.into_iter() {
             match child {
                 NodeOrToken::Node(node) => self.format_node(&node, ctx),
                 NodeOrToken::Token(token) if token.kind() == SyntaxKind::WHITESPACE => {}
@@ -280,18 +275,22 @@ impl Formatter {
     }
 
     /// formats @array, %hash or its ref's [ ... ] or { ... } part
-    fn format_subscription_iter(
+    fn format_subscription<I>(
         &mut self,
-        iter: SyntaxElementChildren<PerlLanguage>,
+        iter: I,
         opening: SyntaxKind,
         closing: SyntaxKind,
         ctx: super::FormatContext,
-    ) {
-        if self.has_newline_before_first_value_iter(iter.clone()) {
+    ) where
+        I: IntoIterator<Item = SyntaxElement<PerlLanguage>>,
+        <I as IntoIterator>::IntoIter: Clone,
+    {
+        let iter = iter.into_iter();
+
+        if self.has_newline_before_first_value_in_elements(iter.clone()) {
             self.format_multiline_delimited_elements(iter, opening, closing, ctx);
         } else {
-            let elements: Vec<_> = iter.collect();
-            self.format_single_line_delimited_elements(elements, opening, closing, true);
+            self.format_single_line_delimited_elements(iter, opening, closing, true);
         }
     }
 
@@ -303,8 +302,8 @@ impl Formatter {
         ctx: super::FormatContext,
     ) {
         let mut children = node.children_with_tokens();
-        self.format_until_arrow_iter(children.by_ref(), ctx);
-        self.format_subscription_iter(children, opening, closing, ctx);
+        self.format_until_arrow(children.by_ref(), ctx);
+        self.format_subscription(children, opening, closing, ctx);
     }
 
     fn format_postfix_slice_expr(
@@ -314,7 +313,7 @@ impl Formatter {
         ctx: super::FormatContext,
     ) {
         let mut children = node.children_with_tokens();
-        self.format_until_arrow_iter(children.by_ref(), ctx);
+        self.format_until_arrow(children.by_ref(), ctx);
 
         for child in children.by_ref() {
             match child {
@@ -362,7 +361,7 @@ impl Formatter {
             }
         }
 
-        self.format_subscription_iter(children, opening, closing, ctx);
+        self.format_subscription(children, opening, closing, ctx);
     }
 
     pub(super) fn format_hash_ref_access(&mut self, node: &PerlNode, ctx: super::FormatContext) {
@@ -431,12 +430,12 @@ impl Formatter {
 
     pub(super) fn format_hash_subscription(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         let children = node.children_with_tokens();
-        self.format_subscription_iter(children, T!['{'], T!['}'], ctx);
+        self.format_subscription(children, T!['{'], T!['}'], ctx);
     }
 
     pub(super) fn format_array_subscription(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         let children = node.children_with_tokens();
-        self.format_subscription_iter(children, T!['['], T![']'], ctx);
+        self.format_subscription(children, T!['['], T![']'], ctx);
     }
 
     pub(super) fn format_sub_prototype(&mut self, node: &PerlNode) {
