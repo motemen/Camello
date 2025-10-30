@@ -1084,18 +1084,19 @@ impl Formatter {
         token: &SyntaxToken<crate::PerlLanguage>,
     ) {
         match current {
-            T![;] => {
-                // Check if the next token (after whitespace) is a comment
-                if let Some(next) = Self::next_token_after_whitespace(token) {
-                    if next.kind() == SyntaxKind::COMMENT {
-                        // Don't add newline here - the comment will handle it
-                        return;
-                    }
+            T![;] | T!['{'] => {
+                let next_token_is_inline_comment = Self::next_token_after_whitespace(token)
+                    .is_some_and(|next| next.kind() == SyntaxKind::COMMENT);
+
+                if current == T!['{'] {
+                    self.writer.increase_indent();
                 }
-                self.writer.handle_formatter_newline();
-            }
-            T!['{'] => {
-                self.writer.increase_indent();
+
+                if next_token_is_inline_comment {
+                    // Don't add newline here—the comment will handle it
+                    return;
+                }
+
                 self.writer.handle_formatter_newline();
             }
             _ => {}
