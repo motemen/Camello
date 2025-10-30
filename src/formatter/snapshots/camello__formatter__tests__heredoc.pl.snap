@@ -3,7 +3,6 @@ source: src/formatter/tests.rs
 expression: formatted
 ---
 # Basic heredoc
-
 sub f {
     die <<__DIE__
 foo
@@ -11,7 +10,6 @@ __DIE__
 }
 
 # Heredoc in nested context
-
 sub g {
     if (1) {
         print <<EOF;
@@ -22,7 +20,6 @@ EOF
 }
 
 # Multiple heredocs
-
 sub h {
     my $x = <<'END';
 First heredoc
@@ -33,7 +30,6 @@ END
 }
 
 # Heredoc with statement modifier
-
 print <<EOF if $debug;
 Debug output
 EOF
