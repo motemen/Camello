@@ -35,11 +35,17 @@ impl Formatter {
             .any(|element| element.kind() == SyntaxKind::NEWLINE);
 
         if should_multiline {
+            // When using multiline formatting, create a new context without suppress_newlines
+            // to ensure that newlines are preserved within the delimited literal
+            let multiline_ctx = super::FormatContext {
+                suppress_newlines: false,
+                ..ctx
+            };
             self.format_multiline_delimited_elements(
                 node.children_with_tokens(),
                 opening,
                 closing,
-                ctx,
+                multiline_ctx,
             );
         } else {
             self.format_single_line_delimited_literal(node, opening, closing, ctx);
