@@ -74,7 +74,9 @@ impl TokenKey {
                 // The covering element is a token, but not the one we're looking for.
                 // This can happen with overlapping tokens (e.g. zero-width tokens).
                 // Search from the parent.
-                token.parent().unwrap_or_else(|| root.clone())
+                token.parent().expect(
+                    "Tokens from covering_element within the root are expected to have a parent",
+                )
             }
         };
 
