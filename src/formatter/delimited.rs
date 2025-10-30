@@ -1,9 +1,59 @@
 use crate::{PerlLanguage, PerlNode, SyntaxKind, T};
 use rowan::{NodeOrToken, SyntaxElement, SyntaxToken};
+use std::collections::VecDeque;
 
 use super::{AlignmentState, AlignmentStrategy, FormatContext, Formatter};
 
 type DelimiterSpacing = (Vec<Option<bool>>, Vec<Option<bool>>);
+
+/// Iterator wrapper that supports peeking ahead multiple elements
+struct BufferedIterator<I: Iterator> {
+    iter: I,
+    buffer: VecDeque<I::Item>,
+}
+
+impl<I: Iterator> BufferedIterator<I> {
+    fn new(iter: I) -> Self {
+        Self {
+            iter,
+            buffer: VecDeque::new(),
+        }
+    }
+
+    /// Find the kind of the next non-whitespace token without consuming
+    fn peek_next_non_whitespace_kind(&mut self) -> Option<SyntaxKind>
+    where
+        I: Iterator<Item = SyntaxElement<PerlLanguage>>,
+    {
+        let mut n = 0;
+        loop {
+            // Fill buffer up to n+1 elements
+            while self.buffer.len() <= n {
+                if let Some(item) = self.iter.next() {
+                    self.buffer.push_back(item);
+                } else {
+                    return None;
+                }
+            }
+
+            match self.buffer.get(n) {
+                Some(NodeOrToken::Token(token)) if token.kind() != SyntaxKind::WHITESPACE => {
+                    return Some(token.kind());
+                }
+                Some(_) => n += 1,
+                None => return None,
+            }
+        }
+    }
+}
+
+impl<I: Iterator> Iterator for BufferedIterator<I> {
+    type Item = I::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.buffer.pop_front().or_else(|| self.iter.next())
+    }
+}
 
 impl Formatter {
     pub(super) fn format_single_line_delimited_children(
@@ -14,10 +64,10 @@ impl Formatter {
         skip_whitespace: bool,
         ctx: FormatContext,
     ) {
-        let elements: Vec<_> = node.children_with_tokens().collect();
+        let elements = node.children_with_tokens();
 
         if let Some((open_spacing, close_spacing)) =
-            self.compute_delimited_spacing(&elements, opening, closing)
+            self.compute_delimited_spacing(elements.clone(), opening, closing)
         {
             self.apply_delimited_spacing(
                 elements,
@@ -27,123 +77,167 @@ impl Formatter {
                 ctx,
             );
         } else if ctx.suppress_newlines {
-            self.format_elements_without_pairs(elements, skip_whitespace, ctx);
+            let suppressed_ctx = ctx.with_suppress_newlines();
+            self.format_elements_without_pairs(elements, skip_whitespace, suppressed_ctx);
         } else {
             self.format_children(node, skip_whitespace, ctx);
         }
     }
 
-    pub(super) fn format_single_line_delimited_elements(
+    pub(super) fn format_single_line_delimited_elements<I>(
         &mut self,
-        elements: Vec<SyntaxElement<PerlLanguage>>,
+        elements: I,
         opening: SyntaxKind,
         closing: SyntaxKind,
         skip_whitespace: bool,
-    ) {
-        let ctx = FormatContext::default().with_suppress_newlines();
+        ctx: FormatContext,
+    ) where
+        I: IntoIterator<Item = SyntaxElement<PerlLanguage>>,
+        I::IntoIter: Clone,
+    {
+        let ctx = ctx.with_suppress_newlines();
+        let iter = elements.into_iter();
+
         if let Some((open_spacing, close_spacing)) =
-            self.compute_delimited_spacing(&elements, opening, closing)
+            self.compute_delimited_spacing(iter.clone(), opening, closing)
         {
-            self.apply_delimited_spacing(
-                elements,
-                open_spacing,
-                close_spacing,
-                skip_whitespace,
-                ctx,
-            );
+            self.apply_delimited_spacing(iter, open_spacing, close_spacing, skip_whitespace, ctx);
         } else {
-            self.format_elements_without_pairs(elements, skip_whitespace, ctx);
+            self.format_elements_without_pairs(iter, skip_whitespace, ctx);
         }
     }
 
-    fn compute_delimited_spacing(
+    fn compute_delimited_spacing<I>(
         &self,
-        elements: &[SyntaxElement<PerlLanguage>],
+        elements: I,
         opening: SyntaxKind,
         closing: SyntaxKind,
-    ) -> Option<DelimiterSpacing> {
-        let mut stack: Vec<usize> = Vec::new();
-        let mut pairs: Vec<(usize, usize)> = Vec::new();
+    ) -> Option<DelimiterSpacing>
+    where
+        I: Iterator<Item = SyntaxElement<PerlLanguage>>,
+    {
+        struct Frame {
+            open_index: usize,
+            significant_tokens: usize,
+            contains_qw: bool,
+        }
 
-        for (index, element) in elements.iter().enumerate() {
-            if let Some(token) = element.as_token() {
-                match token.kind() {
-                    k if k == opening => stack.push(index),
-                    k if k == closing => {
-                        if let Some(open_index) = stack.pop() {
-                            pairs.push((open_index, index));
-                        }
+        let mut open_spacing: Vec<Option<bool>> = Vec::new();
+        let mut close_spacing: Vec<Option<bool>> = Vec::new();
+        let mut stack: Vec<Frame> = Vec::new();
+        let mut saw_pair = false;
+
+        for (index, element) in elements.enumerate() {
+            open_spacing.push(None);
+            close_spacing.push(None);
+
+            match element {
+                NodeOrToken::Node(node) => {
+                    if stack.is_empty() {
+                        continue;
                     }
-                    _ => {}
-                }
-            }
-        }
 
-        if pairs.is_empty() {
-            return None;
-        }
+                    let max_remaining = stack
+                        .iter()
+                        .map(|frame| 2usize.saturating_sub(frame.significant_tokens))
+                        .max()
+                        .unwrap_or(0);
 
-        let mut open_spacing: Vec<Option<bool>> = vec![None; elements.len()];
-        let mut close_spacing: Vec<Option<bool>> = vec![None; elements.len()];
+                    if max_remaining == 0 {
+                        continue;
+                    }
 
-        for (open_index, close_index) in &pairs {
-            if close_index <= open_index {
-                continue;
-            }
+                    let (count, contains_qw) =
+                        Self::count_significant_tokens_in_node(&node, max_remaining);
 
-            let mut significant_tokens = 0;
-            let mut contains_qw = false;
+                    if count == 0 && !contains_qw {
+                        continue;
+                    }
 
-            for element in &elements[open_index + 1..*close_index] {
-                match element {
-                    NodeOrToken::Node(inner) => {
-                        let remaining = 2usize.saturating_sub(significant_tokens);
+                    for frame in &mut stack {
+                        let remaining = 2usize.saturating_sub(frame.significant_tokens);
                         if remaining == 0 {
-                            break;
+                            continue;
                         }
-                        let (count, has_qw) =
-                            Self::count_significant_tokens_in_node(inner, remaining);
-                        significant_tokens += count;
-                        contains_qw |= has_qw;
+                        frame.significant_tokens += count.min(remaining);
+                        if contains_qw {
+                            frame.contains_qw = true;
+                        }
                     }
-                    NodeOrToken::Token(token) => {
-                        if !token.kind().is_trivia() {
-                            significant_tokens += 1;
-                            if matches!(token.kind(), SyntaxKind::QW_STRING | SyntaxKind::QW_KW) {
-                                contains_qw = true;
+                }
+                NodeOrToken::Token(token) => {
+                    let kind = token.kind();
+
+                    if kind == opening {
+                        if !stack.is_empty() {
+                            for frame in &mut stack {
+                                if frame.significant_tokens < 2 {
+                                    frame.significant_tokens += 1;
+                                }
+                            }
+                        }
+                        stack.push(Frame {
+                            open_index: index,
+                            significant_tokens: 0,
+                            contains_qw: false,
+                        });
+                        continue;
+                    }
+
+                    if kind == closing {
+                        if let Some(frame) = stack.pop() {
+                            saw_pair = true;
+                            let tightness = self.options.delimiter_tightness.for_kind(opening);
+                            let mut add_interior_space =
+                                tightness.should_add_space(frame.significant_tokens);
+                            if frame.contains_qw {
+                                add_interior_space = true;
+                            }
+                            open_spacing[frame.open_index] = Some(add_interior_space);
+                            close_spacing[index] = Some(add_interior_space);
+                        }
+                        continue;
+                    }
+
+                    if stack.is_empty() {
+                        continue;
+                    }
+
+                    if !kind.is_trivia() {
+                        let is_qw = matches!(kind, SyntaxKind::QW_STRING | SyntaxKind::QW_KW);
+                        for frame in &mut stack {
+                            if frame.significant_tokens < 2 {
+                                frame.significant_tokens += 1;
+                            }
+                            if is_qw {
+                                frame.contains_qw = true;
                             }
                         }
                     }
                 }
-
-                if significant_tokens >= 2 {
-                    break;
-                }
             }
-
-            let tightness = self.options.delimiter_tightness.for_kind(opening);
-            let mut add_interior_space = tightness.should_add_space(significant_tokens);
-            if contains_qw {
-                add_interior_space = true;
-            }
-            open_spacing[*open_index] = Some(add_interior_space);
-            close_spacing[*close_index] = Some(add_interior_space);
         }
 
-        Some((open_spacing, close_spacing))
+        if saw_pair {
+            Some((open_spacing, close_spacing))
+        } else {
+            None
+        }
     }
 
-    fn apply_delimited_spacing(
+    fn apply_delimited_spacing<I>(
         &mut self,
-        elements: Vec<SyntaxElement<PerlLanguage>>,
+        elements: I,
         open_spacing: Vec<Option<bool>>,
         close_spacing: Vec<Option<bool>>,
         skip_whitespace: bool,
         ctx: FormatContext,
-    ) {
+    ) where
+        I: Iterator<Item = SyntaxElement<PerlLanguage>>,
+    {
         use SyntaxKind::WHITESPACE;
 
-        for (index, element) in elements.into_iter().enumerate() {
+        for (index, element) in elements.enumerate() {
             match element {
                 NodeOrToken::Node(node) => {
                     self.format_node(&node, ctx);
@@ -151,7 +245,7 @@ impl Formatter {
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
 
-                    if let Some(add_space) = open_spacing[index] {
+                    if let Some(add_space) = open_spacing.get(index).copied().flatten() {
                         self.handle_spacing_before(kind);
                         if self.writer.at_line_start() {
                             self.writer.add_indent();
@@ -162,7 +256,7 @@ impl Formatter {
                             self.writer.write_char(' ');
                         }
                         self.writer.set_prev_token_kind(Some(kind));
-                    } else if let Some(add_space) = close_spacing[index] {
+                    } else if let Some(add_space) = close_spacing.get(index).copied().flatten() {
                         if add_space && !self.writer.current_line_ends_with_space() {
                             if self.writer.at_line_start() {
                                 self.writer.add_indent();
@@ -182,12 +276,14 @@ impl Formatter {
         }
     }
 
-    fn format_elements_without_pairs(
+    fn format_elements_without_pairs<I>(
         &mut self,
-        elements: Vec<SyntaxElement<PerlLanguage>>,
+        elements: I,
         skip_whitespace: bool,
         ctx: FormatContext,
-    ) {
+    ) where
+        I: Iterator<Item = SyntaxElement<PerlLanguage>>,
+    {
         for element in elements {
             match element {
                 NodeOrToken::Node(node) => self.format_node(&node, ctx),
@@ -271,9 +367,9 @@ impl Formatter {
         ctx: super::FormatContext,
     ) {
         let ctx = ctx.with_multiline_context();
-        let elements_vec: Vec<_> = elements.into_iter().collect();
+        let mut iter = BufferedIterator::new(elements.into_iter());
 
-        for (index, child) in elements_vec.iter().enumerate() {
+        while let Some(child) = iter.next() {
             match child {
                 NodeOrToken::Node(node) => {
                     let kind = node.kind();
@@ -281,9 +377,9 @@ impl Formatter {
                     match kind {
                         SyntaxKind::EXPR_LIST => {
                             // Special handling for expression lists inside delimiters
-                            self.format_expr_list_multiline_iter(node, ctx);
+                            self.format_expr_list_multiline(&node, ctx);
                         }
-                        _ => self.format_node(node, ctx),
+                        _ => self.format_node(&node, ctx),
                     }
                 }
                 NodeOrToken::Token(token) => {
@@ -295,7 +391,7 @@ impl Formatter {
                         }
                         SyntaxKind::NEWLINE => {
                             // Preserve user-provided newlines
-                            self.format_token(token, ctx);
+                            self.format_token(&token, ctx);
                         }
                         k if k == open_delimiter => {
                             self.handle_spacing_before(kind);
@@ -305,32 +401,22 @@ impl Formatter {
                             }
 
                             // Check if next non-whitespace token is a newline
-                            let has_user_newline_after = elements_vec
-                                .iter()
-                                .skip(index + 1)
-                                .find(|e| {
-                                    !matches!(
-                                        e.as_token().map(|t| t.kind()),
-                                        Some(SyntaxKind::WHITESPACE)
-                                    )
-                                })
-                                .and_then(|e| e.as_token())
-                                .map(|t| t.kind())
-                                == Some(SyntaxKind::NEWLINE);
+                            let has_user_newline_after =
+                                iter.peek_next_non_whitespace_kind() == Some(SyntaxKind::NEWLINE);
 
-                            self.writer.write_token(token);
+                            self.writer.write_token(&token);
                             self.writer.increase_indent();
                             if !has_user_newline_after {
                                 self.writer.handle_formatter_newline();
                             }
-                            self.remember_token(token);
+                            self.remember_token(&token);
                         }
                         k if k == close_delimiter => {
-                            self.handle_multiline_closing_delimiter(token);
+                            self.handle_multiline_closing_delimiter(&token);
                         }
                         _ => {
                             // その他のトークンは通常通り処理
-                            self.format_token(token, ctx);
+                            self.format_token(&token, ctx);
                         }
                     }
                 }
@@ -338,21 +424,22 @@ impl Formatter {
         }
     }
 
-    fn format_expr_list_multiline_iter(&mut self, list: &PerlNode, ctx: super::FormatContext) {
+    fn format_expr_list_multiline(&mut self, list: &PerlNode, ctx: super::FormatContext) {
         let ctx = ctx.with_multiline_context();
-        let elements: Vec<_> = list.children_with_tokens().collect();
 
         let mut set_local_alignment = false;
         if self.alignment_state.is_none() {
-            if let Some(state) = self.collect_expr_list_alignment_state(list, &elements) {
+            if let Some(state) = self.collect_expr_list_alignment_state(list) {
                 self.alignment_state = Some(state);
                 set_local_alignment = true;
             }
         }
 
-        for (index, child) in elements.iter().enumerate() {
+        let mut iter = BufferedIterator::new(list.children_with_tokens());
+
+        while let Some(child) = iter.next() {
             match child {
-                NodeOrToken::Node(node) => self.format_node(node, ctx),
+                NodeOrToken::Node(node) => self.format_node(&node, ctx),
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
 
@@ -362,24 +449,14 @@ impl Formatter {
                         }
                         SyntaxKind::NEWLINE => {
                             // Preserve user-provided newlines
-                            self.format_token(token, ctx);
+                            self.format_token(&token, ctx);
                         }
                         T![,] => {
-                            self.format_token(token, ctx);
+                            self.format_token(&token, ctx);
 
                             // Only add automatic newline if user hasn't provided one
-                            let has_user_newline_after = elements
-                                .iter()
-                                .skip(index + 1)
-                                .find(|e| {
-                                    !matches!(
-                                        e.as_token().map(|t| t.kind()),
-                                        Some(SyntaxKind::WHITESPACE)
-                                    )
-                                })
-                                .and_then(|e| e.as_token())
-                                .map(|t| t.kind())
-                                != Some(SyntaxKind::NEWLINE);
+                            let has_user_newline_after =
+                                iter.peek_next_non_whitespace_kind() != Some(SyntaxKind::NEWLINE);
 
                             if has_user_newline_after {
                                 self.writer.handle_formatter_newline();
@@ -387,7 +464,7 @@ impl Formatter {
                         }
                         _ => {
                             // その他のトークンは通常通り処理
-                            self.format_token(token, ctx);
+                            self.format_token(&token, ctx);
                         }
                     }
                 }
@@ -403,7 +480,6 @@ impl Formatter {
     pub(super) fn collect_expr_list_alignment_state(
         &self,
         list: &PerlNode,
-        elements: &[SyntaxElement<PerlLanguage>],
     ) -> Option<AlignmentState> {
         if !self
             .options
@@ -416,7 +492,7 @@ impl Formatter {
         let mut saw_newline = false;
         let mut top_level_commas = Vec::new();
 
-        for element in elements {
+        for element in list.children_with_tokens() {
             if let Some(token) = element.as_token() {
                 match token.kind() {
                     SyntaxKind::FAT_COMMA => top_level_commas.push(token.clone()),
