@@ -458,8 +458,11 @@ impl Formatter {
                             }
                         }
                         SyntaxKind::COMMENT => {
-                            // Handle inline comments specially
-                            if !self.writer.at_line_start() {
+                            // Handle inline and new-line comments
+                            if self.writer.at_line_start() {
+                                self.writer.add_indent();
+                                self.writer.set_at_line_start(false);
+                            } else {
                                 self.writer.write_char(' ');
                             }
                             self.writer.write_str(token.text().trim(), Some(kind), None);
