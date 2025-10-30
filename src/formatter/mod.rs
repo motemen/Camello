@@ -282,11 +282,12 @@ impl Formatter {
     fn node_has_trailing_comment(&self, node: &PerlNode) -> bool {
         node.descendants_with_tokens()
             .filter_map(|element| element.into_token())
-            .any(|token| {
-                self.trivia_table
-                    .trailing_trivia(&token)
-                    .iter()
-                    .any(|piece| piece.kind() == SyntaxKind::COMMENT)
+            .filter(|token| token.kind() == SyntaxKind::COMMENT)
+            .any(|comment| {
+                matches!(
+                    self.trivia_table.position_of(&comment),
+                    Some(TriviaPosition::Trailing(_))
+                )
             })
     }
 
@@ -778,12 +779,7 @@ impl Formatter {
                 if has_immediate_newline {
                     let range_iter = std::iter::once(NodeOrToken::Token(token.clone()))
                         .chain(children.by_ref().take(take_count));
-                    self.format_multiline_delimited_elements(
-                        range_iter,
-                        T!['('],
-                        T![')'],
-                        ctx,
-                    );
+                    self.format_multiline_delimited_elements(range_iter, T!['('], T![')'], ctx);
                     return true;
                 }
             }
