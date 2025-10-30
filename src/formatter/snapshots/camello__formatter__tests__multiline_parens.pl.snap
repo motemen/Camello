@@ -1,5 +1,6 @@
 ---
 source: src/formatter/tests.rs
+assertion_line: 51
 expression: formatted
 ---
 # Test multiline parentheses in various contexts
@@ -17,7 +18,6 @@ use A (
 );
 
 # Hash assignment
-
 %hash = (
     key => 'value'
 );

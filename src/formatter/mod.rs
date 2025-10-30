@@ -2,7 +2,7 @@ mod delimited;
 mod writer;
 
 use crate::{
-    comments::{TokenKey, TriviaPosition, TriviaTable},
+    comments::{TriviaPosition, TriviaTable},
     PerlLanguage, PerlNode, SyntaxKind, T,
 };
 use rowan::{NodeOrToken, SyntaxElement, SyntaxElementChildren, SyntaxToken};
@@ -300,38 +300,6 @@ impl Formatter {
                     Some(TriviaPosition::Trailing(_))
                 )
             })
-    }
-
-    fn should_isolate_comment(&self, token: &SyntaxToken<PerlLanguage>) -> bool {
-        let Some(TriviaPosition::Leading(owner_key)) = self.trivia_table.position_of(token) else {
-            return false;
-        };
-
-        let Some(owner_token) = owner_key.resolve(&self.root) else {
-            return false;
-        };
-
-        let comment_key = TokenKey::from_token(token);
-        let leading = self.trivia_table.leading_trivia(&owner_token);
-        let first_comment_key = leading
-            .iter()
-            .filter(|piece| piece.kind() == SyntaxKind::COMMENT)
-            .map(|piece| piece.token_key())
-            .next();
-
-        if first_comment_key != Some(comment_key) {
-            return false;
-        }
-
-        let mut current = owner_token.parent();
-        while let Some(node) = current {
-            if node.kind() == SyntaxKind::SUB_DEF {
-                return true;
-            }
-            current = node.parent();
-        }
-
-        false
     }
 
     fn format_node(&mut self, node: &PerlNode, ctx: FormatContext) {
@@ -961,10 +929,6 @@ impl Formatter {
             }
             SyntaxKind::COMMENT => {
                 self.output_pending_empty_lines();
-
-                if self.should_isolate_comment(token) {
-                    self.add_empty_line_before();
-                }
 
                 // コメントは保持するが、適切な位置に配置
                 if self.writer.at_line_start() {

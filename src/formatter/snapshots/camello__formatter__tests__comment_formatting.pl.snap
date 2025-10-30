@@ -1,5 +1,6 @@
 ---
 source: src/formatter/tests.rs
+assertion_line: 51
 expression: formatted
 ---
 # Single line comment
@@ -10,10 +11,8 @@ sub foo {
 
 # Comment before sub
 sub bar {
-
     # Comment inside sub
     my $y = 1;
-
     # Another comment
     my $z = 2;
 }
