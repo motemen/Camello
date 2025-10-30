@@ -1,12 +1,11 @@
 ---
 source: src/formatter/tests.rs
-assertion_line: 51
 expression: formatted
 ---
 # Single line comment
 # Another comment
 sub foo {
-    my $x; # inline comment
+    my $x;    # inline comment
 }
 
 # Comment before sub
