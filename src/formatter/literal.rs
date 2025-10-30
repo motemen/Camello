@@ -52,25 +52,25 @@ impl Formatter {
         }
     }
 
-    pub(super) fn format_qw_expr(&mut self, node: &PerlNode) {
+    pub(super) fn format_qw_expr(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         let should_multiline = node
             .children_with_tokens()
             .any(|child| child.as_token().is_some_and(|t| t.text().contains('\n')));
 
         if should_multiline {
-            self.format_multiline_qw_expr(node);
+            self.format_multiline_qw_expr(node, ctx);
         } else {
-            self.format_single_line_qw_expr(node);
+            self.format_single_line_qw_expr(node, ctx);
         }
     }
 
-    fn format_single_line_qw_expr(&mut self, node: &PerlNode) {
+    fn format_single_line_qw_expr(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         // Special formatting for qw() expressions
         let mut first_word = true;
 
         for child in node.children_with_tokens() {
             match child {
-                NodeOrToken::Node(node) => self.format_node(&node, super::FormatContext::default()),
+                NodeOrToken::Node(node) => self.format_node(&node, ctx),
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
 
@@ -85,7 +85,7 @@ impl Formatter {
                             self.remember_token(&token);
                         }
                         _ => {
-                            self.format_token(&token, super::FormatContext::default());
+                            self.format_token(&token, ctx);
                         }
                     }
                 }
@@ -93,12 +93,12 @@ impl Formatter {
         }
     }
 
-    fn format_multiline_qw_expr(&mut self, node: &PerlNode) {
+    fn format_multiline_qw_expr(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         let mut opened = false;
 
         for child in node.children_with_tokens() {
             match child {
-                NodeOrToken::Node(node) => self.format_node(&node, super::FormatContext::default()),
+                NodeOrToken::Node(node) => self.format_node(&node, ctx),
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
 
@@ -126,7 +126,7 @@ impl Formatter {
                             // Newline is handled for QW_STRING tokens, so skip whitespace here
                         }
                         _ => {
-                            self.format_token(&token, super::FormatContext::default());
+                            self.format_token(&token, ctx);
                         }
                     }
                 }
@@ -134,43 +134,48 @@ impl Formatter {
         }
     }
 
-    pub(super) fn format_q_expr(&mut self, node: &PerlNode) {
-        self.format_q_family_expr(node, T![q], SyntaxKind::LITERAL_STRING);
+    pub(super) fn format_q_expr(&mut self, node: &PerlNode, ctx: super::FormatContext) {
+        self.format_q_family_expr(node, T![q], SyntaxKind::LITERAL_STRING, ctx);
     }
 
-    pub(super) fn format_qq_expr(&mut self, node: &PerlNode) {
-        self.format_q_family_expr(node, T![qq], SyntaxKind::INTERPOLATED_STRING);
+    pub(super) fn format_qq_expr(&mut self, node: &PerlNode, ctx: super::FormatContext) {
+        self.format_q_family_expr(node, T![qq], SyntaxKind::INTERPOLATED_STRING, ctx);
     }
 
-    pub(super) fn format_qx_expr(&mut self, node: &PerlNode) {
-        self.format_q_family_expr(node, T![qx], SyntaxKind::INTERPOLATED_STRING);
+    pub(super) fn format_qx_expr(&mut self, node: &PerlNode, ctx: super::FormatContext) {
+        self.format_q_family_expr(node, T![qx], SyntaxKind::INTERPOLATED_STRING, ctx);
     }
 
-    pub(super) fn format_m_expr(&mut self, node: &PerlNode) {
-        self.format_q_family_expr(node, T![m], SyntaxKind::REGEX_PATTERN);
+    pub(super) fn format_m_expr(&mut self, node: &PerlNode, ctx: super::FormatContext) {
+        self.format_q_family_expr(node, T![m], SyntaxKind::REGEX_PATTERN, ctx);
     }
 
-    pub(super) fn format_qr_expr(&mut self, node: &PerlNode) {
-        self.format_q_family_expr(node, T![qr], SyntaxKind::REGEX_PATTERN);
+    pub(super) fn format_qr_expr(&mut self, node: &PerlNode, ctx: super::FormatContext) {
+        self.format_q_family_expr(node, T![qr], SyntaxKind::REGEX_PATTERN, ctx);
     }
 
-    pub(super) fn format_s_expr(&mut self, node: &PerlNode) {
-        self.format_regex_like_expr(node, &[T![s]]);
+    pub(super) fn format_s_expr(&mut self, node: &PerlNode, ctx: super::FormatContext) {
+        self.format_regex_like_expr(node, &[T![s]], ctx);
     }
 
-    pub(super) fn format_tr_expr(&mut self, node: &PerlNode) {
-        self.format_regex_like_expr(node, &[T![tr], T![y]]);
+    pub(super) fn format_tr_expr(&mut self, node: &PerlNode, ctx: super::FormatContext) {
+        self.format_regex_like_expr(node, &[T![tr], T![y]], ctx);
     }
 
-    fn format_regex_like_expr(&mut self, node: &PerlNode, kw_kinds: &[SyntaxKind]) {
+    fn format_regex_like_expr(
+        &mut self,
+        node: &PerlNode,
+        kw_kinds: &[SyntaxKind],
+        ctx: super::FormatContext,
+    ) {
         for child in node.children_with_tokens() {
             match child {
-                NodeOrToken::Node(node) => self.format_node(&node, super::FormatContext::default()),
+                NodeOrToken::Node(node) => self.format_node(&node, ctx),
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
                     match kind {
                         k if kw_kinds.contains(&k) => {
-                            self.format_token(&token, super::FormatContext::default());
+                            self.format_token(&token, ctx);
                         }
                         SyntaxKind::WHITESPACE => {
                             // Preserve whitespace inside these expressions
@@ -191,16 +196,17 @@ impl Formatter {
         node: &PerlNode,
         kw_kind: SyntaxKind,
         string_kind: SyntaxKind,
+        ctx: super::FormatContext,
     ) {
         // q-family expressions always format as single line
         for child in node.children_with_tokens() {
             match child {
-                NodeOrToken::Node(node) => self.format_node(&node, super::FormatContext::default()),
+                NodeOrToken::Node(node) => self.format_node(&node, ctx),
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
                     match kind {
                         k if k == kw_kind => {
-                            self.format_token(&token, super::FormatContext::default());
+                            self.format_token(&token, ctx);
                         }
                         T!['('] | T!['['] | T![/] | SyntaxKind::DELIMITER => {
                             self.writer.write_token(&token);
