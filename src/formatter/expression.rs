@@ -41,7 +41,7 @@ impl Formatter {
                 self.format_array_subscription(node, ctx);
             }
             SyntaxKind::COMPOUND_VAR => {
-                self.format_compound_var(node);
+                self.format_compound_var(node, ctx);
             }
             SyntaxKind::REGEX_EXPR => {
                 // Default handling for regex expressions - just format children
@@ -177,7 +177,11 @@ impl Formatter {
                 }
                 NodeOrToken::Token(token) => {
                     // Check for multiline parenthesized expressions
-                    if self.try_format_multiline_parens(&token, &mut children, super::FormatContext::default()) {
+                    if self.try_format_multiline_parens(
+                        &token,
+                        &mut children,
+                        super::FormatContext::default(),
+                    ) {
                         continue;
                     }
                     self.format_token(&token, super::FormatContext::default());
@@ -385,7 +389,7 @@ impl Formatter {
         self.format_ref_access_expr(node, T!['('], T![')'], ctx);
     }
 
-    pub(super) fn format_compound_var(&mut self, node: &PerlNode) {
+    pub(super) fn format_compound_var(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         // Handle compound variables like @{expr}, %$var, $#array
         // For braced expressions, default to compact formatting unless the braces contain
         // statement blocks (e.g., @{ my $x = 1; $x }) in which case we format as a block.
@@ -403,13 +407,13 @@ impl Formatter {
                                 child_node.children_with_tokens(),
                                 T!['{'],
                                 T!['}'],
-                                super::FormatContext::default(),
+                                ctx,
                             );
                         } else {
-                            self.format_node(&child_node, super::FormatContext::default());
+                            self.format_node(&child_node, ctx);
                         }
                     } else {
-                        self.format_node(&child_node, super::FormatContext::default());
+                        self.format_node(&child_node, ctx);
                     }
                 }
                 NodeOrToken::Token(token) => {
@@ -423,7 +427,7 @@ impl Formatter {
                             self.remember_token(&token);
                         }
                         _ => {
-                            self.format_token(&token, super::FormatContext::default());
+                            self.format_token(&token, ctx);
                         }
                     }
                 }
