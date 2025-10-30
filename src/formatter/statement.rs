@@ -426,7 +426,8 @@ impl Formatter {
         // measure the width including proper spacing and token formatting.
         let mut options = self.options.clone();
         options.alignment_strategies.clear();
-        let mut formatter = Formatter::with_shared_deps(self.trivia_table.clone(), options);
+        let mut formatter =
+            Formatter::with_shared_deps(self.trivia_table.clone(), options, self.root.clone());
         formatter.format_node(node, super::FormatContext::default());
 
         let columns = if token_kind == SyntaxKind::EQ {
