@@ -778,12 +778,7 @@ impl Formatter {
                 if has_immediate_newline {
                     let range_iter = std::iter::once(NodeOrToken::Token(token.clone()))
                         .chain(children.by_ref().take(take_count));
-                    self.format_multiline_delimited_elements(
-                        range_iter,
-                        T!['('],
-                        T![')'],
-                        ctx,
-                    );
+                    self.format_multiline_delimited_elements(range_iter, T!['('], T![')'], ctx);
                     return true;
                 }
             }
