@@ -153,9 +153,13 @@ impl Formatter {
                     let current_kind = child_node.kind();
 
                     if let Some(prev_kind) = prev_node_kind {
+                        let has_comment_before =
+                            Self::node_has_preceding_comment_sibling(&child_node);
+
                         if (prev_kind == SyntaxKind::USE_STMT || prev_kind == SyntaxKind::NO_STMT)
                             && (current_kind != SyntaxKind::USE_STMT
                                 && current_kind != SyntaxKind::NO_STMT)
+                            && !has_comment_before
                         {
                             let has_existing_empty_line = self.pending_empty_lines > 0
                                 || self.writer.ends_with_double_newline();

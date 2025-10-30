@@ -56,9 +56,15 @@ impl Formatter {
 
             if should_add_empty_line
                 && (node.kind() == SyntaxKind::SUB_DEF || node.kind().is_phase_block_stmt())
-                && self.node_has_leading_comment(node)
             {
-                should_add_empty_line = false;
+                // Don't add empty line if there's a leading comment (as trivia) or
+                // a comment as a previous sibling (skipping trivia siblings)
+                let has_comment_before = self.node_has_leading_comment(node)
+                    || Self::node_has_preceding_comment_sibling(node);
+
+                if has_comment_before {
+                    should_add_empty_line = false;
+                }
             }
 
             if should_add_empty_line {
