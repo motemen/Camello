@@ -5,10 +5,10 @@ use crate::{PerlLanguage, PerlNode, SyntaxKind, T};
 use super::Formatter;
 
 impl Formatter {
-    pub(super) fn format_expr_with_context(&mut self, node: &PerlNode, ctx: super::FormatContext) {
+    pub(super) fn format_expr(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         match node.kind() {
             SyntaxKind::ANON_SUB_EXPR => {
-                self.format_anon_sub_expr_with_context(node, ctx);
+                self.format_anon_sub_expr(node, ctx);
             }
             SyntaxKind::FUNCTION_CALL_EXPR => {
                 self.format_function_call_expr(node, ctx);
@@ -46,17 +46,17 @@ impl Formatter {
             SyntaxKind::REGEX_EXPR => {
                 // Default handling for regex expressions - just format children
                 // The spacing around regex operators is handled in format_token
-                self.format_children(node, false);
+                self.format_children(node, false, ctx);
             }
             SyntaxKind::BACKTICK_EXPR => {
                 // Backtick command substitution: just format children (the backtick string literal)
-                self.format_children(node, false);
+                self.format_children(node, false, ctx);
             }
             _ => {
                 if self.should_use_parenthesized_formatter(node) {
                     self.format_parenthesized_expr(node, ctx);
                 } else {
-                    self.format_children(node, false);
+                    self.format_children(node, false, ctx);
                 }
             }
         }
@@ -79,26 +79,22 @@ impl Formatter {
             // Format complex code sigil expressions like &{$coderef}(1,2,3) without space before (
             if let Some(first_child) = first_child {
                 match first_child {
-                    NodeOrToken::Node(child_node) => {
-                        self.format_node_with_context(&child_node, ctx)
-                    }
-                    NodeOrToken::Token(token) => self.format_token_with_context(&token, ctx),
+                    NodeOrToken::Node(child_node) => self.format_node(&child_node, ctx),
+                    NodeOrToken::Token(token) => self.format_token(&token, ctx),
                 }
             }
 
             // Format the rest without adding spaces before L_PAREN
             for child in children {
                 match child {
-                    NodeOrToken::Node(child_node) => {
-                        self.format_node_with_context(&child_node, ctx)
-                    }
+                    NodeOrToken::Node(child_node) => self.format_node(&child_node, ctx),
                     NodeOrToken::Token(token) => {
                         if token.kind() == T!['('] {
                             // Force no space before this L_PAREN by writing it directly
                             self.writer.write_str("(", Some(T!['(']), None);
                             self.remember_token(&token);
                         } else {
-                            self.format_token_with_context(&token, ctx);
+                            self.format_token(&token, ctx);
                         }
                     }
                 }
@@ -113,11 +109,7 @@ impl Formatter {
         }
     }
 
-    pub(super) fn format_anon_sub_expr_with_context(
-        &mut self,
-        node: &PerlNode,
-        ctx: super::FormatContext,
-    ) {
+    pub(super) fn format_anon_sub_expr(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         // Format anonymous subroutine: sub { ... }
         // Use K&R style like regular subroutines: space before opening brace
 
@@ -130,16 +122,16 @@ impl Formatter {
                             if self.is_simple_block(&child_node) {
                                 self.format_simple_block(&child_node);
                             } else {
-                                self.format_node(&child_node);
+                                self.format_node(&child_node, super::FormatContext::default());
                             }
                         }
                         _ => {
-                            self.format_node(&child_node);
+                            self.format_node(&child_node, super::FormatContext::default());
                         }
                     }
                 }
                 NodeOrToken::Token(token) => {
-                    self.format_token_with_context(&token, ctx);
+                    self.format_token(&token, ctx);
                 }
             }
         }
@@ -148,7 +140,7 @@ impl Formatter {
         // Check if the parenthesized expression contains newlines
         if self.has_newline_before_first_value(node) {
             // Use multiline formatting for expressions with newlines
-            self.format_multiline_delimited_elements_with_context(
+            self.format_multiline_delimited_elements(
                 node.children_with_tokens(),
                 T!['('],
                 T![')'],
@@ -156,7 +148,7 @@ impl Formatter {
             );
         } else {
             // Use single-line formatting with contextual spacing for compact expressions
-            self.format_single_line_delimited_children(node, T!['('], T![')'], true);
+            self.format_single_line_delimited_children(node, T!['('], T![')'], true, ctx);
         }
     }
 
@@ -176,14 +168,14 @@ impl Formatter {
                             self.format_simple_block(&child_node);
                         } else {
                             // Use format_node for complex blocks to preserve empty lines
-                            self.format_node(&child_node);
+                            self.format_node(&child_node, super::FormatContext::default());
                         }
                     } else {
-                        self.format_node(&child_node);
+                        self.format_node(&child_node, super::FormatContext::default());
                     }
                 }
                 NodeOrToken::Token(token) => {
-                    self.format_token(&token);
+                    self.format_token(&token, super::FormatContext::default());
                 }
             }
 
@@ -201,10 +193,10 @@ impl Formatter {
         // Format until arrow
         for child in children_iter.by_ref() {
             match child {
-                NodeOrToken::Node(n) => self.format_node_with_context(n, ctx),
+                NodeOrToken::Node(n) => self.format_node(n, ctx),
                 NodeOrToken::Token(token) if token.kind() == SyntaxKind::WHITESPACE => {}
                 NodeOrToken::Token(token) => {
-                    self.format_token_with_context(token, ctx);
+                    self.format_token(token, ctx);
                     if token.kind() == T![->] {
                         break;
                     }
@@ -216,14 +208,14 @@ impl Formatter {
         for child in children_iter.by_ref() {
             match child {
                 NodeOrToken::Node(n) => {
-                    self.format_node_with_context(n, ctx);
+                    self.format_node(n, ctx);
                     break;
                 }
                 NodeOrToken::Token(token) => {
                     if token.kind() == SyntaxKind::WHITESPACE {
                         continue;
                     }
-                    self.format_token_with_context(token, ctx);
+                    self.format_token(token, ctx);
                     break;
                 }
             }
@@ -239,7 +231,7 @@ impl Formatter {
             // Format parenthesized part
             let paren_part = remaining[..=end_idx].iter().cloned();
             if Self::has_newline_in_elements(paren_part.clone()) {
-                self.format_multiline_delimited_elements(paren_part, T!['('], T![')']);
+                self.format_multiline_delimited_elements(paren_part, T!['('], T![')'], ctx);
             } else {
                 self.format_single_line_delimited_elements(
                     paren_part.collect(),
@@ -252,8 +244,8 @@ impl Formatter {
             // Format any remaining elements (newlines after closing paren)
             for child in &remaining[end_idx + 1..] {
                 match child {
-                    NodeOrToken::Node(n) => self.format_node_with_context(n, ctx),
-                    NodeOrToken::Token(token) => self.format_token_with_context(token, ctx),
+                    NodeOrToken::Node(n) => self.format_node(n, ctx),
+                    NodeOrToken::Token(token) => self.format_token(token, ctx),
                 }
             }
         }
@@ -273,11 +265,11 @@ impl Formatter {
     ) {
         for child in iter {
             match child {
-                NodeOrToken::Node(node) => self.format_node_with_context(&node, ctx),
+                NodeOrToken::Node(node) => self.format_node(&node, ctx),
                 NodeOrToken::Token(token) if token.kind() == SyntaxKind::WHITESPACE => {}
                 NodeOrToken::Token(token) => {
                     // Use format_token to ensure proper spacing is applied
-                    self.format_token_with_context(&token, ctx);
+                    self.format_token(&token, ctx);
 
                     if token.kind() == T![->] {
                         break;
@@ -296,7 +288,7 @@ impl Formatter {
         ctx: super::FormatContext,
     ) {
         if self.has_newline_before_first_value_iter(iter.clone()) {
-            self.format_multiline_delimited_elements_with_context(iter, opening, closing, ctx);
+            self.format_multiline_delimited_elements(iter, opening, closing, ctx);
         } else {
             let elements: Vec<_> = iter.collect();
             self.format_single_line_delimited_elements(elements, opening, closing, true);
@@ -330,10 +322,10 @@ impl Formatter {
                     if token.kind() == SyntaxKind::WHITESPACE {
                         continue;
                     }
-                    self.format_token_with_context(&token, ctx);
+                    self.format_token(&token, ctx);
                 }
                 NodeOrToken::Node(child_node) => {
-                    self.format_node_with_context(&child_node, ctx);
+                    self.format_node(&child_node, ctx);
                 }
             }
             break;
@@ -403,12 +395,13 @@ impl Formatter {
                                 child_node.children_with_tokens(),
                                 T!['{'],
                                 T!['}'],
+                                super::FormatContext::default(),
                             );
                         } else {
-                            self.format_node(&child_node);
+                            self.format_node(&child_node, super::FormatContext::default());
                         }
                     } else {
-                        self.format_node(&child_node);
+                        self.format_node(&child_node, super::FormatContext::default());
                     }
                 }
                 NodeOrToken::Token(token) => {
@@ -422,7 +415,7 @@ impl Formatter {
                             self.remember_token(&token);
                         }
                         _ => {
-                            self.format_token(&token);
+                            self.format_token(&token, super::FormatContext::default());
                         }
                     }
                 }
@@ -433,7 +426,7 @@ impl Formatter {
     fn format_compound_var_simple_block(&mut self, node: &PerlNode) {
         // Use context with suppress_newlines enabled for simple blocks
         let ctx = super::FormatContext::default().with_suppress_newlines();
-        self.format_single_line_delimited_children_with_context(node, T!['{'], T!['}'], true, ctx);
+        self.format_single_line_delimited_children(node, T!['{'], T!['}'], true, ctx);
     }
 
     pub(super) fn format_hash_subscription(&mut self, node: &PerlNode, ctx: super::FormatContext) {
@@ -452,7 +445,7 @@ impl Formatter {
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(child_node) => {
-                    self.format_node(&child_node);
+                    self.format_node(&child_node, super::FormatContext::default());
                 }
                 NodeOrToken::Token(token) => {
                     match token.kind() {
@@ -490,7 +483,7 @@ impl Formatter {
             for child in node.children_with_tokens() {
                 match child {
                     NodeOrToken::Node(child_node) => {
-                        self.format_node_with_context(&child_node, ctx);
+                        self.format_node(&child_node, ctx);
                     }
                     NodeOrToken::Token(token) => {
                         let kind = token.kind();
@@ -511,11 +504,11 @@ impl Formatter {
                                 self.handle_multiline_closing_delimiter(&token);
                             }
                             T![,] => {
-                                self.format_token_with_context(&token, ctx);
+                                self.format_token(&token, ctx);
                                 self.writer.handle_formatter_newline();
                             }
                             _ => {
-                                self.format_token_with_context(&token, ctx);
+                                self.format_token(&token, ctx);
                             }
                         }
                     }
@@ -526,7 +519,7 @@ impl Formatter {
             for child in node.children_with_tokens() {
                 match child {
                     NodeOrToken::Node(child_node) => {
-                        self.format_node(&child_node);
+                        self.format_node(&child_node, super::FormatContext::default());
                     }
                     NodeOrToken::Token(token) => {
                         let kind = token.kind();
@@ -545,7 +538,7 @@ impl Formatter {
                                 self.remember_token(&token);
                             }
                             _ => {
-                                self.format_token(&token);
+                                self.format_token(&token, super::FormatContext::default());
                             }
                         }
                     }
@@ -559,7 +552,9 @@ impl Formatter {
 
         for child in node.children_with_tokens() {
             match child {
-                NodeOrToken::Node(child_node) => self.format_node(&child_node),
+                NodeOrToken::Node(child_node) => {
+                    self.format_node(&child_node, super::FormatContext::default())
+                }
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
                     match kind {
@@ -593,7 +588,7 @@ impl Formatter {
                             self.remember_token(&token);
                         }
                         _ => {
-                            self.format_token(&token);
+                            self.format_token(&token, super::FormatContext::default());
                         }
                     }
                 }
@@ -601,12 +596,12 @@ impl Formatter {
         }
     }
 
-    pub(super) fn format_children(&mut self, node: &PerlNode, skip_whitespace: bool) {
-        self.format_children_with_options(
-            node,
-            super::FormatContext::default(),
-            skip_whitespace,
-            false,
-        );
+    pub(super) fn format_children(
+        &mut self,
+        node: &PerlNode,
+        skip_whitespace: bool,
+        ctx: super::FormatContext,
+    ) {
+        self.format_children_with_options(node, ctx, skip_whitespace, false);
     }
 }

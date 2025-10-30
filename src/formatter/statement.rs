@@ -51,8 +51,8 @@ impl Formatter {
             }
 
             match &child {
-                NodeOrToken::Node(n) => self.format_node(n),
-                NodeOrToken::Token(t) => self.format_token(t),
+                NodeOrToken::Node(n) => self.format_node(n, super::FormatContext::default()),
+                NodeOrToken::Token(t) => self.format_token(t, super::FormatContext::default()),
             }
 
             if is_module_name {
@@ -102,7 +102,7 @@ impl Formatter {
             match child {
                 NodeOrToken::Node(child_node) => {
                     has_content = true;
-                    self.format_node_with_context(&child_node, ctx);
+                    self.format_node(&child_node, ctx);
                 }
                 NodeOrToken::Token(token) => match token.kind() {
                     T!['{'] => {
@@ -131,7 +131,7 @@ impl Formatter {
                     SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE => {}
                     _ => {
                         has_content = true;
-                        self.format_token_with_context(&token, ctx);
+                        self.format_token(&token, ctx);
                     }
                 },
             }
@@ -176,7 +176,7 @@ impl Formatter {
                     }
 
                     self.output_pending_empty_lines();
-                    self.format_node(&child_node);
+                    self.format_node(&child_node, super::FormatContext::default());
 
                     prev_node_kind = Some(current_kind);
                 }
@@ -218,7 +218,7 @@ impl Formatter {
                     }
                     _ => {
                         self.output_pending_empty_lines();
-                        self.format_token(&token);
+                        self.format_token(&token, super::FormatContext::default());
                     }
                 },
             }
@@ -230,8 +230,8 @@ impl Formatter {
 
         if let Some(child) = children.next() {
             match child {
-                NodeOrToken::Node(n) => self.format_node(&n),
-                NodeOrToken::Token(t) => self.format_token(&t),
+                NodeOrToken::Node(n) => self.format_node(&n, super::FormatContext::default()),
+                NodeOrToken::Token(t) => self.format_token(&t, super::FormatContext::default()),
             }
         }
 
@@ -256,8 +256,8 @@ impl Formatter {
 
         for child in children {
             match child {
-                NodeOrToken::Node(n) => self.format_node(&n),
-                NodeOrToken::Token(t) => self.format_token(&t),
+                NodeOrToken::Node(n) => self.format_node(&n, super::FormatContext::default()),
+                NodeOrToken::Token(t) => self.format_token(&t, super::FormatContext::default()),
             }
         }
     }
@@ -280,7 +280,7 @@ impl Formatter {
 
             match child {
                 NodeOrToken::Node(child_node) => {
-                    self.format_node(&child_node);
+                    self.format_node(&child_node, super::FormatContext::default());
                 }
                 NodeOrToken::Token(token) => match token.kind() {
                     T![;] => {
@@ -289,7 +289,7 @@ impl Formatter {
                         self.writer.write_char(' ');
                     }
                     _ => {
-                        self.format_token(&token);
+                        self.format_token(&token, super::FormatContext::default());
                     }
                 },
             }
@@ -427,7 +427,7 @@ impl Formatter {
         let mut options = self.options.clone();
         options.alignment_strategies.clear();
         let mut formatter = Formatter::with_shared_deps(self.trivia_table.clone(), options);
-        formatter.format_node(node);
+        formatter.format_node(node, super::FormatContext::default());
 
         let columns = if token_kind == SyntaxKind::EQ {
             formatter.writer.collect_assignment_columns()

@@ -18,8 +18,9 @@ impl Formatter {
         node: &PerlNode,
         opening: SyntaxKind,
         closing: SyntaxKind,
+        ctx: super::FormatContext,
     ) {
-        self.format_single_line_delimited_children(node, opening, closing, true);
+        self.format_single_line_delimited_children(node, opening, closing, true, ctx);
     }
 
     fn format_delimited_literal(
@@ -34,14 +35,14 @@ impl Formatter {
             .any(|element| element.kind() == SyntaxKind::NEWLINE);
 
         if should_multiline {
-            self.format_multiline_delimited_elements_with_context(
+            self.format_multiline_delimited_elements(
                 node.children_with_tokens(),
                 opening,
                 closing,
                 ctx,
             );
         } else {
-            self.format_single_line_delimited_literal(node, opening, closing);
+            self.format_single_line_delimited_literal(node, opening, closing, ctx);
         }
     }
 
@@ -63,7 +64,7 @@ impl Formatter {
 
         for child in node.children_with_tokens() {
             match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Node(node) => self.format_node(&node, super::FormatContext::default()),
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
 
@@ -78,7 +79,7 @@ impl Formatter {
                             self.remember_token(&token);
                         }
                         _ => {
-                            self.format_token(&token);
+                            self.format_token(&token, super::FormatContext::default());
                         }
                     }
                 }
@@ -91,7 +92,7 @@ impl Formatter {
 
         for child in node.children_with_tokens() {
             match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Node(node) => self.format_node(&node, super::FormatContext::default()),
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
 
@@ -119,7 +120,7 @@ impl Formatter {
                             // Newline is handled for QW_STRING tokens, so skip whitespace here
                         }
                         _ => {
-                            self.format_token(&token);
+                            self.format_token(&token, super::FormatContext::default());
                         }
                     }
                 }
@@ -158,12 +159,12 @@ impl Formatter {
     fn format_regex_like_expr(&mut self, node: &PerlNode, kw_kinds: &[SyntaxKind]) {
         for child in node.children_with_tokens() {
             match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Node(node) => self.format_node(&node, super::FormatContext::default()),
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
                     match kind {
                         k if kw_kinds.contains(&k) => {
-                            self.format_token(&token);
+                            self.format_token(&token, super::FormatContext::default());
                         }
                         SyntaxKind::WHITESPACE => {
                             // Preserve whitespace inside these expressions
@@ -188,12 +189,12 @@ impl Formatter {
         // q-family expressions always format as single line
         for child in node.children_with_tokens() {
             match child {
-                NodeOrToken::Node(node) => self.format_node(&node),
+                NodeOrToken::Node(node) => self.format_node(&node, super::FormatContext::default()),
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
                     match kind {
                         k if k == kw_kind => {
-                            self.format_token(&token);
+                            self.format_token(&token, super::FormatContext::default());
                         }
                         T!['('] | T!['['] | T![/] | SyntaxKind::DELIMITER => {
                             self.writer.write_token(&token);

@@ -33,8 +33,8 @@ impl Formatter {
                 // Default child iteration
                 for child in node.children_with_tokens() {
                     match child {
-                        rowan::NodeOrToken::Node(child_node) => self.format_node(&child_node),
-                        rowan::NodeOrToken::Token(token) => self.format_token(&token),
+                        rowan::NodeOrToken::Node(child_node) => self.format_node(&child_node, super::FormatContext::default()),
+                        rowan::NodeOrToken::Token(token) => self.format_token(&token, super::FormatContext::default()),
                     }
                 }
             }

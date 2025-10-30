@@ -247,7 +247,7 @@ impl Formatter {
     }
 
     pub fn format(&mut self, node: &PerlNode) -> String {
-        self.format_node(node);
+        self.format_node(node, FormatContext::default());
         self.writer.finish()
     }
 
@@ -333,11 +333,7 @@ impl Formatter {
         Some(node)
     }
 
-    fn format_node(&mut self, node: &PerlNode) {
-        self.format_node_with_context(node, FormatContext::default())
-    }
-
-    fn format_node_with_context(&mut self, node: &PerlNode, ctx: FormatContext) {
+    fn format_node(&mut self, node: &PerlNode, ctx: FormatContext) {
         // Add empty line before subs, use statements, and regular statements when appropriate
         // This preserves existing behavior for simple cases while also handling statement spacing
         if node.kind().is_phase_block_stmt()
@@ -448,7 +444,7 @@ impl Formatter {
             | SyntaxKind::COMPOUND_VAR
             | SyntaxKind::REGEX_EXPR
             | SyntaxKind::BACKTICK_EXPR => {
-                self.format_expr_with_context(node, ctx);
+                self.format_expr(node, ctx);
                 return;
             }
             SyntaxKind::BLOCK_STMT => {
@@ -503,7 +499,7 @@ impl Formatter {
                     if self.try_format_multiline_parens(&token, &mut children, ctx) {
                         continue;
                     }
-                    self.format_token_with_context(&token, ctx);
+                    self.format_token(&token, ctx);
                 }
                 NodeOrToken::Node(child_node) => {
                     // Output pending empty lines before processing child nodes if requested
@@ -514,7 +510,7 @@ impl Formatter {
                     {
                         self.output_pending_empty_lines();
                     }
-                    self.format_node_with_context(&child_node, ctx);
+                    self.format_node(&child_node, ctx);
                 }
             }
         }
@@ -782,7 +778,7 @@ impl Formatter {
                 if has_immediate_newline {
                     let range_iter = std::iter::once(NodeOrToken::Token(token.clone()))
                         .chain(children.by_ref().take(take_count));
-                    self.format_multiline_delimited_elements_with_context(
+                    self.format_multiline_delimited_elements(
                         range_iter,
                         T!['('],
                         T![')'],
@@ -912,10 +908,6 @@ impl Formatter {
         false
     }
 
-    fn format_token(&mut self, token: &SyntaxToken<crate::PerlLanguage>) {
-        self.format_token_with_context(token, FormatContext::default())
-    }
-
     fn apply_alignment_padding(&mut self, token: &SyntaxToken<PerlLanguage>) {
         let kind = token.kind();
         if let Some(state) = self.alignment_state.as_mut() {
@@ -952,11 +944,7 @@ impl Formatter {
         }
     }
 
-    fn format_token_with_context(
-        &mut self,
-        token: &SyntaxToken<crate::PerlLanguage>,
-        ctx: FormatContext,
-    ) {
+    fn format_token(&mut self, token: &SyntaxToken<crate::PerlLanguage>, ctx: FormatContext) {
         let kind = token.kind();
         let text = token.text();
 
