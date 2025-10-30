@@ -377,7 +377,7 @@ impl Formatter {
                     match kind {
                         SyntaxKind::EXPR_LIST => {
                             // Special handling for expression lists inside delimiters
-                            self.format_expr_list_multiline_iter(&node, ctx);
+                            self.format_expr_list_multiline(&node, ctx);
                         }
                         _ => self.format_node(&node, ctx),
                     }
@@ -424,7 +424,7 @@ impl Formatter {
         }
     }
 
-    fn format_expr_list_multiline_iter(&mut self, list: &PerlNode, ctx: super::FormatContext) {
+    fn format_expr_list_multiline(&mut self, list: &PerlNode, ctx: super::FormatContext) {
         let ctx = ctx.with_multiline_context();
 
         let mut set_local_alignment = false;
