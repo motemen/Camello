@@ -56,9 +56,25 @@ impl Formatter {
 
             if should_add_empty_line
                 && (node.kind() == SyntaxKind::SUB_DEF || node.kind().is_phase_block_stmt())
-                && self.node_has_leading_comment(node)
             {
-                should_add_empty_line = false;
+                // Don't add empty line if there's a leading comment (as trivia) or
+                // a comment as a previous sibling (skipping trivia siblings)
+                let has_comment_before = self.node_has_leading_comment(node) || {
+                    let mut prev_elem = node.prev_sibling_or_token();
+                    while let Some(ref elem) = prev_elem {
+                        // Skip only whitespace and newlines, not comments
+                        if matches!(elem.kind(), SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE) {
+                            prev_elem = elem.prev_sibling_or_token();
+                            continue;
+                        }
+                        break;
+                    }
+                    prev_elem.map(|elem| elem.kind()) == Some(SyntaxKind::COMMENT)
+                };
+
+                if has_comment_before {
+                    should_add_empty_line = false;
+                }
             }
 
             if should_add_empty_line {
