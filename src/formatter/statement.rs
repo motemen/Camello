@@ -201,9 +201,7 @@ impl Formatter {
                             self.writer.handle_user_newline();
                         }
 
-                        if saw_extra_newline
-                            || self.writer.prev_token_kind() == Some(SyntaxKind::COMMENT)
-                        {
+                        if saw_extra_newline {
                             self.pending_empty_lines = 1;
                         }
                     }
