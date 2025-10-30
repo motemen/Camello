@@ -820,8 +820,8 @@ impl Formatter {
             return true;
         }
 
-        // Ternary operator colon at line start needs continuation indent
-        if current == COLON {
+        // Ternary operator parts at line start need continuation indent
+        if matches!(current, QUESTION_MARK | COLON) {
             return true;
         }
 
