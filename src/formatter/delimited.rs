@@ -119,6 +119,25 @@ impl Formatter {
         (elements, has_newline)
     }
 
+    fn format_nested_delimiters<I>(
+        &mut self,
+        token: SyntaxToken<PerlLanguage>,
+        iter: &mut BufferedIterator<I>,
+        open: SyntaxKind,
+        close: SyntaxKind,
+        ctx: FormatContext,
+    ) where
+        I: Iterator<Item = SyntaxElement<PerlLanguage>>,
+    {
+        let (elements, has_newline) = Self::collect_nested_elements(token, iter, open, close);
+        let elements_iter = elements.into_iter();
+        if has_newline {
+            self.format_multiline_delimited_elements(elements_iter, open, close, ctx);
+        } else {
+            self.format_single_line_delimited_elements(elements_iter, open, close, true, ctx);
+        }
+    }
+
     pub(super) fn format_single_line_delimited_children(
         &mut self,
         node: &PerlNode,
@@ -486,46 +505,10 @@ impl Formatter {
                             self.handle_multiline_closing_delimiter(&token);
                         }
                         SyntaxKind::L_PAREN if open_delimiter != SyntaxKind::L_PAREN => {
-                            let (elements, has_newline) =
-                                Self::collect_nested_elements(token, &mut iter, T!['('], T![')']);
-                            let paren_iter = elements.into_iter();
-                            if has_newline {
-                                self.format_multiline_delimited_elements(
-                                    paren_iter,
-                                    T!['('],
-                                    T![')'],
-                                    ctx,
-                                );
-                            } else {
-                                self.format_single_line_delimited_elements(
-                                    paren_iter,
-                                    T!['('],
-                                    T![')'],
-                                    true,
-                                    ctx,
-                                );
-                            }
+                            self.format_nested_delimiters(token, &mut iter, T!['('], T![')'], ctx);
                         }
                         SyntaxKind::L_BRACKET if open_delimiter != SyntaxKind::L_BRACKET => {
-                            let (elements, has_newline) =
-                                Self::collect_nested_elements(token, &mut iter, T!['['], T![']']);
-                            let bracket_iter = elements.into_iter();
-                            if has_newline {
-                                self.format_multiline_delimited_elements(
-                                    bracket_iter,
-                                    T!['['],
-                                    T![']'],
-                                    ctx,
-                                );
-                            } else {
-                                self.format_single_line_delimited_elements(
-                                    bracket_iter,
-                                    T!['['],
-                                    T![']'],
-                                    true,
-                                    ctx,
-                                );
-                            }
+                            self.format_nested_delimiters(token, &mut iter, T!['['], T![']'], ctx);
                         }
                         _ => {
                             self.indent_multiline_element(kind, ctx);
@@ -616,25 +599,10 @@ impl Formatter {
                             }
                         }
                         SyntaxKind::L_PAREN => {
-                            let (elements, has_newline) =
-                                Self::collect_nested_elements(token, &mut iter, T!['('], T![')']);
-                            let paren_iter = elements.into_iter();
-                            if has_newline {
-                                self.format_multiline_delimited_elements(
-                                    paren_iter,
-                                    T!['('],
-                                    T![')'],
-                                    ctx,
-                                );
-                            } else {
-                                self.format_single_line_delimited_elements(
-                                    paren_iter,
-                                    T!['('],
-                                    T![')'],
-                                    true,
-                                    ctx,
-                                );
-                            }
+                            self.format_nested_delimiters(token, &mut iter, T!['('], T![')'], ctx);
+                        }
+                        SyntaxKind::L_BRACKET => {
+                            self.format_nested_delimiters(token, &mut iter, T!['['], T![']'], ctx);
                         }
                         _ => {
                             self.indent_multiline_element(kind, ctx);
