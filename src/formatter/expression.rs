@@ -186,17 +186,15 @@ impl Formatter {
     }
 
     pub(super) fn format_method_call(&mut self, node: &PerlNode, ctx: super::FormatContext) {
-        // Collect all children first to handle trailing newlines
-        let all_children: Vec<_> = node.children_with_tokens().collect();
-        let mut children_iter = all_children.iter();
+        let mut children_iter = node.children_with_tokens();
 
         // Format until arrow
         for child in children_iter.by_ref() {
             match child {
-                NodeOrToken::Node(n) => self.format_node(n, ctx),
+                NodeOrToken::Node(n) => self.format_node(&n, ctx),
                 NodeOrToken::Token(token) if token.kind() == SyntaxKind::WHITESPACE => {}
                 NodeOrToken::Token(token) => {
-                    self.format_token(token, ctx);
+                    self.format_token(&token, ctx);
                     if token.kind() == T![->] {
                         break;
                     }
@@ -208,39 +206,45 @@ impl Formatter {
         for child in children_iter.by_ref() {
             match child {
                 NodeOrToken::Node(n) => {
-                    self.format_node(n, ctx);
+                    self.format_node(&n, ctx);
                     break;
                 }
                 NodeOrToken::Token(token) => {
                     if token.kind() == SyntaxKind::WHITESPACE {
                         continue;
                     }
-                    self.format_token(token, ctx);
+                    self.format_token(&token, ctx);
                     break;
                 }
             }
         }
 
-        // Find the range for parenthesized arguments
-        let remaining: Vec<_> = children_iter.cloned().collect();
-        let paren_end = remaining
-            .iter()
-            .position(|child| child.as_token().map(|t| t.kind()) == Some(T![')']));
+        // Collect elements until closing paren for parenthesized arguments
+        let mut paren_buffer = Vec::new();
+        let mut found_close_paren = false;
 
-        if let Some(end_idx) = paren_end {
+        for child in children_iter.by_ref() {
+            paren_buffer.push(child.clone());
+            if child.as_token().map(|t| t.kind()) == Some(T![')']) {
+                found_close_paren = true;
+                break;
+            }
+        }
+
+        if found_close_paren {
             // Format parenthesized part
-            let paren_part = remaining[..=end_idx].iter().cloned();
-            if Self::has_newline_in_elements(paren_part.clone()) {
-                self.format_multiline_delimited_elements(paren_part, T!['('], T![')'], ctx);
+            let paren_iter = paren_buffer.iter().cloned();
+            if Self::has_newline_in_elements(paren_iter.clone()) {
+                self.format_multiline_delimited_elements(paren_iter, T!['('], T![')'], ctx);
             } else {
-                self.format_single_line_delimited_elements(paren_part, T!['('], T![')'], true, ctx);
+                self.format_single_line_delimited_elements(paren_iter, T!['('], T![')'], true, ctx);
             }
 
             // Format any remaining elements (newlines after closing paren)
-            for child in &remaining[end_idx + 1..] {
+            for child in children_iter {
                 match child {
-                    NodeOrToken::Node(n) => self.format_node(n, ctx),
-                    NodeOrToken::Token(token) => self.format_token(token, ctx),
+                    NodeOrToken::Node(n) => self.format_node(&n, ctx),
+                    NodeOrToken::Token(token) => self.format_token(&token, ctx),
                 }
             }
         }
