@@ -432,7 +432,8 @@ impl Formatter {
 
         let mut options = self.options.clone();
         options.alignment_strategies.clear();
-        let mut formatter = Formatter::with_shared_deps(self.trivia_table.clone(), options);
+        let mut formatter =
+            Formatter::with_shared_deps(self.trivia_table.clone(), options, self.root.clone());
         formatter
             .writer
             .set_indent_level(self.writer.indent_level());

@@ -213,16 +213,21 @@ pub struct Formatter {
     trivia_table: Rc<TriviaTable>,
     options: FormatterOptions,
     alignment_state: Option<AlignmentState>,
+    root: PerlNode,
 }
 
 impl Formatter {
     #[must_use]
-    pub fn new(trivia_table: TriviaTable) -> Self {
-        Self::with_options(trivia_table, FormatterOptions::default())
+    pub fn new(trivia_table: TriviaTable, root: PerlNode) -> Self {
+        Self::with_options(trivia_table, FormatterOptions::default(), root)
     }
 
     #[must_use]
-    pub fn with_options(trivia_table: TriviaTable, options: FormatterOptions) -> Self {
+    pub fn with_options(
+        trivia_table: TriviaTable,
+        options: FormatterOptions,
+        root: PerlNode,
+    ) -> Self {
         Self {
             pending_empty_lines: 0,
             pending_space_after_block_call: false,
@@ -232,10 +237,15 @@ impl Formatter {
             trivia_table: Rc::new(trivia_table),
             options,
             alignment_state: None,
+            root,
         }
     }
 
-    fn with_shared_deps(trivia_table: Rc<TriviaTable>, options: FormatterOptions) -> Self {
+    fn with_shared_deps(
+        trivia_table: Rc<TriviaTable>,
+        options: FormatterOptions,
+        root: PerlNode,
+    ) -> Self {
         Self {
             pending_empty_lines: 0,
             pending_space_after_block_call: false,
@@ -243,6 +253,7 @@ impl Formatter {
             trivia_table,
             options,
             alignment_state: None,
+            root,
         }
     }
 
@@ -295,10 +306,7 @@ impl Formatter {
             return false;
         };
 
-        let Some(root) = Self::comment_root(token) else {
-            return false;
-        };
-        let Some(owner_token) = owner_key.resolve(&root) else {
+        let Some(owner_token) = owner_key.resolve(&self.root) else {
             return false;
         };
 
@@ -323,14 +331,6 @@ impl Formatter {
         }
 
         false
-    }
-
-    fn comment_root(token: &SyntaxToken<PerlLanguage>) -> Option<PerlNode> {
-        let mut node = token.parent()?;
-        while let Some(parent) = node.parent() {
-            node = parent;
-        }
-        Some(node)
     }
 
     fn format_node(&mut self, node: &PerlNode, ctx: FormatContext) {
@@ -1167,7 +1167,7 @@ pub fn format_with_options(node: &PerlNode, options: FormatterOptions) -> String
         root = parent;
     }
     let trivia_table = TriviaTable::from_syntax(&root);
-    let mut formatter = Formatter::with_options(trivia_table, options);
+    let mut formatter = Formatter::with_options(trivia_table, options, root);
     formatter.format(node)
 }
 
