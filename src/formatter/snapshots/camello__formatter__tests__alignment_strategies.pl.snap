@@ -1,6 +1,5 @@
 ---
 source: src/formatter/tests.rs
-assertion_line: 51
 expression: formatted
 ---
 sub alignment_examples {
@@ -25,7 +24,5 @@ sub alignment_examples {
     log_event $event unless $disabled;
 
     my $short = 1; # comment one
-
     my $long_variable_name = 2; # comment two
-
 }

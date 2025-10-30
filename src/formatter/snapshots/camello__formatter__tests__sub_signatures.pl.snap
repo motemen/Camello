@@ -3,7 +3,6 @@ source: src/formatter/tests.rs
 expression: formatted
 ---
 # Subroutine signatures formatting samples
-
 sub greet ($name, $greeting = "Hello") { "$greeting, $name!" }
 
 sub flexible ($first, $, $third //= 3, @rest) {
