@@ -436,6 +436,7 @@ impl Formatter {
         }
 
         let mut iter = BufferedIterator::new(list.children_with_tokens());
+        let mut skip_next_newline = false;
 
         while let Some(child) = iter.next() {
             match child {
@@ -448,17 +449,45 @@ impl Formatter {
                             // Skip whitespace - spacing is managed by formatter
                         }
                         SyntaxKind::NEWLINE => {
-                            // Preserve user-provided newlines
-                            self.format_token(&token, ctx);
+                            // Skip if we already handled the newline after a comment
+                            if skip_next_newline {
+                                skip_next_newline = false;
+                            } else {
+                                // Preserve user-provided newlines
+                                self.format_token(&token, ctx);
+                            }
+                        }
+                        SyntaxKind::COMMENT => {
+                            // Handle inline and new-line comments
+                            if self.writer.at_line_start() {
+                                self.writer.add_indent();
+                                self.writer.set_at_line_start(false);
+                            } else {
+                                self.writer.write_char(' ');
+                            }
+                            self.writer.write_str(token.text().trim(), Some(kind), None);
+
+                            // Add newline after comment
+                            self.writer.handle_user_newline();
+
+                            // Skip the next newline token since we already added one
+                            skip_next_newline = true;
+
+                            self.remember_token(&token);
                         }
                         T![,] => {
                             self.format_token(&token, ctx);
 
-                            // Only add automatic newline if user hasn't provided one
-                            let has_user_newline_after =
-                                iter.peek_next_non_whitespace_kind() != Some(SyntaxKind::NEWLINE);
+                            // Check what comes after the comma (skipping whitespace)
+                            let next_token_kind = iter.peek_next_non_whitespace_kind();
 
-                            if has_user_newline_after {
+                            // Don't add automatic newline if:
+                            // 1. User has provided a newline already
+                            // 2. Next token is a comment (preserve inline comments)
+                            let should_add_newline = next_token_kind != Some(SyntaxKind::NEWLINE)
+                                && next_token_kind != Some(SyntaxKind::COMMENT);
+
+                            if should_add_newline {
                                 self.writer.handle_formatter_newline();
                             }
                         }
