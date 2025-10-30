@@ -190,7 +190,7 @@ impl Formatter {
                             let tightness = self.options.delimiter_tightness.for_kind(opening);
                             let mut add_interior_space =
                                 tightness.should_add_space(frame.significant_tokens);
-                            if frame.contains_qw {
+                            if frame.contains_qw && opening != T!['('] {
                                 add_interior_space = true;
                             }
                             open_spacing[frame.open_index] = Some(add_interior_space);
