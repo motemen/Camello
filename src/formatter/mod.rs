@@ -944,8 +944,8 @@ impl Formatter {
                     self.writer.add_indent();
                     self.writer.set_at_line_start(false);
                 } else {
-                    // This is an inline comment - add a space before it
-                    self.writer.write_char(' ');
+                    // This is an inline comment - add 4 spaces before it (like perltidy)
+                    self.writer.write_str("    ", None, None);
                 }
                 self.apply_alignment_padding(token);
                 self.writer.write_str(text.trim(), Some(kind), None);

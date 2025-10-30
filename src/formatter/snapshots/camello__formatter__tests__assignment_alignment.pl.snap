@@ -1,12 +1,11 @@
 ---
 source: src/formatter/tests.rs
-assertion_line: 51
 expression: formatted
 ---
 sub demo_alignment {
     my $alpha      = 1;
     my $beta_value = 20;
-    my $gamma      = compute_value(); # trailing comment
+    my $gamma      = compute_value();    # trailing comment
 
     my $multiline =
         some_long_expression();
