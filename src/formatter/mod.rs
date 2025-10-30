@@ -5,7 +5,7 @@ use crate::{
     comments::{TokenKey, TriviaPosition, TriviaTable},
     PerlLanguage, PerlNode, SyntaxKind, T,
 };
-use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
+use rowan::{NodeOrToken, SyntaxElement, SyntaxElementChildren, SyntaxToken};
 use std::collections::VecDeque;
 use std::rc::Rc;
 
@@ -518,11 +518,9 @@ impl Formatter {
     }
 
     fn format_expr_list_node(&mut self, node: &PerlNode, ctx: FormatContext) {
-        let elements: Vec<_> = node.children_with_tokens().collect();
-
         let mut set_local_alignment = false;
         if self.alignment_state.is_none() {
-            if let Some(state) = self.collect_expr_list_alignment_state(node, &elements) {
+            if let Some(state) = self.collect_expr_list_alignment_state(node) {
                 self.alignment_state = Some(state);
                 set_local_alignment = true;
             }
@@ -572,11 +570,11 @@ impl Formatter {
         false
     }
 
-    fn has_newline_before_first_value_iter(
+    fn has_newline_before_first_value_in_elements(
         &self,
-        iter: SyntaxElementChildren<PerlLanguage>,
+        elements: impl IntoIterator<Item = SyntaxElement<PerlLanguage>>,
     ) -> bool {
-        for child in iter {
+        for child in elements.into_iter() {
             match child {
                 NodeOrToken::Token(token) => {
                     if matches!(token.kind(), T!['{'] | T!['['] | T!['(']) {

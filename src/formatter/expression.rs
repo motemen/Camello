@@ -1,4 +1,4 @@
-use rowan::{NodeOrToken, SyntaxElementChildren};
+use rowan::{NodeOrToken, SyntaxElement};
 
 use crate::{PerlLanguage, PerlNode, SyntaxKind, T};
 
@@ -186,17 +186,15 @@ impl Formatter {
     }
 
     pub(super) fn format_method_call(&mut self, node: &PerlNode, ctx: super::FormatContext) {
-        // Collect all children first to handle trailing newlines
-        let all_children: Vec<_> = node.children_with_tokens().collect();
-        let mut children_iter = all_children.iter();
+        let mut children_iter = node.children_with_tokens();
 
         // Format until arrow
         for child in children_iter.by_ref() {
             match child {
-                NodeOrToken::Node(n) => self.format_node(n, ctx),
+                NodeOrToken::Node(n) => self.format_node(&n, ctx),
                 NodeOrToken::Token(token) if token.kind() == SyntaxKind::WHITESPACE => {}
                 NodeOrToken::Token(token) => {
-                    self.format_token(token, ctx);
+                    self.format_token(&token, ctx);
                     if token.kind() == T![->] {
                         break;
                     }
@@ -208,44 +206,45 @@ impl Formatter {
         for child in children_iter.by_ref() {
             match child {
                 NodeOrToken::Node(n) => {
-                    self.format_node(n, ctx);
+                    self.format_node(&n, ctx);
                     break;
                 }
                 NodeOrToken::Token(token) => {
                     if token.kind() == SyntaxKind::WHITESPACE {
                         continue;
                     }
-                    self.format_token(token, ctx);
+                    self.format_token(&token, ctx);
                     break;
                 }
             }
         }
 
-        // Find the range for parenthesized arguments
-        let remaining: Vec<_> = children_iter.cloned().collect();
-        let paren_end = remaining
-            .iter()
-            .position(|child| child.as_token().map(|t| t.kind()) == Some(T![')']));
+        // Collect elements until closing paren for parenthesized arguments
+        let mut paren_buffer = Vec::new();
+        let mut found_close_paren = false;
 
-        if let Some(end_idx) = paren_end {
+        for child in children_iter.by_ref() {
+            paren_buffer.push(child.clone());
+            if child.as_token().map(|t| t.kind()) == Some(T![')']) {
+                found_close_paren = true;
+                break;
+            }
+        }
+
+        if found_close_paren {
             // Format parenthesized part
-            let paren_part = remaining[..=end_idx].iter().cloned();
-            if Self::has_newline_in_elements(paren_part.clone()) {
-                self.format_multiline_delimited_elements(paren_part, T!['('], T![')'], ctx);
+            let paren_iter = paren_buffer.iter().cloned();
+            if Self::has_newline_in_elements(paren_iter.clone()) {
+                self.format_multiline_delimited_elements(paren_iter, T!['('], T![')'], ctx);
             } else {
-                self.format_single_line_delimited_elements(
-                    paren_part.collect(),
-                    T!['('],
-                    T![')'],
-                    true,
-                );
+                self.format_single_line_delimited_elements(paren_iter, T!['('], T![')'], true, ctx);
             }
 
             // Format any remaining elements (newlines after closing paren)
-            for child in &remaining[end_idx + 1..] {
+            for child in children_iter {
                 match child {
-                    NodeOrToken::Node(n) => self.format_node(n, ctx),
-                    NodeOrToken::Token(token) => self.format_token(token, ctx),
+                    NodeOrToken::Node(n) => self.format_node(&n, ctx),
+                    NodeOrToken::Token(token) => self.format_token(&token, ctx),
                 }
             }
         }
@@ -258,12 +257,12 @@ impl Formatter {
         iter.any(|element| element.as_token().map(|t| t.kind()) == Some(SyntaxKind::NEWLINE))
     }
 
-    fn format_until_arrow_iter(
+    fn format_until_arrow(
         &mut self,
-        iter: &mut SyntaxElementChildren<PerlLanguage>,
+        iter: impl IntoIterator<Item = SyntaxElement<PerlLanguage>>,
         ctx: super::FormatContext,
     ) {
-        for child in iter {
+        for child in iter.into_iter() {
             match child {
                 NodeOrToken::Node(node) => self.format_node(&node, ctx),
                 NodeOrToken::Token(token) if token.kind() == SyntaxKind::WHITESPACE => {}
@@ -280,18 +279,22 @@ impl Formatter {
     }
 
     /// formats @array, %hash or its ref's [ ... ] or { ... } part
-    fn format_subscription_iter(
+    fn format_subscription<I>(
         &mut self,
-        iter: SyntaxElementChildren<PerlLanguage>,
+        iter: I,
         opening: SyntaxKind,
         closing: SyntaxKind,
         ctx: super::FormatContext,
-    ) {
-        if self.has_newline_before_first_value_iter(iter.clone()) {
+    ) where
+        I: IntoIterator<Item = SyntaxElement<PerlLanguage>>,
+        <I as IntoIterator>::IntoIter: Clone,
+    {
+        let iter = iter.into_iter();
+
+        if self.has_newline_before_first_value_in_elements(iter.clone()) {
             self.format_multiline_delimited_elements(iter, opening, closing, ctx);
         } else {
-            let elements: Vec<_> = iter.collect();
-            self.format_single_line_delimited_elements(elements, opening, closing, true);
+            self.format_single_line_delimited_elements(iter, opening, closing, true, ctx);
         }
     }
 
@@ -303,8 +306,8 @@ impl Formatter {
         ctx: super::FormatContext,
     ) {
         let mut children = node.children_with_tokens();
-        self.format_until_arrow_iter(children.by_ref(), ctx);
-        self.format_subscription_iter(children, opening, closing, ctx);
+        self.format_until_arrow(children.by_ref(), ctx);
+        self.format_subscription(children, opening, closing, ctx);
     }
 
     fn format_postfix_slice_expr(
@@ -314,7 +317,7 @@ impl Formatter {
         ctx: super::FormatContext,
     ) {
         let mut children = node.children_with_tokens();
-        self.format_until_arrow_iter(children.by_ref(), ctx);
+        self.format_until_arrow(children.by_ref(), ctx);
 
         for child in children.by_ref() {
             match child {
@@ -362,7 +365,7 @@ impl Formatter {
             }
         }
 
-        self.format_subscription_iter(children, opening, closing, ctx);
+        self.format_subscription(children, opening, closing, ctx);
     }
 
     pub(super) fn format_hash_ref_access(&mut self, node: &PerlNode, ctx: super::FormatContext) {
@@ -431,12 +434,12 @@ impl Formatter {
 
     pub(super) fn format_hash_subscription(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         let children = node.children_with_tokens();
-        self.format_subscription_iter(children, T!['{'], T!['}'], ctx);
+        self.format_subscription(children, T!['{'], T!['}'], ctx);
     }
 
     pub(super) fn format_array_subscription(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         let children = node.children_with_tokens();
-        self.format_subscription_iter(children, T!['['], T![']'], ctx);
+        self.format_subscription(children, T!['['], T![']'], ctx);
     }
 
     pub(super) fn format_sub_prototype(&mut self, node: &PerlNode) {
