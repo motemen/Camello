@@ -157,7 +157,8 @@ impl Formatter {
         // Use single-line for simple blocks (single statement, no semicolon)
         // Use multi-line for complex blocks
 
-        for child in node.children_with_tokens() {
+        let mut children = node.children_with_tokens();
+        while let Some(child) = children.next() {
             let mut formatted_block = false;
 
             match child {
@@ -175,6 +176,10 @@ impl Formatter {
                     }
                 }
                 NodeOrToken::Token(token) => {
+                    // Check for multiline parenthesized expressions
+                    if self.try_format_multiline_parens(&token, &mut children, super::FormatContext::default()) {
+                        continue;
+                    }
                     self.format_token(&token, super::FormatContext::default());
                 }
             }
