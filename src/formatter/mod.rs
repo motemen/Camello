@@ -5,7 +5,7 @@ use crate::{
     comments::{TokenKey, TriviaPosition, TriviaTable},
     PerlLanguage, PerlNode, SyntaxKind, T,
 };
-use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
+use rowan::{NodeOrToken, SyntaxElement, SyntaxElementChildren, SyntaxToken};
 use std::collections::VecDeque;
 use std::rc::Rc;
 
@@ -572,11 +572,11 @@ impl Formatter {
         false
     }
 
-    fn has_newline_before_first_value_iter(
+    fn has_newline_before_first_value_in_elements(
         &self,
-        iter: SyntaxElementChildren<PerlLanguage>,
+        elements: impl IntoIterator<Item = SyntaxElement<PerlLanguage>>,
     ) -> bool {
-        for child in iter {
+        for child in elements.into_iter() {
             match child {
                 NodeOrToken::Token(token) => {
                     if matches!(token.kind(), T!['{'] | T!['['] | T!['(']) {
