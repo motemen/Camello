@@ -1,9 +1,59 @@
 use crate::{PerlLanguage, PerlNode, SyntaxKind, T};
 use rowan::{NodeOrToken, SyntaxElement, SyntaxToken};
+use std::collections::VecDeque;
 
 use super::{AlignmentState, AlignmentStrategy, FormatContext, Formatter};
 
 type DelimiterSpacing = (Vec<Option<bool>>, Vec<Option<bool>>);
+
+/// Iterator wrapper that supports peeking ahead multiple elements
+struct BufferedIterator<I: Iterator> {
+    iter: I,
+    buffer: VecDeque<I::Item>,
+}
+
+impl<I: Iterator> BufferedIterator<I> {
+    fn new(iter: I) -> Self {
+        Self {
+            iter,
+            buffer: VecDeque::new(),
+        }
+    }
+
+    /// Find the kind of the next non-whitespace token without consuming
+    fn peek_next_non_whitespace_kind(&mut self) -> Option<SyntaxKind>
+    where
+        I: Iterator<Item = SyntaxElement<PerlLanguage>>,
+    {
+        let mut n = 0;
+        loop {
+            // Fill buffer up to n+1 elements
+            while self.buffer.len() <= n {
+                if let Some(item) = self.iter.next() {
+                    self.buffer.push_back(item);
+                } else {
+                    return None;
+                }
+            }
+
+            match self.buffer.get(n) {
+                Some(NodeOrToken::Token(token)) if token.kind() != SyntaxKind::WHITESPACE => {
+                    return Some(token.kind());
+                }
+                Some(_) => n += 1,
+                None => return None,
+            }
+        }
+    }
+}
+
+impl<I: Iterator> Iterator for BufferedIterator<I> {
+    type Item = I::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.buffer.pop_front().or_else(|| self.iter.next())
+    }
+}
 
 impl Formatter {
     pub(super) fn format_single_line_delimited_children(
@@ -35,26 +85,6 @@ impl Formatter {
     }
 
     pub(super) fn format_single_line_delimited_elements<I>(
-        &mut self,
-        elements: I,
-        opening: SyntaxKind,
-        closing: SyntaxKind,
-        skip_whitespace: bool,
-    ) where
-        I: IntoIterator<Item = SyntaxElement<PerlLanguage>>,
-        I::IntoIter: Clone,
-    {
-        let ctx = FormatContext::default().with_suppress_newlines();
-        self.format_single_line_delimited_elements_with_context(
-            elements,
-            opening,
-            closing,
-            skip_whitespace,
-            ctx,
-        );
-    }
-
-    pub(super) fn format_single_line_delimited_elements_with_context<I>(
         &mut self,
         elements: I,
         opening: SyntaxKind,
@@ -337,9 +367,9 @@ impl Formatter {
         ctx: super::FormatContext,
     ) {
         let ctx = ctx.with_multiline_context();
-        let elements_vec: Vec<_> = elements.into_iter().collect();
+        let mut iter = BufferedIterator::new(elements.into_iter());
 
-        for (index, child) in elements_vec.iter().enumerate() {
+        while let Some(child) = iter.next() {
             match child {
                 NodeOrToken::Node(node) => {
                     let kind = node.kind();
@@ -347,9 +377,9 @@ impl Formatter {
                     match kind {
                         SyntaxKind::EXPR_LIST => {
                             // Special handling for expression lists inside delimiters
-                            self.format_expr_list_multiline_iter(node, ctx);
+                            self.format_expr_list_multiline_iter(&node, ctx);
                         }
-                        _ => self.format_node(node, ctx),
+                        _ => self.format_node(&node, ctx),
                     }
                 }
                 NodeOrToken::Token(token) => {
@@ -361,7 +391,7 @@ impl Formatter {
                         }
                         SyntaxKind::NEWLINE => {
                             // Preserve user-provided newlines
-                            self.format_token(token, ctx);
+                            self.format_token(&token, ctx);
                         }
                         k if k == open_delimiter => {
                             self.handle_spacing_before(kind);
@@ -371,32 +401,22 @@ impl Formatter {
                             }
 
                             // Check if next non-whitespace token is a newline
-                            let has_user_newline_after = elements_vec
-                                .iter()
-                                .skip(index + 1)
-                                .find(|e| {
-                                    !matches!(
-                                        e.as_token().map(|t| t.kind()),
-                                        Some(SyntaxKind::WHITESPACE)
-                                    )
-                                })
-                                .and_then(|e| e.as_token())
-                                .map(|t| t.kind())
-                                == Some(SyntaxKind::NEWLINE);
+                            let has_user_newline_after =
+                                iter.peek_next_non_whitespace_kind() == Some(SyntaxKind::NEWLINE);
 
-                            self.writer.write_token(token);
+                            self.writer.write_token(&token);
                             self.writer.increase_indent();
                             if !has_user_newline_after {
                                 self.writer.handle_formatter_newline();
                             }
-                            self.remember_token(token);
+                            self.remember_token(&token);
                         }
                         k if k == close_delimiter => {
-                            self.handle_multiline_closing_delimiter(token);
+                            self.handle_multiline_closing_delimiter(&token);
                         }
                         _ => {
                             // その他のトークンは通常通り処理
-                            self.format_token(token, ctx);
+                            self.format_token(&token, ctx);
                         }
                     }
                 }
@@ -406,19 +426,20 @@ impl Formatter {
 
     fn format_expr_list_multiline_iter(&mut self, list: &PerlNode, ctx: super::FormatContext) {
         let ctx = ctx.with_multiline_context();
-        let elements: Vec<_> = list.children_with_tokens().collect();
 
         let mut set_local_alignment = false;
         if self.alignment_state.is_none() {
-            if let Some(state) = self.collect_expr_list_alignment_state(list, &elements) {
+            if let Some(state) = self.collect_expr_list_alignment_state(list) {
                 self.alignment_state = Some(state);
                 set_local_alignment = true;
             }
         }
 
-        for (index, child) in elements.iter().enumerate() {
+        let mut iter = BufferedIterator::new(list.children_with_tokens());
+
+        while let Some(child) = iter.next() {
             match child {
-                NodeOrToken::Node(node) => self.format_node(node, ctx),
+                NodeOrToken::Node(node) => self.format_node(&node, ctx),
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
 
@@ -428,24 +449,14 @@ impl Formatter {
                         }
                         SyntaxKind::NEWLINE => {
                             // Preserve user-provided newlines
-                            self.format_token(token, ctx);
+                            self.format_token(&token, ctx);
                         }
                         T![,] => {
-                            self.format_token(token, ctx);
+                            self.format_token(&token, ctx);
 
                             // Only add automatic newline if user hasn't provided one
-                            let has_user_newline_after = elements
-                                .iter()
-                                .skip(index + 1)
-                                .find(|e| {
-                                    !matches!(
-                                        e.as_token().map(|t| t.kind()),
-                                        Some(SyntaxKind::WHITESPACE)
-                                    )
-                                })
-                                .and_then(|e| e.as_token())
-                                .map(|t| t.kind())
-                                != Some(SyntaxKind::NEWLINE);
+                            let has_user_newline_after =
+                                iter.peek_next_non_whitespace_kind() != Some(SyntaxKind::NEWLINE);
 
                             if has_user_newline_after {
                                 self.writer.handle_formatter_newline();
@@ -453,7 +464,7 @@ impl Formatter {
                         }
                         _ => {
                             // その他のトークンは通常通り処理
-                            self.format_token(token, ctx);
+                            self.format_token(&token, ctx);
                         }
                     }
                 }
@@ -469,7 +480,6 @@ impl Formatter {
     pub(super) fn collect_expr_list_alignment_state(
         &self,
         list: &PerlNode,
-        elements: &[SyntaxElement<PerlLanguage>],
     ) -> Option<AlignmentState> {
         if !self
             .options
@@ -482,7 +492,7 @@ impl Formatter {
         let mut saw_newline = false;
         let mut top_level_commas = Vec::new();
 
-        for element in elements {
+        for element in list.children_with_tokens() {
             if let Some(token) = element.as_token() {
                 match token.kind() {
                     SyntaxKind::FAT_COMMA => top_level_commas.push(token.clone()),

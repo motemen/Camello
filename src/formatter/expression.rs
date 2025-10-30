@@ -233,7 +233,7 @@ impl Formatter {
             if Self::has_newline_in_elements(paren_part.clone()) {
                 self.format_multiline_delimited_elements(paren_part, T!['('], T![')'], ctx);
             } else {
-                self.format_single_line_delimited_elements(paren_part, T!['('], T![')'], true);
+                self.format_single_line_delimited_elements(paren_part, T!['('], T![')'], true, ctx);
             }
 
             // Format any remaining elements (newlines after closing paren)
@@ -290,7 +290,7 @@ impl Formatter {
         if self.has_newline_before_first_value_in_elements(iter.clone()) {
             self.format_multiline_delimited_elements(iter, opening, closing, ctx);
         } else {
-            self.format_single_line_delimited_elements(iter, opening, closing, true);
+            self.format_single_line_delimited_elements(iter, opening, closing, true, ctx);
         }
     }
 
