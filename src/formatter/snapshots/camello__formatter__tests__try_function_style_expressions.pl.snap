@@ -3,25 +3,19 @@ source: src/formatter/tests.rs
 expression: formatted
 ---
 # Function-style try with postfix operations
-
 try { die }->method();
 
 # Function-style try with method chain
-
 try { 1 }->then(sub { 2 });
 
 # Function-style try with arithmetic operators
-
 my $x = try { 1 } +1;
 
 # Function-style try with arguments (Try::Tiny style)
-
 try { die } catch { warn $_ };
 
 # Function-style try with multiple arguments
-
 try { die } $handler, $opts;
 
 # Function-style try in list context
-
 my @results = (try { 1 }, try { 2 });

@@ -5,7 +5,6 @@ expression: formatted
 # Test multiline parentheses in various contexts
 
 # Array assignment
-
 @a = (
     1,
     2,
@@ -24,14 +23,12 @@ use A (
 );
 
 # Subroutine call
-
 my $result = some_func(
     arg1,
     arg2
 );
 
 # Nested parentheses
-
 my $x = (
     (
         1 + 2
@@ -39,6 +36,5 @@ my $x = (
 );
 
 # Mixed: no newline after opening paren (should not reformat)
-
 my @list = (1, 2,
     3, 4);
