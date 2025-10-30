@@ -63,7 +63,25 @@ impl TokenKey {
             return None;
         }
 
-        root.token_at_offset(self.range.start())
+        // Fast path: `covering_element` should quickly find the node containing the
+        // token, which massively prunes the search space for `token_at_offset`.
+        let search_node = match root.covering_element(self.range) {
+            rowan::NodeOrToken::Node(node) => node,
+            rowan::NodeOrToken::Token(token) => {
+                if token.kind() == self.kind && token.text_range() == self.range {
+                    return Some(token);
+                }
+                // The covering element is a token, but not the one we're looking for.
+                // This can happen with overlapping tokens (e.g. zero-width tokens).
+                // Search from the parent.
+                token.parent().unwrap_or_else(|| root.clone())
+            }
+        };
+
+        // `token_at_offset`'s offset is relative to the start of the file, so we can
+        // call it on a sub-node without adjusting offsets.
+        search_node
+            .token_at_offset(self.range.start())
             .find(|token| token.kind() == self.kind && token.text_range() == self.range)
     }
 }
