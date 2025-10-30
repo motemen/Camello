@@ -7,7 +7,7 @@ use crate::{PerlLanguage, PerlNode, SyntaxKind, T};
 use super::{AlignmentState, AlignmentStrategy, Formatter};
 
 impl Formatter {
-    pub(super) fn format_use_no_stmt(&mut self, node: &PerlNode) {
+    pub(super) fn format_use_no_stmt(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         // Output pending empty lines before processing use/no statement
         if self.pending_empty_lines > 0 {
             self.output_pending_empty_lines();
@@ -41,18 +41,14 @@ impl Formatter {
 
             // Check for multiline parentheses
             if let NodeOrToken::Token(token) = &child {
-                if self.try_format_multiline_parens(
-                    token,
-                    &mut children,
-                    super::FormatContext::default(),
-                ) {
+                if self.try_format_multiline_parens(token, &mut children, ctx) {
                     continue;
                 }
             }
 
             match &child {
-                NodeOrToken::Node(n) => self.format_node(n, super::FormatContext::default()),
-                NodeOrToken::Token(t) => self.format_token(t, super::FormatContext::default()),
+                NodeOrToken::Node(n) => self.format_node(n, ctx),
+                NodeOrToken::Token(t) => self.format_token(t, ctx),
             }
 
             if is_module_name {
@@ -89,12 +85,12 @@ impl Formatter {
         }
     }
 
-    pub(super) fn format_simple_block(&mut self, node: &PerlNode) {
+    pub(super) fn format_simple_block(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         let brace_tightness = self.options.delimiter_tightness.for_kind(T!['{']);
         let add_space_for_block = brace_tightness.should_add_space_for_simple_block();
 
         // Use context with suppress_newlines enabled for simple blocks
-        let ctx = super::FormatContext::default().with_suppress_newlines();
+        let ctx = ctx.with_suppress_newlines();
 
         let mut has_content = false;
 
@@ -138,9 +134,9 @@ impl Formatter {
         }
     }
 
-    pub(super) fn format_block(&mut self, node: &PerlNode) {
+    pub(super) fn format_block(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         if self.is_simple_block(node) {
-            self.format_simple_block(node);
+            self.format_simple_block(node, ctx);
             return;
         }
 
@@ -180,7 +176,7 @@ impl Formatter {
                     }
 
                     self.output_pending_empty_lines();
-                    self.format_node(&child_node, super::FormatContext::default());
+                    self.format_node(&child_node, ctx);
 
                     prev_node_kind = Some(current_kind);
                 }
@@ -220,20 +216,20 @@ impl Formatter {
                     }
                     _ => {
                         self.output_pending_empty_lines();
-                        self.format_token(&token, super::FormatContext::default());
+                        self.format_token(&token, ctx);
                     }
                 },
             }
         }
     }
 
-    pub(super) fn format_labeled_stmt(&mut self, node: &PerlNode) {
+    pub(super) fn format_labeled_stmt(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         let mut children = node.children_with_tokens().peekable();
 
         if let Some(child) = children.next() {
             match child {
-                NodeOrToken::Node(n) => self.format_node(&n, super::FormatContext::default()),
-                NodeOrToken::Token(t) => self.format_token(&t, super::FormatContext::default()),
+                NodeOrToken::Node(n) => self.format_node(&n, ctx),
+                NodeOrToken::Token(t) => self.format_token(&t, ctx),
             }
         }
 
@@ -258,31 +254,27 @@ impl Formatter {
 
         for child in children {
             match child {
-                NodeOrToken::Node(n) => self.format_node(&n, super::FormatContext::default()),
-                NodeOrToken::Token(t) => self.format_token(&t, super::FormatContext::default()),
+                NodeOrToken::Node(n) => self.format_node(&n, ctx),
+                NodeOrToken::Token(t) => self.format_token(&t, ctx),
             }
         }
     }
 
-    pub(super) fn format_for_stmt(&mut self, node: &PerlNode) {
+    pub(super) fn format_for_stmt(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         // Special handling for C-style for loops: add space after semicolons
         let mut children = node.children_with_tokens();
 
         while let Some(child) = children.next() {
             // Check for multiline parentheses
             if let NodeOrToken::Token(token) = &child {
-                if self.try_format_multiline_parens(
-                    token,
-                    &mut children,
-                    super::FormatContext::default(),
-                ) {
+                if self.try_format_multiline_parens(token, &mut children, ctx) {
                     continue;
                 }
             }
 
             match child {
                 NodeOrToken::Node(child_node) => {
-                    self.format_node(&child_node, super::FormatContext::default());
+                    self.format_node(&child_node, ctx);
                 }
                 NodeOrToken::Token(token) => match token.kind() {
                     T![;] => {
@@ -291,7 +283,7 @@ impl Formatter {
                         self.writer.write_char(' ');
                     }
                     _ => {
-                        self.format_token(&token, super::FormatContext::default());
+                        self.format_token(&token, ctx);
                     }
                 },
             }

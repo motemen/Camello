@@ -14,7 +14,7 @@ impl Formatter {
                 self.format_function_call_expr(node, ctx);
             }
             SyntaxKind::BLOCK_FUNCTION_CALL_EXPR => {
-                self.format_block_function_call(node);
+                self.format_block_function_call(node, ctx);
             }
             SyntaxKind::METHOD_CALL_EXPR => {
                 self.format_method_call(node, ctx);
@@ -41,7 +41,7 @@ impl Formatter {
                 self.format_array_subscription(node, ctx);
             }
             SyntaxKind::COMPOUND_VAR => {
-                self.format_compound_var(node);
+                self.format_compound_var(node, ctx);
             }
             SyntaxKind::REGEX_EXPR => {
                 // Default handling for regex expressions - just format children
@@ -120,13 +120,13 @@ impl Formatter {
                         SyntaxKind::BLOCK_STMT => {
                             // Check if this is a simple block that can be formatted inline
                             if self.is_simple_block(&child_node) {
-                                self.format_simple_block(&child_node);
+                                self.format_simple_block(&child_node, ctx);
                             } else {
-                                self.format_node(&child_node, super::FormatContext::default());
+                                self.format_node(&child_node, ctx);
                             }
                         }
                         _ => {
-                            self.format_node(&child_node, super::FormatContext::default());
+                            self.format_node(&child_node, ctx);
                         }
                     }
                 }
@@ -152,7 +152,11 @@ impl Formatter {
         }
     }
 
-    pub(super) fn format_block_function_call(&mut self, node: &PerlNode) {
+    pub(super) fn format_block_function_call(
+        &mut self,
+        node: &PerlNode,
+        ctx: super::FormatContext,
+    ) {
         // Format block function call: function_name { ... } additional_args
         // Use single-line for simple blocks (single statement, no semicolon)
         // Use multi-line for complex blocks
@@ -166,21 +170,21 @@ impl Formatter {
                     if child_node.kind() == SyntaxKind::BLOCK_STMT {
                         formatted_block = true;
                         if self.is_simple_block(&child_node) {
-                            self.format_simple_block(&child_node);
+                            self.format_simple_block(&child_node, ctx);
                         } else {
                             // Use format_node for complex blocks to preserve empty lines
-                            self.format_node(&child_node, super::FormatContext::default());
+                            self.format_node(&child_node, ctx);
                         }
                     } else {
-                        self.format_node(&child_node, super::FormatContext::default());
+                        self.format_node(&child_node, ctx);
                     }
                 }
                 NodeOrToken::Token(token) => {
                     // Check for multiline parenthesized expressions
-                    if self.try_format_multiline_parens(&token, &mut children, super::FormatContext::default()) {
+                    if self.try_format_multiline_parens(&token, &mut children, ctx) {
                         continue;
                     }
-                    self.format_token(&token, super::FormatContext::default());
+                    self.format_token(&token, ctx);
                 }
             }
 
@@ -385,7 +389,7 @@ impl Formatter {
         self.format_ref_access_expr(node, T!['('], T![')'], ctx);
     }
 
-    pub(super) fn format_compound_var(&mut self, node: &PerlNode) {
+    pub(super) fn format_compound_var(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         // Handle compound variables like @{expr}, %$var, $#array
         // For braced expressions, default to compact formatting unless the braces contain
         // statement blocks (e.g., @{ my $x = 1; $x }) in which case we format as a block.
@@ -394,7 +398,7 @@ impl Formatter {
                 NodeOrToken::Node(child_node) => {
                     if child_node.kind() == SyntaxKind::BLOCK_STMT {
                         if self.is_simple_block(&child_node) {
-                            self.format_compound_var_simple_block(&child_node);
+                            self.format_compound_var_simple_block(&child_node, ctx);
                         } else if child_node
                             .children()
                             .any(|grandchild| grandchild.kind() == SyntaxKind::STMT)
@@ -403,13 +407,13 @@ impl Formatter {
                                 child_node.children_with_tokens(),
                                 T!['{'],
                                 T!['}'],
-                                super::FormatContext::default(),
+                                ctx,
                             );
                         } else {
-                            self.format_node(&child_node, super::FormatContext::default());
+                            self.format_node(&child_node, ctx);
                         }
                     } else {
-                        self.format_node(&child_node, super::FormatContext::default());
+                        self.format_node(&child_node, ctx);
                     }
                 }
                 NodeOrToken::Token(token) => {
@@ -423,7 +427,7 @@ impl Formatter {
                             self.remember_token(&token);
                         }
                         _ => {
-                            self.format_token(&token, super::FormatContext::default());
+                            self.format_token(&token, ctx);
                         }
                     }
                 }
@@ -431,9 +435,9 @@ impl Formatter {
         }
     }
 
-    fn format_compound_var_simple_block(&mut self, node: &PerlNode) {
+    fn format_compound_var_simple_block(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         // Use context with suppress_newlines enabled for simple blocks
-        let ctx = super::FormatContext::default().with_suppress_newlines();
+        let ctx = ctx.with_suppress_newlines();
         self.format_single_line_delimited_children(node, T!['{'], T!['}'], true, ctx);
     }
 
@@ -447,13 +451,13 @@ impl Formatter {
         self.format_subscription(children, T!['['], T![']'], ctx);
     }
 
-    pub(super) fn format_sub_prototype(&mut self, node: &PerlNode) {
+    pub(super) fn format_sub_prototype(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         // Format subroutine prototype: no spaces between parentheses and prototype symbols
         // Example: (@@), ($@), (\@$$@), etc.
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(child_node) => {
-                    self.format_node(&child_node, super::FormatContext::default());
+                    self.format_node(&child_node, ctx);
                 }
                 NodeOrToken::Token(token) => {
                     match token.kind() {
@@ -482,16 +486,16 @@ impl Formatter {
         }
     }
 
-    pub(super) fn format_sub_signature(&mut self, node: &PerlNode) {
+    pub(super) fn format_sub_signature(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         use SyntaxKind::{NEWLINE, WHITESPACE};
 
-        let ctx = super::FormatContext::default().with_multiline_context();
+        let multiline_ctx = ctx.with_multiline_context();
 
         if self.has_newline_before_first_value(node) {
             for child in node.children_with_tokens() {
                 match child {
                     NodeOrToken::Node(child_node) => {
-                        self.format_node(&child_node, ctx);
+                        self.format_node(&child_node, multiline_ctx);
                     }
                     NodeOrToken::Token(token) => {
                         let kind = token.kind();
@@ -512,11 +516,11 @@ impl Formatter {
                                 self.handle_multiline_closing_delimiter(&token);
                             }
                             T![,] => {
-                                self.format_token(&token, ctx);
+                                self.format_token(&token, multiline_ctx);
                                 self.writer.handle_formatter_newline();
                             }
                             _ => {
-                                self.format_token(&token, ctx);
+                                self.format_token(&token, multiline_ctx);
                             }
                         }
                     }
@@ -527,7 +531,7 @@ impl Formatter {
             for child in node.children_with_tokens() {
                 match child {
                     NodeOrToken::Node(child_node) => {
-                        self.format_node(&child_node, super::FormatContext::default());
+                        self.format_node(&child_node, ctx);
                     }
                     NodeOrToken::Token(token) => {
                         let kind = token.kind();
@@ -546,7 +550,7 @@ impl Formatter {
                                 self.remember_token(&token);
                             }
                             _ => {
-                                self.format_token(&token, super::FormatContext::default());
+                                self.format_token(&token, ctx);
                             }
                         }
                     }
@@ -555,14 +559,12 @@ impl Formatter {
         }
     }
 
-    pub(super) fn format_signature_default(&mut self, node: &PerlNode) {
+    pub(super) fn format_signature_default(&mut self, node: &PerlNode, ctx: super::FormatContext) {
         use SyntaxKind::{DEFINED_OR, LOGICAL_OR, WHITESPACE};
 
         for child in node.children_with_tokens() {
             match child {
-                NodeOrToken::Node(child_node) => {
-                    self.format_node(&child_node, super::FormatContext::default())
-                }
+                NodeOrToken::Node(child_node) => self.format_node(&child_node, ctx),
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
                     match kind {
@@ -596,7 +598,7 @@ impl Formatter {
                             self.remember_token(&token);
                         }
                         _ => {
-                            self.format_token(&token, super::FormatContext::default());
+                            self.format_token(&token, ctx);
                         }
                     }
                 }
