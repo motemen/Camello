@@ -334,11 +334,11 @@ impl Formatter {
         match node.kind() {
             SyntaxKind::ROOT => {
                 // Use the same empty line detection logic as BLOCK_STMT for root-level statements
-                self.format_block(node);
+                self.format_block(node, ctx);
                 return;
             }
             SyntaxKind::USE_STMT | SyntaxKind::NO_STMT => {
-                self.format_use_no_stmt(node);
+                self.format_use_no_stmt(node, ctx);
                 return;
             }
             SyntaxKind::EMPTY_STMT => {
@@ -365,7 +365,7 @@ impl Formatter {
             | SyntaxKind::QR_EXPR
             | SyntaxKind::S_EXPR
             | SyntaxKind::TR_EXPR => {
-                self.format_quote_like(node);
+                self.format_quote_like(node, ctx);
                 return;
             }
 
@@ -374,7 +374,7 @@ impl Formatter {
                 return;
             }
             SyntaxKind::LABELED_STMT => {
-                self.format_labeled_stmt(node);
+                self.format_labeled_stmt(node, ctx);
                 return;
             }
             SyntaxKind::LABEL => {
@@ -386,22 +386,22 @@ impl Formatter {
                 return;
             }
             SyntaxKind::SUB_PROTOTYPE => {
-                self.format_sub_prototype(node);
+                self.format_sub_prototype(node, ctx);
                 return;
             }
             SyntaxKind::SUB_SIGNATURE => {
-                self.format_sub_signature(node);
+                self.format_sub_signature(node, ctx);
                 return;
             }
             SyntaxKind::SIGNATURE_PARAM => {
                 // Use default child iteration - spacing managed by general rules
             }
             SyntaxKind::SIGNATURE_DEFAULT => {
-                self.format_signature_default(node);
+                self.format_signature_default(node, ctx);
                 return;
             }
             SyntaxKind::FOR_STMT => {
-                self.format_for_stmt(node);
+                self.format_for_stmt(node, ctx);
                 return;
             }
             SyntaxKind::EXPR_LIST => {
@@ -427,7 +427,7 @@ impl Formatter {
             }
             SyntaxKind::BLOCK_STMT => {
                 // Special handling for BLOCK_STMT: detect empty lines between statements
-                self.format_block(node);
+                self.format_block(node, ctx);
                 return;
             }
             _ => {
