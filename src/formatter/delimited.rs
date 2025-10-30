@@ -56,6 +56,69 @@ impl<I: Iterator> Iterator for BufferedIterator<I> {
 }
 
 impl Formatter {
+    fn indent_multiline_element(&mut self, first_kind: SyntaxKind, ctx: FormatContext) {
+        if !self.writer.at_line_start() || !self.writer.current_line_is_empty() {
+            return;
+        }
+
+        if self.writer.indent_level() == 0 {
+            return;
+        }
+
+        self.writer.add_indent();
+        if self.needs_continuation_indent(first_kind, ctx) {
+            self.writer.push_indent_string();
+        }
+        self.writer.set_at_line_start(false);
+    }
+
+    fn element_contains_newline(element: &SyntaxElement<PerlLanguage>) -> bool {
+        match element {
+            NodeOrToken::Token(token) => token.kind() == SyntaxKind::NEWLINE,
+            NodeOrToken::Node(node) => node.descendants_with_tokens().any(|descendant| {
+                descendant
+                    .into_token()
+                    .is_some_and(|token| token.kind() == SyntaxKind::NEWLINE)
+            }),
+        }
+    }
+
+    fn collect_nested_elements<I>(
+        first_token: SyntaxToken<PerlLanguage>,
+        iter: &mut BufferedIterator<I>,
+        opening: SyntaxKind,
+        closing: SyntaxKind,
+    ) -> (Vec<SyntaxElement<PerlLanguage>>, bool)
+    where
+        I: Iterator<Item = SyntaxElement<PerlLanguage>>,
+    {
+        let mut depth = 1;
+        let mut has_newline = false;
+        let mut elements = Vec::new();
+        elements.push(first_token.into());
+
+        for next in iter {
+            has_newline |= Self::element_contains_newline(&next);
+
+            if let Some(token) = next.as_token() {
+                let kind = token.kind();
+                if kind == opening {
+                    depth += 1;
+                } else if kind == closing {
+                    depth -= 1;
+                }
+            }
+
+            elements.push(next.clone());
+
+            if depth == 0 {
+                break;
+            }
+        }
+
+        (elements, has_newline)
+    }
+
     pub(super) fn format_single_line_delimited_children(
         &mut self,
         node: &PerlNode,
@@ -374,6 +437,14 @@ impl Formatter {
                 NodeOrToken::Node(node) => {
                     let kind = node.kind();
 
+                    if let Some(first_token) = node.descendants_with_tokens().find_map(|element| {
+                        element
+                            .into_token()
+                            .filter(|token| !token.kind().is_trivia())
+                    }) {
+                        self.indent_multiline_element(first_token.kind(), ctx);
+                    }
+
                     match kind {
                         SyntaxKind::EXPR_LIST => {
                             // Special handling for expression lists inside delimiters
@@ -414,7 +485,50 @@ impl Formatter {
                         k if k == close_delimiter => {
                             self.handle_multiline_closing_delimiter(&token);
                         }
+                        SyntaxKind::L_PAREN if open_delimiter != SyntaxKind::L_PAREN => {
+                            let (elements, has_newline) =
+                                Self::collect_nested_elements(token, &mut iter, T!['('], T![')']);
+                            let paren_iter = elements.into_iter();
+                            if has_newline {
+                                self.format_multiline_delimited_elements(
+                                    paren_iter,
+                                    T!['('],
+                                    T![')'],
+                                    ctx,
+                                );
+                            } else {
+                                self.format_single_line_delimited_elements(
+                                    paren_iter,
+                                    T!['('],
+                                    T![')'],
+                                    true,
+                                    ctx,
+                                );
+                            }
+                        }
+                        SyntaxKind::L_BRACKET if open_delimiter != SyntaxKind::L_BRACKET => {
+                            let (elements, has_newline) =
+                                Self::collect_nested_elements(token, &mut iter, T!['['], T![']']);
+                            let bracket_iter = elements.into_iter();
+                            if has_newline {
+                                self.format_multiline_delimited_elements(
+                                    bracket_iter,
+                                    T!['['],
+                                    T![']'],
+                                    ctx,
+                                );
+                            } else {
+                                self.format_single_line_delimited_elements(
+                                    bracket_iter,
+                                    T!['['],
+                                    T![']'],
+                                    true,
+                                    ctx,
+                                );
+                            }
+                        }
                         _ => {
+                            self.indent_multiline_element(kind, ctx);
                             // その他のトークンは通常通り処理
                             self.format_token(&token, ctx);
                         }
@@ -440,7 +554,17 @@ impl Formatter {
 
         while let Some(child) = iter.next() {
             match child {
-                NodeOrToken::Node(node) => self.format_node(&node, ctx),
+                NodeOrToken::Node(node) => {
+                    if let Some(first_token) = node.descendants_with_tokens().find_map(|element| {
+                        element
+                            .into_token()
+                            .filter(|token| !token.kind().is_trivia())
+                    }) {
+                        self.indent_multiline_element(first_token.kind(), ctx);
+                    }
+
+                    self.format_node(&node, ctx)
+                }
                 NodeOrToken::Token(token) => {
                     let kind = token.kind();
 
@@ -491,7 +615,29 @@ impl Formatter {
                                 self.writer.handle_formatter_newline();
                             }
                         }
+                        SyntaxKind::L_PAREN => {
+                            let (elements, has_newline) =
+                                Self::collect_nested_elements(token, &mut iter, T!['('], T![')']);
+                            let paren_iter = elements.into_iter();
+                            if has_newline {
+                                self.format_multiline_delimited_elements(
+                                    paren_iter,
+                                    T!['('],
+                                    T![')'],
+                                    ctx,
+                                );
+                            } else {
+                                self.format_single_line_delimited_elements(
+                                    paren_iter,
+                                    T!['('],
+                                    T![')'],
+                                    true,
+                                    ctx,
+                                );
+                            }
+                        }
                         _ => {
+                            self.indent_multiline_element(kind, ctx);
                             // その他のトークンは通常通り処理
                             self.format_token(&token, ctx);
                         }
