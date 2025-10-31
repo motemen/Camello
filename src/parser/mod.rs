@@ -381,18 +381,7 @@ impl<'a> Parser<'a> {
         ctx: LexContext,
         n: usize,
     ) -> Option<(SyntaxKind, &'a str)> {
-        let mut cloned = self.lexer.clone();
-
-        // If the current token is a quote-like keyword immediately followed by '#',
-        // configure the cloned lexer for quote-like parsing to handle the delimiter correctly.
-        let (current_token, next_char) = self.lexer.peek_token_and_next_char();
-        if let (Some(current_kind), Some('#')) = (current_token, next_char) {
-            if current_kind.is_quote_like_keyword() {
-                let mode = crate::lexer::QuoteLikeMode::from_keyword(current_kind);
-                cloned.begin_quote_like(current_kind, mode);
-            }
-        }
-
+        let cloned = self.clone_lexer_for_quote_like();
         cloned.peek_nth_non_trivia_with_context(ctx, n)
     }
 
@@ -429,16 +418,7 @@ impl<'a> Parser<'a> {
         context: LexContext,
         start_offset: usize,
     ) -> Option<impl Iterator<Item = (SyntaxKind, &'a str)> + '_> {
-        let mut temp_lexer = self.lexer.clone();
-
-        // Configure the lexer for quote-like parsing if needed (same as peek_nth_non_trivia_token_with_context)
-        let (current_token, next_char) = self.lexer.peek_token_and_next_char();
-        if let (Some(current_kind), Some('#')) = (current_token, next_char) {
-            if current_kind.is_quote_like_keyword() {
-                let mode = crate::lexer::QuoteLikeMode::from_keyword(current_kind);
-                temp_lexer.begin_quote_like(current_kind, mode);
-            }
-        }
+        let mut temp_lexer = self.clone_lexer_for_quote_like();
 
         // Create an iterator that skips trivia tokens
         let mut token_iter = std::iter::from_fn(move || loop {
@@ -455,6 +435,22 @@ impl<'a> Parser<'a> {
         }
 
         Some(token_iter)
+    }
+
+    fn clone_lexer_for_quote_like(&self) -> Lexer<'a> {
+        let mut cloned = self.lexer.clone();
+
+        // If the current token is a quote-like keyword immediately followed by '#',
+        // configure the cloned lexer for quote-like parsing to handle the delimiter correctly.
+        let (current_token, next_char) = self.lexer.peek_token_and_next_char();
+        if let (Some(current_kind), Some('#')) = (current_token, next_char) {
+            if current_kind.is_quote_like_keyword() {
+                let mode = crate::lexer::QuoteLikeMode::from_keyword(current_kind);
+                cloned.begin_quote_like(current_kind, mode);
+            }
+        }
+
+        cloned
     }
 
     /// Returns true if the token at `offset` is followed by a fat comma (`=>`).
@@ -542,9 +538,83 @@ pub fn parse_with_options(input: &str, options: ParserOptions) -> (GreenNode, Ve
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lexer::Lexer;
     use crate::parser::test_utils::*;
     use crate::PerlNode;
     use std::fs;
+
+    fn collect_non_trivia_tokens(
+        lexer: &mut Lexer,
+        ctx: LexContext,
+        limit: usize,
+    ) -> Vec<(SyntaxKind, String)> {
+        let mut tokens = Vec::new();
+        while tokens.len() < limit {
+            match lexer.next_token_with_context(ctx) {
+                Some((kind, text)) => {
+                    if !kind.is_trivia() {
+                        tokens.push((kind, text.to_string()));
+                    }
+                }
+                None => break,
+            }
+        }
+        tokens
+    }
+
+    #[test]
+    fn clone_lexer_for_quote_like_without_quote_keyword_matches_plain_clone() {
+        let input = "$var + 1";
+        let parser = Parser::new(input);
+
+        let mut helper_clone = parser.clone_lexer_for_quote_like();
+        let mut plain_clone = Lexer::new(input);
+
+        let helper_tokens = collect_non_trivia_tokens(&mut helper_clone, LexContext::Value, 4);
+        let plain_tokens = collect_non_trivia_tokens(&mut plain_clone, LexContext::Value, 4);
+
+        assert_eq!(helper_tokens, plain_tokens);
+    }
+
+    #[test]
+    fn clone_lexer_for_quote_like_initializes_quote_like_mode() {
+        let input = "qq#foo#";
+        let parser = Parser::new(input);
+
+        let mut helper_clone = parser.clone_lexer_for_quote_like();
+        let mut expected_clone = Lexer::new(input);
+        let (current_kind, next_char) = expected_clone.peek_token_and_next_char();
+        if let (Some(kind), Some('#')) = (current_kind, next_char) {
+            if kind.is_quote_like_keyword() {
+                let mode = crate::lexer::QuoteLikeMode::from_keyword(kind);
+                expected_clone.begin_quote_like(kind, mode);
+            }
+        }
+
+        let helper_tokens = collect_non_trivia_tokens(&mut helper_clone, LexContext::Value, 5);
+        let expected_tokens = collect_non_trivia_tokens(&mut expected_clone, LexContext::Value, 5);
+
+        assert_eq!(helper_tokens, expected_tokens);
+    }
+
+    #[test]
+    fn iter_non_trivia_tokens_from_uses_provided_context() {
+        let input = "x10";
+        let parser = Parser::new(input);
+
+        let mut expected_lexer = Lexer::new(input);
+        let expected_tokens =
+            collect_non_trivia_tokens(&mut expected_lexer, LexContext::Operator, 3);
+
+        let iter_tokens: Vec<(SyntaxKind, String)> = parser
+            .iter_non_trivia_tokens_from(LexContext::Operator, 0)
+            .expect("iterator")
+            .take(expected_tokens.len())
+            .map(|(kind, text)| (kind, text.to_string()))
+            .collect();
+
+        assert_eq!(iter_tokens, expected_tokens);
+    }
 
     #[test]
     fn parser_success_snapshots() {
