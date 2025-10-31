@@ -92,6 +92,47 @@ mod tests {
     }
 
     #[test]
+    fn peek_nth_non_trivia_handles_quote_like_hash_delimiter() {
+        let mut lexer = Lexer::new("qq#foo#");
+
+        assert_eq!(
+            lexer.peek_nth_non_trivia_with_context(LexContext::Value, 0),
+            Some((T![qq], "qq"))
+        );
+        assert_eq!(
+            lexer.peek_nth_non_trivia_with_context(LexContext::Value, 1),
+            Some((SyntaxKind::DELIMITER, "#"))
+        );
+        assert_eq!(
+            lexer.peek_nth_non_trivia_with_context(LexContext::Value, 2),
+            Some((SyntaxKind::INTERPOLATED_STRING, "foo"))
+        );
+        assert_eq!(
+            lexer.peek_nth_non_trivia_with_context(LexContext::Value, 3),
+            Some((SyntaxKind::DELIMITER, "#"))
+        );
+
+        // The actual token stream should match the peeked sequence once quote-like mode begins
+        assert_eq!(
+            lexer.next_token_with_context(LexContext::Value),
+            Some((T![qq], "qq"))
+        );
+        lexer.begin_quote_like(T![qq], QuoteLikeMode::Q);
+        assert_eq!(
+            lexer.next_token_with_context(LexContext::Value),
+            Some((SyntaxKind::DELIMITER, "#"))
+        );
+        assert_eq!(
+            lexer.next_token_with_context(LexContext::Value),
+            Some((SyntaxKind::INTERPOLATED_STRING, "foo"))
+        );
+        assert_eq!(
+            lexer.next_token_with_context(LexContext::Value),
+            Some((SyntaxKind::DELIMITER, "#"))
+        );
+    }
+
+    #[test]
     fn peek_context_switch_clears_cached_tokens() {
         let mut lexer = Lexer::new("/foo/");
         assert_eq!(
