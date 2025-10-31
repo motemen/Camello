@@ -2,39 +2,32 @@ use super::{HeredocMarker, Lexer};
 use crate::SyntaxKind;
 
 impl<'a> Lexer<'a> {
+    /// Helper method to handle the common pattern of trying to consume a token
+    /// and updating the line position if successful
+    fn try_consume_and_update<F>(&mut self, consume_fn: F) -> Option<(SyntaxKind, &'a str)>
+    where
+        F: FnOnce(&mut Self) -> Option<(SyntaxKind, &'a str)>,
+    {
+        if let Some((k, t)) = consume_fn(self) {
+            self.update_line_position(t);
+            Some((k, t))
+        } else {
+            None
+        }
+    }
+
     /// Handle special tokens when in Value context
     pub(super) fn try_handle_expecting_value_context(&mut self) -> Option<(SyntaxKind, &'a str)> {
         // 1) Heredoc start
-        if let Some(result) = self.try_consume_heredoc_start() {
-            let (k, t) = result;
-            self.update_line_position(t);
-            return Some((k, t));
-        }
-        // 2) File test operator like -f
-        if let Some(result) = self.try_consume_file_test_op() {
-            let (k, t) = result;
-            self.update_line_position(t);
-            return Some((k, t));
-        }
-        // 3) Regex literal /.../
-        if let Some(result) = self.try_consume_regex_literal() {
-            let (k, t) = result;
-            self.update_line_position(t);
-            return Some((k, t));
-        }
-        // 4) Backtick command substitution `...`
-        if let Some(result) = self.try_consume_backtick_literal() {
-            let (k, t) = result;
-            self.update_line_position(t);
-            return Some((k, t));
-        }
-        // 5) IO operator like <...>
-        if let Some(result) = self.try_consume_io_operator() {
-            let (k, t) = result;
-            self.update_line_position(t);
-            return Some((k, t));
-        }
-        None
+        self.try_consume_and_update(Self::try_consume_heredoc_start)
+            // 2) File test operator like -f
+            .or_else(|| self.try_consume_and_update(Self::try_consume_file_test_op))
+            // 3) Regex literal /.../
+            .or_else(|| self.try_consume_and_update(Self::try_consume_regex_literal))
+            // 4) Backtick command substitution `...`
+            .or_else(|| self.try_consume_and_update(Self::try_consume_backtick_literal))
+            // 5) IO operator like <...>
+            .or_else(|| self.try_consume_and_update(Self::try_consume_io_operator))
     }
 
     fn try_consume_regex_literal(&mut self) -> Option<(SyntaxKind, &'a str)> {
