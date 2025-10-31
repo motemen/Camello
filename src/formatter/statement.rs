@@ -324,6 +324,7 @@ impl Formatter {
         let mut nodes = vec![first_node.clone()];
         let lookahead = iter.clone();
         let mut saw_newline = false;
+        let mut saw_inline_comment = false;
         let mut prev_node_is_multiline = self.node_spans_multiple_lines(first_node);
 
         for element in lookahead {
@@ -331,6 +332,10 @@ impl Formatter {
                 NodeOrToken::Token(token) => match token.kind() {
                     SyntaxKind::WHITESPACE => continue,
                     SyntaxKind::NEWLINE => {
+                        if saw_inline_comment {
+                            saw_inline_comment = false;
+                            continue;
+                        }
                         if saw_newline {
                             break;
                         }
@@ -339,6 +344,7 @@ impl Formatter {
                     SyntaxKind::COMMENT => {
                         if !saw_newline {
                             saw_newline = true;
+                            saw_inline_comment = true;
                             continue;
                         }
                         break;
@@ -369,6 +375,7 @@ impl Formatter {
                     prev_node_is_multiline = self.node_spans_multiple_lines(&node);
                     nodes.push(node);
                     saw_newline = false;
+                    saw_inline_comment = false;
                 }
             }
         }

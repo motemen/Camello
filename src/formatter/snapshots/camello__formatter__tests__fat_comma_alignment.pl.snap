@@ -3,6 +3,9 @@ source: src/formatter/tests.rs
 assertion_line: 51
 expression: formatted
 ---
+use constant ABC => 1;    # comment
+use constant D   => 'a';
+
 use constant A   => 1;
 use constant FOO => 99;
 
