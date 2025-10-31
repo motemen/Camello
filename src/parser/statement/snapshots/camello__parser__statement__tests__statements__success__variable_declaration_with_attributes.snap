@@ -8,23 +8,24 @@ ROOT@0..87
       MY_KW@0..2 "my"
       WHITESPACE@2..3 " "
       INFIX_EXPR@3..26
-        L_PAREN@3..4 "("
-        EXPR_LIST@4..14
-          SCALAR_VAR@4..6
-            SCALAR_SIGIL@4..5 "$"
-            IDENT@5..6 "x"
-          COMMA@6..7 ","
-          WHITESPACE@7..8 " "
-          ARRAY_VAR@8..10
-            ARRAY_SIGIL@8..9 "@"
-            IDENT@9..10 "y"
-          COMMA@10..11 ","
-          WHITESPACE@11..12 " "
-          HASH_VAR@12..14
-            HASH_SIGIL@12..13 "%"
-            IDENT@13..14 "z"
-        R_PAREN@14..15 ")"
-        WHITESPACE@15..16 " "
+        PAREN_EXPR@3..16
+          L_PAREN@3..4 "("
+          EXPR_LIST@4..14
+            SCALAR_VAR@4..6
+              SCALAR_SIGIL@4..5 "$"
+              IDENT@5..6 "x"
+            COMMA@6..7 ","
+            WHITESPACE@7..8 " "
+            ARRAY_VAR@8..10
+              ARRAY_SIGIL@8..9 "@"
+              IDENT@9..10 "y"
+            COMMA@10..11 ","
+            WHITESPACE@11..12 " "
+            HASH_VAR@12..14
+              HASH_SIGIL@12..13 "%"
+              IDENT@13..14 "z"
+          R_PAREN@14..15 ")"
+          WHITESPACE@15..16 " "
         ATTR@16..23
           COLON@16..17 ":"
           WHITESPACE@17..18 " "

@@ -561,7 +561,7 @@ impl Formatter {
         let is_list = infix_expr
             .children_with_tokens()
             .find(|e| !e.kind().is_trivia())
-            .is_some_and(|e| e.kind() == T!['(']);
+            .is_some_and(|e| e.kind() == T!['('] || e.kind() == SyntaxKind::PAREN_EXPR);
 
         Some((is_var_decl, is_list))
     }

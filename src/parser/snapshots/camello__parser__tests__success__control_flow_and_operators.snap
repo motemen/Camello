@@ -238,29 +238,31 @@ ROOT@0..293
     SEMICOLON@268..269 ";"
   NEWLINE@269..270 "\n"
   STMT@270..281
-    L_PAREN@270..271 "("
-    EXPR_LIST@271..279
-      IDENT@271..272 "a"
-      WHITESPACE@272..273 " "
-      FAT_COMMA@273..275 "=>"
-      WHITESPACE@275..276 " "
-      ARRAY_REF@276..279
-        L_BRACKET@276..277 "["
-        R_BRACKET@277..278 "]"
-        WHITESPACE@278..279 " "
-    R_PAREN@279..280 ")"
+    PAREN_EXPR@270..280
+      L_PAREN@270..271 "("
+      EXPR_LIST@271..279
+        IDENT@271..272 "a"
+        WHITESPACE@272..273 " "
+        FAT_COMMA@273..275 "=>"
+        WHITESPACE@275..276 " "
+        ARRAY_REF@276..279
+          L_BRACKET@276..277 "["
+          R_BRACKET@277..278 "]"
+          WHITESPACE@278..279 " "
+      R_PAREN@279..280 ")"
     SEMICOLON@280..281 ";"
   NEWLINE@281..282 "\n"
   STMT@282..292
-    L_PAREN@282..283 "("
-    EXPR_LIST@283..290
-      IDENT@283..284 "a"
-      WHITESPACE@284..285 " "
-      FAT_COMMA@285..287 "=>"
-      WHITESPACE@287..288 " "
-      ARRAY_REF@288..290
-        L_BRACKET@288..289 "["
-        R_BRACKET@289..290 "]"
-    R_PAREN@290..291 ")"
+    PAREN_EXPR@282..291
+      L_PAREN@282..283 "("
+      EXPR_LIST@283..290
+        IDENT@283..284 "a"
+        WHITESPACE@284..285 " "
+        FAT_COMMA@285..287 "=>"
+        WHITESPACE@287..288 " "
+        ARRAY_REF@288..290
+          L_BRACKET@288..289 "["
+          R_BRACKET@289..290 "]"
+      R_PAREN@290..291 ")"
     SEMICOLON@291..292 ";"
   NEWLINE@292..293 "\n"
