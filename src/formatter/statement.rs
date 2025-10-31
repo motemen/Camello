@@ -1,6 +1,6 @@
 use std::iter::Peekable;
 
-use rowan::{NodeOrToken, SyntaxElementChildren};
+use rowan::{NodeOrToken, SyntaxElementChildren, SyntaxToken};
 
 use crate::{PerlLanguage, PerlNode, SyntaxKind, T};
 
@@ -429,11 +429,12 @@ impl Formatter {
         } else {
             formatter.writer.collect_token_columns(token_kind)
         };
-        if columns.len() != 1 {
-            return None;
-        }
 
-        columns.into_iter().next().map(|column| column.column)
+        let column = columns
+            .into_iter()
+            .min_by_key(|column| (column.indent, column.line_index, column.column))?;
+
+        Some(column.column)
     }
 
     fn alignment_token_kind_for_node(
@@ -464,6 +465,10 @@ impl Formatter {
                     }
                 }) {
                     if token.kind().is_assignment_operator() {
+                        if !Self::assignment_token_belongs_to_node(node, &token) {
+                            continue;
+                        }
+
                         if seen_assignment {
                             return None;
                         }
@@ -535,6 +540,34 @@ impl Formatter {
                 NodeOrToken::Node(_) => false,
             })
             .count()
+    }
+
+    fn assignment_token_belongs_to_node(
+        node: &PerlNode,
+        token: &SyntaxToken<PerlLanguage>,
+    ) -> bool {
+        let mut current = token.parent();
+
+        while let Some(parent) = current {
+            if parent == *node {
+                return true;
+            }
+
+            if matches!(parent.kind(), SyntaxKind::VAR_DECL | SyntaxKind::STMT) {
+                if node.kind() == SyntaxKind::STMT
+                    && parent.kind() == SyntaxKind::VAR_DECL
+                    && parent.parent().is_some_and(|gp| gp == *node)
+                {
+                    return true;
+                }
+
+                return false;
+            }
+
+            current = parent.parent();
+        }
+
+        false
     }
 
     /// Determines the assignment type for alignment purposes.
