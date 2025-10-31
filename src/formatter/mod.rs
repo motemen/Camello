@@ -421,7 +421,8 @@ impl Formatter {
             | SyntaxKind::ARRAY_SUBSCRIPTION_EXPR
             | SyntaxKind::COMPOUND_VAR
             | SyntaxKind::REGEX_EXPR
-            | SyntaxKind::BACKTICK_EXPR => {
+            | SyntaxKind::BACKTICK_EXPR
+            | SyntaxKind::PAREN_EXPR => {
                 self.format_expr(node, ctx);
                 return;
             }

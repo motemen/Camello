@@ -293,6 +293,7 @@ pub enum SyntaxKind {
     POSTFIX_DEREF_EXPR, // Postfix dereference expression (e.g., $ref->@*, $ref->%*, $ref->$*, $ref->$#*)
     POSTFIX_ARRAY_SLICE_EXPR, // Postfix array slice (e.g., $ref->@[...], $ref->@{...})
     POSTFIX_HASH_SLICE_EXPR, // Postfix hash slice (e.g., $ref->%[...], $ref->%{...})
+    PAREN_EXPR,               // Parenthesized expression (e.g., (1, 2, 3))
     REQUIRE_EXPR,       // Require expression (e.g., require local::lib)
 
     // Literal references

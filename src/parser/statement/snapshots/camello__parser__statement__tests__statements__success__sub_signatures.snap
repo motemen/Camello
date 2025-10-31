@@ -1,6 +1,5 @@
 ---
 source: src/parser/statement/tests.rs
-assertion_line: 48
 expression: render_success_tree(&syntax)
 ---
 ROOT@0..1330
@@ -310,17 +309,18 @@ ROOT@0..1330
         SIGNATURE_DEFAULT@774..802
           EQ@774..775 "="
           WHITESPACE@775..776 " "
-          L_PAREN@776..777 "("
-          INFIX_EXPR@777..801
-            FUNCTION_CALL_EXPR@777..792
-              IDENT@777..789 "default_name"
-              L_PAREN@789..790 "("
-              R_PAREN@790..791 ")"
-              WHITESPACE@791..792 " "
-            OR_KW@792..794 "or"
-            WHITESPACE@794..795 " "
-            STRING@795..801 "\"anon\""
-          R_PAREN@801..802 ")"
+          PAREN_EXPR@776..802
+            L_PAREN@776..777 "("
+            INFIX_EXPR@777..801
+              FUNCTION_CALL_EXPR@777..792
+                IDENT@777..789 "default_name"
+                L_PAREN@789..790 "("
+                R_PAREN@790..791 ")"
+                WHITESPACE@791..792 " "
+              OR_KW@792..794 "or"
+              WHITESPACE@794..795 " "
+              STRING@795..801 "\"anon\""
+            R_PAREN@801..802 ")"
       R_PAREN@802..803 ")"
     WHITESPACE@803..804 " "
     BLOCK_STMT@804..825
