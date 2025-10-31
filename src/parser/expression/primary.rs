@@ -78,13 +78,7 @@ impl Parser<'_> {
         let var_kind = if is_compound {
             SyntaxKind::COMPOUND_VAR
         } else {
-            match sigil {
-                SyntaxKind::SCALAR_SIGIL => SyntaxKind::SCALAR_VAR,
-                SyntaxKind::ARRAY_SIGIL => SyntaxKind::ARRAY_VAR,
-                SyntaxKind::HASH_SIGIL => SyntaxKind::HASH_VAR,
-                SyntaxKind::TYPEGLOB_SIGIL => SyntaxKind::TYPEGLOB_VAR,
-                _ => unreachable!(),
-            }
+            Self::get_var_kind_from_sigil(sigil)
         };
 
         self.builder.start_node(var_kind.into());
@@ -305,15 +299,20 @@ impl Parser<'_> {
     }
 
     /// Parses a variable for 'my'/'state' declarations (qualified identifiers are not allowed).  
-    pub fn parse_variable_simple(&mut self) {
-        let sigil = self.current_kind().unwrap();
-        let var_kind = match sigil {
+    /// Helper to determine the variable node kind from the sigil
+    fn get_var_kind_from_sigil(sigil: SyntaxKind) -> SyntaxKind {
+        match sigil {
             SyntaxKind::SCALAR_SIGIL => SyntaxKind::SCALAR_VAR,
             SyntaxKind::ARRAY_SIGIL => SyntaxKind::ARRAY_VAR,
             SyntaxKind::HASH_SIGIL => SyntaxKind::HASH_VAR,
             SyntaxKind::TYPEGLOB_SIGIL => SyntaxKind::TYPEGLOB_VAR,
             _ => unreachable!(),
-        };
+        }
+    }
+
+    pub fn parse_variable_simple(&mut self) {
+        let sigil = self.current_kind().unwrap();
+        let var_kind = Self::get_var_kind_from_sigil(sigil);
 
         self.builder.start_node(var_kind.into());
 
@@ -341,13 +340,7 @@ impl Parser<'_> {
     /// Parses a variable for 'our'/'local' declarations (qualified identifiers are allowed).
     pub fn parse_variable_qualified(&mut self) {
         let sigil = self.current_kind().unwrap();
-        let var_kind = match sigil {
-            SyntaxKind::SCALAR_SIGIL => SyntaxKind::SCALAR_VAR,
-            SyntaxKind::ARRAY_SIGIL => SyntaxKind::ARRAY_VAR,
-            SyntaxKind::HASH_SIGIL => SyntaxKind::HASH_VAR,
-            SyntaxKind::TYPEGLOB_SIGIL => SyntaxKind::TYPEGLOB_VAR,
-            _ => unreachable!(),
-        };
+        let var_kind = Self::get_var_kind_from_sigil(sigil);
 
         self.builder.start_node(var_kind.into());
 
