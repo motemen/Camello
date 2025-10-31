@@ -298,7 +298,6 @@ impl Parser<'_> {
         }
     }
 
-    /// Parses a variable for 'my'/'state' declarations (qualified identifiers are not allowed).  
     /// Helper to determine the variable node kind from the sigil
     fn get_var_kind_from_sigil(sigil: SyntaxKind) -> SyntaxKind {
         match sigil {
@@ -310,6 +309,7 @@ impl Parser<'_> {
         }
     }
 
+    /// Parses a variable for 'my'/'state' declarations (qualified identifiers are not allowed).
     pub fn parse_variable_simple(&mut self) {
         let sigil = self.current_kind().unwrap();
         let var_kind = Self::get_var_kind_from_sigil(sigil);
