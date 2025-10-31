@@ -5,9 +5,10 @@ expression: render_success_tree(&syntax)
 ROOT@0..8
   STMT@0..7
     ARRAY_SUBSCRIPTION_EXPR@0..6
-      L_PAREN@0..1 "("
-      IDENT@1..2 "H"
-      R_PAREN@2..3 ")"
+      PAREN_EXPR@0..3
+        L_PAREN@0..1 "("
+        IDENT@1..2 "H"
+        R_PAREN@2..3 ")"
       L_BRACKET@3..4 "["
       NUMBER@4..5 "1"
       R_BRACKET@5..6 "]"
