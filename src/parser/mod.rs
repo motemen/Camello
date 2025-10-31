@@ -366,9 +366,7 @@ impl<'a> Parser<'a> {
         ctx: LexContext,
         n: usize,
     ) -> Option<(SyntaxKind, &'a str)> {
-        self.lexer
-            .iter_non_trivia_from(ctx, n)
-            .and_then(|mut i| i.next())
+        self.lexer.peek_nth_non_trivia_with_context(ctx, n)
     }
 
     /// Returns true if the token at `offset` is followed by a fat comma (`=>`).
