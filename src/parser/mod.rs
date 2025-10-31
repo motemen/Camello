@@ -355,8 +355,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-
-
     /// Peek at the next non-trivia token with an explicit lexical context
     /// This is used to disambiguate contexts like operator lookahead.
     fn peek_non_trivia_token_with_context(&self, ctx: LexContext) -> Option<(SyntaxKind, &'a str)> {
