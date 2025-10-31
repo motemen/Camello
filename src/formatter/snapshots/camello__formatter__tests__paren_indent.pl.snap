@@ -1,0 +1,19 @@
+---
+source: src/formatter/tests.rs
+expression: formatted
+---
+# array
+[
+    (
+        "a"
+    )
+];
+
+# hash
+[
+    {
+        "a" => (
+            999
+        )
+    }
+];

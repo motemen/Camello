@@ -355,13 +355,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// 括弧内のカンマ区切り式をパースするヘルパー関数
-    fn parse_parenthesized_list(&mut self) {
-        if !self.at(T![')']) {
-            self.expression_list();
-        }
-    }
-
     /// Peek at the next non-trivia token with an explicit lexical context
     /// This is used to disambiguate contexts like operator lookahead.
     fn peek_non_trivia_token_with_context(&self, ctx: LexContext) -> Option<(SyntaxKind, &'a str)> {

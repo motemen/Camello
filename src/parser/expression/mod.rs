@@ -586,12 +586,15 @@ impl Parser<'_> {
             }
             T!['('] => {
                 // Parenthesized expression
+                self.builder.start_node(SyntaxKind::PAREN_EXPR.into());
                 // Inside parens, expect a value
                 self.bump_value(); // (
                 self.skip_whitespace_and_newlines();
 
                 // List inside parentheses (e.g., array initialization)
-                self.parse_parenthesized_list();
+                if !self.at(T![')']) {
+                    self.expression_list();
+                }
 
                 self.skip_whitespace_and_newlines();
 
@@ -602,6 +605,7 @@ impl Parser<'_> {
                 } else {
                     self.error("Expected ')' to close parenthesized list");
                 }
+                self.builder.finish_node();
 
                 // Parenthesized expressions (including empty ()) allow [] subscript (list slices)
                 return (PostfixSubject::List, PrimaryRole::Other);

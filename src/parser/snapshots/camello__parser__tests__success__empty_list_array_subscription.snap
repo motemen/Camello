@@ -1,6 +1,5 @@
 ---
 source: src/parser/mod.rs
-assertion_line: 508
 expression: render_success_tree(&syntax)
 ---
 ROOT@0..52
@@ -8,8 +7,9 @@ ROOT@0..52
   NEWLINE@45..46 "\n"
   STMT@46..52
     ARRAY_SUBSCRIPTION_EXPR@46..51
-      L_PAREN@46..47 "("
-      R_PAREN@47..48 ")"
+      PAREN_EXPR@46..48
+        L_PAREN@46..47 "("
+        R_PAREN@47..48 ")"
       L_BRACKET@48..49 "["
       NUMBER@49..50 "0"
       R_BRACKET@50..51 "]"
