@@ -33,20 +33,15 @@ impl FormatContext {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DelimiterTightness {
     /// Keep delimiters tight with no interior spacing.
     Tight,
     /// Apply the formatter's standard spacing heuristics.
+    #[default]
     Standard,
     /// Prefer looser spacing when possible.
     Loose,
-}
-
-impl Default for DelimiterTightness {
-    fn default() -> Self {
-        Self::Standard
-    }
 }
 
 impl DelimiterTightness {
