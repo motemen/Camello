@@ -92,6 +92,19 @@ impl<'a> Lexer<'a> {
             };
 
             let mut cursor = base_snapshot.clone().into_lexer();
+
+            if matches!(base_snapshot.mode, LexerMode::Normal) {
+                let mut probe = base_snapshot.clone().into_lexer();
+                if let Some((kind, _)) = probe.next_token_internal(Some(context)) {
+                    if kind.is_quote_like_keyword()
+                        && probe.logos_lexer.remainder().starts_with('#')
+                    {
+                        let mode = QuoteLikeMode::from_keyword(kind);
+                        cursor.begin_quote_like(kind, mode);
+                    }
+                }
+            }
+
             let Some(token) = cursor.next_token_internal(Some(context)) else {
                 return false;
             };
