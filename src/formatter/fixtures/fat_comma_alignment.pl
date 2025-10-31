@@ -1,3 +1,6 @@
+use constant ABC => 1;    # comment
+use constant D   => 'a';
+
 use constant A => 1;
 use constant FOO => 99;
 
