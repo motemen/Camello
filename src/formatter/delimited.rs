@@ -1,6 +1,6 @@
 use crate::{PerlLanguage, PerlNode, SyntaxKind, T};
 use rowan::{NodeOrToken, SyntaxElement, SyntaxToken};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 use super::{AlignmentState, AlignmentStrategy, FormatContext, Formatter};
 
@@ -593,14 +593,21 @@ impl Formatter {
             .max()
             .unwrap_or(0);
 
+        // Build a HashMap from tokens to their column information for O(1) lookups
+        let token_column_map: HashMap<_, _> = token_columns
+            .into_iter()
+            .filter_map(|col| {
+                col.token
+                    .as_ref()
+                    .map(|tok| (tok.clone(), col.clone()))
+            })
+            .collect();
+
         for ordinal in 0..max_ord {
             let mut ordinal_entries = Vec::new();
             for (entry_index, tokens) in entry_tokens.iter().enumerate() {
                 if let Some(token) = tokens.get(ordinal) {
-                    let column = token_columns
-                        .iter()
-                        .find(|candidate| candidate.token.as_ref() == Some(token))
-                        .cloned();
+                    let column = token_column_map.get(token).cloned();
                     let column = column?;
                     ordinal_entries.push((entry_index, token.clone(), column));
                 }
