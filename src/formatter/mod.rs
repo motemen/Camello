@@ -1,11 +1,14 @@
 mod delimited;
+mod simple_block;
 mod writer;
 
 use crate::{
     comments::{TriviaPosition, TriviaTable},
     PerlLanguage, PerlNode, SyntaxKind, T,
 };
-use rowan::{NodeOrToken, SyntaxElement, SyntaxElementChildren, SyntaxToken};
+use rowan::{ast::SyntaxNodePtr, NodeOrToken, SyntaxElement, SyntaxElementChildren, SyntaxToken};
+use simple_block::is_simple_block_cached;
+use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::rc::Rc;
 
@@ -208,6 +211,7 @@ pub struct Formatter {
     trivia_table: Rc<TriviaTable>,
     options: FormatterOptions,
     alignment_state: Option<AlignmentState>,
+    block_simplicity_cache: HashMap<SyntaxNodePtr<PerlLanguage>, bool>,
     root: PerlNode,
 }
 
@@ -232,6 +236,7 @@ impl Formatter {
             trivia_table: Rc::new(trivia_table),
             options,
             alignment_state: None,
+            block_simplicity_cache: HashMap::default(),
             root,
         }
     }
@@ -248,6 +253,7 @@ impl Formatter {
             trivia_table,
             options,
             alignment_state: None,
+            block_simplicity_cache: HashMap::default(),
             root,
         }
     }
@@ -572,53 +578,9 @@ impl Formatter {
         false
     }
 
-    fn is_simple_block(&self, node: &PerlNode) -> bool {
-        let mut statement_count = 0;
-        let mut consecutive_newlines = 0;
-        let mut has_empty_line = false;
-
-        for element in node.descendants_with_tokens() {
-            match element {
-                NodeOrToken::Node(child) => {
-                    if child.parent().as_ref().is_some_and(|parent| parent == node) {
-                        if child.kind().is_phase_block_stmt() {
-                            return false;
-                        }
-
-                        if matches!(child.kind(), SyntaxKind::STMT | SyntaxKind::VAR_DECL) {
-                            statement_count += 1;
-                            if statement_count > 1 {
-                                return false;
-                            }
-                        }
-                    }
-                }
-                NodeOrToken::Token(token) => {
-                    if token.kind() == SyntaxKind::NEWLINE {
-                        consecutive_newlines += 1;
-                        // Two consecutive newlines indicate an empty line
-                        if consecutive_newlines >= 2 {
-                            has_empty_line = true;
-                        }
-                    } else if !matches!(token.kind(), SyntaxKind::WHITESPACE) {
-                        consecutive_newlines = 0;
-                    }
-
-                    if matches!(
-                        token.kind(),
-                        T![;]
-                            | SyntaxKind::COMMENT
-                            | SyntaxKind::HEREDOC_START
-                            | SyntaxKind::HEREDOC_CONTENT
-                            | SyntaxKind::HEREDOC_END
-                    ) {
-                        return false;
-                    }
-                }
-            }
-        }
-
-        !has_empty_line
+    fn is_simple_block(&mut self, node: &PerlNode) -> bool {
+        let trivia = self.trivia_table.as_ref();
+        is_simple_block_cached(node, trivia, &mut self.block_simplicity_cache)
     }
 
     fn should_use_parenthesized_formatter(&self, node: &PerlNode) -> bool {

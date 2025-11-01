@@ -1,9 +1,12 @@
 ---
 source: src/formatter/tests.rs
+assertion_line: 51
 expression: formatted
 ---
 # Subroutine signatures formatting samples
-sub greet ($name, $greeting = "Hello") { "$greeting, $name!" }
+sub greet ($name, $greeting = "Hello") {
+    "$greeting, $name!"
+}
 
 sub flexible ($first, $, $third //= 3, @rest) {
     return $first + @rest;
@@ -22,7 +25,9 @@ sub placeholder_only ($, @, %) {
     return @_;
 }
 
-sub placeholder_default ($thing, $ = 1) { return $thing + $; }
+sub placeholder_default ($thing, $ = 1) {
+    return $thing + $;
+}
 
 my $anon = sub ($value ||= 10, %opts) {
     return $opts{scale} ? $value * $opts{scale} : $value;
