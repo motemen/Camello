@@ -175,15 +175,42 @@ impl FormatterOptions {
 }
 
 #[derive(Debug)]
+struct AlignmentEntry {
+    pad: usize,
+    token: Option<SyntaxToken<PerlLanguage>>,
+}
+
+#[derive(Debug)]
 pub(super) struct AlignmentState {
-    pads: VecDeque<usize>,
+    entries: VecDeque<AlignmentEntry>,
     token_kind: SyntaxKind,
 }
 
 impl AlignmentState {
     fn new(token_kind: SyntaxKind, pads: Vec<usize>) -> Self {
+        let entries = pads
+            .into_iter()
+            .map(|pad| AlignmentEntry { pad, token: None })
+            .collect();
         Self {
-            pads: pads.into(),
+            entries,
+            token_kind,
+        }
+    }
+
+    fn with_token_targets(
+        token_kind: SyntaxKind,
+        targets: Vec<(SyntaxToken<PerlLanguage>, usize)>,
+    ) -> Self {
+        let entries = targets
+            .into_iter()
+            .map(|(token, pad)| AlignmentEntry {
+                pad,
+                token: Some(token),
+            })
+            .collect();
+        Self {
+            entries,
             token_kind,
         }
     }
@@ -192,12 +219,19 @@ impl AlignmentState {
         self.token_kind
     }
 
-    fn next_pad(&mut self) -> Option<usize> {
-        self.pads.pop_front()
+    fn consume_pad_for(&mut self, token: &SyntaxToken<PerlLanguage>) -> Option<usize> {
+        let front = self.entries.front()?;
+        if let Some(expected) = front.token.as_ref() {
+            if expected != token {
+                return None;
+            }
+        }
+
+        self.entries.pop_front().map(|entry| entry.pad)
     }
 
     fn is_empty(&self) -> bool {
-        self.pads.is_empty()
+        self.entries.is_empty()
     }
 }
 
@@ -859,15 +893,15 @@ impl Formatter {
             };
 
             if matches_target {
-                if let Some(pad) = state.next_pad() {
+                if let Some(pad) = state.consume_pad_for(token) {
                     if pad > 0 {
                         let spaces = " ".repeat(pad);
                         self.writer.write_str(&spaces, None, None);
                     }
-                }
 
-                if state.is_empty() {
-                    self.alignment_state = None;
+                    if state.is_empty() {
+                        self.alignment_state = None;
+                    }
                 }
             }
         }
