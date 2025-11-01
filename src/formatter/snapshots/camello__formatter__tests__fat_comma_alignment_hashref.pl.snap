@@ -1,0 +1,9 @@
+---
+source: src/formatter/tests.rs
+assertion_line: 51
+expression: formatted
+---
+my $h = +{
+    aaa => { xyz => '' },
+    b   => { x   => '' },
+};
