@@ -519,19 +519,49 @@ impl Formatter {
         }
 
         let mut saw_newline = false;
-        let mut top_level_commas = Vec::new();
+        let mut entry_tokens: Vec<Vec<SyntaxToken<PerlLanguage>>> = Vec::new();
+        let mut current_entry_tokens = Vec::new();
+        let mut has_entry_content = false;
 
         for element in list.children_with_tokens() {
-            if let Some(token) = element.as_token() {
-                match token.kind() {
-                    SyntaxKind::FAT_COMMA => top_level_commas.push(token.clone()),
-                    SyntaxKind::NEWLINE => saw_newline = true,
-                    _ => {}
+            match element {
+                NodeOrToken::Token(token) => match token.kind() {
+                    SyntaxKind::FAT_COMMA => {
+                        current_entry_tokens.push(token.clone());
+                        has_entry_content = true;
+                    }
+                    SyntaxKind::COMMA => {
+                        entry_tokens.push(std::mem::take(&mut current_entry_tokens));
+                        has_entry_content = false;
+                    }
+                    SyntaxKind::NEWLINE => {
+                        saw_newline = true;
+                    }
+                    SyntaxKind::WHITESPACE => {}
+                    _ => {
+                        has_entry_content = true;
+                    }
+                },
+                NodeOrToken::Node(node) => {
+                    has_entry_content = true;
+                    current_entry_tokens.extend(node.descendants_with_tokens().filter_map(
+                        |element| {
+                            if let NodeOrToken::Token(token) = element {
+                                (token.kind() == SyntaxKind::FAT_COMMA).then_some(token)
+                            } else {
+                                None
+                            }
+                        },
+                    ));
                 }
             }
         }
 
-        if top_level_commas.len() < 2 || !saw_newline {
+        if has_entry_content || !current_entry_tokens.is_empty() {
+            entry_tokens.push(current_entry_tokens);
+        }
+
+        if entry_tokens.len() < 2 || !saw_newline {
             return None;
         }
 
@@ -543,88 +573,106 @@ impl Formatter {
             .writer
             .set_indent_level(self.writer.indent_level());
         formatter.format_node(list, FormatContext::default());
-        let mut filtered = Vec::new();
-        for column in formatter
+
+        let token_columns = formatter
             .writer
-            .collect_token_columns(SyntaxKind::FAT_COMMA)
-        {
-            if let Some(token) = column.token.as_ref() {
-                if let Some(position) = top_level_commas
-                    .iter()
-                    .position(|candidate| candidate == token)
-                {
-                    filtered.push((position, column));
-                }
-            }
-        }
-
-        if filtered.len() != top_level_commas.len() {
-            return None;
-        }
-
-        filtered.sort_by_key(|(position, _)| *position);
-        let columns: Vec<_> = filtered.into_iter().map(|(_, column)| column).collect();
-
-        // Break columns into groups where each group contains consecutive lines.
-        // A line break occurs when line_index jumps by more than 1 (indicating a line
-        // without a fat comma in between).
-        let mut groups = Vec::new();
-        if !columns.is_empty() {
-            let mut start = 0;
-            for i in 1..columns.len() {
-                if columns[i].line_index > columns[i - 1].line_index + 1 {
-                    // Line index jumped - there's a line without a fat comma
-                    groups.push(&columns[start..i]);
-                    start = i;
-                }
-            }
-            groups.push(&columns[start..]);
-        }
-
-        // Filter out groups with fewer than 2 elements
-        let groups: Vec<_> = groups
-            .into_iter()
-            .filter(|group| group.len() >= 2)
-            .collect();
-
-        if groups.is_empty() {
+            .collect_token_columns(SyntaxKind::FAT_COMMA);
+        if token_columns.is_empty() {
             return None;
         }
 
         let indent_width = self.writer.indent_level() * self.writer.indent_string_len();
-        let mut all_pads = Vec::new();
+        let mut pad_matrix: Vec<Vec<usize>> = entry_tokens
+            .iter()
+            .map(|tokens| vec![0; tokens.len()])
+            .collect();
 
-        // Calculate padding for each group independently
-        for group in groups {
-            let widths = group
-                .iter()
-                .map(|column| {
-                    let content_width = column.column.saturating_sub(column.indent);
-                    indent_width + content_width
-                })
-                .collect::<Vec<_>>();
+        let max_ord = entry_tokens
+            .iter()
+            .map(|tokens| tokens.len())
+            .max()
+            .unwrap_or(0);
 
-            let max_width = widths.iter().copied().max()?;
+        for ordinal in 0..max_ord {
+            let mut ordinal_entries = Vec::new();
+            for (entry_index, tokens) in entry_tokens.iter().enumerate() {
+                if let Some(token) = tokens.get(ordinal) {
+                    let column = token_columns
+                        .iter()
+                        .find(|candidate| candidate.token.as_ref() == Some(token))
+                        .cloned();
+                    let column = column?;
+                    ordinal_entries.push((entry_index, token.clone(), column));
+                }
+            }
 
-            // If all widths are the same, no padding needed for this group
-            let group_pads = if widths.iter().all(|&width| width == max_width) {
-                vec![0; widths.len()]
-            } else {
-                widths
-                    .into_iter()
-                    .map(|width| max_width - width)
-                    .collect::<Vec<_>>()
-            };
+            if ordinal_entries.len() < 2 {
+                continue;
+            }
 
-            all_pads.extend(group_pads);
+            let mut group_start = 0;
+            while group_start < ordinal_entries.len() {
+                let mut group_end = group_start + 1;
+                while group_end < ordinal_entries.len() {
+                    let prev_line = ordinal_entries[group_end - 1].2.line_index;
+                    let current_line = ordinal_entries[group_end].2.line_index;
+                    if current_line > prev_line + 1 {
+                        break;
+                    }
+                    group_end += 1;
+                }
+
+                let group = &ordinal_entries[group_start..group_end];
+                if group.len() >= 2 {
+                    let widths = group
+                        .iter()
+                        .map(|(entry_index, _, column)| {
+                            let content_width = column.column.saturating_sub(column.indent);
+                            let base_width = indent_width + content_width;
+                            let previous_pad = pad_matrix
+                                .get(*entry_index)
+                                .map(|pads| pads.iter().take(ordinal).sum::<usize>())
+                                .unwrap_or(0);
+                            base_width + previous_pad
+                        })
+                        .collect::<Vec<_>>();
+
+                    let max_width = widths.iter().copied().max().unwrap_or(0);
+                    let all_equal = widths.iter().all(|&width| width == max_width);
+
+                    for ((entry_index, _token, _column), width) in
+                        group.iter().zip(widths.into_iter())
+                    {
+                        if let Some(pads) = pad_matrix.get_mut(*entry_index) {
+                            if let Some(slot) = pads.get_mut(ordinal) {
+                                *slot = if all_equal { 0 } else { max_width - width };
+                            }
+                        }
+                    }
+                }
+
+                group_start = group_end;
+            }
         }
 
-        // Return None if no padding is actually needed
-        if all_pads.iter().all(|&pad| pad == 0) {
+        if pad_matrix
+            .iter()
+            .all(|entry| entry.iter().all(|&pad| pad == 0))
+        {
             return None;
         }
 
-        Some(AlignmentState::new(SyntaxKind::FAT_COMMA, all_pads))
+        let mut targets = Vec::new();
+        for (tokens, pads) in entry_tokens.iter().zip(pad_matrix.into_iter()) {
+            for (token, pad) in tokens.iter().cloned().zip(pads.into_iter()) {
+                targets.push((token, pad));
+            }
+        }
+
+        Some(AlignmentState::with_token_targets(
+            SyntaxKind::FAT_COMMA,
+            targets,
+        ))
     }
 
     pub(super) fn handle_multiline_opening_delimiter(&mut self, token: &SyntaxToken<PerlLanguage>) {
