@@ -306,9 +306,8 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
         (_, COMMA) => Some(false),
         (COMMA, _) => Some(true),
 
-        (_, QUESTION_MARK) => Some(true),
-        (QUESTION_MARK, _) => Some(true),
-        (COLON, _) => Some(true),
+        (_, QUESTION_MARK | COLON) => Some(true),
+        (QUESTION_MARK | COLON, _) => Some(true),
 
         // Logical NOT: special handling
         (L_PAREN, LOGICAL_NOT) => Some(false), // No space after (
