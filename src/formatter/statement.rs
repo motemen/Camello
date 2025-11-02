@@ -436,11 +436,11 @@ impl Formatter {
         } else {
             formatter.writer.collect_token_columns(token_kind)
         };
-        if columns.len() != 1 {
-            return None;
-        }
 
-        columns.into_iter().next().map(|column| column.column)
+        columns
+            .into_iter()
+            .min_by_key(|column| (column.line_index, column.column))
+            .map(|column| column.column)
     }
 
     fn alignment_token_kind_for_node(
@@ -462,6 +462,13 @@ impl Formatter {
                     return None;
                 }
 
+                let stmt_root = if node.kind() == SyntaxKind::STMT {
+                    node.clone()
+                } else {
+                    node.ancestors()
+                        .find(|ancestor| ancestor.kind() == SyntaxKind::STMT)?
+                };
+
                 let mut seen_assignment = false;
                 for token in node.descendants_with_tokens().filter_map(|element| {
                     if let NodeOrToken::Token(token) = element {
@@ -470,6 +477,12 @@ impl Formatter {
                         None
                     }
                 }) {
+                    if token.parent_ancestors().any(|ancestor| {
+                        ancestor.kind() == SyntaxKind::STMT && ancestor != stmt_root
+                    }) {
+                        continue;
+                    }
+
                     if token.kind().is_assignment_operator() {
                         if seen_assignment {
                             return None;
