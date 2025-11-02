@@ -1,4 +1,9 @@
 sub demo_alignment {
+    my $aaa = 1;
+    my @b   = grep { $_ } map {
+        $_ = 1;
+    } @list;
+
     my $alpha = 1;
     my $beta_value = 20;
     my $gamma = compute_value(); # trailing comment
