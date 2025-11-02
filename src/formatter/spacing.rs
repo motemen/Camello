@@ -306,6 +306,7 @@ fn handle_special_cases(prev: SyntaxKind, current: SyntaxKind) -> Option<bool> {
         (_, COMMA) => Some(false),
         (COMMA, _) => Some(true),
 
+        (_, QUESTION_MARK) => Some(true),
         (QUESTION_MARK, _) => Some(true),
         (COLON, _) => Some(true),
 
