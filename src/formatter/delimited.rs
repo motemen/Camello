@@ -596,11 +596,7 @@ impl Formatter {
         // Build a HashMap from tokens to their column information for O(1) lookups
         let token_column_map: HashMap<_, _> = token_columns
             .into_iter()
-            .filter_map(|col| {
-                col.token
-                    .as_ref()
-                    .map(|tok| (tok.clone(), col.clone()))
-            })
+            .filter_map(|col| col.token.as_ref().map(|tok| (tok.clone(), col.clone())))
             .collect();
 
         for ordinal in 0..max_ord {
