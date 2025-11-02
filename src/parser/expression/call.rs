@@ -303,7 +303,7 @@ impl Parser<'_> {
     fn parse_builtin_indirect_call(
         &mut self,
         function_name: &str,
-        _prototype: &PrototypeProfile,
+        prototype: &PrototypeProfile,
         start: rowan::Checkpoint,
     ) {
         // Check if we have arguments following
@@ -330,7 +330,16 @@ impl Parser<'_> {
             {
                 self.builder
                     .start_node_at(start, SyntaxKind::FUNCTION_CALL_EXPR.into());
-                self.expression_list();
+                match prototype {
+                    PrototypeProfile::Single(_) => {
+                        if !self.parse_expression_with_precedence(Precedence::LIST_ITEM) {
+                            self.error("Expected expression after builtin function");
+                        }
+                    }
+                    _ => {
+                        self.expression_list();
+                    }
+                }
                 self.builder.finish_node();
             }
         }
