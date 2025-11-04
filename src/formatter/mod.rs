@@ -617,6 +617,15 @@ impl Formatter {
         is_simple_block_cached(node, trivia, &mut self.block_simplicity_cache)
     }
 
+    pub(super) fn node_spans_multiple_lines(&self, node: &PerlNode) -> bool {
+        // Check if a node contains newlines in its source representation
+        node.descendants_with_tokens().any(|element| {
+            element
+                .as_token()
+                .is_some_and(|token| token.kind() == SyntaxKind::NEWLINE)
+        })
+    }
+
     fn should_use_parenthesized_formatter(&self, node: &PerlNode) -> bool {
         if !self.node_contains_parentheses(node) {
             return false;
@@ -981,6 +990,19 @@ impl Formatter {
                 self.remember_token(token);
             }
             T!['}'] => {
+                if let Some(parent_block) = token.parent() {
+                    if parent_block.kind() == SyntaxKind::BLOCK_STMT {
+                        if let Some(grandparent) = parent_block.parent() {
+                            if grandparent.kind() == SyntaxKind::BLOCK_FUNCTION_CALL_EXPR
+                                && self.node_spans_multiple_lines(&parent_block)
+                                && !self.writer.at_line_start()
+                            {
+                                self.writer.handle_formatter_newline();
+                            }
+                        }
+                    }
+                }
+
                 // 閉じブレースは特別処理：先にインデントを下げる
                 if self.writer.indent_level() > 0 {
                     self.writer.decrease_indent();
