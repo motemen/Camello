@@ -427,83 +427,76 @@ impl Formatter {
     fn format_expr_list_multiline(&mut self, list: &PerlNode, ctx: super::FormatContext) {
         let ctx = ctx.with_multiline_context();
 
-        let mut set_local_alignment = false;
-        if self.alignment_state.is_none() {
-            if let Some(state) = self.collect_expr_list_alignment_state(list) {
-                self.alignment_state = Some(state);
-                set_local_alignment = true;
-            }
-        }
+        let expr_list_alignment = self.collect_expr_list_alignment_state(list);
+        self.with_alignment(expr_list_alignment, |formatter| {
+            let mut iter = BufferedIterator::new(list.children_with_tokens());
+            let mut skip_next_newline = false;
 
-        let mut iter = BufferedIterator::new(list.children_with_tokens());
-        let mut skip_next_newline = false;
+            while let Some(child) = iter.next() {
+                match child {
+                    NodeOrToken::Node(node) => formatter.format_node(&node, ctx),
+                    NodeOrToken::Token(token) => {
+                        let kind = token.kind();
 
-        while let Some(child) = iter.next() {
-            match child {
-                NodeOrToken::Node(node) => self.format_node(&node, ctx),
-                NodeOrToken::Token(token) => {
-                    let kind = token.kind();
-
-                    match kind {
-                        SyntaxKind::WHITESPACE => {
-                            // Skip whitespace - spacing is managed by formatter
-                        }
-                        SyntaxKind::NEWLINE => {
-                            // Skip if we already handled the newline after a comment
-                            if skip_next_newline {
-                                skip_next_newline = false;
-                            } else {
-                                // Preserve user-provided newlines
-                                self.format_token(&token, ctx);
+                        match kind {
+                            SyntaxKind::WHITESPACE => {
+                                // Skip whitespace - spacing is managed by formatter
                             }
-                        }
-                        SyntaxKind::COMMENT => {
-                            // Handle inline and new-line comments
-                            if self.writer.at_line_start() {
-                                self.writer.add_indent();
-                                self.writer.set_at_line_start(false);
-                            } else {
-                                self.writer.write_char(' ');
+                            SyntaxKind::NEWLINE => {
+                                // Skip if we already handled the newline after a comment
+                                if skip_next_newline {
+                                    skip_next_newline = false;
+                                } else {
+                                    // Preserve user-provided newlines
+                                    formatter.format_token(&token, ctx);
+                                }
                             }
-                            self.writer.write_str(token.text().trim(), Some(kind), None);
+                            SyntaxKind::COMMENT => {
+                                // Handle inline and new-line comments
+                                if formatter.writer.at_line_start() {
+                                    formatter.writer.add_indent();
+                                    formatter.writer.set_at_line_start(false);
+                                } else {
+                                    formatter.writer.write_char(' ');
+                                }
+                                formatter
+                                    .writer
+                                    .write_str(token.text().trim(), Some(kind), None);
 
-                            // Add newline after comment
-                            self.writer.handle_user_newline();
+                                // Add newline after comment
+                                formatter.writer.handle_user_newline();
 
-                            // Skip the next newline token since we already added one
-                            skip_next_newline = true;
+                                // Skip the next newline token since we already added one
+                                skip_next_newline = true;
 
-                            self.remember_token(&token);
-                        }
-                        T![,] => {
-                            self.format_token(&token, ctx);
-
-                            // Check what comes after the comma (skipping whitespace)
-                            let next_token_kind = iter.peek_next_non_whitespace_kind();
-
-                            // Don't add automatic newline if:
-                            // 1. User has provided a newline already
-                            // 2. Next token is a comment (preserve inline comments)
-                            let should_add_newline = next_token_kind != Some(SyntaxKind::NEWLINE)
-                                && next_token_kind != Some(SyntaxKind::COMMENT);
-
-                            if should_add_newline {
-                                self.writer.handle_formatter_newline();
+                                formatter.remember_token(&token);
                             }
-                        }
-                        _ => {
-                            // その他のトークンは通常通り処理
-                            self.format_token(&token, ctx);
+                            T![,] => {
+                                formatter.format_token(&token, ctx);
+
+                                // Check what comes after the comma (skipping whitespace)
+                                let next_token_kind = iter.peek_next_non_whitespace_kind();
+
+                                // Don't add automatic newline if:
+                                // 1. User has provided a newline already
+                                // 2. Next token is a comment (preserve inline comments)
+                                let should_add_newline = next_token_kind
+                                    != Some(SyntaxKind::NEWLINE)
+                                    && next_token_kind != Some(SyntaxKind::COMMENT);
+
+                                if should_add_newline {
+                                    formatter.writer.handle_formatter_newline();
+                                }
+                            }
+                            _ => {
+                                // その他のトークンは通常通り処理
+                                formatter.format_token(&token, ctx);
+                            }
                         }
                     }
                 }
             }
-        }
-
-        // Reset alignment state only if we set it locally, to prevent it from affecting subsequent nodes
-        if set_local_alignment {
-            self.alignment_state = None;
-        }
+        });
     }
 
     pub(super) fn collect_expr_list_alignment_state(

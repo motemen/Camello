@@ -531,20 +531,30 @@ impl Formatter {
     }
 
     fn format_expr_list_node(&mut self, node: &PerlNode, ctx: FormatContext) {
-        let mut set_local_alignment = false;
-        if self.alignment_state.is_none() {
-            if let Some(state) = self.collect_expr_list_alignment_state(node) {
-                self.alignment_state = Some(state);
-                set_local_alignment = true;
-            }
-        }
+        let expr_list_alignment = self.collect_expr_list_alignment_state(node);
+        self.with_alignment(expr_list_alignment, |formatter| {
+            // Use the shared helper for multiline paren detection
+            formatter.format_children_with_options(node, ctx, false, false);
+        });
+    }
 
-        // Use the shared helper for multiline paren detection
-        self.format_children_with_options(node, ctx, false, false);
+    /// Execute a closure with a temporary alignment state, automatically restoring
+    /// the previous alignment state when the closure completes.
+    fn with_alignment<F>(&mut self, alignment: Option<AlignmentState>, f: F)
+    where
+        F: FnOnce(&mut Self),
+    {
+        let should_restore = alignment.is_some();
+        let saved_alignment = if should_restore {
+            self.alignment_state.replace(alignment.unwrap())
+        } else {
+            None
+        };
 
-        // Reset alignment state only if we set it locally, to prevent it from affecting subsequent nodes
-        if set_local_alignment {
-            self.alignment_state = None;
+        f(self);
+
+        if should_restore {
+            self.alignment_state = saved_alignment;
         }
     }
 

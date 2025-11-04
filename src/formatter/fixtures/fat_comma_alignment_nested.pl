@@ -14,4 +14,23 @@ sub nested_fat_commas {
         },
         third => 3,
     );
+
+    # Multi-line nested hash with alignment
+    $db->query(
+        sql  => q[],
+        bind => {
+            x   => 1,
+            yyy => 2,
+        },
+    );
+
+    # Deeper nesting
+    func(
+        a => 1,
+        b => {
+            xx  => 10,
+            yyy => 20,
+        },
+        c => 3,
+    );
 }
