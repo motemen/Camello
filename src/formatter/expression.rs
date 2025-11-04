@@ -169,11 +169,13 @@ impl Formatter {
                 NodeOrToken::Node(child_node) => {
                     if child_node.kind() == SyntaxKind::BLOCK_STMT {
                         formatted_block = true;
-                        if self.is_simple_block(&child_node) {
+                        if self.is_simple_block(&child_node)
+                            && !self.node_spans_multiple_lines(&child_node)
+                        {
                             self.format_simple_block(&child_node, ctx);
                         } else {
                             // Use format_node for complex blocks to preserve empty lines
-                            self.format_node(&child_node, ctx);
+                            self.format_node(&child_node, ctx.with_multiline_context());
                         }
                     } else {
                         self.format_node(&child_node, ctx);
