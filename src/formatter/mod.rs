@@ -531,20 +531,30 @@ impl Formatter {
     }
 
     fn format_expr_list_node(&mut self, node: &PerlNode, ctx: FormatContext) {
-        let mut set_local_alignment = false;
-        if self.alignment_state.is_none() {
-            if let Some(state) = self.collect_expr_list_alignment_state(node) {
-                self.alignment_state = Some(state);
-                set_local_alignment = true;
-            }
-        }
+        let expr_list_alignment = self.collect_expr_list_alignment_state(node);
+        self.with_alignment(expr_list_alignment, |formatter| {
+            // Use the shared helper for multiline paren detection
+            formatter.format_children_with_options(node, ctx, false, false);
+        });
+    }
 
-        // Use the shared helper for multiline paren detection
-        self.format_children_with_options(node, ctx, false, false);
+    /// Execute a closure with a temporary alignment state, automatically restoring
+    /// the previous alignment state when the closure completes.
+    fn with_alignment<F>(&mut self, alignment: Option<AlignmentState>, f: F)
+    where
+        F: FnOnce(&mut Self),
+    {
+        let should_restore = alignment.is_some();
+        let saved_alignment = if should_restore {
+            self.alignment_state.replace(alignment.unwrap())
+        } else {
+            None
+        };
 
-        // Reset alignment state only if we set it locally, to prevent it from affecting subsequent nodes
-        if set_local_alignment {
-            self.alignment_state = None;
+        f(self);
+
+        if should_restore {
+            self.alignment_state = saved_alignment;
         }
     }
 
@@ -615,6 +625,15 @@ impl Formatter {
     fn is_simple_block(&mut self, node: &PerlNode) -> bool {
         let trivia = self.trivia_table.as_ref();
         is_simple_block_cached(node, trivia, &mut self.block_simplicity_cache)
+    }
+
+    pub(super) fn node_spans_multiple_lines(&self, node: &PerlNode) -> bool {
+        // Check if a node contains newlines in its source representation
+        node.descendants_with_tokens().any(|element| {
+            element
+                .as_token()
+                .is_some_and(|token| token.kind() == SyntaxKind::NEWLINE)
+        })
     }
 
     fn should_use_parenthesized_formatter(&self, node: &PerlNode) -> bool {
@@ -981,6 +1000,19 @@ impl Formatter {
                 self.remember_token(token);
             }
             T!['}'] => {
+                if let Some(parent_block) = token.parent() {
+                    if parent_block.kind() == SyntaxKind::BLOCK_STMT {
+                        if let Some(grandparent) = parent_block.parent() {
+                            if grandparent.kind() == SyntaxKind::BLOCK_FUNCTION_CALL_EXPR
+                                && self.node_spans_multiple_lines(&parent_block)
+                                && !self.writer.at_line_start()
+                            {
+                                self.writer.handle_formatter_newline();
+                            }
+                        }
+                    }
+                }
+
                 // 閉じブレースは特別処理：先にインデントを下げる
                 if self.writer.indent_level() > 0 {
                     self.writer.decrease_indent();

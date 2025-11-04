@@ -135,7 +135,7 @@ impl Formatter {
     }
 
     pub(super) fn format_block(&mut self, node: &PerlNode, ctx: super::FormatContext) {
-        if self.is_simple_block(node) {
+        if self.is_simple_block(node) && !self.node_spans_multiple_lines(node) {
             self.format_simple_block(node, ctx);
             return;
         }
@@ -409,15 +409,6 @@ impl Formatter {
             .collect::<Vec<_>>();
 
         Some(AlignmentState::new(token_kind, pads))
-    }
-
-    fn node_spans_multiple_lines(&self, node: &PerlNode) -> bool {
-        // Check if a node contains newlines in its source representation
-        node.descendants_with_tokens().any(|element| {
-            element
-                .as_token()
-                .is_some_and(|token| token.kind() == SyntaxKind::NEWLINE)
-        })
     }
 
     fn measure_alignment_prefix(&self, node: &PerlNode, token_kind: SyntaxKind) -> Option<usize> {
