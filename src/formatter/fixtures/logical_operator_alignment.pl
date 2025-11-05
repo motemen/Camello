@@ -1,0 +1,24 @@
+sub logical_alignment {
+    my $result = $foo && $bar;
+    my $fallback = $baz || $default_value;
+    my $defined = $value // $alternative;
+
+    $x = $a && $b;
+    $longer_var = $c || $d;
+    $y = $e // $f;
+
+    my $short && do_something();
+    my $very_long_variable && other_action();
+
+    $result = $check || warn "failed";
+    $value = $input // get_default();
+
+    # Mixed operators should not align
+    my $mixed1 = $a && $b;
+    my $mixed2 = $c || $d;
+    my $mixed3 = $e && $f;
+
+    # Multiple operators on same line should not align
+    my $multi = $a && $b && $c;
+    my $single = $x || $y;
+}

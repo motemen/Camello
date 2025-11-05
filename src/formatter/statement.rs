@@ -521,6 +521,33 @@ impl Formatter {
 
                 None
             }
+            AlignmentStrategy::LogicalOperators => {
+                if !matches!(node.kind(), SyntaxKind::VAR_DECL | SyntaxKind::STMT) {
+                    return None;
+                }
+
+                // Count each logical operator type
+                let and_count = Self::count_tokens_of_kind(node, SyntaxKind::LOGICAL_AND);
+                let or_count = Self::count_tokens_of_kind(node, SyntaxKind::LOGICAL_OR);
+                let defined_or_count = Self::count_tokens_of_kind(node, SyntaxKind::DEFINED_OR);
+
+                // Only align if there's exactly one logical operator of any type
+                let total_count = and_count + or_count + defined_or_count;
+                if total_count != 1 {
+                    return None;
+                }
+
+                // Return the specific operator kind that was found
+                if and_count == 1 {
+                    Some(SyntaxKind::LOGICAL_AND)
+                } else if or_count == 1 {
+                    Some(SyntaxKind::LOGICAL_OR)
+                } else if defined_or_count == 1 {
+                    Some(SyntaxKind::DEFINED_OR)
+                } else {
+                    None
+                }
+            }
             AlignmentStrategy::Comments => {
                 if !matches!(node.kind(), SyntaxKind::VAR_DECL | SyntaxKind::STMT) {
                     return None;

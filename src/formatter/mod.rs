@@ -128,6 +128,7 @@ pub enum AlignmentStrategy {
     Assignments,
     FatCommas,
     PostfixConditionals,
+    LogicalOperators,
     Comments,
 }
 
@@ -147,6 +148,7 @@ impl Default for FormatterOptions {
                 AlignmentStrategy::Assignments,
                 AlignmentStrategy::FatCommas,
                 AlignmentStrategy::PostfixConditionals,
+                AlignmentStrategy::LogicalOperators,
                 AlignmentStrategy::Comments,
             ],
             align_compound_assignments: true,
