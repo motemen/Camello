@@ -197,9 +197,9 @@ impl Formatter {
                         }
                         SyntaxKind::DELIMITER => {
                             let text = token.text();
-                            if text == "{" || text == "(" || text == "[" {
+                            if text == "{" || text == "(" || text == "[" || text == "<" {
                                 delimiter_depth += 1;
-                            } else if text == "}" || text == ")" || text == "]" {
+                            } else if text == "}" || text == ")" || text == "]" || text == ">" {
                                 delimiter_depth -= 1;
                                 if delimiter_depth == 0 && !seen_first_pattern {
                                     seen_first_pattern = true;
@@ -212,6 +212,7 @@ impl Formatter {
                             // First pattern block - preserve as-is
                             self.writer.write_token(&token);
                             self.remember_token(&token);
+                            seen_first_pattern = true;
                         }
                         SyntaxKind::INTERPOLATED_STRING => {
                             // For s/// without 'e' flag, replacement part should be verbatim
