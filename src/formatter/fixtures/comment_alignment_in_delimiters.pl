@@ -1,0 +1,19 @@
++{
+    a => 1,
+    b => 2,    # comment
+};
+
+[
+    1,
+    2,    # comment
+];
+
+{
+    short => 1,    # aligned
+    longer_key => 2,    # aligned
+};
+
+[
+    "short",    # aligned
+    "much longer string",    # aligned
+];

@@ -137,6 +137,8 @@ pub struct FormatterOptions {
     pub alignment_strategies: Vec<AlignmentStrategy>,
     /// Controls whether compound assignment operators are aligned with simple assignments.
     pub align_compound_assignments: bool,
+    /// Minimum number of spaces before inline comments (default: 1)
+    pub min_spaces_before_comment: usize,
 }
 
 impl Default for FormatterOptions {
@@ -150,6 +152,7 @@ impl Default for FormatterOptions {
                 AlignmentStrategy::Comments,
             ],
             align_compound_assignments: true,
+            min_spaces_before_comment: 1,
         }
     }
 }
@@ -170,6 +173,12 @@ impl FormatterOptions {
     #[must_use]
     pub fn with_align_compound_assignments(mut self, align: bool) -> Self {
         self.align_compound_assignments = align;
+        self
+    }
+
+    #[must_use]
+    pub fn with_min_spaces_before_comment(mut self, spaces: usize) -> Self {
+        self.min_spaces_before_comment = spaces;
         self
     }
 }
