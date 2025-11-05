@@ -168,6 +168,20 @@ impl Formatter {
         kw_kinds: &[SyntaxKind],
         ctx: super::FormatContext,
     ) {
+        // For s/// operator, check if 'e' flag is present
+        // If not, the replacement part (INTERPOLATED_STRING) should be verbatim
+        let has_e_flag = kw_kinds.contains(&T![s])
+            && node.children_with_tokens().any(|child| {
+                child
+                    .as_token()
+                    .is_some_and(|t| t.kind() == SyntaxKind::S_FLAGS && t.text().contains('e'))
+            });
+
+        // Track whether we've seen the first delimiter pair (for s///)
+        // After the second delimiter close, the next INTERPOLATED_STRING is the replacement
+        let mut delimiter_depth = 0;
+        let mut seen_first_pattern = false;
+
         for child in node.children_with_tokens() {
             match child {
                 NodeOrToken::Node(node) => self.format_node(&node, ctx),
@@ -180,6 +194,45 @@ impl Formatter {
                         SyntaxKind::WHITESPACE => {
                             // Preserve whitespace inside these expressions
                             self.writer.write_token(&token);
+                        }
+                        SyntaxKind::DELIMITER => {
+                            let text = token.text();
+                            if text == "{" || text == "(" || text == "[" || text == "<" {
+                                delimiter_depth += 1;
+                            } else if text == "}" || text == ")" || text == "]" || text == ">" {
+                                delimiter_depth -= 1;
+                                if delimiter_depth == 0 && !seen_first_pattern {
+                                    seen_first_pattern = true;
+                                }
+                            }
+                            self.writer.write_token(&token);
+                            self.remember_token(&token);
+                        }
+                        SyntaxKind::REGEX_PATTERN => {
+                            // First pattern block - preserve as-is
+                            self.writer.write_token(&token);
+                            self.remember_token(&token);
+                            seen_first_pattern = true;
+                        }
+                        SyntaxKind::INTERPOLATED_STRING => {
+                            // For s/// without 'e' flag, replacement part should be verbatim
+                            if kw_kinds.contains(&T![s]) && seen_first_pattern && !has_e_flag {
+                                // Write verbatim, preserving all whitespace and indentation
+                                let text = token.text();
+                                for (i, line) in text.split('\n').enumerate() {
+                                    if i > 0 {
+                                        self.writer.handle_user_newline();
+                                    }
+                                    if !line.is_empty() {
+                                        self.writer.write_raw(line, Some(kind), Some(&token));
+                                    }
+                                }
+                                self.remember_token(&token);
+                            } else {
+                                // Normal handling for other cases
+                                self.writer.write_token(&token);
+                                self.remember_token(&token);
+                            }
                         }
                         _ => {
                             self.writer.write_token(&token);
