@@ -44,7 +44,7 @@ s{foo}{bar}i;
 s{search}{replace}gi;
 
 # Substitution with 'e' flag (code evaluation)
-# Note: even with 'e' flag, replacement is still verbatim
+# Note: with the 'e' flag, the replacement is evaluated as code, not treated as verbatim
 s{pattern}{uc($1)}e;
 s{(\w+)}{lc($1)}ge;
 
@@ -65,3 +65,22 @@ s{
 }{
     result
 }x;
+
+# Various delimiter styles - formatting should be preserved
+{
+    s/foo/
+        bar
+    /;
+
+    s{foo}{
+        bar
+    };
+
+    s<foo><
+        bar
+    >;
+
+    s#foo#
+        bar
+    #;
+}
