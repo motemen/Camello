@@ -82,6 +82,12 @@ impl Formatter {
 
     /// Format function call expressions, handling special spacing for complex sigil expressions
     fn format_function_call_expr(&mut self, node: &PerlNode, ctx: super::FormatContext) {
+        // Check if this contains an ambiguous child
+        if self.contains_ambiguous_child(node) {
+            self.format_function_call_with_ambiguous_args(node, ctx);
+            return;
+        }
+
         let mut children = node.children_with_tokens();
 
         // Check if the first child is a COMPOUND_VAR starting with CODE_SIGIL
@@ -123,6 +129,63 @@ impl Formatter {
                 self.format_parenthesized_expr(node, ctx);
             } else {
                 self.format_children_with_options(node, ctx, false, false);
+            }
+        }
+    }
+
+    /// Format a function call that contains ambiguous arguments
+    fn format_function_call_with_ambiguous_args(
+        &mut self,
+        node: &PerlNode,
+        ctx: super::FormatContext,
+    ) {
+        let mut children = node.children_with_tokens();
+
+        // Format the function name (first identifier/token)
+        if let Some(first) = children.next() {
+            match first {
+                rowan::NodeOrToken::Node(child_node) => self.format_node(&child_node, ctx),
+                rowan::NodeOrToken::Token(token) => self.format_token(&token, ctx),
+            }
+        }
+
+        // Collect remaining elements (arguments)
+        let remaining: Vec<_> = children.collect();
+
+        // Check if arguments contain ambiguous expressions
+        let has_ambiguous_args = remaining.iter().any(|elem| {
+            elem.as_node()
+                .map(|n| {
+                    n.kind() == SyntaxKind::AMBIGUOUS_CALL_EXPR
+                        || n.descendants()
+                            .any(|d| d.kind() == SyntaxKind::AMBIGUOUS_CALL_EXPR)
+                })
+                .unwrap_or(false)
+        });
+
+        if has_ambiguous_args {
+            // Preserve original text of arguments
+            for elem in remaining {
+                let text = elem.to_string();
+                self.writer.write_str(&text, None, None);
+                if let Some(token) = elem.as_token() {
+                    self.remember_token(token);
+                } else if let Some(node) = elem.as_node() {
+                    for token in node
+                        .descendants_with_tokens()
+                        .filter_map(|e| e.into_token())
+                    {
+                        self.remember_token(&token);
+                    }
+                }
+            }
+        } else {
+            // Format arguments normally
+            for elem in remaining {
+                match elem {
+                    rowan::NodeOrToken::Node(child_node) => self.format_node(&child_node, ctx),
+                    rowan::NodeOrToken::Token(token) => self.format_token(&token, ctx),
+                }
             }
         }
     }

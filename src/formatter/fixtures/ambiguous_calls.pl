@@ -23,3 +23,9 @@ $h = baz(1);
 $i = foo+1+2;
 $j = foo+bar-baz;
 $k = foo+ 1 +2;
+
+# Built-in functions with ambiguous calls
+print foo-2;
+warn bar+1;
+say baz-qux;
+scalar foo+bar;
