@@ -4,22 +4,22 @@ assertion_line: 51
 expression: formatted
 ---
 sub logical_alignment {
-    # && operators should align vertically
-    my $result = $foo          && $bar;
+    # Both = and && should align vertically
+    my $result          = $foo          && $bar;
     my $fallback_longer = $baz && $default_value;
-    my $x = $a                 && $b;
+    my $x               = $a                 && $b;
 
-    # || operators should align vertically
-    $short = $c                  || $d;
+    # Both = and || should align vertically
+    $short              = $c                  || $d;
     $very_long_variable = $check || $fallback;
-    $y = $e                      || $f;
+    $y                  = $e                      || $f;
 
-    # // operators should align vertically
-    my $val = $input         // get_default();
+    # Both = and // should align vertically
+    my $val         = $input         // get_default();
     my $longer_name = $value // $alternative;
 
-    # Statement-level && alignment
-    do_something()                && say "ok";
+    # Statement-level &&: aligns the && operators
+    do_something() && say "ok";
     other_action_with_long_name() && warn "done";
 
     # Empty line breaks alignment groups
@@ -30,10 +30,10 @@ sub logical_alignment {
 
     # Different operators form separate groups
     my $and1 = $foo && $bar;
-    my $or1  = $baz || $qux;
+    my $or1 = $baz || $qux;
     my $def1 = $val // $alt;
 
     # Multiple operators on same line are excluded
-    my $multi  = $a && $b && $c;
+    my $multi = $a && $b && $c;
     my $single = $x || $y;
 }

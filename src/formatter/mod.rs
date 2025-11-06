@@ -145,8 +145,8 @@ impl Default for FormatterOptions {
         Self {
             delimiter_tightness: DelimiterTightnessConfig::default(),
             alignment_strategies: vec![
-                AlignmentStrategy::LogicalOperators,
                 AlignmentStrategy::Assignments,
+                AlignmentStrategy::LogicalOperators,
                 AlignmentStrategy::FatCommas,
                 AlignmentStrategy::PostfixConditionals,
                 AlignmentStrategy::Comments,
@@ -183,20 +183,20 @@ struct AlignmentEntry {
 }
 
 #[derive(Debug)]
-pub(super) struct AlignmentState {
-    entries: VecDeque<AlignmentEntry>,
+pub(super) struct AlignmentColumn {
     token_kind: SyntaxKind,
+    entries: VecDeque<AlignmentEntry>,
 }
 
-impl AlignmentState {
-    fn new(token_kind: SyntaxKind, pads: Vec<usize>) -> Self {
+impl AlignmentColumn {
+    pub(super) fn new(token_kind: SyntaxKind, pads: Vec<usize>) -> Self {
         let entries = pads
             .into_iter()
             .map(|pad| AlignmentEntry { pad, token: None })
             .collect();
         Self {
-            entries,
             token_kind,
+            entries,
         }
     }
 
@@ -212,13 +212,9 @@ impl AlignmentState {
             })
             .collect();
         Self {
-            entries,
             token_kind,
+            entries,
         }
-    }
-
-    fn token_kind(&self) -> SyntaxKind {
-        self.token_kind
     }
 
     fn consume_pad_for(&mut self, token: &SyntaxToken<PerlLanguage>) -> Option<usize> {
@@ -234,6 +230,78 @@ impl AlignmentState {
 
     fn is_empty(&self) -> bool {
         self.entries.is_empty()
+    }
+}
+
+#[derive(Debug)]
+pub(super) struct AlignmentState {
+    columns: Vec<AlignmentColumn>,
+}
+
+impl AlignmentState {
+    fn new(token_kind: SyntaxKind, pads: Vec<usize>) -> Self {
+        let column = AlignmentColumn::new(token_kind, pads);
+        Self {
+            columns: vec![column],
+        }
+    }
+
+    fn with_token_targets(
+        token_kind: SyntaxKind,
+        targets: Vec<(SyntaxToken<PerlLanguage>, usize)>,
+    ) -> Self {
+        let column = AlignmentColumn::with_token_targets(token_kind, targets);
+        Self {
+            columns: vec![column],
+        }
+    }
+
+    pub(super) fn with_multiple_columns(columns: Vec<AlignmentColumn>) -> Self {
+        Self { columns }
+    }
+
+    fn consume_pad_for(&mut self, token: &SyntaxToken<PerlLanguage>) -> Option<usize> {
+        for column in &mut self.columns {
+            if column.token_kind == token.kind() {
+                return column.consume_pad_for(token);
+            }
+        }
+        None
+    }
+
+    fn is_empty(&self) -> bool {
+        self.columns.iter().all(|c| c.is_empty())
+    }
+
+    fn has_column_for_token_kind(
+        &self,
+        kind: SyntaxKind,
+        token: &SyntaxToken<PerlLanguage>,
+        writer: &Writer,
+    ) -> bool {
+        for column in &self.columns {
+            let target_kind = column.token_kind;
+            let matches = if target_kind == SyntaxKind::EQ {
+                if kind.is_compoundable_operator() {
+                    Formatter::next_significant_token(token)
+                        .map(|next| next.kind().is_assignment_operator())
+                        .unwrap_or(false)
+                } else if kind.is_assignment_operator() {
+                    !writer
+                        .prev_token_kind()
+                        .is_some_and(|prev| prev.is_compoundable_operator())
+                } else {
+                    false
+                }
+            } else {
+                target_kind == kind
+            };
+
+            if matches {
+                return true;
+            }
+        }
+        false
     }
 }
 
@@ -895,25 +963,10 @@ impl Formatter {
     fn apply_alignment_padding(&mut self, token: &SyntaxToken<PerlLanguage>) {
         let kind = token.kind();
         if let Some(state) = self.alignment_state.as_mut() {
-            let target_kind = state.token_kind();
-            let matches_target = if target_kind == SyntaxKind::EQ {
-                if kind.is_compoundable_operator() {
-                    Self::next_significant_token(token)
-                        .map(|next| next.kind().is_assignment_operator())
-                        .unwrap_or(false)
-                } else if kind.is_assignment_operator() {
-                    !self
-                        .writer
-                        .prev_token_kind()
-                        .is_some_and(|prev| prev.is_compoundable_operator())
-                } else {
-                    false
-                }
-            } else {
-                target_kind == kind
-            };
+            // Check if this token matches any of the alignment columns
+            let matches_any_target = state.has_column_for_token_kind(kind, token, &self.writer);
 
-            if matches_target {
+            if matches_any_target {
                 if let Some(pad) = state.consume_pad_for(token) {
                     if pad > 0 {
                         let spaces = " ".repeat(pad);

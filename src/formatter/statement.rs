@@ -384,14 +384,20 @@ impl Formatter {
             return None;
         }
 
-        self.build_alignment_state(&nodes, token_kind)
+        self.build_alignment_state(strategy, &nodes, token_kind)
     }
 
     fn build_alignment_state(
         &self,
+        strategy: AlignmentStrategy,
         nodes: &[PerlNode],
         token_kind: SyntaxKind,
     ) -> Option<AlignmentState> {
+        // For logical operators, align both = and the logical operator
+        if strategy == AlignmentStrategy::LogicalOperators {
+            return self.build_multi_column_alignment(nodes, token_kind);
+        }
+
         let mut widths = Vec::with_capacity(nodes.len());
         for node in nodes {
             let width = self.measure_alignment_prefix(node, token_kind)?;
@@ -409,6 +415,53 @@ impl Formatter {
             .collect::<Vec<_>>();
 
         Some(AlignmentState::new(token_kind, pads))
+    }
+
+    fn build_multi_column_alignment(
+        &self,
+        nodes: &[PerlNode],
+        logical_op_kind: SyntaxKind,
+    ) -> Option<AlignmentState> {
+        use super::AlignmentColumn;
+
+        // Measure widths for both = and the logical operator
+        let mut eq_widths = Vec::with_capacity(nodes.len());
+        let mut op_widths = Vec::with_capacity(nodes.len());
+
+        for node in nodes {
+            let eq_width = self.measure_alignment_prefix(node, SyntaxKind::EQ)?;
+            let op_width = self.measure_alignment_prefix(node, logical_op_kind)?;
+            eq_widths.push(eq_width);
+            op_widths.push(op_width);
+        }
+
+        // Calculate max widths and pads for each column
+        let max_eq_width = eq_widths.iter().copied().max()?;
+        let max_op_width = op_widths.iter().copied().max()?;
+
+        // Skip alignment if everything is already aligned
+        let eq_needs_alignment = !eq_widths.iter().all(|&w| w == max_eq_width);
+        let op_needs_alignment = !op_widths.iter().all(|&w| w == max_op_width);
+
+        if !eq_needs_alignment && !op_needs_alignment {
+            return None;
+        }
+
+        let eq_pads = eq_widths
+            .into_iter()
+            .map(|w| max_eq_width - w)
+            .collect::<Vec<_>>();
+        let op_pads = op_widths
+            .into_iter()
+            .map(|w| max_op_width - w)
+            .collect::<Vec<_>>();
+
+        let columns = vec![
+            AlignmentColumn::new(SyntaxKind::EQ, eq_pads),
+            AlignmentColumn::new(logical_op_kind, op_pads),
+        ];
+
+        Some(AlignmentState::with_multiple_columns(columns))
     }
 
     fn measure_alignment_prefix(&self, node: &PerlNode, token_kind: SyntaxKind) -> Option<usize> {
@@ -450,6 +503,28 @@ impl Formatter {
                         .descendants()
                         .any(|child| child.kind() == SyntaxKind::COMPOUND_ASSIGNMENT)
                 {
+                    return None;
+                }
+
+                // Exclude statements with logical operators (they should be handled by LogicalOperators strategy)
+                // But don't count logical operators inside compound assignments (e.g., ||= or &&=)
+                let has_standalone_logical_op = node.descendants_with_tokens().any(|element| {
+                    if let NodeOrToken::Token(token) = element {
+                        if matches!(
+                            token.kind(),
+                            SyntaxKind::LOGICAL_AND
+                                | SyntaxKind::LOGICAL_OR
+                                | SyntaxKind::DEFINED_OR
+                        ) {
+                            // Check if this token is inside a COMPOUND_ASSIGNMENT node
+                            return !token.parent_ancestors().any(|ancestor| {
+                                ancestor.kind() == SyntaxKind::COMPOUND_ASSIGNMENT
+                            });
+                        }
+                    }
+                    false
+                });
+                if has_standalone_logical_op {
                     return None;
                 }
 
@@ -523,6 +598,14 @@ impl Formatter {
             }
             AlignmentStrategy::LogicalOperators => {
                 if !matches!(node.kind(), SyntaxKind::VAR_DECL | SyntaxKind::STMT) {
+                    return None;
+                }
+
+                // Exclude statements with compound assignments (they should be handled by Assignments strategy)
+                if node
+                    .descendants()
+                    .any(|child| child.kind() == SyntaxKind::COMPOUND_ASSIGNMENT)
+                {
                     return None;
                 }
 

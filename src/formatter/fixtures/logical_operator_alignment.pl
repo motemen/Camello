@@ -1,19 +1,19 @@
 sub logical_alignment {
-    # && operators should align vertically
+    # Both = and && should align vertically
     my $result = $foo && $bar;
     my $fallback_longer = $baz && $default_value;
     my $x = $a && $b;
 
-    # || operators should align vertically
+    # Both = and || should align vertically
     $short = $c || $d;
     $very_long_variable = $check || $fallback;
     $y = $e || $f;
 
-    # // operators should align vertically
+    # Both = and // should align vertically
     my $val = $input // get_default();
     my $longer_name = $value // $alternative;
 
-    # Statement-level && alignment
+    # Statement-level &&: aligns the && operators
     do_something() && say "ok";
     other_action_with_long_name() && warn "done";
 
