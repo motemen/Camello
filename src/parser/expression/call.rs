@@ -363,6 +363,22 @@ impl Parser<'_> {
             next_kind = None;
         }
 
+        // Check for ambiguous function calls: foo+1, foo-1, etc.
+        // These could be foo(+1) or foo()+1, so we mark them as ambiguous
+        // The AMBIGUOUS_CALL_EXPR wraps the identifier (including trailing whitespace)
+        // The operator will be parsed by the expression parser, creating an INFIX_EXPR
+        if let Some(kind) = next_kind {
+            if matches!(kind, T![+] | T![-]) {
+                // This is ambiguous: could be foo(+1) or foo()+1
+                // Wrap the already-parsed identifier in AMBIGUOUS_CALL_EXPR
+                // to signal to the formatter to preserve original spacing
+                self.builder
+                    .start_node_at(start, SyntaxKind::AMBIGUOUS_CALL_EXPR.into());
+                self.builder.finish_node();
+                return;
+            }
+        }
+
         // If the next token can start an expression, parse it as a list of arguments.
         if let Some(kind) = next_kind {
             if Self::can_start_expression(kind)

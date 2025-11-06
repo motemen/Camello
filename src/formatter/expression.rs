@@ -52,6 +52,21 @@ impl Formatter {
                 // Backtick command substitution: just format children (the backtick string literal)
                 self.format_children(node, false, ctx);
             }
+            SyntaxKind::AMBIGUOUS_CALL_EXPR => {
+                // Just format the identifier inside - the parent INFIX_EXPR
+                // will handle preserving the original spacing
+                self.format_children(node, false, ctx);
+            }
+            SyntaxKind::INFIX_EXPR => {
+                // Check if this is an ambiguous call (left side is AMBIGUOUS_CALL_EXPR)
+                if self.is_ambiguous_infix_expr(node) {
+                    // Preserve original formatting including whitespace
+                    self.format_ambiguous_infix_expr(node, ctx);
+                } else {
+                    // Normal infix expression formatting
+                    self.format_children(node, false, ctx);
+                }
+            }
             _ => {
                 if self.should_use_parenthesized_formatter(node) {
                     self.format_parenthesized_expr(node, ctx);
@@ -605,6 +620,49 @@ impl Formatter {
                     }
                 }
             }
+        }
+    }
+
+    /// Check if an INFIX_EXPR contains an ambiguous function call on the left side
+    fn is_ambiguous_infix_expr(&self, node: &PerlNode) -> bool {
+        // Check if first child is AMBIGUOUS_CALL_EXPR
+        let first_is_ambiguous = node
+            .children()
+            .next()
+            .is_some_and(|first_child| first_child.kind() == SyntaxKind::AMBIGUOUS_CALL_EXPR);
+
+        if !first_is_ambiguous {
+            return false;
+        }
+
+        // Check if the operator is + or - (the ambiguous operators)
+        // Find the operator token (second non-whitespace element)
+        let operator = node
+            .children_with_tokens()
+            .filter(|elem| !matches!(elem.kind(), SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE))
+            .nth(1)
+            .and_then(|elem| elem.as_token().map(|t| t.kind()));
+
+        matches!(operator, Some(T![+] | T![-]))
+    }
+
+    /// Format an ambiguous infix expression by preserving the original text
+    fn format_ambiguous_infix_expr(&mut self, node: &PerlNode, _ctx: super::FormatContext) {
+        // Preserve the original text including whitespace for ambiguous expressions
+        // This handles cases like: foo+1 (could be foo(+1) or foo()+1)
+
+        // Get the original text with all trivia
+        let original_text = node.text().to_string();
+
+        // Write the original text as-is
+        self.writer.write_str(&original_text, None, None);
+
+        // Remember all tokens in this node so we don't re-process them
+        for token in node
+            .descendants_with_tokens()
+            .filter_map(|elem| elem.into_token())
+        {
+            self.remember_token(&token);
         }
     }
 

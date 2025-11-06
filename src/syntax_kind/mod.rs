@@ -273,6 +273,7 @@ pub enum SyntaxKind {
     HASH_SUBSCRIPTION_EXPR, // Direct hash access expression (e.g., $hash{key})
     ARRAY_SUBSCRIPTION_EXPR, // Direct array access expression (e.g., $array[0])
     FUNCTION_CALL_EXPR, // Function call expression (e.g., push @array, $value)
+    AMBIGUOUS_CALL_EXPR, // Ambiguous function call (e.g., foo+1 could be foo(+1) or foo()+1)
     BLOCK_FUNCTION_CALL_EXPR, // Block function call expression (e.g., eval { ... }, map { ... } @list)
     QW_EXPR,                  // qw() expression (quote word list)
     Q_EXPR,                   // q() expression (single-quoted string literal)
