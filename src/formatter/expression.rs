@@ -149,11 +149,13 @@ impl Formatter {
             }
         }
 
-        // Collect remaining elements (arguments)
+        // Collect remaining elements (arguments including whitespace)
+        // The whitespace will be formatted normally, while ambiguous expressions
+        // will have their original formatting preserved
         let remaining: Vec<_> = children.collect();
 
         // Check if arguments contain ambiguous expressions
-        let has_ambiguous_args = remaining.iter().any(|elem| {
+        let _has_ambiguous_args = remaining.iter().any(|elem| {
             elem.as_node()
                 .map(|n| {
                     n.kind() == SyntaxKind::AMBIGUOUS_CALL_EXPR
@@ -163,14 +165,29 @@ impl Formatter {
                 .unwrap_or(false)
         });
 
-        if has_ambiguous_args {
-            // Preserve original text of arguments
-            for elem in remaining {
+        // Format each element of the arguments
+        // For elements containing ambiguous expressions, preserve their original text
+        // For other elements (including whitespace after function name), format normally
+        // Start with need_space=true since we just formatted function name
+        let mut need_space_before_next = true;
+        for elem in remaining {
+            let elem_has_ambiguous = elem
+                .as_node()
+                .map(|n| {
+                    n.kind() == SyntaxKind::AMBIGUOUS_CALL_EXPR
+                        || n.kind() == SyntaxKind::INFIX_EXPR && self.contains_ambiguous_child(n)
+                })
+                .unwrap_or(false);
+
+            if elem_has_ambiguous {
+                // Add space before ambiguous element if needed (e.g., after function name)
+                if need_space_before_next {
+                    self.writer.write_str(" ", None, None);
+                }
+                // This element contains ambiguous expressions, preserve original text
                 let text = elem.to_string();
                 self.writer.write_str(&text, None, None);
-                if let Some(token) = elem.as_token() {
-                    self.remember_token(token);
-                } else if let Some(node) = elem.as_node() {
+                if let Some(node) = elem.as_node() {
                     for token in node
                         .descendants_with_tokens()
                         .filter_map(|e| e.into_token())
@@ -178,13 +195,30 @@ impl Formatter {
                         self.remember_token(&token);
                     }
                 }
-            }
-        } else {
-            // Format arguments normally
-            for elem in remaining {
+                need_space_before_next = false;
+            } else {
+                // Check if this is whitespace - if so, we don't need to add space
+                let is_whitespace = elem
+                    .as_token()
+                    .map(|t| matches!(t.kind(), SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE))
+                    .unwrap_or(false);
+
+                if is_whitespace {
+                    need_space_before_next = false;
+                }
+
+                // Format this element normally (including function-name-adjacent whitespace)
                 match elem {
+                    rowan::NodeOrToken::Token(token) => {
+                        // For whitespace after function name, write it directly to preserve it
+                        if is_whitespace {
+                            self.writer.write_str(token.text(), None, None);
+                            self.remember_token(&token);
+                        } else {
+                            self.format_token(&token, ctx);
+                        }
+                    }
                     rowan::NodeOrToken::Node(child_node) => self.format_node(&child_node, ctx),
-                    rowan::NodeOrToken::Token(token) => self.format_token(&token, ctx),
                 }
             }
         }
@@ -721,12 +755,12 @@ impl Formatter {
     /// Format an INFIX_EXPR that contains an ambiguous child
     /// This preserves the original formatting of the right-hand side
     fn format_infix_with_ambiguous_child(&mut self, node: &PerlNode, ctx: super::FormatContext) {
-        let mut children = node.children_with_tokens().peekable();
+        let mut children = node.children_with_tokens();
         let mut found_operator = false;
         let mut collected_rhs = Vec::new();
 
         // Format left side and operator normally
-        while let Some(child) = children.peek() {
+        for child in children.by_ref() {
             // Check if this is an operator token
             let is_operator = child
                 .as_token()
@@ -773,22 +807,20 @@ impl Formatter {
 
             if is_operator {
                 // Format the operator
-                if let Some(elem) = children.next() {
-                    match elem {
-                        rowan::NodeOrToken::Token(token) => self.format_token(&token, ctx),
-                        rowan::NodeOrToken::Node(n) => self.format_node(&n, ctx),
-                    }
+                match child {
+                    rowan::NodeOrToken::Token(token) => self.format_token(&token, ctx),
+                    rowan::NodeOrToken::Node(n) => self.format_node(&n, ctx),
                 }
                 found_operator = true;
+                // After operator, we may need space before next non-whitespace element
+                // (this will be determined when formatting RHS elements)
                 break;
             }
 
             // Format left side normally
-            if let Some(elem) = children.next() {
-                match elem {
-                    rowan::NodeOrToken::Token(token) => self.format_token(&token, ctx),
-                    rowan::NodeOrToken::Node(n) => self.format_node(&n, ctx),
-                }
+            match child {
+                rowan::NodeOrToken::Token(token) => self.format_token(&token, ctx),
+                rowan::NodeOrToken::Node(n) => self.format_node(&n, ctx),
             }
         }
 
@@ -803,11 +835,13 @@ impl Formatter {
             return;
         }
 
-        // Collect all remaining elements (right-hand side)
+        // Collect all remaining elements (right-hand side including whitespace)
+        // The whitespace will be formatted normally, while ambiguous expressions
+        // will have their original formatting preserved
         collected_rhs.extend(children);
 
         // Check if the RHS contains an ambiguous expression
-        let rhs_has_ambiguous = collected_rhs.iter().any(|elem| {
+        let _rhs_has_ambiguous = collected_rhs.iter().any(|elem| {
             elem.as_node()
                 .map(|n| {
                     n.kind() == SyntaxKind::AMBIGUOUS_CALL_EXPR
@@ -817,14 +851,29 @@ impl Formatter {
                 .unwrap_or(false)
         });
 
-        if rhs_has_ambiguous {
-            // Preserve the original text of the RHS
-            for elem in collected_rhs {
+        // Format each element of the RHS
+        // For elements containing ambiguous expressions, preserve their original text
+        // For other elements (including whitespace after operator), format normally
+        // Start with need_space=true since we just formatted an operator
+        let mut need_space_before_next = true;
+        for elem in collected_rhs {
+            let elem_has_ambiguous = elem
+                .as_node()
+                .map(|n| {
+                    n.kind() == SyntaxKind::AMBIGUOUS_CALL_EXPR
+                        || n.kind() == SyntaxKind::INFIX_EXPR && self.contains_ambiguous_child(n)
+                })
+                .unwrap_or(false);
+
+            if elem_has_ambiguous {
+                // Add space before ambiguous element if needed (e.g., after = operator)
+                if need_space_before_next {
+                    self.writer.write_str(" ", None, None);
+                }
+                // This element contains ambiguous expressions, preserve original text
                 let text = elem.to_string();
                 self.writer.write_str(&text, None, None);
-                if let Some(token) = elem.as_token() {
-                    self.remember_token(token);
-                } else if let Some(node) = elem.as_node() {
+                if let Some(node) = elem.as_node() {
                     for token in node
                         .descendants_with_tokens()
                         .filter_map(|e| e.into_token())
@@ -832,12 +881,29 @@ impl Formatter {
                         self.remember_token(&token);
                     }
                 }
-            }
-        } else {
-            // Format RHS normally
-            for elem in collected_rhs {
+                need_space_before_next = false;
+            } else {
+                // Check if this is whitespace - if so, we don't need to add space
+                let is_whitespace = elem
+                    .as_token()
+                    .map(|t| matches!(t.kind(), SyntaxKind::WHITESPACE | SyntaxKind::NEWLINE))
+                    .unwrap_or(false);
+
+                if is_whitespace {
+                    need_space_before_next = false;
+                }
+
+                // Format this element normally (including operator-adjacent whitespace)
                 match elem {
-                    rowan::NodeOrToken::Token(token) => self.format_token(&token, ctx),
+                    rowan::NodeOrToken::Token(token) => {
+                        // For whitespace after operator, write it directly to preserve it
+                        if is_whitespace {
+                            self.writer.write_str(token.text(), None, None);
+                            self.remember_token(&token);
+                        } else {
+                            self.format_token(&token, ctx);
+                        }
+                    }
                     rowan::NodeOrToken::Node(child_node) => self.format_node(&child_node, ctx),
                 }
             }
