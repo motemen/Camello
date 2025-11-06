@@ -431,18 +431,26 @@ impl Formatter {
         self.with_alignment(expr_list_alignment, |formatter| {
             let mut iter = BufferedIterator::new(list.children_with_tokens());
             let mut skip_next_newline = false;
+            let mut preceding_whitespace_count = 0;
 
             while let Some(child) = iter.next() {
                 match child {
-                    NodeOrToken::Node(node) => formatter.format_node(&node, ctx),
+                    NodeOrToken::Node(node) => {
+                        preceding_whitespace_count = 0;
+                        formatter.format_node(&node, ctx);
+                    }
                     NodeOrToken::Token(token) => {
                         let kind = token.kind();
 
                         match kind {
                             SyntaxKind::WHITESPACE => {
-                                // Skip whitespace - spacing is managed by formatter
+                                // Track the whitespace count before a comment
+                                // Count only spaces (not tabs or other whitespace)
+                                preceding_whitespace_count =
+                                    token.text().chars().filter(|c| *c == ' ').count();
                             }
                             SyntaxKind::NEWLINE => {
+                                preceding_whitespace_count = 0;
                                 // Skip if we already handled the newline after a comment
                                 if skip_next_newline {
                                     skip_next_newline = false;
@@ -457,7 +465,12 @@ impl Formatter {
                                     formatter.writer.add_indent();
                                     formatter.writer.set_at_line_start(false);
                                 } else {
-                                    formatter.writer.write_char(' ');
+                                    // Use max of original spacing and configured minimum
+                                    let spaces_to_add = preceding_whitespace_count
+                                        .max(formatter.options.min_spaces_before_comment);
+                                    for _ in 0..spaces_to_add {
+                                        formatter.writer.write_char(' ');
+                                    }
                                 }
                                 formatter
                                     .writer
@@ -470,8 +483,10 @@ impl Formatter {
                                 skip_next_newline = true;
 
                                 formatter.remember_token(&token);
+                                preceding_whitespace_count = 0;
                             }
                             T![,] => {
+                                preceding_whitespace_count = 0;
                                 formatter.format_token(&token, ctx);
 
                                 // Check what comes after the comma (skipping whitespace)
@@ -489,6 +504,7 @@ impl Formatter {
                                 }
                             }
                             _ => {
+                                preceding_whitespace_count = 0;
                                 // その他のトークンは通常通り処理
                                 formatter.format_token(&token, ctx);
                             }
