@@ -5,17 +5,17 @@ expression: formatted
 ---
 sub logical_alignment {
     # Both = and && should align vertically
-    my $result          = $foo          && $bar;
+    my $result          = $foo && $bar;
     my $fallback_longer = $baz && $default_value;
-    my $x               = $a                 && $b;
+    my $x               = $a   && $b;
 
     # Both = and || should align vertically
-    $short              = $c                  || $d;
+    $short              = $c     || $d;
     $very_long_variable = $check || $fallback;
-    $y                  = $e                      || $f;
+    $y                  = $e     || $f;
 
     # Both = and // should align vertically
-    my $val         = $input         // get_default();
+    my $val         = $input // get_default();
     my $longer_name = $value // $alternative;
 
     # Statement-level &&: aligns the && operators

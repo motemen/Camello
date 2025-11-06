@@ -424,37 +424,44 @@ impl Formatter {
     ) -> Option<AlignmentState> {
         use super::AlignmentColumn;
 
-        // Measure widths for both = and the logical operator
+        // First, measure and align the = operators
         let mut eq_widths = Vec::with_capacity(nodes.len());
-        let mut op_widths = Vec::with_capacity(nodes.len());
-
         for node in nodes {
             let eq_width = self.measure_alignment_prefix(node, SyntaxKind::EQ)?;
-            let op_width = self.measure_alignment_prefix(node, logical_op_kind)?;
             eq_widths.push(eq_width);
-            op_widths.push(op_width);
         }
 
-        // Calculate max widths and pads for each column
         let max_eq_width = eq_widths.iter().copied().max()?;
-        let max_op_width = op_widths.iter().copied().max()?;
-
-        // Skip alignment if everything is already aligned
-        let eq_needs_alignment = !eq_widths.iter().all(|&w| w == max_eq_width);
-        let op_needs_alignment = !op_widths.iter().all(|&w| w == max_op_width);
-
-        if !eq_needs_alignment && !op_needs_alignment {
-            return None;
-        }
-
         let eq_pads = eq_widths
-            .into_iter()
+            .iter()
             .map(|w| max_eq_width - w)
             .collect::<Vec<_>>();
+
+        // Now measure logical operator positions AFTER = alignment is applied
+        let mut op_widths = Vec::with_capacity(nodes.len());
+        for (i, node) in nodes.iter().enumerate() {
+            // Measure from the start to the logical operator
+            let total_width = self.measure_alignment_prefix(node, logical_op_kind)?;
+            // Subtract the part before =, and add the aligned = position
+            let eq_width = eq_widths[i];
+            let after_eq_width = total_width - eq_width;
+            let aligned_op_width = max_eq_width + after_eq_width;
+            op_widths.push(aligned_op_width);
+        }
+
+        let max_op_width = op_widths.iter().copied().max()?;
         let op_pads = op_widths
             .into_iter()
             .map(|w| max_op_width - w)
             .collect::<Vec<_>>();
+
+        // Skip alignment if everything is already aligned
+        let eq_needs_alignment = !eq_widths.iter().all(|&w| w == max_eq_width);
+        let op_needs_alignment = op_pads.iter().any(|&p| p > 0);
+
+        if !eq_needs_alignment && !op_needs_alignment {
+            return None;
+        }
 
         let columns = vec![
             AlignmentColumn::new(SyntaxKind::EQ, eq_pads),
