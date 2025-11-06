@@ -62,6 +62,9 @@ impl Formatter {
                 if self.is_ambiguous_infix_expr(node) {
                     // Preserve original formatting including whitespace
                     self.format_ambiguous_infix_expr(node, ctx);
+                } else if self.contains_ambiguous_child(node) {
+                    // This node contains an ambiguous child, preserve its formatting
+                    self.format_infix_with_ambiguous_child(node, ctx);
                 } else {
                     // Normal infix expression formatting
                     self.format_children(node, false, ctx);
@@ -644,6 +647,138 @@ impl Formatter {
             .and_then(|elem| elem.as_token().map(|t| t.kind()));
 
         matches!(operator, Some(T![+] | T![-]))
+    }
+
+    /// Check if an INFIX_EXPR contains an ambiguous child node (recursively)
+    fn contains_ambiguous_child(&self, node: &PerlNode) -> bool {
+        node.descendants()
+            .any(|child| child.kind() == SyntaxKind::AMBIGUOUS_CALL_EXPR)
+    }
+
+    /// Format an INFIX_EXPR that contains an ambiguous child
+    /// This preserves the original formatting of the right-hand side
+    fn format_infix_with_ambiguous_child(&mut self, node: &PerlNode, ctx: super::FormatContext) {
+        let mut children = node.children_with_tokens().peekable();
+        let mut found_operator = false;
+        let mut collected_rhs = Vec::new();
+
+        // Format left side and operator normally
+        while let Some(child) = children.peek() {
+            // Check if this is an operator token
+            let is_operator = child
+                .as_token()
+                .map(|t| {
+                    matches!(
+                        t.kind(),
+                        T![=]
+                            | T![+]
+                            | T![-]
+                            | T![*]
+                            | T![/]
+                            | T![%]
+                            | T![.]
+                            | T![x]
+                            | T![**]
+                            | T![<<]
+                            | T![>>]
+                            | T![<]
+                            | T![>]
+                            | T![<=]
+                            | T![>=]
+                            | T![==]
+                            | T![!=]
+                            | T![~~]
+                            | T![eq]
+                            | T![ne]
+                            | T![gt]
+                            | T![lt]
+                            | T![ge]
+                            | T![le]
+                            | T![cmp]
+                            | T![<=>]
+                            | T![=~]
+                            | T![!~]
+                            | T![&&]
+                            | T![||]
+                            | T![&]
+                            | T![|]
+                            | T![^]
+                            | T!["//"]
+                    )
+                })
+                .unwrap_or(false);
+
+            if is_operator {
+                // Format the operator
+                if let Some(elem) = children.next() {
+                    match elem {
+                        rowan::NodeOrToken::Token(token) => self.format_token(&token, ctx),
+                        rowan::NodeOrToken::Node(n) => self.format_node(&n, ctx),
+                    }
+                }
+                found_operator = true;
+                break;
+            }
+
+            // Format left side normally
+            if let Some(elem) = children.next() {
+                match elem {
+                    rowan::NodeOrToken::Token(token) => self.format_token(&token, ctx),
+                    rowan::NodeOrToken::Node(n) => self.format_node(&n, ctx),
+                }
+            }
+        }
+
+        if !found_operator {
+            // No operator found, just format remaining children normally
+            for child in children {
+                match child {
+                    rowan::NodeOrToken::Token(token) => self.format_token(&token, ctx),
+                    rowan::NodeOrToken::Node(child_node) => self.format_node(&child_node, ctx),
+                }
+            }
+            return;
+        }
+
+        // Collect all remaining elements (right-hand side)
+        collected_rhs.extend(children);
+
+        // Check if the RHS contains an ambiguous expression
+        let rhs_has_ambiguous = collected_rhs.iter().any(|elem| {
+            elem.as_node()
+                .map(|n| {
+                    n.kind() == SyntaxKind::AMBIGUOUS_CALL_EXPR
+                        || n.descendants()
+                            .any(|d| d.kind() == SyntaxKind::AMBIGUOUS_CALL_EXPR)
+                })
+                .unwrap_or(false)
+        });
+
+        if rhs_has_ambiguous {
+            // Preserve the original text of the RHS
+            for elem in collected_rhs {
+                let text = elem.to_string();
+                self.writer.write_str(&text, None, None);
+                if let Some(token) = elem.as_token() {
+                    self.remember_token(token);
+                } else if let Some(node) = elem.as_node() {
+                    for token in node
+                        .descendants_with_tokens()
+                        .filter_map(|e| e.into_token())
+                    {
+                        self.remember_token(&token);
+                    }
+                }
+            }
+        } else {
+            // Format RHS normally
+            for elem in collected_rhs {
+                match elem {
+                    rowan::NodeOrToken::Token(token) => self.format_token(&token, ctx),
+                    rowan::NodeOrToken::Node(child_node) => self.format_node(&child_node, ctx),
+                }
+            }
+        }
     }
 
     /// Format an ambiguous infix expression by preserving the original text
