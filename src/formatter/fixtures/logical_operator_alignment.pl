@@ -1,22 +1,26 @@
 sub logical_alignment {
+    # Same operator && should align
     my $result = $foo && $bar;
-    my $fallback = $baz || $default_value;
-    my $defined = $value // $alternative;
+    my $fallback_longer = $baz && $default_value;
+    my $x = $a && $b;
 
-    $x = $a && $b;
-    $longer_var = $c || $d;
-    $y = $e // $f;
+    # Same operator || should align
+    $short = $c || $d;
+    $very_long_variable = $check || $fallback;
+    $y = $e || $f;
 
-    my $short && do_something();
-    my $very_long_variable && other_action();
+    # Same operator // should align
+    my $val = $input // get_default();
+    my $longer_name = $value // $alternative;
 
-    $result = $check || warn "failed";
-    $value = $input // get_default();
+    # Statement modifier with &&
+    do_something() && say "ok";
+    other_action() && warn "done";
 
-    # Mixed operators should not align
+    # Mixed operators should NOT align
     my $mixed1 = $a && $b;
     my $mixed2 = $c || $d;
-    my $mixed3 = $e && $f;
+    my $mixed3 = $e // $f;
 
     # Multiple operators on same line should not align
     my $multi = $a && $b && $c;
