@@ -145,10 +145,10 @@ impl Default for FormatterOptions {
         Self {
             delimiter_tightness: DelimiterTightnessConfig::default(),
             alignment_strategies: vec![
+                AlignmentStrategy::LogicalOperators,
                 AlignmentStrategy::Assignments,
                 AlignmentStrategy::FatCommas,
                 AlignmentStrategy::PostfixConditionals,
-                AlignmentStrategy::LogicalOperators,
                 AlignmentStrategy::Comments,
             ],
             align_compound_assignments: true,
