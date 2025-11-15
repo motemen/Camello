@@ -401,6 +401,7 @@ impl Parser<'_> {
                     || kind == T!['{']
                     || kind == T![::]  // for qualified names like $::foo
                     || kind.is_keyword() // keywords can be used as variable names
+                    || kind.is_sigil() // for multi-level dereferencing like @$$var, %$$var
             }
             None => false,
         }
