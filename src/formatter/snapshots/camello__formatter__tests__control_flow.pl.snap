@@ -1,6 +1,5 @@
 ---
 source: src/formatter/tests.rs
-assertion_line: 51
 expression: formatted
 ---
 warn 1
@@ -22,7 +21,6 @@ my %hash = (key1 => 'value1',
 
 warn 1
 # explanation
-
     if $err;
 
 warn 1
@@ -31,7 +29,6 @@ warn 1
 
 my $x = 1
 # adjust
-
     + 2;
 
 func(my $a, );

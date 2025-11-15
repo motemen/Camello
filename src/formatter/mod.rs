@@ -513,18 +513,37 @@ impl Formatter {
         handle_pending_empty_lines: bool,
     ) {
         let mut children = node.children_with_tokens();
+        let mut skip_next_newline = false;
+
         while let Some(child) = children.next() {
             match child {
                 NodeOrToken::Token(token) => {
-                    if skip_whitespace && token.kind() == SyntaxKind::WHITESPACE {
+                    let kind = token.kind();
+
+                    if skip_whitespace && kind == SyntaxKind::WHITESPACE {
                         continue;
                     }
+
+                    // Skip newline that immediately follows a comment (since format_token
+                    // already added a newline after the comment)
+                    if kind == SyntaxKind::NEWLINE && skip_next_newline {
+                        skip_next_newline = false;
+                        continue;
+                    }
+
                     if self.try_format_multiline_parens(&token, &mut children, ctx) {
+                        skip_next_newline = false;
                         continue;
                     }
+
                     self.format_token(&token, ctx);
+
+                    // Set flag to skip next newline if we just formatted a comment
+                    skip_next_newline = kind == SyntaxKind::COMMENT;
                 }
                 NodeOrToken::Node(child_node) => {
+                    skip_next_newline = false;
+
                     // Output pending empty lines before processing child nodes if requested
                     if handle_pending_empty_lines
                         && self.pending_empty_lines > 0

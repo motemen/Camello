@@ -1,6 +1,5 @@
 ---
 source: src/formatter/tests.rs
-assertion_line: 51
 expression: formatted
 ---
 +{
@@ -14,7 +13,7 @@ expression: formatted
 ];
 
 {
-    short => 1,    # aligned
+    short      => 1,    # aligned
     longer_key => 2,    # aligned
 };
 
