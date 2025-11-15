@@ -32,8 +32,8 @@ impl Parser<'_> {
 
         self.skip_whitespace_and_newlines();
 
-        // Parse the body block
-        self.block();
+        // Parse the body block - for loops can contain when/default clauses
+        self.parse_topicalized_block();
 
         self.builder.finish_node();
     }
@@ -267,12 +267,13 @@ impl Parser<'_> {
         self.skip_whitespace_and_newlines();
 
         // Parse the main block containing when/default clauses
-        self.parse_given_block();
+        self.parse_topicalized_block();
 
         self.builder.finish_node();
     }
 
-    fn parse_given_block(&mut self) {
+    /// Parse a block that can contain when/default clauses (used in given and for statements)
+    fn parse_topicalized_block(&mut self) {
         self.builder.start_node(SyntaxKind::BLOCK_STMT.into());
 
         if self.at(T!['{']) {
@@ -286,7 +287,7 @@ impl Parser<'_> {
                 } else if self.at(T![default]) {
                     self.default_clause();
                 } else {
-                    // Parse regular statements within the given block
+                    // Parse regular statements within the topicalized block
                     if !self.statement() {
                         break;
                     }
@@ -296,7 +297,7 @@ impl Parser<'_> {
 
             self.expect_op(T!['}']);
         } else {
-            self.error("Expected '{' after given condition");
+            self.error("Expected '{' to start block");
         }
 
         self.builder.finish_node();
