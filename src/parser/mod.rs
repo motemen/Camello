@@ -566,6 +566,9 @@ mod tests {
 
 mod expression;
 mod statement;
+
+// Re-export get_operator_info for use in formatter
+pub use expression::precedence::get_operator_info;
 #[cfg(test)]
 mod test_utils;
 #[test]

@@ -154,17 +154,6 @@ impl Formatter {
         // will have their original formatting preserved
         let remaining: Vec<_> = children.collect();
 
-        // Check if arguments contain ambiguous expressions
-        let _has_ambiguous_args = remaining.iter().any(|elem| {
-            elem.as_node()
-                .map(|n| {
-                    n.kind() == SyntaxKind::AMBIGUOUS_CALL_EXPR
-                        || n.descendants()
-                            .any(|d| d.kind() == SyntaxKind::AMBIGUOUS_CALL_EXPR)
-                })
-                .unwrap_or(false)
-        });
-
         // Format each element of the arguments
         // For elements containing ambiguous expressions, preserve their original text
         // For other elements (including whitespace after function name), format normally
@@ -761,48 +750,10 @@ impl Formatter {
 
         // Format left side and operator normally
         for child in children.by_ref() {
-            // Check if this is an operator token
+            // Check if this is an operator token using the canonical operator list
             let is_operator = child
                 .as_token()
-                .map(|t| {
-                    matches!(
-                        t.kind(),
-                        T![=]
-                            | T![+]
-                            | T![-]
-                            | T![*]
-                            | T![/]
-                            | T![%]
-                            | T![.]
-                            | T![x]
-                            | T![**]
-                            | T![<<]
-                            | T![>>]
-                            | T![<]
-                            | T![>]
-                            | T![<=]
-                            | T![>=]
-                            | T![==]
-                            | T![!=]
-                            | T![~~]
-                            | T![eq]
-                            | T![ne]
-                            | T![gt]
-                            | T![lt]
-                            | T![ge]
-                            | T![le]
-                            | T![cmp]
-                            | T![<=>]
-                            | T![=~]
-                            | T![!~]
-                            | T![&&]
-                            | T![||]
-                            | T![&]
-                            | T![|]
-                            | T![^]
-                            | T!["//"]
-                    )
-                })
+                .map(|t| crate::parser::get_operator_info(t.kind()).is_some())
                 .unwrap_or(false);
 
             if is_operator {
@@ -839,17 +790,6 @@ impl Formatter {
         // The whitespace will be formatted normally, while ambiguous expressions
         // will have their original formatting preserved
         collected_rhs.extend(children);
-
-        // Check if the RHS contains an ambiguous expression
-        let _rhs_has_ambiguous = collected_rhs.iter().any(|elem| {
-            elem.as_node()
-                .map(|n| {
-                    n.kind() == SyntaxKind::AMBIGUOUS_CALL_EXPR
-                        || n.descendants()
-                            .any(|d| d.kind() == SyntaxKind::AMBIGUOUS_CALL_EXPR)
-                })
-                .unwrap_or(false)
-        });
 
         // Format each element of the RHS
         // For elements containing ambiguous expressions, preserve their original text
