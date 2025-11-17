@@ -466,9 +466,6 @@ impl Formatter {
                                 // Add newline after comment
                                 formatter.writer.handle_user_newline();
 
-                                // Skip the next newline token since we already added one
-                                skip_next_newline = true;
-
                                 formatter.remember_token(&token);
                             }
                             T![,] => {
@@ -492,6 +489,14 @@ impl Formatter {
                                 // その他のトークンは通常通り処理
                                 formatter.format_token(&token, ctx);
                             }
+                        }
+
+                        // Manage skip_next_newline flag: set it after comments,
+                        // preserve it across whitespace, reset for other tokens
+                        if kind == SyntaxKind::COMMENT {
+                            skip_next_newline = true;
+                        } else if kind != SyntaxKind::WHITESPACE {
+                            skip_next_newline = false;
                         }
                     }
                 }

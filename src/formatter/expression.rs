@@ -699,10 +699,7 @@ impl Formatter {
         for elem in elements {
             let elem_has_ambiguous = elem
                 .as_node()
-                .map(|n| {
-                    n.kind() == SyntaxKind::AMBIGUOUS_CALL_EXPR
-                        || n.kind() == SyntaxKind::INFIX_EXPR && self.contains_ambiguous_child(n)
-                })
+                .map(|n| self.contains_ambiguous_child(n))
                 .unwrap_or(false);
 
             if elem_has_ambiguous {
