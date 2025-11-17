@@ -743,6 +743,12 @@ impl Formatter {
                     }
                     rowan::NodeOrToken::Node(child_node) => self.format_node(&child_node, ctx),
                 }
+
+                // Reset flag after formatting non-whitespace elements
+                // format_token/format_node already handled spacing
+                if !is_whitespace {
+                    need_space_before_next = false;
+                }
             }
         }
     }
