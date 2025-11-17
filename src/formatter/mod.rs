@@ -538,8 +538,13 @@ impl Formatter {
 
                     self.format_token(&token, ctx);
 
-                    // Set flag to skip next newline if we just formatted a comment
-                    skip_next_newline = kind == SyntaxKind::COMMENT;
+                    // Set flag to skip next newline if we just formatted a comment.
+                    // Preserve the flag across whitespace tokens.
+                    if kind == SyntaxKind::COMMENT {
+                        skip_next_newline = true;
+                    } else if kind != SyntaxKind::WHITESPACE {
+                        skip_next_newline = false;
+                    }
                 }
                 NodeOrToken::Node(child_node) => {
                     skip_next_newline = false;
