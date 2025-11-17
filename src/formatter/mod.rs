@@ -513,42 +513,18 @@ impl Formatter {
         handle_pending_empty_lines: bool,
     ) {
         let mut children = node.children_with_tokens();
-        let mut skip_next_newline = false;
-
         while let Some(child) = children.next() {
             match child {
                 NodeOrToken::Token(token) => {
-                    let kind = token.kind();
-
-                    if skip_whitespace && kind == SyntaxKind::WHITESPACE {
+                    if skip_whitespace && token.kind() == SyntaxKind::WHITESPACE {
                         continue;
                     }
-
-                    // Skip newline that immediately follows a comment (since format_token
-                    // already added a newline after the comment)
-                    if kind == SyntaxKind::NEWLINE && skip_next_newline {
-                        skip_next_newline = false;
-                        continue;
-                    }
-
                     if self.try_format_multiline_parens(&token, &mut children, ctx) {
-                        skip_next_newline = false;
                         continue;
                     }
-
                     self.format_token(&token, ctx);
-
-                    // Set flag to skip next newline if we just formatted a comment.
-                    // Preserve the flag across whitespace tokens.
-                    if kind == SyntaxKind::COMMENT {
-                        skip_next_newline = true;
-                    } else if kind != SyntaxKind::WHITESPACE {
-                        skip_next_newline = false;
-                    }
                 }
                 NodeOrToken::Node(child_node) => {
-                    skip_next_newline = false;
-
                     // Output pending empty lines before processing child nodes if requested
                     if handle_pending_empty_lines
                         && self.pending_empty_lines > 0
@@ -984,7 +960,8 @@ impl Formatter {
                 self.output_pending_empty_lines();
 
                 // コメントは保持するが、適切な位置に配置
-                if self.writer.at_line_start() {
+                let is_line_start = self.writer.at_line_start();
+                if is_line_start {
                     self.writer.add_indent();
                     self.writer.set_at_line_start(false);
                 } else {
@@ -993,7 +970,10 @@ impl Formatter {
                 }
                 self.apply_alignment_padding(token);
                 self.writer.write_str(text.trim(), Some(kind), None);
-                self.writer.handle_user_newline();
+                // Only add newline for line-start comments, not inline comments
+                if is_line_start {
+                    self.writer.handle_user_newline();
+                }
                 self.remember_token(token);
             }
             SyntaxKind::HEREDOC_START => {
