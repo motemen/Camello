@@ -363,19 +363,27 @@ impl Parser<'_> {
             next_kind = None;
         }
 
-        // Check for ambiguous function calls: foo+1, foo-1, etc.
-        // These could be foo(+1) or foo()+1, so we mark them as ambiguous
-        // The AMBIGUOUS_CALL_EXPR wraps the identifier (including trailing whitespace)
-        // The operator will be parsed by the expression parser, creating an INFIX_EXPR
+        // Check for ambiguous function calls
         if let Some(kind) = next_kind {
+            // For +/- : These are infix operators, so the expression parser will handle them
+            // We mark as ambiguous and return, letting the expression parser create INFIX_EXPR
             if matches!(kind, T![+] | T![-]) {
                 // This is ambiguous: could be foo(+1) or foo()+1
-                // Wrap the already-parsed identifier in AMBIGUOUS_CALL_EXPR
-                // to signal to the formatter to preserve original spacing
                 self.builder
                     .start_node_at(start, SyntaxKind::AMBIGUOUS_CALL_EXPR.into());
                 self.builder.finish_node();
                 return;
+            }
+
+            // For prefix-only operators: !, ~, \, ++, --, not
+            // These are ambiguous and must be parsed as function calls with arguments
+            if matches!(kind, T![!] | T![~] | T!['\\'] | T![++] | T![--] | T![not]) {
+                // This is ambiguous: could be foo(!1) or foo()!1, etc.
+                // Mark as ambiguous and continue to parse as function call
+                self.builder
+                    .start_node_at(start, SyntaxKind::AMBIGUOUS_CALL_EXPR.into());
+                self.builder.finish_node();
+                // Fall through to parse the arguments as a FUNCTION_CALL_EXPR
             }
         }
 

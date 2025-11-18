@@ -34,3 +34,16 @@ print foo-2;
 warn bar+1;
 say baz-qux;
 scalar foo+bar;
+
+# Other prefix operators - also ambiguous
+$l = foo!1;
+$m = bar~2;
+$n = baz\$x;
+$o = qux++$y;
+$p = quux--$z;
+$q = corge not $w;
+
+# With spaces - still ambiguous
+$r = foo ! 1;
+$s = bar ~ 2;
+$t = baz \ $x;

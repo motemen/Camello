@@ -431,6 +431,7 @@ impl<'a> Parser<'a> {
                 | SyntaxKind::PREFIX_DECREMENT
                 | T![!]
                 | T![~]
+                | T!['\\']
                 | T![not]
                 | SyntaxKind::FILE_TEST_OP
                 | T![x]
