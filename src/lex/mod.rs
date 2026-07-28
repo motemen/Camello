@@ -230,6 +230,17 @@ impl<'a> Lexer<'a> {
         &self.buffer
     }
 
+    /// The raw body of the `(...)` group at the cursor, without consuming it.
+    pub fn peek_raw_paren_body(&mut self) -> Option<&'a str> {
+        let open = self.peek(0)?;
+        if open.kind != crate::lang::TokenKind::L_PAREN {
+            return None;
+        }
+        let body_start = usize::from(open.range.end());
+        let body_len = balanced_paren_body_len(&self.source[body_start..])?;
+        Some(&self.source[body_start..body_start + body_len])
+    }
+
     /// Consume a balanced `(...)` group with its body as one `RAW_CONTENT`
     /// token.
     ///

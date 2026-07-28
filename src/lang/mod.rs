@@ -232,6 +232,9 @@ define_language! {
         DATA_CONTENT        : "data section",
 
         FILE_TEST_OP        : "file test operator",
+        // `<STDIN>`, `<$fh>`, `<>`. Scanned as one token so that the parser
+        // never has to re-decide whether `<` opened a readline or a comparison.
+        IO_HANDLE           : "readline operator",
 
         // A span of source carried through verbatim with a kind attached, which
         // replaces the four ad-hoc escape hatches of the old lexer
@@ -340,7 +343,7 @@ define_language! {
         ANON_HASH,
         ANON_ARRAY,
         ANON_SUB_EXPR,
-        STRING_LITERAL,
+        LITERAL,
         Q_EXPR,
         QQ_EXPR,
         QX_EXPR,

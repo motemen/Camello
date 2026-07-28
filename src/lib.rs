@@ -4,6 +4,7 @@ pub mod formatter;
 pub mod lang;
 pub mod lex;
 pub mod lexer;
+pub mod parse;
 pub mod parser;
 pub mod syntax_kind;
 

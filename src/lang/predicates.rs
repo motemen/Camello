@@ -24,6 +24,10 @@ impl TokenKind {
                 | TokenKind::VERSION
                 | TokenKind::STRING
                 | TokenKind::HEREDOC_START
+                // A bare `/.../` has no keyword; its run starts at the opening
+                // delimiter.
+                | TokenKind::DELIMITER
+                | TokenKind::IO_HANDLE
                 | TokenKind::FILE_TEST_OP
                 | TokenKind::SCALAR_SIGIL
                 | TokenKind::ARRAY_SIGIL
