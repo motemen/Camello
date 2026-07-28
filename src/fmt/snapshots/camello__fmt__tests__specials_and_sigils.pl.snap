@@ -21,13 +21,13 @@ ${'$var_' . $suffix};
 @{"Package::ARRAY"};
 @{'@array_' . $name};
 
-+{ %hash };
++{%hash};
 
 @{$hash{key}};
 
 @{$obj->meth};
 
-+{ @{$obj->meth} };
++{@{$obj->meth}};
 
 [$item];
 
@@ -183,7 +183,7 @@ foo * (1 + 2);
 foo % +1;
 foo * { k => 1 }->{k};
 foo * @_;
-foo * [1, 2, 3]->[0];
+foo * [ 1, 2, 3 ]->[0];
 foo * bar;
 foo * bar;
 foo % bar;

@@ -5,7 +5,7 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
-use crate::{format_perl_with_options, parse_perl, FormatterOptions};
+use crate::{format_perl_with_options, parse_perl, DelimiterSpacing, FormatterOptions};
 
 #[derive(Parser)]
 #[command(name = "camello")]
@@ -142,9 +142,18 @@ pub struct LayoutArgs {
     #[arg(
         long,
         value_name = "N",
-        help = "Minimum spaces before a trailing comment (default: 1)"
+        help = "Minimum spaces before a trailing comment (default: 4)"
     )]
     pub min_spaces_before_comment: Option<usize>,
+
+    /// Space inside flat `[...]` / `{...}` literals
+    #[arg(
+        long,
+        value_name = "STYLE",
+        help = "Inside of [...] and {...} literals: tight, standard (space when \
+                holding two or more items; default), or loose (always a space)"
+    )]
+    pub delimiter_spacing: Option<DelimiterSpacingArg>,
 
     /// Cap on the spaces vertical alignment may insert; 0 disables alignment
     #[arg(
@@ -159,6 +168,24 @@ pub struct LayoutArgs {
     pub no_single_line_blocks: bool,
 }
 
+/// `DelimiterSpacing`, spelled for clap. The library enum stays clap-free.
+#[derive(clap::ValueEnum, Debug, Clone, Copy)]
+pub enum DelimiterSpacingArg {
+    Tight,
+    Standard,
+    Loose,
+}
+
+impl From<DelimiterSpacingArg> for DelimiterSpacing {
+    fn from(arg: DelimiterSpacingArg) -> Self {
+        match arg {
+            DelimiterSpacingArg::Tight => DelimiterSpacing::Tight,
+            DelimiterSpacingArg::Standard => DelimiterSpacing::Standard,
+            DelimiterSpacingArg::Loose => DelimiterSpacing::Loose,
+        }
+    }
+}
+
 impl LayoutArgs {
     fn to_options(&self) -> FormatterOptions {
         let defaults = FormatterOptions::default();
@@ -171,6 +198,9 @@ impl LayoutArgs {
                 .max_alignment_padding
                 .unwrap_or(defaults.max_alignment_padding),
             allow_single_line_blocks: !self.no_single_line_blocks,
+            delimiter_spacing: self
+                .delimiter_spacing
+                .map_or(defaults.delimiter_spacing, Into::into),
         }
     }
 }

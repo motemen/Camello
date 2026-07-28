@@ -48,7 +48,7 @@ func({});
 my $str_quote = q{string};
 
 my $hash  = { a => 1, b => 2 };
-my $array = [1, 2, 3];
+my $array = [ 1, 2, 3 ];
 
 ($a
     ? []

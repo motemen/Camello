@@ -10,14 +10,14 @@ expression: format(&source)
 
 my $x = "aa";
 
-$x =~ s/a// # trailing the substitution
+$x =~ s/a//    # trailing the substitution
     || 1;
 
-$x =~ s/a//;  # an ordinary trailing comment
-$x =~ s{a}{}; # a braced one with an empty replacement
-$x =~ m//;    # an empty pattern
-my @empty   = qw(); # an empty word list
-my $nothing = q();  # an empty literal
+$x =~ s/a//;     # an ordinary trailing comment
+$x =~ s{a}{};    # a braced one with an empty replacement
+$x =~ m//;       # an empty pattern
+my @empty   = qw();    # an empty word list
+my $nothing = q();     # an empty literal
 
 # The comment before a quote-like run still belongs to the run.
 # leading the substitution

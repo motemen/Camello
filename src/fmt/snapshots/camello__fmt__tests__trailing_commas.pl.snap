@@ -26,7 +26,7 @@ my %hash = (
 );
 
 # Array ref with trailing comma
-my $arr   = [1, 2,];
+my $arr   = [ 1, 2, ];
 my $array = [
     1,
     2,

@@ -34,15 +34,37 @@ pub struct FormatterOptions {
     pub max_alignment_padding: usize,
     /// Whether a one-statement `map`/`sub`/`do` block may stay on one line.
     pub allow_single_line_blocks: bool,
+    /// Space inside flat `[...]` and `{...}` literals (formatting.md SPACING-7).
+    /// Parentheses are always tight; blocks always get one space; this only
+    /// concerns anonymous array/hash constructors.
+    pub delimiter_spacing: DelimiterSpacing,
+}
+
+/// How the inside of a flat `[...]` / `{...}` literal is padded.
+///
+/// Decided at build time as part of the spacing rules — a `Doc::Space` is or is
+/// not placed next to the bracket — never in the renderer (ADR 0008 §2). This
+/// is the reintroduction the deviation log's L-006 anticipated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DelimiterSpacing {
+    /// Never a space: `[1, 2]`, `{ a => 1 }` becomes `{a => 1}`.
+    Tight,
+    /// A space when the literal holds two or more items: `[ 1, 2 ]` but `[$x]`.
+    /// A lone `key => value` pair counts as two items, matching SPACING-7's
+    /// `my $h = { key => 'val' };`.
+    Standard,
+    /// Always a space when non-empty: `[ $x ]`.
+    Loose,
 }
 
 impl Default for FormatterOptions {
     fn default() -> Self {
         Self {
             indent_width: 4,
-            min_spaces_before_comment: 1,
+            min_spaces_before_comment: 4,
             max_alignment_padding: 40,
             allow_single_line_blocks: true,
+            delimiter_spacing: DelimiterSpacing::Standard,
         }
     }
 }

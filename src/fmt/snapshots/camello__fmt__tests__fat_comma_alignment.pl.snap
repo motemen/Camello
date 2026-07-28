@@ -6,7 +6,7 @@ expression: format(&source)
 # symbol table and reads them the same either way.
 sub func;
 
-use constant ABC => 1; # comment
+use constant ABC => 1;    # comment
 use constant D   => 'a';
 
 use constant A   => 1;

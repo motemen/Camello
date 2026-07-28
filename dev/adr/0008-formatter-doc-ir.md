@@ -62,7 +62,7 @@ enum Doc {
 
 - Doc を深さ優先で歩き、`Vec<Line>` を構築する。`Line` は `text` と `Vec<(AnchorClass, column)>` を持つ。
 - 空行は `BlankLine` からのみ生じる（≤1 に正規化済み。BLANK_LINE-2/3）。自動空行挿入（sub 前後等, BLANK_LINE-1）は build 時に `BlankLine` を置くことで表現し、判定は TriviaMap による（writer 状態の再検査はしない）。
-- コメント: `Comment(_, Trailing)` は行末に「最小スペース数（オプション `min_spaces_before_comment`、既定1）+ Anchor(TrailingComment)」で出力。`OwnLine` は現在のインデントで独立行に出力。**出力パスはこの1箇所のみ**（現行2系統の統一。ハードコード4スペースとソース空白コピーは廃止し、既定値の変更は fixture 更新として明示する）。
+- コメント: `Comment(_, Trailing)` は行末に「最小スペース数（オプション `min_spaces_before_comment`、既定4 — 2026-07-28 のユーザー決定で 1 から変更）+ Anchor(TrailingComment)」で出力。`OwnLine` は現在のインデントで独立行に出力。**出力パスはこの1箇所のみ**（現行2系統の統一。ハードコード4スペースとソース空白コピーは廃止し、既定値の変更は fixture 更新として明示する）。
 
 ### 5. align — 垂直アライメント独立パス
 
