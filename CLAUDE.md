@@ -164,10 +164,12 @@ Use `-E` instead of `-e` to use character escapes in the input string. e.g. `-E 
 
 **Invariants first (`tests/invariants.rs`).** Every fixture must parse without a
 diagnostic, round-trip losslessly, format to a fixed point
-(`format(format(x)) == format(x)`), and preserve its non-trivia token stream.
-These are the acceptance bar from ADR 0006 §6 and ADR 0008 §6; they ran
-throughout the redesign against a registry of known violations that was only
-allowed to shrink.
+(`format(format(x)) == format(x)`), preserve its non-trivia token stream, keep
+its comments and its verbatim content unchanged, reach the same layout decisions
+on the second pass as on the first (I2), and hold no node whose range begins or
+ends on trivia. These are the acceptance bar from ADR 0006 §6 and ADR 0008 §6;
+they ran throughout the redesign against a registry of known violations that was
+only allowed to shrink.
 
 **Formatter fixtures (`src/fmt/fixtures/`, snapshots via `insta`).** The
 spec-by-example: `formatting.md` says what the rules are, these say what they
@@ -183,15 +185,27 @@ reproduced bugs D1-D7; `src/fmt/tests.rs` covers the layout rules including
 F1-F6; `src/parse/tests.rs` covers the CST normal form and the error-recovery
 acceptance criteria of ADR 0007 §3.
 
-**Two checks that live outside `cargo test`.** Both are worth running when
-touching the lexer or the formatter; neither is fast enough to want on every
+**Three checks that live outside `cargo test`.** All three are worth running
+when touching the lexer or the formatter; none is fast enough to want on every
 build.
 
 ```bash
+./scripts/corpus-check            # run over every .pm below @INC
+./scripts/corpus-check --limit 60 # ... a sample of it, for a quick answer
 ./scripts/perl-check              # ask perl whether formatting changed the meaning
 ./scripts/snapshot-diff           # compare output against the pre-redesign snapshots
 ./scripts/snapshot-diff <fixture> # ... for one fixture
 ```
+
+`scripts/corpus-check` is the "+ real corpus" half of ADR 0008 §6. It formats
+every `.pm` below `@INC` and asks three questions: is `format(format(x))` still
+`format(x)`; did an input perl compiles turn into an output it rejects; do the
+two deparse the same. Files camello reports a diagnostic on, and files that are
+not UTF-8, are counted and set aside — the parser not covering a construct is a
+different question from the formatter damaging code it did parse. **Every defect
+the 2026-07-28 review found was invisible to `cargo test` and obvious here**,
+because a fixture is code someone wrote to exercise a rule and a corpus is code
+someone wrote to get a job done.
 
 `scripts/perl-check` compiles each fixture, formats it, compiles the output, and
 compares `B::Deparse` on both. It exists because `tests/invariants.rs` compares
@@ -202,6 +216,10 @@ is not Perl cannot be a specification for how to format Perl.
 
 `scripts/snapshot-diff` catches what perl cannot: dropped comments, and layout
 that is worse without being wrong.
+
+**Generated source.** `src/parse/grammar/builtins.rs`'s lookup table comes from
+perl's own prototypes via `scripts/generate-builtins`; regenerate and `cargo fmt`
+rather than editing the `match` by hand (deviation L-011).
 
 ### Adding New Syntax Support
 

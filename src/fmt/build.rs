@@ -35,6 +35,10 @@ pub struct Builder<'a> {
     /// candidate flat block, and the alternative was allocating the node's whole
     /// text to search it.
     newline_starts: Vec<TextSize>,
+    /// Where every heredoc marker is, and where every body's terminator is,
+    /// both ascending. Used to count how many bodies a statement is still owed.
+    heredoc_marker_starts: Vec<TextSize>,
+    heredoc_end_starts: Vec<TextSize>,
     /// Answers already given by [`Self::block_can_be_flat`], keyed on where the
     /// block starts. A block's answer depends on the blocks inside it, so
     /// without this the recursion re-derives every level from every level above.
@@ -49,6 +53,8 @@ impl<'a> Builder<'a> {
             fat_comma_depth: 0,
             comment_starts: Vec::new(),
             newline_starts: Vec::new(),
+            heredoc_marker_starts: Vec::new(),
+            heredoc_end_starts: Vec::new(),
             flat_blocks: HashMap::new(),
         }
     }
@@ -60,6 +66,12 @@ impl<'a> Builder<'a> {
         {
             if token.token_kind() == TokenKind::COMMENT {
                 self.comment_starts.push(token.text_range().start());
+            }
+            if token.token_kind() == TokenKind::HEREDOC_START {
+                self.heredoc_marker_starts.push(token.text_range().start());
+            }
+            if token.token_kind() == TokenKind::HEREDOC_END {
+                self.heredoc_end_starts.push(token.text_range().start());
             }
             let start = usize::from(token.text_range().start());
             for (offset, _) in token.text().match_indices('\n') {
@@ -91,6 +103,14 @@ impl<'a> Builder<'a> {
     /// starts on falls (ADR 0007 §7), which is between two statements. Walking
     /// only the child *nodes* would drop it.
     fn statements_into(&mut self, node: &SyntaxNode, parts: &mut Vec<Doc>) {
+        // Heredoc markers whose bodies have not arrived yet. A body begins on
+        // the line after the one its marker is on (ADR 0007 §7), so while any
+        // are outstanding the statements have to stay on that line — putting the
+        // next one on a line of its own makes it the body.
+        // `eval <<EOT; die $@ if $@;` in `URI::data` did exactly that: the
+        // `die` became the first line of the string `eval` was handed.
+        let mut owed = 0usize;
+
         for child in node.children_with_tokens() {
             match child {
                 SyntaxElement::Node(statement) => {
@@ -103,6 +123,8 @@ impl<'a> Builder<'a> {
                         parts.push(Doc::BlankLine);
                     }
                     self.statement_into(&statement, parts);
+                    owed += self.heredoc_markers_in(&statement);
+                    parts.push(if owed > 0 { Doc::Space } else { Doc::HardLine });
                     if separated && statement.next_sibling().is_some() {
                         parts.push(Doc::BlankLine);
                     }
@@ -111,12 +133,28 @@ impl<'a> Builder<'a> {
                     let terminator = token.token_kind() != TokenKind::HEREDOC_CONTENT;
                     parts.push(Doc::VerbatimLines(token.text().into()));
                     if terminator {
+                        owed = owed.saturating_sub(1);
                         parts.push(Doc::HardLine);
                     }
                 }
                 SyntaxElement::Token(_) => {}
             }
         }
+    }
+
+    /// How many heredoc bodies this statement still owes to the line it is on.
+    ///
+    /// Markers it opened, less the bodies that landed inside it: a nested block
+    /// takes its own, and counting those again would hold the enclosing block's
+    /// closing brace on the same line as its last statement.
+    fn heredoc_markers_in(&self, node: &SyntaxNode) -> usize {
+        let count = |offsets: &[TextSize]| {
+            let range = node.text_range();
+            let from = offsets.partition_point(|&start| start < range.start());
+            let to = offsets.partition_point(|&start| start < range.end());
+            to - from
+        };
+        count(&self.heredoc_marker_starts).saturating_sub(count(&self.heredoc_end_starts))
     }
 
     /// A statement. Its comments and blank lines come from its tokens, which is
@@ -127,7 +165,6 @@ impl<'a> Builder<'a> {
         }
 
         parts.push(self.node(node));
-        parts.push(Doc::HardLine);
     }
 
     /// Own-line comments and blank lines attached to a token.

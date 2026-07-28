@@ -423,8 +423,13 @@ impl<'a> Lexer<'a> {
 /// Length of the body of a `(...)` group whose `(` has already been consumed,
 /// or `None` if it is never closed.
 ///
-/// Quoted sections are skipped so that `sub f("(")` does not confuse the depth
-/// count.
+/// Nesting is counted and escapes are honoured; quoted sections are *not*
+/// skipped. `sub f("(")` therefore does not close, which is the same answer
+/// perl gives — "Prototype not terminated" — because this only ever reads a
+/// prototype, and a prototype has no strings in it. A signature default that
+/// does, `sub f($x = "(")`, never reaches here: the signature reading is tried
+/// first and succeeds. Skipping quotes would make camello accept input perl
+/// rejects, which is the trade this file refuses everywhere else. (L-012.)
 fn balanced_paren_body_len(rest: &str) -> Option<usize> {
     let mut depth = 1usize;
     let mut chars = rest.char_indices();

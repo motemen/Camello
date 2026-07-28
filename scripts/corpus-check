@@ -55,7 +55,12 @@ deparse() { # deparse <dir>
   local raw
   raw=$(cd "$1" && timeout 60 perl -MO=Deparse,-p input.pl 2>/dev/null) || return
   local constant='^sub [A-Za-z_][A-Za-z0-9_:]*\s*\(\)\s*\{.*\}$'
-  printf '%s\n' "$raw" | grep -vE "$constant" | grep -vE '^sub [A-Za-z_][A-Za-z0-9_:]*\s*;$'
+  # A reference stringified into the output — `autodie` puts one in `%^H` —
+  # carries the address it happened to be allocated at, which differs between
+  # two runs of the same file.
+  local forward='^sub [A-Za-z_][A-Za-z0-9_:]*\s*(\([^)]*\)\s*)?;$'
+  printf '%s\n' "$raw" | grep -vE "$constant" | grep -vE "$forward" \
+    | sed -E 's/=(SCALAR|ARRAY|HASH|CODE|GLOB|REF)\(0x[0-9a-f]+\)/=\1(0xADDR)/g'
   printf '%s\n' "$raw" | grep -E "$constant" | sort
 }
 

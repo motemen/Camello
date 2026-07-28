@@ -200,9 +200,15 @@ heredoc 終端行の直後、`{` の直後、ファイル先頭には空行を�
 
 ## 5. fixture 自体の変更
 
-**fixture の内容は1バイトも変更していない。**
-移設のみ（`src/formatter/fixtures/` → `src/fmt/fixtures/`、
+**このレポートを書いた時点では、fixture の内容は1バイトも変更しておらず、
+移設のみだった**（`src/formatter/fixtures/` → `src/fmt/fixtures/`、
 `src/parser/fixtures/` → `src/parse/fixtures/`）。
+
+> **追記（2026-07-28、レビュー指摘 P2-8）**: この記述はその後古くなった。
+> `scripts/perl-check` を入れた時点で、fixture のうち12本が
+> **そもそも perl の通らないもの**だと分かり、意図を保ったまま書き換えた。
+> 経緯と一覧は逸脱ログ **L-009** にある。fixture が Perl であることは
+> 以後 `scripts/perl-check` が常時検査している。
 
 評価ノート付録 C は「約35本の fixture が現実装のワークアラウンド挙動を
 固定化している」と指摘しており、本来は1本ずつ「仕様として維持するか」を

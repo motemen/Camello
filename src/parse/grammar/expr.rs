@@ -549,11 +549,22 @@ fn block_call_follows(parser: &mut Parser<'_>) -> bool {
 /// Marked as its own node rather than left as an unexplained first argument
 /// (ADR 0007 §2).
 fn filehandle(parser: &mut Parser<'_>) {
+    // perl decides this from its symbol table, and we have none. An all-capital
+    // bareword followed by `(` is therefore ambiguous — `print FOO(1)` could be
+    // a call — with one exception: perl's own handles are always handles, and
+    // `print STDERR ("x")` prints to standard error rather than calling a sub
+    // named STDERR. Reading it the other way turned every such line in
+    // `Getopt::Long` and `Debian::AdduserLogging` into a function call.
+    const PERL_HANDLES: &[&str] = &["STDIN", "STDOUT", "STDERR", "ARGV", "ARGVOUT", "DATA"];
+    let is_perl_handle = parser
+        .current_text()
+        .is_some_and(|text| PERL_HANDLES.contains(&text));
+
     let is_bareword_handle = parser.at(TokenKind::IDENT)
         && parser
             .current_text()
             .is_some_and(|text| text.chars().all(|ch| ch.is_ascii_uppercase() || ch == '_'))
-        && !parser.nth_at(1, T!["("])
+        && (is_perl_handle || !parser.nth_at(1, T!["("]))
         && !parser.nth_at(1, T![","])
         && !parser.nth_at(1, T!["=>"])
         && !parser.nth_at(1, T![";"]);

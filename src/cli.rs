@@ -5,7 +5,7 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
-use crate::{format_perl, parse_perl};
+use crate::{format_perl_with_options, parse_perl, FormatterOptions};
 
 #[derive(Parser)]
 #[command(name = "camello")]
@@ -70,6 +70,9 @@ pub enum Commands {
         /// Input file encoding (e.g., utf-8, euc-jp, shift_jis)
         #[arg(long, help = "Input file encoding (default: utf-8)")]
         encoding: Option<String>,
+
+        #[command(flatten)]
+        layout: LayoutArgs,
     },
     /// Dump parsed AST structure
     Dump {
@@ -123,6 +126,55 @@ pub enum Commands {
         encoding: Option<String>,
     },
 }
+/// The formatter's options, as command-line flags.
+///
+/// `FormatterOptions` existed and the CLI never passed one, so every knob in it
+/// was reachable from the library and from nowhere else — including
+/// `max_alignment_padding`, which is a guard against one long line pushing a
+/// whole group across the screen.
+#[derive(clap::Args, Debug, Clone)]
+pub struct LayoutArgs {
+    /// Spaces per indent level
+    #[arg(long, value_name = "N", help = "Spaces per indent level (default: 4)")]
+    pub indent_width: Option<usize>,
+
+    /// Minimum spaces between code and a trailing comment
+    #[arg(
+        long,
+        value_name = "N",
+        help = "Minimum spaces before a trailing comment (default: 1)"
+    )]
+    pub min_spaces_before_comment: Option<usize>,
+
+    /// Cap on the spaces vertical alignment may insert; 0 disables alignment
+    #[arg(
+        long,
+        value_name = "N",
+        help = "Maximum alignment padding, 0 to disable alignment (default: 40)"
+    )]
+    pub max_alignment_padding: Option<usize>,
+
+    /// Keep a one-statement `map`/`sub`/`do` block on one line
+    #[arg(long, help = "Never keep a one-statement map/sub/do block on one line")]
+    pub no_single_line_blocks: bool,
+}
+
+impl LayoutArgs {
+    fn to_options(&self) -> FormatterOptions {
+        let defaults = FormatterOptions::default();
+        FormatterOptions {
+            indent_width: self.indent_width.unwrap_or(defaults.indent_width),
+            min_spaces_before_comment: self
+                .min_spaces_before_comment
+                .unwrap_or(defaults.min_spaces_before_comment),
+            max_alignment_padding: self
+                .max_alignment_padding
+                .unwrap_or(defaults.max_alignment_padding),
+            allow_single_line_blocks: !self.no_single_line_blocks,
+        }
+    }
+}
+
 /// Function to interpret escape sequences
 fn interpret_escape_sequences(input: &str) -> String {
     let mut result = String::new();
@@ -181,6 +233,7 @@ pub fn run() -> Result<()> {
             stop_on_first_error,
             output,
             encoding,
+            layout,
         } => {
             format_file(
                 path,
@@ -191,6 +244,7 @@ pub fn run() -> Result<()> {
                 stop_on_first_error,
                 output,
                 encoding,
+                &layout.to_options(),
             )?;
         }
         Commands::Dump {
@@ -293,6 +347,7 @@ fn format_file(
     stop_on_first_error: bool,
     output: Option<PathBuf>,
     encoding: Option<String>,
+    options: &FormatterOptions,
 ) -> Result<()> {
     if write && path.is_none() {
         return Err(miette::miette!(
@@ -306,7 +361,7 @@ fn format_file(
     let (input, source_name) = read_source(path.as_deref(), eval, eval_escape, encoding)?;
 
     // Execute formatting
-    let (formatted, errors) = format_perl(&input);
+    let (formatted, errors) = format_perl_with_options(&input, options);
 
     // If there are errors, display them, and optionally stop immediately
     if !errors.is_empty() {
@@ -393,43 +448,17 @@ fn dump_file(
     }
 }
 
-#[test]
-fn test_interpret_escape_sequences() {
-    assert_eq!(interpret_escape_sequences("hello\\nworld"), "hello\nworld");
-    assert_eq!(interpret_escape_sequences("tab\\there"), "tab\there");
-    assert_eq!(interpret_escape_sequences("quote\\\"test"), "quote\"test");
-    assert_eq!(
-        interpret_escape_sequences("backslash\\\\test"),
-        "backslash\\test"
-    );
-    assert_eq!(interpret_escape_sequences("normal text"), "normal text");
-    assert_eq!(
-        interpret_escape_sequences("print 1\\nif yes();"),
-        "print 1\nif yes();"
-    );
-}
-
-#[test]
-fn test_format_with_escape_sequences() -> Result<(), Box<dyn std::error::Error>> {
-    // Test -E option functionality
-    assert!(format_file(
-        None,
-        None,
-        Some("my$var=1;\\nprint $var;".to_string()),
-        false,
-        false,
-        false,
-        None,
-        None
-    )
-    .is_ok());
-    Ok(())
-}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::format_perl;
     use std::fs;
     use tempfile::tempdir;
+
+    /// The defaults, for the tests that are not about options.
+    fn layout() -> FormatterOptions {
+        FormatterOptions::default()
+    }
 
     #[test]
     fn test_interpret_escape_sequences() {
@@ -458,7 +487,8 @@ mod tests {
             false,
             false,
             None,
-            None
+            None,
+            &layout()
         )
         .is_ok());
         Ok(())
@@ -472,7 +502,18 @@ mod tests {
         fs::write(&file_path, "my$var=1;")?;
 
         // Execute formatting (not actually executed, but confirm no errors)
-        assert!(format_file(Some(file_path), None, None, false, false, false, None, None).is_ok());
+        assert!(format_file(
+            Some(file_path),
+            None,
+            None,
+            false,
+            false,
+            false,
+            None,
+            None,
+            &layout()
+        )
+        .is_ok());
 
         Ok(())
     }
@@ -488,7 +529,8 @@ mod tests {
             false,
             false,
             None,
-            None
+            None,
+            &layout()
         )
         .is_ok());
 
@@ -510,6 +552,7 @@ mod tests {
             false,
             None,
             None,
+            &layout(),
         )?;
 
         let written = fs::read_to_string(&file_path)?;
@@ -538,6 +581,7 @@ mod tests {
             false,
             None,
             Some("shift_jis".to_string()),
+            &layout(),
         )?;
 
         let bytes = fs::read(&file_path)?;
@@ -551,7 +595,7 @@ mod tests {
 
     #[test]
     fn test_format_write_requires_path() {
-        let result = format_file(None, None, None, false, true, false, None, None);
+        let result = format_file(None, None, None, false, true, false, None, None, &layout());
         assert!(result.is_err());
     }
 
@@ -562,7 +606,18 @@ mod tests {
         fs::write(&file_path, "my $var = 1;\n")?; // Use actual newline, not escaped
 
         // Check that the file is correctly formatted
-        assert!(format_file(Some(file_path), None, None, true, false, false, None, None).is_ok());
+        assert!(format_file(
+            Some(file_path),
+            None,
+            None,
+            true,
+            false,
+            false,
+            None,
+            None,
+            &layout()
+        )
+        .is_ok());
 
         Ok(())
     }
@@ -585,7 +640,8 @@ mod tests {
             false,
             false,
             None,
-            Some("utf-8".to_string())
+            Some("utf-8".to_string()),
+            &layout()
         )
         .is_ok());
 
@@ -613,7 +669,8 @@ mod tests {
             false,
             false,
             None,
-            Some("euc-jp".to_string())
+            Some("euc-jp".to_string()),
+            &layout()
         )
         .is_ok());
 
@@ -641,7 +698,8 @@ mod tests {
             false,
             false,
             None,
-            Some("shift_jis".to_string())
+            Some("shift_jis".to_string()),
+            &layout()
         )
         .is_ok());
 
