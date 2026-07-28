@@ -164,10 +164,12 @@ pub(crate) fn block(parser: &mut Parser<'_>) {
 /// (ADR 0007 §5).
 pub(crate) fn name(parser: &mut Parser<'_>, node: NodeKind) {
     let marker = parser.start();
-    if parser.current().is_some_and(is_name_like) {
-        parser.bump_any();
-    } else {
-        parser.error("expected a name");
+    if !parser.bump_name() {
+        if parser.current().is_some_and(is_name_like) {
+            parser.bump_any();
+        } else {
+            parser.error("expected a name");
+        }
     }
     parser.complete(marker, node);
 }
@@ -480,6 +482,20 @@ fn for_header(parser: &mut Parser<'_>) {
 fn try_stmt(parser: &mut Parser<'_>) {
     let marker = parser.start();
     parser.bump();
+    try_tail(parser);
+    parser.expect_term();
+    if parser.at(T![";"]) {
+        parser.bump();
+    }
+    parser.complete(marker, NodeKind::TRY_STMT);
+}
+
+/// The block and handlers of a `try`, shared between statement and expression
+/// position.
+///
+/// `my $x = try { ... } catch { ... };` is the same construct in a different
+/// slot; giving it one parser keeps it one shape in the tree.
+pub(crate) fn try_tail(parser: &mut Parser<'_>) {
     block(parser);
 
     parser.expect_term();
@@ -510,12 +526,6 @@ fn try_stmt(parser: &mut Parser<'_>) {
         block(parser);
         parser.complete(clause, NodeKind::FINALLY_CLAUSE);
     }
-
-    parser.expect_term();
-    if parser.at(T![";"]) {
-        parser.bump();
-    }
-    parser.complete(marker, NodeKind::TRY_STMT);
 }
 
 fn given_stmt(parser: &mut Parser<'_>) {

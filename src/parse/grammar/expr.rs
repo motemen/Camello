@@ -226,14 +226,14 @@ pub(crate) fn postfix(parser: &mut Parser<'_>, mut lhs: CompletedMarker) -> Comp
     lhs
 }
 
+/// Calls whose result cannot be subscripted without an arrow.
+///
+/// `$code->()[0]` is fine — the arrow is already there — so a code-reference
+/// call is not in this set.
 fn is_call(kind: NodeKind) -> bool {
     matches!(
         kind,
-        NodeKind::CALL_EXPR
-            | NodeKind::CODE_CALL_EXPR
-            | NodeKind::METHOD_CALL_EXPR
-            | NodeKind::LIST_CALL_EXPR
-            | NodeKind::BLOCK_CALL_EXPR
+        NodeKind::CALL_EXPR | NodeKind::LIST_CALL_EXPR | NodeKind::BLOCK_CALL_EXPR
     )
 }
 
@@ -452,11 +452,24 @@ fn list_arguments(parser: &mut Parser<'_>) {
 }
 
 fn starts_argument(parser: &mut Parser<'_>) -> bool {
+    // `shift // 1` is defined-or applied to an argument-less `shift`, and perl
+    // special-cases exactly this. Ask in operator position to see it; asking in
+    // term position would read `//` as an empty match and the "argument" would
+    // swallow the rest of the statement.
+    //
+    // Only `//` is decided this way. Widening it to every infix operator would
+    // settle `%`, `*` and `&` in operator position too, and `keys %seen` would
+    // lose its argument to modulo.
+    parser.expect_operator();
+    if parser.at_any(&[T!["//"], T!["//="]]) {
+        return false;
+    }
+
     parser.expect_term();
     match parser.current() {
         None => false,
         Some(kind) if kind.is_stmt_modifier() => false,
-        Some(kind) => kind.can_start_term() || kind == TokenKind::IO_HANDLE,
+        Some(kind) => kind.can_start_term(),
     }
 }
 

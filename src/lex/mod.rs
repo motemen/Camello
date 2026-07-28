@@ -230,6 +230,32 @@ impl<'a> Lexer<'a> {
         &self.buffer
     }
 
+    /// Read the token at the cursor as a plain identifier, whatever `expect`
+    /// would otherwise have made of it.
+    ///
+    /// A name is never an operator and never a quote-like operator, but the two
+    /// `expect` states cannot express "a name goes here": under `Term`,
+    /// `sub tr {}` opens a substitution, and under `Operator`, `sub x100 {}`
+    /// splits into the repetition operator and a number. The grammar knows which
+    /// positions take a name, and this is how it says so — through one routine
+    /// (ADR 0007 §5), not eight coercions.
+    ///
+    /// Returns `None` if there is no identifier here.
+    pub fn take_name(&mut self) -> Option<LexedToken> {
+        let index = self.non_trivia_index(0)?;
+        let start = usize::from(self.buffer[index].range.start());
+        let len = scan::ident_len_at(&self.source[start..]);
+        if len == 0 {
+            return None;
+        }
+
+        self.cursor = index;
+        self.invalidate_from_cursor();
+        self.push(TokenKind::IDENT, start, start + len);
+        self.cursor = self.buffer.len();
+        self.buffer.last().copied()
+    }
+
     /// The raw body of the `(...)` group at the cursor, without consuming it.
     pub fn peek_raw_paren_body(&mut self) -> Option<&'a str> {
         let open = self.peek(0)?;

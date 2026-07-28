@@ -100,6 +100,14 @@ pub(crate) fn primary(parser: &mut Parser<'_>) -> Option<CompletedMarker> {
             parser.complete(marker, NodeKind::DO_BLOCK_EXPR)
         }
 
+        T!["try"] if parser.nth_at(1, T!["{"]) => {
+            let marker = parser.start();
+            parser.bump();
+            super::try_tail(parser);
+            parser.expect_operator();
+            parser.complete(marker, NodeKind::TRY_STMT)
+        }
+
         T!["my"] | T!["our"] | T!["state"] | T!["local"] => var_decl(parser),
 
         T!["undef"] => {
@@ -130,7 +138,11 @@ pub(crate) fn primary(parser: &mut Parser<'_>) -> Option<CompletedMarker> {
 
         T!["return"] | T!["next"] | T!["last"] | T!["redo"] | T!["goto"] => {
             let marker = parser.start();
-            name(parser, NodeKind::SUB_NAME);
+            // Keep the keyword token: these are control flow, not names, and a
+            // lint will want to recognise them without matching on text.
+            let keyword = parser.start();
+            parser.bump();
+            parser.complete(keyword, NodeKind::SUB_NAME);
             parser.expect_term();
             if parser
                 .current()

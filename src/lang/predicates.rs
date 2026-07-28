@@ -200,7 +200,14 @@ impl TokenKind {
     pub fn is_stmt_modifier(self) -> bool {
         matches!(
             self,
-            T!["if"] | T!["unless"] | T!["while"] | T!["until"] | T!["for"] | T!["foreach"]
+            T!["if"]
+                | T!["unless"]
+                | T!["while"]
+                | T!["until"]
+                | T!["for"]
+                | T!["foreach"]
+                // `say $x when /re/;` inside a `given` block.
+                | T!["when"]
         )
     }
 }
