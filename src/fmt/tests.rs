@@ -4,6 +4,7 @@
 
 use std::time::Instant;
 
+use super::doc::Doc;
 use super::{format_source, FormatterOptions};
 use crate::lang::TokenKind;
 
@@ -364,6 +365,80 @@ fn malformed_input_still_formats_to_a_fixed_point() {
         "use A use X;\n",
     ] {
         assert_idempotent(source);
+    }
+}
+
+// ===== I2: the seed rule reproduces its own output =====
+
+/// The flat-or-broken decision of every group, in document order.
+///
+/// This reaches past the rendered text to the decision itself. Idempotency says
+/// the two passes agree on the *output*; this says they agree on the *reasoning*,
+/// which is the property ADR 0008 §6 calls I2 and the one that stops a layout
+/// rule from being accidentally self-cancelling.
+fn group_seeds(source: &str) -> Vec<bool> {
+    fn collect(doc: &Doc, into: &mut Vec<bool>) {
+        match doc {
+            Doc::Group { broken, body } => {
+                into.push(*broken);
+                collect(body, into);
+            }
+            Doc::Concat(parts) => parts.iter().for_each(|part| collect(part, into)),
+            Doc::Indent(body) => collect(body, into),
+            _ => {}
+        }
+    }
+
+    let parsed = crate::parse::parse(source);
+    let options = FormatterOptions::default();
+    let document = super::build::Builder::new(&parsed.trivia, &options).file(&parsed.syntax());
+    let mut seeds = Vec::new();
+    collect(&document, &mut seeds);
+    seeds
+}
+
+#[track_caller]
+fn assert_seed_stable(source: &str) {
+    let formatted = format(source);
+    assert_eq!(
+        group_seeds(source),
+        group_seeds(&formatted),
+        "the layout decisions differ between passes\n--- input ---\n{source}--- output ---\n{formatted}"
+    );
+}
+
+#[test]
+fn layout_decisions_are_stable_across_passes() {
+    for source in [
+        "foo(1, 2);\n",
+        "foo(\n1,\n2,\n);\n",
+        "my %h = (a => 1, b => 2);\n",
+        "my %h = (\n a => 1,\n b => 2,\n);\n",
+        "sub f { 1 }\n",
+        "sub f {\n    my $x = shift;\n    return $x;\n}\n",
+        "if ($x) { print 1; } else { print 2; }\n",
+        "my @xs = map { $_ * 2 } grep { $_ } @ys;\n",
+        "my $r = [\n1,\n[2, 3],\n];\n",
+    ] {
+        assert_seed_stable(source);
+    }
+}
+
+#[test]
+fn layout_decisions_are_stable_over_the_fixtures() {
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/fmt/fixtures");
+    let mut files = Vec::new();
+    collect(&directory, &mut files);
+    files.sort();
+    for path in files {
+        let source = std::fs::read_to_string(&path).expect("failed to read fixture");
+        let formatted = format(&source);
+        assert_eq!(
+            group_seeds(&source),
+            group_seeds(&formatted),
+            "layout decisions differ between passes for {}",
+            path.display()
+        );
     }
 }
 

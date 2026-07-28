@@ -1,0 +1,257 @@
+#!/bin/bash
+#
+# Run camello over a real Perl corpus and ask three questions about the result.
+#
+#   scripts/corpus-check                  every .pm below @INC
+#   scripts/corpus-check <path>...        the given files or directories
+#   scripts/corpus-check --limit 200      a prefix of the corpus, evenly spread
+#   scripts/corpus-check --jobs 8         worker count (default: nproc)
+#   scripts/corpus-check --list           print the corpus and exit
+#
+# ── Why this exists ───────────────────────────────────────────────────────────
+#
+# ADR 0008 §6 asks for the invariants to hold "on the fixtures + a real corpus".
+# The fixture half shipped; this is the other half. Every defect the 2026-07-28
+# review found was invisible to `cargo test` and obvious here, because a fixture
+# is code someone wrote to exercise a rule, and a corpus is code someone wrote to
+# get a job done.
+#
+# Three indicators, in increasing order of how hard they are to see:
+#
+#   1. idempotency   — format(format(x)) != format(x). Needs no perl at all, so
+#                      it runs on every file including the ones perl cannot load.
+#   2. perl -c       — the input compiles and the output does not. Loud, but it
+#                      misses everything that stays syntactically valid.
+#   3. B::Deparse    — both compile and perl reads them as different programs.
+#                      This is the one that catches a comment migrating into a
+#                      replacement string.
+#
+# A file camello reports a diagnostic on is *counted and set aside*: the parser
+# not covering some construct is a known, separate matter from the formatter
+# damaging code it did parse. The summary always prints how many were set aside.
+#
+# Exit status is 0 only when the clean-parse population has zero violations of
+# all three.
+
+set -uo pipefail
+
+base_dir="$(cd "$(dirname "$0")/.." && pwd)"
+
+# ── Single-file mode ──────────────────────────────────────────────────────────
+#
+# The fan-out below re-enters the script here, one process per file, so a worker
+# is a plain subprocess and the parallelism is xargs's problem rather than ours.
+# It prints exactly one TAB-separated record: status, path, detail.
+
+# What perl says the program in <dir>/input.pl means.
+#
+# Two kinds of line are dropped or reordered before comparing, because
+# B::Deparse emits them from a hash walk and their order varies between runs of
+# the same file: forward declarations (`sub name ;`) and the inlinable constant
+# stubs that `use constant` and Errno leave behind (`sub NAME () { 42 }`).
+# Neither carries behaviour; the constants are sorted rather than dropped so a
+# changed *value* still shows up.
+deparse() { # deparse <dir>
+  local raw
+  raw=$(cd "$1" && timeout 60 perl -MO=Deparse,-p input.pl 2>/dev/null) || return
+  local constant='^sub [A-Za-z_][A-Za-z0-9_:]*\s*\(\)\s*\{.*\}$'
+  printf '%s\n' "$raw" | grep -vE "$constant" | grep -vE '^sub [A-Za-z_][A-Za-z0-9_:]*\s*;$'
+  printf '%s\n' "$raw" | grep -E "$constant" | sort
+}
+
+check_one() {
+  local file=$1
+  local camello=$2
+  local work
+  work=$(mktemp -d) || { printf 'ERROR\t%s\tmktemp failed\n' "$file"; return; }
+  trap 'rm -rf "$work"' RETURN
+
+  # camello decodes as UTF-8 and the CLI's --encoding is a per-run choice, so a
+  # latin-1 module is a question about the caller's flags, not about formatting.
+  if ! iconv -f UTF-8 -t UTF-8 < "$file" > /dev/null 2>&1; then
+    printf 'NOT_UTF8\t%s\t\n' "$file"
+    return
+  fi
+
+  # Both sides are compared at the same relative path in sibling directories.
+  # perl's answer depends on where the file is: a module deparsed from its own
+  # @INC location is already in %INC by the time its `use base` chain comes back
+  # round to it, and deparses without its own preamble. Same path, same answer.
+  mkdir -p "$work/a" "$work/b" "$work/c"
+  local input="$work/a/input.pl"
+  local once="$work/b/input.pl"
+  local twice="$work/c/input.pl"
+  cp "$file" "$input"
+
+  # Diagnostics first: a file the parser complains about is set aside, whatever
+  # else is true of it.
+  if ! "$camello" dump -Q "$input" >/dev/null 2>&1; then
+    printf 'DIAGNOSED\t%s\t\n' "$file"
+    return
+  fi
+
+  if ! timeout 60 "$camello" format "$input" > "$once" 2>/dev/null; then
+    printf 'FORMAT_FAILED\t%s\tfirst pass\n' "$file"
+    return
+  fi
+  if ! timeout 60 "$camello" format "$once" > "$twice" 2>/dev/null; then
+    printf 'FORMAT_FAILED\t%s\tsecond pass\n' "$file"
+    return
+  fi
+  if ! cmp -s "$once" "$twice"; then
+    printf 'IDEMPOTENCY\t%s\t%s\n' "$file" \
+      "$(diff "$once" "$twice" | head -6 | tr '\n' '\r')"
+    return
+  fi
+
+  # perl -c and B::Deparse. A module that will not load in isolation — a missing
+  # dependency, an XS bootstrap, a `$VERSION` check — tells us nothing about the
+  # formatter, so it drops out here rather than counting against it.
+  local compile
+  compile=$(cd "$work/a" && timeout 60 perl -c input.pl 2>&1)
+  if ! grep -q 'syntax OK' <<< "$compile"; then
+    printf 'NOT_COMPILABLE\t%s\t%s\n' "$file" "$(head -1 <<< "$compile" | cut -c1-80)"
+    return
+  fi
+
+  compile=$(cd "$work/b" && timeout 60 perl -c input.pl 2>&1)
+  if ! grep -q 'syntax OK' <<< "$compile"; then
+    printf 'PERLC_REGRESSION\t%s\t%s\n' "$file" \
+      "$(grep -v 'syntax OK' <<< "$compile" | head -2 | tr '\n' '\r' | cut -c1-160)"
+    return
+  fi
+
+  local before after
+  before=$(deparse "$work/a")
+  after=$(deparse "$work/b")
+
+  if [ -z "$before" ]; then
+    printf 'NOT_COMPILABLE\t%s\tdeparse produced nothing\n' "$file"
+    return
+  fi
+  if [ "$before" != "$after" ]; then
+    printf 'MEANING\t%s\t%s\n' "$file" \
+      "$(diff <(printf '%s\n' "$before") <(printf '%s\n' "$after") \
+         | head -6 | tr '\n' '\r' | cut -c1-240)"
+    return
+  fi
+
+  printf 'OK\t%s\t\n' "$file"
+}
+
+if [ "${1:-}" = "--one" ]; then
+  check_one "$2" "$3"
+  exit 0
+fi
+
+# ── Corpus selection ──────────────────────────────────────────────────────────
+
+jobs=$(nproc 2>/dev/null || echo 4)
+limit=0
+list_only=0
+paths=()
+
+while [ $# -gt 0 ]; do
+  case $1 in
+    --jobs)  jobs=$2; shift 2 ;;
+    --limit) limit=$2; shift 2 ;;
+    --list)  list_only=1; shift ;;
+    --help|-h)
+      sed -n '2,40p' "$0" | sed 's/^#\{0,1\} \{0,1\}//'
+      exit 0 ;;
+    *) paths+=("$1"); shift ;;
+  esac
+done
+
+collect() {
+  if [ ${#paths[@]} -gt 0 ]; then
+    for path in "${paths[@]}"; do
+      if [ -d "$path" ]; then
+        find "$path" -name '*.pm' -o -name '*.pl' -o -name '*.t'
+      else
+        printf '%s\n' "$path"
+      fi
+    done
+    return
+  fi
+  # `.` and relative entries in @INC would resolve against this repository, and
+  # the repository is not the corpus.
+  perl -e 'print "$_\n" for grep { !ref && m{^/} && -d } @INC' \
+    | while read -r dir; do find "$dir" -name '*.pm' 2>/dev/null; done
+}
+
+mapfile -t corpus < <(collect | sort -u)
+
+if [ "$limit" -gt 0 ] && [ "${#corpus[@]}" -gt "$limit" ]; then
+  # Every nth file rather than the first n: the corpus is sorted by path, so a
+  # prefix would be one distribution's worth of one namespace.
+  stride=$(( (${#corpus[@]} + limit - 1) / limit ))
+  sampled=()
+  for ((i = 0; i < ${#corpus[@]}; i += stride)); do
+    sampled+=("${corpus[i]}")
+  done
+  corpus=("${sampled[@]}")
+fi
+
+if [ ${#corpus[@]} -eq 0 ]; then
+  echo "corpus-check: no files found" >&2
+  exit 1
+fi
+
+if [ "$list_only" -eq 1 ]; then
+  printf '%s\n' "${corpus[@]}"
+  exit 0
+fi
+
+# ── Run ───────────────────────────────────────────────────────────────────────
+
+( cd "$base_dir" && cargo build --quiet ) || exit 1
+camello="$base_dir/target/debug/camello"
+
+results=$(mktemp)
+trap 'rm -f "$results"' EXIT
+
+printf '%s\n' "${corpus[@]}" \
+  | xargs -P "$jobs" -I{} "$0" --one {} "$camello" \
+  > "$results"
+
+count() { grep -c "^$1"$'\t' "$results" || true; }
+
+total=${#corpus[@]}
+ok=$(count OK)
+diagnosed=$(count DIAGNOSED)
+not_utf8=$(count NOT_UTF8)
+not_compilable=$(count NOT_COMPILABLE)
+format_failed=$(count FORMAT_FAILED)
+idempotency=$(count IDEMPOTENCY)
+perlc=$(count PERLC_REGRESSION)
+meaning=$(count MEANING)
+errored=$(count ERROR)
+
+for status in FORMAT_FAILED IDEMPOTENCY PERLC_REGRESSION MEANING ERROR; do
+  grep "^$status"$'\t' "$results" | while IFS=$'\t' read -r kind file detail; do
+    printf '%s  %s\n' "$kind" "$file"
+    [ -n "$detail" ] && printf '%s\n' "$detail" | tr '\r' '\n' | sed 's/^/    /'
+  done
+done
+
+checked=$((total - diagnosed - not_utf8))
+
+cat <<SUMMARY
+---- corpus-check
+  corpus                             $total
+  set aside, parser diagnostics      $diagnosed
+  set aside, not UTF-8               $not_utf8
+  checked                            $checked
+    clean                            $ok
+    perl cannot load the input       $not_compilable
+  VIOLATIONS
+    format failed                    $format_failed
+    idempotency                      $idempotency
+    perl -c regression               $perlc
+    meaning changed                  $meaning
+    harness error                    $errored
+SUMMARY
+
+[ "$format_failed" -eq 0 ] && [ "$idempotency" -eq 0 ] \
+  && [ "$perlc" -eq 0 ] && [ "$meaning" -eq 0 ] && [ "$errored" -eq 0 ]
