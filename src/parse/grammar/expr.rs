@@ -358,8 +358,10 @@ pub(crate) fn bareword_call(parser: &mut Parser<'_>) -> CompletedMarker {
     let marker = parser.start();
     name(parser, NodeKind::SUB_NAME);
 
-    // Parenthesised call: the shape is unambiguous, whatever the name means.
-    if parser.at(T!["("]) {
+    // Parenthesised call: the shape is unambiguous, whatever the name means —
+    // except for the block-taking builtins, handled below.
+    let takes_block = builtin.is_some_and(|builtin| builtin.shape == Shape::BlockList);
+    if parser.at(T!["("]) && !(takes_block && parser.nth_at(1, T!["{"])) {
         arg_list(parser);
         return parser.complete(marker, NodeKind::CALL_EXPR);
     }
@@ -393,6 +395,26 @@ pub(crate) fn bareword_call(parser: &mut Parser<'_>) -> CompletedMarker {
             parser.expect_operator();
             parser.complete(marker, NodeKind::LIST_CALL_EXPR)
         }
+        Shape::BlockList if parser.at(T!["("]) => {
+            // `map({...} @xs)` puts the block inside the parentheses. The
+            // ordinary argument-list parser would read `{...}` as an anonymous
+            // hash and then find no comma.
+            let args = parser.start();
+            parser.expect(T!["("]);
+            parser.expect_term();
+            block(parser);
+            parser.expect_term();
+            if parser.at(T![","]) {
+                parser.bump();
+            }
+            let list = parser.start();
+            list_contents(parser, &[T![")"]]);
+            parser.complete(list, NodeKind::LIST_EXPR);
+            parser.expect(T![")"]);
+            parser.complete(args, NodeKind::ARG_LIST);
+            parser.expect_operator();
+            parser.complete(marker, NodeKind::BLOCK_CALL_EXPR)
+        }
         Shape::BlockList => {
             // `sort SUBNAME LIST` and `sort $coderef LIST`: the comparator is
             // followed by the list with no comma between them. Parsing it as the
@@ -401,9 +423,8 @@ pub(crate) fn bareword_call(parser: &mut Parser<'_>) -> CompletedMarker {
             // `sort` unnecessary (ADR 0007 §2).
             if comparator_follows(parser) {
                 let comparator = parser.start();
-                if let Some(base) = super::primary::primary(parser) {
-                    postfix(parser, base);
-                }
+                // `unary`, not `primary`: `\&cmp` is a reference expression.
+                unary(parser);
                 parser.complete(comparator, NodeKind::FILEHANDLE);
                 parser.expect_term();
                 list_arguments(parser);
@@ -510,6 +531,13 @@ fn comparator_follows(parser: &mut Parser<'_>) -> bool {
         .is_some_and(|kind| kind.is_sigil() || kind == TokenKind::IDENT)
 }
 
+/// Does an argument list start here?
+///
+/// Asked under whatever `expect` the caller established. For a name whose
+/// declaration is unknown that is operator position, so `f / 10` divides; for a
+/// builtin that takes a list it is term position, so `keys %h` keeps its
+/// argument. Deciding it once, in the builtin table, is what keeps the question
+/// out of the lexer (ADR 0007 §6).
 fn starts_argument(parser: &mut Parser<'_>) -> bool {
     // `shift // 1` is defined-or applied to an argument-less `shift`, and perl
     // special-cases exactly this. Ask in operator position to see it; asking in
@@ -519,9 +547,35 @@ fn starts_argument(parser: &mut Parser<'_>) -> bool {
     // Only `//` is decided this way. Widening it to every infix operator would
     // settle `%`, `*` and `&` in operator position too, and `keys %seen` would
     // lose its argument to modulo.
-    parser.expect_operator();
+    let operator_position = parser.expect_is_operator();
+    if !operator_position {
+        parser.expect_operator();
+    }
     if parser.at_any(&[T!["//"], T!["//="]]) {
+        if !operator_position {
+            parser.expect_term();
+        }
         return false;
+    }
+    if operator_position {
+        // The caller said an operator is expected here, so anything that is one
+        // ends the call rather than starting an argument — with one exception.
+        // `decode <$fh>` reads a line and `f < $x` compares, and the two are
+        // told apart by whether a complete readline operator lexes here.
+        if parser.at(T!["<"]) {
+            parser.expect_term();
+            if parser.at(TokenKind::IO_HANDLE) {
+                return true;
+            }
+            parser.expect_operator();
+            return false;
+        }
+        if parser
+            .current()
+            .is_some_and(|kind| infix_op(kind).is_some() || kind.is_stmt_modifier())
+        {
+            return false;
+        }
     }
 
     parser.expect_term();

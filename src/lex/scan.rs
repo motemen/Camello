@@ -14,7 +14,7 @@ use super::{Expect, Lexer};
 const FILE_TEST_CHARS: &[u8] = b"efdlpSbcugktrwxoRWXOszAMC";
 
 /// Punctuation variables that are a single character after their sigil.
-const PUNCT_VAR_CHARS: &[u8] = b"!@/\\,;.&`'+^:?<>()[]|\"-_0=$";
+const PUNCT_VAR_CHARS: &[u8] = b"!@/\\,;.&`'+^:?<>()[]|\"-_0=$%~*";
 
 impl<'a> Lexer<'a> {
     fn rest(&self) -> &'a str {
