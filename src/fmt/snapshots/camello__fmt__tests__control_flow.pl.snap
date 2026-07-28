@@ -55,16 +55,16 @@ LOOP : while ($i < 10) {
     $i++;
 }
 
-LOOP : while ($i < 2) {  }
+LOOP : while ($i < 2) { }
 
 until ($i > 10) {
     $i--;
 }
 
-for (; ; ) {  }
-for (my $i = 0; $i < 10; $i++) {  }
-for (; $i < 10; ) {  }
-for ($i = 0; ; $i++) {  }
+for (; ; ) { }
+for (my $i = 0; $i < 10; $i++) { }
+for (; $i < 10; ) { }
+for ($i = 0; ; $i++) { }
 
 ...;
 

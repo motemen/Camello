@@ -13,6 +13,8 @@ expression: format(&source)
 # Function call with trailing comma
 func(1, 2,);
 func($x, $y, $z,);
+
+# List with trailing comma
 (1, 2,);
 ($a, $b, $c,);
 
