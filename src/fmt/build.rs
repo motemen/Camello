@@ -435,6 +435,11 @@ impl<'a> Builder<'a> {
         if before == Some(T!["::"]) || after == Some(T!["::"]) {
             return false;
         }
+        // `LOOP:` — a label's colon hugs its name (SPACING-11). Everywhere
+        // else `:` is the ternary's and takes spaces.
+        if parent == Some(NodeKind::LABEL) && after == Some(T![":"]) {
+            return false;
+        }
         if before == Some(TokenKind::FILE_TEST_OP) {
             return true;
         }

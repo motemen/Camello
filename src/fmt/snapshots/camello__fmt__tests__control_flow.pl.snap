@@ -48,14 +48,14 @@ print $i until $i == 10;
 say $x until $x <= 0;
 print until ($condition);
 
-LOOP : while ($i < 10) {
+LOOP: while ($i < 10) {
     next LOOP if $i == 5;
     last if $i == 8;
     redo LOOP if $flag;
     $i++;
 }
 
-LOOP : while ($i < 2) { }
+LOOP: while ($i < 2) { }
 
 until ($i > 10) {
     $i--;
