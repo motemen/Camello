@@ -368,6 +368,144 @@ fn malformed_input_still_formats_to_a_fixed_point() {
     }
 }
 
+// ===== The 2026-07-28 review: formatting that destroyed code =====
+
+#[test]
+fn a_comment_never_swallows_the_code_after_it() {
+    // P0-1. The group holding a comment was flat, so everything after the
+    // comment was appended to its line — and a line after `#` is not code.
+    // `my %h = ( # c\n a => 1,\n);` formatted to `my %h = ( # ca => 1,);`.
+    for source in [
+        "my %h = ( # c\n  a => 1,\n);\n",
+        "foo(1, # c\n  2);\n",
+        "foo(1 # c\n);\n",
+        "my $x = [ # c\n 1,\n];\n",
+        "my $h = { a => 1 # c\n};\n",
+        "outer(inner(1 # deep\n), 2);\n",
+    ] {
+        let formatted = format(source);
+        for line in formatted.lines() {
+            let Some(hash) = line.find('#') else { continue };
+            assert!(
+                !line[hash..].contains([';', ',']),
+                "code was appended to a comment line:\n{formatted}"
+            );
+        }
+        assert_idempotent(source);
+        assert_preserves_semantics(source);
+        assert_preserves_comments(source);
+    }
+}
+
+#[test]
+fn a_comment_after_a_substitution_stays_outside_it() {
+    // P0-3. The empty replacement list of `s/a//` is zero width, so it starts
+    // where the closing delimiter starts and an offset-keyed lookup handed both
+    // of them the same trailing comment. The comment was emitted twice, once
+    // inside the literal: "delete a" became "replace a with ' # c'".
+    let source = "$x =~ s/a//   # c\n  || 1;\n";
+    let formatted = format(source);
+    assert!(
+        formatted.starts_with("$x =~ s/a// # c\n"),
+        "the comment must stay outside the replacement:\n{formatted}"
+    );
+    assert_preserves_comments(source);
+    assert_preserves_semantics(source);
+    assert_idempotent(source);
+
+    for source in [
+        "$x =~ s{a}{}; # c\n",
+        "$x =~ m//; # c\n",
+        "my @w = qw(); # c\n",
+        "my $q = q(); # c\n",
+    ] {
+        assert_preserves_comments(source);
+        assert_preserves_semantics(source);
+        assert_idempotent(source);
+    }
+}
+
+#[test]
+fn a_quote_like_run_is_never_spaced_out() {
+    // P0-2. A DELIMITER belongs to a quote-like run wherever it is found. When a
+    // misparse left the run inside an ERROR node the run's own node was gone,
+    // the tightness rule keyed on it stopped firing, and a space appeared beside
+    // content the next pass re-lexed as part of the literal — so the literal
+    // grew by two characters per pass.
+    for source in [
+        "use Exporter 5.57 qw( import );\n",
+        "$v =~ s/xx\\z//;\n",
+        "my @x = grep { $_ }qw(a b);\n",
+        "print \"x\" if any { $_ } qw(a b);\n",
+    ] {
+        let mut text = source.to_string();
+        for _ in 0..4 {
+            text = format(&text);
+        }
+        assert_eq!(
+            text,
+            format(source),
+            "the output kept growing across passes:\n{text}"
+        );
+        assert!(
+            !text.contains("qw ("),
+            "the delimiter was spaced away from its keyword:\n{text}"
+        );
+        assert_preserves_semantics(source);
+    }
+}
+
+#[test]
+fn what_the_parser_could_not_read_is_copied_out_unchanged() {
+    // The last resort of P0-2: every layout rule is a rule about a construct the
+    // parser recognised, and inside an ERROR node it recognised none of them.
+    for source in [
+        "use A use X;\n",
+        "my $x = 1 + ;\nmy $y = 2;\n",
+        "sub f {\n",
+        "q{unterminated\n",
+    ] {
+        assert_idempotent(source);
+    }
+}
+
+#[test]
+fn a_header_comment_and_a_brace_comment_both_survive() {
+    // F6 moves a comment written before the brace to after it, because the brace
+    // does not move. When the brace already carries one of its own, the two
+    // cannot share a line — the second would be inside the first — so the header
+    // comment takes a line inside the block. Both texts survive; their order
+    // does not, which is why this case is here and not in the fixture that the
+    // ordered comment-preservation invariant reads.
+    let formatted =
+        format("if ($y)    # about the condition\n{ # about the block\n    print 1;\n}\n");
+    assert_eq!(
+        formatted,
+        "if ($y) { # about the block\n    # about the condition\n    print 1;\n}\n"
+    );
+    assert_idempotent(&formatted);
+}
+
+#[track_caller]
+fn assert_preserves_comments(source: &str) {
+    let comments = |text: &str| {
+        use crate::lang::TokenExt;
+        crate::parse::parse(text)
+            .syntax()
+            .descendants_with_tokens()
+            .filter_map(|element| element.into_token())
+            .filter(|token| token.token_kind() == TokenKind::COMMENT)
+            .map(|token| token.text().trim_end().to_string())
+            .collect::<Vec<_>>()
+    };
+    let formatted = format(source);
+    assert_eq!(
+        comments(source),
+        comments(&formatted),
+        "the comments changed\n--- input ---\n{source}--- output ---\n{formatted}"
+    );
+}
+
 // ===== I2: the seed rule reproduces its own output =====
 
 /// The flat-or-broken decision of every group, in document order.

@@ -208,15 +208,31 @@ impl<'a> Lexer<'a> {
     }
 
     /// Return to a previously taken [`Mark`].
+    ///
+    /// Restoring `expect` is not enough on its own. The speculative parse that
+    /// is being undone may have re-scanned the tokens at the mark under a
+    /// different expectation — that is usually the whole reason it was
+    /// speculative — and those entries are still in the buffer. Leaving them
+    /// there breaks the coherence guarantee of ADR 0005 §2: `peek` would answer
+    /// from a token scanned under one expectation while `bump` consumed it under
+    /// another. In a debug build the assertion in [`Self::bump`] fires
+    /// (`foo{sub}`, `sub(@y^`, `t{,**t`); in a release build the mis-scanned
+    /// token is consumed in silence.
+    ///
+    /// So the buffer is dropped from the cursor forward, unconditionally. It is
+    /// tempting to check the token *at* the cursor and skip the re-scan when it
+    /// agrees, but that is exactly the bug: in `foo{sub}` the `{` at the cursor
+    /// was scanned under `Term` both times and looks fine, while the `}` four
+    /// tokens later was re-scanned under `Operator` by the attempt being undone.
+    /// The re-parse then reaches it without ever changing `expect`, so nothing
+    /// invalidates it and `bump` consumes a token scanned under the wrong state.
+    ///
+    /// The cost is re-scanning the speculative region, which was just scanned
+    /// once, so it stays proportional to the attempt that failed.
     pub fn rollback(&mut self, mark: Mark) {
         self.cursor = mark.cursor;
-        // Restoring expect must not invalidate: the buffer entries between the
-        // mark and here were scanned under the expectations in force at the
-        // time, and re-entering that prefix will re-derive the same states.
-        // Only a *change* relative to what the buffer holds needs a re-scan, and
-        // rolling back re-establishes exactly the state the buffer was built
-        // under.
         self.expect = mark.expect;
+        self.invalidate_from_cursor();
     }
 
     /// The full token stream, trivia included, up to the given byte offset.

@@ -355,6 +355,16 @@ fn use_stmt(parser: &mut Parser<'_>, node: NodeKind) {
     parser.expect_operator();
     if parser.current().is_some_and(is_name_like) {
         name(parser, NodeKind::SUB_NAME);
+        parser.expect_term();
+        // `use Module VERSION LIST`: the version sits between the module and its
+        // import list and is not part of it. Reading it as the list's first
+        // element leaves the real list unconsumed, and `use Exporter 5.57
+        // qw( import );` recovers into an ERROR node holding the `qw` run — at
+        // which point the formatter no longer recognises it as a quote-like
+        // operator and starts spacing out its delimiters.
+        if parser.at(TokenKind::VERSION) || parser.at(TokenKind::NUMBER) {
+            parser.bump();
+        }
     } else if parser.at(TokenKind::VERSION) || parser.at(TokenKind::NUMBER) {
         parser.bump();
     }

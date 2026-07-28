@@ -289,9 +289,16 @@ impl<'a> Lexer<'a> {
     /// `(s => 1)` and `$h{q}` use quote-like names as plain words. Deciding it
     /// by looking one token ahead — past horizontal space only — keeps `s {a}{b}`
     /// working, which a "next character is `{`" rule would break.
+    ///
+    /// A following `,` is *not* on the list, though it reads like it should be.
+    /// perl has no such exception: `m,b,` is a match on `b` and `(q, 1)` is a
+    /// fatal "can't find string terminator". Treating the comma as a separator
+    /// made `$v =~ m,/\z,,;` — which is ordinary code, and appears verbatim in
+    /// `HTTP::Config` — lex as a bareword, an unterminated regex, and a
+    /// statement the formatter then had to guess at.
     fn quote_like_is_bareword(&self, len: usize) -> bool {
         let after = self.rest_at(len).trim_start_matches([' ', '\t']);
-        after.starts_with("=>") || after.starts_with('}') || after.starts_with(',')
+        after.starts_with("=>") || after.starts_with('}')
     }
 
     /// `v5`, `v5.10.1`. Requires at least one digit, and two dots unless the

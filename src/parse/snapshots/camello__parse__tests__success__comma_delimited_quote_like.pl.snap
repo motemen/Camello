@@ -1,0 +1,387 @@
+---
+source: src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "v"
+        `=` "="
+        LITERAL
+          string literal "\"path/\""
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "v"
+        `.=` ".="
+        LITERAL
+          string literal "\"/\""
+    STMT_MODIFIER
+      `unless` "unless"
+      LIST_EXPR
+        MATCH_EXPR
+          SCALAR_VAR
+            `$` "$"
+            identifier "v"
+          `=~` "=~"
+          M_EXPR
+            `m` "m"
+            delimiter ","
+            regex pattern "/\\z"
+            delimiter ","
+        `,` ","
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      MATCH_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "v"
+        `=~` "=~"
+        S_EXPR
+          `s` "s"
+          delimiter ","
+          regex pattern "/\\*\\z"
+          delimiter ","
+          interpolated string contents ""
+          delimiter ","
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            ARRAY_VAR
+              `@` "@"
+              identifier "parts"
+        `=` "="
+        LIST_CALL_EXPR
+          SUB_NAME
+            identifier "split"
+          LIST_EXPR
+            M_EXPR
+              `m` "m"
+              delimiter ","
+              regex pattern "/"
+              delimiter ","
+            `,` ","
+            SCALAR_VAR
+              `$` "$"
+              identifier "v"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "print"
+        LIST_EXPR
+          LITERAL
+            string literal "\"yes\\n\""
+    STMT_MODIFIER
+      `if` "if"
+      LIST_EXPR
+        MATCH_EXPR
+          SCALAR_VAR
+            `$` "$"
+            identifier "v"
+          `=~` "=~"
+          M_EXPR
+            `m` "m"
+            delimiter ","
+            regex pattern "abc"
+            delimiter ","
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      MATCH_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "v"
+        `=~` "=~"
+        TR_EXPR
+          `tr` "tr"
+          delimiter ","
+          transliteration search list "a-z"
+          delimiter ","
+          transliteration replacement list "A-Z"
+          delimiter ","
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            HASH_VAR
+              `%` "%"
+              identifier "h"
+        `=` "="
+        PAREN_EXPR
+          `(` "("
+          LIST_EXPR
+            LIST_CALL_EXPR
+              SUB_NAME
+                identifier "s"
+            `=>` "=>"
+            LITERAL
+              number "1"
+            `,` ","
+            LIST_CALL_EXPR
+              SUB_NAME
+                identifier "q"
+            `=>` "=>"
+            LITERAL
+              number "2"
+            `,` ","
+            LIST_CALL_EXPR
+              SUB_NAME
+                identifier "y"
+            `=>` "=>"
+            LITERAL
+              number "3"
+            `,` ","
+            LIST_CALL_EXPR
+              SUB_NAME
+                identifier "tr"
+            `=>` "=>"
+            LITERAL
+              number "4"
+            `,` ","
+            LIST_CALL_EXPR
+              SUB_NAME
+                identifier "m"
+            `=>` "=>"
+            LITERAL
+              number "5"
+          `)` ")"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "one"
+        `=` "="
+        HASH_SUBSCRIPT_EXPR
+          SCALAR_VAR
+            `$` "$"
+            identifier "h"
+          `{` "{"
+          SUBSCRIPT
+            SUB_NAME
+              identifier "q"
+          `}` "}"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "two"
+        `=` "="
+        HASH_SUBSCRIPT_EXPR
+          SCALAR_VAR
+            `$` "$"
+            identifier "h"
+          `{` "{"
+          SUBSCRIPT
+            SUB_NAME
+              identifier "s"
+          `}` "}"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            ARRAY_VAR
+              `@` "@"
+              identifier "words"
+        `=` "="
+        QW_EXPR
+          `qw` "qw"
+          delimiter "("
+          word list contents "terse noopt"
+          delimiter ")"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "key"
+        `=` "="
+        LITERAL
+          string literal "\"terse\""
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "print"
+        LIST_EXPR
+          LITERAL
+            string literal "\"found\\n\""
+    STMT_MODIFIER
+      `if` "if"
+      LIST_EXPR
+        BLOCK_CALL_EXPR
+          SUB_NAME
+            identifier "any"
+          BLOCK
+            `{` "{"
+            EXPR_STMT
+              LIST_EXPR
+                BINARY_EXPR
+                  SCALAR_VAR
+                    `$` "$"
+                    identifier "_"
+                  `eq` "eq"
+                  SCALAR_VAR
+                    `$` "$"
+                    identifier "key"
+            `}` "}"
+          LIST_EXPR
+            QW_EXPR
+              `qw` "qw"
+              delimiter "("
+              word list contents "terse noopt nostrip"
+              delimiter ")"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            ARRAY_VAR
+              `@` "@"
+              identifier "big"
+        `=` "="
+        BLOCK_CALL_EXPR
+          SUB_NAME
+            identifier "grep"
+          BLOCK
+            `{` "{"
+            EXPR_STMT
+              LIST_EXPR
+                BINARY_EXPR
+                  SCALAR_VAR
+                    `$` "$"
+                    identifier "_"
+                  `>` ">"
+                  LITERAL
+                    number "1"
+            `}` "}"
+          LIST_EXPR
+            PAREN_EXPR
+              `(` "("
+              LIST_EXPR
+                LITERAL
+                  number "1"
+                `,` ","
+                LITERAL
+                  number "2"
+                `,` ","
+                LITERAL
+                  number "3"
+              `)` ")"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "first"
+        `=` "="
+        BLOCK_CALL_EXPR
+          SUB_NAME
+            identifier "first"
+          BLOCK
+            `{` "{"
+            EXPR_STMT
+              LIST_EXPR
+                BINARY_EXPR
+                  SCALAR_VAR
+                    `$` "$"
+                    identifier "_"
+                  `>` ">"
+                  LITERAL
+                    number "1"
+            `}` "}"
+          LIST_EXPR
+            ARRAY_VAR
+              `@` "@"
+              identifier "big"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "ref"
+        `=` "="
+        LIST_CALL_EXPR
+          SUB_NAME
+            identifier "make_config"
+          LIST_EXPR
+            ANON_HASH
+              `{` "{"
+              LIST_EXPR
+                LIST_CALL_EXPR
+                  SUB_NAME
+                    identifier "verbose"
+                `=>` "=>"
+                LITERAL
+                  number "1"
+              `}` "}"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "count"
+        `=` "="
+        LIST_CALL_EXPR
+          SUB_NAME
+            identifier "counter"
+          LIST_EXPR
+            BINARY_EXPR
+              ANON_HASH
+                `{` "{"
+                LIST_EXPR
+                `}` "}"
+              `-` "-"
+              LITERAL
+                number "1"
+    `;` ";"

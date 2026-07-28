@@ -39,6 +39,14 @@ pub struct Renderer<'a> {
     shape: Option<ShapeKey>,
     /// The next line is a continuation of the one before it.
     continuation: bool,
+    /// A trailing comment has claimed the rest of this line.
+    ///
+    /// Everything after `#` on a line is inside the comment, so writing code
+    /// there does not lay it out badly — it deletes it. The builder is
+    /// responsible for never asking (a group holding a comment breaks), and this
+    /// is here so that a builder bug costs a stray line break instead of a
+    /// missing hash entry.
+    line_closed: bool,
 }
 
 impl<'a> Renderer<'a> {
@@ -51,6 +59,7 @@ impl<'a> Renderer<'a> {
             broken: true,
             shape: None,
             continuation: false,
+            line_closed: false,
         }
     }
 
@@ -137,7 +146,27 @@ impl<'a> Renderer<'a> {
         }
     }
 
+    /// Start a new line if `text` would otherwise land inside a comment.
+    ///
+    /// Whitespace is dropped rather than wrapped: a separator between something
+    /// and a line break has nothing left to separate.
+    fn open_line_for(&mut self, text: &str) -> bool {
+        if !self.line_closed {
+            return true;
+        }
+        if text.trim().is_empty() {
+            return false;
+        }
+        self.newline();
+        // Whatever this is, it was written as part of the line above.
+        self.continuation = true;
+        true
+    }
+
     fn comment(&mut self, text: &str, placement: Placement) {
+        if !self.open_line_for(text) {
+            return;
+        }
         match placement {
             Placement::OwnLine => {
                 // The comment sits on the continuation's line, but it is the
@@ -154,23 +183,35 @@ impl<'a> Renderer<'a> {
                 // One rule, one place. The old formatter had two comment output
                 // paths — one hard-coding four spaces, one copying the source's
                 // whitespace — and the option only reached one of them.
-                if !self.current.text.is_empty() {
-                    for _ in 0..self.options.min_spaces_before_comment.max(1) {
-                        self.current.text.push(' ');
-                    }
+                //
+                // A trailing comment can reach a line with nothing on it — the
+                // token it trailed produced no output — and then there is
+                // nothing to separate it from, so it takes no padding and the
+                // anchor sits where the line starts.
+                let padding = if self.current.text.is_empty() {
+                    0
+                } else {
+                    self.options.min_spaces_before_comment.max(1)
+                };
+                self.ensure_indent();
+                for _ in 0..padding {
+                    self.current.text.push(' ');
                 }
-                let column = self.current.text.chars().count()
-                    - self.options.min_spaces_before_comment.max(1);
+                let column = self.current.text.chars().count() - padding;
                 self.current
                     .anchors
                     .push((AnchorClass::TrailingComment, column));
                 self.current.text.push_str(text);
+                self.line_closed = true;
             }
         }
     }
 
     fn write(&mut self, text: &str) {
         if text.is_empty() {
+            return;
+        }
+        if !self.open_line_for(text) {
             return;
         }
         self.ensure_indent();
@@ -180,6 +221,9 @@ impl<'a> Renderer<'a> {
     /// Verbatim content: written exactly, and any newlines inside it end lines
     /// without the renderer adding indentation to what follows.
     fn write_raw(&mut self, text: &str) {
+        if !self.open_line_for(text) {
+            return;
+        }
         self.ensure_indent();
         let mut parts = text.split('\n');
         if let Some(first) = parts.next() {
@@ -226,6 +270,7 @@ impl<'a> Renderer<'a> {
     }
 
     fn finish_line(&mut self) {
+        self.line_closed = false;
         let mut line = std::mem::take(&mut self.current);
         // Trailing whitespace is formatting, except inside a verbatim region
         // where it is content.

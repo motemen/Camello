@@ -478,10 +478,55 @@ pub(crate) fn bareword_call(parser: &mut Parser<'_>) -> CompletedMarker {
             parser.complete(marker, NodeKind::LIST_CALL_EXPR)
         }
         Shape::List => {
+            if block_call_follows(parser) {
+                list_arguments(parser);
+                return parser.complete(marker, NodeKind::BLOCK_CALL_EXPR);
+            }
             list_arguments(parser);
             parser.complete(marker, NodeKind::LIST_CALL_EXPR)
         }
     }
+}
+
+/// `any { $_ eq $key } qw(a b)` — a list operator with a block prototype whose
+/// prototype we cannot see.
+///
+/// `List::Util`, `Try::Tiny` and everything like them export subs declared
+/// `(&@)`, and without the declaration the `{...}` reads as an anonymous hash.
+/// That is not merely an odd tree: after an anonymous hash the lexer expects an
+/// operator, so the `qw` that follows demotes to a bareword and the whole
+/// statement recovers into an ERROR node — which is where the formatter stopped
+/// recognising the `qw` run and started spacing out its delimiters.
+///
+/// The tie is broken by which reading parses. A term cannot follow an expression
+/// with no operator between them, so if one does, the hash reading was wrong.
+/// `-` and `+` are held back: they are terms and operators both, and
+/// `$config->{limit} - 1` must not be read as a block call on `-1`.
+///
+/// Consumes the block and returns true when it takes that reading; leaves the
+/// parser exactly where it found it otherwise.
+fn block_call_follows(parser: &mut Parser<'_>) -> bool {
+    if !parser.at(T!["{"]) {
+        return false;
+    }
+
+    let checkpoint = parser.checkpoint();
+    let errors_before = parser.diagnostic_count();
+    block(parser);
+    parser.expect_term();
+
+    let list_follows = parser.diagnostic_count() == errors_before
+        && !parser.at_any(&[T!["-"], T!["+"], T!["++"], T!["--"]])
+        && parser.current().is_some_and(TokenKind::can_start_term);
+    if list_follows {
+        if parser.at(T![","]) {
+            parser.bump();
+        }
+        return true;
+    }
+
+    parser.rollback(checkpoint);
+    false
 }
 
 /// `print STDERR ...` / `print {$fh} ...`.
