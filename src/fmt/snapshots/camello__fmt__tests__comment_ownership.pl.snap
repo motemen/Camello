@@ -3,6 +3,7 @@ source: src/fmt/tests.rs
 expression: format(&source)
 ---
 my $x = 1; # inline comment
+
 # leading doc
 # continues
 sub foo {

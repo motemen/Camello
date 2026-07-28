@@ -10,6 +10,7 @@ expression: format(&source)
 # bareword perl has not seen. camello has no symbol table and decides both from
 # whether a complete readline token lexes there (ADR 0007 §6).
 sub decode;
+
 sub process;
 
 # Case 1: IO operator as function argument (issue #203)
