@@ -1,0 +1,63 @@
+---
+source: src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  VAR_DECL_STMT
+    LIST_EXPR
+      VAR_DECL
+        `my` "my"
+        DECL_TARGET
+          `(` "("
+          LIST_EXPR
+            SCALAR_VAR
+              `$` "$"
+              identifier "x"
+            `,` ","
+            ARRAY_VAR
+              `@` "@"
+              identifier "y"
+            `,` ","
+            HASH_VAR
+              `%` "%"
+              identifier "z"
+          `)` ")"
+    ERROR
+      `:` ":"
+      identifier "Bent"
+      `=` "="
+      number "1"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      VAR_DECL
+        `our` "our"
+        DECL_TARGET
+          SCALAR_VAR
+            `$` "$"
+            identifier "value"
+    ERROR
+      `:` ":"
+      identifier "shared"
+      `:` ":"
+      identifier "Foo"
+      `(` "("
+      number "1"
+      `,` ","
+      number "2"
+      `)` ")"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      VAR_DECL
+        `state` "state"
+        DECL_TARGET
+          SCALAR_VAR
+            `$` "$"
+            identifier "scalar"
+    ERROR
+      `:` ":"
+      identifier "lvalue"
+      `+=` "+="
+      number "2"
+    `;` ";"

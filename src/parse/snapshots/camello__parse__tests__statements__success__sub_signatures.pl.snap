@@ -1,0 +1,463 @@
+---
+source: src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  SUB_DEF
+    `sub` "sub"
+    SUB_NAME
+      identifier "greet"
+    SUB_SIGNATURE
+      `(` "("
+      SIGNATURE_PARAM
+        SCALAR_VAR
+          `$` "$"
+          identifier "name"
+      `,` ","
+      SIGNATURE_PARAM
+        SCALAR_VAR
+          `$` "$"
+          identifier "greeting"
+        SIGNATURE_DEFAULT
+          `=` "="
+          LITERAL
+            string literal "\"Hello\""
+      `)` ")"
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          LITERAL
+            string literal "\"$greeting, $name!\""
+      `}` "}"
+  SUB_DEF
+    `sub` "sub"
+    SUB_NAME
+      identifier "flexible"
+    SUB_SIGNATURE
+      `(` "("
+      SIGNATURE_PARAM
+        SCALAR_VAR
+          `$` "$"
+          identifier "first"
+      `,` ","
+      SIGNATURE_PARAM
+        `$` "$"
+      `,` ","
+      SIGNATURE_PARAM
+        SCALAR_VAR
+          `$` "$"
+          identifier "third"
+        SIGNATURE_DEFAULT
+          `//=` "//="
+          LITERAL
+            number "3"
+      `,` ","
+      SIGNATURE_PARAM
+        ARRAY_VAR
+          `@` "@"
+          identifier "rest"
+      `)` ")"
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          LIST_CALL_EXPR
+            SUB_NAME
+              `return` "return"
+            LIST_EXPR
+              BINARY_EXPR
+                SCALAR_VAR
+                  `$` "$"
+                  identifier "first"
+                `+` "+"
+                ARRAY_VAR
+                  `@` "@"
+                  identifier "rest"
+        `;` ";"
+      `}` "}"
+  SUB_DEF
+    `sub` "sub"
+    SUB_NAME
+      identifier "configure"
+    SUB_SIGNATURE
+      `(` "("
+      SIGNATURE_PARAM
+        SCALAR_VAR
+          `$` "$"
+          identifier "debug"
+        SIGNATURE_DEFAULT
+          `||=` "||="
+          LITERAL
+            number "0"
+      `,` ","
+      SIGNATURE_PARAM
+        HASH_VAR
+          `%` "%"
+          identifier "opts"
+      `)` ")"
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          LIST_CALL_EXPR
+            SUB_NAME
+              `return` "return"
+            LIST_EXPR
+              BINARY_EXPR
+                HASH_SUBSCRIPT_EXPR
+                  SCALAR_VAR
+                    `$` "$"
+                    identifier "opts"
+                  `{` "{"
+                  SUBSCRIPT
+                    SUB_NAME
+                      identifier "level"
+                  `}` "}"
+                `//` "//"
+                SCALAR_VAR
+                  `$` "$"
+                  identifier "debug"
+        `;` ";"
+      `}` "}"
+  SUB_DEF
+    `sub` "sub"
+    SUB_NAME
+      identifier "placeholder_only"
+    SUB_SIGNATURE
+      `(` "("
+      SIGNATURE_PARAM
+        `$` "$"
+      `,` ","
+      SIGNATURE_PARAM
+        `@` "@"
+      `,` ","
+      SIGNATURE_PARAM
+        `%` "%"
+      `)` ")"
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          LIST_CALL_EXPR
+            SUB_NAME
+              `return` "return"
+            LIST_EXPR
+              ARRAY_VAR
+                `@` "@"
+                identifier "_"
+        `;` ";"
+      `}` "}"
+  SUB_DEF
+    `sub` "sub"
+    SUB_NAME
+      identifier "scalar_placeholder"
+    SUB_SIGNATURE
+      `(` "("
+      SIGNATURE_PARAM
+        `$` "$"
+      `)` ")"
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          LIST_CALL_EXPR
+            SUB_NAME
+              `return` "return"
+            LIST_EXPR
+              LITERAL
+                number "42"
+        `;` ";"
+      `}` "}"
+  SUB_DEF
+    `sub` "sub"
+    SUB_NAME
+      identifier "placeholder_default"
+    SUB_PROTOTYPE
+      `(` "("
+      raw text "$thing, $ = 1"
+      `)` ")"
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          LIST_CALL_EXPR
+            SUB_NAME
+              `return` "return"
+            LIST_EXPR
+              BINARY_EXPR
+                SCALAR_VAR
+                  `$` "$"
+                  identifier "thing"
+                `+` "+"
+                SCALAR_VAR
+                  `$` "$"
+                  raw text ";"
+      `}` "}"
+  SUB_DEF
+    `sub` "sub"
+    SUB_NAME
+      identifier "complex_default"
+    SUB_SIGNATURE
+      `(` "("
+      SIGNATURE_PARAM
+        SCALAR_VAR
+          `$` "$"
+          identifier "value"
+        SIGNATURE_DEFAULT
+          `=` "="
+          BINARY_EXPR
+            SCALAR_VAR
+              `$` "$"
+              identifier "primary"
+            `||` "||"
+            SCALAR_VAR
+              `$` "$"
+              identifier "fallback"
+      `)` ")"
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          LIST_CALL_EXPR
+            SUB_NAME
+              `return` "return"
+            LIST_EXPR
+              SCALAR_VAR
+                `$` "$"
+                identifier "value"
+        `;` ";"
+      `}` "}"
+  SUB_DEF
+    `sub` "sub"
+    SUB_NAME
+      identifier "grouped_default"
+    SUB_SIGNATURE
+      `(` "("
+      SIGNATURE_PARAM
+        SCALAR_VAR
+          `$` "$"
+          identifier "name"
+        SIGNATURE_DEFAULT
+          `=` "="
+          PAREN_EXPR
+            `(` "("
+            LIST_EXPR
+              BINARY_EXPR
+                CALL_EXPR
+                  SUB_NAME
+                    identifier "default_name"
+                  ARG_LIST
+                    `(` "("
+                    LIST_EXPR
+                    `)` ")"
+                `or` "or"
+                LITERAL
+                  string literal "\"anon\""
+            `)` ")"
+      `)` ")"
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          LIST_CALL_EXPR
+            SUB_NAME
+              `return` "return"
+            LIST_EXPR
+              SCALAR_VAR
+                `$` "$"
+                identifier "name"
+        `;` ";"
+      `}` "}"
+  SUB_DEF
+    `sub` "sub"
+    SUB_NAME
+      identifier "mixed_placeholders"
+    SUB_SIGNATURE
+      `(` "("
+      SIGNATURE_PARAM
+        `%` "%"
+      `,` ","
+      SIGNATURE_PARAM
+        SCALAR_VAR
+          `$` "$"
+          identifier "x"
+      `)` ")"
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          LIST_CALL_EXPR
+            SUB_NAME
+              `return` "return"
+            LIST_EXPR
+              SCALAR_VAR
+                `$` "$"
+                identifier "x"
+        `;` ";"
+      `}` "}"
+  SUB_DEF
+    `sub` "sub"
+    SUB_NAME
+      identifier "slurpy_end"
+    SUB_SIGNATURE
+      `(` "("
+      SIGNATURE_PARAM
+        SCALAR_VAR
+          `$` "$"
+          identifier "first"
+      `,` ","
+      SIGNATURE_PARAM
+        ARRAY_VAR
+          `@` "@"
+          identifier "rest"
+      `)` ")"
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          LIST_CALL_EXPR
+            SUB_NAME
+              `return` "return"
+            LIST_EXPR
+              BINARY_EXPR
+                SCALAR_VAR
+                  `$` "$"
+                  identifier "first"
+                `+` "+"
+                LIST_CALL_EXPR
+                  SUB_NAME
+                    identifier "scalar"
+                  ARRAY_VAR
+                    `@` "@"
+                    identifier "rest"
+        `;` ";"
+      `}` "}"
+  SUB_DEF
+    `sub` "sub"
+    SUB_NAME
+      identifier "multiline"
+    SUB_SIGNATURE
+      `(` "("
+      SIGNATURE_PARAM
+        SCALAR_VAR
+          `$` "$"
+          identifier "alpha"
+      `,` ","
+      SIGNATURE_PARAM
+        SCALAR_VAR
+          `$` "$"
+          identifier "beta"
+        SIGNATURE_DEFAULT
+          `||=` "||="
+          CALL_EXPR
+            SUB_NAME
+              identifier "compute_default"
+            ARG_LIST
+              `(` "("
+              LIST_EXPR
+              `)` ")"
+      `,` ","
+      SIGNATURE_PARAM
+        HASH_VAR
+          `%` "%"
+          identifier "extra"
+      `,` ","
+      `)` ")"
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          LIST_CALL_EXPR
+            SUB_NAME
+              `return` "return"
+            LIST_EXPR
+              BINARY_EXPR
+                BINARY_EXPR
+                  SCALAR_VAR
+                    `$` "$"
+                    identifier "alpha"
+                  `+` "+"
+                  SCALAR_VAR
+                    `$` "$"
+                    identifier "beta"
+                `+` "+"
+                LIST_CALL_EXPR
+                  SUB_NAME
+                    identifier "scalar"
+                  LIST_CALL_EXPR
+                    SUB_NAME
+                      identifier "keys"
+                    HASH_VAR
+                      `%` "%"
+                      identifier "extra"
+        `;` ";"
+      `}` "}"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "anon"
+        `=` "="
+        ANON_SUB_EXPR
+          `sub` "sub"
+          SUB_SIGNATURE
+            `(` "("
+            SIGNATURE_PARAM
+              SCALAR_VAR
+                `$` "$"
+                identifier "value"
+              SIGNATURE_DEFAULT
+                `||=` "||="
+                LITERAL
+                  number "10"
+            `,` ","
+            SIGNATURE_PARAM
+              HASH_VAR
+                `%` "%"
+                identifier "opts"
+            `)` ")"
+          BLOCK
+            `{` "{"
+            EXPR_STMT
+              LIST_EXPR
+                LIST_CALL_EXPR
+                  SUB_NAME
+                    `return` "return"
+                  LIST_EXPR
+                    TERNARY_EXPR
+                      HASH_SUBSCRIPT_EXPR
+                        SCALAR_VAR
+                          `$` "$"
+                          identifier "opts"
+                        `{` "{"
+                        SUBSCRIPT
+                          SUB_NAME
+                            identifier "scale"
+                        `}` "}"
+                      `?` "?"
+                      BINARY_EXPR
+                        SCALAR_VAR
+                          `$` "$"
+                          identifier "value"
+                        `*` "*"
+                        HASH_SUBSCRIPT_EXPR
+                          SCALAR_VAR
+                            `$` "$"
+                            identifier "opts"
+                          `{` "{"
+                          SUBSCRIPT
+                            SUB_NAME
+                              identifier "scale"
+                          `}` "}"
+                      `:` ":"
+                      SCALAR_VAR
+                        `$` "$"
+                        identifier "value"
+              `;` ";"
+            `}` "}"
+    `;` ";"

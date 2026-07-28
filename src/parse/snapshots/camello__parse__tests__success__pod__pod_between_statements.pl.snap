@@ -1,0 +1,25 @@
+---
+source: src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  VAR_DECL_STMT
+    LIST_EXPR
+      VAR_DECL
+        `my` "my"
+        DECL_TARGET
+          SCALAR_VAR
+            `$` "$"
+            identifier "var"
+    `;` ";"
+  POD
+    POD block "=pod\nContent\n=cut"
+  VAR_DECL_STMT
+    LIST_EXPR
+      VAR_DECL
+        `my` "my"
+        DECL_TARGET
+          SCALAR_VAR
+            `$` "$"
+            identifier "other"
+    `;` ";"

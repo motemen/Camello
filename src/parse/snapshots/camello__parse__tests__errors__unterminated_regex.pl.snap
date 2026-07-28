@@ -1,0 +1,5 @@
+---
+source: src/parse/tests.rs
+expression: rendered
+---
+line 1: unterminated regex

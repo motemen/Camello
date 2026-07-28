@@ -1,0 +1,77 @@
+---
+source: src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  EXPR_STMT
+    LIST_EXPR
+      MATCH_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "foo"
+        `=~` "=~"
+        M_EXPR
+          delimiter "/"
+          regex pattern "[a/]"
+          delimiter "/"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      MATCH_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "foo"
+        `=~` "=~"
+        M_EXPR
+          delimiter "/"
+          regex pattern "[]/]"
+          delimiter "/"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      MATCH_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "foo"
+        `=~` "=~"
+        M_EXPR
+          delimiter "/"
+          regex pattern "foo\nbar"
+          delimiter "/"
+          regex flags "x"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      S_EXPR
+        `s` "s"
+        delimiter "/"
+        regex pattern "\\/"
+        delimiter "/"
+        interpolated string contents "::"
+        delimiter "/"
+        regex flags "g"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      M_EXPR
+        `m` "m"
+        delimiter "<"
+        regex pattern ".<a>."
+        delimiter ">"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            ARRAY_VAR
+              `@` "@"
+              identifier "list"
+        `=` "="
+        QW_EXPR
+          `qw` "qw"
+          delimiter "("
+          word list contents "a (b) c"
+          delimiter ")"
+    `;` ";"

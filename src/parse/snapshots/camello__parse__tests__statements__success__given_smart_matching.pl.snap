@@ -1,0 +1,90 @@
+---
+source: src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  USE_STMT
+    `use` "use"
+    version string "v5.14"
+    `;` ";"
+  GIVEN_STMT
+    `given` "given"
+    `(` "("
+    LIST_EXPR
+      SCALAR_VAR
+        `$` "$"
+        identifier "item"
+    `)` ")"
+    BLOCK
+      `{` "{"
+      WHEN_CLAUSE
+        `when` "when"
+        `(` "("
+        LIST_EXPR
+          UNDEF_EXPR
+            `undef` "undef"
+        `)` ")"
+        BLOCK
+          `{` "{"
+          EXPR_STMT
+            LIST_EXPR
+              LIST_CALL_EXPR
+                SUB_NAME
+                  identifier "say"
+                LIST_EXPR
+                  LITERAL
+                    string literal "\"Item is undefined\""
+            `;` ";"
+          `}` "}"
+      WHEN_CLAUSE
+        `when` "when"
+        `(` "("
+        LIST_EXPR
+          ANON_ARRAY
+            `[` "["
+            LIST_EXPR
+              LITERAL
+                number "1"
+              `,` ","
+              LITERAL
+                number "3"
+              `,` ","
+              LITERAL
+                number "5"
+            `]` "]"
+        `)` ")"
+        BLOCK
+          `{` "{"
+          EXPR_STMT
+            LIST_EXPR
+              LIST_CALL_EXPR
+                SUB_NAME
+                  identifier "say"
+                LIST_EXPR
+                  LITERAL
+                    string literal "\"Item is 1, 3, or 5\""
+            `;` ";"
+          `}` "}"
+      WHEN_CLAUSE
+        `when` "when"
+        `(` "("
+        LIST_EXPR
+          QR_EXPR
+            `qr` "qr"
+            delimiter "/"
+            regex pattern "^[a-z]+$"
+            delimiter "/"
+        `)` ")"
+        BLOCK
+          `{` "{"
+          EXPR_STMT
+            LIST_EXPR
+              LIST_CALL_EXPR
+                SUB_NAME
+                  identifier "say"
+                LIST_EXPR
+                  LITERAL
+                    string literal "\"Item consists of lowercase letters\""
+            `;` ";"
+          `}` "}"
+      `}` "}"

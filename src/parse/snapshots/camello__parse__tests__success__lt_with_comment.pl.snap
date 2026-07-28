@@ -1,0 +1,15 @@
+---
+source: src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  EXPR_STMT
+    LIST_EXPR
+      BINARY_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "var"
+        `<` "<"
+        LIST_CALL_EXPR
+          SUB_NAME
+            identifier "foo"

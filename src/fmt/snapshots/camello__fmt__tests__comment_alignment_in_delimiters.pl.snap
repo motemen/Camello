@@ -1,0 +1,21 @@
+---
+source: src/fmt/tests.rs
+expression: format(&source)
+---
++{
+    a => 1,
+    b => 2,
+};
+[
+    1,
+    2,
+];
+{
+    short => 1,
+    longer_key => 2, # aligned
+}
+;
+[
+    "short",
+    "much longer string",
+];

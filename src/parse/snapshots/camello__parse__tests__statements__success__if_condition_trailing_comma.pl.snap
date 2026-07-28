@@ -1,0 +1,21 @@
+---
+source: src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  IF_STMT
+    `if` "if"
+    `(` "("
+    LIST_EXPR
+      SCALAR_VAR
+        `$` "$"
+        identifier "x"
+      `,` ","
+    `)` ")"
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          LITERAL
+            number "1"
+      `}` "}"

@@ -1,6 +1,5 @@
 ---
 source: src/parse/tests.rs
-assertion_line: 94
 expression: "tree(\"$a = $b + $c * $d;\\n$e //= 1 .. 5;\\n\")"
 ---
 ROOT

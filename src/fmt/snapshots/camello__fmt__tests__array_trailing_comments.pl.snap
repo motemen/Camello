@@ -1,0 +1,8 @@
+---
+source: src/fmt/tests.rs
+expression: format(&source)
+---
+[
+    1,
+    2,
+];

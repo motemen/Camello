@@ -1,0 +1,41 @@
+---
+source: src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  EXPR_STMT
+    LIST_EXPR
+      RANGE_EXPR
+        LITERAL
+          number "0x7f"
+        `..` ".."
+        LITERAL
+          number "0x8c"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      RANGE_EXPR
+        LITERAL
+          number "0x7f"
+        `...` "..."
+        LITERAL
+          number "0x8c"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      RANGE_EXPR
+        LITERAL
+          number "0b1010"
+        `..` ".."
+        LITERAL
+          number "0b1111"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      RANGE_EXPR
+        LITERAL
+          number "0o10"
+        `..` ".."
+        LITERAL
+          number "0o20"
+    `;` ";"

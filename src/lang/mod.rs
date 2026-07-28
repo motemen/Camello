@@ -369,8 +369,20 @@ define_language! {
 ///
 /// Constructed only through the `From` impls below, so the two spaces cannot be
 /// confused by arithmetic accident.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SyntaxKind(pub u16);
+
+/// Prints the kind's name rather than its discriminant, so a dumped tree is
+/// readable. rowan's own `Debug` for nodes defers to this.
+impl std::fmt::Debug for SyntaxKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match (self.as_token(), self.as_node()) {
+            (Some(token), _) => write!(f, "{token:?}"),
+            (_, Some(node)) => write!(f, "{node:?}"),
+            _ => write!(f, "SyntaxKind({})", self.0),
+        }
+    }
+}
 
 impl From<TokenKind> for SyntaxKind {
     fn from(kind: TokenKind) -> Self {

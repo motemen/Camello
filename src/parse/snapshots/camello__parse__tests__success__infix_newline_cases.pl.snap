@@ -1,0 +1,78 @@
+---
+source: src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  EXPR_STMT
+    LIST_EXPR
+      BINARY_EXPR
+        ANON_ARRAY
+          `[` "["
+          LIST_EXPR
+          `]` "]"
+        `|` "|"
+        LITERAL
+          number "1"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      BINARY_EXPR
+        ANON_ARRAY
+          `[` "["
+          LIST_EXPR
+          `]` "]"
+        `|` "|"
+        LITERAL
+          number "1"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      BINARY_EXPR
+        ANON_ARRAY
+          `[` "["
+          LIST_EXPR
+          `]` "]"
+        `|` "|"
+        LITERAL
+          number "1"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      BINARY_EXPR
+        ANON_ARRAY
+          `[` "["
+          LIST_EXPR
+            LITERAL
+              number "1"
+            `,` ","
+            LITERAL
+              number "2"
+          `]` "]"
+        `&` "&"
+        LITERAL
+          number "3"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      BINARY_EXPR
+        ANON_ARRAY
+          `[` "["
+          LIST_EXPR
+          `]` "]"
+        `+` "+"
+        LITERAL
+          number "2"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      BINARY_EXPR
+        ANON_ARRAY
+          `[` "["
+          LIST_EXPR
+            LITERAL
+              number "1"
+          `]` "]"
+        `*` "*"
+        LITERAL
+          number "5"
+    `;` ";"

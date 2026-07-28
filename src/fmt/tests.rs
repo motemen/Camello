@@ -311,3 +311,41 @@ fn malformed_input_still_formats_to_a_fixed_point() {
         assert_idempotent(source);
     }
 }
+
+// ===== Fixture snapshots =====
+
+/// Format every fixture and snapshot the result.
+///
+/// These are the spec-by-example: `formatting.md` says what the rules are, and
+/// these say what they produce.
+#[test]
+fn fixture_snapshots() {
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/fmt/fixtures");
+    let mut files = Vec::new();
+    collect(&directory, &mut files);
+    files.sort();
+    assert!(!files.is_empty(), "no fixtures found in {directory:?}");
+
+    for path in files {
+        let name = path
+            .strip_prefix(&directory)
+            .expect("fixture is under the fixture directory")
+            .iter()
+            .map(|part| part.to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("__");
+        let source = std::fs::read_to_string(&path).expect("failed to read fixture");
+        insta::assert_snapshot!(name, format(&source));
+    }
+}
+
+fn collect(directory: &std::path::Path, into: &mut Vec<std::path::PathBuf>) {
+    for entry in std::fs::read_dir(directory).expect("failed to read fixture directory") {
+        let path = entry.expect("failed to read fixture entry").path();
+        if path.is_dir() {
+            collect(&path, into);
+        } else if path.extension().is_some_and(|extension| extension == "pl") {
+            into.push(path);
+        }
+    }
+}

@@ -1,0 +1,5 @@
+---
+source: src/fmt/tests.rs
+expression: format(&source)
+---
+say "Found it!" when $_ ~~ /pattern/;

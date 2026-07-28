@@ -1,0 +1,13 @@
+---
+source: src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  LOOP_STMT
+    `while` "while"
+    `(` "("
+    LIST_EXPR
+    `)` ")"
+    BLOCK
+      `{` "{"
+      `}` "}"

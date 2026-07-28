@@ -1,0 +1,41 @@
+---
+source: src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  SUB_DEF
+    `sub` "sub"
+    SUB_NAME
+      identifier "foo"
+    ATTR
+      `:` ":"
+      SUB_NAME
+        identifier "A"
+    ERROR
+      identifier "B"
+      `{` "{"
+  LIST_EXPR
+  ERROR
+    `}` "}"
+  SUB_DEF
+    `sub` "sub"
+    SUB_NAME
+      identifier "bar"
+    SUB_SIGNATURE
+      `(` "("
+      SIGNATURE_PARAM
+        `$` "$"
+      `)` ")"
+    ATTR
+      `:` ":"
+      SUB_NAME
+        identifier "attr1"
+    ERROR
+      identifier "attr2"
+      `(` "("
+      number "1"
+      `)` ")"
+      `{` "{"
+  LIST_EXPR
+  ERROR
+    `}` "}"

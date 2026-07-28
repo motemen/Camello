@@ -1,6 +1,5 @@
 ---
 source: src/parse/tests.rs
-assertion_line: 111
 expression: "tree(\"-f $x . \\\"y\\\";\\n\")"
 ---
 ROOT

@@ -1,0 +1,27 @@
+---
+source: src/fmt/tests.rs
+expression: format(&source)
+---
+# Trailing comment after operator should preserve continuation indent
+my $x = 1 +
+2;
+
+my $y = 10 *
+3;
+
+my $result = $foo +
+$bar;
+
+# Multiple operators with trailing comments
+my $complex = $a +
+$b *
+$c;
+
+# Assignment operator with trailing comment
+my $val =
+123;
+
+# Chained operations with comments
+my $chain = $first +
+$second -
+$third; # final value

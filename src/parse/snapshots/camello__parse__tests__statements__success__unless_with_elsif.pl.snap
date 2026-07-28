@@ -1,0 +1,59 @@
+---
+source: src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  IF_STMT
+    `unless` "unless"
+    `(` "("
+    LIST_EXPR
+      SCALAR_VAR
+        `$` "$"
+        identifier "condition"
+    `)` ")"
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          LIST_CALL_EXPR
+            SUB_NAME
+              identifier "print"
+            LIST_EXPR
+              LITERAL
+                number "1"
+        `;` ";"
+      `}` "}"
+    ELSIF_CLAUSE
+      `elsif` "elsif"
+      `(` "("
+      LIST_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "other"
+      `)` ")"
+      BLOCK
+        `{` "{"
+        EXPR_STMT
+          LIST_EXPR
+            LIST_CALL_EXPR
+              SUB_NAME
+                identifier "print"
+              LIST_EXPR
+                LITERAL
+                  number "2"
+          `;` ";"
+        `}` "}"
+    ELSE_CLAUSE
+      `else` "else"
+      BLOCK
+        `{` "{"
+        EXPR_STMT
+          LIST_EXPR
+            LIST_CALL_EXPR
+              SUB_NAME
+                identifier "print"
+              LIST_EXPR
+                LITERAL
+                  number "3"
+          `;` ";"
+        `}` "}"

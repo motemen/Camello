@@ -1,0 +1,233 @@
+---
+source: src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  LOOP_STMT
+    `for` "for"
+    FOREACH_HEADER
+      VAR_DECL
+        `my` "my"
+        DECL_TARGET
+          SCALAR_VAR
+            `$` "$"
+            identifier "item"
+      `(` "("
+      LIST_EXPR
+        ARRAY_VAR
+          `@` "@"
+          identifier "items"
+      `)` ")"
+    BLOCK
+      `{` "{"
+      WHEN_CLAUSE
+        `when` "when"
+        `(` "("
+        LIST_EXPR
+          BINARY_EXPR
+            SCALAR_VAR
+              `$` "$"
+              identifier "item"
+            `>` ">"
+            LITERAL
+              number "10"
+        `)` ")"
+        BLOCK
+          `{` "{"
+          EXPR_STMT
+            LIST_EXPR
+              LIST_CALL_EXPR
+                SUB_NAME
+                  identifier "say"
+                LIST_EXPR
+                  LITERAL
+                    string literal "\"Large: $item\""
+            `;` ";"
+          `}` "}"
+      WHEN_CLAUSE
+        `when` "when"
+        `(` "("
+        LIST_EXPR
+          BINARY_EXPR
+            SCALAR_VAR
+              `$` "$"
+              identifier "item"
+            `<` "<"
+            LITERAL
+              number "0"
+        `)` ")"
+        BLOCK
+          `{` "{"
+          EXPR_STMT
+            LIST_EXPR
+              LIST_CALL_EXPR
+                SUB_NAME
+                  identifier "say"
+                LIST_EXPR
+                  LITERAL
+                    string literal "\"Negative: $item\""
+            `;` ";"
+          `}` "}"
+      DEFAULT_CLAUSE
+        `default` "default"
+        BLOCK
+          `{` "{"
+          EXPR_STMT
+            LIST_EXPR
+              LIST_CALL_EXPR
+                SUB_NAME
+                  identifier "say"
+                LIST_EXPR
+                  LITERAL
+                    string literal "\"Normal: $item\""
+            `;` ";"
+          `}` "}"
+      `}` "}"
+  LOOP_STMT
+    `for` "for"
+    FOREACH_HEADER
+      `(` "("
+      LIST_EXPR
+        ARRAY_VAR
+          `@` "@"
+          identifier "values"
+      `)` ")"
+    BLOCK
+      `{` "{"
+      WHEN_CLAUSE
+        `when` "when"
+        `(` "("
+        LIST_EXPR
+          M_EXPR
+            delimiter "/"
+            regex pattern "^test"
+            delimiter "/"
+        `)` ")"
+        BLOCK
+          `{` "{"
+          EXPR_STMT
+            LIST_EXPR
+              LIST_CALL_EXPR
+                SUB_NAME
+                  identifier "say"
+                LIST_EXPR
+                  LITERAL
+                    string literal "\"Test value: $_\""
+            `;` ";"
+          `}` "}"
+      WHEN_CLAUSE
+        `when` "when"
+        `(` "("
+        LIST_EXPR
+          BINARY_EXPR
+            SCALAR_VAR
+              `$` "$"
+              identifier "_"
+            `==` "=="
+            LITERAL
+              number "42"
+        `)` ")"
+        BLOCK
+          `{` "{"
+          EXPR_STMT
+            LIST_EXPR
+              LIST_CALL_EXPR
+                SUB_NAME
+                  identifier "say"
+                LIST_EXPR
+                  LITERAL
+                    string literal "\"The answer!\""
+            `;` ";"
+          `}` "}"
+      DEFAULT_CLAUSE
+        `default` "default"
+        BLOCK
+          `{` "{"
+          EXPR_STMT
+            LIST_EXPR
+              LIST_CALL_EXPR
+                SUB_NAME
+                  identifier "say"
+                LIST_EXPR
+                  LITERAL
+                    string literal "\"Other: $_\""
+            `;` ";"
+          `}` "}"
+      `}` "}"
+  LOOP_STMT
+    `for` "for"
+    C_STYLE_LOOP_HEADER
+      `(` "("
+      LIST_EXPR
+        ASSIGN_EXPR
+          VAR_DECL
+            `my` "my"
+            DECL_TARGET
+              SCALAR_VAR
+                `$` "$"
+                identifier "i"
+          `=` "="
+          LITERAL
+            number "0"
+      `;` ";"
+      LIST_EXPR
+        BINARY_EXPR
+          SCALAR_VAR
+            `$` "$"
+            identifier "i"
+          `<` "<"
+          LITERAL
+            number "10"
+      `;` ";"
+      LIST_EXPR
+        POSTFIX_EXPR
+          SCALAR_VAR
+            `$` "$"
+            identifier "i"
+          `++` "++"
+      `)` ")"
+    BLOCK
+      `{` "{"
+      WHEN_CLAUSE
+        `when` "when"
+        `(` "("
+        LIST_EXPR
+          BINARY_EXPR
+            BINARY_EXPR
+              SCALAR_VAR
+                `$` "$"
+                identifier "i"
+              `%` "%"
+              LITERAL
+                number "2"
+            `==` "=="
+            LITERAL
+              number "0"
+        `)` ")"
+        BLOCK
+          `{` "{"
+          EXPR_STMT
+            LIST_EXPR
+              LIST_CALL_EXPR
+                SUB_NAME
+                  identifier "say"
+                LIST_EXPR
+                  LITERAL
+                    string literal "\"Even: $i\""
+            `;` ";"
+          `}` "}"
+      DEFAULT_CLAUSE
+        `default` "default"
+        BLOCK
+          `{` "{"
+          EXPR_STMT
+            LIST_EXPR
+              LIST_CALL_EXPR
+                SUB_NAME
+                  identifier "say"
+                LIST_EXPR
+                  LITERAL
+                    string literal "\"Odd: $i\""
+            `;` ";"
+          `}` "}"
+      `}` "}"

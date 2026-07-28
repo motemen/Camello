@@ -1,7 +1,0 @@
----
-source: src/formatter/tests.rs
-expression: formatted
----
-sub foo {    # comment
-    ;
-}
