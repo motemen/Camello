@@ -46,7 +46,20 @@ impl<'a> Builder<'a> {
     fn statements_into(&mut self, node: &SyntaxNode, parts: &mut Vec<Doc>) {
         for child in node.children_with_tokens() {
             match child {
-                SyntaxElement::Node(statement) => self.statement_into(&statement, parts),
+                SyntaxElement::Node(statement) => {
+                    // formatting.md BLANK_LINE-1: definitions and phase blocks
+                    // stand apart from the code around them. The renderer drops
+                    // a blank line at the start of the output and straight after
+                    // an opening brace, so these are pushed unconditionally.
+                    let separated = wants_surrounding_blank_lines(&statement);
+                    if separated || wants_preceding_blank_line(&statement) {
+                        parts.push(Doc::BlankLine);
+                    }
+                    self.statement_into(&statement, parts);
+                    if separated && statement.next_sibling().is_some() {
+                        parts.push(Doc::BlankLine);
+                    }
+                }
                 SyntaxElement::Token(token) if token.token_kind().is_heredoc_body() => {
                     let terminator = token.token_kind() != TokenKind::HEREDOC_CONTENT;
                     parts.push(Doc::VerbatimLines(token));
@@ -680,6 +693,16 @@ fn brace_follows(token: &SyntaxToken) -> bool {
                 .is_some_and(|parent| parent.node_kind() == NodeKind::BLOCK);
     }
     false
+}
+
+/// Statements that get a blank line on each side (formatting.md BLANK_LINE-1).
+fn wants_surrounding_blank_lines(node: &SyntaxNode) -> bool {
+    matches!(node.node_kind(), NodeKind::SUB_DEF | NodeKind::PHASE_BLOCK)
+}
+
+/// Statements that get a blank line before them only.
+fn wants_preceding_blank_line(node: &SyntaxNode) -> bool {
+    matches!(node.node_kind(), NodeKind::POD | NodeKind::DATA_SECTION)
 }
 
 fn is_postfix_deref(kind: TokenKind) -> bool {

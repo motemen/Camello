@@ -7,6 +7,7 @@ local $g=4;
 my@arr=(1,2,3);
 our%hash=(a=>1);
 our($p,$q)=(1,2);
+state($s1,$s2);
 *glob=\*STDIN;
 
 # Local lvalue variations
@@ -30,6 +31,7 @@ my($a,undef,$c)=@list;
 my(undef,undef,$result)=func();
 our(undef,$y)=(1,2);
 our($r,undef)=@array;
+state($s3,undef);
 (undef,my @a)=@_;
 (my $x,undef,our @y)=get_values();
 (undef,our $cache,my %hash)=complex_func(@args);
@@ -44,7 +46,7 @@ undef $array[0];
 undef$x;
 undef	$y;
 undef $x,$y;
-undef($a);
+undef(@a);
 my $x = undef;
 $y = undef;
 return undef;

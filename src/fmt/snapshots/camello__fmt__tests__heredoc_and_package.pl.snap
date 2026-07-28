@@ -57,9 +57,13 @@ my $array = [1, 2, 3];
 ($foo || $bar) && ($x // $y);
 
 BEGIN { }
+
 CHECK { }
+
 INIT { }
+
 END { }
 
 sub attr_test : bar : baz { }
+
 sub attr_args : bar(1,2) { }

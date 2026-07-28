@@ -310,6 +310,29 @@ fn consecutive_blank_lines_collapse_to_one() {
     );
 }
 
+#[test]
+fn definitions_and_phase_blocks_stand_apart() {
+    // formatting.md BLANK_LINE-1. The blank line at the top of the file and the
+    // one that would land straight after `{` are dropped, so the rule can be
+    // stated without exceptions at the point it is applied.
+    assert_formats_to(
+        "my $x=1;\nsub foo { return 1; }\nmy $y=2;\n",
+        "my $x = 1;\n\nsub foo {\n    return 1;\n}\n\nmy $y = 2;\n",
+    );
+    assert_formats_to(
+        "BEGIN{$a=1;}INIT{$b=2;}\n",
+        "BEGIN {\n    $a = 1;\n}\n\nINIT {\n    $b = 2;\n}\n",
+    );
+    // A blank line before `__DATA__`, and none introduced inside a block.
+    assert_formats_to(
+        "my $x = 1;\n__DATA__\nraw\n",
+        "my $x = 1;\n\n__DATA__\nraw\n",
+    );
+    // A block that stays on one line gains no blank lines: there is no line for
+    // one to go on.
+    assert_formats_to("sub f { sub g { 1 } }\n", "sub f { sub g { 1 } }\n");
+}
+
 // ===== The invariants, over a wider corpus =====
 
 #[test]
