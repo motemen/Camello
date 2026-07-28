@@ -137,6 +137,12 @@ fn unary(parser: &mut Parser<'_>) -> Option<CompletedMarker> {
     if kind == TokenKind::FILE_TEST_OP {
         let marker = parser.start();
         parser.bump();
+        // `-f // 0` tests `$_` and falls back; see `starts_argument` for why
+        // only `//` is decided in operator position.
+        parser.expect_operator();
+        if parser.at_any(&[T!["//"], T!["//="]]) {
+            return Some(parser.complete(marker, NodeKind::FILE_TEST_EXPR));
+        }
         parser.expect_term();
         expr_bp(parser, Precedence::NAMED_UNARY);
         parser.expect_operator();
@@ -384,6 +390,21 @@ pub(crate) fn bareword_call(parser: &mut Parser<'_>) -> CompletedMarker {
             parser.complete(marker, NodeKind::LIST_CALL_EXPR)
         }
         Shape::BlockList => {
+            // `sort SUBNAME LIST` and `sort $coderef LIST`: the comparator is
+            // followed by the list with no comma between them. Parsing it as the
+            // first list element would stop at the second, so it gets its own
+            // slot — which is also what makes a name-based special case for
+            // `sort` unnecessary (ADR 0007 §2).
+            if comparator_follows(parser) {
+                let comparator = parser.start();
+                if let Some(base) = super::primary::primary(parser) {
+                    postfix(parser, base);
+                }
+                parser.complete(comparator, NodeKind::FILEHANDLE);
+                parser.expect_term();
+                list_arguments(parser);
+                return parser.complete(marker, NodeKind::LIST_CALL_EXPR);
+            }
             if parser.at(T!["{"]) {
                 block(parser);
                 parser.expect_term();
@@ -449,6 +470,30 @@ fn list_arguments(parser: &mut Parser<'_>) {
     list_contents(parser, &[]);
     parser.complete(marker, NodeKind::LIST_EXPR);
     parser.expect_operator();
+}
+
+/// A `sort`-style comparator: a scalar or a code reference, with a term after
+/// it and no comma in between.
+fn comparator_follows(parser: &mut Parser<'_>) -> bool {
+    parser.expect_term();
+    let leads = match parser.current() {
+        Some(TokenKind::SCALAR_SIGIL) => parser.nth_at(1, TokenKind::IDENT),
+        Some(T!["\\"]) => parser.nth(1) == Some(TokenKind::CODE_SIGIL),
+        _ => false,
+    };
+    if !leads {
+        return false;
+    }
+    // Two tokens for `$cmp`, three for `\&cmp`; whatever comes next must start
+    // the list rather than continue the expression.
+    let after = if parser.at(TokenKind::SCALAR_SIGIL) {
+        2
+    } else {
+        3
+    };
+    parser
+        .nth(after)
+        .is_some_and(|kind| kind.is_sigil() || kind == TokenKind::IDENT)
 }
 
 fn starts_argument(parser: &mut Parser<'_>) -> bool {
