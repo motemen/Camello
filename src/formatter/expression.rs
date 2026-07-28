@@ -117,14 +117,11 @@ impl Formatter {
             match child {
                 NodeOrToken::Node(child_node) => {
                     match child_node.kind() {
-                        SyntaxKind::BLOCK_STMT => {
+                        SyntaxKind::BLOCK_STMT
                             // Check if this is a simple block that can be formatted inline
-                            if self.is_simple_block(&child_node) {
+                            if self.is_simple_block(&child_node) => {
                                 self.format_simple_block(&child_node, ctx);
-                            } else {
-                                self.format_node(&child_node, ctx);
                             }
-                        }
                         _ => {
                             self.format_node(&child_node, ctx);
                         }

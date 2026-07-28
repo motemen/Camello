@@ -120,14 +120,10 @@ impl Parser<'_> {
         }
 
         // Parse binary operators with precedence climbing
-        loop {
-            let Some(current_kind) = self
-                .peek_non_trivia_token_with_context(LexContext::Operator)
-                .map(|(k, _)| k)
-            else {
-                break;
-            };
-
+        while let Some(current_kind) = self
+            .peek_non_trivia_token_with_context(LexContext::Operator)
+            .map(|(k, _)| k)
+        {
             if let Some(result) = self.handle_io_operator(primary_role, current_kind, checkpoint) {
                 return result;
             }
