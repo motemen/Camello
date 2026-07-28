@@ -250,10 +250,6 @@ mod redesign {
     const PARSE_GAPS: &[&str] = &[
         // `q\hello\` — a backslash as a quote-like delimiter.
         "src/formatter/fixtures/backslash_delimiter.pl",
-        // `try {...} catch {...}` used as an expression rather than a statement.
-        "src/formatter/fixtures/block_expressions.pl",
-        "src/formatter/fixtures/control_flow.pl",
-        "src/formatter/fixtures/try_function_style_expressions.pl",
         // A named unary builtin applied to a parenthesised list: `keys(%h)`.
         "src/formatter/fixtures/builtin_functions.pl",
         // A trailing comment as the last element of a broken list.
@@ -267,14 +263,12 @@ mod redesign {
         // `<` as both readline and comparison in one file.
         "src/formatter/fixtures/io_operator_disambiguation.pl",
         "src/parser/fixtures/success/io_operator_disambiguation.pl",
-        // Postfix `when` as a statement modifier.
-        "src/formatter/fixtures/postfix_when.pl",
         // `${^GLOBAL_PHASE}` and other caret variables in braces.
         "src/formatter/fixtures/specials_and_sigils.pl",
+        // `try {...} catch {...}` with a method call chained onto the result.
+        "src/formatter/fixtures/try_function_style_expressions.pl",
         // Signatures with `@rest` / `%opts` and attributes after them.
         "src/formatter/fixtures/sub_signatures.pl",
-        // `$code->()[0]`, which is legal where `f()[0]` is not.
-        "src/parser/fixtures/success/code_ref_call_direct_subscription.pl",
         // A bare block used as a loop, with `redo`.
         "src/parser/fixtures/success/control_flow_and_operators.pl",
         // `sub tr {}` and friends: quote-like keywords as subroutine names.

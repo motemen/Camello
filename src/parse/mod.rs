@@ -314,6 +314,16 @@ impl<'a> Parser<'a> {
         self.push_diagnostic(message.into(), range);
     }
 
+    /// Consume the current token as a name (ADR 0007 §5).
+    pub(crate) fn bump_name(&mut self) -> bool {
+        if self.lexer.take_name().is_none() {
+            return false;
+        }
+        self.steps_without_progress = 0;
+        self.events.token();
+        true
+    }
+
     /// The raw body of the `(...)` group at the cursor, without consuming it.
     pub(crate) fn raw_paren_body(&mut self) -> Option<&'a str> {
         self.lexer.peek_raw_paren_body()

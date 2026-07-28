@@ -202,23 +202,7 @@ impl<'a> Lexer<'a> {
 
     /// Length of the identifier at `offset`, including `::` separators.
     fn ident_len(&self, offset: usize) -> usize {
-        let bytes = self.rest_at(offset).as_bytes();
-        if bytes.is_empty() || !(bytes[0].is_ascii_alphabetic() || bytes[0] == b'_') {
-            return 0;
-        }
-        let mut end = 1;
-        while end < bytes.len() {
-            if bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_' {
-                end += 1;
-            } else if bytes[end] == b':' && bytes.get(end + 1) == Some(&b':') {
-                // Only a separator if a name follows; `Foo::` at the end of a
-                // package statement is still one name.
-                end += 2;
-            } else {
-                break;
-            }
-        }
-        end
+        ident_len_at(self.rest_at(offset))
     }
 
     fn scan_word(&mut self) {
@@ -538,6 +522,25 @@ impl<'a> Lexer<'a> {
             self.push(TokenKind::RAW_CONTENT, start, start + 1);
         }
     }
+}
+
+/// Length of the identifier at the start of `text`, `::` separators included.
+pub(super) fn ident_len_at(text: &str) -> usize {
+    let bytes = text.as_bytes();
+    if bytes.is_empty() || !(bytes[0].is_ascii_alphabetic() || bytes[0] == b'_') {
+        return 0;
+    }
+    let mut end = 1;
+    while end < bytes.len() {
+        if bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_' {
+            end += 1;
+        } else if bytes[end] == b':' && bytes.get(end + 1) == Some(&b':') {
+            end += 2;
+        } else {
+            break;
+        }
+    }
+    end
 }
 
 /// Symbolic operators, longest first so that `**=` wins over `**` and `*`.
