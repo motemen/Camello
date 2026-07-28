@@ -1,6 +1,8 @@
 # Camello 再設計評価と新アーキテクチャ方針
 
 **日付**: 2026-07-28
+**状態**: 診断は歴史的記録として保存する。ここで提案した再設計は実施済みで、
+現状は `notes/2026-07-28-redesign-migration-status.md` を参照。
 **目的**: ソースコード全体（約14,500行）の精読に基づき、現行アーキテクチャの構造的問題を診断し、再設計の方針を定める。
 **根拠**: 本文中の `file:line` は執筆時点の HEAD (741e365) に対する参照。検証済みバグは `target/debug/camello` に対して再現確認済み。
 
@@ -150,6 +152,11 @@ parser は `GreenNodeBuilder` に直接書き込む。rowan に `abandon_node` �
 3. **イベント式 parser**: 既存 parser fixture で差分レビュー。ワークアラウンドを固定化した約35本の fixture は「仕様として維持するか」を1本ずつ判定する（付録 C）。
 4. **Doc IR formatter**: 既存スナップショットで差分レビュー。意図的な挙動変更（例: コメント列のソースコピー廃止 → 規則ベースへ）は fixture 更新として明示コミットする。
 5. 新旧切り替え後、旧実装を削除。CLAUDE.md の虚偽記述（存在しない `Builder` API、実装されていないエラー回復戦略、dead な「source mapping」）を現実に合わせて更新する。
+
+> **ステップ2〜5は完了した。** 現状と残作業は
+> `notes/2026-07-28-redesign-migration-status.md` §6、
+> スナップショット差分の分類は `notes/2026-07-28-redesign-snapshot-classification.md`、
+> ADR からの逸脱は `notes/2026-07-28-redesign-deviation-log.md` を参照。
 
 formatter-first の順序も検討したが、parser の CST 形状不整合とトリビアの扱いが formatter に漏れているため、契約 → lexer → parser → formatter の順が結局早いと判断する。
 

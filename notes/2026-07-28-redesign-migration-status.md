@@ -182,23 +182,74 @@ open issue 群（#338, #339, #341, #342, #344, #345, #347, #368）に対応す�
 | ADR 0004 / 0005（D1〜D7） | 実装・通過 |
 | ADR 0006 / 0007（§3 の受け入れ基準3件） | 実装・充足 |
 | ADR 0008（F1〜F6） | 実装・通過 |
-| 旧実装の削除 | `src/lexer/` `src/parser/` `src/formatter/` `src/comments/` `src/syntax_kind/` を削除。14,502 行 → 8,331 行 |
+| 旧実装の削除 | `src/lexer/` `src/parser/` `src/formatter/` `src/comments/` `src/syntax_kind/` を削除。14,502 行 → 8,598 行 |
 | スナップショット差分の分類 | `notes/2026-07-28-redesign-snapshot-classification.md` |
-| 逸脱ログ | L-001 〜 L-007 |
-| CLAUDE.md の現実化 | 完了（存在しない `Builder` API、未実装のエラー回復戦略、dead な source mapping の記述を削除） |
+| 逸脱ログ | L-001 〜 L-008 |
+| CLAUDE.md の現実化 | 完了 |
+| fixture の監査（評価ノート付録 C） | 完了。§6.2 参照 |
 
 全 fixture 76 本が、診断なしでパースされ、可逆で、冪等で、意味を保存する。
+さらに全 76 本が perl の通る Perl であり、整形の前後で `B::Deparse` の出力が
+一致する。
 
-### 残っている課題
+### 6.1 検証の三層
 
-1. **忠実性の差分 4 件**（分類レポート §4）。多行 signature、heredoc 直後の
-   インデント、`+{%hash}` の空白規則、`[ +qw(a b) ]` の特例。
-2. **fixture の監査**（評価ノート付録 C）。約35本が旧実装のワークアラウンド挙動を
-   前提に書かれている可能性がある。出力の分類とは別の粒度の作業で、
-   fixture の入力そのものを1本ずつ判定する必要がある。
-3. **`DelimiterTightness` / `AlignmentStrategy`**（逸脱ログ L-006）。
+不変条件は互いに直交しており、どれか1つでは足りない。
+
+| 見つかるもの | `tests/invariants.rs` | `scripts/snapshot-diff` | `scripts/perl-check` |
+|---|---|---|---|
+| トークン列が変わる改変 | ○ | ○ | ○ |
+| 字句単位の内部に空白が入る | **×** | △ | **○** |
+| perl が拒否する出力 | × | △ | **○** |
+| 演算子の結合が変わる | × | △ | **○** |
+| コメント落ち・見た目の劣化 | × | **○** | × |
+| fixture 自体が非 Perl | × | × | **○** |
+
+`tests/invariants.rs` がトリビア以外のトークン列を比較する以上、
+**1つの字句単位が複数トークンに割れている箇所では原理的に盲目**である。
+`${^MATCH}` と `${^ MATCH}` はトークン列が同一で、変数としては別物だった。
+この盲点は実際に不具合を通しており、`scripts/perl-check` を足して塞いだ。
+
+- `scripts/snapshot-diff` — 切り替え直前（`22fbf18~1`）の formatter
+  スナップショットと現在の出力を突き合わせる。現状 一致 20 / 差分 27。
+- `scripts/perl-check` — perl 自身を正解とする。入力を perl が受け付ける
+  ものだけを対象に、出力も受け付けるか、`B::Deparse` の出力が一致するかを
+  見る。現状 検査 76 / 非 Perl 0 / 破壊 0 / 意味変化 0。
+
+  方言を2つ試すのは、`signatures` を有効にすると `sub f (&\%)` が不正な
+  signature になり、無効なら正しい prototype になるため。
+  1つの方言では fixture 全体を判定できない。これは camello が
+  （シンボル表を持たない以上）直面している曖昧性そのものである。
+
+### 6.2 fixture の監査（評価ノート付録 C）
+
+perl を通すことで機械的に片付いた。当初 15 本が perl に拒否されていたが、
+内訳は半々だった。
+
+**オラクル側の前提不足**（fixture は正しかった）: `use Foo` の解決、
+属性ハンドラ、Try::Tiny の export、未宣言サブルーチンの予告宣言、方言の選択。
+`scripts/perl-lib/CamelloOracle.pm` が供給する。
+
+**本当に非 Perl だったもの**（fixture を修正した）: `my *glob`、
+lexical への `local`、`state (...) = ...`、`undef($a,$b,$c)`、
+`($x + $y)++`、`$*`（5.30 で廃止）、2要素のドット付きバージョン、
+`sort \&custom LIST`、slurpy が2つある signature `($,@,%)`、
+核の try/catch と Try::Tiny 式形式の同居。
+
+最後の2つは単なる誤記ではない。`($,@,%)` は signature として不正なので
+perl は prototype として読み、それを signature とみなして整形すると
+**prototype の文字列を書き換える＝意味を変える**ことになっていた。
+
+### 6.3 残っている課題
+
+1. **忠実性の差分 4 件**（分類レポート §4）。多行 signature の改行、
+   `+{%hash}` の空白規則、`[ +qw(a b) ]` の特例、
+   BLANK_LINE-1 の `package` / `use` グループ前後。
+2. **`DelimiterTightness` / `AlignmentStrategy`**（逸脱ログ L-006）。
    オプションとしてではなく spacing 規則の分岐として再導入するかの判断。
-4. **実世界コーパスに対する差分回帰の CI 化**（評価ノート §4.4 の 4）。
-5. **max-width 自動折り返し**（formatting.md FUTURE-1、ADR 0008 §7）。
+3. **実世界コーパスへの `scripts/perl-check` 適用**（評価ノート §4.4 の 4）。
+   fixture 76 本はこちらが書いたものにすぎず、実世界の Perl のほうが
+   必ず意地悪である。`scripts/deperl` の対象が手近な候補。
+4. **max-width 自動折り返し**（formatting.md FUTURE-1、ADR 0008 §7）。
    Doc IR がそろったので「flat の測定幅が上限を超えたら broken に倒す」
    1パスを render の前に挟むだけで載る。
