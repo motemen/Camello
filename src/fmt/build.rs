@@ -5,6 +5,8 @@
 //! — replacing the seven separate "does the source have a newline here"
 //! predicates the old formatter had scattered across five files.
 
+use rowan::TextSize;
+
 use crate::lang::{
     NodeExt, NodeKind, SyntaxElement, SyntaxNode, SyntaxToken, TokenExt, TokenKind, T,
 };
@@ -19,6 +21,13 @@ pub struct Builder<'a> {
     /// Nesting depth of `=>`, so that an inner hash aligns separately from the
     /// one containing it (ADR 0008 §5).
     fat_comma_depth: u8,
+    /// Where every comment in the file starts, ascending.
+    ///
+    /// "Does this node contain a comment" is asked once per group and once per
+    /// candidate flat block. Answering it by walking the node is a tree walk
+    /// inside a tree walk; answering it by binary search over this is a
+    /// comparison. Built once, in [`Self::file`].
+    comment_starts: Vec<TextSize>,
 }
 
 impl<'a> Builder<'a> {
@@ -27,15 +36,34 @@ impl<'a> Builder<'a> {
             trivia,
             options,
             fat_comma_depth: 0,
+            comment_starts: Vec::new(),
         }
     }
 
     pub fn file(&mut self, root: &SyntaxNode) -> Doc {
+        self.comment_starts = root
+            .descendants_with_tokens()
+            .filter_map(|child| child.into_token())
+            .filter(|token| token.token_kind() == TokenKind::COMMENT)
+            .map(|token| token.text_range().start())
+            .collect();
+
         let mut parts = Vec::new();
         self.statements_into(root, &mut parts);
         // A file ends with exactly one newline.
         parts.push(Doc::HardLine);
         Doc::concat(parts)
+    }
+
+    /// Is there a comment anywhere inside this node?
+    fn contains_comment(&self, node: &SyntaxNode) -> bool {
+        let range = node.text_range();
+        let index = self
+            .comment_starts
+            .partition_point(|&start| start < range.start());
+        self.comment_starts
+            .get(index)
+            .is_some_and(|&start| start < range.end())
     }
 
     /// The statements of a root or a block, plus anything sitting between them.
@@ -90,7 +118,7 @@ impl<'a> Builder<'a> {
     /// formatter's two unrelated paths in two files, only one of which honoured
     /// the spacing option.
     fn leading_docs(&mut self, token: &SyntaxToken) -> Doc {
-        let trivia = self.trivia.at(token.text_range().start());
+        let trivia = self.trivia.of(token.text_range());
         if trivia.leading.is_empty() {
             return Doc::Nil;
         }
@@ -124,7 +152,7 @@ impl<'a> Builder<'a> {
 
     /// The comment sharing a line with this token.
     fn trailing_comment(&mut self, token: &SyntaxToken) -> Doc {
-        let trivia = self.trivia.at(token.text_range().start());
+        let trivia = self.trivia.of(token.text_range());
         for item in &trivia.trailing {
             if item.kind == TokenKind::COMMENT {
                 return Doc::Comment(item.text.clone(), Placement::Trailing);
@@ -138,6 +166,7 @@ impl<'a> Builder<'a> {
             NodeKind::BLOCK => self.block(node),
             NodeKind::POD | NodeKind::DATA_SECTION => self.verbatim(node),
             NodeKind::HEREDOC_BODY => self.verbatim(node),
+            NodeKind::ERROR => self.error(node),
             NodeKind::ARG_LIST | NodeKind::PAREN_EXPR => self.delimited(node, T!["("], T![")"]),
             NodeKind::ANON_ARRAY => self.delimited(node, T!["["], T!["]"]),
             NodeKind::ANON_HASH => self.delimited(node, T!["{"], T!["}"]),
@@ -333,6 +362,15 @@ impl<'a> Builder<'a> {
         if parent.is_some_and(is_quote_like_node) {
             return false;
         }
+        // The same, keyed on the token rather than on the node that should be
+        // holding it. A DELIMITER exists only as part of a quote-like run, so it
+        // is tight wherever it is found — including inside an ERROR node, where
+        // the run's own node is missing and the rule above cannot fire. That is
+        // how `s/xx\z//;` misparsed became `s/xx \ z /  /;`, and then grew by
+        // two spaces on every further pass.
+        if before == Some(TokenKind::DELIMITER) || after == Some(TokenKind::DELIMITER) {
+            return false;
+        }
         // `Foo::Bar` and `$#array`.
         if before == Some(T!["::"]) || after == Some(T!["::"]) {
             return false;
@@ -357,14 +395,14 @@ impl<'a> Builder<'a> {
         let is_newline = |item: &crate::parse::trivia::Trivia| item.kind == TokenKind::NEWLINE;
 
         let after_previous = last_token_of(previous)
-            .map(|token| self.trivia.at(token.text_range().start()))
+            .map(|token| self.trivia.of(token.text_range()))
             .is_some_and(|trivia| trivia.trailing.iter().any(is_newline));
         if after_previous {
             return true;
         }
 
         first_token_of(next)
-            .map(|token| self.trivia.at(token.text_range().start()))
+            .map(|token| self.trivia.of(token.text_range()))
             .is_some_and(|trivia| trivia.leading.iter().any(is_newline))
     }
 
@@ -376,11 +414,22 @@ impl<'a> Builder<'a> {
             Doc::Token(token.clone())
         };
 
-        let leading = self.leading_docs(token);
+        // A quote-like operator is scanned as one atomic run (ADR 0005 §3), so
+        // its parts are one lexical unit: a comment can precede the run or
+        // follow it, and there is nowhere in between for one to be. Only the
+        // outermost tokens ask, which leaves no interior token able to claim a
+        // comment and emit it a second time inside the literal.
+        let (asks_leading, asks_trailing) = run_edges(token);
+
+        let leading = if asks_leading {
+            self.leading_docs(token)
+        } else {
+            Doc::Nil
+        };
         // A comment sitting between a header and its brace belongs after the
         // brace, because the brace does not move (formatting.md NEWLINE-2).
         // `block` emits it there.
-        let trailing = if brace_follows(token) {
+        let trailing = if !asks_trailing || brace_follows(token) {
             Doc::Nil
         } else {
             self.trailing_comment(token)
@@ -389,6 +438,23 @@ impl<'a> Builder<'a> {
             return text;
         }
         Doc::concat(vec![leading, text, trailing])
+    }
+
+    /// Whatever the parser could not read, exactly as it was written.
+    ///
+    /// Every layout rule the formatter has is a rule about a construct it
+    /// recognised. Inside an ERROR node it recognised nothing, so applying them
+    /// is applying rules for a shape that is not there: a quote-like run whose
+    /// node is missing gets spaced out at the delimiters, and the spaces are
+    /// inside the literal on the next pass. Copying the source is the one
+    /// behaviour that cannot make a file worse than it was.
+    fn error(&mut self, node: &SyntaxNode) -> Doc {
+        let parts = node
+            .descendants_with_tokens()
+            .filter_map(|child| child.into_token())
+            .map(Doc::Raw)
+            .collect();
+        Doc::concat(parts)
     }
 
     /// POD, `__DATA__` and heredoc bodies: every token, trivia included.
@@ -405,6 +471,11 @@ impl<'a> Builder<'a> {
     }
 
     /// The comment that sat before this block's brace, to be emitted after it.
+    ///
+    /// The same predicate that suppressed it decides whether it is here, so the
+    /// two cannot disagree about who owns it. They did: for a bare block after
+    /// another statement, `brace_follows` claimed the previous statement's
+    /// trailing comment and this re-emitted it on the brace's line.
     fn comment_before_brace(&mut self, node: &SyntaxNode) -> Doc {
         let Some(first) = first_token(node) else {
             return Doc::Nil;
@@ -412,6 +483,9 @@ impl<'a> Builder<'a> {
         let mut previous = first.prev_token();
         while let Some(token) = previous {
             if !token.token_kind().is_trivia() {
+                if !brace_follows(&token) {
+                    return Doc::Nil;
+                }
                 return self.trailing_comment(&token);
             }
             previous = token.prev_token();
@@ -543,10 +617,16 @@ impl<'a> Builder<'a> {
 
     /// A bracketed group: parentheses, an anonymous array or an anonymous hash.
     ///
-    /// Broken exactly when the source put a newline straight after the opening
-    /// bracket (formatting.md INDENT-2). That rule is stable under
-    /// re-formatting, because a broken group's own output has the newline there
-    /// (ADR 0008 §6, I2).
+    /// Broken when the source put a newline straight after the opening bracket
+    /// (formatting.md INDENT-2) — a rule stable under re-formatting, because a
+    /// broken group's own output has the newline there (ADR 0008 §6, I2) — or
+    /// when the group holds a comment.
+    ///
+    /// The second half is not a taste judgement. A comment runs to end of line,
+    /// so it *is* a hard line break; a flat group is by definition one that
+    /// contains none. Leaving it out is how `my %h = ( # c\n a => 1,\n);`
+    /// formatted to `my %h = ( # ca => 1,);`, with the entry commented out of
+    /// existence.
     fn delimited(&mut self, node: &SyntaxNode, open: TokenKind, close: TokenKind) -> Doc {
         let opening = node
             .children_with_tokens()
@@ -558,9 +638,10 @@ impl<'a> Builder<'a> {
             .filter(|token| token.token_kind() == close)
             .last();
 
-        let broken = opening
-            .as_ref()
-            .is_some_and(|token| self.newline_follows(token));
+        let broken = self.contains_comment(node)
+            || opening
+                .as_ref()
+                .is_some_and(|token| self.newline_follows(token));
 
         let is_hash = open == T!["{"];
         if is_hash {
@@ -664,11 +745,18 @@ impl<'a> Builder<'a> {
         Doc::concat(parts)
     }
 
+    /// Does the rest of this token's line hold no more code?
+    ///
+    /// A comment counts as reaching the newline, because it runs to one: there
+    /// is no way to put anything after `# c` on its line and have it still be
+    /// code. Reading a COMMENT as "not a newline" is what let the formatter
+    /// believe a group with a comment in it could stay flat.
     fn newline_follows(&self, token: &SyntaxToken) -> bool {
         let mut cursor = token.next_sibling_or_token();
         while let Some(element) = cursor {
             match element.as_token() {
                 Some(next) if next.token_kind() == TokenKind::NEWLINE => return true,
+                Some(next) if next.token_kind() == TokenKind::COMMENT => return true,
                 Some(next) if next.token_kind() == TokenKind::WHITESPACE => {
                     cursor = next.next_sibling_or_token();
                 }
@@ -679,7 +767,39 @@ impl<'a> Builder<'a> {
     }
 }
 
-/// Is the next thing after this token a block's opening brace?
+/// Whether this token may carry leading and trailing trivia of its own.
+///
+/// Both, unless it is inside an atomic quote-like run, where only the first
+/// token of the run can be preceded by a comment and only the last can be
+/// followed by one.
+fn run_edges(token: &SyntaxToken) -> (bool, bool) {
+    let Some(parent) = token.parent() else {
+        return (true, true);
+    };
+    if !is_quote_like_node(parent.node_kind()) {
+        return (true, true);
+    }
+    let mut children = parent
+        .children_with_tokens()
+        .filter_map(|child| child.into_token());
+    let first = children.next();
+    let last = parent
+        .children_with_tokens()
+        .filter_map(|child| child.into_token())
+        .last();
+    (first.as_ref() == Some(token), last.as_ref() == Some(token))
+}
+
+/// Is the next thing after this token the opening brace of a block this token
+/// is part of the header of?
+///
+/// Both halves matter. The brace does not move (formatting.md NEWLINE-2), so a
+/// comment written before it comes out after it — but only when the comment was
+/// written *inside the construct*: `if ($x) # why` belongs to the `if`, whereas
+/// the trailing comment of `my $x = 1;` before a bare block belongs to the
+/// statement that ended. Claiming the second moved a comment across a statement
+/// boundary and, with the comment then emitted from two places, put two of them
+/// on the brace's line.
 fn brace_follows(token: &SyntaxToken) -> bool {
     let mut next = token.next_token();
     while let Some(candidate) = next {
@@ -687,10 +807,19 @@ fn brace_follows(token: &SyntaxToken) -> bool {
             next = candidate.next_token();
             continue;
         }
-        return candidate.token_kind() == T!["{"]
-            && candidate
-                .parent()
-                .is_some_and(|parent| parent.node_kind() == NodeKind::BLOCK);
+        if candidate.token_kind() != T!["{"] {
+            return false;
+        }
+        let Some(block) = candidate.parent() else {
+            return false;
+        };
+        if block.node_kind() != NodeKind::BLOCK {
+            return false;
+        }
+        let Some(header) = block.parent() else {
+            return false;
+        };
+        return token.parent_ancestors().any(|ancestor| ancestor == header);
     }
     false
 }

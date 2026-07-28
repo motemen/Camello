@@ -416,3 +416,74 @@ fn heredoc_bookkeeping_survives_lookahead_invalidation() {
         .collect();
     assert_eq!(rebuilt, source);
 }
+
+#[test]
+fn rollback_drops_lookahead_scanned_under_another_expectation() {
+    // The coherence guarantee of ADR 0005 §2 covers the whole buffer, not just
+    // the token at the mark. `foo{sub}` reaches here through
+    // `anon_hash_or_block`: the anonymous-hash attempt scans the `}` in operator
+    // position, the attempt is rolled back, and the block re-parse arrives at
+    // that same `}` expecting a term without ever changing `expect` — so nothing
+    // invalidates it. Under a debug build the assertion in `bump` fired; under a
+    // release build a token scanned as an operator was consumed as a term.
+    let mut lexer = Lexer::new("{ sub }");
+    let mark = lexer.mark();
+    assert_eq!(lexer.expect(), Expect::Term);
+
+    // The speculative attempt: walk to the `}` in operator position.
+    lexer.bump();
+    lexer.set_expect(Expect::Operator);
+    while lexer.peek_kind(0).is_some_and(|kind| kind != T!["}"]) {
+        lexer.bump();
+    }
+    assert_eq!(lexer.peek_kind(0), Some(T!["}"]));
+    assert_eq!(
+        lexer.peek(0).map(|token| token.expect_at_lex),
+        Some(Expect::Operator)
+    );
+
+    lexer.rollback(mark);
+
+    // Re-walk without ever leaving term position; the `}` must have been
+    // re-scanned under it.
+    lexer.bump();
+    while lexer.peek_kind(0).is_some_and(|kind| kind != T!["}"]) {
+        lexer.bump();
+    }
+    assert_eq!(
+        lexer.peek(0).map(|token| token.expect_at_lex),
+        Some(Expect::Term),
+        "the rolled-back lookahead was left in the buffer"
+    );
+}
+
+#[test]
+fn a_comma_after_a_quote_like_keyword_is_its_delimiter() {
+    // perl has no bareword exception for `,`: `(q, 1)` is a fatal "can't find
+    // string terminator" and `m,b,` is a match. Reading the comma as a separator
+    // turned `$v =~ m,/\z,,;` — which is what `HTTP::Config` contains — into a
+    // bareword and an unterminated regex.
+    assert_eq!(
+        kinds("m,/\\z,"),
+        vec![
+            T!["m"],
+            TokenKind::DELIMITER,
+            TokenKind::REGEX_PATTERN,
+            TokenKind::DELIMITER
+        ]
+    );
+    assert_eq!(
+        kinds("q,text,"),
+        vec![
+            T!["q"],
+            TokenKind::DELIMITER,
+            TokenKind::LITERAL_STRING,
+            TokenKind::DELIMITER
+        ]
+    );
+    assert_lossless("m,/\\z,,;");
+
+    // The exceptions that do exist are unaffected.
+    assert_eq!(kinds("s => 1")[0], TokenKind::IDENT);
+    assert_eq!(kinds("{q}")[1], TokenKind::IDENT);
+}

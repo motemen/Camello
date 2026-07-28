@@ -73,9 +73,32 @@ pub struct TriviaMap {
 
 impl TriviaMap {
     /// Trivia for the token starting at `offset`.
+    ///
+    /// Prefer [`Self::of`] where the token's range is in hand: a start offset
+    /// identifies at most one token *of non-zero width*, and this cannot tell
+    /// the difference.
     #[must_use]
     pub fn at(&self, offset: TextSize) -> &TokenTrivia {
         self.by_token_start.get(&offset).unwrap_or(&self.empty)
+    }
+
+    /// Trivia for the token occupying `range`.
+    ///
+    /// A zero-width token starts exactly where the next token starts — the empty
+    /// replacement list of `s/a//` and the delimiter after it both begin at the
+    /// same offset — so keying on the start alone hands one run of trivia to two
+    /// owners and the formatter emits it twice. A token with no text can own no
+    /// trivia, which settles the ambiguity without needing a second key.
+    ///
+    /// The visible form of getting this wrong was `$x =~ s/a// # c` formatting
+    /// to `$x =~ s/a/ # c/ # c`: a comment moved inside the replacement string
+    /// and "delete a" became "replace a with ' # c'".
+    #[must_use]
+    pub fn of(&self, range: TextRange) -> &TokenTrivia {
+        if range.is_empty() {
+            return &self.empty;
+        }
+        self.at(range.start())
     }
 
     #[must_use]
