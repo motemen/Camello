@@ -15,7 +15,7 @@ use crate::lang::{
 use crate::parse::trivia::TriviaMap;
 
 use super::doc::{AnchorClass, Doc, Placement, ShapeKey};
-use super::FormatterOptions;
+use super::{DelimiterSpacing, FormatterOptions};
 
 pub struct Builder<'a> {
     trivia: &'a TriviaMap,
@@ -795,11 +795,22 @@ impl<'a> Builder<'a> {
             parts.push(Doc::indent(Doc::concat(vec![Doc::SoftLine, body])));
             parts.push(Doc::SoftLine);
         } else {
-            if is_hash {
+            // formatting.md SPACING-7: whether a flat literal pads its inside
+            // depends on the configured spacing and how many items it holds.
+            // An `a => 1` pair is two items, so `{ a => 1 }` keeps its spaces
+            // under Standard while `[$x]` stays tight. Parentheses are always
+            // tight, whatever the setting.
+            let spacious = open != T!["("]
+                && match self.options.delimiter_spacing {
+                    DelimiterSpacing::Tight => false,
+                    DelimiterSpacing::Standard => Self::item_count(node) >= 2,
+                    DelimiterSpacing::Loose => true,
+                };
+            if spacious {
                 parts.push(Doc::Space);
             }
             parts.push(body);
-            if is_hash {
+            if spacious {
                 parts.push(Doc::Space);
             }
         }
@@ -807,6 +818,20 @@ impl<'a> Builder<'a> {
             parts.push(self.token(token));
         }
         Doc::group(broken, Doc::concat(parts))
+    }
+
+    /// How many items a delimited literal holds, where both `,` and `=>`
+    /// separate items (SPACING-7 counts `key => 'val'` as two).
+    fn item_count(node: &SyntaxNode) -> usize {
+        node.children()
+            .map(|child| {
+                if child.node_kind() == NodeKind::LIST_EXPR {
+                    child.children().count()
+                } else {
+                    1
+                }
+            })
+            .sum()
     }
 
     /// The elements of a list, one per line when the group is broken.

@@ -5,7 +5,7 @@ expression: format(&source)
 # Single line comment
 # Another comment
 sub foo {
-    my $x; # inline comment
+    my $x;    # inline comment
 }
 
 # Comment before sub

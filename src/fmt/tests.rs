@@ -168,7 +168,7 @@ fn comment_before_a_block_keeps_the_brace_on_its_line() {
     // K&R: the brace stays on the `if` line, and the comment that sat before it
     // moves after it, because the brace is the formatter's to place.
     let first = formatted.lines().next().unwrap_or_default();
-    assert_eq!(first, "if ($x) { # why", "{formatted}");
+    assert_eq!(first, "if ($x) {    # why", "{formatted}");
     assert!(
         !formatted.contains("\n\n"),
         "and no blank line is introduced:\n{formatted}"
@@ -271,7 +271,7 @@ fn postfix_dereference_binds_tight() {
 fn comments_keep_their_line_and_their_ownership() {
     assert_formats_to(
         "# own line\nmy $x = 1;   # trailing\n",
-        "# own line\nmy $x = 1; # trailing\n",
+        "# own line\nmy $x = 1;    # trailing\n",
     );
 }
 
@@ -453,7 +453,7 @@ fn a_comment_after_a_substitution_stays_outside_it() {
     let source = "$x =~ s/a//   # c\n  || 1;\n";
     let formatted = format(source);
     assert!(
-        formatted.starts_with("$x =~ s/a// # c\n"),
+        formatted.starts_with("$x =~ s/a//    # c\n"),
         "the comment must stay outside the replacement:\n{formatted}"
     );
     assert_preserves_comments(source);
@@ -528,7 +528,7 @@ fn a_header_comment_and_a_brace_comment_both_survive() {
         format("if ($y)    # about the condition\n{ # about the block\n    print 1;\n}\n");
     assert_eq!(
         formatted,
-        "if ($y) { # about the block\n    # about the condition\n    print 1;\n}\n"
+        "if ($y) {    # about the block\n    # about the condition\n    print 1;\n}\n"
     );
     assert_idempotent(&formatted);
 }

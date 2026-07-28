@@ -129,6 +129,11 @@
   分類レポート §2.2 に記録した。
 - **原状回復**: オプションではなく `wants_space` の分岐として再導入する。
   `FormatterOptions` を build 側に渡す配線はすでにある。
+- **解決（2026-07-28 追記）**: ユーザーの要望により再導入した。この項の方針どおり
+  build 時の spacing 分岐として実装（`FormatterOptions::delimiter_spacing`、
+  `tight` / `standard` / `loose`、既定 `standard` = 旧 SPACING-7 準拠。丸括弧は常に tight）。
+  あわせて `min_spaces_before_comment` の既定を 1 → 4（旧実装の perltidy 風の見た目）に変更。
+  formatting.md SPACING-7 / COMMENT-3 も更新済み。
 
 ---
 

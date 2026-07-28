@@ -17,7 +17,7 @@ pub mod parse;
 use std::sync::Arc;
 
 pub use diagnostic::ParseError;
-pub use fmt::FormatterOptions;
+pub use fmt::{DelimiterSpacing, FormatterOptions};
 pub use lang::{NodeKind, SyntaxKind, SyntaxNode, SyntaxToken, TokenKind};
 pub use parse::TriviaMap;
 

@@ -2,7 +2,7 @@
 source: src/fmt/tests.rs
 expression: format(&source)
 ---
-my $x = 1; # inline comment
+my $x = 1;    # inline comment
 
 # leading doc
 # continues
@@ -10,7 +10,7 @@ sub foo {
     say $x;
 }
 
-my $y = 2; # trailing comment
+my $y = 2;    # trailing comment
 # comment after newline
 # and another
 say $y;
