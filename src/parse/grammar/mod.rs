@@ -31,6 +31,19 @@ fn statement(parser: &mut Parser<'_>) {
             parser.bump();
             parser.complete(marker, NodeKind::POD);
         }
+        // The whole declaration arrived as one run from the lexer; there is
+        // nothing to parse inside it, only somewhere to put it.
+        T!["format"] => {
+            let marker = parser.start();
+            parser.bump();
+            if parser.at(TokenKind::RAW_CONTENT) {
+                parser.bump();
+            }
+            if parser.at(TokenKind::FORMAT_CONTENT) {
+                parser.bump();
+            }
+            parser.complete(marker, NodeKind::FORMAT_DECL);
+        }
         T!["__END__"] | T!["__DATA__"] => {
             let marker = parser.start();
             parser.bump();

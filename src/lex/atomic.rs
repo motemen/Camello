@@ -379,6 +379,92 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Byte length of a `format` header — `format NAME =` up to end of line —
+    /// measured from the keyword, or `None` if this `format` is an ordinary word.
+    ///
+    /// `keyword_len` is the length of `format` itself, already scanned.
+    pub(super) fn format_header_len(&self, keyword_len: usize) -> Option<usize> {
+        let rest = &self.remaining()[keyword_len..];
+        let mut offset = rest.len() - rest.trim_start_matches([' ', '\t']).len();
+
+        // The name is optional: a bare `format =` writes to the currently
+        // selected filehandle.
+        let name = super::scan::ident_len_at(&rest[offset..]);
+        offset += name;
+        offset += rest[offset..].len() - rest[offset..].trim_start_matches([' ', '\t']).len();
+
+        if !rest[offset..].starts_with('=') {
+            return None;
+        }
+        offset += 1;
+        // Nothing but the line ending may follow the `=`; `format => 1` is a
+        // fat comma and `$x = format $y` is a call.
+        let line_end = rest[offset..].find('\n').unwrap_or(rest[offset..].len());
+        if !rest[offset..offset + line_end].trim().is_empty() {
+            return None;
+        }
+        Some(keyword_len + offset)
+    }
+
+    /// A `format` declaration, scanned whole (ADR 0005 §3).
+    ///
+    /// The picture lines are not code and not an expression: `@<<<<` is a
+    /// left-justified field five characters wide, and every space in it counts.
+    /// Parsed as an expression it came out as `@< << <` — four tokens spaced by
+    /// the formatter into something that means nothing — with no diagnostic to
+    /// say so.
+    pub(super) fn scan_format(&mut self, keyword_len: usize) {
+        let start = self.scan_pos;
+        let Some(header_len) = self.format_header_len(keyword_len) else {
+            self.push(T!["format"], start, start + keyword_len);
+            return;
+        };
+
+        self.push(T!["format"], start, start + keyword_len);
+        // The header is one span: its internal spacing is the writer's, and
+        // there is nothing in it for the formatter to lay out.
+        if header_len > keyword_len {
+            let header_start = self.scan_pos;
+            self.push(TokenKind::RAW_CONTENT, header_start, start + header_len);
+        }
+
+        let rest = self.remaining();
+        let newline_len = if rest.starts_with("\r\n") {
+            2
+        } else {
+            usize::from(rest.starts_with('\n'))
+        };
+        if newline_len == 0 {
+            return;
+        }
+        let newline_start = self.scan_pos;
+        self.push(
+            TokenKind::NEWLINE,
+            newline_start,
+            newline_start + newline_len,
+        );
+
+        // Everything up to and including the line holding only `.`.
+        let body = self.remaining();
+        let mut offset = 0usize;
+        let end = loop {
+            let line_end = body[offset..]
+                .find('\n')
+                .map_or(body.len(), |index| offset + index);
+            if body[offset..line_end].trim_end_matches('\r') == "." {
+                break line_end;
+            }
+            if line_end >= body.len() {
+                break body.len();
+            }
+            offset = line_end + 1;
+        };
+        if end > 0 {
+            let body_start = self.scan_pos;
+            self.push(TokenKind::FORMAT_CONTENT, body_start, body_start + end);
+        }
+    }
+
     /// A POD block, from a `=command` in column 0 to the end of its `=cut` line.
     pub(super) fn scan_pod(&mut self) {
         let start = self.scan_pos;

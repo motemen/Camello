@@ -5,6 +5,8 @@
 //! — replacing the seven separate "does the source have a newline here"
 //! predicates the old formatter had scattered across five files.
 
+use std::collections::HashMap;
+
 use rowan::TextSize;
 
 use crate::lang::{
@@ -28,6 +30,15 @@ pub struct Builder<'a> {
     /// inside a tree walk; answering it by binary search over this is a
     /// comparison. Built once, in [`Self::file`].
     comment_starts: Vec<TextSize>,
+    /// Where every line terminator in the file is, ascending. Same reason as
+    /// `comment_starts`: "was this written across lines" is asked once per
+    /// candidate flat block, and the alternative was allocating the node's whole
+    /// text to search it.
+    newline_starts: Vec<TextSize>,
+    /// Answers already given by [`Self::block_can_be_flat`], keyed on where the
+    /// block starts. A block's answer depends on the blocks inside it, so
+    /// without this the recursion re-derives every level from every level above.
+    flat_blocks: HashMap<TextSize, bool>,
 }
 
 impl<'a> Builder<'a> {
@@ -37,16 +48,25 @@ impl<'a> Builder<'a> {
             options,
             fat_comma_depth: 0,
             comment_starts: Vec::new(),
+            newline_starts: Vec::new(),
+            flat_blocks: HashMap::new(),
         }
     }
 
     pub fn file(&mut self, root: &SyntaxNode) -> Doc {
-        self.comment_starts = root
+        for token in root
             .descendants_with_tokens()
             .filter_map(|child| child.into_token())
-            .filter(|token| token.token_kind() == TokenKind::COMMENT)
-            .map(|token| token.text_range().start())
-            .collect();
+        {
+            if token.token_kind() == TokenKind::COMMENT {
+                self.comment_starts.push(token.text_range().start());
+            }
+            let start = usize::from(token.text_range().start());
+            for (offset, _) in token.text().match_indices('\n') {
+                self.newline_starts
+                    .push(TextSize::try_from(start + offset).expect("offset is in range"));
+            }
+        }
 
         let mut parts = Vec::new();
         self.statements_into(root, &mut parts);
@@ -57,13 +77,12 @@ impl<'a> Builder<'a> {
 
     /// Is there a comment anywhere inside this node?
     fn contains_comment(&self, node: &SyntaxNode) -> bool {
-        let range = node.text_range();
-        let index = self
-            .comment_starts
-            .partition_point(|&start| start < range.start());
-        self.comment_starts
-            .get(index)
-            .is_some_and(|&start| start < range.end())
+        contains(&self.comment_starts, node)
+    }
+
+    /// Was this node written across more than one line?
+    fn contains_newline(&self, node: &SyntaxNode) -> bool {
+        contains(&self.newline_starts, node)
     }
 
     /// The statements of a root or a block, plus anything sitting between them.
@@ -90,7 +109,7 @@ impl<'a> Builder<'a> {
                 }
                 SyntaxElement::Token(token) if token.token_kind().is_heredoc_body() => {
                     let terminator = token.token_kind() != TokenKind::HEREDOC_CONTENT;
-                    parts.push(Doc::VerbatimLines(token));
+                    parts.push(Doc::VerbatimLines(token.text().into()));
                     if terminator {
                         parts.push(Doc::HardLine);
                     }
@@ -165,6 +184,7 @@ impl<'a> Builder<'a> {
         match node.node_kind() {
             NodeKind::BLOCK => self.block(node),
             NodeKind::POD | NodeKind::DATA_SECTION => self.verbatim(node),
+            NodeKind::FORMAT_DECL => self.format_decl(node),
             NodeKind::HEREDOC_BODY => self.verbatim(node),
             NodeKind::ERROR => self.error(node),
             NodeKind::ARG_LIST | NodeKind::PAREN_EXPR => self.delimited(node, T!["("], T![")"]),
@@ -440,6 +460,30 @@ impl<'a> Builder<'a> {
         Doc::concat(vec![leading, text, trailing])
     }
 
+    /// A `format` declaration: header laid out, picture lines untouched.
+    ///
+    /// The header is ordinary code and takes the statement's indentation. The
+    /// picture lines are not: `@<<<<` is a field five characters wide, so every
+    /// character of them, leading whitespace included, is reproduced where it
+    /// was.
+    fn format_decl(&mut self, node: &SyntaxNode) -> Doc {
+        let mut parts = vec![self.leading_docs_of(node)];
+        for token in node
+            .children_with_tokens()
+            .filter_map(|child| child.into_token())
+        {
+            match token.token_kind() {
+                TokenKind::FORMAT_CONTENT => parts.push(Doc::VerbatimLines(token.text().into())),
+                kind if kind.is_trivia() => {}
+                // No `Doc::Space` between them: the header arrives as the
+                // keyword and one raw span that already holds the writer's
+                // spacing, so inserting more would double it.
+                _ => parts.push(Doc::Token(token)),
+            }
+        }
+        Doc::concat(parts)
+    }
+
     /// Whatever the parser could not read, exactly as it was written.
     ///
     /// Every layout rule the formatter has is a rule about a construct it
@@ -457,17 +501,34 @@ impl<'a> Builder<'a> {
         Doc::concat(parts)
     }
 
-    /// POD, `__DATA__` and heredoc bodies: every token, trivia included.
+    /// POD, `__DATA__`, a `format` picture and heredoc bodies: the region's
+    /// source text, reproduced where it was.
     ///
-    /// Dropping the newline between `__DATA__` and its contents would join them
-    /// into one line, and the result would not even re-parse the same way.
+    /// One `VerbatimLines` for the whole node rather than one per token. These
+    /// constructs exist in column 0 and nowhere else — the lexer recognises
+    /// `=head1` and `__END__` at a line start and there only (ADR 0005 §5) — so
+    /// indenting one produces output that no longer contains it. Emitting them
+    /// token by token put the first in column 0 and left the rest to pick up the
+    /// enclosing block's indentation, which is the same bug one token along.
     fn verbatim(&mut self, node: &SyntaxNode) -> Doc {
-        let parts = node
-            .children_with_tokens()
-            .filter_map(|child| child.into_token())
-            .map(Doc::Raw)
-            .collect();
-        Doc::concat(parts)
+        let leading = self.leading_docs_of(node);
+        Doc::concat(vec![
+            leading,
+            Doc::VerbatimLines(node.text().to_string().into()),
+        ])
+    }
+
+    /// The own-line comments and blank lines written before this node.
+    ///
+    /// Nodes emitted as one verbatim region never reach [`Self::token`], so
+    /// without this the comment above a `__DATA__` or a `=head1` is simply not
+    /// emitted — which no invariant noticed until comment preservation became
+    /// one.
+    fn leading_docs_of(&mut self, node: &SyntaxNode) -> Doc {
+        match first_token(node) {
+            Some(token) => self.leading_docs(&token),
+            None => Doc::Nil,
+        }
     }
 
     /// The comment that sat before this block's brace, to be emitted after it.
@@ -541,15 +602,35 @@ impl<'a> Builder<'a> {
     }
 
     /// The single rule that replaces `is_simple_block`'s seven rejections plus
-    /// its memoisation plus the `suppress_newlines` flag that leaked past both.
-    fn block_can_be_flat(&self, node: &SyntaxNode, statements: &[SyntaxNode]) -> bool {
+    /// the `suppress_newlines` flag that leaked past them.
+    ///
+    /// Memoised, and asking only about the *nearest* nested blocks. Without
+    /// either, twenty nested `sub {` — forty characters of input — took over
+    /// ninety seconds: recursing into every descendant block meant each level
+    /// re-answered the question for every level below it, and each answer
+    /// allocated the node's whole text to look for a newline in it.
+    fn block_can_be_flat(&mut self, node: &SyntaxNode, statements: &[SyntaxNode]) -> bool {
+        let key = node.text_range().start();
+        if let Some(&answer) = self.flat_blocks.get(&key) {
+            return answer;
+        }
+        let answer = self.compute_block_can_be_flat(node, statements);
+        self.flat_blocks.insert(key, answer);
+        answer
+    }
+
+    fn compute_block_can_be_flat(&mut self, node: &SyntaxNode, statements: &[SyntaxNode]) -> bool {
+        // Error recovery can leave a block with no closing brace. There is no
+        // `{ x }` to fit on a line, so there is nothing to be flat, and saying
+        // otherwise makes the output re-read as a different shape on the next
+        // pass.
+        if brace(node, T!["}"], true).is_none() {
+            return false;
+        }
         // An empty block is `{ }` wherever it appears; there is nothing to put
         // on a line of its own.
         if statements.is_empty() {
-            return !node
-                .descendants_with_tokens()
-                .filter_map(|child| child.into_token())
-                .any(|token| token.token_kind() == TokenKind::COMMENT);
+            return !self.contains_comment(node);
         }
         if statements.len() != 1 {
             return false;
@@ -584,7 +665,7 @@ impl<'a> Builder<'a> {
         // statement that ends in `;` reads as a body rather than a value
         // (ADR 0008 §3: single statement, no semicolon, no comment, no source
         // newline).
-        if node.text().to_string().contains('\n') {
+        if self.contains_newline(node) {
             return false;
         }
         if statements[0]
@@ -594,11 +675,7 @@ impl<'a> Builder<'a> {
         {
             return false;
         }
-        if node
-            .descendants_with_tokens()
-            .filter_map(|child| child.into_token())
-            .any(|token| token.token_kind() == TokenKind::COMMENT)
-        {
+        if self.contains_comment(node) {
             return false;
         }
 
@@ -606,13 +683,17 @@ impl<'a> Builder<'a> {
         // block that has to break cannot itself be flat. Keeping this a property
         // of the structure is what removes the old `suppress_newlines` flag and
         // the leaks it caused (F2).
-        node.descendants()
-            .skip(1)
-            .filter(|child| child.node_kind() == NodeKind::BLOCK)
-            .all(|child| {
-                let statements: Vec<SyntaxNode> = child.children().collect();
-                self.block_can_be_flat(&child, &statements)
-            })
+        //
+        // Only the nearest nested blocks: each of them asks the same question of
+        // its own, so the answer covers every depth without this level walking
+        // there itself.
+        for child in nearest_blocks(node) {
+            let statements: Vec<SyntaxNode> = child.children().collect();
+            if !self.block_can_be_flat(&child, &statements) {
+                return false;
+            }
+        }
+        true
     }
 
     /// A bracketed group: parentheses, an anonymous array or an anonymous hash.
@@ -765,6 +846,31 @@ impl<'a> Builder<'a> {
         }
         false
     }
+}
+
+/// Does any of these ascending offsets fall inside the node?
+fn contains(offsets: &[TextSize], node: &SyntaxNode) -> bool {
+    let range = node.text_range();
+    let index = offsets.partition_point(|&start| start < range.start());
+    offsets.get(index).is_some_and(|&start| start < range.end())
+}
+
+/// The blocks inside this node that no other block lies between.
+///
+/// Answering a question about "every nested block" by asking it of these, and
+/// letting each of them do the same, is what keeps the recursion linear: the
+/// alternative visits a block once for every ancestor it has.
+fn nearest_blocks(node: &SyntaxNode) -> Vec<SyntaxNode> {
+    let mut found = Vec::new();
+    let mut pending: Vec<SyntaxNode> = node.children().collect();
+    while let Some(child) = pending.pop() {
+        if child.node_kind() == NodeKind::BLOCK {
+            found.push(child);
+        } else {
+            pending.extend(child.children());
+        }
+    }
+    found
 }
 
 /// Whether this token may carry leading and trailing trivia of its own.

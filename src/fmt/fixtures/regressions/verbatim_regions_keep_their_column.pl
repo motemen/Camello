@@ -1,0 +1,41 @@
+use strict;
+use warnings;
+
+# Trailing whitespace inside a raw atom is content, not formatting. Trimming it
+# is the I1 violation the three-phase split was supposed to make
+# unrepresentable — and under a non-`/x` pattern it changes what matches.
+my $extended = qr/
+  a
+  b
+/x;
+
+my $multiline = "first line
+second line";
+
+sub reads_data {
+    # `__END__` and `=pod` exist in column 0 and nowhere else (ADR 0005 §5).
+    # Indenting one, which is what happens when a guard clause puts it inside a
+    # block, produces output with no `__END__` in it at all.
+    print "hello\n";
+}
+
+# A `format` declaration is not an expression. `@<<<<` is a left-justified
+# field five characters wide; parsed and re-spaced it became `@< << <`, which
+# is four things that mean nothing, and no diagnostic said so.
+format STDOUT =
+@<<<<<<<<< @>>>>>>>>>
+$::left,   $::right
+.
+
+format STDOUT_TOP =
+Left       Right
+---------- ----------
+.
+
+reads_data();
+
+__END__
+
+Trailing blank lines below this point are content: `while (<DATA>)` counts them.
+
+

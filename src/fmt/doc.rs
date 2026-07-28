@@ -45,8 +45,14 @@ pub enum Doc {
     ///
     /// A heredoc body is the case: it begins at a line start in the source and
     /// must begin at a line start in the output, whatever the indentation of the
-    /// statement its marker appeared in.
-    VerbatimLines(SyntaxToken),
+    /// statement its marker appeared in. POD, `__DATA__` and the picture lines
+    /// of a `format` are the same.
+    ///
+    /// Text rather than a token, because a region is not always one token —
+    /// `__END__`, the newline after it and the data are three — and the whole
+    /// region has to be written in one go. Written token by token, the second
+    /// one starts on an empty line and picks up the enclosing indentation.
+    VerbatimLines(smol_str::SmolStr),
     /// Exactly one space. Spacing is decided during build, so the renderer never
     /// inserts one on its own and there is nothing for a call site to bypass.
     Space,

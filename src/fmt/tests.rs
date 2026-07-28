@@ -506,6 +506,122 @@ fn assert_preserves_comments(source: &str) {
     );
 }
 
+// ===== The 2026-07-28 review: robustness =====
+
+#[test]
+fn nested_blocks_do_not_take_exponential_time() {
+    // P1-1. Twenty nested `sub {` — forty characters — took over ninety
+    // seconds. Each level re-answered "can this be flat" for every level below
+    // it, and each answer allocated the node's whole text to search it for a
+    // newline. Two hundred levels is ten times deeper and finishes instantly.
+    let source = format!("{}1{};\n", "sub { ".repeat(200), " }".repeat(200));
+    let start = Instant::now();
+    let _ = format(&source);
+    let elapsed = start.elapsed().as_secs_f64();
+    assert!(
+        elapsed < 5.0,
+        "200 nested blocks took {elapsed:.3}s; that is not linear"
+    );
+}
+
+#[test]
+fn input_deeper_than_the_limit_is_reported_and_kept() {
+    // P1-2 and P1-3. A thousand open parentheses aborted the process — the step
+    // limit was a `panic!` in release builds too — and the formatter's own
+    // recursive walk ran out of stack a little deeper. It is a diagnostic now,
+    // what could not be parsed is copied out unchanged, and the output is still
+    // a fixed point.
+    for source in [
+        format!("{}1{};\n", "(".repeat(2000), ")".repeat(2000)),
+        format!("{}{};\n", "[".repeat(2000), "]".repeat(2000)),
+        format!("{}1{};\n", "sub { ".repeat(2000), " }".repeat(2000)),
+    ] {
+        let (formatted, errors) = crate::format_perl(&source);
+        assert!(!errors.is_empty(), "the limit must be reported");
+        assert_eq!(
+            formatted.chars().filter(|ch| !ch.is_whitespace()).count(),
+            source.chars().filter(|ch| !ch.is_whitespace()).count(),
+            "nothing may be dropped when the limit is reached"
+        );
+        assert_idempotent(&source);
+    }
+}
+
+#[test]
+fn verbatim_content_keeps_its_trailing_whitespace() {
+    // P1-5. `finish_line` trimmed every line, including the ones that end
+    // inside a raw atom, where the whitespace is content. Two corpus modules
+    // deparsed differently because of it.
+    let source = "my $re = qr/\n  a  \n  b\n/x;\n";
+    assert!(
+        format(source).contains("  a  \n"),
+        "the pattern lost characters: {}",
+        format(source)
+    );
+    assert_idempotent(source);
+
+    // And the blank lines at the end of a `__DATA__` section, which
+    // `while (<DATA>)` counts.
+    let source = "my $x = 1;\n__DATA__\nline1\n\n\n";
+    assert!(
+        format(source).ends_with("line1\n\n\n"),
+        "{:?}",
+        format(source)
+    );
+    assert_idempotent(source);
+}
+
+#[test]
+fn verbatim_regions_start_in_column_zero() {
+    // P1-6. `__END__` and `=head1` are recognised at a line start and nowhere
+    // else (ADR 0005 §5), so a region that begins inside an open block still
+    // begins in column 0 — and indenting it produces output that no longer has
+    // a data section in it.
+    let source = "sub f {\n    print 1;\n__END__\nrest\n";
+    let formatted = format(source);
+    assert!(
+        formatted.contains("\n__END__\nrest\n"),
+        "the region was indented out of existence:\n{formatted}"
+    );
+    assert_idempotent(source);
+
+    let source = "sub f {\n=head1 X\n\ndoc\n\n=cut\n    print 1;\n}\n";
+    assert!(format(source).contains("\n=head1 X"), "{}", format(source));
+    assert_idempotent(source);
+
+    // The other half of the same rule: indented, the marker is an ordinary
+    // word. Moving it to column 0 to match the kind the lexer gave it would
+    // turn the rest of the enclosing block into data.
+    let source = "sub f {\n    print 1;\n    __END__\n}\ntail\n";
+    assert!(
+        format(source).contains("    __END__\n}"),
+        "an indented marker is a word and stays where it is:\n{}",
+        format(source)
+    );
+    assert_idempotent(source);
+    assert_preserves_semantics(source);
+}
+
+#[test]
+fn a_format_declaration_is_carried_through_untouched() {
+    // P1-7. `@<<<<` is a left-justified field five characters wide. Parsed as
+    // an expression it came out as `@< << <`, which is four things that mean
+    // nothing, and nothing was reported.
+    let source = "format STDOUT =\n@<<<<< @>>>>>\n$a,    $b\n.\n\nprint 1;\n";
+    let formatted = format(source);
+    assert!(
+        formatted.contains("@<<<<< @>>>>>\n$a,    $b\n.\n"),
+        "the picture lines were rewritten:\n{formatted}"
+    );
+    assert_idempotent(source);
+    assert_preserves_semantics(source);
+
+    // And `format` is only a keyword where a declaration follows it.
+    assert_formats_to("my %h = (format => 1);\n", "my %h = (format => 1);\n");
+    assert_formats_to("my $x = $o->format($y);\n", "my $x = $o->format($y);\n");
+    assert_formats_to("sub format { 1 }\n", "sub format { 1 }\n");
+}
+
 // ===== I2: the seed rule reproduces its own output =====
 
 /// The flat-or-broken decision of every group, in document order.

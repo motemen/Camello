@@ -88,6 +88,8 @@ define_language! {
         // (ADR 0005 §5).
         "x"          => X_OP,
 
+        "format"     => FORMAT_KW,
+
         "__END__"    => END_KW,
         "__DATA__"   => DATA_KW,
     }
@@ -230,6 +232,11 @@ define_language! {
 
         POD_CONTENT         : "POD block",
         DATA_CONTENT        : "data section",
+        // The picture lines of a `format` declaration, from the line after the
+        // `=` to the line holding only `.`. Every character is significant:
+        // `@<<<<` is a left-justified field five wide, and `@< << <` is four
+        // things that are not.
+        FORMAT_CONTENT      : "format picture",
 
         FILE_TEST_OP        : "file test operator",
         // `<STDIN>`, `<$fh>`, `<>`. Scanned as one token so that the parser
@@ -270,6 +277,7 @@ define_language! {
         PHASE_BLOCK,
         POD,
         DATA_SECTION,
+        FORMAT_DECL,
         EMPTY_STMT,
         ERROR,
 

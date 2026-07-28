@@ -40,6 +40,7 @@ impl Parse {
 pub fn parse(source: &str) -> Parse {
     let mut parser = Parser::new(source);
     grammar::root(&mut parser);
+    parser.drain_into_error();
     parser.finish()
 }
 
@@ -66,10 +67,28 @@ pub struct Parser<'a> {
     /// consuming input trips this instead of hanging — the old parser hit that
     /// class of bug repeatedly (notes/2025-01-17-infinite-loop-analysis.md).
     steps_without_progress: u32,
+    /// Markers open right now, which is how deeply the tree nests here.
+    depth: u32,
+    /// Set once a limit has been reached. From then on the parser reports end of
+    /// input, every rule unwinds, and [`Self::drain_into_error`] puts what is
+    /// left into one ERROR node.
+    ///
+    /// A limit is not a bug in the input. `((((...` a thousand deep is a
+    /// perfectly ordinary thing for a fuzzer or a generated file to contain, and
+    /// a formatter's answer to it is a diagnostic, not an abort.
+    stopped: bool,
 }
 
 /// Far more inspections than any single position legitimately needs.
 const STEP_LIMIT: u32 = 10_000;
+
+/// Far deeper than any hand-written Perl nests, and far shallower than the
+/// depth at which the formatter's recursive walk runs out of stack (~3500).
+///
+/// The cap is here rather than in the formatter because it is here that it can
+/// be reported: the parser produces diagnostics and the tree it produces is what
+/// the formatter walks, so bounding the tree bounds everything downstream.
+const DEPTH_LIMIT: u32 = 512;
 
 impl<'a> Parser<'a> {
     fn new(source: &'a str) -> Self {
@@ -78,7 +97,46 @@ impl<'a> Parser<'a> {
             events: Events::default(),
             diagnostics: Vec::new(),
             steps_without_progress: 0,
+            depth: 0,
+            stopped: false,
         }
+    }
+
+    /// Stop parsing, with a diagnostic saying why.
+    ///
+    /// Reporting end of input is what unwinds the rules: every loop in the
+    /// grammar is guarded on it, and every open marker is completed on the way
+    /// out, so the event stream stays well-formed. What has not been consumed is
+    /// picked up by [`Self::drain_into_error`].
+    fn stop(&mut self, message: &str) {
+        if self.stopped {
+            return;
+        }
+        self.stopped = true;
+        let range = self.current_range();
+        self.push_diagnostic(message.to_string(), range);
+    }
+
+    /// Consume whatever is left into one ERROR node.
+    ///
+    /// Only ever does anything after [`Self::stop`]. Without it the remaining
+    /// tokens would reach the tree through the replayer's end-of-file flush, as
+    /// bare children of ROOT that no formatter rule covers — and the file's tail
+    /// would be dropped from the output.
+    fn drain_into_error(&mut self) {
+        if !self.stopped {
+            return;
+        }
+        self.stopped = false;
+        if self.lexer.peek(0).is_none() {
+            return;
+        }
+        let marker = self.start();
+        while self.lexer.peek(0).is_some() {
+            self.lexer.bump();
+            self.events.token();
+        }
+        self.complete(marker, NodeKind::ERROR);
     }
 
     fn finish(mut self) -> Parse {
@@ -119,18 +177,21 @@ impl<'a> Parser<'a> {
     }
 
     pub(crate) fn nth(&mut self, n: usize) -> Option<TokenKind> {
+        if self.stopped {
+            return None;
+        }
         self.step();
+        if self.stopped {
+            return None;
+        }
         self.lexer.peek_kind(n)
     }
 
     fn step(&mut self) {
         self.steps_without_progress += 1;
         if self.steps_without_progress >= STEP_LIMIT {
-            let at = self.lexer.peek(0);
-            panic!(
-                "parser inspected the same position {STEP_LIMIT} times without consuming input; \
-                 a rule is looping at {at:?}"
-            );
+            self.steps_without_progress = 0;
+            self.stop("parser stopped making progress here");
         }
     }
 
@@ -169,14 +230,20 @@ impl<'a> Parser<'a> {
     // ===== Node construction =====
 
     pub(crate) fn start(&mut self) -> Marker {
+        self.depth += 1;
+        if self.depth > DEPTH_LIMIT {
+            self.stop("expression nests too deeply to format");
+        }
         self.events.start()
     }
 
     pub(crate) fn complete(&mut self, marker: Marker, kind: NodeKind) -> CompletedMarker {
+        self.depth = self.depth.saturating_sub(1);
         self.events.complete(marker, kind)
     }
 
     pub(crate) fn abandon(&mut self, marker: Marker) {
+        self.depth = self.depth.saturating_sub(1);
         self.events.abandon(marker);
     }
 
@@ -370,6 +437,10 @@ impl<'a> Parser<'a> {
         if self.lexer.take_raw_parens().is_none() {
             return false;
         }
+        // Input was consumed, so the no-progress counter starts again. Every
+        // other `bump_*` says so; this one did not, and a file with enough
+        // prototypes in it could reach the step limit on legitimate progress.
+        self.steps_without_progress = 0;
         self.events.token();
         self.events.token();
         self.events.token();
