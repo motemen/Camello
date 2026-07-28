@@ -16,7 +16,7 @@ $debug ||= 0,
     return $opts{level} // $debug;
 }
 
-sub placeholder_only($,@,%) {
+sub placeholder_only($,@) {
     return @_;
 }
 

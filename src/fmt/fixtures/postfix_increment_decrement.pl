@@ -10,8 +10,8 @@ $h->{k}++;
 $h->{key}--;
 $hash->{count}++;
 
-($x + $y)++;
-($a * $b)--;
+($x)++;
+($h{count})--;
 
 $obj->value++;
 $obj->count--;

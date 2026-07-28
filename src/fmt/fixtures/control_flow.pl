@@ -65,5 +65,3 @@ try {
 } finally {
     tidy_up();
 }
-
-my $try_value = try { attempt() } catch { fallback() };

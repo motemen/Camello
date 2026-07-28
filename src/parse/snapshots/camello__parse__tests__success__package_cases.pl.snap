@@ -147,7 +147,7 @@ ROOT
     `package` "package"
     SUB_NAME
       identifier "Bar::456DEF"
-    version string "v1.0"
+    version string "v1.0.0"
     `;` ";"
   PACKAGE_STMT
     `package` "package"

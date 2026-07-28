@@ -1,3 +1,7 @@
+# `func` is declared so perl reads the calls below as calls; camello has no
+# symbol table and reads them the same either way.
+sub func;
+
 use constant ABC => 1;    # comment
 use constant D   => 'a';
 

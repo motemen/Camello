@@ -1,5 +1,13 @@
 # IO operator vs comparison disambiguation tests
 
+# `decode` and `process` are declared, because that is the reading these cases
+# mean: a declared list operator takes `<$fh>` as a readline argument. `f` is
+# deliberately left undeclared, because `f < $x > 1` is a comparison only for a
+# bareword perl has not seen. camello has no symbol table and decides both from
+# whether a complete readline token lexes there (ADR 0007 §6).
+sub decode;
+sub process;
+
 # Case 1: IO operator as function argument (issue #203)
 decode <$fh>;
 
