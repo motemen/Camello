@@ -156,6 +156,7 @@ impl<'a> TokenCursor<'a> {
             self.run.push(Trivia {
                 kind: token.kind,
                 range: token.range,
+                text: builder.source[token.range].into(),
             });
         }
 

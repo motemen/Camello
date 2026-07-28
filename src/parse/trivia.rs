@@ -3,15 +3,20 @@
 use std::collections::HashMap;
 
 use rowan::{TextRange, TextSize};
+use smol_str::SmolStr;
 
 use crate::lang::TokenKind;
 
-/// One piece of trivia, kept with its text range so the formatter can read it
-/// without walking back into the tree.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One piece of trivia, with its text.
+///
+/// Carrying the text matters for comments: the placement rule of ADR 0006 §4
+/// puts a leading comment *outside* the node it belongs to, so a consumer
+/// holding only the node cannot find the token again.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Trivia {
     pub kind: TokenKind,
     pub range: TextRange,
+    pub text: SmolStr,
 }
 
 /// The trivia attached to one non-trivia token.
@@ -93,10 +98,16 @@ impl TriviaMap {
             return;
         }
 
-        let split = run
-            .iter()
-            .position(|trivia| trivia.kind == TokenKind::NEWLINE)
-            .map_or(run.len(), |index| index + 1);
+        // With no preceding token there is no line to share, so the whole run
+        // belongs to what follows — otherwise a comment on the first line of a
+        // file would be attributed to nothing and disappear.
+        let split = if previous_start.is_none() {
+            0
+        } else {
+            run.iter()
+                .position(|trivia| trivia.kind == TokenKind::NEWLINE)
+                .map_or(run.len(), |index| index + 1)
+        };
 
         let (trailing, leading) = run.split_at(split);
 
