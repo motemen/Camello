@@ -248,22 +248,15 @@ mod redesign {
     /// Every entry is a gap in coverage, not a disagreement about what the
     /// fixture means. Ordered as they appear on disk.
     const PARSE_GAPS: &[&str] = &[
-        // A named unary builtin applied to a parenthesised list: `keys(%h)`.
-        "src/formatter/fixtures/builtin_functions.pl",
         // A trailing comment as the last element of a broken list.
         "src/formatter/fixtures/comment_alignment_in_delimiters.pl",
-        // `${^GLOBAL_PHASE}` and other caret variables in braces.
+        // A bareword followed by `{ k => 1 }->{k}`: hash-ref versus block where
+        // the call's argument shape is also unknown.
         "src/formatter/fixtures/specials_and_sigils.pl",
         // Signatures with `@rest` / `%opts` and attributes after them.
         "src/formatter/fixtures/sub_signatures.pl",
-        // A bare block used as a loop, with `redo`.
-        "src/parser/fixtures/success/control_flow_and_operators.pl",
-        // `sub tr {}` and friends: quote-like keywords as subroutine names.
-        "src/parser/fixtures/success/package_cases.pl",
         // Character classes containing the delimiter: `m[[\]]`.
         "src/parser/fixtures/success/regex.pl",
-        // `sort \&comparator, @xs`.
-        "src/parser/fixtures/success/sort_function_reference.pl",
     ];
 
     /// Fixtures the new formatter does not yet round-trip. Each is downstream of
@@ -271,14 +264,12 @@ mod redesign {
     const IDEMPOTENCY_GAPS: &[&str] = &[
         "src/formatter/fixtures/heredoc.pl",
         "src/formatter/fixtures/heredoc_and_package.pl",
-        "src/formatter/fixtures/specials_and_sigils.pl",
         "src/parser/fixtures/success/regex.pl",
     ];
 
     const SEMANTIC_GAPS: &[&str] = &[
         "src/formatter/fixtures/heredoc.pl",
         "src/formatter/fixtures/heredoc_and_package.pl",
-        "src/formatter/fixtures/specials_and_sigils.pl",
         "src/parser/fixtures/success/regex.pl",
     ];
 

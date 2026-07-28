@@ -39,11 +39,11 @@ fn statement(parser: &mut Parser<'_>) {
             }
             parser.complete(marker, NodeKind::DATA_SECTION);
         }
-        T!["sub"]
-            if parser.nth_at(1, TokenKind::IDENT) || parser.nth(1).is_some_and(is_name_like) =>
-        {
-            sub_def(parser);
-        }
+        // `sub` at statement level names a subroutine unless a body follows
+        // straight away. Deciding it here, rather than by peeking at a name the
+        // lexer may have read as a quote-like operator, is what lets
+        // `sub tr {}` and `sub s {}` work.
+        T!["sub"] if !parser.nth_at(1, T!["{"]) => sub_def(parser),
         T!["package"] => package_stmt(parser),
         T!["use"] => use_stmt(parser, NodeKind::USE_STMT),
         T!["no"] => use_stmt(parser, NodeKind::NO_STMT),

@@ -105,6 +105,11 @@ impl<'a> Parser<'a> {
         self.lexer.set_expect(Expect::Term);
     }
 
+    /// Whether the lexer is currently expecting an operator.
+    pub(crate) fn expect_is_operator(&self) -> bool {
+        self.lexer.expect() == Expect::Operator
+    }
+
     pub(crate) fn expect_operator(&mut self) {
         self.lexer.set_expect(Expect::Operator);
     }
