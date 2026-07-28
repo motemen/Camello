@@ -48,7 +48,11 @@ impl<'a> Builder<'a> {
             match child {
                 SyntaxElement::Node(statement) => self.statement_into(&statement, parts),
                 SyntaxElement::Token(token) if token.token_kind().is_heredoc_body() => {
-                    parts.push(Doc::Raw(token));
+                    let terminator = token.token_kind() != TokenKind::HEREDOC_CONTENT;
+                    parts.push(Doc::VerbatimLines(token));
+                    if terminator {
+                        parts.push(Doc::HardLine);
+                    }
                 }
                 SyntaxElement::Token(_) => {}
             }

@@ -13,6 +13,9 @@ pub struct Line {
     pub anchors: Vec<(AnchorClass, usize)>,
     pub shape: Option<ShapeKey>,
     pub indent: usize,
+    /// Part of a verbatim region. Its trailing whitespace is content, not
+    /// formatting, so it is left alone.
+    pub verbatim: bool,
 }
 
 impl Line {
@@ -65,6 +68,7 @@ impl<'a> Renderer<'a> {
             Doc::Nil => {}
             Doc::Token(token) => self.write(token.text()),
             Doc::Raw(token) => self.write_raw(token.text()),
+            Doc::VerbatimLines(token) => self.write_verbatim_lines(token.text()),
             Doc::Space => self.write(" "),
             Doc::Concat(parts) => {
                 for part in parts {
@@ -172,6 +176,21 @@ impl<'a> Renderer<'a> {
         }
     }
 
+    /// Content that begins its own line at column 0.
+    fn write_verbatim_lines(&mut self, text: &str) {
+        if !self.current.text.is_empty() {
+            self.finish_line();
+        }
+        let mut parts = text.split('\n').peekable();
+        while let Some(part) = parts.next() {
+            self.current.verbatim = true;
+            self.current.text.push_str(part);
+            if parts.peek().is_some() {
+                self.finish_line();
+            }
+        }
+    }
+
     fn ensure_indent(&mut self) {
         if self.current.text.is_empty() {
             self.current.indent = self.indent;
@@ -186,8 +205,11 @@ impl<'a> Renderer<'a> {
 
     fn finish_line(&mut self) {
         let mut line = std::mem::take(&mut self.current);
-        // Trailing whitespace is never meaningful in output.
-        line.text = line.text.trim_end().to_string();
+        // Trailing whitespace is formatting, except inside a verbatim region
+        // where it is content.
+        if !line.verbatim {
+            line.text = line.text.trim_end().to_string();
+        }
         // A blank line does not consume the pending shape: the statement it was
         // declared for has not been emitted yet, and the align pass needs the
         // shape on the line that carries the anchor.

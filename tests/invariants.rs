@@ -252,20 +252,15 @@ mod redesign {
     /// Empty: every checked-in fixture parses without a diagnostic.
     const PARSE_GAPS: &[&str] = &[];
 
-    /// Fixtures the new formatter does not yet round-trip.
+    /// Fixtures the new formatter does not round-trip.
     ///
-    /// Both are heredocs: the body is placed in the tree at the line it starts
-    /// on (ADR 0007 §7), and the builder does not yet reproduce that placement
-    /// exactly when the marker is nested inside a broken argument list.
-    const IDEMPOTENCY_GAPS: &[&str] = &[
-        "src/formatter/fixtures/heredoc.pl",
-        "src/formatter/fixtures/heredoc_and_package.pl",
-    ];
+    /// Empty: `format(format(x)) == format(x)` holds for every fixture.
+    const IDEMPOTENCY_GAPS: &[&str] = &[];
 
-    const SEMANTIC_GAPS: &[&str] = &[
-        "src/formatter/fixtures/heredoc.pl",
-        "src/formatter/fixtures/heredoc_and_package.pl",
-    ];
+    /// Fixtures whose token stream formatting changes.
+    ///
+    /// Empty: the output re-lexes to the input's non-trivia tokens throughout.
+    const SEMANTIC_GAPS: &[&str] = &[];
 
     fn tokens(source: &str) -> Vec<(String, String)> {
         camello::parse::parse(source)
