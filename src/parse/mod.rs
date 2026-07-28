@@ -49,6 +49,11 @@ pub struct Checkpoint {
     events: usize,
     lexer: Mark,
     diagnostics: usize,
+    /// Where the next token starts. Progress has to be measured in *input*
+    /// consumed, not events recorded: a rule that opens and closes a node
+    /// without consuming anything has recorded events and still made no
+    /// progress, which is exactly how a non-advancing loop hides.
+    offset: Option<TextSize>,
 }
 
 pub struct Parser<'a> {
@@ -115,11 +120,13 @@ impl<'a> Parser<'a> {
 
     fn step(&mut self) {
         self.steps_without_progress += 1;
-        assert!(
-            self.steps_without_progress < STEP_LIMIT,
-            "parser inspected the same position {STEP_LIMIT} times without consuming input; \
-             a rule is looping"
-        );
+        if self.steps_without_progress >= STEP_LIMIT {
+            let at = self.lexer.peek(0);
+            panic!(
+                "parser inspected the same position {STEP_LIMIT} times without consuming input; \
+                 a rule is looping at {at:?}"
+            );
+        }
     }
 
     pub(crate) fn at(&mut self, kind: TokenKind) -> bool {
@@ -267,12 +274,17 @@ impl<'a> Parser<'a> {
 
     // ===== Speculation (ADR 0007 §1) =====
 
-    pub(crate) fn checkpoint(&self) -> Checkpoint {
+    pub(crate) fn checkpoint(&mut self) -> Checkpoint {
         Checkpoint {
             events: self.events.len(),
             lexer: self.lexer.mark(),
             diagnostics: self.diagnostics.len(),
+            offset: self.offset(),
         }
+    }
+
+    fn offset(&mut self) -> Option<TextSize> {
+        self.lexer.peek(0).map(|token| token.range.start())
     }
 
     /// Undo everything since `checkpoint`: events, lexer position and the
@@ -293,8 +305,8 @@ impl<'a> Parser<'a> {
     ///
     /// Rules use this to notice they made no progress, so a malformed input
     /// produces a diagnostic instead of a hang.
-    pub(crate) fn checkpoint_is_unmoved(&self, checkpoint: Checkpoint) -> bool {
-        self.events.len() == checkpoint.events
+    pub(crate) fn checkpoint_is_unmoved(&mut self, checkpoint: Checkpoint) -> bool {
+        self.offset() == checkpoint.offset
     }
 
     /// Report at a range other than the current token.

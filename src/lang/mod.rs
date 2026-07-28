@@ -441,6 +441,35 @@ impl rowan::Language for PerlLang {
     }
 }
 
+/// Reads a token's kind back as a [`TokenKind`].
+///
+/// rowan hands back the untyped `SyntaxKind`; these put the split of ADR 0004 §1
+/// back in place at the point of use, so the formatter matches on token kinds
+/// and node kinds rather than on integers.
+pub trait TokenExt {
+    fn token_kind(&self) -> TokenKind;
+}
+
+impl TokenExt for rowan::SyntaxToken<PerlLang> {
+    fn token_kind(&self) -> TokenKind {
+        self.kind()
+            .as_token()
+            .expect("a token in the tree always carries a token kind")
+    }
+}
+
+pub trait NodeExt {
+    fn node_kind(&self) -> NodeKind;
+}
+
+impl NodeExt for rowan::SyntaxNode<PerlLang> {
+    fn node_kind(&self) -> NodeKind {
+        self.kind()
+            .as_node()
+            .expect("a node in the tree always carries a node kind")
+    }
+}
+
 pub type SyntaxNode = rowan::SyntaxNode<PerlLang>;
 pub type SyntaxToken = rowan::SyntaxToken<PerlLang>;
 pub type SyntaxElement = rowan::SyntaxElement<PerlLang>;

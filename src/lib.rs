@@ -1,5 +1,6 @@
 pub mod cli;
 pub mod comments;
+pub mod fmt;
 pub mod formatter;
 pub mod lang;
 pub mod lex;
