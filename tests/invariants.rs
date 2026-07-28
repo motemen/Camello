@@ -256,9 +256,7 @@ mod redesign {
         "src/formatter/fixtures/comment_alignment_in_delimiters.pl",
         // `use parent -norequire, 'Module';`
         "src/formatter/fixtures/declarations.pl",
-        // Heredoc bodies inside an argument list.
-        "src/formatter/fixtures/heredoc.pl",
-        "src/formatter/fixtures/heredoc_and_package.pl",
+        // `print $FH <<HOGE` — a heredoc after a scalar filehandle.
         "src/parser/fixtures/success/print_filehandle_heredoc.pl",
         // `<` as both readline and comparison in one file.
         "src/formatter/fixtures/io_operator_disambiguation.pl",
@@ -273,13 +271,8 @@ mod redesign {
         "src/parser/fixtures/success/control_flow_and_operators.pl",
         // `sub tr {}` and friends: quote-like keywords as subroutine names.
         "src/parser/fixtures/success/package_cases.pl",
-        // `0o10` octal literals in a range.
-        "src/parser/fixtures/success/range_non_decimal.pl",
         // Character classes containing the delimiter: `m[[\]]`.
         "src/parser/fixtures/success/regex.pl",
-        // `$Foo::Bar::{name}` stash access.
-        "src/parser/fixtures/success/root_hash_package_variable.pl",
-        "src/parser/fixtures/success/root_qualified_identifiers.pl",
         // `sort \&comparator, @xs`.
         "src/parser/fixtures/success/sort_function_reference.pl",
     ];
@@ -288,6 +281,7 @@ mod redesign {
     /// a parse gap above; none is an independent formatter defect.
     const IDEMPOTENCY_GAPS: &[&str] = &[
         "src/formatter/fixtures/heredoc.pl",
+        "src/formatter/fixtures/heredoc_and_package.pl",
         "src/formatter/fixtures/specials_and_sigils.pl",
         "src/parser/fixtures/success/regex.pl",
     ];
@@ -295,6 +289,7 @@ mod redesign {
     const SEMANTIC_GAPS: &[&str] = &[
         "src/formatter/fixtures/backslash_delimiter.pl",
         "src/formatter/fixtures/heredoc.pl",
+        "src/formatter/fixtures/heredoc_and_package.pl",
         "src/formatter/fixtures/specials_and_sigils.pl",
         "src/parser/fixtures/success/regex.pl",
     ];

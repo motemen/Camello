@@ -82,6 +82,26 @@ impl TokenKind {
         )
     }
 
+    /// A heredoc body, which the parser never consumes.
+    ///
+    /// The marker `<<EOF` is a token in the expression; the body arrives at the
+    /// next line start, in the middle of whatever the expression was doing. The
+    /// parser skips it exactly as it skips trivia, and the replayer puts it back
+    /// where it was found (ADR 0007 §7).
+    #[must_use]
+    pub fn is_heredoc_body(self) -> bool {
+        matches!(
+            self,
+            TokenKind::HEREDOC_CONTENT | TokenKind::HEREDOC_END | TokenKind::UNTERMINATED_HEREDOC
+        )
+    }
+
+    /// Tokens the parser does not see at all.
+    #[must_use]
+    pub fn is_parser_invisible(self) -> bool {
+        self.is_trivia() || self.is_heredoc_body()
+    }
+
     /// A sigil that introduces a variable.
     #[must_use]
     pub fn is_sigil(self) -> bool {

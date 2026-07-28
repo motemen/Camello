@@ -135,14 +135,18 @@ impl<'a> TokenCursor<'a> {
         }
     }
 
-    /// Emit every trivia token up to the next non-trivia one, recording its
-    /// ownership.
+    /// Emit everything the parser skipped over, up to the next token it will
+    /// consume, recording who owns each piece of trivia.
+    ///
+    /// Heredoc bodies pass through here too: the parser never consumed them, but
+    /// they belong in the tree at the point they appeared (ADR 0007 §7). They
+    /// are not trivia, so they take no part in the ownership split.
     fn flush_trivia(&mut self, builder: &mut TreeBuilder<'_>, trivia: &mut TriviaMap) {
         let start = self.index;
         while self
             .tokens
             .get(self.index)
-            .is_some_and(|token| token.kind.is_trivia())
+            .is_some_and(|token| token.kind.is_parser_invisible())
         {
             self.index += 1;
         }
@@ -153,11 +157,13 @@ impl<'a> TokenCursor<'a> {
         self.run.clear();
         for token in &self.tokens[start..self.index] {
             builder.token(token.kind, token.range);
-            self.run.push(Trivia {
-                kind: token.kind,
-                range: token.range,
-                text: builder.source[token.range].into(),
-            });
+            if token.kind.is_trivia() {
+                self.run.push(Trivia {
+                    kind: token.kind,
+                    range: token.range,
+                    text: builder.source[token.range].into(),
+                });
+            }
         }
 
         let next_start = self.tokens.get(self.index).map(|token| token.range.start());
@@ -179,7 +185,7 @@ impl<'a> TokenCursor<'a> {
     /// it would break losslessness.
     fn flush_remaining(&mut self, builder: &mut TreeBuilder<'_>, trivia: &mut TriviaMap) {
         while self.index < self.tokens.len() {
-            if self.tokens[self.index].kind.is_trivia() {
+            if self.tokens[self.index].kind.is_parser_invisible() {
                 self.flush_trivia(builder, trivia);
             } else {
                 self.emit_token(builder);

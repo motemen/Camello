@@ -327,7 +327,7 @@ impl<'a> Lexer<'a> {
                 }
                 self.scan_next();
             }
-            if self.buffer[index].kind.is_trivia() {
+            if self.buffer[index].kind.is_parser_invisible() {
                 index += 1;
                 continue;
             }

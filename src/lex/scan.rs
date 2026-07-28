@@ -96,7 +96,7 @@ impl<'a> Lexer<'a> {
             return;
         }
 
-        if first.is_ascii_alphabetic() || first == b'_' {
+        if first.is_ascii_alphabetic() || first == b'_' || self.rest().starts_with("::") {
             self.scan_word();
             return;
         }
@@ -143,6 +143,7 @@ impl<'a> Lexer<'a> {
             let radix_digits: Option<fn(u8) -> bool> = match bytes[1] {
                 b'x' | b'X' => Some(|byte| byte.is_ascii_hexdigit() || byte == b'_'),
                 b'b' | b'B' => Some(|byte| matches!(byte, b'0' | b'1' | b'_')),
+                b'o' | b'O' => Some(|byte| matches!(byte, b'0'..=b'7' | b'_')),
                 _ => None,
             };
             if let Some(is_digit) = radix_digits {
@@ -497,10 +498,12 @@ impl<'a> Lexer<'a> {
             return;
         }
 
-        if first.is_ascii_alphabetic() || first == b'_' {
+        if first.is_ascii_alphabetic() || first == b'_' || bytes.starts_with(b"::") {
             let len = self.ident_len(0);
-            self.push(TokenKind::IDENT, start, start + len);
-            return;
+            if len > 0 {
+                self.push(TokenKind::IDENT, start, start + len);
+                return;
+            }
         }
 
         if first.is_ascii_digit() {
@@ -509,6 +512,12 @@ impl<'a> Lexer<'a> {
                 .position(|byte| !byte.is_ascii_digit())
                 .unwrap_or(bytes.len());
             self.push(TokenKind::NUMBER, start, start + len);
+            return;
+        }
+
+        // `%::` names the main stash; the name is the separator itself.
+        if bytes.starts_with(b"::") {
+            self.push(TokenKind::IDENT, start, start + 2);
             return;
         }
 
@@ -527,10 +536,14 @@ impl<'a> Lexer<'a> {
 /// Length of the identifier at the start of `text`, `::` separators included.
 pub(super) fn ident_len_at(text: &str) -> usize {
     let bytes = text.as_bytes();
-    if bytes.is_empty() || !(bytes[0].is_ascii_alphabetic() || bytes[0] == b'_') {
-        return 0;
+    // A leading `::` means the `main` package: `::diag(...)` and `$::foo`.
+    let mut end = if bytes.starts_with(b"::") { 2 } else { 0 };
+    if end == 0 {
+        if bytes.is_empty() || !(bytes[0].is_ascii_alphabetic() || bytes[0] == b'_') {
+            return 0;
+        }
+        end = 1;
     }
-    let mut end = 1;
     while end < bytes.len() {
         if bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_' {
             end += 1;
