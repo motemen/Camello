@@ -268,6 +268,30 @@ fn arrow(parser: &mut Parser<'_>, lhs: CompletedMarker) -> CompletedMarker {
             arg_list(parser);
             parser.complete(marker, NodeKind::CODE_CALL_EXPR)
         }
+        // Postfix slices: `$r->@[0, 1]` and `$r->%{...}`. The sigil says which
+        // slice, the bracket says which subscript.
+        // `%` reads as modulo in operator position, which is where the arrow
+        // leaves the lexer; a bracket after it says it is a slice sigil instead.
+        Some(TokenKind::ARRAY_SIGIL | TokenKind::HASH_SIGIL | TokenKind::MODULO)
+            if parser.nth_at(1, T!["["]) || parser.nth_at(1, T!["{"]) =>
+        {
+            let array = parser.at(TokenKind::ARRAY_SIGIL);
+            parser.expect_term();
+            // A bare sigil: the scanner would otherwise read `@[` as a
+            // punctuation variable and swallow the bracket.
+            parser.bump_sigil();
+            let close = if parser.at(T!["["]) { T!["]"] } else { T!["}"] };
+            parser.bump();
+            bracketed_index(parser, close);
+            parser.complete(
+                marker,
+                if array {
+                    NodeKind::POSTFIX_ARRAY_SLICE_EXPR
+                } else {
+                    NodeKind::POSTFIX_HASH_SLICE_EXPR
+                },
+            )
+        }
         _ => {
             // A method name. `->if` and `->s` are legal, which is why the name
             // routine coerces keywords rather than each call site doing it.

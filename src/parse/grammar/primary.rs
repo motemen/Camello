@@ -197,13 +197,12 @@ pub(crate) fn variable(parser: &mut Parser<'_>) -> CompletedMarker {
         Some(T!["{"]) => {
             parser.bump();
             parser.expect_term();
-            // `${^MATCH}` and `${name}` hold a name, not an expression. The
-            // lexer already read `^MATCH` as one raw token for `$^MATCH`, but
-            // inside braces the caret arrives on its own.
+            // `${^MATCH}` and `${name}` hold a name, not an expression.
             if parser.at(TokenKind::BITWISE_XOR) && parser.nth_at(1, TokenKind::IDENT) {
                 let name = parser.start();
-                parser.bump();
-                parser.bump();
+                // One token, so no space can be rendered inside the name and a
+                // regression would show up in the token stream.
+                parser.bump_caret_name();
                 parser.complete(name, NodeKind::SUB_NAME);
             } else if parser
                 .current()

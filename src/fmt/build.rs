@@ -227,8 +227,12 @@ impl<'a> Builder<'a> {
         if matches!(after, Some(T![";"] | T![","])) {
             return false;
         }
-        // `->` binds tight on both sides.
+        // `->` binds tight on both sides, and so does a postfix dereference,
+        // which is an arrow with its target glued on.
         if before == Some(T!["->"]) || after == Some(T!["->"]) {
+            return false;
+        }
+        if after.is_some_and(is_postfix_deref) {
             return false;
         }
         // A sigil is part of the name that follows it — except a signature
@@ -288,6 +292,8 @@ impl<'a> Builder<'a> {
                 NodeKind::HASH_SUBSCRIPT_EXPR
                     | NodeKind::ARRAY_SUBSCRIPT_EXPR
                     | NodeKind::BLOCK_DEREF_EXPR
+                    | NodeKind::POSTFIX_ARRAY_SLICE_EXPR
+                    | NodeKind::POSTFIX_HASH_SLICE_EXPR
             )
         ) && (matches!(after, Some(T!["{"] | T!["}"] | T!["["] | T!["]"]))
             || matches!(before, Some(T!["{"] | T!["["])))
@@ -674,6 +680,18 @@ fn brace_follows(token: &SyntaxToken) -> bool {
                 .is_some_and(|parent| parent.node_kind() == NodeKind::BLOCK);
     }
     false
+}
+
+fn is_postfix_deref(kind: TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::POSTFIX_DEREF_ARRAY
+            | TokenKind::POSTFIX_DEREF_HASH
+            | TokenKind::POSTFIX_DEREF_SCALAR
+            | TokenKind::POSTFIX_DEREF_ARRAY_LAST_INDEX
+            | TokenKind::POSTFIX_DEREF_CODE
+            | TokenKind::POSTFIX_DEREF_GLOB
+    )
 }
 
 fn is_quote_like_node(kind: NodeKind) -> bool {

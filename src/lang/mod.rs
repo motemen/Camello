@@ -330,6 +330,8 @@ define_language! {
         DEREF_EXPR,
         BLOCK_DEREF_EXPR,
         POSTFIX_DEREF_EXPR,
+        POSTFIX_ARRAY_SLICE_EXPR,
+        POSTFIX_HASH_SLICE_EXPR,
         REFERENCE_EXPR,
 
         // -- Subscripting and slicing
