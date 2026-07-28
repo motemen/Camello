@@ -1,6 +1,5 @@
 ---
 source: src/parse/tests.rs
-assertion_line: 85
 expression: "tree(\"foo(1);\\nprint STDERR \\\"x\\\";\\nmap { $_ } @xs;\\n$obj->method(2);\\n\")"
 ---
 ROOT

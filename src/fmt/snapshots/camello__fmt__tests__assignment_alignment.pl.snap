@@ -1,0 +1,34 @@
+---
+source: src/fmt/tests.rs
+expression: format(&source)
+---
+sub demo_alignment {
+    my $aaa = 1;
+    my @b   = grep { $_ } map {
+        $_ = 1;
+    } @list;
+
+    my $alpha      = 1;
+    my $beta_value = 20;
+    my $gamma      = compute_value(); # trailing comment
+
+    my $multiline =
+    some_long_expression();
+
+    my $delta = 3;
+    # comment should break grouping
+    my $epsilon_extra = 4;
+    my $zeta      = 5;
+    my $eta_extra = 6;
+
+    $plain               = 7;
+    $long_plain_variable = 8;
+
+    $skip_block = do {
+        9;
+    };
+    $after_block = 10;
+
+    our $phi = 11;
+    state $omega_long_name = 12;
+}

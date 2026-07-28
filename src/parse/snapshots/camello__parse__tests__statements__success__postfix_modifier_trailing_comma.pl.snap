@@ -1,0 +1,131 @@
+---
+source: src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  EXPR_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "x"
+        `=` "="
+        LITERAL
+          number "1"
+      `,` ","
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "if"
+        LIST_EXPR
+          SCALAR_VAR
+            `$` "$"
+            identifier "cond"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "x"
+        `=` "="
+        LITERAL
+          number "2"
+      `,` ","
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "if"
+        LIST_EXPR
+          SCALAR_VAR
+            `$` "$"
+            identifier "other"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "x"
+        `=` "="
+        LITERAL
+          number "3"
+      `,` ","
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "unless"
+        LIST_EXPR
+          SCALAR_VAR
+            `$` "$"
+            identifier "cond"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "x"
+        `=` "="
+        LITERAL
+          number "4"
+      `,` ","
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "while"
+        LIST_EXPR
+          SCALAR_VAR
+            `$` "$"
+            identifier "cond"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "x"
+        `=` "="
+        LITERAL
+          number "5"
+      `,` ","
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "until"
+        LIST_EXPR
+          SCALAR_VAR
+            `$` "$"
+            identifier "cond"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "x"
+        `=` "="
+        LITERAL
+          number "6"
+      `,` ","
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "for"
+        LIST_EXPR
+          ARRAY_VAR
+            `@` "@"
+            identifier "list"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "x"
+        `=` "="
+        LITERAL
+          number "7"
+      `,` ","
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "foreach"
+        LIST_EXPR
+          ARRAY_VAR
+            `@` "@"
+            identifier "list"
+    `;` ";"

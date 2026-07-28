@@ -1,0 +1,16 @@
+---
+source: src/fmt/tests.rs
+expression: format(&source)
+---
+[
+    (
+        "a"
+    )
+];
+[
+    {
+        "a" => (
+            999
+        )
+    }
+];

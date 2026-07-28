@@ -353,3 +353,62 @@ sub greet ($name, $greeting = 'hello') {
     assert_lossless(source);
     insta::assert_snapshot!(tree(source));
 }
+
+// ===== Fixture snapshots =====
+
+/// Parse every fixture and snapshot the tree, or the diagnostics for the
+/// `errors/` ones.
+#[test]
+fn fixture_snapshots() {
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/parse/fixtures");
+    let mut files = Vec::new();
+    collect(&directory, &mut files);
+    files.sort();
+    assert!(!files.is_empty(), "no fixtures found in {directory:?}");
+
+    for path in files {
+        let relative = path
+            .strip_prefix(&directory)
+            .expect("fixture is under the fixture directory");
+        let name = relative
+            .iter()
+            .map(|part| part.to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("__");
+        let source = std::fs::read_to_string(&path).expect("failed to read fixture");
+
+        // For an error fixture the diagnostics are the point; for the rest the
+        // tree is.
+        let rendered = if relative
+            .components()
+            .any(|part| part.as_os_str() == "errors")
+        {
+            let diagnostics = parse(&source).diagnostics;
+            diagnostics
+                .iter()
+                .map(|diagnostic| {
+                    let line = source[..usize::from(diagnostic.range.start())]
+                        .lines()
+                        .count();
+                    format!("line {line}: {}", diagnostic.message)
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        } else {
+            tree(&source)
+        };
+
+        insta::assert_snapshot!(name, rendered);
+    }
+}
+
+fn collect(directory: &std::path::Path, into: &mut Vec<std::path::PathBuf>) {
+    for entry in std::fs::read_dir(directory).expect("failed to read fixture directory") {
+        let path = entry.expect("failed to read fixture entry").path();
+        if path.is_dir() {
+            collect(&path, into);
+        } else if path.extension().is_some_and(|extension| extension == "pl") {
+            into.push(path);
+        }
+    }
+}

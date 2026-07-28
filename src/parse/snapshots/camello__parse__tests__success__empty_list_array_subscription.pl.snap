@@ -1,0 +1,18 @@
+---
+source: src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  EXPR_STMT
+    LIST_EXPR
+      ARRAY_SUBSCRIPT_EXPR
+        PAREN_EXPR
+          `(` "("
+          LIST_EXPR
+          `)` ")"
+        `[` "["
+        SUBSCRIPT
+          LITERAL
+            number "0"
+        `]` "]"
+    `;` ";"

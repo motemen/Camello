@@ -1,6 +1,5 @@
 ---
 source: src/parse/tests.rs
-assertion_line: 118
 expression: "tree(\"$a & $b == $c;\\n\")"
 ---
 ROOT

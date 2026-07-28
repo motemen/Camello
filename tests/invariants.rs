@@ -1,16 +1,20 @@
-//! Formatter invariants required by ADR 0008 §6.
+//! Formatter and parser invariants required by ADR 0006 §6 and ADR 0008 §6.
 //!
-//! * **Idempotency**: `format(format(x)) == format(x)` for every fixture.
-//! * **Semantic preservation**: re-lexing the input and the output yields the
-//!   same non-trivia token sequence.
+//! * **Clean parse**: every checked-in fixture parses without a diagnostic.
+//! * **Losslessness**: the tree's tokens reproduce the source byte for byte.
+//! * **Idempotency**: `format(format(x)) == format(x)`.
+//! * **Semantic preservation**: re-lexing input and output yields the same
+//!   non-trivia token sequence.
 //!
-//! These run over every checked-in fixture so that the redesign (ADR 0004-0008)
-//! has a fixed acceptance bar that exists *before* the rewrite lands.
+//! These ran throughout the redesign — first against the old stack, then against
+//! the new one — with a registry of known violations that was only ever allowed
+//! to shrink. The registry is gone because it reached empty.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use camello::{format_perl, parse_perl, SyntaxKind};
+use camello::lang::TokenExt;
+use camello::{format_perl, parse_perl};
 
 /// Collect every `.pl` file below `dir`, sorted for deterministic reporting.
 fn collect_fixtures(dir: &Path) -> Vec<PathBuf> {
@@ -34,38 +38,56 @@ fn collect_fixtures(dir: &Path) -> Vec<PathBuf> {
     acc
 }
 
-fn fixture_root(relative: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join(relative)
+/// Every fixture that must satisfy the invariants.
+///
+/// The `errors/` fixtures are excluded on purpose: they exist to pin down what a
+/// malformed file reports, and do not parse cleanly by construction.
+fn all_fixture_files() -> Vec<(String, PathBuf)> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    for directory in ["src/fmt/fixtures", "src/parse/fixtures/success"] {
+        for path in collect_fixtures(&root.join(directory)) {
+            let label = path
+                .strip_prefix(root)
+                .unwrap_or(&path)
+                .display()
+                .to_string();
+            files.push((label, path));
+        }
+    }
+    assert!(!files.is_empty(), "no fixtures found");
+    files
 }
 
 /// The non-trivia token sequence of `source`, as `(kind, text)` pairs.
 ///
-/// Lexing in this project is parser-driven, so the only faithful way to re-lex
-/// is to run the parser and read the leaves of the resulting CST.
-fn token_stream(source: &str) -> Vec<(SyntaxKind, String)> {
-    let (syntax, _errors) = parse_perl(source);
-    syntax
+/// Lexing is parser-driven — `expect` comes from the grammar (ADR 0005 §2) — so
+/// the faithful way to re-lex is to parse and read the leaves.
+fn token_stream(source: &str) -> Vec<(String, String)> {
+    parse_perl(source)
+        .0
         .descendants_with_tokens()
         .filter_map(|element| element.into_token())
-        .filter(|token| !token.kind().is_trivia())
-        .map(|token| (token.kind(), token.text().to_string()))
+        .filter(|token| !token.token_kind().is_trivia())
+        .map(|token| {
+            (
+                format!("{:?}", token.token_kind()),
+                token.text().to_string(),
+            )
+        })
         .collect()
 }
 
 /// Render the first divergence between two token streams for a readable failure.
-fn describe_divergence(before: &[(SyntaxKind, String)], after: &[(SyntaxKind, String)]) -> String {
-    let position = (0..before.len().max(after.len())).find(|&index| {
-        let lhs = before.get(index);
-        let rhs = after.get(index);
-        lhs != rhs
-    });
-
-    let Some(position) = position else {
+fn describe_divergence(before: &[(String, String)], after: &[(String, String)]) -> String {
+    let Some(position) =
+        (0..before.len().max(after.len())).find(|&index| before.get(index) != after.get(index))
+    else {
         return "streams are equal".to_string();
     };
 
     let context = position.saturating_sub(3);
-    let render = |stream: &[(SyntaxKind, String)]| {
+    let render = |stream: &[(String, String)]| {
         stream
             .iter()
             .enumerate()
@@ -73,7 +95,7 @@ fn describe_divergence(before: &[(SyntaxKind, String)], after: &[(SyntaxKind, St
             .take(position - context + 4)
             .map(|(index, (kind, text))| {
                 let marker = if index == position { ">>" } else { "  " };
-                format!("{marker} [{index}] {kind:?} {text:?}")
+                format!("{marker} [{index}] {kind} {text:?}")
             })
             .collect::<Vec<_>>()
             .join("\n")
@@ -86,91 +108,81 @@ fn describe_divergence(before: &[(SyntaxKind, String)], after: &[(SyntaxKind, St
     )
 }
 
-pub struct Failure {
-    pub fixture: String,
-    pub detail: String,
+struct Failure {
+    fixture: String,
+    detail: String,
 }
 
-/// Fixtures known to violate an invariant under the *current* (pre-redesign)
-/// implementation.
-///
-/// This registry is the migration ledger for ADR 0008 §6: entries may only be
-/// removed, never added, and the redesign is not complete until it is empty.
-/// Listing a fixture here still enforces something — if a fixture starts
-/// passing, the test fails and demands the entry be dropped.
-mod known_violations {
-    /// F3 in notes/2026-07-28-redesign-assessment.md: alignment groups require a
-    /// NEWLINE in the *source*, so `my $x=1;my $yy=2;` only aligns on the second
-    /// pass. Fixed by the independent align pass (ADR 0008 §5).
-    pub const IDEMPOTENCY: &[&str] = &["src/formatter/fixtures/control_flow.pl"];
-
-    /// F1 is not currently triggered by any checked-in fixture; the redesign adds
-    /// coverage for it (multi-line string literals inside blocks).
-    pub const SEMANTIC_PRESERVATION: &[&str] = &[];
+fn report(kind: &str, failures: Vec<Failure>, total: usize) {
+    assert!(
+        failures.is_empty(),
+        "{}",
+        failures.iter().fold(
+            format!("{} of {total} fixtures violate {kind}:\n", failures.len()),
+            |mut message, failure| {
+                message.push_str(&format!(
+                    "\n=== {} ===\n{}\n",
+                    failure.fixture, failure.detail
+                ));
+                message
+            }
+        )
+    );
 }
 
-pub fn report(kind: &str, failures: Vec<Failure>, total: usize, known: &[&str]) {
-    let mut unexpected = Vec::new();
-    let mut seen = Vec::new();
+#[test]
+fn every_fixture_parses_without_diagnostics() {
+    let files = all_fixture_files();
+    let total = files.len();
+    let mut failures = Vec::new();
 
-    for failure in failures {
-        if known.contains(&failure.fixture.as_str()) {
-            seen.push(failure.fixture);
-        } else {
-            unexpected.push(failure);
+    for (label, path) in files {
+        let source = fs::read_to_string(&path).expect("failed to read fixture");
+        let (_, errors) = parse_perl(&source);
+        if errors.is_empty() {
+            continue;
         }
+        let detail = errors
+            .iter()
+            .take(3)
+            .map(|error| {
+                let line = source[..usize::from(error.range.start())].lines().count();
+                format!("  line {line}: {}", error.message)
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        failures.push(Failure {
+            fixture: label,
+            detail,
+        });
     }
 
-    let fixed: Vec<&&str> = known
-        .iter()
-        .filter(|fixture| !seen.iter().any(|s| s == *fixture))
-        .collect();
-
-    let mut message = String::new();
-
-    if !unexpected.is_empty() {
-        message.push_str(&format!(
-            "{} of {total} fixtures newly violate {kind}:\n",
-            unexpected.len()
-        ));
-        for failure in &unexpected {
-            message.push_str(&format!(
-                "\n=== {} ===\n{}\n",
-                failure.fixture, failure.detail
-            ));
-        }
-    }
-
-    if !fixed.is_empty() {
-        message.push_str(&format!(
-            "\n{} fixture(s) now satisfy {kind} but are still listed in \
-             known_violations; remove them from the registry:\n",
-            fixed.len()
-        ));
-        for fixture in fixed {
-            message.push_str(&format!("  - {fixture}\n"));
-        }
-    }
-
-    assert!(message.is_empty(), "{message}");
+    report("a clean parse", failures, total);
 }
 
-/// Every fixture directory whose contents must satisfy the invariants.
-pub fn all_fixture_files() -> Vec<(String, PathBuf)> {
-    let mut files = Vec::new();
-    for root in ["src/formatter/fixtures", "src/parser/fixtures/success"] {
-        let dir = fixture_root(root);
-        for path in collect_fixtures(&dir) {
-            let label = path
-                .strip_prefix(Path::new(env!("CARGO_MANIFEST_DIR")))
-                .unwrap_or(&path)
-                .display()
-                .to_string();
-            files.push((label, path));
+#[test]
+fn parsing_is_lossless() {
+    let files = all_fixture_files();
+    let total = files.len();
+    let mut failures = Vec::new();
+
+    for (label, path) in files {
+        let source = fs::read_to_string(&path).expect("failed to read fixture");
+        let rebuilt: String = parse_perl(&source)
+            .0
+            .descendants_with_tokens()
+            .filter_map(|element| element.into_token())
+            .map(|token| token.text().to_string())
+            .collect();
+        if rebuilt != source {
+            failures.push(Failure {
+                fixture: label,
+                detail: "the tree's tokens do not reproduce the source".to_string(),
+            });
         }
     }
-    assert!(!files.is_empty(), "no fixtures found");
-    files
+
+    report("losslessness (ADR 0006 §6)", failures, total);
 }
 
 #[test]
@@ -187,18 +199,13 @@ fn formatting_is_idempotent() {
             failures.push(Failure {
                 fixture: label,
                 detail: format!(
-                    "format(format(x)) != format(x)\n--- pass 1 ---\n{once}\n--- pass 2 ---\n{twice}"
+                    "format(format(x)) != format(x)\n--- pass 1 ---\n{once}--- pass 2 ---\n{twice}"
                 ),
             });
         }
     }
 
-    report(
-        "idempotency (ADR 0008 §6)",
-        failures,
-        total,
-        known_violations::IDEMPOTENCY,
-    );
+    report("idempotency (ADR 0008 §6)", failures, total);
 }
 
 #[test]
@@ -220,129 +227,5 @@ fn formatting_preserves_semantics() {
         }
     }
 
-    report(
-        "semantic preservation (ADR 0008 §6)",
-        failures,
-        total,
-        known_violations::SEMANTIC_PRESERVATION,
-    );
-}
-
-// ============================================================================
-// The redesigned stack (ADR 0004-0008)
-//
-// The new lexer, parser and formatter live alongside the old ones until the
-// switch-over. These tests hold the new stack to the same bar, with their own
-// ledger of what it does not handle yet. Cutting over means emptying these
-// three registries; until then they say precisely what is left.
-// ============================================================================
-
-mod redesign {
-    use super::{all_fixture_files, Failure};
-    use camello::fmt::{format_source, FormatterOptions};
-    use camello::lang::TokenExt;
-    use std::fs;
-
-    /// Fixtures the new grammar does not parse cleanly yet.
-    ///
-    /// Every entry is a gap in coverage, not a disagreement about what the
-    /// fixture means. Ordered as they appear on disk.
-    /// Fixtures the new grammar does not parse cleanly yet.
-    ///
-    /// Empty: every checked-in fixture parses without a diagnostic.
-    const PARSE_GAPS: &[&str] = &[];
-
-    /// Fixtures the new formatter does not round-trip.
-    ///
-    /// Empty: `format(format(x)) == format(x)` holds for every fixture.
-    const IDEMPOTENCY_GAPS: &[&str] = &[];
-
-    /// Fixtures whose token stream formatting changes.
-    ///
-    /// Empty: the output re-lexes to the input's non-trivia tokens throughout.
-    const SEMANTIC_GAPS: &[&str] = &[];
-
-    fn tokens(source: &str) -> Vec<(String, String)> {
-        camello::parse::parse(source)
-            .syntax()
-            .descendants_with_tokens()
-            .filter_map(|element| element.into_token())
-            .filter(|token| !token.token_kind().is_trivia())
-            .map(|token| {
-                (
-                    format!("{:?}", token.token_kind()),
-                    token.text().to_string(),
-                )
-            })
-            .collect()
-    }
-
-    /// Same monotonic ledger as the old stack's: entries may only be removed.
-    fn check(kind: &str, failures: Vec<Failure>, known: &[&str]) {
-        super::report(kind, failures, known.len(), known);
-    }
-
-    #[test]
-    fn every_fixture_parses_without_diagnostics() {
-        let mut failures = Vec::new();
-        for (label, path) in all_fixture_files() {
-            let source = fs::read_to_string(&path).expect("failed to read fixture");
-            let parsed = camello::parse::parse(&source);
-            if parsed.diagnostics.is_empty() {
-                continue;
-            }
-            let detail = parsed
-                .diagnostics
-                .iter()
-                .take(3)
-                .map(|diagnostic| {
-                    let line = source[..usize::from(diagnostic.range.start())]
-                        .lines()
-                        .count();
-                    format!("  line {line}: {}", diagnostic.message)
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-            failures.push(Failure {
-                fixture: label,
-                detail,
-            });
-        }
-        check("the redesigned grammar", failures, PARSE_GAPS);
-    }
-
-    #[test]
-    fn formatting_is_idempotent() {
-        let options = FormatterOptions::default();
-        let mut failures = Vec::new();
-        for (label, path) in all_fixture_files() {
-            let source = fs::read_to_string(&path).expect("failed to read fixture");
-            let once = format_source(&source, &options);
-            let twice = format_source(&once, &options);
-            if once != twice {
-                failures.push(Failure {
-                    fixture: label,
-                    detail: format!("--- pass 1 ---\n{once}--- pass 2 ---\n{twice}"),
-                });
-            }
-        }
-        check("redesigned idempotency", failures, IDEMPOTENCY_GAPS);
-    }
-
-    #[test]
-    fn formatting_preserves_semantics() {
-        let options = FormatterOptions::default();
-        let mut failures = Vec::new();
-        for (label, path) in all_fixture_files() {
-            let source = fs::read_to_string(&path).expect("failed to read fixture");
-            let formatted = format_source(&source, &options);
-            if tokens(&source) != tokens(&formatted) {
-                failures.push(Failure {
-                    fixture: label,
-                    detail: "token stream differs".to_string(),
-                });
-            }
-        }
-        check("redesigned semantic preservation", failures, SEMANTIC_GAPS);
-    }
+    report("semantic preservation (ADR 0008 §6)", failures, total);
 }

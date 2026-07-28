@@ -1,0 +1,45 @@
+---
+source: src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "each"
+        DEREF_EXPR
+          `%` "%"
+          SCALAR_VAR
+            `$` "$"
+            identifier "hash"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "each"
+        ARRAY_VAR
+          `@` "@"
+          identifier "array"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "values"
+        DEREF_EXPR
+          `%` "%"
+          SCALAR_VAR
+            `$` "$"
+            identifier "hash_ref"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "values"
+        ARRAY_VAR
+          `@` "@"
+          identifier "array_ref"
+    `;` ";"

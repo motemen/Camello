@@ -1,0 +1,7 @@
+---
+source: src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  POD
+    POD block "=head1 TITLE\nContent\n=cut"

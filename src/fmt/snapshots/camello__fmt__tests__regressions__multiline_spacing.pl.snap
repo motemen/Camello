@@ -1,0 +1,24 @@
+---
+source: src/fmt/tests.rs
+expression: format(&source)
+---
+fun(
+    sub {
+        ...;
+    },
+);
+
+fun(
+    q[
+        12345
+    ]
+);
+
+s{}{} if 1;
+
+!!$bool;
+
+fun
+1,
+2,
+3;

@@ -1,9 +1,0 @@
----
-source: src/formatter/tests.rs
-assertion_line: 51
-expression: formatted
----
-[
-    1, # one
-    2, # two
-];

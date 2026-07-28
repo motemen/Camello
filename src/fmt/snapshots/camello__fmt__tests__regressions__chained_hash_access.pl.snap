@@ -1,0 +1,8 @@
+---
+source: src/fmt/tests.rs
+expression: format(&source)
+---
+$h->{ a }{ b };
+$config->{ options }{ dry_run };
+$data->{ $key }{ nested_value };
+$obj->{ result }{ items }->[0];

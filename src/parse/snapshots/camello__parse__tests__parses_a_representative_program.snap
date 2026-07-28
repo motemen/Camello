@@ -1,6 +1,5 @@
 ---
 source: src/parse/tests.rs
-assertion_line: 354
 expression: tree(source)
 ---
 ROOT

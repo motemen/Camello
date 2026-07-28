@@ -1,0 +1,10 @@
+---
+source: src/fmt/tests.rs
+expression: format(&source)
+---
+sub foo {
+    !$x
+}
+sub bar {
+    ~$y
+}

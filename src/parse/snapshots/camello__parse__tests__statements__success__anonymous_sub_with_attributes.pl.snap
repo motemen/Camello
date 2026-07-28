@@ -1,0 +1,34 @@
+---
+source: src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  SUB_DEF
+    `sub` "sub"
+    SUB_NAME
+      identifier "f"
+    BLOCK
+      `{` "{"
+      SUB_DEF
+        `sub` "sub"
+        SUB_NAME
+        ATTR
+          `:` ":"
+          SUB_NAME
+            identifier "method"
+        ATTR
+          `:` ":"
+          SUB_NAME
+            identifier "foo"
+          ATTR_ARGS
+            `(` "("
+            raw text "1"
+            `)` ")"
+        BLOCK
+          `{` "{"
+          EXPR_STMT
+            LIST_EXPR
+              LITERAL
+                number "0"
+          `}` "}"
+      `}` "}"

@@ -1,6 +1,5 @@
 ---
 source: src/parse/tests.rs
-assertion_line: 66
 expression: "tree(\"$x = 1;\\nfoo();\\n\")"
 ---
 ROOT

@@ -1,0 +1,105 @@
+---
+source: src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  EXPR_STMT
+    LIST_EXPR
+      DEREF_EXPR
+        `@` "@"
+        DEREF_EXPR
+          `$` "$"
+          SCALAR_VAR
+            `$` "$"
+            identifier "aaa"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      DEREF_EXPR
+        `%` "%"
+        DEREF_EXPR
+          `$` "$"
+          SCALAR_VAR
+            `$` "$"
+            identifier "bbb"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      DEREF_EXPR
+        `$` "$"
+        DEREF_EXPR
+          `$` "$"
+          DEREF_EXPR
+            `$` "$"
+            SCALAR_VAR
+              `$` "$"
+              identifier "ccc"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      DEREF_EXPR
+        `@` "@"
+        DEREF_EXPR
+          `$` "$"
+          DEREF_EXPR
+            `$` "$"
+            SCALAR_VAR
+              `$` "$"
+              identifier "ddd"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            ARRAY_VAR
+              `@` "@"
+              identifier "array"
+        `=` "="
+        DEREF_EXPR
+          `@` "@"
+          DEREF_EXPR
+            `$` "$"
+            SCALAR_VAR
+              `$` "$"
+              identifier "ref"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            HASH_VAR
+              `%` "%"
+              identifier "hash"
+        `=` "="
+        DEREF_EXPR
+          `%` "%"
+          DEREF_EXPR
+            `$` "$"
+            SCALAR_VAR
+              `$` "$"
+              identifier "hashref"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "scalar"
+        `=` "="
+        DEREF_EXPR
+          `$` "$"
+          DEREF_EXPR
+            `$` "$"
+            DEREF_EXPR
+              `$` "$"
+              SCALAR_VAR
+                `$` "$"
+                identifier "deepref"
+    `;` ";"

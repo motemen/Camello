@@ -1,6 +1,5 @@
 ---
 source: src/parse/tests.rs
-assertion_line: 71
 expression: "tree(\"my ($a, $b) = @_;\\n\")"
 ---
 ROOT

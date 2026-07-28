@@ -1,0 +1,5 @@
+---
+source: src/parse/tests.rs
+expression: rendered
+---
+line 2: expected `}`, found end of file

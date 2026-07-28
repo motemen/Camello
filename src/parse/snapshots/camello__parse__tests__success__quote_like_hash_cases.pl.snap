@@ -1,0 +1,102 @@
+---
+source: src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  BLOCK_STMT
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          PAREN_EXPR
+            `(` "("
+            LIST_EXPR
+              QR_EXPR
+                `qr` "qr"
+                delimiter "#"
+                regex pattern "x"
+                delimiter "#"
+            `)` ")"
+      `}` "}"
+  BLOCK_STMT
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          S_EXPR
+            `s` "s"
+            delimiter "#"
+            regex pattern "x"
+            delimiter "#"
+            interpolated string contents "y"
+            delimiter "#"
+      `}` "}"
+  BLOCK_STMT
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          PAREN_EXPR
+            `(` "("
+            LIST_EXPR
+              M_EXPR
+                `m` "m"
+                delimiter "#"
+                regex pattern "pattern"
+                delimiter "#"
+            `)` ")"
+      `}` "}"
+  BLOCK_STMT
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          TR_EXPR
+            `tr` "tr"
+            delimiter "#"
+            transliteration search list "a"
+            delimiter "#"
+            transliteration replacement list "b"
+            delimiter "#"
+      `}` "}"
+  BLOCK_STMT
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          TR_EXPR
+            `y` "y"
+            delimiter "#"
+            transliteration search list "a"
+            delimiter "#"
+            transliteration replacement list "b"
+            delimiter "#"
+      `}` "}"
+  BLOCK_STMT
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          LIST_CALL_EXPR
+            SUB_NAME
+              identifier "qr"
+          `=>` "=>"
+          LITERAL
+            number "1"
+      `}` "}"
+  EMPTY_STMT
+    `;` ";"
+  BLOCK_STMT
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          LIST_CALL_EXPR
+            SUB_NAME
+              identifier "s"
+          `=>` "=>"
+          LITERAL
+            number "2"
+      `}` "}"
+  EMPTY_STMT
+    `;` ";"

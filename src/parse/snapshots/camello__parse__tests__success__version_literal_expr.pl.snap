@@ -1,0 +1,26 @@
+---
+source: src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  USE_STMT
+    `use` "use"
+    SUB_NAME
+      identifier "constant"
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "HAVE_BOOLEANS"
+      `=>` "=>"
+      PAREN_EXPR
+        `(` "("
+        LIST_EXPR
+          BINARY_EXPR
+            SCALAR_VAR
+              `$` "$"
+              raw text "^V"
+            `ge` "ge"
+            LITERAL
+              version string "v5.36"
+        `)` ")"
+    `;` ";"
