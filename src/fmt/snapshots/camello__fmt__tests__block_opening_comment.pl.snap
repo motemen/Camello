@@ -2,6 +2,6 @@
 source: src/fmt/tests.rs
 expression: format(&source)
 ---
-sub foo {
+sub foo { # comment
     ;
 }

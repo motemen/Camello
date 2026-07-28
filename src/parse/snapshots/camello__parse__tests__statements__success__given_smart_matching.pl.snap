@@ -9,21 +9,23 @@ ROOT
     `;` ";"
   GIVEN_STMT
     `given` "given"
-    `(` "("
-    LIST_EXPR
-      SCALAR_VAR
-        `$` "$"
-        identifier "item"
-    `)` ")"
+    PAREN_EXPR
+      `(` "("
+      LIST_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "item"
+      `)` ")"
     BLOCK
       `{` "{"
       WHEN_CLAUSE
         `when` "when"
-        `(` "("
-        LIST_EXPR
-          UNDEF_EXPR
-            `undef` "undef"
-        `)` ")"
+        PAREN_EXPR
+          `(` "("
+          LIST_EXPR
+            UNDEF_EXPR
+              `undef` "undef"
+          `)` ")"
         BLOCK
           `{` "{"
           EXPR_STMT
@@ -38,21 +40,22 @@ ROOT
           `}` "}"
       WHEN_CLAUSE
         `when` "when"
-        `(` "("
-        LIST_EXPR
-          ANON_ARRAY
-            `[` "["
-            LIST_EXPR
-              LITERAL
-                number "1"
-              `,` ","
-              LITERAL
-                number "3"
-              `,` ","
-              LITERAL
-                number "5"
-            `]` "]"
-        `)` ")"
+        PAREN_EXPR
+          `(` "("
+          LIST_EXPR
+            ANON_ARRAY
+              `[` "["
+              LIST_EXPR
+                LITERAL
+                  number "1"
+                `,` ","
+                LITERAL
+                  number "3"
+                `,` ","
+                LITERAL
+                  number "5"
+              `]` "]"
+          `)` ")"
         BLOCK
           `{` "{"
           EXPR_STMT
@@ -67,14 +70,15 @@ ROOT
           `}` "}"
       WHEN_CLAUSE
         `when` "when"
-        `(` "("
-        LIST_EXPR
-          QR_EXPR
-            `qr` "qr"
-            delimiter "/"
-            regex pattern "^[a-z]+$"
-            delimiter "/"
-        `)` ")"
+        PAREN_EXPR
+          `(` "("
+          LIST_EXPR
+            QR_EXPR
+              `qr` "qr"
+              delimiter "/"
+              regex pattern "^[a-z]+$"
+              delimiter "/"
+          `)` ")"
         BLOCK
           `{` "{"
           EXPR_STMT

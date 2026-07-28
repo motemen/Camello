@@ -164,11 +164,10 @@ fn comment_at_the_start_of_a_broken_list_adds_no_blank_line() {
 fn comment_before_a_block_keeps_the_brace_on_its_line() {
     let source = "if ($x)    # why\n{\n    print 1;\n}\n";
     let formatted = format(source);
+    // K&R: the brace stays on the `if` line, and the comment that sat before it
+    // moves after it, because the brace is the formatter's to place.
     let first = formatted.lines().next().unwrap_or_default();
-    assert!(
-        first.trim_end().ends_with('{'),
-        "K&R: the brace stays on the `if` line, got {first:?} from:\n{formatted}"
-    );
+    assert_eq!(first, "if ($x) { # why", "{formatted}");
     assert!(
         !formatted.contains("\n\n"),
         "and no blank line is introduced:\n{formatted}"

@@ -5,12 +5,13 @@ expression: rendered
 ROOT
   GIVEN_STMT
     `given` "given"
-    `(` "("
-    LIST_EXPR
-      SCALAR_VAR
-        `$` "$"
-        identifier "value"
-    `)` ")"
+    PAREN_EXPR
+      `(` "("
+      LIST_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "value"
+      `)` ")"
     BLOCK
       `{` "{"
       EXPR_STMT

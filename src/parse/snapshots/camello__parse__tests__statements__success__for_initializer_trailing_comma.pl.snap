@@ -6,15 +6,16 @@ ROOT
   LOOP_STMT
     `for` "for"
     FOREACH_HEADER
-      `(` "("
-      LIST_EXPR
-        LITERAL
-          number "1"
-        `,` ","
-        LITERAL
-          number "2"
-        `,` ","
-      `)` ")"
+      PAREN_EXPR
+        `(` "("
+        LIST_EXPR
+          LITERAL
+            number "1"
+          `,` ","
+          LITERAL
+            number "2"
+          `,` ","
+        `)` ")"
     BLOCK
       `{` "{"
       `}` "}"

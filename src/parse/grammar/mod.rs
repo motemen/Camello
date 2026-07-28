@@ -393,12 +393,21 @@ fn if_stmt(parser: &mut Parser<'_>) {
     parser.complete(marker, NodeKind::IF_STMT);
 }
 
+/// The parenthesised part of a control structure.
+///
+/// Wrapped in `PAREN_EXPR` like any other parenthesised list, so the formatter
+/// has one rule for "a bracketed group" rather than a separate case for
+/// conditions (ADR 0008 §3).
 fn condition(parser: &mut Parser<'_>) {
     parser.expect_term();
-    if !parser.expect(T!["("]) {
+    if !parser.at(T!["("]) {
+        parser.error("expected `(`");
         parser.recover(Recovery::Statement);
         return;
     }
+
+    let marker = parser.start();
+    parser.bump();
     parser.expect_term();
     let list = parser.start();
     expr::list_contents(parser, &[T![")"]]);
@@ -409,6 +418,7 @@ fn condition(parser: &mut Parser<'_>) {
             parser.bump();
         }
     }
+    parser.complete(marker, NodeKind::PAREN_EXPR);
     parser.expect_term();
 }
 

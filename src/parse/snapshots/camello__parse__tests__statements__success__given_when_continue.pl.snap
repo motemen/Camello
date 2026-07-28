@@ -5,21 +5,23 @@ expression: rendered
 ROOT
   GIVEN_STMT
     `given` "given"
-    `(` "("
-    LIST_EXPR
-      SCALAR_VAR
-        `$` "$"
-        identifier "variable"
-    `)` ")"
+    PAREN_EXPR
+      `(` "("
+      LIST_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "variable"
+      `)` ")"
     BLOCK
       `{` "{"
       WHEN_CLAUSE
         `when` "when"
-        `(` "("
-        LIST_EXPR
-          LITERAL
-            string literal "'foo'"
-        `)` ")"
+        PAREN_EXPR
+          `(` "("
+          LIST_EXPR
+            LITERAL
+              string literal "'foo'"
+          `)` ")"
         BLOCK
           `{` "{"
           EXPR_STMT

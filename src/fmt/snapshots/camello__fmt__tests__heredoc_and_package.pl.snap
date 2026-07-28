@@ -20,6 +20,7 @@ if ($some_var) {
     print <<~EOF;
         This is a here-doc
         EOF
+
 }
 
 package Foo::Bar { my $x = 1; }
@@ -30,8 +31,7 @@ package Foo::Bar v5.36.0;
 package Foo::Bar::Baz { print "hi"; }
 package Foo::123ABC { my $x = 1; }
 package Foo::123 1.0;
-package Bar::456 v2.0.0 {
-}
+package Bar::456 v2.0.0 {  }
 package Foo::123ABC v1.0.0;
 package Foo::123::Bar::789;
 package A::1::B::2::C::3;
@@ -48,20 +48,14 @@ my $str_quote = q{string};
 my $hash  = { a => 1, b => 2 };
 my $array = [1, 2, 3];
 ($a
-? []
-: {});
+    ? []
+    : {});
 ($foo || $bar) && ($x // $y);
 
-BEGIN {
-}
-CHECK {
-}
-INIT {
-}
-END {
-}
+BEGIN {  }
+CHECK {  }
+INIT {  }
+END {  }
 
-sub attr_test : bar : baz {
-}
-sub attr_args : bar (1,2) {
-}
+sub attr_test : bar : baz {  }
+sub attr_args : bar(1,2) {  }

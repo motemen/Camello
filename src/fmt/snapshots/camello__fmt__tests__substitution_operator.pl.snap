@@ -69,6 +69,8 @@ s{
 }{
     result
 }x;
+
+# Various delimiter styles - formatting should be preserved
 {
     s/foo/
         bar

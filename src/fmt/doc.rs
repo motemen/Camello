@@ -125,6 +125,9 @@ impl Doc {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ShapeKey {
     pub statement: crate::lang::NodeKind,
-    pub declaration: Option<crate::lang::TokenKind>,
+    /// Whether the statement declares. formatting.md §7 keys on the *presence*
+    /// of `my`/`our`/`state`/`local`, not on which one, so a run of mixed
+    /// declarations still aligns.
+    pub declares: bool,
     pub list_assignment: bool,
 }
