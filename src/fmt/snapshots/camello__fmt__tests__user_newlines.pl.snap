@@ -64,9 +64,11 @@ my $obj = $factory->create()->initialize()->configure();
 
 # hash with fat comma alignment and newlines
 my %config = (
-    key1 => "long_value_1",
+    key1 =>
+        "long_value_1",
     key2 => "value2",
-    key3 => compute_value()
+    key3 =>
+        compute_value()
 );
 
 # expression continuation with operators
