@@ -231,10 +231,13 @@ impl<'a> Builder<'a> {
         if before == Some(T!["->"]) || after == Some(T!["->"]) {
             return false;
         }
-        // A sigil is part of the name that follows it.
+        // A sigil is part of the name that follows it — except a signature
+        // placeholder, which is a bare `$` holding a slot. `$ = 1` must not
+        // close up into `$= 1`, which reads as the `$=` variable.
         if before.is_some_and(TokenKind::is_sigil) {
-            return false;
+            return parent == Some(NodeKind::SIGNATURE_PARAM);
         }
+
         // An argument list hugs the name it belongs to: `foo(1)`, not `foo (1)`.
         // The parenthesis is inside ARG_LIST, so the test is on the node.
         if next.as_node().is_some_and(|node| {
