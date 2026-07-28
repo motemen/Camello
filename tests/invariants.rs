@@ -11,6 +11,8 @@
 //!   unchanged in the input.
 //! * **Seed stability** (ADR 0008 §6 I2): a broken group's own output re-reads
 //!   as broken, so a second pass makes the same layout choices as the first.
+//! * **Trivia placement** (ADR 0006 §4): no node's range begins or ends on
+//!   trivia.
 //!
 //! These ran throughout the redesign — first against the old stack, then against
 //! the new one — with a registry of known violations that was only ever allowed
@@ -189,6 +191,67 @@ fn parsing_is_lossless() {
     }
 
     report("losslessness (ADR 0006 §6)", failures, total);
+}
+
+/// No node's range begins or ends on trivia (ADR 0006 §4).
+///
+/// The ADR promised this as a property test and it shipped as one assertion
+/// about one hard-coded string. It is what makes "does this node span more than
+/// one line" have an exact answer instead of depending on where the whitespace
+/// happened to land, so it is worth asking of every fixture in the tree.
+#[test]
+fn no_node_range_includes_trivia() {
+    let files = all_fixture_files();
+    let total = files.len();
+    let mut failures = Vec::new();
+
+    for (label, path) in files {
+        let source = fs::read_to_string(&path).expect("failed to read fixture");
+        let root = parse_perl(&source).0;
+        let mut offenders = Vec::new();
+        for node in root.descendants() {
+            // ROOT covers the file, trailing newline and all.
+            if node == root {
+                continue;
+            }
+            let mut tokens = node
+                .descendants_with_tokens()
+                .filter_map(|element| element.into_token());
+            let Some(first) = tokens.next() else { continue };
+            let last = node
+                .descendants_with_tokens()
+                .filter_map(|element| element.into_token())
+                .last()
+                .unwrap_or_else(|| first.clone());
+
+            // Asked of the tokens, not of the text: POD and `__DATA__` hold
+            // their own line terminators, and those are content.
+            if first.token_kind().is_trivia() {
+                offenders.push(format!(
+                    "  {} starts on trivia: {:?}",
+                    node.kind(),
+                    first.text()
+                ));
+            } else if last.token_kind().is_trivia() {
+                offenders.push(format!(
+                    "  {} ends on trivia: {:?}",
+                    node.kind(),
+                    last.text()
+                ));
+            }
+            if offenders.len() >= 3 {
+                break;
+            }
+        }
+        if !offenders.is_empty() {
+            failures.push(Failure {
+                fixture: label,
+                detail: offenders.join("\n"),
+            });
+        }
+    }
+
+    report("trivia placement (ADR 0006 §4)", failures, total);
 }
 
 #[test]

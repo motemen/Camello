@@ -127,7 +127,13 @@ pub(crate) fn primary(parser: &mut Parser<'_>) -> Option<CompletedMarker> {
             let marker = parser.start();
             parser.bump();
             parser.expect_term();
-            if parser.at(TokenKind::IDENT) || parser.at(TokenKind::VERSION) {
+            // A version is not a name. `name` coerces through `take_name`,
+            // which re-reads the token with the identifier scanner — and
+            // `require v5.26` came back as `v5 . 26`, a concatenation of a
+            // bareword and a number.
+            if parser.at(TokenKind::VERSION) {
+                parser.bump();
+            } else if parser.at(TokenKind::IDENT) {
                 name(parser, NodeKind::SUB_NAME);
             } else {
                 expr(parser);

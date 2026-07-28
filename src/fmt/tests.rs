@@ -290,6 +290,53 @@ fn trailing_comments_align_as_a_group() {
 }
 
 #[test]
+fn alignment_padding_is_capped() {
+    // The cap exists so one very long line cannot push a whole group across the
+    // screen (issue #273). It shipped with no test at all, which is how a DoS
+    // guard stops being one.
+    let source = "my $short = 1;\nmy $this_name_is_very_much_longer_than_the_others = 2;\n";
+
+    let generous = format_source(
+        source,
+        &FormatterOptions {
+            max_alignment_padding: 100,
+            ..FormatterOptions::default()
+        },
+    );
+    let capped = format_source(
+        source,
+        &FormatterOptions {
+            max_alignment_padding: 4,
+            ..FormatterOptions::default()
+        },
+    );
+
+    let column = |text: &str| text.lines().next().and_then(|line| line.find('=')).unwrap();
+    assert_eq!(
+        column(&generous),
+        "my $this_name_is_very_much_longer_than_the_others ".len()
+    );
+    assert_eq!(column(&capped), "my $short ".len() + 4);
+
+    // Capping must not cost idempotency: the second pass has to reach the same
+    // columns, not add another four spaces.
+    let options = FormatterOptions {
+        max_alignment_padding: 4,
+        ..FormatterOptions::default()
+    };
+    assert_eq!(format_source(&capped, &options), capped);
+
+    // Zero means "do not align", and stays that way.
+    let none = FormatterOptions {
+        max_alignment_padding: 0,
+        ..FormatterOptions::default()
+    };
+    let unaligned = format_source(source, &none);
+    assert_eq!(column(&unaligned), "my $short ".len());
+    assert_eq!(format_source(&unaligned, &none), unaligned);
+}
+
+#[test]
 fn the_minimum_space_before_a_comment_is_one_option() {
     // The old formatter had two comment paths — one hard-coding four spaces, one
     // copying the source's whitespace — and the option reached only one.
