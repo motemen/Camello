@@ -12,7 +12,7 @@ ROOT
         `=~` "=~"
         M_EXPR
           delimiter "/"
-          regex pattern "[a/]"
+          regex pattern "[a\\/]"
           delimiter "/"
     `;` ";"
   EXPR_STMT
@@ -23,8 +23,21 @@ ROOT
           identifier "foo"
         `=~` "=~"
         M_EXPR
+          `m` "m"
+          delimiter "{"
+          regex pattern "[/]"
+          delimiter "}"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      MATCH_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "foo"
+        `=~` "=~"
+        M_EXPR
           delimiter "/"
-          regex pattern "[]/]"
+          regex pattern "[]]"
           delimiter "/"
     `;` ";"
   EXPR_STMT
