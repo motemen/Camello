@@ -14,7 +14,7 @@ package Bar::456DEF::Test;
 package Module::123abc456;
 package Test::999XYZ789;
 package Foo::123ABC { my $x = 1; }
-package Bar::456DEF v1.0;
+package Bar::456DEF v1.0.0;
 package Foo::123ABC::B::456DEF;
 sub tr {}
 package tr;

@@ -4,6 +4,7 @@
 #
 #   scripts/perl-check                  check every fixture
 #   scripts/perl-check <file>...        check the given files
+#   VERBOSE=1 scripts/perl-check        also report which dialect each file needed
 #
 # For each input perl accepts:
 #   1. format it, and check perl still accepts the output;
@@ -14,8 +15,17 @@
 # into several tokens — `${^MATCH}` versus `${^ MATCH}` is the same token stream
 # and a different variable. Deparsing asks perl what it read.
 #
-# Fixtures perl rejects are skipped: some are deliberately malformed, and others
-# are fragments that never had to compile.
+# ── Why there is more than one dialect ────────────────────────────────────────
+#
+# Whether a file is Perl depends on which features are enabled, and the answer
+# can flip: with `signatures` on, `sub f (&\%)` is a malformed signature; with it
+# off, it is a perfectly good prototype. Likewise `try { } catch { };` is a pair
+# of function calls under Try::Tiny and a syntax error under core `try`.
+#
+# So the oracle asks "is there a dialect under which this is Perl", trying each
+# in turn. That ambiguity is not an artefact of the test: it is the same one
+# camello faces, having no symbol table and no way to know which pragmas are in
+# force.
 
 set -uo pipefail
 
@@ -26,25 +36,75 @@ fi
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
+mkdir -p "$work/lib"
 
 cargo build --quiet || exit 1
 camello=target/debug/camello
+lib=scripts/perl-lib
 
-skipped=0
+# `classic` keeps prototypes and lets the Try::Tiny stubs in CamelloOracle supply
+# `try`/`catch`/`finally`; `modern` turns on the core replacements for both.
+classic="-Mfeature=say,switch,state,fc"
+modern="-Mfeature=say,switch,state,fc,signatures,try"
+
+compile() { # compile <dialect-flags> <file>
+  perl -I "$lib" -I "$work/lib" -MCamelloOracle "$1" -MCamelloPredeclare -c "$2" 2>&1
+}
+
+# Names the file uses as list operators without declaring them. perl says which,
+# so collect them from its own complaint and declare them.
+predeclare() {
+  local file=$1 name
+  printf 'package main;\n1;\n' > "$work/lib/CamelloPredeclare.pm"
+  local decls=""
+  for _ in 1 2 3 4 5 6 7 8; do
+    name=$(compile "$classic" "$file" \
+           | grep -m1 -oE 'predeclare "[A-Za-z_][A-Za-z0-9_]*"' \
+           | sed 's/predeclare "//; s/"//')
+    [ -z "$name" ] && break
+    decls="${decls}sub ${name};"$'\n'
+    printf 'package main;\n%s1;\n' "$decls" > "$work/lib/CamelloPredeclare.pm"
+  done
+}
+
+not_perl=0
 checked=0
 broken=0
 changed=0
 
-deparse() {
-  # -p parenthesises everything, so precedence differences show up as text.
-  perl -MO=Deparse,-p "$1" 2>/dev/null
+# Is the file still the same program after formatting, read under this dialect?
+# Returns 0 for yes, 1 for "the output does not compile", 2 for "it compiles but
+# says something else".
+# B::Deparse does not emit forward declarations in a stable order, and they
+# carry no behaviour, so they take no part in the comparison.
+deparse() { # deparse <dialect-flags> <file>
+  perl -I "$lib" -I "$work/lib" -MCamelloOracle "$1" \
+    -MCamelloPredeclare -MO=Deparse,-p "$2" 2>/dev/null \
+    | grep -vE '^sub [A-Za-z_][A-Za-z0-9_:]* ;$'
+}
+
+survives() { # survives <dialect-flags> <input> <output>
+  compile "$1" "$3" | grep -q 'syntax OK' || return 1
+  local before after
+  before=$(deparse "$1" "$2")
+  after=$(deparse "$1" "$3")
+  [ -z "$before" ] && return 0
+  [ "$before" = "$after" ] && return 0
+  return 2
 }
 
 for file in "${files[@]}"; do
-  if ! perl -c "$file" >/dev/null 2>&1; then
-    skipped=$((skipped + 1))
-    reason=$(perl -c "$file" 2>&1 | head -1 | cut -c1-70)
-    printf 'SKIPPED  %s\n    %s\n' "$file" "$reason"
+  predeclare "$file"
+
+  accepting=()
+  for flags in "$classic" "$modern"; do
+    compile "$flags" "$file" | grep -q 'syntax OK' && accepting+=("$flags")
+  done
+
+  if [ ${#accepting[@]} -eq 0 ]; then
+    not_perl=$((not_perl + 1))
+    printf 'NOT PERL  %s\n' "$file"
+    compile "$classic" "$file" | head -1 | cut -c1-100 | sed 's/^/    /'
     continue
   fi
 
@@ -57,23 +117,33 @@ for file in "${files[@]}"; do
 
   checked=$((checked + 1))
 
-  if ! perl -c "$formatted" >/dev/null 2>&1; then
-    echo "OUTPUT REJECTED BY PERL  $file"
-    perl -c "$formatted" 2>&1 | head -3 | sed 's/^/    /'
-    broken=$((broken + 1))
-    continue
-  fi
+  # Formatting is fine if it preserves the program under *some* dialect the
+  # input was valid in. Requiring every dialect would fail files that only make
+  # sense under one of them: with `signatures` off, `sub f ($x = 1)` is a
+  # prototype whose text B::Deparse echoes verbatim, so any reformatting of it
+  # reads as a change.
+  best=3
+  for flags in "${accepting[@]}"; do
+    survives "$flags" "$file" "$formatted"
+    status=$?
+    [ "$status" -lt "$best" ] && best=$status
+    [ "$best" -eq 0 ] && break
+  done
 
-  before=$(deparse "$file")
-  after=$(deparse "$formatted")
-  if [ -n "$before" ] && [ "$before" != "$after" ]; then
-    echo "MEANING CHANGED  $file"
-    diff <(printf '%s\n' "$before") <(printf '%s\n' "$after") | head -8 | sed 's/^/    /'
-    changed=$((changed + 1))
-  fi
+  case $best in
+    0) [ -n "${VERBOSE:-}" ] && printf 'OK        %s\n' "$file" ;;
+    1) echo "OUTPUT REJECTED BY PERL  $file"
+       compile "${accepting[0]}" "$formatted" | head -3 | sed 's/^/    /'
+       broken=$((broken + 1)) ;;
+    *) echo "MEANING CHANGED  $file"
+       diff <(deparse "${accepting[0]}" "$file") \
+            <(deparse "${accepting[0]}" "$formatted") \
+         | head -8 | sed 's/^/    /'
+       changed=$((changed + 1)) ;;
+  esac
 done
 
-printf -- '---- checked %d, skipped %d (perl rejects the input), broken %d, meaning changed %d\n' \
-  "$checked" "$skipped" "$broken" "$changed"
+printf -- '---- checked %d, not perl %d, broken %d, meaning changed %d\n' \
+  "$checked" "$not_perl" "$broken" "$changed"
 
 [ "$broken" -eq 0 ] && [ "$changed" -eq 0 ]

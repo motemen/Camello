@@ -20,3 +20,7 @@ $handler, $opts;
 
 # Function-style try in list context
 my @results = (try { 1 }, try { 2 });
+
+# Moved here from control_flow.pl: the Try::Tiny expression form and core
+# try/catch cannot coexist in one file, and that file uses the core form.
+my $try_value = try { attempt() } catch { fallback() };
