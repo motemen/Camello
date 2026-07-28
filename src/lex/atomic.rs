@@ -330,6 +330,21 @@ impl<'a> Lexer<'a> {
                         end_start,
                         end_start + terminator_len,
                     );
+
+                    // `foo(<<A, <<B)` puts two bodies one after the other, and
+                    // the second starts at the line *after* the first
+                    // terminator. Leaving that line terminator here made it the
+                    // first byte of the next body, so B's contents gained a
+                    // leading newline — which the token stream cannot see,
+                    // because it is still one HEREDOC_CONTENT token with the
+                    // same text either way, and perl printed a blank line.
+                    //
+                    // Only between bodies: with none left the newline is the
+                    // ordinary scanner's, exactly as before.
+                    if self.next_heredoc().is_some() && self.remaining().starts_with('\n') {
+                        let newline = self.scan_pos;
+                        self.push(TokenKind::NEWLINE, newline, newline + 1);
+                    }
                 }
                 None => {
                     self.push(

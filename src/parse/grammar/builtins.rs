@@ -11,6 +11,22 @@
 //! The old parser answered these from a 22-entry table plus string comparisons
 //! against `"sort"` and `"//"` scattered across four files. Anything missing
 //! from that table — `push`, `die`, `defined`, `open` — was guessed at.
+//!
+//! **This table is generated.** `scripts/generate-builtins` reads perl's own
+//! prototypes through `prototype("CORE::$name")` and applies perl's own mapping
+//! from toke.c: no arguments is FUNC0, exactly one is UNIOP — a named unary
+//! operator, binding tighter than comparison — and anything else is LSTOP. The
+//! handful of builtins perl gives no prototype for have bespoke syntax in its
+//! grammar and are listed by hand in the script, with the reason.
+//!
+//! Generation runs there and the result is committed, rather than running at
+//! build time: a Rust crate that cannot be built without a perl installation is
+//! a worse trade than a table that has to be regenerated when perl gains a
+//! builtin. Re-run the script and diff. This is deviation L-011.
+//!
+//! Being written from memory instead cost `eval`: with the name missing, the
+//! parser fell through to "unknown, expect an operator next", `eval <<EOT`
+//! lexed as a left shift, and the heredoc body was promoted to code.
 
 use crate::lex::Expect;
 
@@ -27,6 +43,10 @@ pub(crate) enum Shape {
     BlockList,
     /// An optional bareword or scalar filehandle, then a list: `print`, `say`.
     FilehandleList,
+    /// A block, or one operand: `eval`. Unlike `BlockList` nothing follows the
+    /// block, and unlike `NamedUnary` the brace opens a block rather than an
+    /// anonymous hash — `eval {` is never a hash in perl either.
+    BlockOrTerm,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -44,36 +64,47 @@ pub(crate) struct Builtin {
 pub(crate) fn lookup(name: &str) -> Option<Builtin> {
     let (shape, expect_after_name) = match name {
         // -- block-taking list operators
-        "map" | "grep" | "sort" => (Shape::BlockList, Expect::Term),
+        "grep" | "map" | "sort" => (Shape::BlockList, Expect::Term),
 
         // -- filehandle-taking list operators
         "print" | "printf" | "say" => (Shape::FilehandleList, Expect::Term),
 
-        // -- named unary operators (perlop's "named unary operators")
-        "defined" | "ref" | "scalar" | "lc" | "uc" | "lcfirst" | "ucfirst" | "length" | "chr"
-        | "ord" | "hex" | "oct" | "int" | "abs" | "sqrt" | "log" | "exp" | "sin" | "cos"
-        | "quotemeta" | "fc" | "rand" | "srand" | "exists" | "delete" | "each" | "keys"
-        | "values" | "shift" | "pop" | "chomp" | "chop" | "chdir" | "rmdir" | "readlink"
-        | "stat" | "lstat" | "undef" | "study" | "pos" | "alarm" | "sleep" | "caller" | "exit"
-        | "umask" | "gmtime" | "localtime" | "lock" | "fileno" | "readdir" | "closedir"
-        | "rewinddir" | "telldir" | "getpgrp" => (Shape::NamedUnary, Expect::Term),
+        // -- named unary operators — exactly one argument, binding
+        // tighter than comparison (perlop)
+        "abs" | "alarm" | "caller" | "chdir" | "chr" | "chroot" | "close" | "closedir" | "cos"
+        | "dbmclose" | "defined" | "delete" | "each" | "eof" | "exists" | "exit" | "exp" | "fc"
+        | "fileno" | "getc" | "getgrgid" | "getgrnam" | "gethostbyname" | "getnetbyname"
+        | "getpeername" | "getpgrp" | "getprotobyname" | "getprotobynumber" | "getpwnam"
+        | "getpwuid" | "getsockname" | "glob" | "gmtime" | "hex" | "int" | "keys" | "lc"
+        | "lcfirst" | "length" | "localtime" | "lock" | "log" | "lstat" | "oct" | "ord" | "pop"
+        | "pos" | "prototype" | "quotemeta" | "rand" | "readdir" | "readline" | "readlink"
+        | "readpipe" | "ref" | "reset" | "rewinddir" | "rmdir" | "scalar" | "sethostent"
+        | "setnetent" | "setprotoent" | "setservent" | "shift" | "sin" | "sleep" | "sqrt"
+        | "srand" | "stat" | "study" | "tell" | "telldir" | "tied" | "uc" | "ucfirst" | "umask"
+        | "undef" | "untie" | "values" | "write" => (Shape::NamedUnary, Expect::Term),
 
-        // -- nullary
-        "time" | "times" | "wait" | "getppid" | "fork" => (Shape::Nullary, Expect::Operator),
+        // -- no arguments at all
+        "endgrent" | "endhostent" | "endnetent" | "endprotoent" | "endpwent" | "endservent"
+        | "fork" | "getgrent" | "gethostent" | "getlogin" | "getnetent" | "getppid"
+        | "getprotoent" | "getpwent" | "getservent" | "setgrent" | "setpwent" | "time"
+        | "times" | "wait" | "wantarray" => (Shape::Nullary, Expect::Operator),
 
         // -- ordinary list operators
-        "push" | "unshift" | "splice" | "join" | "reverse" | "sprintf" | "die" | "warn"
-        | "open" | "close" | "binmode" | "eof" | "read" | "sysread" | "syswrite" | "seek"
-        | "sysseek" | "tell" | "truncate" | "unlink" | "rename" | "mkdir" | "opendir" | "chmod"
-        | "chown" | "utime" | "link" | "symlink" | "system" | "exec" | "kill" | "bless" | "tie"
-        | "untie" | "tied" | "select" | "pack" | "unpack" | "index" | "rindex" | "substr"
-        | "atan2" | "crypt" | "formline" | "chroot" | "setpgrp" | "waitpid" | "wantarray" => {
-            (Shape::List, Expect::Term)
-        }
+        "accept" | "atan2" | "bind" | "binmode" | "bless" | "chmod" | "chomp" | "chop"
+        | "chown" | "connect" | "crypt" | "dbmopen" | "die" | "exec" | "fcntl" | "flock"
+        | "formline" | "gethostbyaddr" | "getnetbyaddr" | "getpriority" | "getservbyname"
+        | "getservbyport" | "getsockopt" | "index" | "ioctl" | "join" | "kill" | "link"
+        | "listen" | "mkdir" | "msgctl" | "msgget" | "msgrcv" | "msgsnd" | "open" | "opendir"
+        | "pack" | "pipe" | "push" | "read" | "recv" | "rename" | "reverse" | "rindex" | "seek"
+        | "seekdir" | "select" | "semctl" | "semget" | "semop" | "send" | "setpgrp"
+        | "setpriority" | "setsockopt" | "shmctl" | "shmget" | "shmread" | "shmwrite"
+        | "shutdown" | "socket" | "socketpair" | "splice" | "split" | "sprintf" | "substr"
+        | "symlink" | "syscall" | "sysopen" | "sysread" | "sysseek" | "system" | "syswrite"
+        | "tie" | "truncate" | "unlink" | "unpack" | "unshift" | "utime" | "vec" | "waitpid"
+        | "warn" => (Shape::List, Expect::Term),
 
-        // `split` is the reason the expect question exists at all: the first
-        // argument is a pattern, so the `/` after it must lex as a match.
-        "split" => (Shape::List, Expect::Term),
+        // -- a block, or one operand
+        "eval" => (Shape::BlockOrTerm, Expect::Term),
 
         _ => return None,
     };
