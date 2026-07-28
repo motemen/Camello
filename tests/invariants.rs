@@ -252,15 +252,8 @@ mod redesign {
         "src/formatter/fixtures/builtin_functions.pl",
         // A trailing comment as the last element of a broken list.
         "src/formatter/fixtures/comment_alignment_in_delimiters.pl",
-        // `print $FH <<HOGE` — a heredoc after a scalar filehandle.
-        "src/parser/fixtures/success/print_filehandle_heredoc.pl",
-        // `<` as both readline and comparison in one file.
-        "src/formatter/fixtures/io_operator_disambiguation.pl",
-        "src/parser/fixtures/success/io_operator_disambiguation.pl",
         // `${^GLOBAL_PHASE}` and other caret variables in braces.
         "src/formatter/fixtures/specials_and_sigils.pl",
-        // `try {...} catch {...}` with a method call chained onto the result.
-        "src/formatter/fixtures/try_function_style_expressions.pl",
         // Signatures with `@rest` / `%opts` and attributes after them.
         "src/formatter/fixtures/sub_signatures.pl",
         // A bare block used as a loop, with `redo`.

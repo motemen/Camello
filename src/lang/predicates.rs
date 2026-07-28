@@ -47,7 +47,6 @@ impl TokenKind {
                 | T!["+"]
                 | T!["++"]
                 | T!["--"]
-                | T!["<"]
                 | T!["not"]
                 | T!["sub"]
                 | T!["do"]
