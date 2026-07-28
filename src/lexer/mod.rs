@@ -16,321 +16,6 @@ pub use types::{DelimiterPhase, DelimiterType, LexContext, QuoteLikeMode, QuoteL
 use lookahead::CachedEntry;
 use types::{HeredocMarker, LexerMode};
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn peek_non_trivia_token_skips_trivia() {
-        let mut lexer = Lexer::new("$var\n@array");
-        assert_eq!(
-            lexer.peek_non_trivia_token(),
-            Some((SyntaxKind::SCALAR_SIGIL, "$"))
-        );
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::SCALAR_SIGIL, "$")));
-        assert_eq!(
-            lexer.peek_non_trivia_token(),
-            Some((SyntaxKind::IDENT, "var"))
-        );
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "var")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::NEWLINE, "\n")));
-        assert_eq!(
-            lexer.peek_non_trivia_token(),
-            Some((SyntaxKind::ARRAY_SIGIL, "@"))
-        );
-    }
-
-    #[test]
-    fn comment_and_newline_are_emitted_separately() {
-        let mut lexer = Lexer::new("# first\n# second\n");
-
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::COMMENT, "# first")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::NEWLINE, "\n")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::COMMENT, "# second")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::NEWLINE, "\n")));
-        assert_eq!(lexer.next_token(), None);
-
-        let mut lexer = Lexer::new("# lone comment");
-        assert_eq!(
-            lexer.next_token(),
-            Some((SyntaxKind::COMMENT, "# lone comment"))
-        );
-        assert_eq!(lexer.next_token(), None);
-    }
-
-    #[test]
-    fn array_index_variable_allows_quote_keywords_as_names() {
-        let mut lexer = Lexer::new("$#q");
-
-        assert_eq!(
-            lexer.next_token_with_context(LexContext::Value),
-            Some((SyntaxKind::ARRAY_INDEX_SIGIL, "$#"))
-        );
-        assert_eq!(
-            lexer.next_token_with_context(LexContext::Value),
-            Some((SyntaxKind::IDENT, "q"))
-        );
-    }
-
-    #[test]
-    fn peek_token_caches_result() {
-        let mut lexer = Lexer::new("$foo + 1");
-        assert_eq!(lexer.peek_token(), Some((SyntaxKind::SCALAR_SIGIL, "$")));
-        assert_eq!(lexer.peek_token(), Some((SyntaxKind::SCALAR_SIGIL, "$")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::SCALAR_SIGIL, "$")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "foo")));
-    }
-
-    #[test]
-    fn peek_nth_non_trivia_with_context_is_stable() {
-        let lexer_src = "$foo   + $bar";
-        let mut lexer = Lexer::new(lexer_src);
-
-        assert_eq!(
-            lexer.peek_nth_non_trivia_with_context(LexContext::Value, 0),
-            Some((SyntaxKind::SCALAR_SIGIL, "$"))
-        );
-        assert_eq!(
-            lexer.peek_nth_non_trivia_with_context(LexContext::Value, 1),
-            Some((SyntaxKind::IDENT, "foo"))
-        );
-        assert_eq!(
-            lexer.peek_nth_non_trivia_with_context(LexContext::Value, 2),
-            Some((T![+], "+"))
-        );
-        // Repeating lookahead should produce consistent results
-        assert_eq!(
-            lexer.peek_nth_non_trivia_with_context(LexContext::Value, 1),
-            Some((SyntaxKind::IDENT, "foo"))
-        );
-
-        // Consuming tokens afterwards should follow the peeked sequence
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::SCALAR_SIGIL, "$")));
-        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "foo")));
-    }
-
-    #[test]
-    fn peek_nth_non_trivia_handles_quote_like_hash_delimiter() {
-        let mut lexer = Lexer::new("qq#foo#");
-
-        assert_eq!(
-            lexer.peek_nth_non_trivia_with_context(LexContext::Value, 0),
-            Some((T![qq], "qq"))
-        );
-        assert_eq!(
-            lexer.peek_nth_non_trivia_with_context(LexContext::Value, 1),
-            Some((SyntaxKind::DELIMITER, "#"))
-        );
-        assert_eq!(
-            lexer.peek_nth_non_trivia_with_context(LexContext::Value, 2),
-            Some((SyntaxKind::INTERPOLATED_STRING, "foo"))
-        );
-        assert_eq!(
-            lexer.peek_nth_non_trivia_with_context(LexContext::Value, 3),
-            Some((SyntaxKind::DELIMITER, "#"))
-        );
-
-        // The actual token stream should match the peeked sequence once quote-like mode begins
-        assert_eq!(
-            lexer.next_token_with_context(LexContext::Value),
-            Some((T![qq], "qq"))
-        );
-        lexer.begin_quote_like(T![qq], QuoteLikeMode::Q);
-        assert_eq!(
-            lexer.next_token_with_context(LexContext::Value),
-            Some((SyntaxKind::DELIMITER, "#"))
-        );
-        assert_eq!(
-            lexer.next_token_with_context(LexContext::Value),
-            Some((SyntaxKind::INTERPOLATED_STRING, "foo"))
-        );
-        assert_eq!(
-            lexer.next_token_with_context(LexContext::Value),
-            Some((SyntaxKind::DELIMITER, "#"))
-        );
-    }
-
-    #[test]
-    fn peek_context_switch_clears_cached_tokens() {
-        let mut lexer = Lexer::new("/foo/");
-        assert_eq!(
-            lexer
-                .peek_non_trivia_with_context(LexContext::Operator)
-                .map(|(kind, _)| kind),
-            Some(T![/])
-        );
-
-        // Switching to value context should allow regex literal handling
-        assert_eq!(
-            lexer
-                .peek_non_trivia_with_context(LexContext::Value)
-                .map(|(kind, _)| kind),
-            Some(SyntaxKind::REGEX_LITERAL)
-        );
-        assert_eq!(
-            lexer
-                .next_token_with_context(LexContext::Value)
-                .map(|(kind, _)| kind),
-            Some(SyntaxKind::REGEX_LITERAL)
-        );
-    }
-
-    #[test]
-    fn peek_token_and_next_char_handles_hash_delimiter() {
-        let lexer_src = "qq#foo#";
-        let lexer = Lexer::new(lexer_src);
-
-        let (first_kind, first_char) = lexer.peek_token_and_next_char();
-        assert_eq!(first_kind, Some(T![qq]));
-        assert_eq!(first_char, Some('#'));
-
-        // Subsequent peeks should return the same values without consuming
-        let (second_kind, second_char) = lexer.peek_token_and_next_char();
-        assert_eq!(second_kind, Some(T![qq]));
-        assert_eq!(second_char, Some('#'));
-    }
-
-    #[test]
-    fn quote_like_peek_and_consume_flow() {
-        let mut lexer = Lexer::new("qq#foo#");
-
-        // Initial peek should see the keyword without consuming it
-        assert_eq!(lexer.peek_token(), Some((T![qq], "qq")));
-
-        let (kw_kind, _) = lexer
-            .next_token_with_context(LexContext::Value)
-            .expect("expected quote-like keyword");
-        assert_eq!(kw_kind, T![qq]);
-
-        lexer.begin_quote_like(kw_kind, QuoteLikeMode::Q);
-
-        // After entering quote-like mode, the cached lookahead should expose the delimiter
-        assert_eq!(lexer.peek_token(), Some((SyntaxKind::DELIMITER, "#")));
-    }
-
-    #[test]
-    fn heredoc_marker_variants_are_parsed_correctly() {
-        let cases = [
-            ("<<'EOF'\n", "EOF"),
-            ("<<\"EOF\"\n", "EOF"),
-            ("<<`EOF`\n", "EOF"),
-            ("<<\\EOF\n", "EOF"),
-            ("<<\"\"\n", ""),
-        ];
-
-        for (source, expected_marker) in cases {
-            let mut lexer = Lexer::new(source);
-            let (kind, _) = lexer
-                .next_token_with_context(LexContext::Value)
-                .expect("expected heredoc start");
-            assert_eq!(kind, SyntaxKind::HEREDOC_START);
-
-            let marker = lexer
-                .heredoc_queue
-                .back()
-                .expect("heredoc marker should be queued");
-            assert_eq!(marker.marker, expected_marker);
-        }
-    }
-
-    #[test]
-    fn heredoc_marker_handles_escaped_quotes() {
-        let mut lexer = Lexer::new("<<\"foo\\\"bar\"\n");
-        let (kind, _) = lexer
-            .next_token_with_context(LexContext::Value)
-            .expect("expected heredoc start");
-        assert_eq!(kind, SyntaxKind::HEREDOC_START);
-
-        let marker = lexer
-            .heredoc_queue
-            .back()
-            .expect("heredoc marker should be queued");
-        assert_eq!(marker.marker, "foo\\\"bar");
-    }
-
-    #[test]
-    fn iter_non_trivia_from_basic_iteration() {
-        let lexer = Lexer::new("$a + $b * $c");
-
-        let iter = lexer
-            .iter_non_trivia_from(LexContext::Value, 0)
-            .expect("Should return iterator");
-        let tokens: Vec<_> = iter.take(5).collect();
-
-        assert_eq!(tokens.len(), 5);
-        assert_eq!(tokens[0].0, SyntaxKind::SCALAR_SIGIL);
-        assert_eq!(tokens[1].0, SyntaxKind::IDENT);
-        assert_eq!(tokens[2].0, T![+]);
-        assert_eq!(tokens[3].0, SyntaxKind::SCALAR_SIGIL);
-        assert_eq!(tokens[4].0, SyntaxKind::IDENT);
-
-        let iter2 = lexer
-            .iter_non_trivia_from(LexContext::Value, 2)
-            .expect("Should return iterator");
-        let tokens2: Vec<_> = iter2.take(3).collect();
-
-        assert_eq!(tokens2.len(), 3);
-        assert_eq!(tokens2[0].0, T![+]);
-        assert_eq!(tokens2[1].0, SyntaxKind::SCALAR_SIGIL);
-        assert_eq!(tokens2[2].0, SyntaxKind::IDENT);
-    }
-
-    #[test]
-    fn iter_non_trivia_from_with_braces() {
-        let lexer = Lexer::new("{ a => 1; b => 2 }");
-
-        let iter = lexer
-            .iter_non_trivia_from(LexContext::Value, 1)
-            .expect("Should return iterator");
-
-        let mut found_semicolon = false;
-        let mut brace_depth = 0;
-
-        for (kind, _) in iter {
-            match kind {
-                T!['{'] => brace_depth += 1,
-                T!['}'] => {
-                    if brace_depth == 0 {
-                        break;
-                    }
-                    brace_depth -= 1;
-                }
-                T![;] if brace_depth == 0 => {
-                    found_semicolon = true;
-                    break;
-                }
-                _ => {}
-            }
-        }
-
-        assert!(found_semicolon, "Should find semicolon at top level");
-    }
-
-    #[test]
-    fn iter_non_trivia_from_skips_trivia() {
-        let lexer = Lexer::new("$a   # comment\n  + $b");
-
-        let iter = lexer
-            .iter_non_trivia_from(LexContext::Value, 0)
-            .expect("Should return iterator");
-        let tokens: Vec<_> = iter.take(4).collect();
-
-        assert_eq!(tokens.len(), 4);
-        assert_eq!(tokens[0].0, SyntaxKind::SCALAR_SIGIL);
-        assert_eq!(tokens[1].0, SyntaxKind::IDENT);
-        assert_eq!(tokens[2].0, T![+]);
-        assert_eq!(tokens[3].0, SyntaxKind::SCALAR_SIGIL);
-    }
-
-    #[test]
-    fn iter_non_trivia_from_beyond_end() {
-        let lexer = Lexer::new("$a + $b");
-
-        let iter = lexer.iter_non_trivia_from(LexContext::Value, 100);
-        assert!(iter.is_none(), "Should return None for offset beyond end");
-    }
-}
-
 pub struct Lexer<'a> {
     pub(super) logos_lexer: logos::Lexer<'a, Token>,
     pub(super) at_line_start: bool, // Track if we're at the start of a line for POD detection
@@ -698,5 +383,320 @@ impl<'a> Lexer<'a> {
         context: LexContext,
     ) -> Option<(SyntaxKind, &'a str)> {
         self.next_token_internal(Some(context))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn peek_non_trivia_token_skips_trivia() {
+        let mut lexer = Lexer::new("$var\n@array");
+        assert_eq!(
+            lexer.peek_non_trivia_token(),
+            Some((SyntaxKind::SCALAR_SIGIL, "$"))
+        );
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::SCALAR_SIGIL, "$")));
+        assert_eq!(
+            lexer.peek_non_trivia_token(),
+            Some((SyntaxKind::IDENT, "var"))
+        );
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "var")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::NEWLINE, "\n")));
+        assert_eq!(
+            lexer.peek_non_trivia_token(),
+            Some((SyntaxKind::ARRAY_SIGIL, "@"))
+        );
+    }
+
+    #[test]
+    fn comment_and_newline_are_emitted_separately() {
+        let mut lexer = Lexer::new("# first\n# second\n");
+
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::COMMENT, "# first")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::NEWLINE, "\n")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::COMMENT, "# second")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::NEWLINE, "\n")));
+        assert_eq!(lexer.next_token(), None);
+
+        let mut lexer = Lexer::new("# lone comment");
+        assert_eq!(
+            lexer.next_token(),
+            Some((SyntaxKind::COMMENT, "# lone comment"))
+        );
+        assert_eq!(lexer.next_token(), None);
+    }
+
+    #[test]
+    fn array_index_variable_allows_quote_keywords_as_names() {
+        let mut lexer = Lexer::new("$#q");
+
+        assert_eq!(
+            lexer.next_token_with_context(LexContext::Value),
+            Some((SyntaxKind::ARRAY_INDEX_SIGIL, "$#"))
+        );
+        assert_eq!(
+            lexer.next_token_with_context(LexContext::Value),
+            Some((SyntaxKind::IDENT, "q"))
+        );
+    }
+
+    #[test]
+    fn peek_token_caches_result() {
+        let mut lexer = Lexer::new("$foo + 1");
+        assert_eq!(lexer.peek_token(), Some((SyntaxKind::SCALAR_SIGIL, "$")));
+        assert_eq!(lexer.peek_token(), Some((SyntaxKind::SCALAR_SIGIL, "$")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::SCALAR_SIGIL, "$")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "foo")));
+    }
+
+    #[test]
+    fn peek_nth_non_trivia_with_context_is_stable() {
+        let lexer_src = "$foo   + $bar";
+        let mut lexer = Lexer::new(lexer_src);
+
+        assert_eq!(
+            lexer.peek_nth_non_trivia_with_context(LexContext::Value, 0),
+            Some((SyntaxKind::SCALAR_SIGIL, "$"))
+        );
+        assert_eq!(
+            lexer.peek_nth_non_trivia_with_context(LexContext::Value, 1),
+            Some((SyntaxKind::IDENT, "foo"))
+        );
+        assert_eq!(
+            lexer.peek_nth_non_trivia_with_context(LexContext::Value, 2),
+            Some((T![+], "+"))
+        );
+        // Repeating lookahead should produce consistent results
+        assert_eq!(
+            lexer.peek_nth_non_trivia_with_context(LexContext::Value, 1),
+            Some((SyntaxKind::IDENT, "foo"))
+        );
+
+        // Consuming tokens afterwards should follow the peeked sequence
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::SCALAR_SIGIL, "$")));
+        assert_eq!(lexer.next_token(), Some((SyntaxKind::IDENT, "foo")));
+    }
+
+    #[test]
+    fn peek_nth_non_trivia_handles_quote_like_hash_delimiter() {
+        let mut lexer = Lexer::new("qq#foo#");
+
+        assert_eq!(
+            lexer.peek_nth_non_trivia_with_context(LexContext::Value, 0),
+            Some((T![qq], "qq"))
+        );
+        assert_eq!(
+            lexer.peek_nth_non_trivia_with_context(LexContext::Value, 1),
+            Some((SyntaxKind::DELIMITER, "#"))
+        );
+        assert_eq!(
+            lexer.peek_nth_non_trivia_with_context(LexContext::Value, 2),
+            Some((SyntaxKind::INTERPOLATED_STRING, "foo"))
+        );
+        assert_eq!(
+            lexer.peek_nth_non_trivia_with_context(LexContext::Value, 3),
+            Some((SyntaxKind::DELIMITER, "#"))
+        );
+
+        // The actual token stream should match the peeked sequence once quote-like mode begins
+        assert_eq!(
+            lexer.next_token_with_context(LexContext::Value),
+            Some((T![qq], "qq"))
+        );
+        lexer.begin_quote_like(T![qq], QuoteLikeMode::Q);
+        assert_eq!(
+            lexer.next_token_with_context(LexContext::Value),
+            Some((SyntaxKind::DELIMITER, "#"))
+        );
+        assert_eq!(
+            lexer.next_token_with_context(LexContext::Value),
+            Some((SyntaxKind::INTERPOLATED_STRING, "foo"))
+        );
+        assert_eq!(
+            lexer.next_token_with_context(LexContext::Value),
+            Some((SyntaxKind::DELIMITER, "#"))
+        );
+    }
+
+    #[test]
+    fn peek_context_switch_clears_cached_tokens() {
+        let mut lexer = Lexer::new("/foo/");
+        assert_eq!(
+            lexer
+                .peek_non_trivia_with_context(LexContext::Operator)
+                .map(|(kind, _)| kind),
+            Some(T![/])
+        );
+
+        // Switching to value context should allow regex literal handling
+        assert_eq!(
+            lexer
+                .peek_non_trivia_with_context(LexContext::Value)
+                .map(|(kind, _)| kind),
+            Some(SyntaxKind::REGEX_LITERAL)
+        );
+        assert_eq!(
+            lexer
+                .next_token_with_context(LexContext::Value)
+                .map(|(kind, _)| kind),
+            Some(SyntaxKind::REGEX_LITERAL)
+        );
+    }
+
+    #[test]
+    fn peek_token_and_next_char_handles_hash_delimiter() {
+        let lexer_src = "qq#foo#";
+        let lexer = Lexer::new(lexer_src);
+
+        let (first_kind, first_char) = lexer.peek_token_and_next_char();
+        assert_eq!(first_kind, Some(T![qq]));
+        assert_eq!(first_char, Some('#'));
+
+        // Subsequent peeks should return the same values without consuming
+        let (second_kind, second_char) = lexer.peek_token_and_next_char();
+        assert_eq!(second_kind, Some(T![qq]));
+        assert_eq!(second_char, Some('#'));
+    }
+
+    #[test]
+    fn quote_like_peek_and_consume_flow() {
+        let mut lexer = Lexer::new("qq#foo#");
+
+        // Initial peek should see the keyword without consuming it
+        assert_eq!(lexer.peek_token(), Some((T![qq], "qq")));
+
+        let (kw_kind, _) = lexer
+            .next_token_with_context(LexContext::Value)
+            .expect("expected quote-like keyword");
+        assert_eq!(kw_kind, T![qq]);
+
+        lexer.begin_quote_like(kw_kind, QuoteLikeMode::Q);
+
+        // After entering quote-like mode, the cached lookahead should expose the delimiter
+        assert_eq!(lexer.peek_token(), Some((SyntaxKind::DELIMITER, "#")));
+    }
+
+    #[test]
+    fn heredoc_marker_variants_are_parsed_correctly() {
+        let cases = [
+            ("<<'EOF'\n", "EOF"),
+            ("<<\"EOF\"\n", "EOF"),
+            ("<<`EOF`\n", "EOF"),
+            ("<<\\EOF\n", "EOF"),
+            ("<<\"\"\n", ""),
+        ];
+
+        for (source, expected_marker) in cases {
+            let mut lexer = Lexer::new(source);
+            let (kind, _) = lexer
+                .next_token_with_context(LexContext::Value)
+                .expect("expected heredoc start");
+            assert_eq!(kind, SyntaxKind::HEREDOC_START);
+
+            let marker = lexer
+                .heredoc_queue
+                .back()
+                .expect("heredoc marker should be queued");
+            assert_eq!(marker.marker, expected_marker);
+        }
+    }
+
+    #[test]
+    fn heredoc_marker_handles_escaped_quotes() {
+        let mut lexer = Lexer::new("<<\"foo\\\"bar\"\n");
+        let (kind, _) = lexer
+            .next_token_with_context(LexContext::Value)
+            .expect("expected heredoc start");
+        assert_eq!(kind, SyntaxKind::HEREDOC_START);
+
+        let marker = lexer
+            .heredoc_queue
+            .back()
+            .expect("heredoc marker should be queued");
+        assert_eq!(marker.marker, "foo\\\"bar");
+    }
+
+    #[test]
+    fn iter_non_trivia_from_basic_iteration() {
+        let lexer = Lexer::new("$a + $b * $c");
+
+        let iter = lexer
+            .iter_non_trivia_from(LexContext::Value, 0)
+            .expect("Should return iterator");
+        let tokens: Vec<_> = iter.take(5).collect();
+
+        assert_eq!(tokens.len(), 5);
+        assert_eq!(tokens[0].0, SyntaxKind::SCALAR_SIGIL);
+        assert_eq!(tokens[1].0, SyntaxKind::IDENT);
+        assert_eq!(tokens[2].0, T![+]);
+        assert_eq!(tokens[3].0, SyntaxKind::SCALAR_SIGIL);
+        assert_eq!(tokens[4].0, SyntaxKind::IDENT);
+
+        let iter2 = lexer
+            .iter_non_trivia_from(LexContext::Value, 2)
+            .expect("Should return iterator");
+        let tokens2: Vec<_> = iter2.take(3).collect();
+
+        assert_eq!(tokens2.len(), 3);
+        assert_eq!(tokens2[0].0, T![+]);
+        assert_eq!(tokens2[1].0, SyntaxKind::SCALAR_SIGIL);
+        assert_eq!(tokens2[2].0, SyntaxKind::IDENT);
+    }
+
+    #[test]
+    fn iter_non_trivia_from_with_braces() {
+        let lexer = Lexer::new("{ a => 1; b => 2 }");
+
+        let iter = lexer
+            .iter_non_trivia_from(LexContext::Value, 1)
+            .expect("Should return iterator");
+
+        let mut found_semicolon = false;
+        let mut brace_depth = 0;
+
+        for (kind, _) in iter {
+            match kind {
+                T!['{'] => brace_depth += 1,
+                T!['}'] => {
+                    if brace_depth == 0 {
+                        break;
+                    }
+                    brace_depth -= 1;
+                }
+                T![;] if brace_depth == 0 => {
+                    found_semicolon = true;
+                    break;
+                }
+                _ => {}
+            }
+        }
+
+        assert!(found_semicolon, "Should find semicolon at top level");
+    }
+
+    #[test]
+    fn iter_non_trivia_from_skips_trivia() {
+        let lexer = Lexer::new("$a   # comment\n  + $b");
+
+        let iter = lexer
+            .iter_non_trivia_from(LexContext::Value, 0)
+            .expect("Should return iterator");
+        let tokens: Vec<_> = iter.take(4).collect();
+
+        assert_eq!(tokens.len(), 4);
+        assert_eq!(tokens[0].0, SyntaxKind::SCALAR_SIGIL);
+        assert_eq!(tokens[1].0, SyntaxKind::IDENT);
+        assert_eq!(tokens[2].0, T![+]);
+        assert_eq!(tokens[3].0, SyntaxKind::SCALAR_SIGIL);
+    }
+
+    #[test]
+    fn iter_non_trivia_from_beyond_end() {
+        let lexer = Lexer::new("$a + $b");
+
+        let iter = lexer.iter_non_trivia_from(LexContext::Value, 100);
+        assert!(iter.is_none(), "Should return None for offset beyond end");
     }
 }

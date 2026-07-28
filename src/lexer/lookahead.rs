@@ -145,9 +145,9 @@ impl<'a> Lexer<'a> {
             }
             let token = {
                 let cache = self.lookahead.borrow();
-                match cache.get(index) {
-                    Some(entry) => entry.token,
-                    None => return None,
+                {
+                    let entry = cache.get(index)?;
+                    entry.token
                 }
             };
             if !token.0.is_trivia() && target_kinds.contains(&token.0) {
@@ -173,9 +173,9 @@ impl<'a> Lexer<'a> {
             }
             let token = {
                 let cache = self.lookahead.borrow();
-                match cache.get(index) {
-                    Some(entry) => entry.token,
-                    None => return None,
+                {
+                    let entry = cache.get(index)?;
+                    entry.token
                 }
             };
             if token.0.is_trivia() {

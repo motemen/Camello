@@ -29,10 +29,9 @@ impl<I: Iterator> BufferedIterator<I> {
         loop {
             // Fill buffer up to n+1 elements
             while self.buffer.len() <= n {
-                if let Some(item) = self.iter.next() {
+                {
+                    let item = self.iter.next()?;
                     self.buffer.push_back(item);
-                } else {
-                    return None;
                 }
             }
 
@@ -652,9 +651,7 @@ impl Formatter {
                     let max_width = widths.iter().copied().max().unwrap_or(0);
                     let all_equal = widths.iter().all(|&width| width == max_width);
 
-                    for ((entry_index, _token, _column), width) in
-                        group.iter().zip(widths.into_iter())
-                    {
+                    for ((entry_index, _token, _column), width) in group.iter().zip(widths) {
                         if let Some(pads) = pad_matrix.get_mut(*entry_index) {
                             if let Some(slot) = pads.get_mut(ordinal) {
                                 *slot = if all_equal { 0 } else { max_width - width };
@@ -675,8 +672,8 @@ impl Formatter {
         }
 
         let mut targets = Vec::new();
-        for (tokens, pads) in entry_tokens.iter().zip(pad_matrix.into_iter()) {
-            for (token, pad) in tokens.iter().cloned().zip(pads.into_iter()) {
+        for (tokens, pads) in entry_tokens.iter().zip(pad_matrix) {
+            for (token, pad) in tokens.iter().cloned().zip(pads) {
                 targets.push((token, pad));
             }
         }

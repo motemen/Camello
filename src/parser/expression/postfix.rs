@@ -85,15 +85,11 @@ impl Parser<'_> {
     ) -> bool {
         let mut current_subject = initial_subject;
         let mut consumed_postfix = false;
-        loop {
-            // Always look ahead in Operator context for postfix continuations
-            let Some(next_kind_op) = self
-                .peek_non_trivia_token_with_context(LexContext::Operator)
-                .map(|(k, _)| k)
-            else {
-                break;
-            };
-
+        // Always look ahead in Operator context for postfix continuations
+        while let Some(next_kind_op) = self
+            .peek_non_trivia_token_with_context(LexContext::Operator)
+            .map(|(k, _)| k)
+        {
             // Align the real lexer position with the non-trivia operator we just peeked.
             // Without this, trivia like newlines remain pending and the upcoming bump_* call
             // ends up consuming the trivia instead of the operator (e.g. expr\n->).
