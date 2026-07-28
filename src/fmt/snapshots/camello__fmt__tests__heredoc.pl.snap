@@ -7,7 +7,6 @@ sub f {
     die <<__DIE__
 foo
 __DIE__
-
 }
 
 # Heredoc in nested context
@@ -17,7 +16,6 @@ sub g {
 Hello, World!
 This is a heredoc.
 EOF
-
     }
 }
 
@@ -26,11 +24,9 @@ sub h {
     my $x = <<'END';
 First heredoc
 END
-
     my $y = <<END;
 Second heredoc
 END
-
 }
 
 # Heredoc with statement modifier

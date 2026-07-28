@@ -120,7 +120,10 @@ impl<'a> Renderer<'a> {
                 // opening brace or at the top of the file.
                 let previous = self.lines.last();
                 let suppress = previous.is_none_or(Line::is_blank)
-                    || previous.is_some_and(|line| line.text.trim_end().ends_with('{'));
+                    || previous.is_some_and(|line| line.text.trim_end().ends_with('{'))
+                    // The newline that ended a heredoc terminator is structural,
+                    // not a blank line the user left.
+                    || previous.is_some_and(|line| line.verbatim);
                 if !suppress {
                     self.finish_line();
                 }

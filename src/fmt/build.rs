@@ -423,9 +423,10 @@ impl<'a> Builder<'a> {
             let mut parts = Vec::new();
             parts.extend(open);
             parts.push(header_comment);
+            let empty = body.is_empty();
             parts.push(Doc::Space);
-            parts.push(Doc::concat(body));
-            if close.is_some() {
+            if !empty {
+                parts.push(Doc::concat(body));
                 parts.push(Doc::Space);
             }
             parts.extend(close);
@@ -486,8 +487,17 @@ impl<'a> Builder<'a> {
             return false;
         }
         // A statement that was written across lines stays across lines, and a
-        // comment anywhere forces the block open.
+        // statement that ends in `;` reads as a body rather than a value
+        // (ADR 0008 §3: single statement, no semicolon, no comment, no source
+        // newline).
         if node.text().to_string().contains('\n') {
+            return false;
+        }
+        if statements[0]
+            .children_with_tokens()
+            .filter_map(|child| child.into_token())
+            .any(|token| token.token_kind() == T![";"])
+        {
             return false;
         }
         !node
@@ -532,14 +542,14 @@ impl<'a> Builder<'a> {
         }
 
         let mut parts = Vec::new();
-        if let Some(token) = opening {
-            parts.push(Doc::Token(token));
+        if let Some(token) = &opening {
+            parts.push(self.token(token));
         }
 
         let body = Doc::concat(inner);
         if body.is_nil() {
-            if let Some(token) = closing {
-                parts.push(Doc::Token(token));
+            if let Some(token) = &closing {
+                parts.push(self.token(token));
             }
             return Doc::group(false, Doc::concat(parts));
         }
@@ -556,8 +566,8 @@ impl<'a> Builder<'a> {
                 parts.push(Doc::Space);
             }
         }
-        if let Some(token) = closing {
-            parts.push(Doc::Token(token));
+        if let Some(token) = &closing {
+            parts.push(self.token(token));
         }
         Doc::group(broken, Doc::concat(parts))
     }
