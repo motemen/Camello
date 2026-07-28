@@ -41,6 +41,12 @@ pub enum Doc {
     /// makes F1 — indentation injected into a multi-line string literal, growing
     /// with every pass — not merely fixed but unrepresentable.
     Raw(SyntaxToken),
+    /// Verbatim content that owns whole lines and starts in column 0.
+    ///
+    /// A heredoc body is the case: it begins at a line start in the source and
+    /// must begin at a line start in the output, whatever the indentation of the
+    /// statement its marker appeared in.
+    VerbatimLines(SyntaxToken),
     /// Exactly one space. Spacing is decided during build, so the renderer never
     /// inserts one on its own and there is nothing for a call site to bypass.
     Space,
