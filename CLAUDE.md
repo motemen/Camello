@@ -13,82 +13,87 @@ The long-term vision is to expand beyond formatting and evolve into a comprehens
 ### Data Flow
 
 ```
-Perl Source [Lexer] -> Tokens [Parser] -> CST [Formatter] -> Formatted Code
+Perl Source [lex] -> Tokens [parse] -> Events -> CST + TriviaMap [fmt] -> Doc IR -> Lines -> Formatted Code
 ```
+
+The design is recorded in `dev/adr/`:
+
+- **ADR 0004** — `TokenKind` / `NodeKind` split, generated from one definition.
+- **ADR 0005** — lexer contract: a single `expect` state, a token buffer, atomic runs.
+- **ADR 0006** — trivia model: ownership and placement rules.
+- **ADR 0007** — event-based parser and the CST normal form.
+- **ADR 0008** — three-phase formatter over a document IR.
+
+ADR 0001-0003 describe the implementation these replaced and are superseded.
+
+`notes/2026-07-28-redesign-assessment.md` diagnoses what was wrong with that
+implementation; `notes/2026-07-28-redesign-deviation-log.md` records every point
+where the built thing differs from the ADRs and why.
 
 ### Rowan Integration
 
-The project uses a custom `PerlLanguage` type implementing Rowan's `Language` trait. SyntaxKind conversion is handled via `From<SyntaxKind> for rowan::SyntaxKind`.
+`lang::PerlLang` implements rowan's `Language` with `lang::SyntaxKind`, a
+newtype over `u16`. Token kinds occupy `0..TOKEN_COUNT` and node kinds the range
+above, so `SyntaxKind::as_token` / `as_node` recover the split. Only
+`parse::replay` touches `GreenNodeBuilder`, and its API is typed on `TokenKind` /
+`NodeKind`, so a node kind cannot be written into a token slot.
 
 ### Error Recovery
 
-The parser implements multiple error recovery strategies:
+`p.error(msg)` reports without consuming; `p.error_and_bump` and
+`p.error_recover` are explicit. Recovery is panic-mode against a synchronisation
+set — `;`, `}` and the statement-starting keywords, plus `,` `)` `]` inside a
+list — and everything skipped goes into one `ERROR` node (ADR 0007 §3).
 
-1. **Token-level**: Skips invalid tokens and records them as `ERROR` nodes.
-2. **Statement-level**: Attempts to recover to the next semicolon or brace to continue parsing.
-3. **Structure-level**: Continues parsing subsequent statements even after encountering a malformed one.
+## Key Components
 
-## Key Components & Functions
+### Core API (`src/lib.rs`)
 
-### Core API Functions
+- `parse_perl(&str) -> (PerlNode, Vec<ParseError>)`
+- `parse_perl_with_trivia(&str) -> (PerlNode, TriviaMap, Vec<ParseError>)`
+- `format_perl(&str) -> (String, Vec<ParseError>)`
+- `format_perl_with_options(&str, &FormatterOptions) -> (String, Vec<ParseError>)`
 
-- **`pub fn format_perl(input: &str) -> (String, Vec<ParseError>)`** (`src/lib.rs`): The primary public API. It takes a string of Perl code, orchestrates the lexing, parsing, and formatting process, and returns the formatted code along with any parse errors.
+### `src/lang/` — the language vocabulary (ADR 0004)
 
-- **`pub fn parse_perl(input: &str) -> (PerlNode, Vec<ParseError>)`** (`src/lib.rs`): Parses Perl source into a `PerlNode` CST and returns any syntax errors encountered during parsing.
+One `define_language!` invocation generates `TokenKind`, `NodeKind`, the
+`SyntaxKind` conversion layer, the `T![…]` macro, `is_keyword` / `is_punct` /
+`is_trivia`, the keyword lookup the lexer uses, and `Display`. Adding a keyword
+is one edit. `predicates.rs` holds the hand-written semantic predicates, typed on
+`TokenKind`.
 
-- **`Parser::root(&mut self)`** (`src/parser/mod.rs`): The top-level parsing function that starts the recursive descent process for an entire file. It's the internal entry point called by `parse_perl`.
+### `src/lex/` — the scanner (ADR 0005)
 
-- **`format_node(node: &SyntaxNode, builder: &mut Builder)`** (in `src/formatter/mod.rs`): The heart of the formatter. This function recursively traverses the CST, applying formatting rules (indentation, spacing, newlines) for each `SyntaxNode` and appending the result to a string builder.
+Hand-written. `expect` is lexer state, not an argument, so `peek` and `bump`
+cannot disagree; a debug assertion checks it. Lookahead is a token buffer that
+`set_expect` invalidates from the cursor forward. Quote-like operators, heredoc
+bodies, POD and `__DATA__` are scanned as atomic runs (`atomic.rs`), so no
+scanning mode is observable between calls.
 
-### Core Components
+### `src/parse/` — the parser (ADR 0006, 0007)
 
-**SyntaxKind** (`src/syntax_kind.rs`): Central enum defining all Perl syntax elements. Uses `#[repr(u16)]` for efficient Rowan integration.
+`event.rs` records `Start` / `Token` / `Finish` / `Error`; `replay.rs` turns
+those into a green tree and builds the `TriviaMap` in the same pass. Speculative
+parsing is `checkpoint()` / `rollback()`. `grammar/` holds the rules:
+`precedence.rs` (perlop order), `builtins.rs` (argument shape and the `expect`
+after a name), `primary.rs`, `expr.rs`, `mod.rs`.
 
-**Lexer** (`src/lexer/mod.rs`): Logos-based tokenizer that handles Perl-specific tokens. It performs contextual disambiguation for operators like `/` (division vs. regex), `%` (modulo vs. hash sigil), and keywords like `tr`, `y`, `s` via a dedicated `disambiguate` method that uses parser-provided `LexContext` hints. It correctly tokenizes quote-like operators (`q`, `qq`, `qw`, `s`, `tr`, `y`), POD blocks, and `__DATA__` sections.
+Fixtures live in `src/parse/fixtures/{success,errors,statements}`.
 
-**Parser** (`src/parser/mod.rs`): Recursive descent Pratt parser using Rowan's GreenNodeBuilder.
+### `src/fmt/` — the formatter (ADR 0008)
 
-- `root()`: Parses an entire file, including statements, POD, and data sections.
-- `statement()`: Handles various statement types, including control structures (`if/else/elsif`, `for`, `while`, `unless`), declarations (`package`, `use`, `no`), and subroutine definitions.
-- `var_decl()`: Parses variable declarations (`my`, `our`, `state`, `local`).
-- `sub_def()`: Parses subroutine definitions, including prototypes.
-- `expression()`: Parses complex expressions with correct operator precedence, including infix, prefix, and postfix operators, ternary expressions (`?:`), anonymous subroutines (`sub { ... }`), and typeglobs (`*FOO`, `*{...}`).
+`build.rs` turns the CST and trivia map into `doc::Doc`, deciding every layout
+question once. `render.rs` walks the document into `Vec<Line>`, applying spacing
+and indentation. `align.rs` is an independent O(n) pass over the rendered lines.
+Verbatim content is a `Raw` (or `VerbatimLines`) atom the renderer never writes
+inside, which is what makes indentation-into-a-string-literal unrepresentable.
 
-- **Formatter** (`src/formatter/mod.rs`): Traverses the CST to apply formatting rules.
+Fixtures live in `src/fmt/fixtures/`.
 
-- Indentation: 4-space indentation for blocks.
-- Spacing: Adds spaces around operators (e.g., `$a = $b + $c`), but keeps others compact (e.g., `$obj->method`).
-- Braces: Uses K&R brace style (`sub name {`).
-- Comments & Whitespace: Preserves comments, newlines, and user-added empty lines between statements.
-- Multiline Formatting: Intelligently formats multiline array/hash references and `qw` expressions based on whether they contain newlines in the original source.
-- Verbatim Sections: Preserves `__DATA__` and POD sections exactly as they are.
-- Token Spans: Tracks the original token span for each line, enabling source mapping and diff generation features.
+### CLI (`src/cli.rs`)
 
-**CLI** (`src/cli.rs`): Clap-based interface with `format` and `dump` subcommands. The `format` command also supports a `--check` flag to verify that code is already formatted. Input can come from files, strings (`-e`/`-E`), or stdin.
-
-**Crate Structure** (`src/main.rs`, `src/lib.rs`): The project is a mixed binary/library crate.
-
-- `src/lib.rs`: The library root, containing the core parsing and formatting logic and exposing public APIs like `format_perl`.
-- `src/main.rs`: The binary entry point, which parses command-line arguments via `src/cli.rs` and calls the library functions.
-
-### Module Structure
-
-#### Parser Structure (`src/parser/`)
-
-- `mod.rs`: The main parser module, defining the `Parser` struct and core parsing loop.
-- `statement.rs`: Handles statement-level parsing (e.g., `if`, `while`, `sub`).
-- `expression/mod.rs`: Manages expression parsing using a Pratt parser.
-- `expression/call.rs`: Groups function-call parsing helpers and heuristics.
-- `expression/precedence.rs`: Defines operator precedence and associativity.
-- `expression/primary.rs`: Parses primary expressions like variables, literals, and parenthesized expressions.
-- `expression/quoted.rs`: Handles complex quote-like operators.
-
-#### Formatter Structure (`src/formatter/`)
-
-- `mod.rs`: The main formatter module, responsible for traversing the CST.
-- `expression.rs`, `literal.rs`: Handle formatting for specific syntax node types.
-- `spacing.rs`, `whitespace.rs`: Manage whitespace and spacing rules.
-- `verbatim.rs`: Preserves sections that should not be formatted.
+Clap-based, with `format` and `dump`. `format --check` reports whether a file is
+already formatted. Input comes from a file, `-e` / `-E`, or stdin.
 
 ## Development Guidelines
 
@@ -99,7 +104,7 @@ The parser implements multiple error recovery strategies:
 
 ### Pre-commit Checks
 
-- Always run **all** of the following commands, in order, before committing: `cargo fmt` → `cargo clippy -- -D warnings` → `cargo test -q`. Skipping any step is not allowed.
+- Always run **all** of the following commands, in order, before committing: `cargo fmt` → `cargo clippy --all-targets -- -D warnings` → `cargo test -q`. Skipping any step is not allowed.
 - If any command fails, keep iterating on fixes and rerun the full sequence until all commands succeed. Only commit once they complete without errors. If you ultimately cannot resolve a failure, state the reason explicitly in your final message and leave the command undone.
 - Report the result of each command in the testing section of your final message, indicating success or failure.
 
@@ -108,7 +113,7 @@ The parser implements multiple error recovery strategies:
 cargo fmt
 
 # Run linter
-cargo clippy -- -D warnings
+cargo clippy --all-targets -- -D warnings
 
 # Run all tests
 cargo test -q
@@ -127,11 +132,15 @@ cargo test -q
 cargo build --release
 
 # Run a single test module
-cargo test -q parser::tests
-cargo test -q formatter::tests
+cargo test -q parse::tests
+cargo test -q fmt::tests
+cargo test -q lex::tests
+
+# Regenerate snapshots after an intended change
+INSTA_FORCE_UPDATE=1 cargo test -q --lib
 
 # Run specific test
-cargo test -q test_var_decl_formatting
+cargo test -q assignments_align_on_the_first_pass
 ```
 
 ### CLI Usage
@@ -153,51 +162,62 @@ Use `-E` instead of `-e` to use character escapes in the input string. e.g. `-E 
 
 ### Testing Strategy
 
-Our testing strategy prioritizes end-to-end correctness and maintainability using fixture-based snapshot tests with external `.pl` files.
+**Invariants first (`tests/invariants.rs`).** Every fixture must parse without a
+diagnostic, round-trip losslessly, format to a fixed point
+(`format(format(x)) == format(x)`), and preserve its non-trivia token stream.
+These are the acceptance bar from ADR 0006 §6 and ADR 0008 §6; they ran
+throughout the redesign against a registry of known violations that was only
+allowed to shrink.
 
-- **Primary: Formatter Fixture Tests (`src/formatter/tests.rs`)**
+**Formatter fixtures (`src/fmt/fixtures/`, snapshots via `insta`).** The
+spec-by-example: `formatting.md` says what the rules are, these say what they
+produce. Add a `.pl` file and run the tests to generate its snapshot.
 
-  - These are the most important tests, acting as integration tests that cover the entire process from lexing and parsing to final output.
-  - Test cases are defined as separate `.pl` files in `src/formatter/fixtures/` for better maintainability and readability.
-  - They verify the formatter's output against stored snapshots using `insta`.
-  - The goal is to have a comprehensive suite of fixture-based tests that cover a wide range of valid Perl syntax and formatting edge cases.
+**Parser fixtures (`src/parse/fixtures/`).** `success/` for valid code (snapshot
+is the tree), `errors/` and `statements/errors/` for invalid code (snapshot is
+the diagnostics). Prefer adding a case to an existing fixture over writing an
+inline test.
 
-- **Secondary: Parser Fixture Tests (`src/parser/mod.rs` and `src/parser/statement.rs`)**
-
-  - Uses fixture files in `src/parser/fixtures/` organized by test type:
-    - `success/` - valid Perl code that should parse without errors
-    - `errors/` - invalid code that should generate specific parse errors
-    - `statements/` - statement-specific test cases
-  - Shared test utilities in `src/parser/test_utils.rs` provide common functions for fixture loading and result rendering.
-  - Parser tests verify both successful parsing (CST structure) and error recovery behavior.
-
-- **Integration Tests (`tests/` directory)**: Verifies CLI behavior, file I/O, and end-to-end functionality using real-world or complex examples.
-
-**Fixture Management:**
-- Test cases stored as `.pl` files are easier to read, edit, and maintain than inline strings
-- Fixtures can be organized hierarchically in subdirectories for better categorization
-- When adding new syntax support, create corresponding fixture files to ensure comprehensive coverage
-- **Avoid inline test functions in `src/parser/mod.rs`**: Instead, add test cases to existing fixture files when appropriate. For example, tests verifying that keywords can be used as identifiers (e.g., `sub given {}`, `package tr;`) should be added to `src/parser/fixtures/success/package_cases.pl` rather than creating separate inline test functions
+**Unit tests.** `src/lex/tests.rs` covers the lexical rules including the seven
+reproduced bugs D1-D7; `src/fmt/tests.rs` covers the layout rules including
+F1-F6; `src/parse/tests.rs` covers the CST normal form and the error-recovery
+acceptance criteria of ADR 0007 §3.
 
 ### Adding New Syntax Support
 
-1. Add new variants to the `SyntaxKind` enum in `src/syntax_kind.rs`.
-2. **If adding a new keyword**, update the `SyntaxKind::is_keyword` method in `src/syntax_kind/predicates.rs` to include the new keyword(s). This ensures that keywords can be used as subroutine names (e.g., `sub when {}`) or package names.
-3. Update the lexer in `src/lexer/mod.rs`. This may involve adding a new `Token` variant, updating regexes, or extending `Lexer::disambiguate` with new contextual rules.
-4. Add parsing logic to the appropriate parser function in `src/parser/`. For expressions, this may involve adding a new `OperatorInfo` in `src/parser/expression/precedence.rs`.
-5. Update the formatter in `src/formatter/` by adding a new `format_...` function to handle the new syntax node.
-6. Create fixture files in `src/formatter/fixtures/` and `src/parser/fixtures/` to test the new syntax:
-   - Add `.pl` files with examples of the new syntax to appropriate fixture directories
-   - Run tests to generate corresponding snapshots using `insta`
-   - Ensure both successful parsing and error cases are covered with appropriate fixtures
-7. **If adding a new keyword**, add tests that verify the keyword can be used as an identifier in valid contexts (e.g., as a subroutine name or package name).
+1. Add the token and node kinds to the `define_language!` invocation in
+   `src/lang/mod.rs`. Keywords go in the `keywords` section and nothing else
+   needs updating — `is_keyword`, the lookup and `T![…]` are all generated.
+2. Teach `src/lex/` to scan it. A construct that switches scanning mode belongs
+   in `atomic.rs` as a single run.
+3. Add the rule to `src/parse/grammar/`. Prefer speculative parsing
+   (`checkpoint` / `rollback`) over unbounded lookahead. Keyword-as-name
+   coercion goes through `grammar::name`, and nowhere else.
+4. Add the layout rule to `src/fmt/build.rs`. Spacing is an explicit
+   `Doc::Space`; the renderer inserts nothing on its own.
+5. Add a fixture under `src/parse/fixtures/` and `src/fmt/fixtures/`, and run
+   the tests to generate snapshots. If the syntax uses a keyword, add a case
+   showing it also works as a name (`sub tr {}`, `package q;`).
 
-### Parser Function Pattern
+### Parser Rule Pattern
 
 ```rust
-fn parse_construct(&mut self) {
-    self.builder.start_node(SyntaxKind::CONSTRUCT.into());
-    // ... parsing logic ...
-    self.builder.finish_node();
+fn construct(parser: &mut Parser<'_>) {
+    let marker = parser.start();
+    // ... rules ...
+    parser.complete(marker, NodeKind::CONSTRUCT);
+}
+```
+
+A `Marker` must be completed or abandoned; dropping one is a debug assertion
+failure. To try a reading and back out:
+
+```rust
+let checkpoint = parser.checkpoint();
+let marker = parser.start();
+// ... speculative parse ...
+if !worked_out {
+    parser.abandon(marker);
+    parser.rollback(checkpoint);
 }
 ```
