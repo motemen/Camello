@@ -402,6 +402,51 @@ fn fixture_snapshots() {
     }
 }
 
+#[test]
+fn the_builtin_table_knows_every_name_perl_does() {
+    // The table is generated from perl's own prototypes
+    // (`scripts/generate-builtins`). Written from memory it had holes, and the
+    // holes were not harmless: with `eval` missing, the parser fell through to
+    // "unknown name, expect an operator", `eval <<EOT` lexed as a left shift,
+    // and the heredoc body became code.
+    use super::grammar::builtins::{lookup, Shape};
+
+    for name in [
+        "eval",
+        "wantarray",
+        "chomp",
+        "select",
+        "readline",
+        "prototype",
+    ] {
+        assert!(lookup(name).is_some(), "`{name}` is missing from the table");
+    }
+    assert_eq!(lookup("wantarray").map(|b| b.shape), Some(Shape::Nullary));
+    assert_eq!(lookup("eval").map(|b| b.shape), Some(Shape::BlockOrTerm));
+    assert_eq!(lookup("defined").map(|b| b.shape), Some(Shape::NamedUnary));
+    assert_eq!(lookup("push").map(|b| b.shape), Some(Shape::List));
+    assert!(lookup("frobnicate").is_none());
+}
+
+#[test]
+fn eval_takes_a_heredoc_and_a_block() {
+    let rendered = tree("my $d = eval <<EOT;\nhello\nEOT\n");
+    assert!(
+        rendered.contains("HEREDOC_EXPR"),
+        "`eval <<EOT` must read the heredoc marker, not a left shift:\n{rendered}"
+    );
+    assert!(
+        rendered.contains(r#""<<EOT""#),
+        "the marker must be one token, not a shift and a bareword:\n{rendered}"
+    );
+
+    let rendered = tree("my $r = eval { 1 };\n");
+    assert!(
+        rendered.contains("BLOCK") && !rendered.contains("ANON_HASH"),
+        "`eval BLOCK` is a block, never an anonymous hash:\n{rendered}"
+    );
+}
+
 fn collect(directory: &std::path::Path, into: &mut Vec<std::path::PathBuf>) {
     for entry in std::fs::read_dir(directory).expect("failed to read fixture directory") {
         let path = entry.expect("failed to read fixture entry").path();

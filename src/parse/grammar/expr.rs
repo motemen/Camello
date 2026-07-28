@@ -472,6 +472,21 @@ pub(crate) fn bareword_call(parser: &mut Parser<'_>) -> CompletedMarker {
             list_arguments(parser);
             parser.complete(marker, NodeKind::LIST_CALL_EXPR)
         }
+        Shape::BlockOrTerm => {
+            // `eval { ... }` versus `eval $string`. perl never reads the brace
+            // as an anonymous hash here, and neither do we.
+            if parser.at(T!["{"]) {
+                block(parser);
+                parser.expect_operator();
+                return parser.complete(marker, NodeKind::BLOCK_CALL_EXPR);
+            }
+            if starts_argument(parser, true) {
+                parser.expect_term();
+                expr_bp(parser, Precedence::NAMED_UNARY);
+            }
+            parser.expect_operator();
+            parser.complete(marker, NodeKind::LIST_CALL_EXPR)
+        }
         Shape::FilehandleList => {
             filehandle(parser);
             list_arguments(parser);

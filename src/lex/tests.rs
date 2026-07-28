@@ -487,3 +487,65 @@ fn a_comma_after_a_quote_like_keyword_is_its_delimiter() {
     assert_eq!(kinds("s => 1")[0], TokenKind::IDENT);
     assert_eq!(kinds("{q}")[1], TokenKind::IDENT);
 }
+
+#[test]
+fn a_second_heredoc_body_starts_on_the_next_line() {
+    // `foo(<<A, <<B)` queues two bodies. The second begins after the first
+    // terminator's line, and leaving that line terminator to the ordinary
+    // scanner made it the first byte of B — so B held "\ntwo\n" and perl
+    // printed a blank line. The token *stream* is identical either way, which
+    // is why the invariants could not see it.
+    let source = "foo(<<A, <<B);\none\nA\ntwo\nB\n";
+    let bodies: Vec<String> = lex(source)
+        .into_iter()
+        .filter(|(kind, _)| *kind == TokenKind::HEREDOC_CONTENT)
+        .map(|(_, text)| text)
+        .collect();
+    assert_eq!(bodies, vec!["one\n".to_string(), "two\n".to_string()]);
+    assert_lossless(source);
+
+    // Three, and an indented one, behave the same.
+    let source = "f(<<~A, <<B, <<C);\n  one\n  A\ntwo\nB\nthree\nC\n";
+    let bodies: Vec<String> = lex(source)
+        .into_iter()
+        .filter(|(kind, _)| *kind == TokenKind::HEREDOC_CONTENT)
+        .map(|(_, text)| text)
+        .collect();
+    assert_eq!(
+        bodies,
+        vec![
+            "  one\n".to_string(),
+            "two\n".to_string(),
+            "three\n".to_string()
+        ]
+    );
+    assert_lossless(source);
+}
+
+#[test]
+fn a_name_may_hold_characters_outside_ascii() {
+    // Under `use utf8` perl accepts any word character in a name. Scanning as
+    // ASCII did not reject `$café`, it split it, and `my $café = 1;` came out
+    // as `my $caf é = 1;` — a syntax error where a working program had been.
+    assert_eq!(
+        kinds("my $café = 1;"),
+        vec![
+            T!["my"],
+            TokenKind::SCALAR_SIGIL,
+            TokenKind::IDENT,
+            T!["="],
+            TokenKind::NUMBER,
+            T![";"]
+        ]
+    );
+    assert_eq!(
+        lex("$café")
+            .into_iter()
+            .map(|(_, text)| text)
+            .collect::<Vec<_>>(),
+        vec!["$".to_string(), "café".to_string()]
+    );
+    assert_eq!(kinds("名前();")[0], TokenKind::IDENT);
+    assert_eq!(kinds("my %メニュー;")[2], TokenKind::IDENT);
+    assert_lossless("sub 名前 { my ($引数) = @_; }");
+}

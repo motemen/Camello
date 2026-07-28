@@ -1,0 +1,153 @@
+#!/usr/bin/perl
+#
+# Generate the builtin argument-shape table from perl's own prototypes.
+#
+#   scripts/generate-builtins            print the match arms
+#
+# Paste the output into `lookup` in src/parse/grammar/builtins.rs, replacing
+# everything between the `match name {` and the `_ => return None,`, then run
+# `cargo fmt`: the line breaking here is approximate and rustfmt has the last
+# word on it.
+#
+# ADR 0007 §6 says the table comes from real prototypes rather than from
+# memory. It does — but the generation runs here and the result is committed,
+# not run at build time: a Rust crate that cannot be built without a perl
+# installation is a worse trade than a table that has to be regenerated when
+# perl gains a builtin. Re-run this and diff when that happens.
+#
+# The mapping is perl's own, from toke.c: a builtin with no arguments is FUNC0,
+# one with exactly one is UNIOP — a named unary operator, binding tighter than
+# comparison — and anything else is LSTOP, an ordinary list operator.
+#
+# Prototypes that are `undef` carry no information: those builtins have bespoke
+# syntax in perl's grammar, and they are listed by hand below with the reason.
+
+use strict;
+use warnings;
+
+# perlfunc's index, which is the set of names perl will resolve as CORE::.
+my @NAMES = qw(
+    abs accept alarm atan2 bind binmode bless caller chdir chmod chomp chop
+    chown chr chroot close closedir connect cos crypt dbmclose dbmopen defined
+    delete die each endgrent endhostent endnetent endprotoent endpwent
+    endservent eof eval exec exists exit exp fc fcntl fileno flock fork
+    formline getc getgrent getgrgid getgrnam gethostbyaddr gethostbyname
+    gethostent getlogin getnetbyaddr getnetbyname getnetent getpeername getpgrp
+    getppid getpriority getprotobyname getprotobynumber getprotoent getpwent
+    getpwnam getpwuid getservbyname getservbyport getservent getsockname
+    getsockopt glob gmtime grep hex index int ioctl join keys kill lc lcfirst
+    length link listen localtime lock log lstat map mkdir msgctl msgget msgrcv
+    msgsnd oct open opendir ord pack pipe pop pos print printf prototype push
+    quotemeta rand read readdir readline readlink readpipe recv ref rename
+    reset reverse rewinddir rindex rmdir say scalar seek seekdir select semctl
+    semget semop send setgrent sethostent setnetent setpgrp setpriority
+    setprotoent setpwent setservent setsockopt shift shmctl shmget shmread
+    shmwrite shutdown sin sleep socket socketpair sort splice split sprintf
+    sqrt srand stat study substr symlink syscall sysopen sysread sysseek system
+    syswrite tell telldir tie tied time times truncate uc ucfirst umask undef
+    unlink unpack unshift untie utime values vec wait waitpid wantarray warn
+    write
+);
+
+# Builtins whose prototype is `undef`, decided by reading perlfunc and perlop.
+# Anything camello's grammar already owns as a keyword — `my`, `return`, `do`,
+# `use`, the loop controls — is absent on purpose: it never reaches this table.
+my %BY_HAND = (
+    # A leading block, then a list.
+    map    => 'BlockList',
+    grep   => 'BlockList',
+    sort   => 'BlockList',
+
+    # A filehandle, then a list.
+    print  => 'FilehandleList',
+    printf => 'FilehandleList',
+    say    => 'FilehandleList',
+
+    # One operand, at named-unary precedence.
+    defined => 'NamedUnary',
+    exists  => 'NamedUnary',
+    delete  => 'NamedUnary',
+
+    # `eval BLOCK` and `eval EXPR`, told apart by the brace.
+    eval => 'BlockOrTerm',
+
+    # LISTOPs in perl's grammar: `chomp(@lines)` chomps every one of them.
+    chomp  => 'List',
+    chop   => 'List',
+    exec   => 'List',
+    system => 'List',
+    select => 'List',
+
+    # `split /,/, $x` — the first argument is a pattern, so the `/` after the
+    # name has to lex as a match. That is the second question this table
+    # answers, and it falls out of `Expect::Term`, which every non-nullary
+    # shape already carries.
+    split => 'List',
+);
+
+sub shape_of {
+    my ($name) = @_;
+    return $BY_HAND{$name} if exists $BY_HAND{$name};
+
+    my $proto = prototype("CORE::$name");
+    return undef unless defined $proto;
+
+    # A reference slot is one slot however many sigils it accepts, so collapse
+    # `\[%@]` and `\$` before looking for a slurpy `@` or `%`.
+    my $slots = $proto;
+    $slots =~ s/\\\[[^\]]*\]/R/g;
+    $slots =~ s/\\./R/g;
+
+    return 'List' if $slots =~ /[\@%]/;
+
+    my $count = length($slots =~ tr/;//dr);
+    return 'Nullary'    if $count == 0;
+    return 'NamedUnary' if $count == 1;
+    return 'List';
+}
+
+my %by_shape;
+my %unresolved;
+for my $name (@NAMES) {
+    my $shape = shape_of($name);
+    if (!defined $shape) {
+        $unresolved{$name} = 1;
+        next;
+    }
+    push @{ $by_shape{$shape} }, $name;
+}
+
+if (%unresolved) {
+    print STDERR "no prototype and no hand entry: @{[ sort keys %unresolved ]}\n";
+}
+
+my @ORDER = qw(BlockList FilehandleList NamedUnary Nullary List BlockOrTerm);
+my %COMMENT = (
+    BlockList      => 'block-taking list operators',
+    FilehandleList => 'filehandle-taking list operators',
+    NamedUnary     => "named unary operators — exactly one argument, binding\n        // tighter than comparison (perlop)",
+    Nullary        => 'no arguments at all',
+    List           => 'ordinary list operators',
+    BlockOrTerm    => 'a block, or one operand',
+);
+
+for my $shape (@ORDER) {
+    my $names = $by_shape{$shape} or next;
+    my @names = sort @$names;
+    my $expect = $shape eq 'Nullary' ? 'Expect::Operator' : 'Expect::Term';
+
+    print "        // -- $COMMENT{$shape}\n";
+
+    my @lines;
+    my $line = '';
+    for my $name (@names) {
+        my $piece = "\"$name\"";
+        if (length($line) + length($piece) + 3 > 90) {
+            push @lines, $line;
+            $line = '';
+        }
+        $line = $line eq '' ? $piece : "$line | $piece";
+    }
+    push @lines, $line if $line ne '';
+    print "        ", join("\n        | ", @lines), " => (Shape::$shape, $expect),\n\n";
+}

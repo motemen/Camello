@@ -5,58 +5,43 @@ expression: rendered
 ROOT
   EXPR_STMT
     LIST_EXPR
-      LIST_CALL_EXPR
+      BLOCK_CALL_EXPR
         SUB_NAME
           identifier "eval"
-        LIST_EXPR
-          ANON_HASH
-            `{` "{"
-            LIST_EXPR
-              LIST_CALL_EXPR
-                SUB_NAME
-                  identifier "use"
-                LIST_EXPR
-                  LIST_CALL_EXPR
-                    SUB_NAME
-                      identifier "strict"
-            `}` "}"
+        BLOCK
+          `{` "{"
+          USE_STMT
+            `use` "use"
+            SUB_NAME
+              identifier "strict"
+          `}` "}"
     `;` ";"
   EXPR_STMT
     LIST_EXPR
-      LIST_CALL_EXPR
+      BLOCK_CALL_EXPR
         SUB_NAME
           identifier "eval"
-        LIST_EXPR
-          ANON_HASH
-            `{` "{"
-            LIST_EXPR
-              LIST_CALL_EXPR
-                SUB_NAME
-                  identifier "use"
-                LIST_EXPR
-                  LIST_CALL_EXPR
-                    SUB_NAME
-                      identifier "warnings"
-            `}` "}"
+        BLOCK
+          `{` "{"
+          USE_STMT
+            `use` "use"
+            SUB_NAME
+              identifier "warnings"
+          `}` "}"
     `;` ";"
   EXPR_STMT
     LIST_EXPR
-      LIST_CALL_EXPR
+      BLOCK_CALL_EXPR
         SUB_NAME
           identifier "eval"
-        LIST_EXPR
-          ANON_HASH
-            `{` "{"
+        BLOCK
+          `{` "{"
+          USE_STMT
+            `use` "use"
+            SUB_NAME
+              identifier "feature"
             LIST_EXPR
-              LIST_CALL_EXPR
-                SUB_NAME
-                  identifier "use"
-                LIST_EXPR
-                  LIST_CALL_EXPR
-                    SUB_NAME
-                      identifier "feature"
-                    LIST_EXPR
-                      LITERAL
-                        string literal "'say'"
-            `}` "}"
+              LITERAL
+                string literal "'say'"
+          `}` "}"
     `;` ";"

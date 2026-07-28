@@ -1,0 +1,315 @@
+---
+source: src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  USE_STMT
+    `use` "use"
+    SUB_NAME
+      identifier "utf8"
+    `;` ";"
+  USE_STMT
+    `use` "use"
+    SUB_NAME
+      identifier "strict"
+    `;` ";"
+  USE_STMT
+    `use` "use"
+    SUB_NAME
+      identifier "warnings"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "document"
+        `=` "="
+        LIST_CALL_EXPR
+          SUB_NAME
+            identifier "eval"
+          HEREDOC_EXPR
+            heredoc marker "<<'EOT'"
+    `;` ";"
+  heredoc body "this is data, not code\n"
+  heredoc terminator "EOT"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "result"
+        `=` "="
+        BLOCK_CALL_EXPR
+          SUB_NAME
+            identifier "eval"
+          BLOCK
+            `{` "{"
+            EXPR_STMT
+              LIST_EXPR
+                BINARY_EXPR
+                  LITERAL
+                    number "1"
+                  `+` "+"
+                  LITERAL
+                    number "1"
+            `}` "}"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      BINARY_EXPR
+        BLOCK_CALL_EXPR
+          SUB_NAME
+            identifier "eval"
+          BLOCK
+            `{` "{"
+            EXPR_STMT
+              LIST_EXPR
+                CALL_EXPR
+                  SUB_NAME
+                    identifier "risky"
+                  ARG_LIST
+                    `(` "("
+                    LIST_EXPR
+                    `)` ")"
+            `}` "}"
+        `or` "or"
+        LIST_CALL_EXPR
+          SUB_NAME
+            identifier "warn"
+          LIST_EXPR
+            LITERAL
+              string literal "\"failed: $@\""
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "computed"
+        `=` "="
+        LIST_CALL_EXPR
+          SUB_NAME
+            identifier "eval"
+          LITERAL
+            string literal "\"1 + 1\""
+    `;` ";"
+  SUB_DEF
+    `sub` "sub"
+    SUB_NAME
+      identifier "context"
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          LIST_CALL_EXPR
+            SUB_NAME
+              `return` "return"
+            LIST_EXPR
+              TERNARY_EXPR
+                LIST_CALL_EXPR
+                  SUB_NAME
+                    identifier "wantarray"
+                `?` "?"
+                PAREN_EXPR
+                  `(` "("
+                  LIST_EXPR
+                    LITERAL
+                      number "1"
+                    `,` ","
+                    LITERAL
+                      number "2"
+                  `)` ")"
+                `:` ":"
+                LITERAL
+                  number "1"
+        `;` ";"
+      `}` "}"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            ARRAY_VAR
+              `@` "@"
+              identifier "lines"
+        `=` "="
+        PAREN_EXPR
+          `(` "("
+          LIST_EXPR
+            LITERAL
+              string literal "\"a\\n\""
+          `)` ")"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "chomp"
+        LIST_EXPR
+          ARRAY_VAR
+            `@` "@"
+            identifier "lines"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "size"
+        `=` "="
+        LIST_CALL_EXPR
+          SUB_NAME
+            identifier "length"
+          ARRAY_SUBSCRIPT_EXPR
+            SCALAR_VAR
+              `$` "$"
+              identifier "lines"
+            `[` "["
+            SUBSCRIPT
+              LITERAL
+                number "0"
+            `]` "]"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "kind"
+        `=` "="
+        LIST_CALL_EXPR
+          SUB_NAME
+            identifier "ref"
+          REFERENCE_EXPR
+            `\` "\\"
+            ARRAY_VAR
+              `@` "@"
+              identifier "lines"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "café"
+        `=` "="
+        LITERAL
+          string literal "\"au lait\""
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            HASH_VAR
+              `%` "%"
+              identifier "メニュー"
+        `=` "="
+        PAREN_EXPR
+          `(` "("
+          LIST_EXPR
+            LIST_CALL_EXPR
+              SUB_NAME
+                identifier "コーヒー"
+            `=>` "=>"
+            SCALAR_VAR
+              `$` "$"
+              identifier "café"
+          `)` ")"
+    `;` ";"
+  SUB_DEF
+    `sub` "sub"
+    SUB_NAME
+      identifier "名前"
+    BLOCK
+      `{` "{"
+      VAR_DECL_STMT
+        LIST_EXPR
+          ASSIGN_EXPR
+            VAR_DECL
+              `my` "my"
+              DECL_TARGET
+                `(` "("
+                LIST_EXPR
+                  SCALAR_VAR
+                    `$` "$"
+                    identifier "引数"
+                `)` ")"
+            `=` "="
+            ARRAY_VAR
+              `@` "@"
+              identifier "_"
+        `;` ";"
+      EXPR_STMT
+        LIST_EXPR
+          LIST_CALL_EXPR
+            SUB_NAME
+              `return` "return"
+            LIST_EXPR
+              SCALAR_VAR
+                `$` "$"
+                identifier "引数"
+        `;` ";"
+      `}` "}"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "print"
+        LIST_EXPR
+          CALL_EXPR
+            SUB_NAME
+              identifier "名前"
+            ARG_LIST
+              `(` "("
+              LIST_EXPR
+                SCALAR_VAR
+                  `$` "$"
+                  identifier "café"
+              `)` ")"
+          `,` ","
+          LITERAL
+            string literal "\"\\n\""
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "print"
+        FILEHANDLE
+          SCALAR_VAR
+            `$` "$"
+            identifier "メニュー"
+        LIST_EXPR
+          ANON_HASH
+            `{` "{"
+            LIST_EXPR
+              LIST_CALL_EXPR
+                SUB_NAME
+                  identifier "コーヒー"
+            `}` "}"
+          `,` ","
+          LITERAL
+            string literal "\"\\n\""
+    `;` ";"

@@ -96,7 +96,7 @@ impl<'a> Lexer<'a> {
             return;
         }
 
-        if first.is_ascii_alphabetic() || first == b'_' || self.rest().starts_with("::") {
+        if ident_len_at(self.rest()) > 0 {
             self.scan_word();
             return;
         }
@@ -517,12 +517,10 @@ impl<'a> Lexer<'a> {
             return;
         }
 
-        if first.is_ascii_alphabetic() || first == b'_' || bytes.starts_with(b"::") {
-            let len = self.ident_len(0);
-            if len > 0 {
-                self.push(TokenKind::IDENT, start, start + len);
-                return;
-            }
+        let name_len = self.ident_len(0);
+        if name_len > 0 {
+            self.push(TokenKind::IDENT, start, start + name_len);
+            return;
         }
 
         if first.is_ascii_digit() {
@@ -558,21 +556,51 @@ pub(super) fn ident_len_at(text: &str) -> usize {
     // A leading `::` means the `main` package: `::diag(...)` and `$::foo`.
     let mut end = if bytes.starts_with(b"::") { 2 } else { 0 };
     if end == 0 {
-        if bytes.is_empty() || !(bytes[0].is_ascii_alphabetic() || bytes[0] == b'_') {
+        let Some(first) = text.chars().next() else {
+            return 0;
+        };
+        if !starts_identifier(first) {
             return 0;
         }
-        end = 1;
+        end = first.len_utf8();
     }
     while end < bytes.len() {
-        if bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_' {
-            end += 1;
-        } else if bytes[end] == b':' && bytes.get(end + 1) == Some(&b':') {
-            end += 2;
-        } else {
+        if bytes[end] == b':' {
+            if bytes.get(end + 1) == Some(&b':') {
+                end += 2;
+                continue;
+            }
             break;
         }
+        let Some(ch) = text[end..].chars().next() else {
+            break;
+        };
+        if !continues_identifier(ch) {
+            break;
+        }
+        end += ch.len_utf8();
     }
     end
+}
+
+/// May an identifier begin with this character?
+///
+/// Under `use utf8` perl accepts any word character, so `$café` and `sub 名前`
+/// are ordinary names. Restricting this to ASCII did not reject them — it split
+/// them, and `my $café = 1;` came out as `my $caf é = 1;`, which is a syntax
+/// error where a working program used to be.
+///
+/// Anything non-ASCII counts, rather than `XID_Start` exactly. The alternative
+/// is a Unicode tables dependency to be more precise about input that perl
+/// itself will reject at compile time either way; being wrong here means
+/// accepting a name perl would not, and the formatter's job is to leave it
+/// alone, not to adjudicate it.
+fn starts_identifier(ch: char) -> bool {
+    ch.is_ascii_alphabetic() || ch == '_' || !ch.is_ascii()
+}
+
+fn continues_identifier(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || ch == '_' || !ch.is_ascii()
 }
 
 /// Symbolic operators, longest first so that `**=` wins over `**` and `*`.

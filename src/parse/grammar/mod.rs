@@ -1,6 +1,6 @@
 //! The grammar (ADR 0007 §2, §3, §5).
 
-mod builtins;
+pub(crate) mod builtins;
 mod expr;
 pub(crate) mod precedence;
 mod primary;
