@@ -32,12 +32,27 @@ impl<'a> Builder<'a> {
 
     pub fn file(&mut self, root: &SyntaxNode) -> Doc {
         let mut parts = Vec::new();
-        for statement in root.children() {
-            self.statement_into(&statement, &mut parts);
-        }
+        self.statements_into(root, &mut parts);
         // A file ends with exactly one newline.
         parts.push(Doc::HardLine);
         Doc::concat(parts)
+    }
+
+    /// The statements of a root or a block, plus anything sitting between them.
+    ///
+    /// A heredoc body is a token, not a statement: it lands wherever the line it
+    /// starts on falls (ADR 0007 §7), which is between two statements. Walking
+    /// only the child *nodes* would drop it.
+    fn statements_into(&mut self, node: &SyntaxNode, parts: &mut Vec<Doc>) {
+        for child in node.children_with_tokens() {
+            match child {
+                SyntaxElement::Node(statement) => self.statement_into(&statement, parts),
+                SyntaxElement::Token(token) if token.token_kind().is_heredoc_body() => {
+                    parts.push(Doc::Raw(token));
+                }
+                SyntaxElement::Token(_) => {}
+            }
+        }
     }
 
     /// A statement. Its comments and blank lines come from its tokens, which is
@@ -360,12 +375,12 @@ impl<'a> Builder<'a> {
         let flat = self.block_can_be_flat(node, &statements);
 
         let mut body = Vec::new();
-        for statement in &statements {
-            if flat {
+        if flat {
+            for statement in &statements {
                 body.push(self.node(statement));
-            } else {
-                self.statement_into(statement, &mut body);
             }
+        } else {
+            self.statements_into(node, &mut body);
         }
 
         // Error recovery can leave a block without one or both braces; emit what
