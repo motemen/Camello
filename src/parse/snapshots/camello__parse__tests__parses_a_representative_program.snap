@@ -58,21 +58,22 @@ ROOT
               SCALAR_VAR
                 `$` "$"
                 identifier "word"
-          `(` "("
-          LIST_EXPR
-            LIST_CALL_EXPR
-              SUB_NAME
-                identifier "split"
-              LIST_EXPR
-                M_EXPR
-                  delimiter "/"
-                  regex pattern "\\s+"
-                  delimiter "/"
-                `,` ","
-                SCALAR_VAR
-                  `$` "$"
-                  identifier "name"
-          `)` ")"
+          PAREN_EXPR
+            `(` "("
+            LIST_EXPR
+              LIST_CALL_EXPR
+                SUB_NAME
+                  identifier "split"
+                LIST_EXPR
+                  M_EXPR
+                    delimiter "/"
+                    regex pattern "\\s+"
+                    delimiter "/"
+                  `,` ","
+                  SCALAR_VAR
+                    `$` "$"
+                    identifier "name"
+            `)` ")"
         BLOCK
           `{` "{"
           EXPR_STMT

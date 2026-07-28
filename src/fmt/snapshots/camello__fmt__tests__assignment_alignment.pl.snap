@@ -13,7 +13,7 @@ sub demo_alignment {
     my $gamma      = compute_value(); # trailing comment
 
     my $multiline =
-    some_long_expression();
+        some_long_expression();
 
     my $delta = 3;
     # comment should break grouping
@@ -29,6 +29,6 @@ sub demo_alignment {
     };
     $after_block = 10;
 
-    our $phi = 11;
+    our $phi               = 11;
     state $omega_long_name = 12;
 }

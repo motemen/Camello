@@ -64,11 +64,12 @@ ROOT
     `;` ";"
   LOOP_STMT
     `while` "while"
-    `(` "("
-    LIST_EXPR
-      IO_EXPR
-        readline operator "<$fh>"
-    `)` ")"
+    PAREN_EXPR
+      `(` "("
+      LIST_EXPR
+        IO_EXPR
+          readline operator "<$fh>"
+      `)` ")"
     BLOCK
       `{` "{"
       EXPR_STMT
@@ -96,27 +97,28 @@ ROOT
     `;` ";"
   IF_STMT
     `if` "if"
-    `(` "("
-    LIST_EXPR
-      BINARY_EXPR
+    PAREN_EXPR
+      `(` "("
+      LIST_EXPR
         BINARY_EXPR
-          SCALAR_VAR
-            `$` "$"
-            identifier "a"
-          `<` "<"
-          SCALAR_VAR
-            `$` "$"
-            identifier "b"
-        `&&` "&&"
-        BINARY_EXPR
-          SCALAR_VAR
-            `$` "$"
-            identifier "c"
-          `>` ">"
-          SCALAR_VAR
-            `$` "$"
-            identifier "d"
-    `)` ")"
+          BINARY_EXPR
+            SCALAR_VAR
+              `$` "$"
+              identifier "a"
+            `<` "<"
+            SCALAR_VAR
+              `$` "$"
+              identifier "b"
+          `&&` "&&"
+          BINARY_EXPR
+            SCALAR_VAR
+              `$` "$"
+              identifier "c"
+            `>` ">"
+            SCALAR_VAR
+              `$` "$"
+              identifier "d"
+      `)` ")"
     BLOCK
       `{` "{"
       EXPR_STMT

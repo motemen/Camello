@@ -3,29 +3,32 @@ source: src/fmt/tests.rs
 expression: format(&source)
 ---
 warn 1
-if $err;
+    if $err;
 
 my $x = 1
-+ 2;
+    + 2;
 
-my $result = func($a, $b);
+my $result = func($a,
+    $b);
 
 sub foo {
-    my $result = func($a, $b);
+    my $result = func($a,
+        $b);
 }
 
-my %hash = (key1 => 'value1', key2 => 'value2');
+my %hash = (key1 => 'value1',
+    key2 => 'value2');
 
 warn 1
-# explanation
+    # explanation
 if $err;
 
 warn 1
 
-if $err;
+    if $err;
 
 my $x = 1
-# adjust
+    # adjust
 + 2;
 
 func(my $a,);
@@ -52,21 +55,16 @@ LOOP : while ($i < 10) {
     $i++;
 }
 
-LOOP : while ($i < 2) {
-}
+LOOP : while ($i < 2) {  }
 
 until ($i > 10) {
     $i--;
 }
 
-for (; ; ) {
-}
-for (my $i = 0; $i < 10; $i++) {
-}
-for (; $i < 10; ) {
-}
-for ($i = 0; ; $i++) {
-}
+for (; ; ) {  }
+for (my $i = 0; $i < 10; $i++) {  }
+for (; $i < 10; ) {  }
+for ($i = 0; ; $i++) {  }
 
 ...;
 

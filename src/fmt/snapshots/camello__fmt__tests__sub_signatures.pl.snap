@@ -12,9 +12,9 @@ sub flexible ($first, $, $third //= 3, @rest) {
 }
 
 sub configure
-($debug ||= 0,
-%opts) {
-    return $opts{ level } // $debug;
+    ($debug ||= 0,
+    %opts) {
+    return $opts{level} // $debug;
 }
 
 sub placeholder_only ($, @, %) {
@@ -26,11 +26,11 @@ sub placeholder_default ($thing, $= 1) {
 }
 
 my $anon = sub ($value ||= 10, %opts) {
-    return $opts{ scale } ? $value * $opts{ scale } : $value;
+    return $opts{scale} ? $value * $opts{scale} : $value;
 };
 
 sub multiline ($alpha,
-$beta ||= compute_default(),
-%extra,) {
+    $beta ||= compute_default(),
+    %extra,) {
     return $alpha + $beta + scalar keys %extra;
 }

@@ -2,90 +2,90 @@
 source: src/fmt/tests.rs
 expression: format(&source)
 ---
-&{ $coderef }(1, 2, 3);
-&{ $dispatch{ $index } }(1, 2, 3);
+&{$coderef}(1, 2, 3);
+&{$dispatch{$index}}(1, 2, 3);
 &$ORIG;
-&{ "package::method" };
-&{ $obj->method };
-&{ 'DynamicSub::' . $name };
+&{"package::method"};
+&{$obj->method};
+&{'DynamicSub::' . $name};
 
-${ $ref };
-${ $hash{ key } };
-${ $complex_expression };
-${ "dynamic_var" };
-${ '$var_' . $suffix };
+${$ref};
+${$hash{key}};
+${$complex_expression};
+${"dynamic_var"};
+${'$var_' . $suffix};
 
-@{ $arrayref };
-@{ $hash{ arrays } };
-@{ $array_dispatch{ $type } };
-@{ "Package::ARRAY" };
-@{ '@array_' . $name };
+@{$arrayref};
+@{$hash{arrays}};
+@{$array_dispatch{$type}};
+@{"Package::ARRAY"};
+@{'@array_' . $name};
 
 +{ %hash };
 
-@{ $hash{ key } };
+@{$hash{key}};
 
-@{ $obj->meth };
+@{$obj->meth};
 
-+{ @{ $obj->meth } };
++{ @{$obj->meth} };
 [$item];
 
-%{ $hashref };
-%{ $obj->get_hash };
-%{ $hash_table{ $key } };
-%{ "Package::HASH" };
-%{ '%hash_' . $suffix };
+%{$hashref};
+%{$obj->get_hash};
+%{$hash_table{$key}};
+%{"Package::HASH"};
+%{'%hash_' . $suffix};
 
-&{ $handlers{ $type || 'default' } };
-${ $refs->[0] };
-@{ $data->{ arrays }->[0] };
-%{ $config->{ $env }->{ hashes } };
+&{$handlers{$type || 'default'}};
+${$refs->[0]};
+@{$data->{arrays}->[0]};
+%{$config->{$env}->{hashes}};
 
-&{ $code }();
-&{ $dispatch{ $method } }(@args);
-print &{ $formatters{ $type } }($data);
-my $result = &{ $callback }($input);
-my @items  = @{ $container };
-my %config = %{ $settings };
-&{ $obj->get_method }(&{ $factory }(), @{ $args });
+&{$code}();
+&{$dispatch{$method}}(@args);
+print &{$formatters{$type}}($data);
+my $result = &{$callback}($input);
+my @items  = @{$container};
+my %config = %{$settings};
+&{$obj->get_method}(&{$factory}(), @{$args});
 
-$h->{ if };
-$h->{ unless };
-$h->{ elsif };
-$h->{ else };
-$h->{ for };
-$h->{ foreach };
-$h->{ while };
-$h->{ until };
-$h->{ sub };
-$h->{ my };
-$h->{ our };
-$h->{ state };
-$h->{ local };
-$h->{ package };
-$h->{ use };
-$h->{ no };
-$h->{ require };
-$h->{ return };
-$h->{ undef };
-$h->{ next };
-$h->{ last };
-$h->{ redo };
-$h->{ not };
-$h->{ and };
-$h->{ or };
-$h->{ xor };
-$h->{ q };
-$h->{ qq };
-$h->{ qw };
-$h->{ qx };
-$h->{ qr };
-$h->{ m };
-$h->{ s };
-$h->{ tr };
-$h->{ y };
-$h->{ __END__ };
-$h->{ __DATA__ };
+$h->{if};
+$h->{unless};
+$h->{elsif};
+$h->{else};
+$h->{for};
+$h->{foreach};
+$h->{while};
+$h->{until};
+$h->{sub};
+$h->{my};
+$h->{our};
+$h->{state};
+$h->{local};
+$h->{package};
+$h->{use};
+$h->{no};
+$h->{require};
+$h->{return};
+$h->{undef};
+$h->{next};
+$h->{last};
+$h->{redo};
+$h->{not};
+$h->{and};
+$h->{or};
+$h->{xor};
+$h->{q};
+$h->{qq};
+$h->{qw};
+$h->{qx};
+$h->{qr};
+$h->{m};
+$h->{s};
+$h->{tr};
+$h->{y};
+$h->{__END__};
+$h->{__DATA__};
 
 $h = { if => 1, while => 2, until => 3 };
 my $until = 1;
@@ -108,17 +108,17 @@ my $INIT      = 1;
 my $CHECK     = 1;
 my $UNITCHECK = 1;
 my $END       = 1;
-${ ^ MATCH };
-${ ^ PREMATCH };
-${ ^ POSTMATCH };
-${ ^ ENCODING };
-${ ^ TAINT };
-${ ^ UNICODE };
-${ ^ UTF8CACHE };
-${ ^ UTF8LOCALE };
-my $res = ${ ^ MATCH };
-$undef = ${ ^ ENCODING };
-print $undef, ${ ^ MATCH };
+${^ MATCH};
+${^ PREMATCH};
+${^ POSTMATCH};
+${^ ENCODING};
+${^ TAINT};
+${^ UNICODE};
+${^ UTF8CACHE};
+${^ UTF8LOCALE};
+my $res = ${^ MATCH};
+$undef = ${^ ENCODING};
+print $undef, ${^ MATCH};
 use vars qw($undef ${^MATCH});
 
 $_;
@@ -158,7 +158,7 @@ $*;
 
 say $$ ^ H;
 my $value = $$ ^ 2;
-say ${ $^H };
+say ${$^H};
 
 $#arr;
 my $last = $#items;
@@ -166,14 +166,12 @@ $#Package::array;
 $#main::data;
 $#$arrayref;
 my $size = $#$ref + 1;
-for my $i (0 .. $#array) {
-}
-if ($#data >= 0) {
-}
+for my $i (0 .. $#array) {  }
+if ($#data >= 0) {  }
 
 my $fh = \*STDIN;
 *STDOUT;
-*{ $name };
+*{$name};
 
 my $ref  = \"foo";
 my $ref2 = \'bar';
@@ -183,7 +181,7 @@ my $ref4 = \qq{qux};
 foo < $o->meth;
 foo * (1 + 2);
 foo % +1;
-foo * { k => 1 }->{ k };
+foo * { k => 1 }->{k};
 foo * @_;
 foo * [1, 2, 3]->[0];
 foo * bar;

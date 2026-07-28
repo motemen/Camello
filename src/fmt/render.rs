@@ -37,6 +37,8 @@ pub struct Renderer<'a> {
     /// The shape key most recently declared, applied to lines as they are
     /// finished.
     shape: Option<ShapeKey>,
+    /// The next line is a continuation of the one before it.
+    continuation: bool,
 }
 
 impl<'a> Renderer<'a> {
@@ -48,6 +50,7 @@ impl<'a> Renderer<'a> {
             indent: 0,
             broken: true,
             shape: None,
+            continuation: false,
         }
     }
 
@@ -101,6 +104,12 @@ impl<'a> Renderer<'a> {
             Doc::UserLine { broken } => {
                 if *broken {
                     self.newline();
+                    // A line the user wrapped is indented one level
+                    // (formatting.md INDENT-3). Applying it to the line rather
+                    // than wrapping the doc in `Indent` is what keeps it at
+                    // exactly one level however deeply the expression nests —
+                    // and is why ADR 0002's fourteen branches are not needed.
+                    self.continuation = true;
                 }
             }
             Doc::BlankLine => {
@@ -178,6 +187,7 @@ impl<'a> Renderer<'a> {
 
     /// Content that begins its own line at column 0.
     fn write_verbatim_lines(&mut self, text: &str) {
+        self.continuation = false;
         if !self.current.text.is_empty() {
             self.finish_line();
         }
@@ -192,11 +202,15 @@ impl<'a> Renderer<'a> {
     }
 
     fn ensure_indent(&mut self) {
-        if self.current.text.is_empty() {
-            self.current.indent = self.indent;
-            let width = self.indent * self.options.indent_width;
-            self.current.text.push_str(&" ".repeat(width));
+        if !self.current.text.is_empty() {
+            return;
         }
+        let indent = self.indent + usize::from(self.continuation);
+        self.continuation = false;
+        self.current.indent = indent;
+        self.current
+            .text
+            .push_str(&" ".repeat(indent * self.options.indent_width));
     }
 
     fn newline(&mut self) {

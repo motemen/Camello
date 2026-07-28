@@ -5,13 +5,14 @@ expression: rendered
 ROOT
   IF_STMT
     `if` "if"
-    `(` "("
-    LIST_EXPR
-      SCALAR_VAR
-        `$` "$"
-        identifier "x"
-      `,` ","
-    `)` ")"
+    PAREN_EXPR
+      `(` "("
+      LIST_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "x"
+        `,` ","
+      `)` ")"
     BLOCK
       `{` "{"
       EXPR_STMT

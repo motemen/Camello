@@ -5,12 +5,13 @@ expression: rendered
 ROOT
   IF_STMT
     `unless` "unless"
-    `(` "("
-    LIST_EXPR
-      SCALAR_VAR
-        `$` "$"
-        identifier "condition"
-    `)` ")"
+    PAREN_EXPR
+      `(` "("
+      LIST_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "condition"
+      `)` ")"
     BLOCK
       `{` "{"
       EXPR_STMT
@@ -25,12 +26,13 @@ ROOT
       `}` "}"
     ELSIF_CLAUSE
       `elsif` "elsif"
-      `(` "("
-      LIST_EXPR
-        SCALAR_VAR
-          `$` "$"
-          identifier "other"
-      `)` ")"
+      PAREN_EXPR
+        `(` "("
+        LIST_EXPR
+          SCALAR_VAR
+            `$` "$"
+            identifier "other"
+        `)` ")"
       BLOCK
         `{` "{"
         EXPR_STMT

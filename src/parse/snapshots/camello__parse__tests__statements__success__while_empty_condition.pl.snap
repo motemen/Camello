@@ -5,9 +5,10 @@ expression: rendered
 ROOT
   LOOP_STMT
     `while` "while"
-    `(` "("
-    LIST_EXPR
-    `)` ")"
+    PAREN_EXPR
+      `(` "("
+      LIST_EXPR
+      `)` ")"
     BLOCK
       `{` "{"
       `}` "}"

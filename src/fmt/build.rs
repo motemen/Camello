@@ -65,8 +65,8 @@ impl<'a> Builder<'a> {
         if let Some(shape) = shape_key(node) {
             parts.push(Doc::Shape(shape));
         }
+
         parts.push(self.node(node));
-        parts.push(self.trailing_comment_of_last_token(node));
         parts.push(Doc::HardLine);
     }
 
@@ -118,13 +118,6 @@ impl<'a> Builder<'a> {
             }
         }
         Doc::Nil
-    }
-
-    fn trailing_comment_of_last_token(&mut self, node: &SyntaxNode) -> Doc {
-        match last_token(node) {
-            Some(token) => self.trailing_comment(&token),
-            None => Doc::Nil,
-        }
     }
 
     fn node(&mut self, node: &SyntaxNode) -> Doc {
@@ -244,10 +237,9 @@ impl<'a> Builder<'a> {
         }
         // An argument list hugs the name it belongs to: `foo(1)`, not `foo (1)`.
         // The parenthesis is inside ARG_LIST, so the test is on the node.
-        if next
-            .as_node()
-            .is_some_and(|node| node.node_kind() == NodeKind::ARG_LIST)
-        {
+        if next.as_node().is_some_and(|node| {
+            matches!(node.node_kind(), NodeKind::ARG_LIST | NodeKind::ATTR_ARGS)
+        }) {
             return false;
         }
 
@@ -286,7 +278,17 @@ impl<'a> Builder<'a> {
         {
             return false;
         }
-        if after == Some(T!["{"]) && parent == Some(NodeKind::HASH_SUBSCRIPT_EXPR) {
+        // `$h->{key}`, `$h{a}{b}`, `&{$code}` — braces hug their contents.
+        if matches!(
+            parent,
+            Some(
+                NodeKind::HASH_SUBSCRIPT_EXPR
+                    | NodeKind::ARRAY_SUBSCRIPT_EXPR
+                    | NodeKind::BLOCK_DEREF_EXPR
+            )
+        ) && (matches!(after, Some(T!["{"] | T!["}"] | T!["["] | T!["]"]))
+            || matches!(before, Some(T!["{"] | T!["["])))
+        {
             return false;
         }
         // Nothing between a prefix operator and its operand.
@@ -353,10 +355,18 @@ impl<'a> Builder<'a> {
         };
 
         let leading = self.leading_docs(token);
-        if leading.is_nil() {
+        // A comment sitting between a header and its brace belongs after the
+        // brace, because the brace does not move (formatting.md NEWLINE-2).
+        // `block` emits it there.
+        let trailing = if brace_follows(token) {
+            Doc::Nil
+        } else {
+            self.trailing_comment(token)
+        };
+        if leading.is_nil() && trailing.is_nil() {
             return text;
         }
-        Doc::concat(vec![leading, text])
+        Doc::concat(vec![leading, text, trailing])
     }
 
     /// POD, `__DATA__` and heredoc bodies: every token, trivia included.
@@ -370,6 +380,21 @@ impl<'a> Builder<'a> {
             .map(Doc::Raw)
             .collect();
         Doc::concat(parts)
+    }
+
+    /// The comment that sat before this block's brace, to be emitted after it.
+    fn comment_before_brace(&mut self, node: &SyntaxNode) -> Doc {
+        let Some(first) = first_token(node) else {
+            return Doc::Nil;
+        };
+        let mut previous = first.prev_token();
+        while let Some(token) = previous {
+            if !token.token_kind().is_trivia() {
+                return self.trailing_comment(&token);
+            }
+            previous = token.prev_token();
+        }
+        Doc::Nil
     }
 
     /// A block. Control-structure blocks always break; a `map`/`sub`/`do` block
@@ -387,14 +412,17 @@ impl<'a> Builder<'a> {
             self.statements_into(node, &mut body);
         }
 
+        let header_comment = self.comment_before_brace(node);
+
         // Error recovery can leave a block without one or both braces; emit what
         // is there rather than assuming a shape the tree does not have.
-        let open = brace(node, T!["{"], false).map(Doc::Token);
-        let close = brace(node, T!["}"], true).map(Doc::Token);
+        let open = brace(node, T!["{"], false).map(|token| self.token(&token));
+        let close = brace(node, T!["}"], true).map(|token| self.token(&token));
 
         if flat {
             let mut parts = Vec::new();
             parts.extend(open);
+            parts.push(header_comment);
             parts.push(Doc::Space);
             parts.push(Doc::concat(body));
             if close.is_some() {
@@ -406,6 +434,7 @@ impl<'a> Builder<'a> {
 
         let mut parts = Vec::new();
         parts.extend(open);
+        parts.push(header_comment);
         parts.push(Doc::HardLine);
         if !body.is_empty() {
             parts.push(Doc::indent(Doc::concat(body)));
@@ -417,6 +446,14 @@ impl<'a> Builder<'a> {
     /// The single rule that replaces `is_simple_block`'s seven rejections plus
     /// its memoisation plus the `suppress_newlines` flag that leaked past both.
     fn block_can_be_flat(&self, node: &SyntaxNode, statements: &[SyntaxNode]) -> bool {
+        // An empty block is `{ }` wherever it appears; there is nothing to put
+        // on a line of its own.
+        if statements.is_empty() {
+            return !node
+                .descendants_with_tokens()
+                .filter_map(|child| child.into_token())
+                .any(|token| token.token_kind() == TokenKind::COMMENT);
+        }
         if statements.len() != 1 {
             return false;
         }
@@ -548,18 +585,27 @@ impl<'a> Builder<'a> {
                         parts.push(Doc::Anchor(AnchorClass::FatComma(self.fat_comma_depth)));
                         parts.push(Doc::Space);
                     }
-                    let last = token.next_sibling_or_token().is_none()
-                        || token
-                            .siblings_with_tokens(rowan::Direction::Next)
-                            .skip(1)
-                            .all(|sibling| {
-                                sibling
-                                    .as_token()
-                                    .is_some_and(|token| token.token_kind().is_trivia())
-                            });
-                    parts.push(Doc::Token(token));
+                    let last = token
+                        .siblings_with_tokens(rowan::Direction::Next)
+                        .skip(1)
+                        .all(|sibling| {
+                            sibling
+                                .as_token()
+                                .is_some_and(|token| token.token_kind().is_trivia())
+                        });
+                    let user_break = self.newline_follows(&token);
+                    parts.push(self.token(&token));
                     if ends_element && !last {
-                        parts.push(if broken { Doc::Line } else { Doc::Space });
+                        // A broken group puts one element per line; a flat one
+                        // still keeps a line break the user put here
+                        // (formatting.md POLICY-4).
+                        parts.push(if broken {
+                            Doc::Line
+                        } else if user_break {
+                            Doc::UserLine { broken: true }
+                        } else {
+                            Doc::Space
+                        });
                     } else if !ends_element {
                         parts.push(Doc::Space);
                     }
@@ -584,6 +630,22 @@ impl<'a> Builder<'a> {
     }
 }
 
+/// Is the next thing after this token a block's opening brace?
+fn brace_follows(token: &SyntaxToken) -> bool {
+    let mut next = token.next_token();
+    while let Some(candidate) = next {
+        if candidate.token_kind().is_trivia() {
+            next = candidate.next_token();
+            continue;
+        }
+        return candidate.token_kind() == T!["{"]
+            && candidate
+                .parent()
+                .is_some_and(|parent| parent.node_kind() == NodeKind::BLOCK);
+    }
+    false
+}
+
 fn is_quote_like_node(kind: NodeKind) -> bool {
     matches!(
         kind,
@@ -603,11 +665,9 @@ fn shape_key(node: &SyntaxNode) -> Option<ShapeKey> {
     if !matches!(kind, NodeKind::EXPR_STMT | NodeKind::VAR_DECL_STMT) {
         return None;
     }
-    let declaration = node
+    let declares = node
         .descendants()
-        .find(|child| child.node_kind() == NodeKind::VAR_DECL)
-        .and_then(|decl| first_token(&decl))
-        .map(|token| token.token_kind());
+        .any(|child| child.node_kind() == NodeKind::VAR_DECL);
     let list_assignment = node
         .descendants()
         .filter(|child| child.node_kind() == NodeKind::DECL_TARGET)
@@ -619,7 +679,7 @@ fn shape_key(node: &SyntaxNode) -> Option<ShapeKey> {
 
     Some(ShapeKey {
         statement: kind,
-        declaration,
+        declares,
         list_assignment,
     })
 }

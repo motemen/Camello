@@ -3,25 +3,25 @@ source: src/fmt/tests.rs
 expression: format(&source)
 ---
 # Trailing comment after operator should preserve continuation indent
-my $x = 1 +
-2;
+my $x = 1 + # comment
+    2;
 
-my $y = 10 *
-3;
+my $y = 10 * # another comment
+    3;
 
-my $result = $foo +
-$bar;
+my $result = $foo + # trailing comment
+    $bar;
 
 # Multiple operators with trailing comments
-my $complex = $a +
-$b *
-$c;
+my $complex = $a + # first
+    $b * # second
+    $c;
 
 # Assignment operator with trailing comment
-my $val =
-123;
+my $val = # comment after equals
+    123;
 
 # Chained operations with comments
-my $chain = $first +
-$second -
-$third; # final value
+my $chain = $first + # add first
+    $second - # subtract second
+    $third;   # final value
