@@ -379,7 +379,7 @@ impl<'a> Lexer<'a> {
             }
             if rest.starts_with('<') {
                 if let Some(len) = self.io_operator_len() {
-                    self.push(TokenKind::IDENT, start, start + len);
+                    self.push(TokenKind::IO_HANDLE, start, start + len);
                     return;
                 }
             }

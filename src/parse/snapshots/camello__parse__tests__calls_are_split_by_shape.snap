@@ -1,0 +1,63 @@
+---
+source: src/parse/tests.rs
+assertion_line: 85
+expression: "tree(\"foo(1);\\nprint STDERR \\\"x\\\";\\nmap { $_ } @xs;\\n$obj->method(2);\\n\")"
+---
+ROOT
+  EXPR_STMT
+    LIST_EXPR
+      CALL_EXPR
+        SUB_NAME
+          identifier "foo"
+        ARG_LIST
+          `(` "("
+          LIST_EXPR
+            LITERAL
+              number "1"
+          `)` ")"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "print"
+        FILEHANDLE
+          identifier "STDERR"
+        LIST_EXPR
+          LITERAL
+            string literal "\"x\""
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      BLOCK_CALL_EXPR
+        SUB_NAME
+          identifier "map"
+        BLOCK
+          `{` "{"
+          EXPR_STMT
+            LIST_EXPR
+              SCALAR_VAR
+                `$` "$"
+                identifier "_"
+          `}` "}"
+        LIST_EXPR
+          ARRAY_VAR
+            `@` "@"
+            identifier "xs"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      METHOD_CALL_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "obj"
+        `->` "->"
+        SUB_NAME
+          identifier "method"
+        ARG_LIST
+          `(` "("
+          LIST_EXPR
+            LITERAL
+              number "2"
+          `)` ")"
+    `;` ";"

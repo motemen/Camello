@@ -1,0 +1,41 @@
+---
+source: src/parse/tests.rs
+assertion_line: 94
+expression: "tree(\"$a = $b + $c * $d;\\n$e //= 1 .. 5;\\n\")"
+---
+ROOT
+  EXPR_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "a"
+        `=` "="
+        BINARY_EXPR
+          SCALAR_VAR
+            `$` "$"
+            identifier "b"
+          `+` "+"
+          BINARY_EXPR
+            SCALAR_VAR
+              `$` "$"
+              identifier "c"
+            `*` "*"
+            SCALAR_VAR
+              `$` "$"
+              identifier "d"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "e"
+        `//=` "//="
+        RANGE_EXPR
+          LITERAL
+            number "1"
+          `..` ".."
+          LITERAL
+            number "5"
+    `;` ";"
