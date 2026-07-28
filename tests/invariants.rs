@@ -247,30 +247,24 @@ mod redesign {
     ///
     /// Every entry is a gap in coverage, not a disagreement about what the
     /// fixture means. Ordered as they appear on disk.
-    const PARSE_GAPS: &[&str] = &[
-        // A trailing comment as the last element of a broken list.
-        "src/formatter/fixtures/comment_alignment_in_delimiters.pl",
-        // A bareword followed by `{ k => 1 }->{k}`: hash-ref versus block where
-        // the call's argument shape is also unknown.
-        "src/formatter/fixtures/specials_and_sigils.pl",
-        // Signatures with `@rest` / `%opts` and attributes after them.
-        "src/formatter/fixtures/sub_signatures.pl",
-        // Character classes containing the delimiter: `m[[\]]`.
-        "src/parser/fixtures/success/regex.pl",
-    ];
+    /// Fixtures the new grammar does not parse cleanly yet.
+    ///
+    /// Empty: every checked-in fixture parses without a diagnostic.
+    const PARSE_GAPS: &[&str] = &[];
 
-    /// Fixtures the new formatter does not yet round-trip. Each is downstream of
-    /// a parse gap above; none is an independent formatter defect.
+    /// Fixtures the new formatter does not yet round-trip.
+    ///
+    /// Both are heredocs: the body is placed in the tree at the line it starts
+    /// on (ADR 0007 §7), and the builder does not yet reproduce that placement
+    /// exactly when the marker is nested inside a broken argument list.
     const IDEMPOTENCY_GAPS: &[&str] = &[
         "src/formatter/fixtures/heredoc.pl",
         "src/formatter/fixtures/heredoc_and_package.pl",
-        "src/parser/fixtures/success/regex.pl",
     ];
 
     const SEMANTIC_GAPS: &[&str] = &[
         "src/formatter/fixtures/heredoc.pl",
         "src/formatter/fixtures/heredoc_and_package.pl",
-        "src/parser/fixtures/success/regex.pl",
     ];
 
     fn tokens(source: &str) -> Vec<(String, String)> {

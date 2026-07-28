@@ -256,6 +256,29 @@ impl<'a> Lexer<'a> {
         self.buffer.last().copied()
     }
 
+    /// Read the token at the cursor as a bare sigil, without the name the
+    /// scanner would otherwise attach to it.
+    ///
+    /// A signature placeholder is written `$,` or `@,` — a sigil holding a slot
+    /// and then the separator. Scanning normally, `$,` is the output field
+    /// separator variable, which is also real Perl; only the grammar knows which
+    /// is meant here.
+    pub fn take_sigil(&mut self) -> Option<LexedToken> {
+        let index = self.non_trivia_index(0)?;
+        let token = self.buffer[index];
+        if !token.kind.is_sigil() {
+            return None;
+        }
+        let start = usize::from(token.range.start());
+        let len = self.source[start..].chars().next()?.len_utf8();
+
+        self.cursor = index;
+        self.invalidate_from_cursor();
+        self.push(token.kind, start, start + len);
+        self.cursor = self.buffer.len();
+        self.buffer.last().copied()
+    }
+
     /// The raw body of the `(...)` group at the cursor, without consuming it.
     pub fn peek_raw_paren_body(&mut self) -> Option<&'a str> {
         let open = self.peek(0)?;

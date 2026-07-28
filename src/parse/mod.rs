@@ -329,6 +329,27 @@ impl<'a> Parser<'a> {
         true
     }
 
+    /// The text a punctuation variable's name would be, if the current token is
+    /// a sigil whose name is a single punctuation character.
+    pub(crate) fn raw_after_sigil(&mut self) -> Option<&'a str> {
+        if !self.current().is_some_and(TokenKind::is_sigil) {
+            return None;
+        }
+        (self.nth(1) == Some(TokenKind::RAW_CONTENT))
+            .then(|| self.lexer.peek_text(1))
+            .flatten()
+    }
+
+    /// Consume the current token as a bare sigil (signature placeholders).
+    pub(crate) fn bump_sigil(&mut self) -> bool {
+        if self.lexer.take_sigil().is_none() {
+            return false;
+        }
+        self.steps_without_progress = 0;
+        self.events.token();
+        true
+    }
+
     /// The raw body of the `(...)` group at the cursor, without consuming it.
     pub(crate) fn raw_paren_body(&mut self) -> Option<&'a str> {
         self.lexer.peek_raw_paren_body()

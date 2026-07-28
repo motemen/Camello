@@ -159,6 +159,17 @@ impl<'a> Lexer<'a> {
         let mut depth = 1usize;
         let content_len;
 
+        // Inside a regex, a character class is opaque: `/[a/]/` matches `a` or
+        // `/`, so the `/` in the class does not end the pattern.
+        let regex = matches!(
+            kind,
+            TokenKind::REGEX_PATTERN | TokenKind::TR_SEARCH_LIST | TokenKind::TR_REPLACEMENT_LIST
+        );
+        let mut in_character_class = false;
+        // A `]` at the very start of a class is a literal `]`, optionally after
+        // a leading `^`: `/[]/]/` matches `]` or `/`.
+        let mut class_start = false;
+
         let mut chars = rest.char_indices();
         loop {
             let Some((offset, ch)) = chars.next() else {
@@ -176,6 +187,23 @@ impl<'a> Lexer<'a> {
             if ch == '\\' && close != '\\' {
                 chars.next();
                 continue;
+            }
+            if regex {
+                if in_character_class {
+                    if ch == '^' && class_start {
+                        continue;
+                    }
+                    if ch == ']' && !class_start {
+                        in_character_class = false;
+                    }
+                    class_start = false;
+                    continue;
+                }
+                if ch == '[' && close != ']' {
+                    in_character_class = true;
+                    class_start = true;
+                    continue;
+                }
             }
             if nests && ch == open {
                 depth += 1;

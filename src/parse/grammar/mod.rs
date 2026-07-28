@@ -231,13 +231,26 @@ fn signature_or_prototype(parser: &mut Parser<'_>) {
         // A signature parameter is a sigil and a name. `$1` is a perfectly good
         // variable but not a parameter, so this is where `sub f($1)` stops being
         // a signature and becomes a candidate prototype.
-        if !parser.current().is_some_and(TokenKind::is_sigil) || !parser.nth_at(1, TokenKind::IDENT)
-        {
+        if !parser.current().is_some_and(TokenKind::is_sigil) {
             ok = false;
             break;
         }
+
+        // A placeholder parameter is a bare sigil holding a slot: `sub f($,@,%)`.
+        // The scanner reads `$,` as the output field separator variable, which is
+        // also real Perl, so only the grammar can say which is meant.
+        let placeholder = matches!(parser.raw_after_sigil(), Some("," | ")" | "="));
+
         let param = parser.start();
-        primary::variable(parser);
+        if placeholder {
+            parser.bump_sigil();
+        } else if parser.nth_at(1, TokenKind::IDENT) {
+            primary::variable(parser);
+        } else {
+            parser.abandon(param);
+            ok = false;
+            break;
+        }
         if parser.at(T!["="]) || parser.at(T!["//="]) || parser.at(T!["||="]) {
             let default = parser.start();
             parser.bump();

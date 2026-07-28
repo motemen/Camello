@@ -57,6 +57,12 @@ pub(crate) fn list_contents(parser: &mut Parser<'_>, terminators: &[TokenKind]) 
 
         if parser.at_any(&[T![","], T!["=>"]]) {
             parser.bump();
+            // A trailing separator is allowed everywhere, which is one option on
+            // one list parser rather than four implementations (ADR 0007 §5).
+            parser.expect_term();
+            if parser.at_any(&[T!["}"], T![")"], T!["]"], T![";"]]) {
+                break;
+            }
             continue;
         }
         break;
@@ -388,7 +394,7 @@ pub(crate) fn bareword_call(parser: &mut Parser<'_>) -> CompletedMarker {
     match shape {
         Shape::Nullary => parser.complete(marker, NodeKind::LIST_CALL_EXPR),
         Shape::NamedUnary => {
-            if starts_argument(parser) {
+            if starts_argument(parser, true) {
                 parser.expect_term();
                 expr_bp(parser, Precedence::NAMED_UNARY);
             }
@@ -498,7 +504,9 @@ fn filehandle(parser: &mut Parser<'_>) {
 }
 
 fn list_arguments(parser: &mut Parser<'_>) {
-    if !starts_argument(parser) {
+    // A list operator's argument is not optional in the sense `shift`'s is:
+    // `split //, $s` really does take a pattern.
+    if !starts_argument(parser, false) {
         return;
     }
     let marker = parser.start();
@@ -538,7 +546,7 @@ fn comparator_follows(parser: &mut Parser<'_>) -> bool {
 /// builtin that takes a list it is term position, so `keys %h` keeps its
 /// argument. Deciding it once, in the builtin table, is what keeps the question
 /// out of the lexer (ADR 0007 §6).
-fn starts_argument(parser: &mut Parser<'_>) -> bool {
+fn starts_argument(parser: &mut Parser<'_>, argument_is_optional: bool) -> bool {
     // `shift // 1` is defined-or applied to an argument-less `shift`, and perl
     // special-cases exactly this. Ask in operator position to see it; asking in
     // term position would read `//` as an empty match and the "argument" would
@@ -548,14 +556,19 @@ fn starts_argument(parser: &mut Parser<'_>) -> bool {
     // settle `%`, `*` and `&` in operator position too, and `keys %seen` would
     // lose its argument to modulo.
     let operator_position = parser.expect_is_operator();
-    if !operator_position {
-        parser.expect_operator();
-    }
-    if parser.at_any(&[T!["//"], T!["//="]]) {
+    if argument_is_optional {
+        if !operator_position {
+            parser.expect_operator();
+        }
+        if parser.at_any(&[T!["//"], T!["//="]]) {
+            if !operator_position {
+                parser.expect_term();
+            }
+            return false;
+        }
         if !operator_position {
             parser.expect_term();
         }
-        return false;
     }
     if operator_position {
         // The caller said an operator is expected here, so anything that is one
