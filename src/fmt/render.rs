@@ -49,6 +49,16 @@ pub struct Renderer<'a> {
     line_closed: bool,
 }
 
+/// The empty piece after an atom's final newline is that newline, not a line of
+/// its own: the output joins lines with one newline each, so counting it would
+/// add a blank line per pass. Clearing `verbatim` on it is what lets the
+/// trailing-blank sweep in [`Renderer::render`] take it away again.
+fn mark_terminator(line: &mut Line, index: usize, parts: &[&str]) {
+    if index + 1 == parts.len() && parts.len() > 1 && parts[index].is_empty() {
+        line.verbatim = false;
+    }
+}
+
 impl<'a> Renderer<'a> {
     pub fn new(options: &'a FormatterOptions) -> Self {
         Self {
@@ -68,8 +78,15 @@ impl<'a> Renderer<'a> {
         if !self.current.text.is_empty() || !self.current.anchors.is_empty() {
             self.finish_line();
         }
-        // A trailing blank line is an artefact of the final HardLine.
-        while self.lines.last().is_some_and(Line::is_blank) {
+        // A trailing blank line is an artefact of the final HardLine — unless it
+        // is verbatim, in which case it is the file's content. `while (<DATA>)`
+        // counts the blank lines at the end of a `__DATA__` section, and dropping
+        // them changes what the program reads.
+        while self
+            .lines
+            .last()
+            .is_some_and(|line| line.is_blank() && !line.verbatim)
+        {
             self.lines.pop();
         }
         self.lines
@@ -80,7 +97,7 @@ impl<'a> Renderer<'a> {
             Doc::Nil => {}
             Doc::Token(token) => self.write(token.text()),
             Doc::Raw(token) => self.write_raw(token.text()),
-            Doc::VerbatimLines(token) => self.write_verbatim_lines(token.text()),
+            Doc::VerbatimLines(text) => self.write_verbatim_lines(text),
             Doc::Space => self.write(" "),
             Doc::Concat(parts) => {
                 for part in parts {
@@ -225,15 +242,20 @@ impl<'a> Renderer<'a> {
             return;
         }
         self.ensure_indent();
-        let mut parts = text.split('\n');
-        if let Some(first) = parts.next() {
-            self.current.text.push_str(first);
-        }
-        for part in parts {
-            self.finish_line();
+        let parts: Vec<&str> = text.split('\n').collect();
+        for (index, part) in parts.iter().enumerate() {
+            if index > 0 {
+                // The line ends inside the atom, so whatever whitespace is at
+                // the end of it is content. `qr/\n  a  \n/x` and a `__DATA__`
+                // section both lost characters to the trim, which is the I1
+                // violation the renderer was supposed to make unrepresentable.
+                self.current.verbatim = true;
+                self.finish_line();
+            }
             // Deliberately not `write`: the continuation of a raw atom starts at
             // column 0, because that is where it was.
             self.current.text.push_str(part);
+            mark_terminator(&mut self.current, index, &parts);
         }
     }
 
@@ -243,13 +265,14 @@ impl<'a> Renderer<'a> {
         if !self.current.text.is_empty() {
             self.finish_line();
         }
-        let mut parts = text.split('\n').peekable();
-        while let Some(part) = parts.next() {
-            self.current.verbatim = true;
-            self.current.text.push_str(part);
-            if parts.peek().is_some() {
+        let parts: Vec<&str> = text.split('\n').collect();
+        for (index, part) in parts.iter().enumerate() {
+            if index > 0 {
                 self.finish_line();
             }
+            self.current.verbatim = true;
+            self.current.text.push_str(part);
+            mark_terminator(&mut self.current, index, &parts);
         }
     }
 

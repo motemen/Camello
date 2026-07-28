@@ -239,8 +239,32 @@ impl<'a> Lexer<'a> {
             return;
         }
 
+        // `__END__` and `__DATA__` are markers in column 0 and words anywhere
+        // else (ADR 0005 §5) — `scan_line_start_construct` has already taken the
+        // ones that are markers, so anything reaching here is a word. Producing
+        // the keyword regardless gave an indented `__END__` a data section with
+        // no content, and the formatter, moving it to the column the kind
+        // implied, turned the rest of the enclosing block into data.
+        if matches!(keyword, T!["__END__"] | T!["__DATA__"]) {
+            self.push(TokenKind::IDENT, start, start + len);
+            return;
+        }
+
         if keyword.is_quote_like_keyword() {
             self.scan_quote_like(keyword, len);
+            return;
+        }
+
+        // `format` is only a declaration when a header line follows it. Anywhere
+        // else — `Number::Format->format($n)`, `my %h = (format => 1)`, a user
+        // sub of that name — it is an ordinary word, so the keyword is produced
+        // only where the whole construct is.
+        if keyword == T!["format"] {
+            if self.format_header_len(len).is_some() {
+                self.scan_format(len);
+            } else {
+                self.push(TokenKind::IDENT, start, start + len);
+            }
             return;
         }
 
@@ -381,7 +405,7 @@ impl<'a> Lexer<'a> {
             }
             if let Some((kind, len)) = self.sigil_at() {
                 self.push(kind, start, start + len);
-                self.scan_variable_name();
+                self.scan_variable_name(kind);
                 return;
             }
         }
@@ -476,6 +500,14 @@ impl<'a> Lexer<'a> {
             b'$' => TokenKind::SCALAR_SIGIL,
             b'@' => TokenKind::ARRAY_SIGIL,
             b'%' => TokenKind::HASH_SIGIL,
+            // `&&` and `**` spell operators that no variable can: there is no
+            // `&&` code variable and no `**` glob. Everything else about a
+            // sigil is decided without looking at what follows (below), but
+            // these two characters cannot begin a name under any reading, so
+            // taking them as a sigil is not a judgement call — it is wrong.
+            // `defined && -d` became `defined(&&-d)` on the strength of it.
+            b'&' if matches!(bytes.get(1), Some(b'&' | b'=')) => return None,
+            b'*' if matches!(bytes.get(1), Some(b'*' | b'=')) => return None,
             b'&' => TokenKind::CODE_SIGIL,
             b'*' => TokenKind::TYPEGLOB_SIGIL,
             _ => return None,
@@ -495,7 +527,7 @@ impl<'a> Lexer<'a> {
     /// `consume_one_char_as_ident` / `consume_digit_prefixed_ident` escape
     /// hatches: `$@` and `$1` are ordinary tokens here, not raw-text pokes from
     /// the parser (ADR 0004 §5).
-    fn scan_variable_name(&mut self) {
+    fn scan_variable_name(&mut self, sigil: TokenKind) {
         let start = self.scan_pos;
         let bytes = self.rest().as_bytes();
         let Some(&first) = bytes.first() else { return };
@@ -544,7 +576,16 @@ impl<'a> Lexer<'a> {
             return;
         }
 
-        if PUNCT_VAR_CHARS.contains(&first) {
+        // Only `$`, `@` and `%` have punctuation variables — `$&`, `@-`, `%+`.
+        // There is no `&&` code variable and no `**` glob, so reading one there
+        // takes the `&&` out of `defined && -d` and makes it the argument of
+        // `defined`, which is how `File::Spec::Unix` came out saying something
+        // else.
+        let takes_punctuation = matches!(
+            sigil,
+            TokenKind::SCALAR_SIGIL | TokenKind::ARRAY_SIGIL | TokenKind::HASH_SIGIL
+        );
+        if takes_punctuation && PUNCT_VAR_CHARS.contains(&first) {
             self.push(TokenKind::RAW_CONTENT, start, start + 1);
         }
     }

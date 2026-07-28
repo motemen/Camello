@@ -447,6 +447,53 @@ fn eval_takes_a_heredoc_and_a_block() {
     );
 }
 
+#[test]
+fn a_limit_is_a_diagnostic_and_not_an_abort() {
+    // P1-2 and P1-3. The step limit was a `panic!` — in release builds too — so
+    // a thousand open parentheses aborted the process, and a little deeper the
+    // formatter's own recursive walk ran out of stack. Neither is a bug in the
+    // input: generated code and fuzzers produce it, and a formatter's answer is
+    // a diagnostic.
+    for source in [
+        format!("{}1{};\n", "(".repeat(2000), ")".repeat(2000)),
+        format!("{}{};\n", "[".repeat(2000), "]".repeat(2000)),
+        format!("{}1{};\n", "sub {{ ".repeat(2000), " }}".repeat(2000)),
+    ] {
+        let parsed = parse(&source);
+        assert!(
+            !parsed.diagnostics.is_empty(),
+            "reaching a limit must be reported"
+        );
+        // And nothing is lost: what could not be parsed is still in the tree.
+        let rebuilt: String = parsed
+            .syntax()
+            .descendants_with_tokens()
+            .filter_map(|element| element.into_token())
+            .map(|token| token.text().to_string())
+            .collect();
+        assert_eq!(rebuilt, source, "the tail of the input was dropped");
+    }
+}
+
+#[test]
+fn a_speculative_parse_leaves_no_stale_lookahead() {
+    // P1-4. `anon_hash_or_block` tries the hash reading, scans the `}` in
+    // operator position, rolls back, and re-parses as a block — reaching that
+    // same `}` in term position without ever changing `expect`, so nothing
+    // invalidated it. Debug builds asserted; release builds consumed a token
+    // scanned under the wrong state.
+    for source in ["foo{sub}", "sub(@y^", "t{,**t", "foo{sub}; bar{s}"] {
+        let parsed = parse(source);
+        let rebuilt: String = parsed
+            .syntax()
+            .descendants_with_tokens()
+            .filter_map(|element| element.into_token())
+            .map(|token| token.text().to_string())
+            .collect();
+        assert_eq!(rebuilt, source);
+    }
+}
+
 fn collect(directory: &std::path::Path, into: &mut Vec<std::path::PathBuf>) {
     for entry in std::fs::read_dir(directory).expect("failed to read fixture directory") {
         let path = entry.expect("failed to read fixture entry").path();
