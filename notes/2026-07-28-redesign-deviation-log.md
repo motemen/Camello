@@ -111,3 +111,37 @@
   キーワードトークンのまま残している。
 - **原状回復**: expect に `Name` を足して3状態にすれば API からは消える。
   ただし ADR 0005 §2 の「2状態」という明示に反する。
+
+---
+
+## L-006: `DelimiterTightness` / `AlignmentStrategy` オプションを移植しなかった
+
+- **逸脱**: 旧 `FormatterOptions` にあった `DelimiterTightness`（デリミタ内側の空白）と
+  `AlignmentStrategy` を新 formatter に移植せず、対応する
+  `tests/delimiter_tightness.rs` を削除した。
+- **移行計画の記述**: 評価ノート §5 ステップ5「新旧切り替え後、旧実装を削除」
+  （オプションの扱いには言及がない）
+- **理由**: ADR 0008 §7 はレンダラのパラメータとして「インデント幅・タブ等」しか
+  挙げておらず、デリミタ内側の空白は build 時の spacing 規則
+  （`Doc::Space` を置くかどうか）の一部である。オプションとして残すと、
+  ADR 0008 §2 が消したはずの「spacing の分岐が2箇所にある」状態が戻る。
+- **影響範囲**: `[ 1, 2 ]` → `[1, 2]`、`$h->{ key }` → `$h->{key}` に統一される。
+  分類レポート §2.2 に記録した。
+- **原状回復**: オプションではなく `wants_space` の分岐として再導入する。
+  `FormatterOptions` を build 側に渡す配線はすでにある。
+
+---
+
+## L-007: 検証対象から `errors/` fixture を除外している
+
+- **逸脱**: `tests/invariants.rs` は `src/parse/fixtures/errors/` と
+  `src/parse/fixtures/statements/errors/` を検査対象に含めない。
+- **ADR の記述**: ADR 0008 §6「全 fixture + 実コーパスに対し … を CI で強制する」
+- **理由**: これらは「壊れた入力が何を報告するか」を固定するための fixture であり、
+  診断が出ることが期待される挙動である。「診断なしでパースされること」を
+  要求すると定義上必ず失敗する。
+  なお冪等性は `src/fmt/tests.rs` の `malformed_input_still_formats_to_a_fixed_point`
+  で別途検査している。
+- **影響範囲**: 検査対象は 76 本（fmt 47 + parse success 29）。
+- **原状回復**: 不変条件ごとに対象集合を分ける（診断なしは success のみ、
+  冪等性と可逆性は全件）。現状は前者に合わせて一律に絞っている。
