@@ -239,7 +239,13 @@ fn signature_or_prototype(parser: &mut Parser<'_>) {
         // A placeholder parameter is a bare sigil holding a slot: `sub f($,@,%)`.
         // The scanner reads `$,` as the output field separator variable, which is
         // also real Perl, so only the grammar can say which is meant.
-        let placeholder = matches!(parser.raw_after_sigil(), Some("," | ")" | "="));
+        // Written with a space (`$ = 1`, `$ , `) the sigil stands alone; written
+        // without one the scanner has already glued it to a punctuation
+        // variable, so both spellings have to be recognised.
+        let placeholder = matches!(parser.raw_after_sigil(), Some("," | ")" | "="))
+            || (parser.nth_at(1, T![","])
+                || parser.nth_at(1, T![")"])
+                || parser.nth(1).is_some_and(TokenKind::is_assignment_op));
 
         let param = parser.start();
         if placeholder {

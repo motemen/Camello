@@ -173,9 +173,19 @@ ROOT
     `sub` "sub"
     SUB_NAME
       identifier "placeholder_default"
-    SUB_PROTOTYPE
+    SUB_SIGNATURE
       `(` "("
-      raw text "$thing, $ = 1"
+      SIGNATURE_PARAM
+        SCALAR_VAR
+          `$` "$"
+          identifier "thing"
+      `,` ","
+      SIGNATURE_PARAM
+        `$` "$"
+        SIGNATURE_DEFAULT
+          `=` "="
+          LITERAL
+            number "1"
       `)` ")"
     BLOCK
       `{` "{"

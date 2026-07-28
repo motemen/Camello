@@ -21,7 +21,7 @@ sub placeholder_only ($, @, %) {
     return @_;
 }
 
-sub placeholder_default ($thing, $= 1) {
+sub placeholder_default ($thing, $ = 1) {
     return $thing + $;
 }
 
