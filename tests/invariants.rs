@@ -5,6 +5,12 @@
 //! * **Idempotency**: `format(format(x)) == format(x)`.
 //! * **Semantic preservation**: re-lexing input and output yields the same
 //!   non-trivia token sequence.
+//! * **Comment preservation**: input and output hold the same comment texts, in
+//!   the same order.
+//! * **Verbatim preservation**: every `Raw` token of the output appears
+//!   unchanged in the input.
+//! * **Seed stability** (ADR 0008 §6 I2): a broken group's own output re-reads
+//!   as broken, so a second pass makes the same layout choices as the first.
 //!
 //! These ran throughout the redesign — first against the old stack, then against
 //! the new one — with a registry of known violations that was only ever allowed
@@ -13,7 +19,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use camello::lang::TokenExt;
+use camello::lang::{TokenExt, TokenKind};
 use camello::{format_perl, parse_perl};
 
 /// Collect every `.pl` file below `dir`, sorted for deterministic reporting.
@@ -206,6 +212,111 @@ fn formatting_is_idempotent() {
     }
 
     report("idempotency (ADR 0008 §6)", failures, total);
+}
+
+/// The comment texts of `source`, in order.
+fn comment_stream(source: &str) -> Vec<String> {
+    parse_perl(source)
+        .0
+        .descendants_with_tokens()
+        .filter_map(|element| element.into_token())
+        .filter(|token| token.token_kind() == TokenKind::COMMENT)
+        .map(|token| token.text().trim_end().to_string())
+        .collect()
+}
+
+/// The texts of every token the formatter must reproduce byte for byte.
+fn verbatim_stream(source: &str) -> Vec<String> {
+    parse_perl(source)
+        .0
+        .descendants_with_tokens()
+        .filter_map(|element| element.into_token())
+        .filter(|token| token.token_kind().is_verbatim())
+        .map(|token| token.text().to_string())
+        .collect()
+}
+
+/// Comments survive formatting unchanged and in order.
+///
+/// The other invariants compare non-trivia tokens, so a comment that is dropped,
+/// duplicated, or absorbed into a replacement string changes nothing they look
+/// at. Every one of P0-1 and P0-3 in the 2026-07-28 review lived in that blind
+/// spot.
+#[test]
+fn formatting_preserves_comments() {
+    let files = all_fixture_files();
+    let total = files.len();
+    let mut failures = Vec::new();
+
+    for (label, path) in files {
+        let source = fs::read_to_string(&path).expect("failed to read fixture");
+        let (formatted, _) = format_perl(&source);
+        let before = comment_stream(&source);
+        let after = comment_stream(&formatted);
+        if before != after {
+            failures.push(Failure {
+                fixture: label,
+                detail: format!(
+                    "{} comments in, {} out\n--- input ---\n{}\n--- output ---\n{}",
+                    before.len(),
+                    after.len(),
+                    before.join("\n"),
+                    after.join("\n")
+                ),
+            });
+        }
+    }
+
+    report("comment preservation", failures, total);
+}
+
+/// Verbatim content is reproduced byte for byte (ADR 0008 §6, I1).
+///
+/// Two checks, because they fail in different ways. The sequence comparison
+/// catches a literal that changed; the substring test catches a literal that
+/// grew something the formatter inserted next to it, which is how the same byte
+/// sequence can survive re-lexing as a *different* token boundary.
+#[test]
+fn formatting_preserves_verbatim_content() {
+    let files = all_fixture_files();
+    let total = files.len();
+    let mut failures = Vec::new();
+
+    for (label, path) in files {
+        let source = fs::read_to_string(&path).expect("failed to read fixture");
+        let (formatted, _) = format_perl(&source);
+        let before = verbatim_stream(&source);
+        let after = verbatim_stream(&formatted);
+
+        if before != after {
+            let position = (0..before.len().max(after.len()))
+                .find(|&index| before.get(index) != after.get(index))
+                .unwrap_or(0);
+            failures.push(Failure {
+                fixture: label,
+                detail: format!(
+                    "verbatim token #{position} changed\n  input:  {:?}\n  output: {:?}",
+                    before.get(position),
+                    after.get(position)
+                ),
+            });
+            continue;
+        }
+
+        // A heredoc terminator carries the newline that ends its line, and the
+        // file's final newline may have been absent from the input.
+        if let Some(text) = after
+            .iter()
+            .find(|text| !source.contains(text.trim_end_matches('\n')))
+        {
+            failures.push(Failure {
+                fixture: label,
+                detail: format!("verbatim text not present in the input: {text:?}"),
+            });
+        }
+    }
+
+    report("verbatim preservation (ADR 0008 §6, I1)", failures, total);
 }
 
 #[test]
