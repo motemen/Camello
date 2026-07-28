@@ -14,10 +14,10 @@ use Module (
 );
 
 func(
-    a   => 1,
+    a => 1,
     bbb => 2,
 );
 
 func
-    a   => 1,
+    a => 1,
     bbb => 2;

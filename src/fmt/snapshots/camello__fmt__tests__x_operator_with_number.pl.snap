@@ -25,9 +25,9 @@ package x2::Test;
 
 # Mixed cases
 my $repeated = "foo" x 2;
-my $result = x100();
+my $result   = x100();
 
 # Edge cases
-my $empty = "" x 5;
+my $empty  = "" x 5;
 my $single = "a" x 1;
 my $large  = "big" x 1000;

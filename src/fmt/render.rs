@@ -140,10 +140,15 @@ impl<'a> Renderer<'a> {
     fn comment(&mut self, text: &str, placement: Placement) {
         match placement {
             Placement::OwnLine => {
+                // The comment sits on the continuation's line, but it is the
+                // code after it that the continuation indent is for, so the flag
+                // survives the comment.
+                let continuation = self.continuation;
                 if !self.current.text.trim().is_empty() {
                     self.newline();
                 }
                 self.write(text);
+                self.continuation = continuation;
             }
             Placement::Trailing => {
                 // One rule, one place. The old formatter had two comment output
@@ -227,10 +232,10 @@ impl<'a> Renderer<'a> {
         if !line.verbatim {
             line.text = line.text.trim_end().to_string();
         }
-        // A blank line does not consume the pending shape: the statement it was
-        // declared for has not been emitted yet, and the align pass needs the
-        // shape on the line that carries the anchor.
-        if !line.text.trim().is_empty() {
+        // The shape belongs to the line that carries an anchor. A blank line or
+        // a line holding only a comment must not consume it, or the statement it
+        // was declared for would fall out of its own alignment group.
+        if !line.anchors.is_empty() {
             line.shape = self.shape.take();
         }
         self.lines.push(line);

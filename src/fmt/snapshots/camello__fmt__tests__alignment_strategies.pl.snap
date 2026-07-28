@@ -13,7 +13,7 @@ sub alignment_examples {
     );
 
     func(
-        a   => 1,
+        a => 1,
         xxx => 2,
     );
 

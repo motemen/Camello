@@ -21,7 +21,7 @@ my %hash = (key1 => 'value1',
 
 warn 1
     # explanation
-if $err;
+    if $err;
 
 warn 1
 
@@ -29,7 +29,7 @@ warn 1
 
 my $x = 1
     # adjust
-+ 2;
+    + 2;
 
 func(my $a,);
 
@@ -84,8 +84,4 @@ try {
     tidy_up();
 }
 
-my $try_value = try {
-    attempt()
-} catch {
-    fallback()
-};
+my $try_value = try { attempt() } catch { fallback() };

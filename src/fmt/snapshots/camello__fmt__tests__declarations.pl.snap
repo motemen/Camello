@@ -3,7 +3,7 @@ source: src/fmt/tests.rs
 expression: format(&source)
 ---
 # Variable declarations
-my $x = 1;
+my $x     = 1;
 our $x    = 2;
 state $x  = 3;
 local $x  = 4;
@@ -13,7 +13,7 @@ state ($x, $y) = (1, 2);
 my *glob = \*STDIN;
 
 # Local lvalue variations
-local $SIG{__WARN__} = \&CORE::die;
+local $SIG{__WARN__}      = \&CORE::die;
 local $ENV{PATH}          = '/usr/bin';
 local $hash{key}          = $value;
 local Module->hash->{key} = $value;
@@ -28,7 +28,7 @@ local (undef, $SIG{__DIE__})  = (undef, \&my_die);
 local ($a, undef, $hash{key}) = @list;
 
 # Undef in declarations and calls
-my (undef, $x) = @_;
+my (undef, $x)             = @_;
 my ($a, undef, $c)         = @list;
 my (undef, undef, $result) = func();
 our (undef, $y)            = (1, 2);
