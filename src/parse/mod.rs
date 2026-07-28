@@ -340,6 +340,16 @@ impl<'a> Parser<'a> {
             .flatten()
     }
 
+    /// Consume `^NAME` as one token (`${^MATCH}`).
+    pub(crate) fn bump_caret_name(&mut self) -> bool {
+        if self.lexer.take_caret_name().is_none() {
+            return false;
+        }
+        self.steps_without_progress = 0;
+        self.events.token();
+        true
+    }
+
     /// Consume the current token as a bare sigil (signature placeholders).
     pub(crate) fn bump_sigil(&mut self) -> bool {
         if self.lexer.take_sigil().is_none() {

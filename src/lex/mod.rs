@@ -256,6 +256,34 @@ impl<'a> Lexer<'a> {
         self.buffer.last().copied()
     }
 
+    /// Read `^NAME` at the cursor as one token.
+    ///
+    /// `$^W` is already a single token, because the caret follows the sigil
+    /// directly. `${^MATCH}` puts a brace in between, so the scanner reaches the
+    /// caret in ordinary operator position and reads it as bitwise xor. Keeping
+    /// the name whole matters for more than tidiness: as two tokens, a space
+    /// could be rendered between them, and `${^ MATCH}` is a different variable.
+    ///
+    /// Returns `None` if there is no `^NAME` here.
+    pub fn take_caret_name(&mut self) -> Option<LexedToken> {
+        let index = self.non_trivia_index(0)?;
+        let start = usize::from(self.buffer[index].range.start());
+        let rest = &self.source[start..];
+        if !rest.starts_with('^') {
+            return None;
+        }
+        let len = 1 + scan::ident_len_at(&rest[1..]);
+        if len == 1 {
+            return None;
+        }
+
+        self.cursor = index;
+        self.invalidate_from_cursor();
+        self.push(TokenKind::RAW_CONTENT, start, start + len);
+        self.cursor = self.buffer.len();
+        self.buffer.last().copied()
+    }
+
     /// Read the token at the cursor as a bare sigil, without the name the
     /// scanner would otherwise attach to it.
     ///

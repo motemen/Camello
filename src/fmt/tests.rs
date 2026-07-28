@@ -231,6 +231,39 @@ fn verbatim_regions_survive_untouched() {
     }
 }
 
+#[test]
+fn caret_variables_are_never_split() {
+    // `${^ MATCH}` is a different variable from `${^MATCH}`. The name is one
+    // token, so there is nowhere for a space to go — and if that ever changed,
+    // the token stream would differ and `assert_preserves_semantics` would say
+    // so.
+    for source in [
+        "${^MATCH};\n",
+        "my $phase = ${^GLOBAL_PHASE};\n",
+        "my @caps = @{^CAPTURE};\n",
+        "my $warning = $^W;\n",
+    ] {
+        let formatted = format(source);
+        assert!(
+            !formatted.contains("^ "),
+            "the caret must stay attached to its name: {formatted}"
+        );
+        assert_idempotent(source);
+        assert_preserves_semantics(source);
+    }
+}
+
+#[test]
+fn postfix_dereference_binds_tight() {
+    // `->@*` is an arrow with its target glued on, so nothing goes between the
+    // subject and it. Postfix slices are subscripts and hug their contents.
+    assert_formats_to("$r->@*;\n", "$r->@*;\n");
+    assert_formats_to("$r->%*;\n", "$r->%*;\n");
+    assert_formats_to("$r->$#*;\n", "$r->$#*;\n");
+    assert_formats_to("$r->@[0,1];\n", "$r->@[0, 1];\n");
+    assert_formats_to("$r->%{a,b};\n", "$r->%{a, b};\n");
+}
+
 // ===== Comments (formatting.md COMMENT) =====
 
 #[test]
