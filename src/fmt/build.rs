@@ -119,13 +119,16 @@ impl<'a> Builder<'a> {
                     // a blank line at the start of the output and straight after
                     // an opening brace, so these are pushed unconditionally.
                     let separated = wants_surrounding_blank_lines(&statement);
-                    if separated || wants_preceding_blank_line(&statement) {
+                    if owed == 0 && (separated || wants_preceding_blank_line(&statement)) {
                         parts.push(Doc::BlankLine);
                     }
                     self.statement_into(&statement, parts);
                     owed += self.heredoc_markers_in(&statement);
                     parts.push(if owed > 0 { Doc::Space } else { Doc::HardLine });
-                    if separated && statement.next_sibling().is_some() {
+                    // A blank line here would land between the marker's line and
+                    // the body, which is to say *inside* the body — and the body
+                    // would gain a line on every pass.
+                    if owed == 0 && separated && statement.next_sibling().is_some() {
                         parts.push(Doc::BlankLine);
                     }
                 }
