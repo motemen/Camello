@@ -2,6 +2,7 @@ pub mod cli;
 pub mod comments;
 pub mod formatter;
 pub mod lang;
+pub mod lex;
 pub mod lexer;
 pub mod parser;
 pub mod syntax_kind;
