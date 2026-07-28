@@ -79,11 +79,13 @@ pub(crate) fn infix_op(kind: TokenKind) -> Option<InfixOp> {
         T!["|"] | T!["^"] => (Precedence::BITWISE_OR, Left, NodeKind::BINARY_EXPR),
         TokenKind::BITWISE_AND => (Precedence::BITWISE_AND, Left, NodeKind::BINARY_EXPR),
 
+        // perlop calls these non-associative, but perl itself accepts
+        // `$a < $b > 0` and groups it to the left, so that is what we build.
         T!["=="] | T!["!="] | T!["<=>"] | T!["eq"] | T!["ne"] | T!["cmp"] | T!["~~"] => {
-            (Precedence::EQUALITY, NonAssoc, NodeKind::BINARY_EXPR)
+            (Precedence::EQUALITY, Left, NodeKind::BINARY_EXPR)
         }
         T!["<"] | T![">"] | T!["<="] | T![">="] | T!["lt"] | T!["gt"] | T!["le"] | T!["ge"] => {
-            (Precedence::RELATIONAL, NonAssoc, NodeKind::BINARY_EXPR)
+            (Precedence::RELATIONAL, Left, NodeKind::BINARY_EXPR)
         }
 
         T!["<<"] | T![">>"] => (Precedence::SHIFT, Left, NodeKind::BINARY_EXPR),

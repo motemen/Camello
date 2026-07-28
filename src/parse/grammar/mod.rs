@@ -2,7 +2,7 @@
 
 mod builtins;
 mod expr;
-mod precedence;
+pub(crate) mod precedence;
 mod primary;
 
 use crate::lang::{NodeKind, TokenKind, T};
@@ -480,10 +480,27 @@ fn for_header(parser: &mut Parser<'_>) {
 }
 
 fn try_stmt(parser: &mut Parser<'_>) {
+    let checkpoint = parser.checkpoint();
     let marker = parser.start();
     parser.bump();
     try_tail(parser);
     parser.expect_term();
+
+    // `try { ... }->method();` is an expression that happens to start with a
+    // `try`. Rather than deciding in advance which it is, parse the statement
+    // form and reconsider if something follows that only an expression can
+    // continue with (ADR 0007 §1).
+    if parser.at_any(&[T!["->"], T!["?"]])
+        || parser
+            .current()
+            .is_some_and(|kind| super::grammar::precedence::infix_op(kind).is_some())
+    {
+        parser.abandon(marker);
+        parser.rollback(checkpoint);
+        expr_stmt(parser);
+        return;
+    }
+
     if parser.at(T![";"]) {
         parser.bump();
     }

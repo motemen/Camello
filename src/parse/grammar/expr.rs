@@ -376,7 +376,11 @@ pub(crate) fn bareword_call(parser: &mut Parser<'_>) -> CompletedMarker {
     if let Some(builtin) = builtin {
         parser.set_expect(builtin.expect_after_name);
     } else {
-        parser.expect_term();
+        // With no declaration in sight, assume `f / 10` divides rather than
+        // matching. Perl guesses here too; the difference is that the guess is
+        // written down in one place (ADR 0007 §6) instead of being a special
+        // case in the lexer.
+        parser.expect_operator();
     }
 
     match shape {
@@ -445,12 +449,22 @@ fn filehandle(parser: &mut Parser<'_>) {
 
     let is_block_handle = parser.at(T!["{"]);
 
-    if !is_bareword_handle && !is_block_handle {
+    // `print $fh @lines` — a scalar handle, told apart from `print $x, $y` by
+    // the absence of a comma.
+    let is_scalar_handle = parser.at(TokenKind::SCALAR_SIGIL)
+        && parser.nth_at(1, TokenKind::IDENT)
+        && parser
+            .nth(2)
+            .is_some_and(|kind| kind.can_start_term() || kind == TokenKind::HEREDOC_START);
+
+    if !is_bareword_handle && !is_block_handle && !is_scalar_handle {
         return;
     }
 
     let marker = parser.start();
-    if is_block_handle {
+    if is_scalar_handle {
+        super::primary::variable(parser);
+    } else if is_block_handle {
         parser.bump();
         parser.expect_term();
         expr(parser);

@@ -14,7 +14,7 @@ use super::{Expect, Lexer};
 const FILE_TEST_CHARS: &[u8] = b"efdlpSbcugktrwxoRWXOszAMC";
 
 /// Punctuation variables that are a single character after their sigil.
-const PUNCT_VAR_CHARS: &[u8] = b"!@/\\,;.&`'+^:?<>()[]|\"-_0";
+const PUNCT_VAR_CHARS: &[u8] = b"!@/\\,;.&`'+^:?<>()[]|\"-_0=$";
 
 impl<'a> Lexer<'a> {
     fn rest(&self) -> &'a str {
@@ -493,8 +493,20 @@ impl<'a> Lexer<'a> {
         let bytes = self.rest().as_bytes();
         let Some(&first) = bytes.first() else { return };
 
-        // A following `{` or `$` is a dereference; the parser builds that.
-        if matches!(first, b'{' | b'$') {
+        // A following `{` is a dereference; the parser builds that.
+        if first == b'{' {
+            return;
+        }
+        // `$$name` dereferences, but a bare `$$` is the process id.
+        if first == b'$' {
+            let follows = bytes.get(1).copied();
+            let dereferences = follows.is_some_and(|byte| {
+                byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'{' | b'$')
+            });
+            if dereferences {
+                return;
+            }
+            self.push(TokenKind::RAW_CONTENT, start, start + 1);
             return;
         }
 
