@@ -1,0 +1,79 @@
+#!/bin/bash
+#
+# Use perl itself as the oracle for "did formatting change the meaning".
+#
+#   scripts/perl-check                  check every fixture
+#   scripts/perl-check <file>...        check the given files
+#
+# For each input perl accepts:
+#   1. format it, and check perl still accepts the output;
+#   2. deparse both and compare.
+#
+# This catches what the in-tree invariants cannot. `tests/invariants.rs` compares
+# non-trivia token streams, so it is blind wherever one lexical unit is split
+# into several tokens — `${^MATCH}` versus `${^ MATCH}` is the same token stream
+# and a different variable. Deparsing asks perl what it read.
+#
+# Fixtures perl rejects are skipped: some are deliberately malformed, and others
+# are fragments that never had to compile.
+
+set -uo pipefail
+
+files=("$@")
+if [ ${#files[@]} -eq 0 ]; then
+  mapfile -t files < <(find src/fmt/fixtures src/parse/fixtures/success -name '*.pl' | sort)
+fi
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
+cargo build --quiet || exit 1
+camello=target/debug/camello
+
+skipped=0
+checked=0
+broken=0
+changed=0
+
+deparse() {
+  # -p parenthesises everything, so precedence differences show up as text.
+  perl -MO=Deparse,-p "$1" 2>/dev/null
+}
+
+for file in "${files[@]}"; do
+  if ! perl -c "$file" >/dev/null 2>&1; then
+    skipped=$((skipped + 1))
+    reason=$(perl -c "$file" 2>&1 | head -1 | cut -c1-70)
+    printf 'SKIPPED  %s\n    %s\n' "$file" "$reason"
+    continue
+  fi
+
+  formatted="$work/formatted.pl"
+  if ! "$camello" format "$file" > "$formatted" 2>/dev/null; then
+    echo "FORMAT FAILED  $file"
+    broken=$((broken + 1))
+    continue
+  fi
+
+  checked=$((checked + 1))
+
+  if ! perl -c "$formatted" >/dev/null 2>&1; then
+    echo "OUTPUT REJECTED BY PERL  $file"
+    perl -c "$formatted" 2>&1 | head -3 | sed 's/^/    /'
+    broken=$((broken + 1))
+    continue
+  fi
+
+  before=$(deparse "$file")
+  after=$(deparse "$formatted")
+  if [ -n "$before" ] && [ "$before" != "$after" ]; then
+    echo "MEANING CHANGED  $file"
+    diff <(printf '%s\n' "$before") <(printf '%s\n' "$after") | head -8 | sed 's/^/    /'
+    changed=$((changed + 1))
+  fi
+done
+
+printf -- '---- checked %d, skipped %d (perl rejects the input), broken %d, meaning changed %d\n' \
+  "$checked" "$skipped" "$broken" "$changed"
+
+[ "$broken" -eq 0 ] && [ "$changed" -eq 0 ]
