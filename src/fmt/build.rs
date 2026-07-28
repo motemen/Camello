@@ -608,6 +608,8 @@ impl<'a> Builder<'a> {
                         parts.push(Doc::Anchor(AnchorClass::FatComma(self.fat_comma_depth)));
                         parts.push(Doc::Space);
                     }
+                    let value_on_next_line =
+                        token.token_kind() == T!["=>"] && self.newline_follows(&token);
                     let last = token
                         .siblings_with_tokens(rowan::Direction::Next)
                         .skip(1)
@@ -618,7 +620,9 @@ impl<'a> Builder<'a> {
                         });
                     let user_break = self.newline_follows(&token);
                     parts.push(self.token(&token));
-                    if ends_element && !last {
+                    if value_on_next_line {
+                        parts.push(Doc::UserLine { broken: true });
+                    } else if ends_element && !last {
                         // A broken group puts one element per line; a flat one
                         // still keeps a line break the user put here
                         // (formatting.md POLICY-4).
