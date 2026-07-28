@@ -86,9 +86,9 @@ fn describe_divergence(before: &[(SyntaxKind, String)], after: &[(SyntaxKind, St
     )
 }
 
-struct Failure {
-    fixture: String,
-    detail: String,
+pub struct Failure {
+    pub fixture: String,
+    pub detail: String,
 }
 
 /// Fixtures known to violate an invariant under the *current* (pre-redesign)
@@ -109,7 +109,7 @@ mod known_violations {
     pub const SEMANTIC_PRESERVATION: &[&str] = &[];
 }
 
-fn report(kind: &str, failures: Vec<Failure>, total: usize, known: &[&str]) {
+pub fn report(kind: &str, failures: Vec<Failure>, total: usize, known: &[&str]) {
     let mut unexpected = Vec::new();
     let mut seen = Vec::new();
 
@@ -156,7 +156,7 @@ fn report(kind: &str, failures: Vec<Failure>, total: usize, known: &[&str]) {
 }
 
 /// Every fixture directory whose contents must satisfy the invariants.
-fn all_fixture_files() -> Vec<(String, PathBuf)> {
+pub fn all_fixture_files() -> Vec<(String, PathBuf)> {
     let mut files = Vec::new();
     for root in ["src/formatter/fixtures", "src/parser/fixtures/success"] {
         let dir = fixture_root(root);
@@ -226,4 +226,166 @@ fn formatting_preserves_semantics() {
         total,
         known_violations::SEMANTIC_PRESERVATION,
     );
+}
+
+// ============================================================================
+// The redesigned stack (ADR 0004-0008)
+//
+// The new lexer, parser and formatter live alongside the old ones until the
+// switch-over. These tests hold the new stack to the same bar, with their own
+// ledger of what it does not handle yet. Cutting over means emptying these
+// three registries; until then they say precisely what is left.
+// ============================================================================
+
+mod redesign {
+    use super::{all_fixture_files, Failure};
+    use camello::fmt::{format_source, FormatterOptions};
+    use camello::lang::TokenExt;
+    use std::fs;
+
+    /// Fixtures the new grammar does not parse cleanly yet.
+    ///
+    /// Every entry is a gap in coverage, not a disagreement about what the
+    /// fixture means. Ordered as they appear on disk.
+    const PARSE_GAPS: &[&str] = &[
+        // `q\hello\` — a backslash as a quote-like delimiter.
+        "src/formatter/fixtures/backslash_delimiter.pl",
+        // `try {...} catch {...}` used as an expression rather than a statement.
+        "src/formatter/fixtures/block_expressions.pl",
+        "src/formatter/fixtures/control_flow.pl",
+        "src/formatter/fixtures/try_function_style_expressions.pl",
+        // A named unary builtin applied to a parenthesised list: `keys(%h)`.
+        "src/formatter/fixtures/builtin_functions.pl",
+        // A trailing comment as the last element of a broken list.
+        "src/formatter/fixtures/comment_alignment_in_delimiters.pl",
+        // `use parent -norequire, 'Module';`
+        "src/formatter/fixtures/declarations.pl",
+        // Heredoc bodies inside an argument list.
+        "src/formatter/fixtures/heredoc.pl",
+        "src/formatter/fixtures/heredoc_and_package.pl",
+        "src/parser/fixtures/success/print_filehandle_heredoc.pl",
+        // `<` as both readline and comparison in one file.
+        "src/formatter/fixtures/io_operator_disambiguation.pl",
+        "src/parser/fixtures/success/io_operator_disambiguation.pl",
+        // Postfix `when` as a statement modifier.
+        "src/formatter/fixtures/postfix_when.pl",
+        // `${^GLOBAL_PHASE}` and other caret variables in braces.
+        "src/formatter/fixtures/specials_and_sigils.pl",
+        // Signatures with `@rest` / `%opts` and attributes after them.
+        "src/formatter/fixtures/sub_signatures.pl",
+        // `$code->()[0]`, which is legal where `f()[0]` is not.
+        "src/parser/fixtures/success/code_ref_call_direct_subscription.pl",
+        // A bare block used as a loop, with `redo`.
+        "src/parser/fixtures/success/control_flow_and_operators.pl",
+        // `sub tr {}` and friends: quote-like keywords as subroutine names.
+        "src/parser/fixtures/success/package_cases.pl",
+        // `0o10` octal literals in a range.
+        "src/parser/fixtures/success/range_non_decimal.pl",
+        // Character classes containing the delimiter: `m[[\]]`.
+        "src/parser/fixtures/success/regex.pl",
+        // `$Foo::Bar::{name}` stash access.
+        "src/parser/fixtures/success/root_hash_package_variable.pl",
+        "src/parser/fixtures/success/root_qualified_identifiers.pl",
+        // `sort \&comparator, @xs`.
+        "src/parser/fixtures/success/sort_function_reference.pl",
+    ];
+
+    /// Fixtures the new formatter does not yet round-trip. Each is downstream of
+    /// a parse gap above; none is an independent formatter defect.
+    const IDEMPOTENCY_GAPS: &[&str] = &[
+        "src/formatter/fixtures/heredoc.pl",
+        "src/formatter/fixtures/specials_and_sigils.pl",
+        "src/parser/fixtures/success/regex.pl",
+    ];
+
+    const SEMANTIC_GAPS: &[&str] = &[
+        "src/formatter/fixtures/backslash_delimiter.pl",
+        "src/formatter/fixtures/heredoc.pl",
+        "src/formatter/fixtures/specials_and_sigils.pl",
+        "src/parser/fixtures/success/regex.pl",
+    ];
+
+    fn tokens(source: &str) -> Vec<(String, String)> {
+        camello::parse::parse(source)
+            .syntax()
+            .descendants_with_tokens()
+            .filter_map(|element| element.into_token())
+            .filter(|token| !token.token_kind().is_trivia())
+            .map(|token| {
+                (
+                    format!("{:?}", token.token_kind()),
+                    token.text().to_string(),
+                )
+            })
+            .collect()
+    }
+
+    /// Same monotonic ledger as the old stack's: entries may only be removed.
+    fn check(kind: &str, failures: Vec<Failure>, known: &[&str]) {
+        super::report(kind, failures, known.len(), known);
+    }
+
+    #[test]
+    fn every_fixture_parses_without_diagnostics() {
+        let mut failures = Vec::new();
+        for (label, path) in all_fixture_files() {
+            let source = fs::read_to_string(&path).expect("failed to read fixture");
+            let parsed = camello::parse::parse(&source);
+            if parsed.diagnostics.is_empty() {
+                continue;
+            }
+            let detail = parsed
+                .diagnostics
+                .iter()
+                .take(3)
+                .map(|diagnostic| {
+                    let line = source[..usize::from(diagnostic.range.start())]
+                        .lines()
+                        .count();
+                    format!("  line {line}: {}", diagnostic.message)
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            failures.push(Failure {
+                fixture: label,
+                detail,
+            });
+        }
+        check("the redesigned grammar", failures, PARSE_GAPS);
+    }
+
+    #[test]
+    fn formatting_is_idempotent() {
+        let options = FormatterOptions::default();
+        let mut failures = Vec::new();
+        for (label, path) in all_fixture_files() {
+            let source = fs::read_to_string(&path).expect("failed to read fixture");
+            let once = format_source(&source, &options);
+            let twice = format_source(&once, &options);
+            if once != twice {
+                failures.push(Failure {
+                    fixture: label,
+                    detail: format!("--- pass 1 ---\n{once}--- pass 2 ---\n{twice}"),
+                });
+            }
+        }
+        check("redesigned idempotency", failures, IDEMPOTENCY_GAPS);
+    }
+
+    #[test]
+    fn formatting_preserves_semantics() {
+        let options = FormatterOptions::default();
+        let mut failures = Vec::new();
+        for (label, path) in all_fixture_files() {
+            let source = fs::read_to_string(&path).expect("failed to read fixture");
+            let formatted = format_source(&source, &options);
+            if tokens(&source) != tokens(&formatted) {
+                failures.push(Failure {
+                    fixture: label,
+                    detail: "token stream differs".to_string(),
+                });
+            }
+        }
+        check("redesigned semantic preservation", failures, SEMANTIC_GAPS);
+    }
 }
