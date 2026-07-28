@@ -183,6 +183,26 @@ reproduced bugs D1-D7; `src/fmt/tests.rs` covers the layout rules including
 F1-F6; `src/parse/tests.rs` covers the CST normal form and the error-recovery
 acceptance criteria of ADR 0007 §3.
 
+**Two checks that live outside `cargo test`.** Both are worth running when
+touching the lexer or the formatter; neither is fast enough to want on every
+build.
+
+```bash
+./scripts/perl-check              # ask perl whether formatting changed the meaning
+./scripts/snapshot-diff           # compare output against the pre-redesign snapshots
+./scripts/snapshot-diff <fixture> # ... for one fixture
+```
+
+`scripts/perl-check` compiles each fixture, formats it, compiles the output, and
+compares `B::Deparse` on both. It exists because `tests/invariants.rs` compares
+non-trivia token streams and is therefore **blind wherever one lexical unit is
+split into several tokens** — `${^MATCH}` and `${^ MATCH}` are the same token
+stream and different variables. It also keeps every fixture honest: a file that
+is not Perl cannot be a specification for how to format Perl.
+
+`scripts/snapshot-diff` catches what perl cannot: dropped comments, and layout
+that is worse without being wrong.
+
 ### Adding New Syntax Support
 
 1. Add the token and node kinds to the `define_language!` invocation in

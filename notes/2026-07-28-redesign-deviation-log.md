@@ -145,3 +145,43 @@
 - **影響範囲**: 検査対象は 76 本（fmt 47 + parse success 29）。
 - **原状回復**: 不変条件ごとに対象集合を分ける（診断なしは success のみ、
   冪等性と可逆性は全件）。現状は前者に合わせて一律に絞っている。
+
+---
+
+## L-008: BLANK_LINE-1 の `package` / `use` グループの空行を実装していない
+
+- **逸脱**: formatting.md BLANK_LINE-1 は「`package`, `use`, `no` 文: 文のグループの前後
+  （ただし `package` 直後の `use` など、関連する宣言が続く場合は除く）」に空行を入れると定めるが、
+  実装していない。同項目の `sub` 定義・フェーズブロック・POD・`__DATA__` は実装済み。
+- **ADR の記述**: ADR 0008 は冒頭で「formatting.md を仕様とする」と述べており、
+  §4 で「自動空行挿入（sub 前後等, BLANK_LINE-1）は build 時に `BlankLine` を置くことで表現する」と書いている。
+- **理由**: 「関連する宣言が続く場合は除く」の判定が仕様として確定していない。
+  `package Foo; use strict; use warnings;` を1グループと見るのは明らかだが、
+  `use` の間に `my $x = 1;` が挟まったとき、`require` や `no` が混ざったとき、
+  条件付き `use if` があるときの境界が書かれていない。
+  推測で実装すると、後で仕様を確定したときに fixture を二度書き換えることになる。
+- **影響範囲**: `use` 文の連なりの前後に空行が入らない。既存 fixture では
+  `package Foo::Bar;` と `use strict;` が隣接する形しか出てこないため、
+  スナップショットへの影響は現時点ではない。
+- **原状回復**: `wants_preceding_blank_line` / `wants_surrounding_blank_lines`
+  （`src/fmt/build.rs`）にグループ判定を足す。空行の抑制はレンダラ側にあるので、
+  builder は「グループの先頭か」を判定できればよい。
+  ただし先に formatting.md 側で境界を確定すること。
+
+---
+
+## L-009: fixture を Perl として正しい形に書き換えた
+
+- **逸脱**: 評価ノート付録 C は fixture を「仕様として維持 / 新設計で不要 / 挙動を意図的に変更」の
+  3つに分類せよと言うが、実際に必要だった4つ目の分類は「**そもそも Perl ではない**」だった。
+  該当する 10 本を、意図を保ったまま perl の通る形に書き換えた。
+- **評価ノートの記述**: 付録 C
+- **理由**: Perl でないものは「Perl をどう整形するか」の仕様になりえない。
+  たとえば `sub placeholder_only($,@,%)` は slurpy が2つあり signature として不正で、
+  perl は prototype として読む。それを signature とみなして整形すれば prototype の
+  文字列が書き換わる。fixture がその出力を「正解」として固定していた。
+- **影響範囲**: 書き換えた 10 本のスナップショットが変わる。
+  内容は `notes/2026-07-28-redesign-snapshot-classification.md` と
+  `notes/2026-07-28-redesign-migration-status.md` §6.2 に記録。
+- **原状回復**: 不要。ただし「fixture は perl が通ること」を
+  `scripts/perl-check` で常時検査しているので、この分類が再発しないことは担保されている。
