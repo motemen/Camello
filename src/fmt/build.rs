@@ -461,7 +461,9 @@ impl<'a> Builder<'a> {
         if !self.options.allow_single_line_blocks {
             return false;
         }
-        // A block belonging to a control structure always breaks (NEWLINE-2).
+        // A control structure's block always breaks (formatting.md NEWLINE-2).
+        // `sub`, `do`, `map` and `try` blocks are not control structures: they
+        // may hold a single value and stay on one line (ADR 0008 §3).
         if node
             .parent()
             .map(|parent| parent.node_kind())
@@ -472,13 +474,9 @@ impl<'a> Builder<'a> {
                         | NodeKind::LOOP_STMT
                         | NodeKind::ELSIF_CLAUSE
                         | NodeKind::ELSE_CLAUSE
-                        | NodeKind::TRY_STMT
-                        | NodeKind::CATCH_CLAUSE
-                        | NodeKind::FINALLY_CLAUSE
                         | NodeKind::GIVEN_STMT
                         | NodeKind::WHEN_CLAUSE
                         | NodeKind::DEFAULT_CLAUSE
-                        | NodeKind::SUB_DEF
                         | NodeKind::PHASE_BLOCK
                         | NodeKind::BLOCK_STMT
                 )
@@ -500,10 +498,25 @@ impl<'a> Builder<'a> {
         {
             return false;
         }
-        !node
+        if node
             .descendants_with_tokens()
             .filter_map(|child| child.into_token())
             .any(|token| token.token_kind() == TokenKind::COMMENT)
+        {
+            return false;
+        }
+
+        // A flat group must contain no hard line break, so a block that holds a
+        // block that has to break cannot itself be flat. Keeping this a property
+        // of the structure is what removes the old `suppress_newlines` flag and
+        // the leaks it caused (F2).
+        node.descendants()
+            .skip(1)
+            .filter(|child| child.node_kind() == NodeKind::BLOCK)
+            .all(|child| {
+                let statements: Vec<SyntaxNode> = child.children().collect();
+                self.block_can_be_flat(&child, &statements)
+            })
     }
 
     /// A bracketed group: parentheses, an anonymous array or an anonymous hash.

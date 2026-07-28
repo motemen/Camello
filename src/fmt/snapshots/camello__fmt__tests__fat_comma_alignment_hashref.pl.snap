@@ -9,7 +9,7 @@ my $h = +{
 
 map {
     +{
-        time  => scalar @_,
+        time => scalar @_,
         count => 2,
     };
 } @list;

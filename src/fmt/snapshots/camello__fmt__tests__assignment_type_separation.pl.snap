@@ -8,7 +8,7 @@ sub test_assignment_types {
     $b = 2;
 
     # Different declarations should align with each other
-    my $c = 3;
+    my $c    = 3;
     our $d   = 4;
     state $e = 5;
 
@@ -17,6 +17,6 @@ sub test_assignment_types {
     my $z = 10;
 
     # But same types should align
-    my $foo = 100;
+    my $foo        = 100;
     my $bar_longer = 200;
 }
