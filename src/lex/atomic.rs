@@ -171,8 +171,9 @@ impl<'a> Lexer<'a> {
                 return false;
             };
 
-            if ch == '\\' {
-                // Skip the escaped character, whatever it is.
+            // `q\hello\` uses the backslash itself as the delimiter, so there
+            // is nothing for it to escape.
+            if ch == '\\' && close != '\\' {
                 chars.next();
                 continue;
             }

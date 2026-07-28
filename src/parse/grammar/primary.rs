@@ -197,7 +197,23 @@ pub(crate) fn variable(parser: &mut Parser<'_>) -> CompletedMarker {
         Some(T!["{"]) => {
             parser.bump();
             parser.expect_term();
-            expr(parser);
+            // `${^MATCH}` and `${name}` hold a name, not an expression. The
+            // lexer already read `^MATCH` as one raw token for `$^MATCH`, but
+            // inside braces the caret arrives on its own.
+            if parser.at(TokenKind::BITWISE_XOR) && parser.nth_at(1, TokenKind::IDENT) {
+                let name = parser.start();
+                parser.bump();
+                parser.bump();
+                parser.complete(name, NodeKind::SUB_NAME);
+            } else if parser
+                .current()
+                .is_some_and(|kind| kind.is_keyword() || kind == TokenKind::IDENT)
+                && parser.nth_at(1, T!["}"])
+            {
+                name(parser, NodeKind::SUB_NAME);
+            } else {
+                expr(parser);
+            }
             parser.expect(T!["}"]);
             parser.expect_operator();
             return parser.complete(marker, NodeKind::BLOCK_DEREF_EXPR);
@@ -239,6 +255,12 @@ pub(crate) fn var_decl(parser: &mut Parser<'_>) -> CompletedMarker {
         super::expr::list_contents(parser, &[T![")"]]);
         parser.complete(list, NodeKind::LIST_EXPR);
         parser.expect(T![")"]);
+    } else if parser.at(TokenKind::IDENT) && parser.nth_at(1, T!["->"]) {
+        // `local Module->hash->{key} = $value;` — the target is a general
+        // lvalue, not necessarily a variable.
+        if let Some(base) = primary(parser) {
+            super::expr::postfix(parser, base);
+        }
     } else if parser.current().is_some_and(TokenKind::is_sigil) {
         // `local $h{key}` subscripts the declared variable, but `for my $x (@xs)`
         // must not read the list as a call on `$x`.

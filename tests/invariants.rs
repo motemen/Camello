@@ -248,14 +248,10 @@ mod redesign {
     /// Every entry is a gap in coverage, not a disagreement about what the
     /// fixture means. Ordered as they appear on disk.
     const PARSE_GAPS: &[&str] = &[
-        // `q\hello\` — a backslash as a quote-like delimiter.
-        "src/formatter/fixtures/backslash_delimiter.pl",
         // A named unary builtin applied to a parenthesised list: `keys(%h)`.
         "src/formatter/fixtures/builtin_functions.pl",
         // A trailing comment as the last element of a broken list.
         "src/formatter/fixtures/comment_alignment_in_delimiters.pl",
-        // `use parent -norequire, 'Module';`
-        "src/formatter/fixtures/declarations.pl",
         // `print $FH <<HOGE` — a heredoc after a scalar filehandle.
         "src/parser/fixtures/success/print_filehandle_heredoc.pl",
         // `<` as both readline and comparison in one file.
@@ -287,7 +283,6 @@ mod redesign {
     ];
 
     const SEMANTIC_GAPS: &[&str] = &[
-        "src/formatter/fixtures/backslash_delimiter.pl",
         "src/formatter/fixtures/heredoc.pl",
         "src/formatter/fixtures/heredoc_and_package.pl",
         "src/formatter/fixtures/specials_and_sigils.pl",
