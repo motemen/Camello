@@ -1,7 +1,3 @@
----
-source: src/fmt/tests.rs
-expression: format(&source)
----
 # A quote-like run is one lexical unit, and its zero-width parts start where the
 # next part starts. Keying trivia on a start offset alone gave the empty
 # replacement list of `s/a//` and the delimiter after it the same owner, and the

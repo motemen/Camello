@@ -1,7 +1,3 @@
----
-source: src/fmt/tests.rs
-expression: format(&source)
----
 # Two heredoc bodies follow one another, and the second starts on the line
 # *after* the first terminator. Leaving that line terminator to the ordinary
 # scanner made it the first byte of the second body, so B arrived as "\ntwo\n".

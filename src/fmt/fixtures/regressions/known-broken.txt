@@ -1,0 +1,42 @@
+# Fixtures whose expected output the formatter does not yet produce.
+#
+# A fixture under `regressions/` is an A→B pair: the `.pl` file is A, and B is
+# its `.expected.pl` sibling, or A itself when there is none. Normally
+# `format(A) == B` and there is nothing to record. A defect found before it is
+# fixed is the exception: the reproduction is worth checking in on the day it is
+# found, but it fails by construction until the fix lands.
+#
+# This file is that record, and it is the only one. A fixture listed here is
+# excluded from the invariant sweeps as well: its output is already known to be
+# wrong, and asking eight more questions about it only spreads one fact across
+# eight lists.
+#
+# The ledger is monotone. An entry may be removed and never added: a listed
+# fixture that starts producing its expected output fails the test just as
+# loudly as an unlisted one that stops, so it cannot silence a regression in
+# code that works today, and it cannot go stale — the fix that lands is required
+# to delete its line.
+#
+# One path per line, relative to the repository root.
+
+# The string's own lines are written at the current column instead of at
+# column 0, or are not written at all. The terminator ends up indented, which
+# stops it closing the heredoc, and perl cannot read the output.
+src/fmt/fixtures/regressions/heredoc_inside_a_broken_group.pl
+src/fmt/fixtures/regressions/heredoc_marker_without_a_separator.pl
+src/fmt/fixtures/regressions/two_heredocs_in_one_list.pl
+src/fmt/fixtures/regressions/heredoc_in_a_list_element.pl
+src/fmt/fixtures/regressions/multiline_q_string_closing_delimiter.pl
+
+# Alignment: which lines form a group, and what column they agree on.
+src/fmt/fixtures/regressions/align_group_excludes_the_first_item.pl
+src/fmt/fixtures/regressions/align_columns_disagree.pl
+src/fmt/fixtures/regressions/align_leaks_into_a_single_line_call.pl
+src/fmt/fixtures/regressions/align_counts_characters_not_columns.pl
+
+# Spacing and line breaks that change nothing but how the code reads.
+src/fmt/fixtures/regressions/unary_plus_hugs_its_operand.pl
+src/fmt/fixtures/regressions/package_block_trailing_semicolon.pl
+src/fmt/fixtures/regressions/nested_call_argument_indent.pl
+src/fmt/fixtures/regressions/bracket_inner_space_varies_with_arity.pl
+src/fmt/fixtures/regressions/blank_line_after_a_heredoc_terminator.pl

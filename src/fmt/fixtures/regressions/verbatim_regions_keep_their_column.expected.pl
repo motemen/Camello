@@ -1,7 +1,3 @@
----
-source: src/fmt/tests.rs
-expression: format(&source)
----
 use strict;
 use warnings;
 
@@ -39,3 +35,5 @@ reads_data();
 __END__
 
 Trailing blank lines below this point are content: `while (<DATA>)` counts them.
+
+

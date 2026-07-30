@@ -156,24 +156,52 @@ cargo run -- dump input.pl
 
 # Check if a file is already formatted (exits with non-zero if not)
 cargo run -- format --check input.pl
+
+# Ask the formatter's invariants of arbitrary code (file, directory, or stdin)
+cargo run -- check input.pl
+cargo run -- check --list-invariants
+cargo run -- check --only comments,verbatim ~/some/perl/tree
 ```
 
 Use `-E` instead of `-e` to use character escapes in the input string. e.g. `-E 'sub foo {\n\twarn;\n}'`.
 
 ### Testing Strategy
 
-**Invariants first (`tests/invariants.rs`).** Every fixture must parse without a
-diagnostic, round-trip losslessly, format to a fixed point
-(`format(format(x)) == format(x)`), preserve its non-trivia token stream, keep
-its comments and its verbatim content unchanged, reach the same layout decisions
-on the second pass as on the first (I2), and hold no node whose range begins or
-ends on trivia. These are the acceptance bar from ADR 0006 §6 and ADR 0008 §6;
-they ran throughout the redesign against a registry of known violations that was
-only allowed to shrink.
+Two kinds of check, and the difference between them is the design.
+
+**Where the answer is written down, check the answer.** A fixture has an expected
+output; checking it against that output is the whole of the job, and subsumes
+every property below.
+
+**Where it is not, ask the invariants** (`src/check.rs`, ADR 0006 §6 and ADR 0008
+§6): parses without a diagnostic, round-trips losslessly, formats to a fixed
+point (`format(format(x)) == format(x)`), preserves its non-trivia token stream,
+keeps its comments and its verbatim content unchanged, reaches the same layout
+decisions on the second pass as on the first (I2), holds no node whose range
+begins or ends on trivia. These are what can be asked of code nobody has written
+an expected output for — which is to say, of a corpus. `camello check` is the
+command; `tests/invariants.rs` runs the same checks over the fixtures, where they
+serve as a guard against an expected output that is itself wrong.
 
 **Formatter fixtures (`src/fmt/fixtures/`, snapshots via `insta`).** The
 spec-by-example: `formatting.md` says what the rules are, these say what they
 produce. Add a `.pl` file and run the tests to generate its snapshot.
+
+**Regression fixtures (`src/fmt/fixtures/regressions/`) are A→B pairs.** The
+`.pl` file is A; B is its `.expected.pl` sibling, or A itself when there is none.
+A fixture that must come back unchanged is not a special case — it is one whose B
+equals its A. These carry no snapshot: the expected output is already the answer,
+and a snapshot generated from what the formatter does is exactly what a
+regression fixture must not take on trust.
+
+**A defect enters the tree on the day it is found, not the day it is fixed.**
+Minimise it, add it under `regressions/` with its expected output, and add one
+line to `src/fmt/fixtures/regressions/known-broken.txt`. The ledger is monotone:
+an entry may be removed and never added, a listed fixture that starts producing
+its expected output fails the test as loudly as an unlisted one that stops, and a
+listed fixture is skipped by the invariant sweeps — its output is already known
+to be wrong, and one fact belongs in one place. The fix that lands is what
+deletes the line.
 
 **Parser fixtures (`src/parse/fixtures/`).** `success/` for valid code (snapshot
 is the tree), `errors/` and `statements/errors/` for invalid code (snapshot is
@@ -190,6 +218,7 @@ when touching the lexer or the formatter; none is fast enough to want on every
 build.
 
 ```bash
+cargo run -- check <path>...      # the invariants, over anything at all
 ./scripts/corpus-check            # run over every .pm below @INC
 ./scripts/corpus-check --limit 60 # ... a sample of it, for a quick answer
 ./scripts/perl-check              # ask perl whether formatting changed the meaning
@@ -198,14 +227,18 @@ build.
 ```
 
 `scripts/corpus-check` is the "+ real corpus" half of ADR 0008 §6. It formats
-every `.pm` below `@INC` and asks three questions: is `format(format(x))` still
-`format(x)`; did an input perl compiles turn into an output it rejects; do the
-two deparse the same. Files camello reports a diagnostic on, and files that are
-not UTF-8, are counted and set aside — the parser not covering a construct is a
-different question from the formatter damaging code it did parse. **Every defect
-the 2026-07-28 review found was invisible to `cargo test` and obvious here**,
-because a fixture is code someone wrote to exercise a rule and a corpus is code
-someone wrote to get a job done.
+every `.pm` below `@INC` and asks three questions: what does `camello check` say;
+did an input perl compiles turn into an output it rejects; do the two deparse the
+same. Files camello reports a diagnostic on, and files that are not UTF-8, are
+counted and set aside — the parser not covering a construct is a different
+question from the formatter damaging code it did parse. **Every defect the
+2026-07-28 review found was invisible to `cargo test` and obvious here**, because
+a fixture is code someone wrote to exercise a rule and a corpus is code someone
+wrote to get a job done.
+
+The workflow that follows from this: `camello check` (or `corpus-check`) on real
+code finds a violation → minimise it into a `regressions/` fixture with its
+expected output → one line in the ledger → fix it later, deleting that line.
 
 `scripts/perl-check` compiles each fixture, formats it, compiles the output, and
 compares `B::Deparse` on both. It exists because `tests/invariants.rs` compares

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # Run camello over a real Perl corpus and ask three questions about the result.
 #
@@ -18,13 +18,17 @@
 #
 # Three indicators, in increasing order of how hard they are to see:
 #
-#   1. idempotency   — format(format(x)) != format(x). Needs no perl at all, so
-#                      it runs on every file including the ones perl cannot load.
+#   1. camello check — the invariants of ADR 0006 §6 and ADR 0008 §6, asked by
+#                      the binary itself: idempotency, losslessness, comment and
+#                      verbatim preservation, seed stability, and the rest. Needs
+#                      no perl, so it runs on every file including the ones perl
+#                      cannot load.
 #   2. perl -c       — the input compiles and the output does not. Loud, but it
 #                      misses everything that stays syntactically valid.
 #   3. B::Deparse    — both compile and perl reads them as different programs.
 #                      This is the one that catches a comment migrating into a
-#                      replacement string.
+#                      replacement string, which no invariant over token streams
+#                      can see.
 #
 # A file camello reports a diagnostic on is *counted and set aside*: the parser
 # not covering some construct is a known, separate matter from the formatter
@@ -86,30 +90,30 @@ check_one() {
   # perl's answer depends on where the file is: a module deparsed from its own
   # @INC location is already in %INC by the time its `use base` chain comes back
   # round to it, and deparses without its own preamble. Same path, same answer.
-  mkdir -p "$work/a" "$work/b" "$work/c"
+  mkdir -p "$work/a" "$work/b"
   local input="$work/a/input.pl"
   local once="$work/b/input.pl"
-  local twice="$work/c/input.pl"
   cp "$file" "$input"
 
-  # Diagnostics first: a file the parser complains about is set aside, whatever
-  # else is true of it.
-  if ! "$camello" dump -Q "$input" >/dev/null 2>&1; then
+  # The invariants, all eight of them, from `camello check`. A file the parser
+  # complains about is set aside, whatever else is true of it: the parser not
+  # covering a construct is a separate matter from the formatter damaging code
+  # it did parse, and `check` reports that and nothing else for such a file.
+  local invariants
+  invariants=$(timeout 60 "$camello" check --quiet "$input" 2>/dev/null \
+               | grep -v '^----' | grep -v '^ ')
+  if grep -q $'\tclean-parse\t' <<< "$invariants"; then
     printf 'DIAGNOSED\t%s\t\n' "$file"
+    return
+  fi
+  if [ -n "$invariants" ]; then
+    printf 'INVARIANT\t%s\t%s\n' "$file" \
+      "$(cut -f2,3 <<< "$invariants" | head -4 | tr '\n' '\r')"
     return
   fi
 
   if ! timeout 60 "$camello" format "$input" > "$once" 2>/dev/null; then
     printf 'FORMAT_FAILED\t%s\tfirst pass\n' "$file"
-    return
-  fi
-  if ! timeout 60 "$camello" format "$once" > "$twice" 2>/dev/null; then
-    printf 'FORMAT_FAILED\t%s\tsecond pass\n' "$file"
-    return
-  fi
-  if ! cmp -s "$once" "$twice"; then
-    printf 'IDEMPOTENCY\t%s\t%s\n' "$file" \
-      "$(diff "$once" "$twice" | head -6 | tr '\n' '\r')"
     return
   fi
 
@@ -232,12 +236,12 @@ diagnosed=$(count DIAGNOSED)
 not_utf8=$(count NOT_UTF8)
 not_compilable=$(count NOT_COMPILABLE)
 format_failed=$(count FORMAT_FAILED)
-idempotency=$(count IDEMPOTENCY)
+invariant=$(count INVARIANT)
 perlc=$(count PERLC_REGRESSION)
 meaning=$(count MEANING)
 errored=$(count ERROR)
 
-for status in FORMAT_FAILED IDEMPOTENCY PERLC_REGRESSION MEANING ERROR; do
+for status in FORMAT_FAILED INVARIANT PERLC_REGRESSION MEANING ERROR; do
   grep "^$status"$'\t' "$results" | while IFS=$'\t' read -r kind file detail; do
     printf '%s  %s\n' "$kind" "$file"
     [ -n "$detail" ] && printf '%s\n' "$detail" | tr '\r' '\n' | sed 's/^/    /'
@@ -256,11 +260,11 @@ cat <<SUMMARY
     perl cannot load the input       $not_compilable
   VIOLATIONS
     format failed                    $format_failed
-    idempotency                      $idempotency
+    invariants (camello check)       $invariant
     perl -c regression               $perlc
     meaning changed                  $meaning
     harness error                    $errored
 SUMMARY
 
-[ "$format_failed" -eq 0 ] && [ "$idempotency" -eq 0 ] \
+[ "$format_failed" -eq 0 ] && [ "$invariant" -eq 0 ] \
   && [ "$perlc" -eq 0 ] && [ "$meaning" -eq 0 ] && [ "$errored" -eq 0 ]

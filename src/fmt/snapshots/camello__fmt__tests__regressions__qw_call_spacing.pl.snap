@@ -1,6 +1,0 @@
----
-source: src/fmt/tests.rs
-expression: format(&source)
----
-# Ensure qw() arguments remain tight in function calls
-call(qw(1 2 3));
