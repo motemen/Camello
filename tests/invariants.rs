@@ -145,6 +145,7 @@ mod known_violations {
     /// Downstream of the dropped-body defect: the first pass drops a body, so
     /// the second pass reads a marker that never gets one.
     pub const IDEMPOTENCY: &[&str] = &[
+        "src/fmt/fixtures/regressions/heredoc_in_a_list_element.pl",
         "src/fmt/fixtures/regressions/heredoc_marker_without_a_separator.pl",
         "src/fmt/fixtures/regressions/two_heredocs_in_one_list.pl",
     ];
@@ -160,11 +161,14 @@ mod known_violations {
     ///   start of its line.
     /// * `heredoc_marker_without_a_separator`: the body and its terminator
     ///   disappear from the output altogether.
+    /// * `heredoc_in_a_list_element`: the same as the first, with the marker in
+    ///   a bracketed list element rather than a hash value.
     /// * `two_heredocs_in_one_list`: both at once — the first body is indented
     ///   further, and with `<<~` that changes the string's value because the
     ///   terminator's indentation is what gets stripped; the second body is
     ///   dropped.
     pub const VERBATIM_PRESERVATION: &[&str] = &[
+        "src/fmt/fixtures/regressions/heredoc_in_a_list_element.pl",
         "src/fmt/fixtures/regressions/heredoc_inside_a_broken_group.pl",
         "src/fmt/fixtures/regressions/heredoc_marker_without_a_separator.pl",
         "src/fmt/fixtures/regressions/two_heredocs_in_one_list.pl",
@@ -174,6 +178,7 @@ mod known_violations {
     /// the heredoc and a dropped body is gone, so re-lexing the output yields a
     /// different token sequence — and perl cannot read it at all.
     pub const SEMANTIC_PRESERVATION: &[&str] = &[
+        "src/fmt/fixtures/regressions/heredoc_in_a_list_element.pl",
         "src/fmt/fixtures/regressions/heredoc_inside_a_broken_group.pl",
         "src/fmt/fixtures/regressions/heredoc_marker_without_a_separator.pl",
         "src/fmt/fixtures/regressions/two_heredocs_in_one_list.pl",
