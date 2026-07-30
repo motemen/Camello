@@ -5,14 +5,17 @@ expression: format(&source)
 my $str = <<EOF;
 hello
 EOF
+
 my $empty = <<EOF;
 EOF
+
 die <<DIE;
 
 This is
   dying message!
 
 DIE
+
 if ($some_var) {
     print <<~EOF;
         This is a here-doc
