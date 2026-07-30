@@ -35,7 +35,6 @@ src/fmt/fixtures/regressions/align_leaks_into_a_single_line_call.pl
 src/fmt/fixtures/regressions/align_counts_characters_not_columns.pl
 
 # Spacing and line breaks that change nothing but how the code reads.
-src/fmt/fixtures/regressions/package_block_trailing_semicolon.pl
 src/fmt/fixtures/regressions/nested_call_argument_indent.pl
 src/fmt/fixtures/regressions/bracket_inner_space_varies_with_arity.pl
 src/fmt/fixtures/regressions/blank_line_after_a_heredoc_terminator.pl

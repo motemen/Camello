@@ -15,8 +15,7 @@ expression: format(&source)
 {
     short => 1,    # aligned
         longer_key => 2,    # aligned
-}
-;
+};
 
 [
     "short",    # aligned
