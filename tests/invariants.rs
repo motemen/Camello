@@ -12,7 +12,7 @@
 //! **The invariants** ([`camello::check`], ADR 0006 §6 and ADR 0008 §6). These
 //! are what can be asked of code whose answer *nobody has written down*: that
 //! the string content survives, that the comments survive, that a second pass
-//! changes nothing. Their real home is `camello check`, over a corpus; running
+//! changes nothing. Their real home is `camello dev check`, over a corpus; running
 //! them over the fixtures as well is cheap, and catches an expected output that
 //! is itself wrong.
 //!

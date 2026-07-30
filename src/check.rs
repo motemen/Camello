@@ -7,7 +7,7 @@
 //!
 //! They live here rather than in the test so that both callers can use them:
 //! `tests/invariants.rs` runs them over the checked-in fixtures, and
-//! `camello check` runs them over anything at all — which is how a defect gets
+//! `camello dev check` runs them over anything at all — which is how a defect gets
 //! found in the first place, before it is minimised into a fixture.
 
 use crate::lang::{TokenExt, TokenKind};

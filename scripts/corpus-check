@@ -18,7 +18,7 @@
 #
 # Three indicators, in increasing order of how hard they are to see:
 #
-#   1. camello check — the invariants of ADR 0006 §6 and ADR 0008 §6, asked by
+#   1. dev check     — the invariants of ADR 0006 §6 and ADR 0008 §6, asked by
 #                      the binary itself: idempotency, losslessness, comment and
 #                      verbatim preservation, seed stability, and the rest. Needs
 #                      no perl, so it runs on every file including the ones perl
@@ -95,12 +95,12 @@ check_one() {
   local once="$work/b/input.pl"
   cp "$file" "$input"
 
-  # The invariants, all eight of them, from `camello check`. A file the parser
+  # The invariants, all eight of them, from `camello dev check`. A file the parser
   # complains about is set aside, whatever else is true of it: the parser not
   # covering a construct is a separate matter from the formatter damaging code
   # it did parse, and `check` reports that and nothing else for such a file.
   local invariants
-  invariants=$(timeout 60 "$camello" check --quiet "$input" 2>/dev/null \
+  invariants=$(timeout 60 "$camello" dev check --quiet "$input" 2>/dev/null \
                | grep -v '^----' | grep -v '^ ')
   if grep -q $'\tclean-parse\t' <<< "$invariants"; then
     printf 'DIAGNOSED\t%s\t\n' "$file"
@@ -260,7 +260,7 @@ cat <<SUMMARY
     perl cannot load the input       $not_compilable
   VIOLATIONS
     format failed                    $format_failed
-    invariants (camello check)       $invariant
+    invariants (dev check)           $invariant
     perl -c regression               $perlc
     meaning changed                  $meaning
     harness error                    $errored
