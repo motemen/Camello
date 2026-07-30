@@ -4,7 +4,7 @@ expression: format(&source)
 ---
 sub nested_fat_commas {
     HTTP::Response->new(
-        code => 401,
+        code    => 401,
         message => 'Authorization required',
         headers => {
             Content_Type => 'text/plain',
@@ -21,7 +21,7 @@ sub nested_fat_commas {
 
     # Multi-line nested hash with alignment
     $db->query(
-        sql => q[],
+        sql  => q[],
         bind => {
             x   => 1,
             yyy => 2,

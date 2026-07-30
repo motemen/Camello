@@ -29,7 +29,6 @@ src/fmt/fixtures/regressions/heredoc_in_a_list_element.pl
 src/fmt/fixtures/regressions/multiline_q_string_closing_delimiter.pl
 
 # Alignment: which lines form a group, and what column they agree on.
-src/fmt/fixtures/regressions/align_group_excludes_the_first_item.pl
 src/fmt/fixtures/regressions/align_columns_disagree.pl
 src/fmt/fixtures/regressions/align_leaks_into_a_single_line_call.pl
 src/fmt/fixtures/regressions/align_counts_characters_not_columns.pl
