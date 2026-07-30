@@ -155,8 +155,16 @@ impl<'a> Renderer<'a> {
                 }
             }
             Doc::Anchor(class) => {
-                let column = self.current.text.chars().count();
-                self.current.anchors.push((*class, column));
+                // Alignment is a relation between lines, so an anchor inside a
+                // group that stays on one line has nothing to hold. Keeping it
+                // let `bar(b => $y, charlie => $z)` join the vertical group of
+                // the call above it and pad a `=>` that no other line shares —
+                // and, because only the first anchor of a class on a line is
+                // read, it was the padding of an arbitrary one of the pair.
+                if self.broken {
+                    let column = self.current.text.chars().count();
+                    self.current.anchors.push((*class, column));
+                }
             }
             Doc::Comment(text, placement) => self.comment(text, *placement),
             Doc::Shape(shape) => self.shape = *shape,
