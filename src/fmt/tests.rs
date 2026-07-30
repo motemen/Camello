@@ -756,6 +756,10 @@ fn layout_decisions_are_stable_over_the_fixtures() {
         if known {
             if stable {
                 fixed.push(label);
+            } else {
+                // Visible under `cargo test -- --nocapture`; a green run should
+                // still be able to say what it is not checking.
+                println!("seed stability: known violation tolerated: {label}");
             }
             continue;
         }
