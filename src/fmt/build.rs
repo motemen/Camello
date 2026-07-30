@@ -110,6 +110,10 @@ impl<'a> Builder<'a> {
         // `eval <<EOT; die $@ if $@;` in `URI::data` did exactly that: the
         // `die` became the first line of the string `eval` was handed.
         let mut owed = 0usize;
+        // A definition's trailing blank line, held back because a `;` written on
+        // its last line comes first. The definition ends at that semicolon, so
+        // the blank line goes after it.
+        let mut blank_line_owed = false;
 
         for child in node.children_with_tokens() {
             match child {
@@ -124,12 +128,30 @@ impl<'a> Builder<'a> {
                     }
                     self.statement_into(&statement, parts);
                     owed += self.heredoc_markers_in(&statement);
-                    parts.push(if owed > 0 { Doc::Space } else { Doc::HardLine });
+                    // Nothing at all before a `;` that was written on this
+                    // statement's line: not a line break, and not the blank line
+                    // a definition asks for either, which would land between the
+                    // brace and the semicolon it belongs to.
+                    let hugged = owed == 0 && self.empty_statement_hugs(&statement);
+                    parts.push(if owed > 0 {
+                        Doc::Space
+                    } else if hugged {
+                        Doc::Nil
+                    } else {
+                        Doc::HardLine
+                    });
+                    if std::mem::take(&mut blank_line_owed) && statement.next_sibling().is_some() {
+                        parts.push(Doc::BlankLine);
+                    }
                     // A blank line here would land between the marker's line and
                     // the body, which is to say *inside* the body — and the body
                     // would gain a line on every pass.
                     if owed == 0 && separated && statement.next_sibling().is_some() {
-                        parts.push(Doc::BlankLine);
+                        if hugged {
+                            blank_line_owed = true;
+                        } else {
+                            parts.push(Doc::BlankLine);
+                        }
                     }
                 }
                 SyntaxElement::Token(token) if token.token_kind().is_heredoc_body() => {
@@ -143,6 +165,29 @@ impl<'a> Builder<'a> {
                 SyntaxElement::Token(_) => {}
             }
         }
+    }
+
+    /// Does the next statement consist of a `;` written on this statement's own
+    /// line?
+    ///
+    /// `package Foo { ... };` and `sub f { }` followed by a stray `;` both put a
+    /// semicolon after a closing brace, and the parser reads it as an EMPTY_STMT
+    /// of its own (ADR 0007 §2) — correctly, because that is what it is. On a
+    /// line of its own it reads as a statement someone forgot to delete; on the
+    /// brace's line it reads as what the writer wrote. Where the user put it is
+    /// the only evidence of which one it is, and so it decides
+    /// (formatting.md POLICY-4).
+    fn empty_statement_hugs(&self, statement: &SyntaxNode) -> bool {
+        let Some(next) = statement.next_sibling() else {
+            return false;
+        };
+        if next.node_kind() != NodeKind::EMPTY_STMT {
+            return false;
+        }
+        !self.has_user_newline_between(
+            &SyntaxElement::Node(statement.clone()),
+            &SyntaxElement::Node(next),
+        )
     }
 
     /// How many heredoc bodies this statement still owes to the line it is on.

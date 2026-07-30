@@ -9,3 +9,13 @@ sub t {
 
     is 1, 1;
 }
+
+# The same shape after a definition, which asks for a blank line after itself:
+# the definition ends at the semicolon, so the blank line goes after that.
+sub u { 1 };
+
+# And a `;` the writer did put on a line of its own stays there.
+package Baz {
+    1;
+}
+;
