@@ -112,7 +112,7 @@ impl<'a> Renderer<'a> {
         match doc {
             Doc::Nil => {}
             Doc::Token(token) => self.write(token.text()),
-            Doc::Raw(token) => self.write_raw(token.text()),
+            Doc::Raw(text) => self.write_raw(text),
             Doc::VerbatimLines(text) => self.write_verbatim_lines(text),
             Doc::Space => self.write(" "),
             Doc::Concat(parts) => {

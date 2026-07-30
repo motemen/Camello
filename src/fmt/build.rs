@@ -274,6 +274,7 @@ impl<'a> Builder<'a> {
             NodeKind::ANON_ARRAY => self.delimited(node, T!["["], T!["]"]),
             NodeKind::ANON_HASH => self.delimited(node, T!["{"], T!["}"]),
             NodeKind::SUBSCRIPT => self.sequence(node),
+            kind if is_quote_like_node(kind) => self.quote_like(node),
             _ => self.sequence(node),
         }
     }
@@ -530,7 +531,7 @@ impl<'a> Builder<'a> {
                 lines
             }
         } else if kind.is_verbatim() {
-            Doc::Raw(token.clone())
+            Doc::Raw(token.text().into())
         } else {
             Doc::Token(token.clone())
         };
@@ -597,9 +598,31 @@ impl<'a> Builder<'a> {
         let parts = node
             .descendants_with_tokens()
             .filter_map(|child| child.into_token())
-            .map(Doc::Raw)
+            .map(|token| Doc::Raw(token.text().into()))
             .collect();
         Doc::concat(parts)
+    }
+
+    /// A quote-like operator: one lexical run (ADR 0005 §3), and so one atom.
+    ///
+    /// Emitted token by token, the closing delimiter of a run whose content
+    /// spans lines is a token like any other: it starts a line, and a line that
+    /// starts gets the enclosing indentation. `q{\nalpha\n}` came out with its
+    /// `}` indented — inside the string, where it changed the value, and where
+    /// `dev check` saw the verbatim content it was supposed to preserve change
+    /// under it. The run's own source text is the one rendering that cannot be
+    /// wrong.
+    fn quote_like(&mut self, node: &SyntaxNode) -> Doc {
+        let leading = self.leading_docs_of(node);
+        let trailing = match last_token(node) {
+            Some(token) => self.trailing_comment(&token),
+            None => Doc::Nil,
+        };
+        Doc::concat(vec![
+            leading,
+            Doc::Raw(node.text().to_string().into()),
+            trailing,
+        ])
     }
 
     /// POD, `__DATA__`, a `format` picture and heredoc bodies: the region's

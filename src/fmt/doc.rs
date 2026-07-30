@@ -40,7 +40,11 @@ pub enum Doc {
     /// The renderer neither splits these nor indents inside them, which is what
     /// makes F1 — indentation injected into a multi-line string literal, growing
     /// with every pass — not merely fixed but unrepresentable.
-    Raw(SyntaxToken),
+    ///
+    /// Text rather than a token, because the unit is not always one token: a
+    /// quote-like operator is one lexical run (ADR 0005 §3) and is written as
+    /// one atom, delimiters included.
+    Raw(smol_str::SmolStr),
     /// Verbatim content that owns whole lines and starts in column 0.
     ///
     /// A heredoc body is the case: it begins at a line start in the source and

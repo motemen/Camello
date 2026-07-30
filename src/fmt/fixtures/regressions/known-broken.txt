@@ -23,7 +23,6 @@
 # column 0, or are not written at all. The terminator ends up indented, which
 # stops it closing the heredoc, and perl cannot read the output.
 src/fmt/fixtures/regressions/heredoc_in_a_list_element.pl
-src/fmt/fixtures/regressions/multiline_q_string_closing_delimiter.pl
 
 # Alignment: which lines form a group, and what column they agree on.
 
