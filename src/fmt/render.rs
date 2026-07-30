@@ -3,14 +3,30 @@
 //! Indentation is applied here, when a line is started — never while appending
 //! text. A `Raw` atom is written as-is, so no indentation can end up inside one.
 
+use unicode_width::UnicodeWidthStr;
+
 use crate::fmt::doc::{AnchorClass, Doc, Placement, ShapeKey};
 use crate::fmt::FormatterOptions;
 
-/// One output line, with the column of each alignment anchor on it.
+/// A place on a line that wants to agree with the lines around it.
+#[derive(Debug, Clone, Copy)]
+pub struct Anchor {
+    pub class: AnchorClass,
+    /// Where it sits on screen — the display width of the text before it, so
+    /// that `'あいう'` counts the six columns it occupies rather than the three
+    /// characters it is written with.
+    pub column: usize,
+    /// Where padding for it goes, as a byte index into the line's text. Carried
+    /// rather than re-derived, because a column no longer identifies a position
+    /// in the string once one character can be two columns wide.
+    pub byte: usize,
+}
+
+/// One output line, with the alignment anchors on it.
 #[derive(Debug, Clone, Default)]
 pub struct Line {
     pub text: String,
-    pub anchors: Vec<(AnchorClass, usize)>,
+    pub anchors: Vec<Anchor>,
     pub shape: Option<ShapeKey>,
     pub indent: usize,
     /// Part of a verbatim region. Its trailing whitespace is content, not
@@ -162,8 +178,11 @@ impl<'a> Renderer<'a> {
                 // and, because only the first anchor of a class on a line is
                 // read, it was the padding of an arbitrary one of the pair.
                 if self.broken {
-                    let column = self.current.text.chars().count();
-                    self.current.anchors.push((*class, column));
+                    self.current.anchors.push(Anchor {
+                        class: *class,
+                        column: self.current.text.width(),
+                        byte: self.current.text.len(),
+                    });
                 }
             }
             Doc::Comment(text, placement) => self.comment(text, *placement),
@@ -219,13 +238,18 @@ impl<'a> Renderer<'a> {
                     self.options.min_spaces_before_comment.max(1)
                 };
                 self.ensure_indent();
+                // The anchor is where the padding starts, not where the comment
+                // does: aligning a group means agreeing on that column and then
+                // each line paying its own minimum out of it.
+                let anchor = Anchor {
+                    class: AnchorClass::TrailingComment,
+                    column: self.current.text.width(),
+                    byte: self.current.text.len(),
+                };
+                self.current.anchors.push(anchor);
                 for _ in 0..padding {
                     self.current.text.push(' ');
                 }
-                let column = self.current.text.chars().count() - padding;
-                self.current
-                    .anchors
-                    .push((AnchorClass::TrailingComment, column));
                 self.current.text.push_str(text);
                 self.line_closed = true;
             }
