@@ -159,7 +159,7 @@ impl<'a> Renderer<'a> {
                 self.current.anchors.push((*class, column));
             }
             Doc::Comment(text, placement) => self.comment(text, *placement),
-            Doc::Shape(shape) => self.shape = Some(*shape),
+            Doc::Shape(shape) => self.shape = *shape,
         }
     }
 
@@ -300,11 +300,13 @@ impl<'a> Renderer<'a> {
         if !line.verbatim {
             line.text = line.text.trim_end().to_string();
         }
-        // The shape belongs to the line that carries an anchor. A blank line or
-        // a line holding only a comment must not consume it, or the statement it
-        // was declared for would fall out of its own alignment group.
+        // The shape belongs to the line that carries an anchor, and to every such
+        // line of the statement it was declared for — not just the first.
+        // Consuming it here is what put `alpha => 1` in a group of its own and
+        // left the entries under it to align without it: one statement, one
+        // shape, and the lines it breaks across all carry it.
         if !line.anchors.is_empty() {
-            line.shape = self.shape.take();
+            line.shape = self.shape;
         }
         self.lines.push(line);
     }

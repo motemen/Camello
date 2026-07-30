@@ -208,10 +208,10 @@ impl<'a> Builder<'a> {
     /// A statement. Its comments and blank lines come from its tokens, which is
     /// where every comment in the output comes from (ADR 0008 §4).
     fn statement_into(&mut self, node: &SyntaxNode, parts: &mut Vec<Doc>) {
-        if let Some(shape) = shape_key(node) {
-            parts.push(Doc::Shape(shape));
-        }
-
+        // Declared for every statement, including the ones with no shape of
+        // their own: it is what ends the previous statement's declaration, and
+        // the lines a statement breaks across all carry what it declared.
+        parts.push(Doc::Shape(shape_key(node)));
         parts.push(self.node(node));
     }
 
@@ -894,8 +894,12 @@ impl<'a> Builder<'a> {
         for child in list.children_with_tokens() {
             match child {
                 SyntaxElement::Node(node) => {
+                    // A list element is not a statement, so it declares a shape
+                    // only where it happens to be one. Declaring `None` here
+                    // instead would end the enclosing statement's declaration
+                    // partway through its own list.
                     if let Some(shape) = shape_key(&node) {
-                        parts.push(Doc::Shape(shape));
+                        parts.push(Doc::Shape(Some(shape)));
                     }
                     parts.push(self.node(&node));
                 }

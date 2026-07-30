@@ -18,6 +18,6 @@ expression: format(&source)
 };
 
 [
-    "short",    # aligned
+    "short",                 # aligned
     "much longer string",    # aligned
 ];

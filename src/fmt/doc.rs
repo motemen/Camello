@@ -84,7 +84,12 @@ pub enum Doc {
     /// Declares the shape of the statement now being emitted, so the align pass
     /// can tell where one group of comparable statements ends and the next
     /// begins. Produces no output.
-    Shape(ShapeKey),
+    ///
+    /// `None` is a declaration too — "the statement now being emitted has no
+    /// comparable shape" — and every statement makes one. A statement that
+    /// declared nothing would leave the previous statement's shape standing, and
+    /// the two would align with each other.
+    Shape(Option<ShapeKey>),
     /// Nothing at all. Lets builders return a value unconditionally.
     Nil,
 }
