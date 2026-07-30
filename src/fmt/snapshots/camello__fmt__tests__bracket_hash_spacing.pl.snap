@@ -17,8 +17,8 @@ $obj->{array}[0]{key};
 $data[0]{nested}[1]{deep};
 
 # PREFIX_EXPR with qw should have spaces
-[+qw(a b)];
-[-qw(x y z)];
+[ +qw(a b) ];
+[ -qw(x y z) ];
 $arr[+qw(foo)];
 
 # PREFIX_EXPR without qw should be tight for single elements
