@@ -19,10 +19,4 @@
 #
 # One path per line, relative to the repository root.
 
-# The string's own lines are written at the current column instead of at
-# column 0, or are not written at all. The terminator ends up indented, which
-# stops it closing the heredoc, and perl cannot read the output.
-
-# Alignment: which lines form a group, and what column they agree on.
-
-# Spacing and line breaks that change nothing but how the code reads.
+# (empty: every fixture under regressions/ produces its expected output)
