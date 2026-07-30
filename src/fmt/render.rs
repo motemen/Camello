@@ -320,7 +320,22 @@ impl<'a> Renderer<'a> {
             .push_str(&" ".repeat(indent * self.options.indent_width));
     }
 
+    /// End the current line — unless there is nothing on it.
+    ///
+    /// A line break where a line has not been started adds nothing, and a
+    /// verbatim region ends by starting a line nobody has written to yet: the
+    /// break that closes a heredoc terminator and the one the enclosing group
+    /// puts after the element the marker belonged to are the same break, and
+    /// counting both left a blank line between the body and the code after it.
+    /// `Doc::BlankLine` is how a blank line is asked for, and it finishes the
+    /// line itself rather than coming through here.
     fn newline(&mut self) {
+        if self.current.text.trim().is_empty() && !self.current.verbatim {
+            // Indentation written for text that never arrived belongs to no
+            // line; the next one starts its own.
+            self.current.text.clear();
+            return;
+        }
         self.finish_line();
     }
 

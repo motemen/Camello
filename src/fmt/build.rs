@@ -155,12 +155,10 @@ impl<'a> Builder<'a> {
                     }
                 }
                 SyntaxElement::Token(token) if token.token_kind().is_heredoc_body() => {
-                    let terminator = token.token_kind() != TokenKind::HEREDOC_CONTENT;
-                    parts.push(Doc::VerbatimLines(token.text().into()));
-                    if terminator {
+                    if token.token_kind() != TokenKind::HEREDOC_CONTENT {
                         owed = owed.saturating_sub(1);
-                        parts.push(Doc::HardLine);
                     }
+                    parts.push(self.token(&token));
                 }
                 SyntaxElement::Token(_) => {}
             }
@@ -407,10 +405,8 @@ impl<'a> Builder<'a> {
                     | TokenKind::POD_CONTENT
                     | TokenKind::DATA_CONTENT
             )
-        ) || matches!(
-            before,
-            Some(TokenKind::HEREDOC_CONTENT | TokenKind::POD_CONTENT)
-        ) {
+        ) || before.is_some_and(|kind| kind.is_heredoc_body() || kind == TokenKind::POD_CONTENT)
+        {
             return false;
         }
 
@@ -518,7 +514,22 @@ impl<'a> Builder<'a> {
 
     fn token(&mut self, token: &SyntaxToken) -> Doc {
         let kind = token.token_kind();
-        let text = if kind.is_verbatim() {
+        let text = if kind.is_heredoc_body() {
+            // A heredoc body owns whole lines and starts in column 0, wherever
+            // the marker that opened it was written (ADR 0007 §7). Reached
+            // through a list or an argument list it used to arrive as a `Raw`,
+            // which starts at the current column: the first line was indented
+            // into the string and the terminator was indented out of being a
+            // terminator, and perl could not read the output back.
+            let terminator = kind != TokenKind::HEREDOC_CONTENT;
+            let lines = Doc::VerbatimLines(token.text().into());
+            if terminator {
+                // Nothing else belongs on the terminator's line.
+                Doc::concat(vec![lines, Doc::HardLine])
+            } else {
+                lines
+            }
+        } else if kind.is_verbatim() {
             Doc::Raw(token.clone())
         } else {
             Doc::Token(token.clone())
@@ -819,10 +830,20 @@ impl<'a> Builder<'a> {
             self.fat_comma_depth = self.fat_comma_depth.saturating_add(1);
         }
 
-        let inner: Vec<Doc> = node
-            .children()
-            .map(|child| self.list_items(&child, broken))
-            .collect();
+        // `children_with_tokens`, not `children`: a heredoc body is a token, and
+        // it can be a direct child of the bracket its marker was written inside
+        // — `f(\n    <<'A'\nbody\nA\n);` puts one right there. Walking only the
+        // child nodes dropped it from the output, string and terminator both.
+        let mut inner = Vec::new();
+        for child in node.children_with_tokens() {
+            match child {
+                SyntaxElement::Node(child) => inner.push(self.list_items(&child, broken)),
+                SyntaxElement::Token(token) if token.token_kind().is_heredoc_body() => {
+                    inner.push(self.token(&token));
+                }
+                SyntaxElement::Token(_) => {}
+            }
+        }
 
         if is_hash {
             self.fat_comma_depth = self.fat_comma_depth.saturating_sub(1);
@@ -904,6 +925,14 @@ impl<'a> Builder<'a> {
                     parts.push(self.node(&node));
                 }
                 SyntaxElement::Token(token) if token.token_kind().is_trivia() => {}
+                // A heredoc body sits between two elements of the list its
+                // marker was written in. It places itself — whole lines, from
+                // column 0 — so none of the separator rules below apply to it,
+                // and the `Doc::Space` they would add would be written at the
+                // start of the line after the terminator.
+                SyntaxElement::Token(token) if token.token_kind().is_heredoc_body() => {
+                    parts.push(self.token(&token));
+                }
                 SyntaxElement::Token(token) => {
                     // `=>` joins a key to its value; only `,` ends an element.
                     let ends_element = token.token_kind() == T![","];

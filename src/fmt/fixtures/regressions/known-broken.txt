@@ -22,9 +22,6 @@
 # The string's own lines are written at the current column instead of at
 # column 0, or are not written at all. The terminator ends up indented, which
 # stops it closing the heredoc, and perl cannot read the output.
-src/fmt/fixtures/regressions/heredoc_inside_a_broken_group.pl
-src/fmt/fixtures/regressions/heredoc_marker_without_a_separator.pl
-src/fmt/fixtures/regressions/two_heredocs_in_one_list.pl
 src/fmt/fixtures/regressions/heredoc_in_a_list_element.pl
 src/fmt/fixtures/regressions/multiline_q_string_closing_delimiter.pl
 
