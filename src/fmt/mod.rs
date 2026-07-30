@@ -109,7 +109,7 @@ pub fn layout_seeds(source: &str) -> Vec<bool> {
                 collect(body, into);
             }
             doc::Doc::Concat(parts) => parts.iter().for_each(|part| collect(part, into)),
-            doc::Doc::Indent(body) => collect(body, into),
+            doc::Doc::Indent(body) | doc::Doc::Continuation(body) => collect(body, into),
             _ => {}
         }
     }

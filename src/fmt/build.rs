@@ -915,8 +915,18 @@ impl<'a> Builder<'a> {
             if spacious {
                 parts.push(Doc::Space);
             }
-            parts.push(body);
-            if spacious {
+            // The contents are the continuation scope, and the closing bracket
+            // is outside it: a bracket the user put on a line of its own belongs
+            // at the column the construct started from, not at the level of the
+            // arguments it closes. Without the break, `] ) )` collapsed onto one
+            // line and nothing in the output showed which closed what.
+            let own_line = closing
+                .as_ref()
+                .is_some_and(|token| self.closes_on_its_own_line(token, &body));
+            parts.push(Doc::continuation(body));
+            if own_line {
+                parts.push(Doc::HardLine);
+            } else if spacious {
                 parts.push(Doc::Space);
             }
         }
@@ -1028,6 +1038,51 @@ impl<'a> Builder<'a> {
             }
         }
         false
+    }
+
+    /// Does this closing bracket deserve the line of its own it was written on?
+    ///
+    /// Only where the contents in front of it wrapped too. A bracket closing
+    /// something that fitted on one line is put back on that line — `func({}\n)`
+    /// is one line's worth of code and comes out as one — but where the
+    /// arguments broke across lines, the closer that ends them shows which
+    /// bracket closes what, and the alternative is `] ) )` run together at the
+    /// end of the last argument.
+    ///
+    /// Walks tokens rather than siblings: a closing bracket's left neighbour is
+    /// inside the node before it.
+    fn closes_on_its_own_line(&self, closing: &SyntaxToken, body: &Doc) -> bool {
+        let mut cursor = closing.prev_token();
+        loop {
+            match cursor {
+                Some(token) if token.token_kind() == TokenKind::NEWLINE => break,
+                Some(token) if token.token_kind().is_trivia() => cursor = token.prev_token(),
+                _ => return false,
+            }
+        }
+        // …and only where the contents are going to occupy more than one line.
+        // Asked of the document rather than of the source, because that is what
+        // decides it: `Mail::Mailer` writes its list with the newline in front
+        // of each comma, which is not a break the formatter keeps, so the
+        // contents come out on one line — and a closer left on the next line
+        // would be pulled back up by the pass after that (ADR 0008 §6, I2).
+        breaks(body)
+    }
+}
+
+/// Will this document put anything on a line of its own?
+///
+/// A `Line` or `SoftLine` answers for the group that holds it, which is why the
+/// question is asked of the group and not of them.
+fn breaks(doc: &Doc) -> bool {
+    match doc {
+        Doc::HardLine | Doc::BlankLine | Doc::VerbatimLines(_) | Doc::Comment(_, _) => true,
+        Doc::UserLine { broken } => *broken,
+        Doc::Raw(text) => text.contains('\n'),
+        Doc::Group { broken, body } => *broken || breaks(body),
+        Doc::Indent(body) | Doc::Continuation(body) => breaks(body),
+        Doc::Concat(parts) => parts.iter().any(breaks),
+        _ => false,
     }
 }
 

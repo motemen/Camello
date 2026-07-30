@@ -69,6 +69,15 @@ pub enum Doc {
     },
     /// One indent unit for any line break inside.
     Indent(Box<Doc>),
+    /// The extent of a continuation indent (formatting.md INDENT-3).
+    ///
+    /// The first line break the user made inside this takes one indent level,
+    /// and every line until the end of it is written at that level — so an
+    /// `Indent` nested inside is one level deeper again, and the closing bracket
+    /// emitted *after* it is back where the construct started. Applying the
+    /// level to one line at a time instead made the contents of a bracket that
+    /// broke inside a wrapped argument list no deeper than the bracket itself.
+    Continuation(Box<Doc>),
     /// Newline in a broken group, a space in a flat one.
     Line,
     /// Newline in a broken group, nothing in a flat one.
@@ -119,6 +128,11 @@ impl Doc {
     #[must_use]
     pub fn indent(body: Doc) -> Doc {
         Doc::Indent(Box::new(body))
+    }
+
+    #[must_use]
+    pub fn continuation(body: Doc) -> Doc {
+        Doc::Continuation(Box::new(body))
     }
 
     /// Whether this contributes nothing to the output.
