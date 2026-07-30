@@ -1,0 +1,142 @@
+---
+source: src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "ok"
+        LIST_EXPR
+          PREFIX_EXPR
+            `+` "+"
+            METHOD_CALL_EXPR
+              LIST_CALL_EXPR
+                SUB_NAME
+                  identifier "Foo::Bar"
+              `->` "->"
+              SUB_NAME
+                identifier "baz"
+              ARG_LIST
+                `(` "("
+                LIST_EXPR
+                  LITERAL
+                    string literal "'/x'"
+                `)` ")"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "is"
+        LIST_EXPR
+          PREFIX_EXPR
+            `+` "+"
+            ANON_HASH
+              `{` "{"
+              LIST_EXPR
+                LIST_CALL_EXPR
+                  SUB_NAME
+                    identifier "a"
+                `=>` "=>"
+                LITERAL
+                  number "1"
+              `}` "}"
+          `,` ","
+          SCALAR_VAR
+            `$` "$"
+            identifier "expected"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "is"
+        LIST_EXPR
+          PREFIX_EXPR
+            `+` "+"
+            METHOD_CALL_EXPR
+              LIST_CALL_EXPR
+                SUB_NAME
+                  identifier "Foo::Bar"
+              `->` "->"
+              SUB_NAME
+                identifier "qux"
+              ARG_LIST
+                `(` "("
+                LIST_EXPR
+                  SCALAR_VAR
+                    `$` "$"
+                    identifier "x"
+                `)` ")"
+          `,` ","
+          LITERAL
+            number "1"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "limit"
+        `=` "="
+        BINARY_EXPR
+          LIST_CALL_EXPR
+            SUB_NAME
+              identifier "PI"
+          `+` "+"
+          LITERAL
+            number "1"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "tight"
+        `=` "="
+        BINARY_EXPR
+          LIST_CALL_EXPR
+            SUB_NAME
+              identifier "PI"
+          `+` "+"
+          LITERAL
+            number "1"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "minus"
+        `=` "="
+        BINARY_EXPR
+          LIST_CALL_EXPR
+            SUB_NAME
+              identifier "MAX"
+          `-` "-"
+          LITERAL
+            number "1"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "report"
+        LIST_EXPR
+          PREFIX_EXPR
+            `+` "+"
+            SCALAR_VAR
+              `$` "$"
+              identifier "value"
+    `;` ";"
