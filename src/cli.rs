@@ -436,7 +436,8 @@ fn check_paths(
             .collect()
     };
 
-    let skipped = files.len() - sources.len();
+    // Saturating: reading stdin puts one source in with no file behind it.
+    let skipped = files.len().saturating_sub(sources.len());
     let mut violated = 0usize;
     let mut counts: Vec<(Invariant, usize)> =
         Invariant::ALL.iter().map(|kind| (*kind, 0)).collect();
