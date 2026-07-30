@@ -29,8 +29,12 @@ pub struct FormatterOptions {
     /// Minimum spaces between code and a trailing comment. One rule, applied in
     /// one place (ADR 0008 §4).
     pub min_spaces_before_comment: usize,
-    /// Cap on alignment padding, so one very long line cannot push a whole
-    /// group across the screen (issue #273).
+    /// How far apart a group's anchors may be and still be aligned, so that one
+    /// very long line cannot push a whole group across the screen (issue #273).
+    ///
+    /// A group either agrees on one column or is not aligned at all: capping
+    /// each line's own padding instead gave a group whose members ended up in
+    /// three different columns, which is neither (formatting.md §7).
     pub max_alignment_padding: usize,
     /// Whether a one-statement `map`/`sub`/`do` block may stay on one line.
     pub allow_single_line_blocks: bool,
@@ -62,7 +66,7 @@ impl Default for FormatterOptions {
         Self {
             indent_width: 4,
             min_spaces_before_comment: 4,
-            max_alignment_padding: 40,
+            max_alignment_padding: 64,
             allow_single_line_blocks: true,
             delimiter_spacing: DelimiterSpacing::Standard,
         }

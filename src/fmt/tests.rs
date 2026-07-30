@@ -293,29 +293,35 @@ fn alignment_padding_is_capped() {
     // The cap exists so one very long line cannot push a whole group across the
     // screen (issue #273). It shipped with no test at all, which is how a DoS
     // guard stops being one.
+    //
+    // It is a property of the group: aligned on the widest member, or not
+    // aligned at all. Capping each line's own padding instead left a group in
+    // three different columns — aligned by no measure, and stable, so nothing
+    // ever took it back.
     let source = "my $short = 1;\nmy $this_name_is_very_much_longer_than_the_others = 2;\n";
 
-    let generous = format_source(
-        source,
-        &FormatterOptions {
-            max_alignment_padding: 100,
-            ..FormatterOptions::default()
-        },
-    );
-    let capped = format_source(
-        source,
-        &FormatterOptions {
-            max_alignment_padding: 4,
-            ..FormatterOptions::default()
-        },
-    );
+    let with_cap = |cap: usize| {
+        format_source(
+            source,
+            &FormatterOptions {
+                max_alignment_padding: cap,
+                ..FormatterOptions::default()
+            },
+        )
+    };
+    let generous = with_cap(100);
+    let capped = with_cap(4);
 
-    let column = |text: &str| text.lines().next().and_then(|line| line.find('=')).unwrap();
-    assert_eq!(
-        column(&generous),
-        "my $this_name_is_very_much_longer_than_the_others ".len()
-    );
-    assert_eq!(column(&capped), "my $short ".len() + 4);
+    let columns = |text: &str| -> Vec<usize> {
+        text.lines()
+            .filter_map(|line| line.find('='))
+            .collect::<Vec<_>>()
+    };
+    let long_name = "my $this_name_is_very_much_longer_than_the_others ".len();
+    assert_eq!(columns(&generous), vec![long_name, long_name]);
+    // Over the cap, so neither line is padded — and in particular they do not
+    // end up in two columns.
+    assert_eq!(columns(&capped), vec!["my $short ".len(), long_name]);
 
     // Capping must not cost idempotency: the second pass has to reach the same
     // columns, not add another four spaces.
@@ -331,8 +337,14 @@ fn alignment_padding_is_capped() {
         ..FormatterOptions::default()
     };
     let unaligned = format_source(source, &none);
-    assert_eq!(column(&unaligned), "my $short ".len());
+    assert_eq!(columns(&unaligned), vec!["my $short ".len(), long_name]);
     assert_eq!(format_source(&unaligned, &none), unaligned);
+
+    // Within the cap, every member of the group agrees on one column.
+    let pair = "my $x = 1;\nmy $longer_name = 2;\n";
+    let aligned = format_source(pair, &FormatterOptions::default());
+    let expected = "my $longer_name ".len();
+    assert_eq!(columns(&aligned), vec![expected, expected]);
 }
 
 #[test]

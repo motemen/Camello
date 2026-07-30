@@ -6,8 +6,8 @@ use Test2::V0;
 sub t {
     my $self = shift;
     is $self->{foo}, object {
-        call short_name                                              => 'value';
-        call medium_name_here                                        => 'value';
+        call short_name                                               => 'value';
+        call medium_name_here                                         => 'value';
         call very_long_predicate_name_that_is_quite_wide_indeed_maybe => T;
     };
 }
