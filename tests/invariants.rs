@@ -141,22 +141,34 @@ mod known_violations {
     pub const CLEAN_PARSE: &[&str] = &[];
     pub const LOSSLESSNESS: &[&str] = &[];
     pub const TRIVIA_PLACEMENT: &[&str] = &[];
-    pub const IDEMPOTENCY: &[&str] = &[];
+    /// Downstream of `heredoc_marker_without_a_separator`: the first pass drops
+    /// the body, so the second pass reads a marker that never gets one.
+    pub const IDEMPOTENCY: &[&str] =
+        &["src/fmt/fixtures/regressions/heredoc_marker_without_a_separator.pl"];
+
     pub const COMMENT_PRESERVATION: &[&str] = &[];
 
-    /// A heredoc body inside a group that breaks over several lines is written
-    /// as `Raw` rather than `VerbatimLines`, so it lands at the current column
-    /// instead of at column 0: the first body line and the terminator are both
-    /// indented, which changes the string and leaves the terminator no longer
-    /// at the start of its line.
-    pub const VERBATIM_PRESERVATION: &[&str] =
-        &["src/fmt/fixtures/regressions/heredoc_inside_a_broken_group.pl"];
+    /// A heredoc body outside a statement list loses its lines.
+    ///
+    /// * `heredoc_inside_a_broken_group`: written as `Raw` rather than
+    ///   `VerbatimLines`, so it lands at the current column instead of at
+    ///   column 0. The first body line and the terminator are both indented,
+    ///   which changes the string and leaves the terminator no longer at the
+    ///   start of its line.
+    /// * `heredoc_marker_without_a_separator`: the body and its terminator
+    ///   disappear from the output altogether.
+    pub const VERBATIM_PRESERVATION: &[&str] = &[
+        "src/fmt/fixtures/regressions/heredoc_inside_a_broken_group.pl",
+        "src/fmt/fixtures/regressions/heredoc_marker_without_a_separator.pl",
+    ];
 
-    /// Downstream of the same defect: the indented terminator no longer closes
-    /// the heredoc, so re-lexing the output yields a different token sequence —
-    /// and perl cannot read the output at all.
-    pub const SEMANTIC_PRESERVATION: &[&str] =
-        &["src/fmt/fixtures/regressions/heredoc_inside_a_broken_group.pl"];
+    /// Downstream of the same two defects: an indented terminator no longer
+    /// closes the heredoc and a dropped body is gone, so re-lexing the output
+    /// yields a different token sequence — and perl cannot read it at all.
+    pub const SEMANTIC_PRESERVATION: &[&str] = &[
+        "src/fmt/fixtures/regressions/heredoc_inside_a_broken_group.pl",
+        "src/fmt/fixtures/regressions/heredoc_marker_without_a_separator.pl",
+    ];
 }
 
 fn report(kind: &str, failures: Vec<Failure>, total: usize, known: &[&str]) {
