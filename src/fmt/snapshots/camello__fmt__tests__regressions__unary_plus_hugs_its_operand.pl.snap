@@ -1,0 +1,10 @@
+---
+source: src/fmt/tests.rs
+expression: format(&source)
+---
+# The disambiguating unary `+` of `ok +Foo->bar` — which stops the argument
+# list being read as a hash subscript or a block — is written `ok + Foo->bar`,
+# where it reads as a binary operator. `+{ ... }` keeps its operand.
+ok + Foo::Bar->baz('/x');
+is + Foo::Bar->qux($x), 1;
+my $h = +{ a => 1 };
