@@ -74,6 +74,21 @@ pub enum Commands {
         #[command(flatten)]
         layout: LayoutArgs,
     },
+    /// Developer tools (hidden): not an interface to depend on
+    ///
+    /// Everything here exists to work on camello itself — asking the invariants
+    /// of arbitrary code, looking at a tree. `format` is the interface; these
+    /// are the tools, in the sense of `go tool`, and they may change shape
+    /// without notice.
+    #[command(hide = true)]
+    Dev {
+        #[command(subcommand)]
+        command: DevCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum DevCommands {
     /// Dump parsed AST structure
     Dump {
         /// Path to the Perl file to parse and dump (reads from stdin if not provided)
@@ -167,6 +182,7 @@ pub enum Commands {
         encoding: Option<String>,
     },
 }
+
 /// The formatter's options, as command-line flags.
 ///
 /// `FormatterOptions` existed and the CLI never passed one, so every knob in it
@@ -318,16 +334,8 @@ pub fn run() -> Result<()> {
                 &layout.to_options(),
             )?;
         }
-        Commands::Dump {
-            path,
-            eval,
-            eval_escape,
-            quiet,
-            very_quiet,
-            stop_on_first_error,
-            encoding,
-        } => {
-            dump_file(
+        Commands::Dev { command } => match command {
+            DevCommands::Dump {
                 path,
                 eval,
                 eval_escape,
@@ -335,31 +343,41 @@ pub fn run() -> Result<()> {
                 very_quiet,
                 stop_on_first_error,
                 encoding,
-            )?;
-        }
-        Commands::Check {
-            paths,
-            only,
-            list_invariants,
-            quiet,
-            extensions,
-            encoding,
-        } => {
-            return check_paths(
+            } => {
+                dump_file(
+                    path,
+                    eval,
+                    eval_escape,
+                    quiet,
+                    very_quiet,
+                    stop_on_first_error,
+                    encoding,
+                )?;
+            }
+            DevCommands::Check {
                 paths,
-                only.as_deref(),
+                only,
                 list_invariants,
                 quiet,
-                &extensions,
+                extensions,
                 encoding,
-            );
-        }
+            } => {
+                return check_paths(
+                    paths,
+                    only.as_deref(),
+                    list_invariants,
+                    quiet,
+                    &extensions,
+                    encoding,
+                );
+            }
+        },
     }
 
     Ok(())
 }
 
-/// `camello check`: run the invariants over files, directories, or stdin.
+/// `camello dev check`: run the invariants over files, directories, or stdin.
 ///
 /// Exits non-zero when anything is violated, so it can gate a corpus run.
 fn check_paths(

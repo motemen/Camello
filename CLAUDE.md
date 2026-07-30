@@ -150,17 +150,22 @@ cargo test -q assignments_align_on_the_first_pass
 cargo run -- format -e 'my $var=1;'
 cargo run -- format input.pl
 
-# Dump the parsed CST for debugging
-cargo run -- dump -e 'my $var=1;'
-cargo run -- dump input.pl
-
 # Check if a file is already formatted (exits with non-zero if not)
 cargo run -- format --check input.pl
+```
+
+`format` is the interface; the developer tools live under a hidden `dev`
+subcommand, in the sense of `go tool`, and may change shape without notice.
+
+```bash
+# Dump the parsed CST for debugging
+cargo run -- dev dump -e 'my $var=1;'
+cargo run -- dev dump input.pl
 
 # Ask the formatter's invariants of arbitrary code (file, directory, or stdin)
-cargo run -- check input.pl
-cargo run -- check --list-invariants
-cargo run -- check --only comments,verbatim ~/some/perl/tree
+cargo run -- dev check input.pl
+cargo run -- dev check --list-invariants
+cargo run -- dev check --only comments,verbatim ~/some/perl/tree
 ```
 
 Use `-E` instead of `-e` to use character escapes in the input string. e.g. `-E 'sub foo {\n\twarn;\n}'`.
@@ -179,7 +184,7 @@ point (`format(format(x)) == format(x)`), preserves its non-trivia token stream,
 keeps its comments and its verbatim content unchanged, reaches the same layout
 decisions on the second pass as on the first (I2), holds no node whose range
 begins or ends on trivia. These are what can be asked of code nobody has written
-an expected output for — which is to say, of a corpus. `camello check` is the
+an expected output for — which is to say, of a corpus. `camello dev check` is the
 command; `tests/invariants.rs` runs the same checks over the fixtures, where they
 serve as a guard against an expected output that is itself wrong.
 
@@ -218,7 +223,7 @@ when touching the lexer or the formatter; none is fast enough to want on every
 build.
 
 ```bash
-cargo run -- check <path>...      # the invariants, over anything at all
+cargo run -- dev check <path>... # the invariants, over anything at all
 ./scripts/corpus-check            # run over every .pm below @INC
 ./scripts/corpus-check --limit 60 # ... a sample of it, for a quick answer
 ./scripts/perl-check              # ask perl whether formatting changed the meaning
@@ -227,7 +232,7 @@ cargo run -- check <path>...      # the invariants, over anything at all
 ```
 
 `scripts/corpus-check` is the "+ real corpus" half of ADR 0008 §6. It formats
-every `.pm` below `@INC` and asks three questions: what does `camello check` say;
+every `.pm` below `@INC` and asks three questions: what does `camello dev check` say;
 did an input perl compiles turn into an output it rejects; do the two deparse the
 same. Files camello reports a diagnostic on, and files that are not UTF-8, are
 counted and set aside — the parser not covering a construct is a different
@@ -236,7 +241,7 @@ question from the formatter damaging code it did parse. **Every defect the
 a fixture is code someone wrote to exercise a rule and a corpus is code someone
 wrote to get a job done.
 
-The workflow that follows from this: `camello check` (or `corpus-check`) on real
+The workflow that follows from this: `camello dev check` (or `corpus-check`) on real
 code finds a violation → minimise it into a `regressions/` fixture with its
 expected output → one line in the ledger → fix it later, deleting that line.
 

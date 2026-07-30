@@ -12,7 +12,7 @@ base_dir="$(cd "$(dirname "$0")/.." && pwd)"
 
 ( cd "$base_dir" && cargo build )
 
-# Takes a list of directories or archive files as arguments, runs $base_dir/target/debug/camello dump on them, and displays success rate.
+# Takes a list of directories or archive files as arguments, runs $base_dir/target/debug/camello dev dump on them, and displays success rate.
 # Additionally, when processing directories, if .tar.gz/.tgz/.zip files are found, they are extracted into temporary directories
 # and processed recursively as directories.
 
@@ -88,7 +88,7 @@ process_directory() {
 					else
 						encoding_flag="--encoding $encoding"
 					fi
-					if "$base_dir/target/debug/camello" dump $encoding_flag --stop-on-first-error -q "$file"; then
+					if "$base_dir/target/debug/camello" dev dump $encoding_flag --stop-on-first-error -q "$file"; then
 						((success++))
 						/bin/echo -n "." >&2
 					else
