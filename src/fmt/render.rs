@@ -55,6 +55,10 @@ pub struct Renderer<'a> {
     shape: Option<ShapeKey>,
     /// The next line is a continuation of the one before it.
     continuation: bool,
+    /// Whether a continuation scope is open, and whether a user break in it has
+    /// already taken its indent level (formatting.md INDENT-3): one level for
+    /// the whole of a wrapped expression, however many times it wraps.
+    continued: Option<bool>,
     /// A trailing comment has claimed the rest of this line.
     ///
     /// Everything after `#` on a line is inside the comment, so writing code
@@ -85,6 +89,7 @@ impl<'a> Renderer<'a> {
             broken: true,
             shape: None,
             continuation: false,
+            continued: None,
             line_closed: false,
         }
     }
@@ -130,6 +135,17 @@ impl<'a> Renderer<'a> {
                 self.walk(body);
                 self.indent -= 1;
             }
+            Doc::Continuation(body) => {
+                // The level a user break takes belongs to this scope: an
+                // `Indent` inside it starts from the deeper level, and whatever
+                // is emitted after it — a closing bracket — starts from the
+                // level the construct began at.
+                let indent = self.indent;
+                let outer = self.continued.replace(false);
+                self.walk(body);
+                self.indent = indent;
+                self.continued = outer;
+            }
             Doc::Line => {
                 if self.broken {
                     self.newline();
@@ -147,11 +163,23 @@ impl<'a> Renderer<'a> {
                 if *broken {
                     self.newline();
                     // A line the user wrapped is indented one level
-                    // (formatting.md INDENT-3). Applying it to the line rather
-                    // than wrapping the doc in `Indent` is what keeps it at
-                    // exactly one level however deeply the expression nests —
-                    // and is why ADR 0002's fourteen branches are not needed.
-                    self.continuation = true;
+                    // (formatting.md INDENT-3), and one level is all it takes
+                    // however many times the expression wraps — so the level is
+                    // taken once per continuation scope, not once per break.
+                    match self.continued {
+                        // Inside a bracket, the level lasts to the end of its
+                        // contents, so what nests inside nests deeper.
+                        Some(false) => {
+                            self.continued = Some(true);
+                            self.indent += 1;
+                        }
+                        Some(true) => {}
+                        // Outside one there is nothing to hold it: a wrapped
+                        // condition or signature is followed by the block it
+                        // belongs to, which starts again from the statement's
+                        // own level.
+                        None => self.continuation = true,
+                    }
                 }
             }
             Doc::BlankLine => {
