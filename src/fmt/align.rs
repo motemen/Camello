@@ -10,7 +10,7 @@
 //! seconds.
 
 use crate::fmt::doc::AnchorClass;
-use crate::fmt::render::Line;
+use crate::fmt::render::{Anchor, Line};
 use crate::fmt::FormatterOptions;
 
 /// The order classes are aligned in. Earlier classes shift the columns of later
@@ -28,7 +28,7 @@ fn class_order(class: AnchorClass) -> (u8, u8) {
 pub fn align(lines: &mut [Line], options: &FormatterOptions) {
     let mut classes: Vec<AnchorClass> = lines
         .iter()
-        .flat_map(|line| line.anchors.iter().map(|(class, _)| *class))
+        .flat_map(|line| line.anchors.iter().map(|anchor| anchor.class))
         .collect();
     classes.sort_by_key(|class| class_order(*class));
     classes.dedup();
@@ -73,11 +73,15 @@ fn align_class(lines: &mut [Line], class: AnchorClass, options: &FormatterOption
     }
 }
 
-fn column_of(line: &Line, class: AnchorClass) -> Option<usize> {
+fn anchor_of(line: &Line, class: AnchorClass) -> Option<Anchor> {
     line.anchors
         .iter()
-        .find(|(candidate, _)| *candidate == class)
-        .map(|(_, column)| *column)
+        .find(|anchor| anchor.class == class)
+        .copied()
+}
+
+fn column_of(line: &Line, class: AnchorClass) -> Option<usize> {
+    anchor_of(line, class).map(|anchor| anchor.column)
 }
 
 /// Insert spaces so that `class`'s anchor sits at `target`.
@@ -85,27 +89,24 @@ fn column_of(line: &Line, class: AnchorClass) -> Option<usize> {
 /// Padding is only ever spaces, so it creates no new anchor and the pass is its
 /// own fixed point (ADR 0008 §6, I3).
 fn pad_to(line: &mut Line, class: AnchorClass, target: usize, options: &FormatterOptions) {
-    let Some(column) = column_of(line, class) else {
+    let Some(anchor) = anchor_of(line, class) else {
         return;
     };
     let padding = target
-        .saturating_sub(column)
+        .saturating_sub(anchor.column)
         .min(options.max_alignment_padding);
     if padding == 0 {
         return;
     }
 
-    let byte_index = line
-        .text
-        .char_indices()
-        .nth(column)
-        .map_or(line.text.len(), |(index, _)| index);
-    line.text.insert_str(byte_index, &" ".repeat(padding));
+    line.text.insert_str(anchor.byte, &" ".repeat(padding));
 
-    // Everything at or after the insertion point moved right.
-    for (_, other) in &mut line.anchors {
-        if *other >= column {
-            *other += padding;
+    // Everything at or after the insertion point moved right. A space is one
+    // byte and one column, so the two shift by the same amount.
+    for other in &mut line.anchors {
+        if other.byte >= anchor.byte {
+            other.byte += padding;
+            other.column += padding;
         }
     }
 }

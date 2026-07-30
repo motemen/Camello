@@ -122,6 +122,7 @@ dependencies = [
  "smol_str",
  "tempfile",
  "thiserror",
+ "unicode-width 0.2.1",
 ]
 
 [[package]]

@@ -16,6 +16,9 @@ clap = { version = "4.0", features = ["derive"] }
 # 効率的な文字列処理
 smol_str = "0.2"
 
+# 桁揃えのための表示幅（全角は2桁）
+unicode-width = "0.2"
+
 # エラー診断とレポート
 miette = { version = "7.0", features = ["fancy"] }
 thiserror = "1.0"
