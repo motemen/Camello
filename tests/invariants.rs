@@ -143,8 +143,20 @@ mod known_violations {
     pub const TRIVIA_PLACEMENT: &[&str] = &[];
     pub const IDEMPOTENCY: &[&str] = &[];
     pub const COMMENT_PRESERVATION: &[&str] = &[];
-    pub const VERBATIM_PRESERVATION: &[&str] = &[];
-    pub const SEMANTIC_PRESERVATION: &[&str] = &[];
+
+    /// A heredoc body inside a group that breaks over several lines is written
+    /// as `Raw` rather than `VerbatimLines`, so it lands at the current column
+    /// instead of at column 0: the first body line and the terminator are both
+    /// indented, which changes the string and leaves the terminator no longer
+    /// at the start of its line.
+    pub const VERBATIM_PRESERVATION: &[&str] =
+        &["src/fmt/fixtures/regressions/heredoc_inside_a_broken_group.pl"];
+
+    /// Downstream of the same defect: the indented terminator no longer closes
+    /// the heredoc, so re-lexing the output yields a different token sequence —
+    /// and perl cannot read the output at all.
+    pub const SEMANTIC_PRESERVATION: &[&str] =
+        &["src/fmt/fixtures/regressions/heredoc_inside_a_broken_group.pl"];
 }
 
 fn report(kind: &str, failures: Vec<Failure>, total: usize, known: &[&str]) {
