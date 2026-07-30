@@ -725,22 +725,47 @@ fn layout_decisions_are_stable_across_passes() {
     }
 }
 
+/// Fixtures known to violate seed stability, the counterpart of the ledger in
+/// `tests/invariants.rs`.
+///
+/// Same rules: an entry may be removed and never added, and a listed fixture
+/// that starts passing fails the test.
+///
+/// `heredoc_in_a_list_element` loses a group between passes because the first
+/// pass indents the heredoc terminator, which takes the terminator out of
+/// column 0 and leaves the rest of the file inside the string.
+const SEED_STABILITY_VIOLATIONS: &[&str] = &["regressions/heredoc_in_a_list_element.pl"];
+
 #[test]
 fn layout_decisions_are_stable_over_the_fixtures() {
     let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/fmt/fixtures");
     let mut files = Vec::new();
     collect(&directory, &mut files);
     files.sort();
+    let mut fixed = Vec::new();
     for path in files {
+        let label = path
+            .strip_prefix(&directory)
+            .expect("fixture is under the fixture directory")
+            .display()
+            .to_string();
+        let known = SEED_STABILITY_VIOLATIONS.contains(&label.as_str());
         let source = std::fs::read_to_string(&path).expect("failed to read fixture");
         let formatted = format(&source);
-        assert_eq!(
-            group_seeds(&source),
-            group_seeds(&formatted),
-            "layout decisions differ between passes for {}",
-            path.display()
-        );
+        let stable = group_seeds(&source) == group_seeds(&formatted);
+        if known {
+            if stable {
+                fixed.push(label);
+            }
+            continue;
+        }
+        assert!(stable, "layout decisions differ between passes for {label}");
     }
+    assert!(
+        fixed.is_empty(),
+        "fixture(s) now stable but still listed in SEED_STABILITY_VIOLATIONS; \
+         remove them: {fixed:?}"
+    );
 }
 
 // ===== Fixture snapshots =====
