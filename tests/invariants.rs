@@ -202,6 +202,16 @@ fn report(kind: &str, failures: Vec<Failure>, total: usize, known: &[&str]) {
         .filter(|fixture| !expected.iter().any(|failure| failure.fixture == **fixture))
         .collect();
 
+    // What the ledger let through, by name. The standard harness captures this
+    // unless the test fails, so `cargo test -- --nocapture` is what surfaces it
+    // — but a green run should still be able to say what it is not checking.
+    if !expected.is_empty() {
+        println!("{kind}: {} known violation(s) tolerated", expected.len());
+        for failure in &expected {
+            println!("  - {}", failure.fixture);
+        }
+    }
+
     let mut message = String::new();
 
     if !unexpected.is_empty() {
