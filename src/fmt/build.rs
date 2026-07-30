@@ -231,6 +231,18 @@ impl<'a> Builder<'a> {
         // (formatting.md BLANK_LINE-3).
         let mut parts = Vec::new();
         let mut items = trivia.leading.iter().peekable();
+        // With one exception. A heredoc body is invisible to the parser
+        // (ADR 0007 §7), so it holds no trivia of its own and the newline that
+        // ended its terminator's line has no token to be trailing trivia of: it
+        // arrives here, in front of whatever comes next. It is the terminator's
+        // line ending, not a line the user left empty — the ones after it are.
+        if follows_heredoc_body(token)
+            && items
+                .peek()
+                .is_some_and(|item| item.kind == TokenKind::NEWLINE)
+        {
+            items.next();
+        }
         while let Some(item) = items.next() {
             match item.kind {
                 TokenKind::COMMENT => {
@@ -1049,6 +1061,18 @@ fn nearest_blocks(node: &SyntaxNode) -> Vec<SyntaxNode> {
 /// Both, unless it is inside an atomic quote-like run, where only the first
 /// token of the run can be preceded by a comment and only the last can be
 /// followed by one.
+/// Is the nearest thing written before this token a heredoc body?
+fn follows_heredoc_body(token: &SyntaxToken) -> bool {
+    let mut previous = token.prev_token();
+    while let Some(candidate) = previous {
+        if !candidate.token_kind().is_trivia() {
+            return candidate.token_kind().is_heredoc_body();
+        }
+        previous = candidate.prev_token();
+    }
+    false
+}
+
 fn run_edges(token: &SyntaxToken) -> (bool, bool) {
     let Some(parent) = token.parent() else {
         return (true, true);
