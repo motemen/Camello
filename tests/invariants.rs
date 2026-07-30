@@ -152,7 +152,8 @@ mod known_violations {
 
     pub const COMMENT_PRESERVATION: &[&str] = &[];
 
-    /// A heredoc body outside a statement list loses its lines.
+    /// Verbatim content that owns whole lines is written at the current column
+    /// instead of at column 0, or is not written at all.
     ///
     /// * `heredoc_inside_a_broken_group`: written as `Raw` rather than
     ///   `VerbatimLines`, so it lands at the current column instead of at
@@ -163,12 +164,17 @@ mod known_violations {
     ///   disappear from the output altogether.
     /// * `heredoc_in_a_list_element`: the same as the first, with the marker in
     ///   a bracketed list element rather than a hash value.
+    /// * `multiline_q_string_closing_delimiter`: not a heredoc — a multi-line
+    ///   `q{...}`, whose closing delimiter is indented, appending the
+    ///   indentation to the string's value. perl reads the output's value as
+    ///   `"\nalpha\n        "` where the input's is `"\nalpha\n"`.
     /// * `two_heredocs_in_one_list`: both at once — the first body is indented
     ///   further, and with `<<~` that changes the string's value because the
     ///   terminator's indentation is what gets stripped; the second body is
     ///   dropped.
     pub const VERBATIM_PRESERVATION: &[&str] = &[
         "src/fmt/fixtures/regressions/heredoc_in_a_list_element.pl",
+        "src/fmt/fixtures/regressions/multiline_q_string_closing_delimiter.pl",
         "src/fmt/fixtures/regressions/heredoc_inside_a_broken_group.pl",
         "src/fmt/fixtures/regressions/heredoc_marker_without_a_separator.pl",
         "src/fmt/fixtures/regressions/two_heredocs_in_one_list.pl",
@@ -179,6 +185,7 @@ mod known_violations {
     /// different token sequence — and perl cannot read it at all.
     pub const SEMANTIC_PRESERVATION: &[&str] = &[
         "src/fmt/fixtures/regressions/heredoc_in_a_list_element.pl",
+        "src/fmt/fixtures/regressions/multiline_q_string_closing_delimiter.pl",
         "src/fmt/fixtures/regressions/heredoc_inside_a_broken_group.pl",
         "src/fmt/fixtures/regressions/heredoc_marker_without_a_separator.pl",
         "src/fmt/fixtures/regressions/two_heredocs_in_one_list.pl",

@@ -1,0 +1,14 @@
+# A `q{...}` spanning several lines as a hash value. Everything between the
+# delimiters is the string's value, the closing brace's own line included, so
+# indenting that brace appends whitespace to the string.
+my @cases = (
+    {
+        foo => 'a',
+        bar => q{
+alpha
+},
+        baz => q{
+beta
+},
+    },
+);
