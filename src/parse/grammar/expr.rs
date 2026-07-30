@@ -678,6 +678,20 @@ fn starts_argument(parser: &mut Parser<'_>, argument_is_optional: bool) -> bool 
             parser.expect_operator();
             return false;
         }
+        // `ok +Foo->bar` — perl's documented disambiguating unary plus. Its only
+        // purpose is to open an argument list where a bare `{` or `(` would be
+        // read as something else, so addition applied to an argument-less call is
+        // the one reading it cannot have. Without a declaration in sight the
+        // evidence is how it was written: the idiom hugs its operand and leaves a
+        // space in front, where arithmetic on a constant (`PI + 1`, `MAX-1`) does
+        // not.
+        if parser.at(T!["+"]) && parser.current_is_glued_prefix() {
+            parser.expect_term();
+            if parser.nth(1).is_some_and(TokenKind::can_start_term) {
+                return true;
+            }
+            parser.expect_operator();
+        }
         if parser
             .current()
             .is_some_and(|kind| infix_op(kind).is_some() || kind.is_stmt_modifier())

@@ -223,6 +223,22 @@ impl<'a> Parser<'a> {
         TextRange::empty(end)
     }
 
+    /// Was the current token written with whitespace before it and none after —
+    /// the shape of an operator someone glued to what follows it?
+    ///
+    /// Asked of the source rather than of the token stream, so it needs no
+    /// lookahead and cannot disagree with the `expect` the next token will be
+    /// lexed under. It is evidence about intent and nothing more: the grammar
+    /// uses it only where a symbol table would otherwise be needed to choose
+    /// between two readings (ADR 0007 §6).
+    pub(crate) fn current_is_glued_prefix(&mut self) -> bool {
+        let range = self.current_range();
+        let source = self.lexer.source();
+        let before = &source[..usize::from(range.start())];
+        let after = &source[usize::from(range.end())..];
+        before.ends_with(char::is_whitespace) && after.starts_with(|c: char| !c.is_whitespace())
+    }
+
     pub(crate) fn at_end(&mut self) -> bool {
         self.current().is_none()
     }
