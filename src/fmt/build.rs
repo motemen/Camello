@@ -441,13 +441,12 @@ impl<'a> Builder<'a> {
         {
             return false;
         }
-        // `$h->{key}`, `$h{a}{b}`, `&{$code}` — braces hug their contents.
+        // `$h->{key}`, `$h{a}{b}` — a subscript's braces hug their contents.
         if matches!(
             parent,
             Some(
                 NodeKind::HASH_SUBSCRIPT_EXPR
                     | NodeKind::ARRAY_SUBSCRIPT_EXPR
-                    | NodeKind::BLOCK_DEREF_EXPR
                     | NodeKind::POSTFIX_ARRAY_SLICE_EXPR
                     | NodeKind::POSTFIX_HASH_SLICE_EXPR
             )
@@ -455,6 +454,21 @@ impl<'a> Builder<'a> {
             || matches!(before, Some(T!["{"] | T!["["])))
         {
             return false;
+        }
+        // A dereference's braces hug a name and open up around anything else:
+        // `@{$x}`, but `@{ $ref->{bar} }` (SPACING-7). The sigil rule above has
+        // already closed the gap between the sigil and the brace.
+        if parent == Some(NodeKind::BLOCK_DEREF_EXPR)
+            && (matches!(after, Some(T!["}"])) || matches!(before, Some(T!["{"])))
+        {
+            // No child node at all means the braces hold something that is not
+            // an expression — `${^MATCH}`, whose name is the caret and the word
+            // together. A space there names a different variable, which no
+            // token-stream comparison can see.
+            let deref = previous.parent().or_else(|| next.parent());
+            return deref
+                .and_then(|node| node.children().next())
+                .is_some_and(|inner| !is_simple_term(&inner));
         }
         // Nothing between a prefix operator and its operand.
         if parent == Some(NodeKind::PREFIX_EXPR) || parent == Some(NodeKind::REFERENCE_EXPR) {
@@ -909,7 +923,16 @@ impl<'a> Builder<'a> {
             let spacious = open != T!["("]
                 && match self.options.delimiter_spacing {
                     DelimiterSpacing::Tight => false,
-                    DelimiterSpacing::Standard => Self::item_count(node) >= 2,
+                    // A lone item closes the brackets up only where it is a
+                    // name: `[$x]` and `{ $single }` are what the arity rule was
+                    // for, and `[ map { $_->foo } @$list ]`, `{ $obj->qux }` and
+                    // `[ foo($body) ]` are what it caught by accident — a
+                    // literal with something inside it, squeezed against its own
+                    // brackets because it held one thing.
+                    DelimiterSpacing::Standard => {
+                        Self::item_count(node) >= 2
+                            || sole_item(node).is_some_and(|item| !is_simple_term(&item))
+                    }
                     DelimiterSpacing::Loose => true,
                 };
             if spacious {
@@ -1067,6 +1090,45 @@ impl<'a> Builder<'a> {
         // contents come out on one line — and a closer left on the next line
         // would be pulled back up by the pass after that (ADR 0008 §6, I2).
         breaks(body)
+    }
+}
+
+/// The one thing this bracket holds, if it holds exactly one.
+fn sole_item(node: &SyntaxNode) -> Option<SyntaxNode> {
+    let only = |node: &SyntaxNode| {
+        let mut children = node.children();
+        let first = children.next()?;
+        children.next().is_none().then_some(first)
+    };
+    let child = only(node)?;
+    if child.node_kind() == NodeKind::LIST_EXPR {
+        only(&child)
+    } else {
+        Some(child)
+    }
+}
+
+/// A term a bracket closes up around: a variable or a literal, and nothing with
+/// its own structure (formatting.md SPACING-7).
+fn is_simple_term(node: &SyntaxNode) -> bool {
+    match node.node_kind() {
+        NodeKind::SCALAR_VAR
+        | NodeKind::ARRAY_VAR
+        | NodeKind::HASH_VAR
+        | NodeKind::CODE_VAR
+        | NodeKind::TYPEGLOB_VAR
+        | NodeKind::LITERAL
+        // `${^MATCH}` is one name spelled with a caret in it, and `@{name}` a
+        // symbolic reference to another: a space inside those braces names a
+        // different variable, which no token-stream comparison can see.
+        | NodeKind::SUB_NAME => true,
+        // `-1` is a number with a sign on it and `\$x` a variable with a
+        // backslash: what the brackets close up around is the operand.
+        NodeKind::PREFIX_EXPR | NodeKind::REFERENCE_EXPR => node
+            .children()
+            .next()
+            .is_some_and(|inner| is_simple_term(&inner)),
+        _ => false,
     }
 }
 

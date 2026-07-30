@@ -3,52 +3,52 @@ source: src/fmt/tests.rs
 expression: format(&source)
 ---
 &{$coderef}(1, 2, 3);
-&{$dispatch{$index}}(1, 2, 3);
+&{ $dispatch{$index} }(1, 2, 3);
 &$ORIG;
 &{"package::method"};
-&{$obj->method};
-&{'DynamicSub::' . $name};
+&{ $obj->method };
+&{ 'DynamicSub::' . $name };
 
 ${$ref};
-${$hash{key}};
+${ $hash{key} };
 ${$complex_expression};
 ${"dynamic_var"};
-${'$var_' . $suffix};
+${ '$var_' . $suffix };
 
 @{$arrayref};
-@{$hash{arrays}};
-@{$array_dispatch{$type}};
+@{ $hash{arrays} };
+@{ $array_dispatch{$type} };
 @{"Package::ARRAY"};
-@{'@array_' . $name};
+@{ '@array_' . $name };
 
 +{%hash};
 
-@{$hash{key}};
+@{ $hash{key} };
 
-@{$obj->meth};
+@{ $obj->meth };
 
-+{@{$obj->meth}};
++{ @{ $obj->meth } };
 
 [$item];
 
 %{$hashref};
-%{$obj->get_hash};
-%{$hash_table{$key}};
+%{ $obj->get_hash };
+%{ $hash_table{$key} };
 %{"Package::HASH"};
-%{'%hash_' . $suffix};
+%{ '%hash_' . $suffix };
 
-&{$handlers{$type || 'default'}};
-${$refs->[0]};
-@{$data->{arrays}->[0]};
-%{$config->{$env}->{hashes}};
+&{ $handlers{$type || 'default'} };
+${ $refs->[0] };
+@{ $data->{arrays}->[0] };
+%{ $config->{$env}->{hashes} };
 
 &{$code}();
-&{$dispatch{$method}}(@args);
-print &{$formatters{$type}}($data);
+&{ $dispatch{$method} }(@args);
+print &{ $formatters{$type} }($data);
 my $result = &{$callback}($input);
 my @items  = @{$container};
 my %config = %{$settings};
-&{$obj->get_method}(&{$factory}(), @{$args});
+&{ $obj->get_method }(&{$factory}(), @{$args});
 
 $h->{if};
 $h->{unless};
