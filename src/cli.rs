@@ -125,6 +125,47 @@ pub enum Commands {
         #[arg(long, help = "Input file encoding (default: utf-8)")]
         encoding: Option<String>,
     },
+    /// Ask the formatter's invariants of arbitrary Perl
+    ///
+    /// A fixture has an expected output and is checked against it. Code taken
+    /// off a disk has none, and these are the questions that can still be asked
+    /// of it: does the string content survive, do the comments survive, does a
+    /// second pass change anything. This is how a defect gets found before
+    /// anyone knows what the right output would have been.
+    Check {
+        /// Files or directories to check (reads from stdin if not provided)
+        #[arg(help = "Files or directories to check (recursive; stdin if omitted)")]
+        paths: Vec<PathBuf>,
+
+        /// Only report these invariants (comma-separated slugs)
+        #[arg(
+            long,
+            value_name = "SLUG,...",
+            help = "Only report these invariants; --list-invariants prints the slugs"
+        )]
+        only: Option<String>,
+
+        /// List the invariants and exit
+        #[arg(long, help = "List the invariants and exit")]
+        list_invariants: bool,
+
+        /// One line per violation, without the evidence
+        #[arg(short, long, help = "One line per violation, without the evidence")]
+        quiet: bool,
+
+        /// File extensions to walk into when given a directory
+        #[arg(
+            long,
+            value_name = "EXT,...",
+            default_value = "pl,pm,t,psgi",
+            help = "Extensions to consider when walking a directory"
+        )]
+        extensions: String,
+
+        /// Input file encoding (e.g., utf-8, euc-jp, shift_jis)
+        #[arg(long, help = "Input file encoding (default: utf-8)")]
+        encoding: Option<String>,
+    },
 }
 /// The formatter's options, as command-line flags.
 ///
@@ -296,8 +337,178 @@ pub fn run() -> Result<()> {
                 encoding,
             )?;
         }
+        Commands::Check {
+            paths,
+            only,
+            list_invariants,
+            quiet,
+            extensions,
+            encoding,
+        } => {
+            return check_paths(
+                paths,
+                only.as_deref(),
+                list_invariants,
+                quiet,
+                &extensions,
+                encoding,
+            );
+        }
     }
 
+    Ok(())
+}
+
+/// `camello check`: run the invariants over files, directories, or stdin.
+///
+/// Exits non-zero when anything is violated, so it can gate a corpus run.
+fn check_paths(
+    paths: Vec<PathBuf>,
+    only: Option<&str>,
+    list_invariants: bool,
+    quiet: bool,
+    extensions: &str,
+    encoding: Option<String>,
+) -> Result<()> {
+    use crate::check::{check, Invariant};
+
+    if list_invariants {
+        for invariant in Invariant::ALL {
+            println!("{:<16} {}", invariant.slug(), invariant.name());
+        }
+        return Ok(());
+    }
+
+    let wanted: Option<Vec<&str>> = only.map(|list| list.split(',').map(str::trim).collect());
+    if let Some(wanted) = &wanted {
+        for slug in wanted {
+            if !Invariant::ALL.iter().any(|kind| kind.slug() == *slug) {
+                return Err(miette::miette!(
+                    "unknown invariant {slug:?}; --list-invariants prints them"
+                ));
+            }
+        }
+    }
+
+    let extensions: Vec<&str> = extensions.split(',').map(str::trim).collect();
+    let encoding = get_encoding(encoding.as_ref())?;
+
+    let mut files = Vec::new();
+    for path in &paths {
+        collect_perl_files(path, &extensions, &mut files)?;
+    }
+
+    // No paths at all means stdin, so the command composes with a pipeline the
+    // way `format` does.
+    let sources: Vec<(String, String)> = if paths.is_empty() {
+        let mut bytes = Vec::new();
+        io::stdin().read_to_end(&mut bytes).into_diagnostic()?;
+        let (decoded, _, _) = encoding.decode(&bytes);
+        vec![("<stdin>".to_string(), decoded.into_owned())]
+    } else {
+        files
+            .iter()
+            .filter_map(|path| {
+                let bytes = fs::read(path).ok()?;
+                let (decoded, _, had_errors) = encoding.decode(&bytes);
+                // Not decodable is not a violation; it is a file this command
+                // has nothing to say about.
+                (!had_errors).then(|| (path.display().to_string(), decoded.into_owned()))
+            })
+            .collect()
+    };
+
+    let skipped = files.len() - sources.len();
+    let mut violated = 0usize;
+    let mut counts: Vec<(Invariant, usize)> =
+        Invariant::ALL.iter().map(|kind| (*kind, 0)).collect();
+
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    for (label, source) in &sources {
+        let violations: Vec<_> = check(source)
+            .into_iter()
+            .filter(|violation| {
+                wanted
+                    .as_ref()
+                    .is_none_or(|wanted| wanted.contains(&violation.invariant.slug()))
+            })
+            .collect();
+        if violations.is_empty() {
+            continue;
+        }
+        violated += 1;
+        for violation in violations {
+            for entry in &mut counts {
+                if entry.0 == violation.invariant {
+                    entry.1 += 1;
+                }
+            }
+            writeln!(
+                out,
+                "{label}\t{}\t{}",
+                violation.invariant.slug(),
+                violation.summary
+            )
+            .into_diagnostic()?;
+            if !quiet {
+                for line in violation.detail.lines() {
+                    writeln!(out, "    {line}").into_diagnostic()?;
+                }
+            }
+        }
+    }
+
+    writeln!(
+        out,
+        "---- checked {}, clean {}, violated {violated}{}",
+        sources.len(),
+        sources.len() - violated,
+        if skipped > 0 {
+            format!(", not decodable {skipped}")
+        } else {
+            String::new()
+        }
+    )
+    .into_diagnostic()?;
+    for (invariant, count) in counts.iter().filter(|(_, count)| *count > 0) {
+        writeln!(out, "     {:<16} {count}", invariant.slug()).into_diagnostic()?;
+    }
+
+    if violated > 0 {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+/// Every file below `path` whose extension is one this command reads.
+fn collect_perl_files(path: &Path, extensions: &[&str], into: &mut Vec<PathBuf>) -> Result<()> {
+    if path.is_file() {
+        into.push(path.to_path_buf());
+        return Ok(());
+    }
+    if !path.is_dir() {
+        return Err(miette::miette!(
+            "no such file or directory: {}",
+            path.display()
+        ));
+    }
+    let mut entries: Vec<PathBuf> = fs::read_dir(path)
+        .into_diagnostic()?
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .collect();
+    entries.sort();
+    for entry in entries {
+        if entry.is_dir() {
+            collect_perl_files(&entry, extensions, into)?;
+        } else if entry
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| extensions.contains(&ext))
+        {
+            into.push(entry);
+        }
+    }
     Ok(())
 }
 

@@ -1,7 +1,3 @@
----
-source: src/fmt/tests.rs
-expression: format(&source)
----
 # A comment runs to end of line, so a group holding one cannot be flat. Every
 # case below used to concatenate the rest of the group onto the comment's line,
 # which does not lay the code out badly — it comments it out.

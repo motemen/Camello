@@ -90,3 +90,30 @@ pub fn format_source(source: &str, options: &FormatterOptions) -> String {
     let parsed = crate::parse::parse(source);
     format(&parsed.syntax(), &parsed.trivia, options)
 }
+
+/// The flat-or-broken decision of every group in `source`, in document order.
+///
+/// Layout is decided once, at build time, from the source (ADR 0008 §3), so
+/// these are the seeds a second pass would have to reproduce for the output to
+/// be stable (ADR 0008 §6 I2).
+#[must_use]
+pub fn layout_seeds(source: &str) -> Vec<bool> {
+    fn collect(document: &doc::Doc, into: &mut Vec<bool>) {
+        match document {
+            doc::Doc::Group { broken, body } => {
+                into.push(*broken);
+                collect(body, into);
+            }
+            doc::Doc::Concat(parts) => parts.iter().for_each(|part| collect(part, into)),
+            doc::Doc::Indent(body) => collect(body, into),
+            _ => {}
+        }
+    }
+
+    let parsed = crate::parse::parse(source);
+    let options = FormatterOptions::default();
+    let document = build::Builder::new(&parsed.trivia, &options).file(&parsed.syntax());
+    let mut seeds = Vec::new();
+    collect(&document, &mut seeds);
+    seeds
+}

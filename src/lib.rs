@@ -7,6 +7,7 @@
 //! * [`parse`] — an event-recording parser, so speculative parsing is possible.
 //! * [`fmt`] — a document IR, so layout is decided once and rendered once.
 
+pub mod check;
 pub mod cli;
 pub mod diagnostic;
 pub mod fmt;

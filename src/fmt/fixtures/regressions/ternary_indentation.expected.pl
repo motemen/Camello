@@ -1,7 +1,3 @@
----
-source: src/fmt/tests.rs
-expression: format(&source)
----
 sub test {
     return $s eq ""
         ? 1

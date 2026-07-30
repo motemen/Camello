@@ -4,7 +4,6 @@
 
 use std::time::Instant;
 
-use super::doc::Doc;
 use super::{format_source, FormatterOptions};
 use crate::lang::TokenKind;
 
@@ -671,39 +670,12 @@ fn a_format_declaration_is_carried_through_untouched() {
 
 // ===== I2: the seed rule reproduces its own output =====
 
-/// The flat-or-broken decision of every group, in document order.
-///
-/// This reaches past the rendered text to the decision itself. Idempotency says
-/// the two passes agree on the *output*; this says they agree on the *reasoning*,
-/// which is the property ADR 0008 §6 calls I2 and the one that stops a layout
-/// rule from being accidentally self-cancelling.
-fn group_seeds(source: &str) -> Vec<bool> {
-    fn collect(doc: &Doc, into: &mut Vec<bool>) {
-        match doc {
-            Doc::Group { broken, body } => {
-                into.push(*broken);
-                collect(body, into);
-            }
-            Doc::Concat(parts) => parts.iter().for_each(|part| collect(part, into)),
-            Doc::Indent(body) => collect(body, into),
-            _ => {}
-        }
-    }
-
-    let parsed = crate::parse::parse(source);
-    let options = FormatterOptions::default();
-    let document = super::build::Builder::new(&parsed.trivia, &options).file(&parsed.syntax());
-    let mut seeds = Vec::new();
-    collect(&document, &mut seeds);
-    seeds
-}
-
 #[track_caller]
 fn assert_seed_stable(source: &str) {
     let formatted = format(source);
     assert_eq!(
-        group_seeds(source),
-        group_seeds(&formatted),
+        super::layout_seeds(source),
+        super::layout_seeds(&formatted),
         "the layout decisions differ between passes\n--- input ---\n{source}--- output ---\n{formatted}"
     );
 }
@@ -725,64 +697,23 @@ fn layout_decisions_are_stable_across_passes() {
     }
 }
 
-/// Fixtures known to violate seed stability, the counterpart of the ledger in
-/// `tests/invariants.rs`.
-///
-/// Same rules: an entry may be removed and never added, and a listed fixture
-/// that starts passing fails the test.
-///
-/// `heredoc_in_a_list_element` loses a group between passes because the first
-/// pass indents the heredoc terminator, which takes the terminator out of
-/// column 0 and leaves the rest of the file inside the string.
-const SEED_STABILITY_VIOLATIONS: &[&str] = &["regressions/heredoc_in_a_list_element.pl"];
-
-#[test]
-fn layout_decisions_are_stable_over_the_fixtures() {
-    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/fmt/fixtures");
-    let mut files = Vec::new();
-    collect(&directory, &mut files);
-    files.sort();
-    let mut fixed = Vec::new();
-    for path in files {
-        let label = path
-            .strip_prefix(&directory)
-            .expect("fixture is under the fixture directory")
-            .display()
-            .to_string();
-        let known = SEED_STABILITY_VIOLATIONS.contains(&label.as_str());
-        let source = std::fs::read_to_string(&path).expect("failed to read fixture");
-        let formatted = format(&source);
-        let stable = group_seeds(&source) == group_seeds(&formatted);
-        if known {
-            if stable {
-                fixed.push(label);
-            } else {
-                // Visible under `cargo test -- --nocapture`; a green run should
-                // still be able to say what it is not checking.
-                println!("seed stability: known violation tolerated: {label}");
-            }
-            continue;
-        }
-        assert!(stable, "layout decisions differ between passes for {label}");
-    }
-    assert!(
-        fixed.is_empty(),
-        "fixture(s) now stable but still listed in SEED_STABILITY_VIOLATIONS; \
-         remove them: {fixed:?}"
-    );
-}
-
 // ===== Fixture snapshots =====
 
 /// Format every fixture and snapshot the result.
 ///
 /// These are the spec-by-example: `formatting.md` says what the rules are, and
 /// these say what they produce.
+///
+/// `regressions/` is excluded. Those fixtures carry their own expected output
+/// as an A→B pair (`tests/invariants.rs`), and a snapshot beside it would be a
+/// second answer to the same question — one generated from what the formatter
+/// does, which is exactly what a regression fixture must not take on trust.
 #[test]
 fn fixture_snapshots() {
     let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/fmt/fixtures");
     let mut files = Vec::new();
     collect(&directory, &mut files);
+    files.retain(|path| !path.starts_with(directory.join("regressions")));
     files.sort();
     assert!(!files.is_empty(), "no fixtures found in {directory:?}");
 
@@ -804,7 +735,9 @@ fn collect(directory: &std::path::Path, into: &mut Vec<std::path::PathBuf>) {
         let path = entry.expect("failed to read fixture entry").path();
         if path.is_dir() {
             collect(&path, into);
-        } else if path.extension().is_some_and(|extension| extension == "pl") {
+        } else if path.extension().is_some_and(|extension| extension == "pl")
+            && !path.to_string_lossy().ends_with(".expected.pl")
+        {
             into.push(path);
         }
     }

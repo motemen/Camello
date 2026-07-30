@@ -1,7 +1,3 @@
----
-source: src/fmt/tests.rs
-expression: format(&source)
----
 # A call whose argument is another call, with a list among its arguments. The
 # elements of the inner `[ ... ]` come out no deeper than the bracket that
 # opens them, and the closers `] ) )` collapse onto one line, so nothing in the
@@ -14,10 +10,11 @@ use Test2::V0;
 sub t {
     my ($obj, $x, $y) = @_;
     my $res = $obj->foo(bar("x",
-        alpha   => 'a',
-        bravo   => [
-        charlie => $x,
-        delta   => $y,
-    ]));
+        alpha => 'a',
+        bravo => [
+            charlie => $x,
+            delta   => $y,
+        ]
+    ));
     ok $res;
 }
