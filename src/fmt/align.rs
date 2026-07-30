@@ -60,12 +60,19 @@ fn align_class(lines: &mut [Line], class: AnchorClass, options: &FormatterOption
         }
 
         if end - start >= 2 {
-            let target = (start..end)
-                .filter_map(|index| column_of(&lines[index], class))
-                .max()
-                .unwrap_or(first);
-            for line in &mut lines[start..end] {
-                pad_to(line, class, target, options);
+            let columns = || (start..end).filter_map(|index| column_of(&lines[index], class));
+            let target = columns().max().unwrap_or(first);
+            let narrowest = columns().min().unwrap_or(first);
+            // The cap is a property of the group, not of each line in it: one
+            // very long member should stop the group being aligned, never leave
+            // it half aligned. Applying it per line gave a group in Test2's
+            // `object { ... }` style three different columns — an output that is
+            // aligned by no measure and stable under re-formatting, so nothing
+            // ever took it back.
+            if target - narrowest <= options.max_alignment_padding {
+                for line in &mut lines[start..end] {
+                    pad_to(line, class, target);
+                }
             }
         }
 
@@ -88,13 +95,11 @@ fn column_of(line: &Line, class: AnchorClass) -> Option<usize> {
 ///
 /// Padding is only ever spaces, so it creates no new anchor and the pass is its
 /// own fixed point (ADR 0008 §6, I3).
-fn pad_to(line: &mut Line, class: AnchorClass, target: usize, options: &FormatterOptions) {
+fn pad_to(line: &mut Line, class: AnchorClass, target: usize) {
     let Some(anchor) = anchor_of(line, class) else {
         return;
     };
-    let padding = target
-        .saturating_sub(anchor.column)
-        .min(options.max_alignment_padding);
+    let padding = target.saturating_sub(anchor.column);
     if padding == 0 {
         return;
     }
