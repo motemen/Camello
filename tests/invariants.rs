@@ -16,7 +16,9 @@
 //!
 //! These ran throughout the redesign — first against the old stack, then against
 //! the new one — with a registry of known violations that was only ever allowed
-//! to shrink. The registry is gone because it reached empty.
+//! to shrink. It reached empty and was removed; [`known_violations`] brings it
+//! back, so that a defect can enter the tree as a fixture on the day it is found
+//! rather than on the day it is fixed.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -121,21 +123,67 @@ struct Failure {
     detail: String,
 }
 
-fn report(kind: &str, failures: Vec<Failure>, total: usize) {
-    assert!(
-        failures.is_empty(),
-        "{}",
-        failures.iter().fold(
-            format!("{} of {total} fixtures violate {kind}:\n", failures.len()),
-            |mut message, failure| {
-                message.push_str(&format!(
-                    "\n=== {} ===\n{}\n",
-                    failure.fixture, failure.detail
-                ));
-                message
-            }
-        )
-    );
+/// Fixtures known to violate an invariant, one list per invariant.
+///
+/// A known defect is worth a fixture straight away, but a fixture that
+/// reproduces one fails the invariants by construction — so without somewhere to
+/// record it, the reproduction cannot be checked in until the fix is written,
+/// and in the meantime the only copy of it lives outside the tree.
+///
+/// The ledger is monotone: an entry may be removed and never added, and a listed
+/// fixture that starts passing fails the test just as loudly as an unlisted one
+/// that starts failing. So it cannot be used to silence a regression — a
+/// regression in already-passing code has no entry to hide behind — and it
+/// cannot go stale, because the fix that lands is required to delete its line.
+///
+/// Each entry says which case it is and links its reproduction.
+mod known_violations {
+    pub const CLEAN_PARSE: &[&str] = &[];
+    pub const LOSSLESSNESS: &[&str] = &[];
+    pub const TRIVIA_PLACEMENT: &[&str] = &[];
+    pub const IDEMPOTENCY: &[&str] = &[];
+    pub const COMMENT_PRESERVATION: &[&str] = &[];
+    pub const VERBATIM_PRESERVATION: &[&str] = &[];
+    pub const SEMANTIC_PRESERVATION: &[&str] = &[];
+}
+
+fn report(kind: &str, failures: Vec<Failure>, total: usize, known: &[&str]) {
+    let (expected, unexpected): (Vec<Failure>, Vec<Failure>) = failures
+        .into_iter()
+        .partition(|failure| known.contains(&failure.fixture.as_str()));
+
+    let fixed: Vec<&&str> = known
+        .iter()
+        .filter(|fixture| !expected.iter().any(|failure| failure.fixture == **fixture))
+        .collect();
+
+    let mut message = String::new();
+
+    if !unexpected.is_empty() {
+        message.push_str(&format!(
+            "{} of {total} fixtures violate {kind}:\n",
+            unexpected.len()
+        ));
+        for failure in &unexpected {
+            message.push_str(&format!(
+                "\n=== {} ===\n{}\n",
+                failure.fixture, failure.detail
+            ));
+        }
+    }
+
+    if !fixed.is_empty() {
+        message.push_str(&format!(
+            "\n{} fixture(s) now satisfy {kind} but are still listed in \
+             known_violations; remove them from the registry:\n",
+            fixed.len()
+        ));
+        for fixture in fixed {
+            message.push_str(&format!("  - {fixture}\n"));
+        }
+    }
+
+    assert!(message.is_empty(), "{message}");
 }
 
 #[test]
@@ -165,7 +213,12 @@ fn every_fixture_parses_without_diagnostics() {
         });
     }
 
-    report("a clean parse", failures, total);
+    report(
+        "a clean parse",
+        failures,
+        total,
+        known_violations::CLEAN_PARSE,
+    );
 }
 
 #[test]
@@ -190,7 +243,12 @@ fn parsing_is_lossless() {
         }
     }
 
-    report("losslessness (ADR 0006 §6)", failures, total);
+    report(
+        "losslessness (ADR 0006 §6)",
+        failures,
+        total,
+        known_violations::LOSSLESSNESS,
+    );
 }
 
 /// No node's range begins or ends on trivia (ADR 0006 §4).
@@ -251,7 +309,12 @@ fn no_node_range_includes_trivia() {
         }
     }
 
-    report("trivia placement (ADR 0006 §4)", failures, total);
+    report(
+        "trivia placement (ADR 0006 §4)",
+        failures,
+        total,
+        known_violations::TRIVIA_PLACEMENT,
+    );
 }
 
 #[test]
@@ -274,7 +337,12 @@ fn formatting_is_idempotent() {
         }
     }
 
-    report("idempotency (ADR 0008 §6)", failures, total);
+    report(
+        "idempotency (ADR 0008 §6)",
+        failures,
+        total,
+        known_violations::IDEMPOTENCY,
+    );
 }
 
 /// The comment texts of `source`, in order.
@@ -330,7 +398,12 @@ fn formatting_preserves_comments() {
         }
     }
 
-    report("comment preservation", failures, total);
+    report(
+        "comment preservation",
+        failures,
+        total,
+        known_violations::COMMENT_PRESERVATION,
+    );
 }
 
 /// Verbatim content is reproduced byte for byte (ADR 0008 §6, I1).
@@ -379,7 +452,12 @@ fn formatting_preserves_verbatim_content() {
         }
     }
 
-    report("verbatim preservation (ADR 0008 §6, I1)", failures, total);
+    report(
+        "verbatim preservation (ADR 0008 §6, I1)",
+        failures,
+        total,
+        known_violations::VERBATIM_PRESERVATION,
+    );
 }
 
 #[test]
@@ -401,5 +479,10 @@ fn formatting_preserves_semantics() {
         }
     }
 
-    report("semantic preservation (ADR 0008 §6)", failures, total);
+    report(
+        "semantic preservation (ADR 0008 §6)",
+        failures,
+        total,
+        known_violations::SEMANTIC_PRESERVATION,
+    );
 }
