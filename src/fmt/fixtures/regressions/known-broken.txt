@@ -24,4 +24,3 @@
 # reported as a clean-parse violation.
 src/fmt/fixtures/regressions/glob_angle_brackets.pl
 src/fmt/fixtures/regressions/heredoc_as_a_list_operator_argument.pl
-src/fmt/fixtures/regressions/heredoc_space_before_the_delimiter.pl

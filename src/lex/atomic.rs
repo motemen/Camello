@@ -254,15 +254,21 @@ impl<'a> Lexer<'a> {
         });
     }
 
-    /// `<<EOF`, `<<"EOF"`, `<<'EOF'`, `<<~EOF`.
+    /// `<<EOF`, `<<"EOF"`, `<<'EOF'`, `<<~EOF`, `<< "EOF"`.
     ///
-    /// A space between `<<` and the terminator makes it a left shift, matching
-    /// perl since 5.28.
+    /// The bare form must be written against the `<<`: perl since 5.28 forbids
+    /// `<< EOF` outright, and reading it as a heredoc would take a left shift's
+    /// right operand for a terminator. A *quoted* terminator may be held off at
+    /// a distance — perl allows it, and `eval << "    ..."` in real code relies
+    /// on it, the quotes being what lets the terminator hold characters no
+    /// identifier could.
     pub(super) fn heredoc_marker_len(&self) -> Option<usize> {
         let rest = self.remaining();
         let after = rest.strip_prefix("<<")?;
         let indent_len = usize::from(after.starts_with('~'));
         let after = &after[indent_len..];
+        let space_len = after.len() - after.trim_start_matches([' ', '\t']).len();
+        let after = &after[space_len..];
 
         let body_len = match after.as_bytes().first()? {
             b'"' | b'\'' => {
@@ -270,13 +276,14 @@ impl<'a> Lexer<'a> {
                 let end = after[1..].find(quote as char)?;
                 end + 2
             }
+            _ if space_len > 0 => return None,
             byte if byte.is_ascii_alphabetic() || *byte == b'_' => after
                 .find(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
                 .unwrap_or(after.len()),
             _ => return None,
         };
 
-        Some(2 + indent_len + body_len)
+        Some(2 + indent_len + space_len + body_len)
     }
 
     pub(super) fn scan_heredoc_marker(&mut self, len: usize) {
@@ -286,6 +293,7 @@ impl<'a> Lexer<'a> {
         let indentable = body.starts_with('~');
         let terminator = body
             .trim_start_matches('~')
+            .trim_start_matches([' ', '\t'])
             .trim_matches(['"', '\''])
             .to_string();
 
