@@ -22,7 +22,6 @@
 # Constructs the parser does not yet read, found by `camello dev check` over a
 # 2560-file production corpus. Every one of them is valid Perl, and every one is
 # reported as a clean-parse violation.
-src/fmt/fixtures/regressions/empty_list_element.pl
 src/fmt/fixtures/regressions/deref_block_with_a_terminator.pl
 src/fmt/fixtures/regressions/glob_angle_brackets.pl
 src/fmt/fixtures/regressions/heredoc_as_a_list_operator_argument.pl
