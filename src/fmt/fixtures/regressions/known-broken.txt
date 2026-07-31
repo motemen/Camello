@@ -23,10 +23,6 @@
 # 2560-file production corpus. Every one of them is valid Perl, and every one is
 # reported as a clean-parse violation.
 src/fmt/fixtures/regressions/lexical_sub_declaration.pl
-src/fmt/fixtures/regressions/declaration_keyword_as_a_hash_key.pl
-src/fmt/fixtures/regressions/sub_as_a_hash_key.pl
-src/fmt/fixtures/regressions/keyword_bareword_in_a_list_operator.pl
-src/fmt/fixtures/regressions/return_of_a_block_call.pl
 src/fmt/fixtures/regressions/empty_list_element.pl
 src/fmt/fixtures/regressions/deref_block_with_a_terminator.pl
 src/fmt/fixtures/regressions/glob_angle_brackets.pl

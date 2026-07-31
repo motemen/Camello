@@ -12,6 +12,11 @@ pub(crate) fn primary(parser: &mut Parser<'_>) -> Option<CompletedMarker> {
     let kind = parser.current()?;
 
     let completed = match kind {
+        // Asked before anything else claims the keyword: `sub => $id` is the
+        // string `"sub"`, not the start of an anonymous subroutine, and
+        // `state => 'ready'` is a hash key rather than a declaration.
+        kind if kind.is_keyword() && super::quoted_bareword(parser) => bareword_call(parser),
+
         kind if kind.is_sigil() => variable(parser),
 
         TokenKind::NUMBER | TokenKind::VERSION | TokenKind::STRING => {

@@ -297,17 +297,15 @@ ROOT
       LIST_CALL_EXPR
         SUB_NAME
           identifier "print"
-        FILEHANDLE
-          SCALAR_VAR
-            `$` "$"
-            identifier "メニュー"
         LIST_EXPR
-          ANON_HASH
+          HASH_SUBSCRIPT_EXPR
+            SCALAR_VAR
+              `$` "$"
+              identifier "メニュー"
             `{` "{"
-            LIST_EXPR
-              LIST_CALL_EXPR
-                SUB_NAME
-                  identifier "コーヒー"
+            SUBSCRIPT
+              SUB_NAME
+                identifier "コーヒー"
             `}` "}"
           `,` ","
           LITERAL
