@@ -25,6 +25,8 @@ impl Precedence {
     pub const LOGICAL_AND: Precedence = Precedence(35);
     pub const BITWISE_OR: Precedence = Precedence(40);
     pub const BITWISE_AND: Precedence = Precedence(45);
+    /// `isa`, which perlop puts on its own line between equality and `&`.
+    pub const CLASS_INSTANCE: Precedence = Precedence(47);
     pub const EQUALITY: Precedence = Precedence(50);
     pub const RELATIONAL: Precedence = Precedence(55);
     /// File tests and named unary functions. The old table reused the prefix
@@ -75,6 +77,8 @@ pub(crate) fn infix_op(kind: TokenKind) -> Option<InfixOp> {
 
         T!["||"] | T!["//"] => (Precedence::LOGICAL_OR, Left, NodeKind::BINARY_EXPR),
         T!["&&"] => (Precedence::LOGICAL_AND, Left, NodeKind::BINARY_EXPR),
+
+        T!["isa"] => (Precedence::CLASS_INSTANCE, NonAssoc, NodeKind::BINARY_EXPR),
 
         T!["|"] | T!["^"] => (Precedence::BITWISE_OR, Left, NodeKind::BINARY_EXPR),
         TokenKind::BITWISE_AND => (Precedence::BITWISE_AND, Left, NodeKind::BINARY_EXPR),

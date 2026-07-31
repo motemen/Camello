@@ -33,9 +33,6 @@ src/fmt/fixtures/regressions/trailing_comment_at_end_of_file.pl
 # call with a trailing `:`, and `method f() {` as a call subscripted by a block.
 src/fmt/fixtures/regressions/core_class_feature.pl
 
-# The infix `isa` operator is not parsed; its bareword right operand ends the
-# expression early wherever it appears.
-src/fmt/fixtures/regressions/isa_infix_operator.pl
 
 # `$invocant->&name(...)` is not parsed: `&` is not accepted where a method name
 # is expected.
