@@ -73,6 +73,13 @@ fn statement(parser: &mut Parser<'_>) {
             sub_def(parser);
         }
         T!["package"] => package_stmt(parser),
+        // `class Foo;` and `class Foo { ... }` have `package`'s shape exactly,
+        // and `method NAME ...` has `sub`'s. Which keyword opened it is a token
+        // of the node, the way a loop keeps its `while` or its `for`, so
+        // neither needs a node kind of its own. The guard is what leaves
+        // `class(...)` and `method(...)` the calls they are.
+        T!["class"] if parser.nth(1).is_some_and(is_name_like) => package_stmt(parser),
+        T!["method"] if parser.nth(1).is_some_and(is_name_like) => sub_def(parser),
         T!["use"] => use_stmt(parser, NodeKind::USE_STMT),
         T!["no"] => use_stmt(parser, NodeKind::NO_STMT),
         T!["if"] | T!["unless"] => if_stmt(parser),
@@ -127,7 +134,8 @@ fn statement(parser: &mut Parser<'_>) {
 /// An expression statement, plus any postfix modifier and the terminating `;`.
 fn expr_stmt(parser: &mut Parser<'_>) {
     let marker = parser.start();
-    let declaration = parser.at_any(&[T!["my"], T!["our"], T!["state"], T!["local"]]);
+    let declaration = parser.at_any(&[T!["my"], T!["our"], T!["state"], T!["local"]])
+        || (parser.at(T!["field"]) && parser.nth(1).is_some_and(TokenKind::is_sigil));
 
     let before = parser.checkpoint();
     let list = parser.start();
@@ -248,12 +256,15 @@ pub(crate) fn quoted_bareword(parser: &mut Parser<'_>) -> bool {
 
 fn sub_def(parser: &mut Parser<'_>) {
     let marker = parser.start();
-    // The `my` of `my sub helper { ... }`; the rest is an ordinary definition.
+    // Three spellings, one definition: `sub f`, a word in front of it
+    // (`my sub f`, `async sub f`), and a word in place of it (`method f`).
     if !parser.at(T!["sub"]) {
         parser.bump();
         parser.expect_term();
     }
-    parser.bump();
+    if parser.at(T!["sub"]) {
+        parser.bump();
+    }
     name(parser, NodeKind::SUB_NAME);
     subroutine_tail(parser, true);
     parser.complete(marker, NodeKind::SUB_DEF);
