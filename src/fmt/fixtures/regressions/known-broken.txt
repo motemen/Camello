@@ -19,16 +19,4 @@
 #
 # One path per line, relative to the repository root.
 
-# A comment after the last statement of the file is dropped. Found once
-# `feature.pm` started parsing: the file ends with `# ex: set ro ft=perl:`, and
-# nothing follows it for the comment to attach to.
-src/fmt/fixtures/regressions/trailing_comment_at_end_of_file.pl
-
-
-
-
-
-
-
-
-
+# (empty: every fixture under regressions/ produces its expected output)

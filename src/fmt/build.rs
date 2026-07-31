@@ -82,8 +82,39 @@ impl<'a> Builder<'a> {
 
         let mut parts = Vec::new();
         self.statements_into(root, &mut parts);
+        parts.push(self.end_of_file_docs());
         // A file ends with exactly one newline.
         parts.push(Doc::HardLine);
+        Doc::concat(parts)
+    }
+
+    /// Own-line comments written after the last statement of the file.
+    ///
+    /// Trivia belongs to the token that follows it (ADR 0006 §3), and here
+    /// there is none; the map keeps such a run under its own name, and this is
+    /// the one place it is emitted. `feature.pm` ends with
+    /// `# ex: set ro ft=perl:` and lost it.
+    fn end_of_file_docs(&self) -> Doc {
+        let mut parts = Vec::new();
+        let mut items = self.trivia.at_end().iter().peekable();
+        while let Some(item) = items.next() {
+            match item.kind {
+                TokenKind::COMMENT => {
+                    parts.push(Doc::Comment(item.text.clone(), Placement::OwnLine));
+                    parts.push(Doc::HardLine);
+                    // The newline ending the comment's own line is not a blank
+                    // line, the same reading `leading_docs` takes.
+                    if items
+                        .peek()
+                        .is_some_and(|next| next.kind == TokenKind::NEWLINE)
+                    {
+                        items.next();
+                    }
+                }
+                TokenKind::NEWLINE => parts.push(Doc::BlankLine),
+                _ => {}
+            }
+        }
         Doc::concat(parts)
     }
 
