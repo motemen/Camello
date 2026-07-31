@@ -19,6 +19,7 @@
 #
 # One path per line, relative to the repository root.
 
-# Constructs the parser does not yet read, found by `camello dev check` over a
-# 2560-file production corpus. Every one of them is valid Perl, and every one is
-# reported as a clean-parse violation.
+# A comment after the last statement of the file is dropped. Found once
+# `feature.pm` started parsing: the file ends with `# ex: set ro ft=perl:`, and
+# nothing follows it for the comment to attach to.
+src/fmt/fixtures/regressions/trailing_comment_at_end_of_file.pl
