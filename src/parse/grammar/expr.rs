@@ -729,6 +729,20 @@ fn starts_argument(parser: &mut Parser<'_>, argument_is_optional: bool) -> bool 
             parser.expect_operator();
             return false;
         }
+        // `ok -f $path` is a file test and `PI - 1` is subtraction, and the same
+        // question separates them: does a file test lex here. The letters are
+        // what makes getting this wrong expensive — `s`, `y` and `m` are file
+        // tests and quote-like operators both, so `ok -s $path` read as
+        // subtraction starts a substitution whose body runs to the end of the
+        // file.
+        if parser.at(T!["-"]) {
+            parser.expect_term();
+            if parser.at(TokenKind::FILE_TEST_OP) {
+                return true;
+            }
+            parser.expect_operator();
+            return false;
+        }
         // `ok +Foo->bar` — perl's documented disambiguating unary plus. Its only
         // purpose is to open an argument list where a bare `{` or `(` would be
         // read as something else, so addition applied to an argument-less call is

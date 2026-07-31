@@ -45,9 +45,6 @@ src/fmt/fixtures/regressions/hash_literal_starting_a_statement.pl
 
 
 
-# `ok -s $path`: after a bareword the `-` is binary, so `s` starts a
-# substitution whose body swallows the rest of the file.
-src/fmt/fixtures/regressions/file_test_after_a_bareword.pl
 
 # An empty hash literal holding a blank line formats to `{\n}` and then to `{}`,
 # so the first pass is not a fixed point.
