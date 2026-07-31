@@ -115,6 +115,11 @@ pub(crate) fn primary(parser: &mut Parser<'_>) -> Option<CompletedMarker> {
 
         T!["my"] | T!["our"] | T!["state"] | T!["local"] => var_decl(parser),
 
+        // `field $slot : param = $default;` declares a variable in every
+        // respect, attributes and default included. Only where a variable
+        // follows: `field(...)` is a call on a subroutine of that name.
+        T!["field"] if parser.nth(1).is_some_and(TokenKind::is_sigil) => var_decl(parser),
+
         T!["undef"] => {
             let marker = parser.start();
             parser.bump();
@@ -295,6 +300,14 @@ pub(crate) fn var_decl(parser: &mut Parser<'_>) -> CompletedMarker {
         parser.error("expected a variable to declare");
     }
     parser.complete(target, NodeKind::DECL_TARGET);
+
+    // `our $value :shared :Foo(1, 2);` — a declared variable takes attributes
+    // exactly as a subroutine does (perlsub, "Subroutine Attributes"; the
+    // variable case is `attributes`). The same routine reads both, so
+    // `state $scalar :lvalue += 2` needs nothing of its own.
+    while parser.at(T![":"]) {
+        super::attribute(parser);
+    }
 
     parser.expect_operator();
     parser.complete(marker, NodeKind::VAR_DECL)

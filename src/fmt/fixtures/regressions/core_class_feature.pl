@@ -11,12 +11,12 @@ field $bar : param;
 field $baz : param;
 field $qux : param : reader = undef;
 
-method one() {
+method one () {
     return $bar->quux;
 }
 
-method two() { $qux // 'none' }
+method two () { $qux // 'none' }
 
-method three($corge = undef) {
+method three ($corge = undef) {
     return defined $corge ? 'yes' : 'no';
 }

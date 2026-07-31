@@ -39,6 +39,12 @@ define_language! {
         "do"         => DO_KW,
 
         "package"    => PACKAGE_KW,
+        // The core class feature (perl 5.38). `class` opens a package-like
+        // scope; `field` declares a slot and `method` a subroutine with an
+        // implicit `$self`, both of them only inside one.
+        "class"      => CLASS_KW,
+        "field"      => FIELD_KW,
+        "method"     => METHOD_KW,
         "use"        => USE_KW,
         "no"         => NO_KW,
         "require"    => REQUIRE_KW,

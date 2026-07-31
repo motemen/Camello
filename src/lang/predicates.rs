@@ -58,6 +58,12 @@ impl TokenKind {
                 | T!["our"]
                 | T!["state"]
                 | T!["local"]
+                // The class feature's words. Each is a keyword only in the
+                // shape that makes it one, so each is also a name a term can
+                // start with — `return method($x)` calls a subroutine.
+                | T!["class"]
+                | T!["field"]
+                | T!["method"]
                 | T!["undef"]
                 | T!["return"]
                 | T!["require"]

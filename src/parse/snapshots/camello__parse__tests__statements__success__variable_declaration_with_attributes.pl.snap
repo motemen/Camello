@@ -5,28 +5,31 @@ expression: rendered
 ROOT
   VAR_DECL_STMT
     LIST_EXPR
-      VAR_DECL
-        `my` "my"
-        DECL_TARGET
-          `(` "("
-          LIST_EXPR
-            SCALAR_VAR
-              `$` "$"
-              identifier "x"
-            `,` ","
-            ARRAY_VAR
-              `@` "@"
-              identifier "y"
-            `,` ","
-            HASH_VAR
-              `%` "%"
-              identifier "z"
-          `)` ")"
-    ERROR
-      `:` ":"
-      identifier "Bent"
-      `=` "="
-      number "1"
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            `(` "("
+            LIST_EXPR
+              SCALAR_VAR
+                `$` "$"
+                identifier "x"
+              `,` ","
+              ARRAY_VAR
+                `@` "@"
+                identifier "y"
+              `,` ","
+              HASH_VAR
+                `%` "%"
+                identifier "z"
+            `)` ")"
+          ATTR
+            `:` ":"
+            SUB_NAME
+              identifier "Bent"
+        `=` "="
+        LITERAL
+          number "1"
     `;` ";"
   VAR_DECL_STMT
     LIST_EXPR
@@ -36,28 +39,33 @@ ROOT
           SCALAR_VAR
             `$` "$"
             identifier "value"
-    ERROR
-      `:` ":"
-      identifier "shared"
-      `:` ":"
-      identifier "Foo"
-      `(` "("
-      number "1"
-      `,` ","
-      number "2"
-      `)` ")"
+        ATTR
+          `:` ":"
+          SUB_NAME
+            identifier "shared"
+        ATTR
+          `:` ":"
+          SUB_NAME
+            identifier "Foo"
+          ATTR_ARGS
+            `(` "("
+            raw text "1, 2"
+            `)` ")"
     `;` ";"
   VAR_DECL_STMT
     LIST_EXPR
-      VAR_DECL
-        `state` "state"
-        DECL_TARGET
-          SCALAR_VAR
-            `$` "$"
-            identifier "scalar"
-    ERROR
-      `:` ":"
-      identifier "lvalue"
-      `+=` "+="
-      number "2"
+      ASSIGN_EXPR
+        VAR_DECL
+          `state` "state"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "scalar"
+          ATTR
+            `:` ":"
+            SUB_NAME
+              identifier "lvalue"
+        `+=` "+="
+        LITERAL
+          number "2"
     `;` ";"

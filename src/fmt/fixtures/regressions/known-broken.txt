@@ -29,9 +29,6 @@ src/fmt/fixtures/regressions/trailing_comment_at_end_of_file.pl
 # of these nine defects or the trailing comment above, which accounted for 27 of
 # the 45 on its own.
 
-# `class` / `field` / `method` are not parsed. The `field` lines are read as a
-# call with a trailing `:`, and `method f() {` as a call subscripted by a block.
-src/fmt/fixtures/regressions/core_class_feature.pl
 
 
 
