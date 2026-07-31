@@ -69,9 +69,21 @@ impl TokenTrivia {
 pub struct TriviaMap {
     by_token_start: HashMap<TextSize, TokenTrivia>,
     empty: TokenTrivia,
+    at_end: Vec<Trivia>,
 }
 
 impl TriviaMap {
+    /// Own-line trivia after the last token of the file.
+    ///
+    /// ADR 0006 §3 gives such a run to the token that follows it, and at end of
+    /// file there is none — EOF is not a token here. Naming the case is what
+    /// keeps the comment: left implicit, `# ex: set ro ft=perl:` on the last
+    /// line of `feature.pm` was in the tree, owned by nothing, and dropped.
+    #[must_use]
+    pub fn at_end(&self) -> &[Trivia] {
+        &self.at_end
+    }
+
     /// Trivia for the token starting at `offset`.
     ///
     /// Prefer [`Self::of`] where the token's range is in hand: a start offset
@@ -144,16 +156,19 @@ impl TriviaMap {
             }
         }
 
-        // Trivia at end of file has no following token; per ADR 0006 §3 it would
-        // belong to EOF, which is not a token here, so it stays only in the tree.
-        if let Some(offset) = next_start {
-            if !leading.is_empty() {
-                self.by_token_start
-                    .entry(offset)
-                    .or_default()
-                    .leading
-                    .extend_from_slice(leading);
-            }
+        if leading.is_empty() {
+            return;
+        }
+        match next_start {
+            Some(offset) => self
+                .by_token_start
+                .entry(offset)
+                .or_default()
+                .leading
+                .extend_from_slice(leading),
+            // No following token to own it. It is still trivia of the file, and
+            // has its own place to be said so.
+            None => self.at_end.extend_from_slice(leading),
         }
     }
 }
