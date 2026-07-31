@@ -700,6 +700,19 @@ fn starts_argument(parser: &mut Parser<'_>, argument_is_optional: bool) -> bool 
             parser.expect_operator();
             return false;
         }
+        // `matches <<"EOF"` hands over a heredoc and `$bits << 2` shifts, and
+        // the same question tells them apart: does a complete heredoc marker
+        // lex here. Getting it wrong is the one failure that is silent — the
+        // body is then read as code, and only says so when it does not happen
+        // to be valid Perl.
+        if parser.at(T!["<<"]) {
+            parser.expect_term();
+            if parser.at(TokenKind::HEREDOC_START) {
+                return true;
+            }
+            parser.expect_operator();
+            return false;
+        }
         // `ok +Foo->bar` — perl's documented disambiguating unary plus. Its only
         // purpose is to open an argument list where a bare `{` or `(` would be
         // read as something else, so addition applied to an argument-less call is
