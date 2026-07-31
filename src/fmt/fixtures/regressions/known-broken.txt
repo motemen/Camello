@@ -49,9 +49,6 @@ src/fmt/fixtures/regressions/async_sub_and_await.pl
 # subscript that would have disambiguated it is never reached.
 src/fmt/fixtures/regressions/hash_literal_starting_a_statement.pl
 
-# `$obj->$state`: the variable after the arrow is lexed as the keyword its name
-# is spelled like, so the method call ends at the sigil.
-src/fmt/fixtures/regressions/method_name_in_a_keyword_named_variable.pl
 
 
 # `ok -s $path`: after a bareword the `-` is binary, so `s` starts a

@@ -308,7 +308,14 @@ fn arrow(parser: &mut Parser<'_>, lhs: CompletedMarker) -> CompletedMarker {
             // routine coerces keywords rather than each call site doing it.
             parser.expect_operator();
             if parser.at(TokenKind::SCALAR_SIGIL) {
-                // `$obj->$method()`
+                // `$obj->$method()`. Asked again in term position, because a
+                // `$` after an arrow is always a sigil and only there does the
+                // scanner read what follows it as a variable name: `$obj->$state`
+                // otherwise scans `state` as the keyword it is spelled like and
+                // the call ends at the bare sigil. The question cannot be asked
+                // in term position to begin with — `$obj->s` is a method named
+                // `s`, and a term is where that starts a substitution.
+                parser.expect_term();
                 super::primary::variable(parser);
             } else {
                 name(parser, NodeKind::SUB_NAME);
