@@ -109,6 +109,17 @@ fn statement(parser: &mut Parser<'_>) {
         TokenKind::IDENT if parser.nth_at(1, T![":"]) && !parser.nth_at(2, T![":"]) => {
             labeled_stmt(parser);
         }
+        // `async sub NAME { ... }` — a definition introduced by a word some
+        // parser plugin added. `Future::AsyncAwait` spells it `async`; without
+        // the plugin the shape is the only evidence there is, so the shape is
+        // what this matches, and it is the same one `my sub NAME` has.
+        // `on_error sub { ... };` stays the call it is: the name after `sub` is
+        // what tells a definition from an anonymous subroutine being passed.
+        TokenKind::IDENT
+            if parser.nth_at(1, T!["sub"]) && parser.nth(2).is_some_and(is_name_like) =>
+        {
+            sub_def(parser);
+        }
         _ => expr_stmt(parser),
     }
 }
