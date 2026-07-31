@@ -458,21 +458,33 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// `<STDIN>`, `<$fh>`, `<>`, `<Foo::Bar>`.
+    /// `<STDIN>`, `<$fh>`, `<>`, `<Foo::Bar>`, and `<*.txt>`.
     ///
-    /// Bounded to a single line, so an unmatched `<` is a comparison rather than
-    /// a scan to end of file.
+    /// A bare handle name or a scalar reads a line; anything else between the
+    /// angles is a glob, equivalent to `glob EXPR` (perlop, "I/O Operators").
+    /// perl makes no distinction while scanning and neither does this: in term
+    /// position the whole `<...>` is one lexical unit either way, and reading
+    /// only the handle spelling left `<*.txt>` to be assembled out of `<`, `*`,
+    /// `.`, `txt` and `>` — five tokens the formatter was free to space out.
+    ///
+    /// Bounded to a single line and stopped by a second `<`, so an unmatched one
+    /// is a comparison rather than a scan to end of file. A space straight after
+    /// the `<` ends it too: `f < $x > 1` is a comparison for a bareword perl has
+    /// not seen, and how it was written is the only evidence there is.
     fn io_operator_len(&self) -> Option<usize> {
         let bytes = self.rest().as_bytes();
         let mut index = 1;
-        if bytes.get(index) == Some(&b'$') {
-            index += 1;
+        if bytes
+            .get(index)
+            .is_some_and(|byte| byte.is_ascii_whitespace())
+        {
+            return None;
         }
         while index < bytes.len() {
             match bytes[index] {
                 b'>' => return Some(index + 1),
-                byte if byte.is_ascii_alphanumeric() || byte == b'_' || byte == b':' => index += 1,
-                _ => return None,
+                b'\n' | b'<' => return None,
+                _ => index += 1,
             }
         }
         None

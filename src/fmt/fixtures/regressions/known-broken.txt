@@ -22,4 +22,3 @@
 # Constructs the parser does not yet read, found by `camello dev check` over a
 # 2560-file production corpus. Every one of them is valid Perl, and every one is
 # reported as a clean-parse violation.
-src/fmt/fixtures/regressions/glob_angle_brackets.pl
