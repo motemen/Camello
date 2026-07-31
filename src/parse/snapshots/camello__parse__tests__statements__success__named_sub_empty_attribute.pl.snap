@@ -9,7 +9,6 @@ ROOT
       identifier "foo"
     ATTR
       `:` ":"
-      SUB_NAME
     BLOCK
       `{` "{"
       `}` "}"
