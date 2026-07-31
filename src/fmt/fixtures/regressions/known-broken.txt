@@ -35,9 +35,6 @@ src/fmt/fixtures/regressions/core_class_feature.pl
 
 
 
-# `async sub` and `await` are not parsed. `async` is taken for the whole
-# declaration, leaving the body without a `sub` to belong to.
-src/fmt/fixtures/regressions/async_sub_and_await.pl
 
 
 
