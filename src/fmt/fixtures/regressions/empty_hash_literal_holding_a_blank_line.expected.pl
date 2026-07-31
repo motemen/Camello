@@ -3,15 +3,10 @@
 # closes up the same way `baz` — written without one — already does.
 package Foo;
 
-__PACKAGE__->bar({
+__PACKAGE__->bar({});
 
-});
+__PACKAGE__->baz({});
 
-__PACKAGE__->baz({
-});
-
-use constant QUX => + {
-
-};
+use constant QUX => +{};
 
 1;
