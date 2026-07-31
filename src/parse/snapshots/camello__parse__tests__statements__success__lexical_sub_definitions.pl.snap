@@ -3,12 +3,8 @@ source: src/parse/tests.rs
 expression: rendered
 ---
 ROOT
-  VAR_DECL_STMT
-    LIST_EXPR
-      VAR_DECL
-        `my` "my"
-        DECL_TARGET
   SUB_DEF
+    `my` "my"
     `sub` "sub"
     SUB_NAME
       identifier "foo"
@@ -19,12 +15,8 @@ ROOT
           LITERAL
             number "42"
       `}` "}"
-  VAR_DECL_STMT
-    LIST_EXPR
-      VAR_DECL
-        `state` "state"
-        DECL_TARGET
   SUB_DEF
+    `state` "state"
     `sub` "sub"
     SUB_NAME
       identifier "bar"
@@ -47,12 +39,8 @@ ROOT
                 number "0"
             `]` "]"
       `}` "}"
-  VAR_DECL_STMT
-    LIST_EXPR
-      VAR_DECL
-        `our` "our"
-        DECL_TARGET
   SUB_DEF
+    `our` "our"
     `sub` "sub"
     SUB_NAME
       identifier "baz"

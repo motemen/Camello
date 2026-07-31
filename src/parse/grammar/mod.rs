@@ -64,6 +64,14 @@ fn statement(parser: &mut Parser<'_>) {
         // lexer may have read as a quote-like operator, is what lets
         // `sub tr {}` and `sub s {}` work.
         T!["sub"] if !parser.nth_at(1, T!["{"]) => sub_def(parser),
+        // `my sub NAME { ... }` — a lexically scoped named subroutine
+        // (perlsub). What follows the declaration keyword is a subroutine, not
+        // the variable the declaration rule would look for.
+        T!["my"] | T!["our"] | T!["state"]
+            if parser.nth_at(1, T!["sub"]) && !parser.nth_at(2, T!["{"]) =>
+        {
+            sub_def(parser);
+        }
         T!["package"] => package_stmt(parser),
         T!["use"] => use_stmt(parser, NodeKind::USE_STMT),
         T!["no"] => use_stmt(parser, NodeKind::NO_STMT),
@@ -214,6 +222,11 @@ pub(crate) fn quoted_bareword(parser: &mut Parser<'_>) -> bool {
 
 fn sub_def(parser: &mut Parser<'_>) {
     let marker = parser.start();
+    // The `my` of `my sub helper { ... }`; the rest is an ordinary definition.
+    if !parser.at(T!["sub"]) {
+        parser.bump();
+        parser.expect_term();
+    }
     parser.bump();
     name(parser, NodeKind::SUB_NAME);
     subroutine_tail(parser, true);
