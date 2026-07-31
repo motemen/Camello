@@ -34,9 +34,6 @@ src/fmt/fixtures/regressions/trailing_comment_at_end_of_file.pl
 src/fmt/fixtures/regressions/core_class_feature.pl
 
 
-# `$invocant->&name(...)` is not parsed: `&` is not accepted where a method name
-# is expected.
-src/fmt/fixtures/regressions/lexical_sub_method_call.pl
 
 # `async sub` and `await` are not parsed. `async` is taken for the whole
 # declaration, leaving the body without a `sub` to belong to.

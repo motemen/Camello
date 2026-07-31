@@ -393,6 +393,11 @@ impl<'a> Builder<'a> {
         if after.is_some_and(is_postfix_deref) {
             return false;
         }
+        // `$invocant->&name(...)`: the `&` introduces the name and belongs to
+        // it, the same way the arrow before it does.
+        if before == Some(TokenKind::BITWISE_AND) && parent == Some(NodeKind::METHOD_CALL_EXPR) {
+            return false;
+        }
         // A sigil is part of the name that follows it — except a signature
         // placeholder, which is a bare `$` holding a slot. `$ = 1` must not
         // close up into `$= 1`, which reads as the `$=` variable.
