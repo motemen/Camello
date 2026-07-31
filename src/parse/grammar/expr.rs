@@ -307,6 +307,15 @@ fn arrow(parser: &mut Parser<'_>, lhs: CompletedMarker) -> CompletedMarker {
             // A method name. `->if` and `->s` are legal, which is why the name
             // routine coerces keywords rather than each call site doing it.
             parser.expect_operator();
+            // `$invocant->&name(...)` calls the lexical sub `name` with the
+            // invocant as its first argument (perl 5.42). The `&` is part of
+            // the call, not a sigil on a name to be looked up in a package, so
+            // it stays a token of the method call rather than opening a
+            // variable — the scanner reads it as bitwise and, this being
+            // operator position.
+            if parser.at(TokenKind::BITWISE_AND) {
+                parser.bump();
+            }
             if parser.at(TokenKind::SCALAR_SIGIL) {
                 // `$obj->$method()`. Asked again in term position, because a
                 // `$` after an arrow is always a sigil and only there does the
