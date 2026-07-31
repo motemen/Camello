@@ -78,6 +78,7 @@ fn expr_bp(parser: &mut Parser<'_>, min: Precedence) -> Option<CompletedMarker> 
         if parser
             .current()
             .is_some_and(|kind| kind.is_stmt_modifier() && min <= Precedence::COMMA)
+            && !super::quoted_bareword(parser)
         {
             break;
         }
@@ -572,9 +573,14 @@ fn filehandle(parser: &mut Parser<'_>) {
     let is_block_handle = parser.at(T!["{"]);
 
     // `print $fh @lines` — a scalar handle, told apart from `print $x, $y` by
-    // the absence of a comma.
+    // the absence of a comma. A subscript says the scalar is not the handle:
+    // `print $claim{sub}, $rest` prints a hash element, and the handle slot
+    // takes a simple scalar and nothing else.
     let is_scalar_handle = parser.at(TokenKind::SCALAR_SIGIL)
         && parser.nth_at(1, TokenKind::IDENT)
+        && !parser.nth_at(2, T!["{"])
+        && !parser.nth_at(2, T!["["])
+        && !parser.nth_at(2, T!["->"])
         && parser
             .nth(2)
             .is_some_and(|kind| kind.can_start_term() || kind == TokenKind::HEREDOC_START);
@@ -650,6 +656,12 @@ fn starts_argument(parser: &mut Parser<'_>, argument_is_optional: bool) -> bool 
     // Only `//` is decided this way. Widening it to every infix operator would
     // settle `%`, `*` and `&` in operator position too, and `keys %seen` would
     // lose its argument to modulo.
+    // `run until => 1` passes the string `"until"`: the `=>` quotes it, so it
+    // neither ends the call nor modifies the statement.
+    if super::quoted_bareword(parser) {
+        return true;
+    }
+
     let operator_position = parser.expect_is_operator();
     if argument_is_optional {
         if !operator_position {

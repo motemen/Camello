@@ -20,6 +20,13 @@ fn statement(parser: &mut Parser<'_>) {
     parser.expect_term();
     let Some(kind) = parser.current() else { return };
 
+    // `default => 1;` is an expression whose first element happens to be a
+    // keyword, not the `default` block of a `given`.
+    if kind.is_keyword() && quoted_bareword(parser) {
+        expr_stmt(parser);
+        return;
+    }
+
     match kind {
         T![";"] => {
             let marker = parser.start();
@@ -113,7 +120,7 @@ fn expr_stmt(parser: &mut Parser<'_>) {
 
 /// `... if $x`, `... for @xs`.
 fn stmt_modifier(parser: &mut Parser<'_>) {
-    if !parser.current().is_some_and(TokenKind::is_stmt_modifier) {
+    if !parser.current().is_some_and(TokenKind::is_stmt_modifier) || quoted_bareword(parser) {
         return;
     }
     let marker = parser.start();
@@ -189,6 +196,18 @@ pub(crate) fn name(parser: &mut Parser<'_>, node: NodeKind) {
 
 fn is_name_like(kind: TokenKind) -> bool {
     kind == TokenKind::IDENT || kind.is_keyword()
+}
+
+/// Is the token here a bareword that the `=>` after it quotes?
+///
+/// `=>` quotes the bareword to its left (perlop, "Comma Operator"), so
+/// `state => 'paid'` and `sub => $id` hold strings whatever the word means
+/// elsewhere. Every rule that would otherwise claim the keyword — the statement
+/// dispatch, the declaration and anonymous-subroutine terms, the postfix
+/// modifiers — asks this first, so the quoting rule is written down once rather
+/// than once per keyword (ADR 0007 §5).
+pub(crate) fn quoted_bareword(parser: &mut Parser<'_>) -> bool {
+    parser.current().is_some_and(is_name_like) && parser.nth_at(1, T!["=>"])
 }
 
 // ===== Declarations =====

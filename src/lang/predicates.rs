@@ -50,6 +50,10 @@ impl TokenKind {
                 | T!["not"]
                 | T!["sub"]
                 | T!["do"]
+                // `return try { ... } catch { ... };`. The statement form is
+                // the common one, but `try` in term position is an expression
+                // like any other, and `return`'s argument is where it shows.
+                | T!["try"]
                 | T!["my"]
                 | T!["our"]
                 | T!["state"]
