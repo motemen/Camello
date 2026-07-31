@@ -87,8 +87,23 @@ fn statement(parser: &mut Parser<'_>) {
             phase_block(parser);
         }
         T!["{"] => {
+            let checkpoint = parser.checkpoint();
             let marker = parser.start();
             block(parser);
+
+            // A `{` opening a statement is a block — unless an arrow follows the
+            // matching `}`, which nothing that is a block can be followed by. A
+            // dispatch table written as the last expression of a subroutine is
+            // the common case. Deciding it by parsing and reconsidering, rather
+            // than by scanning ahead for the closing brace, is the same shape as
+            // `try { ... }->method()` (ADR 0007 §1).
+            if parser.at(T!["->"]) {
+                parser.abandon(marker);
+                parser.rollback(checkpoint);
+                expr_stmt(parser);
+                return;
+            }
+
             parser.complete(marker, NodeKind::BLOCK_STMT);
         }
         TokenKind::IDENT if parser.nth_at(1, T![":"]) && !parser.nth_at(2, T![":"]) => {

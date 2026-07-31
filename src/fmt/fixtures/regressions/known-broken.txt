@@ -39,9 +39,6 @@ src/fmt/fixtures/regressions/core_class_feature.pl
 # declaration, leaving the body without a `sub` to belong to.
 src/fmt/fixtures/regressions/async_sub_and_await.pl
 
-# A hash literal opening a statement is committed to as a block, and the
-# subscript that would have disambiguated it is never reached.
-src/fmt/fixtures/regressions/hash_literal_starting_a_statement.pl
 
 
 
