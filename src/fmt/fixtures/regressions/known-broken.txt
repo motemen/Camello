@@ -24,10 +24,6 @@
 # nothing follows it for the comment to attach to.
 src/fmt/fixtures/regressions/trailing_comment_at_end_of_file.pl
 
-# The nine below came out of one sweep of `dev check` over a Perl application of
-# some 5500 files: 45 of them violated an invariant, and every violation was one
-# of these nine defects or the trailing comment above, which accounted for 27 of
-# the 45 on its own.
 
 
 
@@ -36,7 +32,3 @@ src/fmt/fixtures/regressions/trailing_comment_at_end_of_file.pl
 
 
 
-
-# An empty hash literal holding a blank line formats to `{\n}` and then to `{}`,
-# so the first pass is not a fixed point.
-src/fmt/fixtures/regressions/empty_hash_literal_holding_a_blank_line.pl

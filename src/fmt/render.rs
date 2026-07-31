@@ -183,15 +183,26 @@ impl<'a> Renderer<'a> {
                 }
             }
             Doc::BlankLine => {
-                if !self.current.text.trim().is_empty() {
-                    self.newline();
-                }
                 // Never two in a row (BLANK_LINE-3), and never straight after an
                 // opening brace or at the top of the file.
-                let previous = self.lines.last();
-                let suppress = previous.is_none_or(Line::is_blank)
-                    || previous.is_some_and(|line| line.text.trim_end().ends_with('{'));
+                //
+                // The line break that would carry the blank line is suppressed
+                // with it. Breaking first and only then declining to leave the
+                // line empty is what turned `f({\n\n})` into `f({\n})` — output
+                // holding a break that nothing asked for, and which the next
+                // pass closes up, so the first pass was not a fixed point.
+                let pending = !self.current.text.trim().is_empty();
+                let suppress = if pending {
+                    self.current.text.trim_end().ends_with('{')
+                } else {
+                    self.lines
+                        .last()
+                        .is_none_or(|line| line.is_blank() || line.text.trim_end().ends_with('{'))
+                };
                 if !suppress {
+                    if pending {
+                        self.newline();
+                    }
                     self.finish_line();
                 }
             }
