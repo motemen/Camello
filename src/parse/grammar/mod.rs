@@ -364,6 +364,14 @@ fn attribute(parser: &mut Parser<'_>) {
     let marker = parser.start();
     parser.bump();
     parser.expect_operator();
+    // `sub f : { ... }` — perl accepts an attribute list that is only its
+    // colon, and a codebase that writes `sub f : Tests` everywhere acquires one
+    // of these by a dropped word.
+    if !parser.current().is_some_and(is_name_like) {
+        parser.expect_term();
+        parser.complete(marker, NodeKind::ATTR);
+        return;
+    }
     name(parser, NodeKind::SUB_NAME);
     if parser.at(T!["("]) {
         let args = parser.start();

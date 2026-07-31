@@ -53,9 +53,6 @@ src/fmt/fixtures/regressions/hash_literal_starting_a_statement.pl
 # is spelled like, so the method call ends at the sigil.
 src/fmt/fixtures/regressions/method_name_in_a_keyword_named_variable.pl
 
-# `sub f : {` — an attribute list that is only a colon. A name is demanded after
-# it.
-src/fmt/fixtures/regressions/sub_attribute_colon_without_a_name.pl
 
 # `ok -s $path`: after a bareword the `-` is binary, so `s` starts a
 # substitution whose body swallows the rest of the file.
