@@ -222,7 +222,20 @@ pub(crate) fn variable(parser: &mut Parser<'_>) -> CompletedMarker {
             {
                 name(parser, NodeKind::SUB_NAME);
             } else {
+                // What the braces hold is a block, not an expression (perlref),
+                // so it may be a series and may end with its own terminator:
+                // `@{ get_ref(); }` and `@{ get_ref(), }` are both perl.
                 expr(parser);
+                while parser.at_any(&[T![";"], T![","]]) {
+                    parser.bump();
+                    parser.expect_term();
+                    if parser.at(T!["}"]) || parser.at_end() {
+                        break;
+                    }
+                    if expr(parser).is_none() {
+                        break;
+                    }
+                }
             }
             parser.expect(T!["}"]);
             parser.expect_operator();
