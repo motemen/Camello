@@ -23,3 +23,44 @@
 # `feature.pm` started parsing: the file ends with `# ex: set ro ft=perl:`, and
 # nothing follows it for the comment to attach to.
 src/fmt/fixtures/regressions/trailing_comment_at_end_of_file.pl
+
+# The nine below came out of one sweep of `dev check` over a Perl application of
+# some 5500 files: 45 of them violated an invariant, and every violation was one
+# of these nine defects or the trailing comment above, which accounted for 27 of
+# the 45 on its own.
+
+# `class` / `field` / `method` are not parsed. The `field` lines are read as a
+# call with a trailing `:`, and `method f() {` as a call subscripted by a block.
+src/fmt/fixtures/regressions/core_class_feature.pl
+
+# The infix `isa` operator is not parsed; its bareword right operand ends the
+# expression early wherever it appears.
+src/fmt/fixtures/regressions/isa_infix_operator.pl
+
+# `$invocant->&name(...)` is not parsed: `&` is not accepted where a method name
+# is expected.
+src/fmt/fixtures/regressions/lexical_sub_method_call.pl
+
+# `async sub` and `await` are not parsed. `async` is taken for the whole
+# declaration, leaving the body without a `sub` to belong to.
+src/fmt/fixtures/regressions/async_sub_and_await.pl
+
+# A hash literal opening a statement is committed to as a block, and the
+# subscript that would have disambiguated it is never reached.
+src/fmt/fixtures/regressions/hash_literal_starting_a_statement.pl
+
+# `$obj->$state`: the variable after the arrow is lexed as the keyword its name
+# is spelled like, so the method call ends at the sigil.
+src/fmt/fixtures/regressions/method_name_in_a_keyword_named_variable.pl
+
+# `sub f : {` — an attribute list that is only a colon. A name is demanded after
+# it.
+src/fmt/fixtures/regressions/sub_attribute_colon_without_a_name.pl
+
+# `ok -s $path`: after a bareword the `-` is binary, so `s` starts a
+# substitution whose body swallows the rest of the file.
+src/fmt/fixtures/regressions/file_test_after_a_bareword.pl
+
+# An empty hash literal holding a blank line formats to `{\n}` and then to `{}`,
+# so the first pass is not a fixed point.
+src/fmt/fixtures/regressions/empty_hash_literal_holding_a_blank_line.pl
