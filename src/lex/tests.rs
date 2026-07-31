@@ -345,6 +345,23 @@ fn heredoc_body_follows_at_the_next_line_start() {
     assert_lossless(source);
 }
 
+/// A quoted terminator may be held off from the `<<`; a bare one may not.
+///
+/// perl forbids `<< EOF` (5.28 onwards) and reads `1 << 2` as a left shift, so
+/// only the quoted spelling can be told from a shift by looking at it.
+#[test]
+fn a_space_before_a_quoted_heredoc_terminator_is_allowed() {
+    let source = "my $x = << \"END\";\nbody\nEND\n";
+    let tokens = kinds(source);
+    assert!(tokens.contains(&TokenKind::HEREDOC_START));
+    assert!(tokens.contains(&TokenKind::HEREDOC_END));
+    assert_lossless(source);
+
+    let bare = "my $x = << END;\n";
+    assert!(!kinds(bare).contains(&TokenKind::HEREDOC_START));
+    assert_lossless(bare);
+}
+
 #[test]
 fn unterminated_heredoc_is_reported_not_guessed() {
     let source = "my $x = <<EOF;\nline1\n";
