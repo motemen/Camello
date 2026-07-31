@@ -1004,7 +1004,18 @@ impl<'a> Builder<'a> {
                 SyntaxElement::Token(token) => {
                     // `=>` joins a key to its value; only `,` ends an element.
                     let ends_element = token.token_kind() == T![","];
-                    if token.token_kind() == T!["=>"] {
+                    // Two separators in a row are an empty element: `f(1,, 2)`,
+                    // `f(k =>, 1)`, `f('a', => 1)`. The element between them is
+                    // what the space would have gone around, so each separator
+                    // spaces itself as it always does and neither adds a space
+                    // for an element that is not there: a `,` hugs what is on
+                    // its left, so nothing precedes it, and a `=>` whose left
+                    // neighbour is a separator has its space already and no
+                    // column of its own to align to.
+                    let empty_before = adjacent_separator(&token, rowan::Direction::Prev).is_some();
+                    let empty_after =
+                        adjacent_separator(&token, rowan::Direction::Next) == Some(T![","]);
+                    if token.token_kind() == T!["=>"] && !empty_before {
                         parts.push(Doc::Anchor(AnchorClass::FatComma(self.fat_comma_depth)));
                         parts.push(Doc::Space);
                     }
@@ -1020,7 +1031,9 @@ impl<'a> Builder<'a> {
                         });
                     let user_break = self.newline_follows(&token);
                     parts.push(self.token(&token));
-                    if value_on_next_line {
+                    if empty_after {
+                        // Nothing at all: the next separator follows straight on.
+                    } else if value_on_next_line {
                         parts.push(Doc::UserLine { broken: true });
                     } else if ends_element && !last {
                         // A broken group puts one element per line; a flat one
@@ -1250,6 +1263,23 @@ fn wants_surrounding_blank_lines(node: &SyntaxNode) -> bool {
 /// Statements that get a blank line before them only.
 fn wants_preceding_blank_line(node: &SyntaxNode) -> bool {
     matches!(node.node_kind(), NodeKind::POD | NodeKind::DATA_SECTION)
+}
+
+/// The list separator written directly against this one, if there is one.
+///
+/// Two separators with nothing between them are an empty element, which perl
+/// allows and drops.
+fn adjacent_separator(token: &SyntaxToken, direction: rowan::Direction) -> Option<TokenKind> {
+    token
+        .siblings_with_tokens(direction)
+        .skip(1)
+        .find(|sibling| match sibling.as_token() {
+            Some(token) => !token.token_kind().is_trivia(),
+            None => true,
+        })
+        .and_then(SyntaxElement::into_token)
+        .map(|sibling| sibling.token_kind())
+        .filter(|kind| matches!(kind, T![","] | T!["=>"]))
 }
 
 fn is_postfix_deref(kind: TokenKind) -> bool {

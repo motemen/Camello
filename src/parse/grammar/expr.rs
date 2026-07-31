@@ -46,6 +46,16 @@ pub(crate) fn list_contents(parser: &mut Parser<'_>, terminators: &[TokenKind]) 
             break;
         }
 
+        // An empty element: `f(1,, 2)`, `f(k =>, 1)`, `f(, 'x')`. perl lets the
+        // separator stand on its own and drops the element, and leftover commas
+        // are common enough in real code that reading one as a missing
+        // expression loses the rest of the list.
+        if parser.at_any(&[T![","], T!["=>"]]) {
+            parser.bump();
+            parser.expect_term();
+            continue;
+        }
+
         let before = parser.checkpoint();
         if expr(parser).is_none() {
             parser.rollback(before);
