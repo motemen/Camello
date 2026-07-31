@@ -23,4 +23,3 @@
 # 2560-file production corpus. Every one of them is valid Perl, and every one is
 # reported as a clean-parse violation.
 src/fmt/fixtures/regressions/glob_angle_brackets.pl
-src/fmt/fixtures/regressions/heredoc_as_a_list_operator_argument.pl
