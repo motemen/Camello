@@ -83,6 +83,10 @@ define_language! {
         "ge"         => STR_GE,
         "cmp"        => STR_CMP,
 
+        // The class instance operator (perl 5.32, stable in 5.36). Its right
+        // operand is a bareword class name.
+        "isa"        => ISA_KW,
+
         // Repetition. Only recognised in operator position, so `x5` lexes as a
         // single identifier in term position and needs no re-splitting
         // (ADR 0005 §5).

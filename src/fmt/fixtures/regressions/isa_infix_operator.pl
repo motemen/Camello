@@ -17,3 +17,9 @@ sub foo {
 
     return $y;
 }
+
+# ... and is still a name wherever the grammar wants one.
+sub isa { return 0 }
+
+my %h = (isa => 1);
+my $z = Bar->isa('Baz') || $h{isa};
