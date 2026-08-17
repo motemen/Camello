@@ -566,3 +566,38 @@ fn a_name_may_hold_characters_outside_ascii() {
     assert_eq!(kinds("my %メニュー;")[2], TokenKind::IDENT);
     assert_lossless("sub 名前 { my ($引数) = @_; }");
 }
+
+#[test]
+fn a_leading_dot_is_a_number_where_a_term_is_expected() {
+    let texts = |source: &str| {
+        lex(source)
+            .into_iter()
+            .filter(|(kind, _)| !kind.is_trivia())
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(
+        texts("$max * -.1"),
+        vec![
+            (TokenKind::SCALAR_SIGIL, "$".to_string()),
+            (TokenKind::IDENT, "max".to_string()),
+            (TokenKind::STAR, "*".to_string()),
+            (T!["-"], "-".to_string()),
+            (TokenKind::NUMBER, ".1".to_string()),
+        ]
+    );
+
+    // Where an operator is expected the same character concatenates.
+    assert_eq!(
+        texts("$a .5"),
+        vec![
+            (TokenKind::SCALAR_SIGIL, "$".to_string()),
+            (TokenKind::IDENT, "a".to_string()),
+            (T!["."], ".".to_string()),
+            (TokenKind::NUMBER, "5".to_string()),
+        ]
+    );
+
+    assert_lossless("my $x = .5;");
+    assert_lossless("$a .5");
+}

@@ -113,7 +113,11 @@ fn statement(parser: &mut Parser<'_>) {
 
             parser.complete(marker, NodeKind::BLOCK_STMT);
         }
-        TokenKind::IDENT if parser.nth_at(1, T![":"]) && !parser.nth_at(2, T![":"]) => {
+        // A label is any name followed by a single `:`, and a keyword spells one
+        // as readily as an identifier: `CHECK: { ... }` in Badger, `return:` as
+        // a goto target in Hash::Merge. The quote-like operators cannot reach
+        // here — `s:a:b:` arrives from the lexer as one run, not `s` and a `:`.
+        kind if is_name_like(kind) && parser.nth_at(1, T![":"]) && !parser.nth_at(2, T![":"]) => {
             labeled_stmt(parser);
         }
         // `async sub NAME { ... }` — a definition introduced by a word some
@@ -184,8 +188,10 @@ fn semicolon(parser: &mut Parser<'_>) {
         parser.bump();
         return;
     }
-    if parser.at_end() || parser.at(T!["}"]) {
-        // A final statement may omit its semicolon.
+    // A final statement may omit its semicolon — and `__END__` ends the program
+    // text as surely as the file does (perldata), which is what `1` on the line
+    // above one is relying on.
+    if parser.at_end() || parser.at_any(&[T!["}"], T!["__END__"], T!["__DATA__"]]) {
         return;
     }
     parser.error("expected `;` at the end of the statement");
@@ -401,19 +407,25 @@ fn is_prototype(body: &str) -> bool {
 /// `sub f : Bar : Baz` and `sub f :Bar:Baz` are the same three attributes
 /// (perlsub, "Subroutine Attributes").
 ///
-/// What may continue the list without a colon depends on what follows it. After
-/// a subroutine's attributes only a body or a `;` can come, so any word there is
-/// an attribute — `sub f : lvalue method {}`. After a declaration's, a statement
-/// modifier can, so only an identifier continues the list and `our $x :shared if
-/// $cond` keeps its `if`.
-pub(crate) fn attribute_list(parser: &mut Parser<'_>, any_word_continues: bool) {
+/// How much of what follows is an attribute depends on what else could be
+/// there. A subroutine's attributes are followed only by a body or a `;`, so any
+/// word is an attribute and a colon with nothing after it still opens a list —
+/// `sub f : lvalue method {}` and `sub f : {}`. A declaration's are followed by
+/// whatever the expression goes on to do: a statement modifier in `our $x
+/// :shared if $cond`, and the other arm of a ternary in `$c ? my $buf :
+/// $self->{rbuf}`. So there, a colon is an attribute list only when a name
+/// follows it, and only an identifier continues one.
+pub(crate) fn attribute_list(parser: &mut Parser<'_>, subroutine: bool) {
     if !parser.at(T![":"]) {
+        return;
+    }
+    if !subroutine && !parser.nth_at(1, TokenKind::IDENT) {
         return;
     }
     let continues = |parser: &mut Parser<'_>| match parser.current() {
         Some(T![":"]) => true,
         Some(TokenKind::IDENT) => true,
-        Some(kind) => any_word_continues && is_name_like(kind),
+        Some(kind) => subroutine && is_name_like(kind),
         None => false,
     };
     while continues(parser) {
@@ -732,11 +744,17 @@ fn phase_block(parser: &mut Parser<'_>) {
 fn labeled_stmt(parser: &mut Parser<'_>) {
     let marker = parser.start();
     let label = parser.start();
-    parser.bump();
+    // `CHECK: { ... last CHECK; }` — a label is a name, so a keyword spelling
+    // one is coerced the way every other keyword-as-name is (ADR 0007 §5).
+    if !parser.bump_name() {
+        parser.bump_any();
+    }
     parser.bump();
     parser.complete(label, NodeKind::LABEL);
     parser.expect_term();
-    if parser.at_end() {
+    // A label may end a block as well as a file: `return:` is the last line of
+    // `Hash::Merge::_get_behavior`, a target for a `goto` and nothing else.
+    if parser.at_end() || parser.at(T!["}"]) {
         parser.complete(marker, NodeKind::LABELED_STMT);
         return;
     }

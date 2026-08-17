@@ -160,10 +160,12 @@ pub(crate) fn primary(parser: &mut Parser<'_>) -> Option<CompletedMarker> {
             parser.bump();
             parser.complete(keyword, NodeKind::SUB_NAME);
             parser.expect_term();
-            if parser
-                .current()
-                .is_some_and(|kind| kind.can_start_term() && !kind.is_stmt_modifier())
-            {
+            // What follows may be a label, and a label may be spelled with a
+            // keyword: `last CHECK;` inside `CHECK: { ... }`. A keyword that
+            // starts no term is still a name here.
+            if parser.current().is_some_and(|kind| {
+                (kind.can_start_term() || super::is_name_like(kind)) && !kind.is_stmt_modifier()
+            }) {
                 list_expr(parser, Recovery::Statement);
             }
             parser.expect_operator();
@@ -298,7 +300,16 @@ pub(crate) fn var_decl(parser: &mut Parser<'_>) -> CompletedMarker {
         if let Some(base) = primary(parser) {
             super::expr::postfix(parser, base);
         }
-    } else if parser.current().is_some_and(TokenKind::is_sigil) {
+    } else if parser.current().is_some_and(TokenKind::is_sigil)
+        || (parser.at(TokenKind::IDENT) && parser.nth(1).is_some_and(TokenKind::is_sigil))
+    {
+        // `my Proc::Daemon $self = shift;` — a class name in front of the
+        // variable (perlsub, "Private Variables via my()"). What it declares is
+        // the variable after the name, which the rest of this arm reads.
+        if parser.at(TokenKind::IDENT) {
+            name(parser, NodeKind::SUB_NAME);
+            parser.expect_term();
+        }
         // `local $h{key}` subscripts the declared variable, but `for my $x (@xs)`
         // must not read the list as a call on `$x`.
         let mut target = variable(parser);
