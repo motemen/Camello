@@ -20,6 +20,11 @@ print({ $fh } map { ref eq 'ARRAY' ? @$_ : $_ } @data);
 print($fh 'do{ my ' . $dump . '}');
 printf($fh "%s\n", $line);
 
+# The indirect-object form of `$fh->autoflush(1)`
+use IO::Handle;
+open my $fh, '>', $path or die $!;
+autoflush $fh 1;
+
 # A bareword with no declaration in sight, taking a hash or a glob
 sub _error;
 

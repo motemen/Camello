@@ -13,6 +13,10 @@ use super::{Expect, Lexer};
 /// The old lexer took any single letter, so `-q $x` became a file test.
 const FILE_TEST_CHARS: &[u8] = b"efdlpSbcugktrwxoRWXOszAMC";
 
+/// Perl counts a form feed as whitespace; a page break in the middle of a file
+/// is what modules written on paper-era terminals left behind.
+const FORM_FEED: u8 = 0x0c;
+
 /// Punctuation variables that are a single character after their sigil.
 const PUNCT_VAR_CHARS: &[u8] = b"!@/\\,;.&`'+^:?<>()[]|\"-_0=$%~*";
 
@@ -57,10 +61,12 @@ impl<'a> Lexer<'a> {
         let first = bytes[0];
 
         match first {
-            b' ' | b'\t' => {
+            // Form feed is horizontal whitespace to perl, and MIME::Body puts one
+            // on a line of its own as a page break.
+            b' ' | b'\t' | FORM_FEED => {
                 let len = bytes
                     .iter()
-                    .position(|byte| !matches!(byte, b' ' | b'\t'))
+                    .position(|byte| !matches!(*byte, b' ' | b'\t' | FORM_FEED))
                     .unwrap_or(bytes.len());
                 self.push(TokenKind::WHITESPACE, start, start + len);
                 return;
