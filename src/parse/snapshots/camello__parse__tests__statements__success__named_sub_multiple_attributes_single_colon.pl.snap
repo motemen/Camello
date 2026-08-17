@@ -11,12 +11,12 @@ ROOT
       `:` ":"
       SUB_NAME
         identifier "A"
-    ERROR
-      identifier "B"
+    ATTR
+      SUB_NAME
+        identifier "B"
+    BLOCK
       `{` "{"
-  LIST_EXPR
-  ERROR
-    `}` "}"
+      `}` "}"
   SUB_DEF
     `sub` "sub"
     SUB_NAME
@@ -30,12 +30,13 @@ ROOT
       `:` ":"
       SUB_NAME
         identifier "attr1"
-    ERROR
-      identifier "attr2"
-      `(` "("
-      number "1"
-      `)` ")"
+    ATTR
+      SUB_NAME
+        identifier "attr2"
+      ATTR_ARGS
+        `(` "("
+        raw text "1"
+        `)` ")"
+    BLOCK
       `{` "{"
-  LIST_EXPR
-  ERROR
-    `}` "}"
+      `}` "}"
