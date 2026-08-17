@@ -98,11 +98,16 @@ pub fn format(root: &SyntaxNode, trivia: &TriviaMap, options: &FormatterOptions)
 /// Does the file's last content end without the line terminator it was written
 /// without?
 fn ends_in_unterminated_verbatim(root: &SyntaxNode) -> bool {
-    root.descendants_with_tokens()
-        .filter_map(|element| element.into_token())
-        .filter(|token| token.token_kind() != TokenKind::WHITESPACE)
-        .last()
-        .is_some_and(|token| token.token_kind().is_verbatim() && !token.text().ends_with('\n'))
+    // From the end, not by walking the file: this is asked once per format, and
+    // the answer is in the last token or two.
+    let mut token = root.last_token();
+    while let Some(current) = token {
+        if current.token_kind() != TokenKind::WHITESPACE {
+            return current.token_kind().is_verbatim() && !current.text().ends_with('\n');
+        }
+        token = current.prev_token();
+    }
+    false
 }
 
 /// Parse and format in one step.
