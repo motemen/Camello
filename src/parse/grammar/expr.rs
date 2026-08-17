@@ -551,6 +551,14 @@ pub(crate) fn bareword_call(parser: &mut Parser<'_>) -> CompletedMarker {
             parser.complete(marker, NodeKind::LIST_CALL_EXPR)
         }
         Shape::List => {
+            // `autoflush $fh 1;` — the indirect-object form of `$fh->autoflush(1)`,
+            // which Parallel::Scoreboard writes. Only the scalar shape, and only
+            // where no declaration says otherwise: a bareword invocant would
+            // claim the constant in `mylog ERROR . "x"`, and the comma in
+            // `f $x, 1` already says that call is not one of these.
+            if builtin.is_none() && parser.at(TokenKind::SCALAR_SIGIL) && at_filehandle(parser, 0) {
+                filehandle(parser);
+            }
             if block_call_follows(parser) {
                 list_arguments(parser);
                 return parser.complete(marker, NodeKind::BLOCK_CALL_EXPR);
