@@ -152,7 +152,17 @@ cargo run -- format input.pl
 
 # Check if a file is already formatted (exits with non-zero if not)
 cargo run -- format --check input.pl
+
+# Format a tree in place, one file per core
+cargo run -- format --write lib/
+cargo run -- format --check lib/ t/       # report what would change
+cargo run -- format --write --jobs 4 lib/ # or a worker count of your own
 ```
+
+One source goes to stdout; a tree has nowhere to print to, so `--write` or
+`--check` is required as soon as the arguments name a directory or more than one
+file. A file the parser reports a diagnostic on is named and left alone: a
+best-effort rewrite is something to ask for one file at a time.
 
 `format` is the interface; the developer tools live under a hidden `dev`
 subcommand, in the sense of `go tool`, and may change shape without notice.
@@ -166,6 +176,7 @@ cargo run -- dev dump input.pl
 cargo run -- dev check input.pl
 cargo run -- dev check --list-invariants
 cargo run -- dev check --only comments,verbatim ~/some/perl/tree
+cargo run -- dev check --jobs 1 ~/some/perl/tree   # serially, for profiling
 ```
 
 Use `-E` instead of `-e` to use character escapes in the input string. e.g. `-E 'sub foo {\n\twarn;\n}'`.

@@ -20,16 +20,16 @@ pub struct Cli {
 pub enum Commands {
     /// Format Perl code
     Format {
-        /// Path to the Perl file to format (reads from stdin if not provided)
-        #[arg(help = "Path to the Perl file (reads from stdin if not provided)")]
-        path: Option<PathBuf>,
+        /// Files or directories to format (reads from stdin if not provided)
+        #[arg(help = "Files or directories to format (recursive; stdin if omitted)")]
+        paths: Vec<PathBuf>,
 
         /// Perl code to format
         #[arg(
             short,
             long = "eval",
             help = "Perl code to format",
-            conflicts_with_all = ["path", "eval_escape"]
+            conflicts_with_all = ["paths", "eval_escape"]
         )]
         eval: Option<String>,
 
@@ -38,7 +38,7 @@ pub enum Commands {
             short = 'E',
             long = "eval-escape",
             help = "Perl code to format with escape sequence interpretation (\\n becomes newline)",
-            conflicts_with_all = ["path", "eval"]
+            conflicts_with_all = ["paths", "eval"]
         )]
         eval_escape: Option<String>,
 
@@ -50,11 +50,29 @@ pub enum Commands {
         #[arg(
             short = 'w',
             long = "write",
-            help = "Overwrite the input file with the formatted result",
-            requires = "path",
+            help = "Overwrite the input files with the formatted result",
+            requires = "paths",
             conflicts_with_all = ["check", "output"]
         )]
         write: bool,
+
+        /// Extensions to consider when walking a directory
+        #[arg(
+            long,
+            value_name = "EXT,...",
+            default_value = "pl,pm,t,psgi",
+            help = "Extensions to consider when walking a directory"
+        )]
+        extensions: String,
+
+        /// How many files to format at once
+        #[arg(
+            short = 'j',
+            long,
+            value_name = "N",
+            help = "How many files to format at once (default: one per core)"
+        )]
+        jobs: Option<usize>,
 
         /// Stop formatting after the first parse error is reported
         #[arg(
@@ -151,6 +169,15 @@ pub enum DevCommands {
         /// Files or directories to check (reads from stdin if not provided)
         #[arg(help = "Files or directories to check (recursive; stdin if omitted)")]
         paths: Vec<PathBuf>,
+
+        /// How many files to check at once
+        #[arg(
+            short = 'j',
+            long,
+            value_name = "N",
+            help = "How many files to check at once (default: one per core)"
+        )]
+        jobs: Option<usize>,
 
         /// Only report these invariants (comma-separated slugs)
         #[arg(
@@ -312,18 +339,35 @@ pub fn run() -> Result<()> {
 
     match cli.command {
         Commands::Format {
-            path,
+            paths,
             eval,
             eval_escape,
             check,
             write,
+            extensions,
+            jobs,
             stop_on_first_error,
             output,
             encoding,
             layout,
         } => {
+            // One source is a thing to look at, and its formatted text goes to
+            // stdout. A tree is a thing to do something to, and there is nowhere
+            // for five hundred files of stdout to go — so the two are different
+            // commands wearing one name, and this is where they part.
+            if is_a_tree(&paths) {
+                return format_tree(
+                    paths,
+                    check,
+                    write,
+                    &extensions,
+                    jobs,
+                    encoding,
+                    &layout.to_options(),
+                );
+            }
             format_file(
-                path,
+                paths.into_iter().next(),
                 eval,
                 eval_escape,
                 check,
@@ -356,6 +400,7 @@ pub fn run() -> Result<()> {
             }
             DevCommands::Check {
                 paths,
+                jobs,
                 only,
                 list_invariants,
                 quiet,
@@ -364,6 +409,7 @@ pub fn run() -> Result<()> {
             } => {
                 return check_paths(
                     paths,
+                    jobs,
                     only.as_deref(),
                     list_invariants,
                     quiet,
@@ -377,11 +423,225 @@ pub fn run() -> Result<()> {
     Ok(())
 }
 
+/// Is this a set of paths to walk, rather than one source to print?
+///
+/// A directory always is; so is more than one path, whatever they are.
+fn is_a_tree(paths: &[PathBuf]) -> bool {
+    paths.len() > 1 || paths.first().is_some_and(|path| path.is_dir())
+}
+
+/// Apply `job` to every item, on as many threads as asked for, and give the
+/// results back in the order the items were in.
+///
+/// Formatting one file has nothing to do with formatting the next — no shared
+/// state, no ordering — so the only thing this has to preserve is the order of
+/// the *output*, which it does by writing each result into its own slot. The
+/// alternative is printing from the workers, which makes a run's output depend
+/// on how the scheduler felt.
+fn in_parallel<T, R>(items: &[T], jobs: Option<usize>, job: impl Fn(&T) -> R + Sync) -> Vec<R>
+where
+    T: Sync,
+    R: Send,
+{
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex;
+
+    let workers = jobs
+        .filter(|&jobs| jobs > 0)
+        .unwrap_or_else(|| {
+            std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get)
+        })
+        .min(items.len())
+        .max(1);
+
+    if workers == 1 {
+        return items.iter().map(job).collect();
+    }
+
+    let next = AtomicUsize::new(0);
+    let slots: Vec<Mutex<Option<R>>> = items.iter().map(|_| Mutex::new(None)).collect();
+    let job = &job;
+    let slots = &slots;
+    let next = &next;
+
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            scope.spawn(move || loop {
+                let index = next.fetch_add(1, Ordering::Relaxed);
+                let Some(item) = items.get(index) else { return };
+                let result = job(item);
+                *slots[index]
+                    .lock()
+                    .expect("no worker panics while holding this") = Some(result);
+            });
+        }
+    });
+
+    slots
+        .iter()
+        .map(|slot| {
+            slot.lock()
+                .expect("the workers are finished")
+                .take()
+                .expect("every slot was filled")
+        })
+        .collect()
+}
+
+/// What formatting one file came to.
+struct Formatted {
+    /// Rendered diagnostics, if the file did not parse cleanly.
+    diagnostics: Vec<String>,
+    /// Whether the formatted text differs from what is on disk.
+    changed: bool,
+    /// What went wrong before formatting could even be attempted.
+    failure: Option<String>,
+}
+
+/// `camello format` over files and directories, in parallel.
+///
+/// Writing is asked for, never assumed: the formatted text of a tree has
+/// nowhere to go but back over the tree, and doing that because someone typed a
+/// path is not undoable.
+fn format_tree(
+    paths: Vec<PathBuf>,
+    check: bool,
+    write: bool,
+    extensions: &str,
+    jobs: Option<usize>,
+    encoding: Option<String>,
+    options: &FormatterOptions,
+) -> Result<()> {
+    if !check && !write {
+        return Err(miette::miette!(
+            "formatting more than one file needs --write (rewrite them) or --check (report which would change)"
+        ));
+    }
+
+    let encoding = get_encoding(encoding.as_ref())?;
+    let extensions: Vec<&str> = extensions.split(',').map(str::trim).collect();
+
+    let mut files = Vec::new();
+    for path in &paths {
+        collect_perl_files(path, &extensions, &mut files)?;
+    }
+
+    let reports = in_parallel(&files, jobs, |path| {
+        format_one(path, check, encoding, options)
+    });
+
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    let (mut changed, mut with_diagnostics, mut failed) = (0usize, 0usize, 0usize);
+    for (path, report) in files.iter().zip(&reports) {
+        let path = path.display();
+        if let Some(failure) = &report.failure {
+            failed += 1;
+            writeln!(out, "{path}\t{failure}").into_diagnostic()?;
+            continue;
+        }
+        if !report.diagnostics.is_empty() {
+            with_diagnostics += 1;
+            writeln!(out, "{path}\t{} diagnostic(s)", report.diagnostics.len())
+                .into_diagnostic()?;
+            for diagnostic in &report.diagnostics {
+                for line in diagnostic.lines() {
+                    writeln!(out, "    {line}").into_diagnostic()?;
+                }
+            }
+        }
+        if report.changed {
+            changed += 1;
+            let what = if check { "would reformat" } else { "formatted" };
+            writeln!(out, "{path}\t{what}").into_diagnostic()?;
+        }
+    }
+
+    let what = if check { "would reformat" } else { "formatted" };
+    writeln!(
+        out,
+        "---- checked {}, {what} {changed}{}{}",
+        files.len(),
+        if with_diagnostics > 0 {
+            format!(", left alone {with_diagnostics}")
+        } else {
+            String::new()
+        },
+        if failed > 0 {
+            format!(", unreadable {failed}")
+        } else {
+            String::new()
+        }
+    )
+    .into_diagnostic()?;
+
+    // A file nobody could parse cleanly is not "formatted", and `--check` in a
+    // pipeline wants to hear about it.
+    if failed > 0 || with_diagnostics > 0 || (check && changed > 0) {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+/// Format one file of a tree: read it, format it, and write it back if asked.
+fn format_one(
+    path: &Path,
+    check: bool,
+    encoding: &'static Encoding,
+    options: &FormatterOptions,
+) -> Formatted {
+    let failed = |failure: String| Formatted {
+        diagnostics: Vec::new(),
+        changed: false,
+        failure: Some(failure),
+    };
+
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) => return failed(error.to_string()),
+    };
+    let (input, _, had_errors) = encoding.decode(&bytes);
+    if had_errors {
+        return failed("not decodable with this encoding".to_string());
+    }
+
+    let (formatted, errors) = format_perl_with_options(&input, options);
+    let diagnostics: Vec<String> = errors
+        .into_iter()
+        .map(|error| format!("{:?}", Report::new(error)))
+        .collect();
+
+    // A file the parser had something to say about is reported and left alone.
+    // One such file, formatted on purpose, is a best-effort the writer can look
+    // at; a tree of them, rewritten because someone typed a directory, is not.
+    if !diagnostics.is_empty() {
+        return Formatted {
+            diagnostics,
+            changed: false,
+            failure: None,
+        };
+    }
+
+    let changed = formatted != input;
+    if changed && !check {
+        if let Err(error) = write_with_encoding(path, &formatted, encoding) {
+            return failed(format!("{error}"));
+        }
+    }
+
+    Formatted {
+        diagnostics,
+        changed,
+        failure: None,
+    }
+}
+
 /// `camello dev check`: run the invariants over files, directories, or stdin.
 ///
 /// Exits non-zero when anything is violated, so it can gate a corpus run.
 fn check_paths(
     paths: Vec<PathBuf>,
+    jobs: Option<usize>,
     only: Option<&str>,
     list_invariants: bool,
     quiet: bool,
@@ -416,43 +676,46 @@ fn check_paths(
         collect_perl_files(path, &extensions, &mut files)?;
     }
 
-    // No paths at all means stdin, so the command composes with a pipeline the
-    // way `format` does.
-    let sources: Vec<(String, String)> = if paths.is_empty() {
-        let mut bytes = Vec::new();
-        io::stdin().read_to_end(&mut bytes).into_diagnostic()?;
-        let (decoded, _, _) = encoding.decode(&bytes);
-        vec![("<stdin>".to_string(), decoded.into_owned())]
-    } else {
-        files
-            .iter()
-            .filter_map(|path| {
-                let bytes = fs::read(path).ok()?;
-                let (decoded, _, had_errors) = encoding.decode(&bytes);
-                // Not decodable is not a violation; it is a file this command
-                // has nothing to say about.
-                (!had_errors).then(|| (path.display().to_string(), decoded.into_owned()))
-            })
-            .collect()
-    };
-
-    // Saturating: reading stdin puts one source in with no file behind it.
-    let skipped = files.len().saturating_sub(sources.len());
-    let mut offenders: Vec<(&str, Vec<&'static str>)> = Vec::new();
-    let mut counts: Vec<(Invariant, usize)> =
-        Invariant::ALL.iter().map(|kind| (*kind, 0)).collect();
-
-    let stdout = io::stdout();
-    let mut out = stdout.lock();
-    for (label, source) in &sources {
-        let violations: Vec<_> = check(source)
+    let wanted_by = |violations: Vec<crate::check::Violation>| -> Vec<crate::check::Violation> {
+        violations
             .into_iter()
             .filter(|violation| {
                 wanted
                     .as_ref()
                     .is_none_or(|wanted| wanted.contains(&violation.invariant.slug()))
             })
-            .collect();
+            .collect()
+    };
+
+    // No paths at all means stdin, so the command composes with a pipeline the
+    // way `format` does. `None` is a file this command has nothing to say about
+    // — unreadable, or not decodable with this encoding, neither of which is a
+    // violation.
+    let checked: Vec<Option<(String, Vec<crate::check::Violation>)>> = if paths.is_empty() {
+        let mut bytes = Vec::new();
+        io::stdin().read_to_end(&mut bytes).into_diagnostic()?;
+        let (decoded, _, _) = encoding.decode(&bytes);
+        vec![Some(("<stdin>".to_string(), wanted_by(check(&decoded))))]
+    } else {
+        in_parallel(&files, jobs, |path| {
+            let bytes = fs::read(path).ok()?;
+            let (decoded, _, had_errors) = encoding.decode(&bytes);
+            if had_errors {
+                return None;
+            }
+            Some((path.display().to_string(), wanted_by(check(&decoded))))
+        })
+    };
+
+    let sources = checked.iter().flatten().count();
+    let skipped = checked.len() - sources;
+    let mut offenders: Vec<(&str, Vec<&'static str>)> = Vec::new();
+    let mut counts: Vec<(Invariant, usize)> =
+        Invariant::ALL.iter().map(|kind| (*kind, 0)).collect();
+
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    for (label, violations) in checked.iter().flatten() {
         if violations.is_empty() {
             continue;
         }
@@ -488,7 +751,7 @@ fn check_paths(
 
     // The per-file reports have scrolled away by now; a run over a directory
     // ends by saying which files to go back to.
-    if violated > 0 && sources.len() > 1 {
+    if violated > 0 && sources > 1 {
         writeln!(out, "---- files with a violation").into_diagnostic()?;
         for (label, slugs) in &offenders {
             writeln!(out, "     {label}\t{}", slugs.join(" ")).into_diagnostic()?;
@@ -497,9 +760,8 @@ fn check_paths(
 
     writeln!(
         out,
-        "---- checked {}, clean {}, violated {violated}{}",
-        sources.len(),
-        sources.len() - violated,
+        "---- checked {sources}, clean {}, violated {violated}{}",
+        sources - violated,
         if skipped > 0 {
             format!(", not decodable {skipped}")
         } else {
@@ -987,5 +1249,72 @@ mod tests {
     fn test_invalid_encoding() {
         let result = get_encoding(Some(&"invalid-encoding-name".to_string()));
         assert!(result.is_err());
+    }
+
+    /// Every worker's result lands in its own slot, so the order out is the
+    /// order in however the threads were scheduled.
+    #[test]
+    fn parallel_results_keep_their_order() {
+        let items: Vec<usize> = (0..1000).collect();
+        for jobs in [None, Some(1), Some(4), Some(64)] {
+            let doubled = in_parallel(&items, jobs, |item| item * 2);
+            assert_eq!(
+                doubled,
+                items.iter().map(|item| item * 2).collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[test]
+    fn a_directory_is_formatted_in_place() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempdir()?;
+        fs::create_dir(dir.path().join("nested"))?;
+        fs::write(dir.path().join("a.pl"), "my $x=1;\n")?;
+        fs::write(dir.path().join("nested/b.pm"), "my $y = 2;\n")?;
+        // Not one of the extensions walked into, so it must come back untouched.
+        fs::write(dir.path().join("notes.txt"), "my $z=3;\n")?;
+
+        let reports = in_parallel(
+            &[
+                dir.path().join("a.pl"),
+                dir.path().join("nested/b.pm"),
+                dir.path().join("notes.txt"),
+            ],
+            None,
+            |path| format_one(path, false, encoding_rs::UTF_8, &layout()),
+        );
+        assert!(reports.iter().all(|report| report.failure.is_none()));
+        assert_eq!(fs::read_to_string(dir.path().join("a.pl"))?, "my $x = 1;\n");
+        assert_eq!(
+            fs::read_to_string(dir.path().join("nested/b.pm"))?,
+            "my $y = 2;\n"
+        );
+
+        Ok(())
+    }
+
+    /// A file the parser had something to say about is reported, not rewritten.
+    #[test]
+    fn a_file_with_diagnostics_is_left_alone() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempdir()?;
+        let path = dir.path().join("broken.pl");
+        fs::write(&path, "my $z=;\n")?;
+
+        let report = format_one(&path, false, encoding_rs::UTF_8, &layout());
+
+        assert!(!report.diagnostics.is_empty());
+        assert!(!report.changed);
+        assert_eq!(fs::read_to_string(&path)?, "my $z=;\n");
+
+        Ok(())
+    }
+
+    #[test]
+    fn a_directory_or_several_paths_is_a_tree() {
+        let dir = tempdir().expect("a temporary directory");
+        assert!(is_a_tree(&[dir.path().to_path_buf()]));
+        assert!(is_a_tree(&[PathBuf::from("a.pl"), PathBuf::from("b.pl")]));
+        assert!(!is_a_tree(&[PathBuf::from("a.pl")]));
+        assert!(!is_a_tree(&[]));
     }
 }
