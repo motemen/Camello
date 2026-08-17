@@ -314,9 +314,7 @@ pub(crate) fn var_decl(parser: &mut Parser<'_>) -> CompletedMarker {
     // exactly as a subroutine does (perlsub, "Subroutine Attributes"; the
     // variable case is `attributes`). The same routine reads both, so
     // `state $scalar :lvalue += 2` needs nothing of its own.
-    while parser.at(T![":"]) {
-        super::attribute(parser);
-    }
+    super::attribute_list(parser, false);
 
     parser.expect_operator();
     parser.complete(marker, NodeKind::VAR_DECL)

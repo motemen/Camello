@@ -17,6 +17,17 @@ sub multi
     : lvalue
     : method { }
 
+# One colon introduces the list; the rest are optional
+sub spaced : Bar Baz(qux) { }
+sub tight :Bar:Baz { }
+sub keyword_named : lvalue method { }
+sub fwd : Bar Baz;
+my $anon = sub : lvalue method { };
+
+# Attributes on a variable, where a statement modifier may follow
+our $shared : Attr Other(1) = 1;
+our $guarded : Attr if $cond;
+
 # Anonymous sub with attributes
 my $sub = sub : lvalue { };
 

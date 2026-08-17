@@ -279,9 +279,7 @@ pub(crate) fn subroutine_tail(parser: &mut Parser<'_>, allow_forward_declaration
         signature_or_prototype(parser);
     }
 
-    while parser.at(T![":"]) {
-        attribute(parser);
-    }
+    attribute_list(parser, true);
 
     parser.expect_term();
     if parser.at(T!["{"]) {
@@ -397,10 +395,38 @@ fn is_prototype(body: &str) -> bool {
     })
 }
 
+/// The attributes of a subroutine or a declared variable, as a whole.
+///
+/// One colon introduces the list and the rest are optional: `sub f : Bar Baz`,
+/// `sub f : Bar : Baz` and `sub f :Bar:Baz` are the same three attributes
+/// (perlsub, "Subroutine Attributes").
+///
+/// What may continue the list without a colon depends on what follows it. After
+/// a subroutine's attributes only a body or a `;` can come, so any word there is
+/// an attribute — `sub f : lvalue method {}`. After a declaration's, a statement
+/// modifier can, so only an identifier continues the list and `our $x :shared if
+/// $cond` keeps its `if`.
+pub(crate) fn attribute_list(parser: &mut Parser<'_>, any_word_continues: bool) {
+    if !parser.at(T![":"]) {
+        return;
+    }
+    let continues = |parser: &mut Parser<'_>| match parser.current() {
+        Some(T![":"]) => true,
+        Some(TokenKind::IDENT) => true,
+        Some(kind) => any_word_continues && is_name_like(kind),
+        None => false,
+    };
+    while continues(parser) {
+        attribute(parser);
+    }
+}
+
 fn attribute(parser: &mut Parser<'_>) {
     let marker = parser.start();
-    parser.bump();
-    parser.expect_operator();
+    if parser.at(T![":"]) {
+        parser.bump();
+        parser.expect_operator();
+    }
     // `sub f : { ... }` — perl accepts an attribute list that is only its
     // colon, and a codebase that writes `sub f : Tests` everywhere acquires one
     // of these by a dropped word.
