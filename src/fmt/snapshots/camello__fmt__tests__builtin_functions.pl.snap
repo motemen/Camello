@@ -31,6 +31,10 @@ _error %state, $cb, {@pseudo};
 getdata %^H, $wiz;
 handler &$callback, 1;
 
+# A named unary with no argument, followed by a word operator
+my @names = grep { defined and !ref and /^\w+$/s } @spec;
+my $plain = ref or 1;
+
 each %$hash;
 each @array;
 values %$hash;

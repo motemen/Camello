@@ -47,7 +47,11 @@ pub(crate) fn primary(parser: &mut Parser<'_>) -> Option<CompletedMarker> {
         TokenKind::DELIMITER => {
             let marker = parser.start();
             while parser.current().is_some_and(is_quote_like_part) {
+                let last = parser.current_ends_quote_like_run();
                 parser.bump();
+                if last {
+                    break;
+                }
             }
             parser.expect_operator();
             parser.complete(marker, NodeKind::M_EXPR)
@@ -337,8 +341,16 @@ fn quote_like(parser: &mut Parser<'_>, keyword: TokenKind) -> CompletedMarker {
     let marker = parser.start();
     parser.bump();
 
+    // The scanner marked where the run ends, and stopping there is the point:
+    // peeking one token past it asks the lexer for a token under the wrong
+    // expectation, and `s/_//gr // $default` came back with a fourth delimiter
+    // and half the statement inside a substitution.
     while parser.current().is_some_and(is_quote_like_part) {
+        let last = parser.current_ends_quote_like_run();
         parser.bump();
+        if last {
+            break;
+        }
     }
 
     parser.expect_operator();

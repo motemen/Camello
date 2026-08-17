@@ -124,6 +124,7 @@ impl<'a> Lexer<'a> {
         }
 
         self.scan_quote_like_flags(keyword);
+        self.mark_end_of_run();
     }
 
     /// A bare `/.../` match, committed to as soon as a term is expected.
@@ -134,6 +135,14 @@ impl<'a> Lexer<'a> {
             return;
         }
         self.scan_flags(MATCH_FLAGS);
+        self.mark_end_of_run();
+    }
+
+    /// Say that the run ends at the token just pushed.
+    fn mark_end_of_run(&mut self) {
+        if let Some(last) = self.buffer.last_mut() {
+            last.ends_quote_like_run = true;
+        }
     }
 
     fn push_delimiter(&mut self, delimiter: char) {
@@ -251,6 +260,7 @@ impl<'a> Lexer<'a> {
                 rowan::TextSize::try_from(at).expect("source larger than 4GiB"),
             ),
             expect_at_lex: self.expect,
+            ends_quote_like_run: false,
         });
     }
 

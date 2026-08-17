@@ -180,3 +180,7 @@ my $ref3 = \q{baz};
 my $ref4 = \qq{qux};
 
 foo < $o->meth; foo * (1+2); foo % +1; foo * { k => 1 }->{k}; foo*@_; foo*[1,2,3]->[0]; foo * bar; foo*bar; foo%bar; foo::bar($baz); split //, $s; keys %+;
+
+# `~~` in term position is double negation, not smartmatch (IO::Socket::SSL)
+my $count = ~~@del;
+say "matched" if $x ~~ @list;
