@@ -195,3 +195,7 @@ foo % bar;
 foo::bar($baz);
 split //, $s;
 keys %+;
+
+# `~~` in term position is double negation, not smartmatch (IO::Socket::SSL)
+my $count = ~~@del;
+say "matched" if $x ~~ @list;

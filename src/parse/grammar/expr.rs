@@ -811,6 +811,20 @@ fn starts_argument(parser: &mut Parser<'_>, argument_is_optional: bool) -> bool 
     match parser.current() {
         None => false,
         Some(kind) if kind.is_stmt_modifier() => false,
+        // A word spelling an infix operator does not start an argument, in term
+        // position any more than in operator position: `ref and /x/` tests `$_`
+        // and then matches, and reading `and` as a bareword argument left the
+        // `/x/` to divide by. In term position the lexer hands these back as
+        // identifiers, because `{ or => 1 }` needs it to (ADR 0005 §5), so the
+        // text is what has to be asked. A quoted bareword was settled above.
+        Some(TokenKind::IDENT)
+            if parser
+                .current_text()
+                .and_then(TokenKind::from_keyword)
+                .is_some_and(|kind| infix_op(kind).is_some()) =>
+        {
+            false
+        }
         Some(kind) => kind.can_start_term(),
     }
 }

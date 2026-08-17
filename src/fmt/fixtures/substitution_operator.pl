@@ -84,3 +84,10 @@ s{
         bar
     #;
 }
+
+# The run ends where the scanner says it does: a `//` after the flags is
+# defined-or, not a fourth delimiter (Devel::Cover::Collection).
+my $version = $run->{version} =~ s/_//gr // next;
+my $trimmed = $text =~ s{a}{b} // '';
+my $matched = $text =~ m/a/g // 0;
+my $literal = q{x} // 1;

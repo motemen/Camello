@@ -215,6 +215,13 @@ impl<'a> Parser<'a> {
         self.lexer.peek_text(n)
     }
 
+    /// Is the current token the last of an atomic quote-like run (ADR 0005 §3)?
+    pub(crate) fn current_ends_quote_like_run(&mut self) -> bool {
+        self.lexer
+            .peek(0)
+            .is_some_and(|token| token.ends_quote_like_run)
+    }
+
     pub(crate) fn current_range(&mut self) -> TextRange {
         self.lexer
             .peek(0)

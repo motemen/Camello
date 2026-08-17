@@ -444,9 +444,15 @@ impl<'a> Lexer<'a> {
         match self.expect {
             // `%`, `*` and `&` are sigils in term position, and the sigil branch
             // above has already claimed them.
+            // `~~@del` is double bitwise negation, the idiom for the number of
+            // elements (IO::Socket::SSL); smartmatch is an infix operator and
+            // cannot start a term.
             Expect::Term => !matches!(
                 kind,
-                TokenKind::MODULO | TokenKind::STAR | TokenKind::BITWISE_AND
+                TokenKind::MODULO
+                    | TokenKind::STAR
+                    | TokenKind::BITWISE_AND
+                    | TokenKind::SMART_MATCH
             ),
             Expect::Operator => !matches!(
                 kind,

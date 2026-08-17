@@ -45,6 +45,13 @@ pub struct LexedToken {
     /// The `expect` in force when this token was scanned. Used by the debug
     /// assertion in [`Lexer::bump`] that peek and consume agree (ADR 0005 §2).
     pub expect_at_lex: Expect,
+    /// Whether this token is the last of an atomic quote-like run (ADR 0005 §3).
+    ///
+    /// The run's extent is the scanner's knowledge and nobody else's: `s/a/b/gr`
+    /// and `s{a}{b}` end after a different number of delimiters, and a parser
+    /// that peeks one token past the end asks for it under the wrong
+    /// expectation — which is how `s/_//gr // $default` grew a fourth delimiter.
+    pub ends_quote_like_run: bool,
 }
 
 impl LexedToken {
@@ -370,6 +377,7 @@ impl<'a> Lexer<'a> {
                     TextSize::try_from(body_start).expect("source larger than 4GiB"),
                 ),
                 expect_at_lex: self.expect,
+                ends_quote_like_run: false,
             });
         }
         let body = *self.buffer.last().expect("just pushed");
@@ -415,6 +423,7 @@ impl<'a> Lexer<'a> {
                 TextSize::try_from(end).expect("source larger than 4GiB"),
             ),
             expect_at_lex: self.expect,
+            ends_quote_like_run: false,
         });
         self.scan_pos = end;
     }
