@@ -640,6 +640,11 @@ impl<'a> Lexer<'a> {
 }
 
 /// Length of the identifier at the start of `text`, `::` separators included.
+/// A name ends at the apostrophe. perl 5.42 made the old package separator a
+/// feature that can be switched off, and camello reads every file as though it
+/// were (`no feature "apostrophe_as_package_separator"`; ADR 0005 §5). `Carp
+/// ::Assert`'s `sub shouldn't ($$)` therefore does not parse, and
+/// `print STDERR'text'` does.
 pub(super) fn ident_len_at(text: &str) -> usize {
     let bytes = text.as_bytes();
     // A leading `::` means the `main` package: `::diag(...)` and `$::foo`.

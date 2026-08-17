@@ -601,3 +601,22 @@ fn a_leading_dot_is_a_number_where_a_term_is_expected() {
     assert_lossless("my $x = .5;");
     assert_lossless("$a .5");
 }
+
+#[test]
+fn a_name_ends_at_an_apostrophe() {
+    // perl 5.42 made `'` as a package separator a feature that can be switched
+    // off, and camello reads every file as though it were (ADR 0005 §5). So
+    // `STDERR'text'` is a bareword and a string, not the name `STDERR::text`.
+    assert_eq!(
+        lex("print STDERR'text'")
+            .into_iter()
+            .filter(|(kind, _)| !kind.is_trivia())
+            .collect::<Vec<_>>(),
+        vec![
+            (TokenKind::IDENT, "print".to_string()),
+            (TokenKind::IDENT, "STDERR".to_string()),
+            (TokenKind::STRING, "'text'".to_string()),
+        ]
+    );
+    assert_lossless("print STDERR'text'");
+}

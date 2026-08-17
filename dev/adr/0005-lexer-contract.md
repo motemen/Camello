@@ -64,6 +64,15 @@ struct LexedToken { kind: TokenKind, range: TextRange, expect_at_lex: Expect }
 - **file test 演算子**: `-` + 実際の file test 文字集合（`efdlpSbcugktrwxoRWXOszAMC`）のみを `FILE_TEST_OP` とする（現行は任意の英字1文字）。
 - **数値**: `0x7f..` の dot 問題はスキャナが最初から正しく切る（`0x7f` の直後で数値を閉じ、`..` を演算子として読む）。`"abc"x5` は Operator 文脈で `x` + `5` として読む（再分割ではなく最初からそう lex する）。
 - **複合代入演算子**（`+=` `-=` `//=` `||=` `**=` 等）は単一トークン。
+- **アポストロフィはパッケージ区切りではない**（2026-08-17 追記）: perl 5.42 は
+  `'` を `::` の代わりに使う記法を `apostrophe_as_package_separator` フィーチャとして
+  **無効化できる**ようにした（削除ではない）。camello はすべての入力を
+  `no feature "apostrophe_as_package_separator"` の下にあるものとして読む。
+  名前は `'` で終わる。両方は選べない曖昧性であり——`STDERR'text'` は
+  「`STDERR::text` という名前」と「バレワードに続く文字列」のどちらとも読める——
+  現代の Perl を対象にする（CLAUDE.md「Project Overview」）以上、
+  後者を取る。結果として `Carp::Assert` の `sub shouldn't ($$)`
+  （＝`sub shouldn::t`）は診断になる。
 
 ### 6. 位置情報
 
