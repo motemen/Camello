@@ -95,22 +95,63 @@ pub struct Violation {
 /// tree built by error recovery is not one the formatter was asked to handle.
 #[must_use]
 pub fn check(source: &str) -> Vec<Violation> {
+    check_only(source, Invariant::ALL)
+}
+
+/// Ask only these invariants, and do only their work.
+///
+/// The filtering used to happen after the fact, so `--only clean-parse` parsed
+/// the file, formatted it twice, re-lexed both, and then threw seven answers
+/// away — asking one question of a corpus cost eight times what it should.
+#[must_use]
+pub fn check_only(source: &str, wanted: &[Invariant]) -> Vec<Violation> {
+    let asked = |invariant: Invariant| wanted.contains(&invariant);
     let mut violations = Vec::new();
 
+    // Not a question anyone can opt out of: every answer below is about what the
+    // formatter did with a tree, and a tree built by error recovery is not one
+    // it was asked to handle.
     if let Some(violation) = clean_parse(source) {
-        return vec![violation];
+        return asked(Invariant::CleanParse)
+            .then_some(vec![violation])
+            .unwrap_or_default();
     }
 
-    violations.extend(losslessness(source));
-    violations.extend(trivia_placement(source));
+    if asked(Invariant::Losslessness) {
+        violations.extend(losslessness(source));
+    }
+    if asked(Invariant::TriviaPlacement) {
+        violations.extend(trivia_placement(source));
+    }
+
+    let formats = [
+        Invariant::Idempotency,
+        Invariant::SemanticPreservation,
+        Invariant::CommentPreservation,
+        Invariant::VerbatimPreservation,
+        Invariant::SeedStability,
+    ];
+    if !formats.iter().copied().any(asked) {
+        return violations;
+    }
 
     let (formatted, _) = format_perl(source);
 
-    violations.extend(idempotency(&formatted));
-    violations.extend(semantic_preservation(source, &formatted));
-    violations.extend(comment_preservation(source, &formatted));
-    violations.extend(verbatim_preservation(source, &formatted));
-    violations.extend(seed_stability(source, &formatted));
+    if asked(Invariant::Idempotency) {
+        violations.extend(idempotency(&formatted));
+    }
+    if asked(Invariant::SemanticPreservation) {
+        violations.extend(semantic_preservation(source, &formatted));
+    }
+    if asked(Invariant::CommentPreservation) {
+        violations.extend(comment_preservation(source, &formatted));
+    }
+    if asked(Invariant::VerbatimPreservation) {
+        violations.extend(verbatim_preservation(source, &formatted));
+    }
+    if asked(Invariant::SeedStability) {
+        violations.extend(seed_stability(source, &formatted));
+    }
 
     violations
 }
