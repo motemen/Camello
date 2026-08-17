@@ -37,6 +37,7 @@ define_language! {
         "while"      => WHILE_KW,
         "until"      => UNTIL_KW,
         "do"         => DO_KW,
+        "continue"   => CONTINUE_KW,
 
         "package"    => PACKAGE_KW,
         // The core class feature (perl 5.38). `class` opens a package-like
@@ -296,6 +297,7 @@ define_language! {
         LABEL,
         ELSIF_CLAUSE,
         ELSE_CLAUSE,
+        CONTINUE_CLAUSE,
         CATCH_CLAUSE,
         CATCH_PARAM,
         FINALLY_CLAUSE,

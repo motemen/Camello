@@ -93,6 +93,20 @@ fn statement(parser: &mut Parser<'_>) {
         {
             phase_block(parser);
         }
+        // `AUTOLOAD { ... }` and `DESTROY { ... }` define a subroutine without
+        // the `sub` (perlsub; `B::Deparse` prints both back with it). Devel
+        // ::Symdump writes the first, and without this it read as a call taking
+        // a block — which then took the statement after it as its argument.
+        // No other name does this: `FOO { ... }` is an indirect method call.
+        TokenKind::IDENT
+            if parser.nth_at(1, T!["{"])
+                && matches!(parser.current_text(), Some("AUTOLOAD" | "DESTROY")) =>
+        {
+            let marker = parser.start();
+            name(parser, NodeKind::SUB_NAME);
+            subroutine_tail(parser, false);
+            parser.complete(marker, NodeKind::SUB_DEF);
+        }
         T!["{"] => {
             let checkpoint = parser.checkpoint();
             let marker = parser.start();
@@ -581,7 +595,25 @@ fn loop_stmt(parser: &mut Parser<'_>) {
     }
 
     block(parser);
+    continue_clause(parser);
     parser.complete(marker, NodeKind::LOOP_STMT);
+}
+
+/// `while (...) { ... } continue { ... }` — the block perl runs at the end of
+/// every iteration, `next` included (perlsyn).
+///
+/// Without a rule of its own the word reads as a call taking a block, and a call
+/// takes a list after it: Badger::Exporter's `continue` swallowed the statement
+/// that followed the loop.
+fn continue_clause(parser: &mut Parser<'_>) {
+    parser.expect_term();
+    if !(parser.at(T!["continue"]) && parser.nth_at(1, T!["{"])) {
+        return;
+    }
+    let clause = parser.start();
+    parser.bump();
+    block(parser);
+    parser.complete(clause, NodeKind::CONTINUE_CLAUSE);
 }
 
 /// Both `for (init; test; step)` and `for my $x (@xs)`.

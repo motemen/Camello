@@ -55,6 +55,16 @@ sub _get_behavior {
     return:
 }
 
+# A loop's continue block runs at the end of every iteration, `next` included
+SYMBOL: while (@$imports) {
+    next SYMBOL if $done{$_}++;
+    $count++;
+}
+continue {
+    unshift(@$imports,@$all) unless $count;
+}
+for my $x (@a) { $y++; } continue { $z++; }
+
 until($i>10){$i--;}
 
 for(;;){}
