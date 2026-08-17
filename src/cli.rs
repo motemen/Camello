@@ -648,7 +648,7 @@ fn check_paths(
     extensions: &str,
     encoding: Option<String>,
 ) -> Result<()> {
-    use crate::check::{check, Invariant};
+    use crate::check::{check_only, Invariant};
 
     if list_invariants {
         for invariant in Invariant::ALL {
@@ -657,16 +657,19 @@ fn check_paths(
         return Ok(());
     }
 
-    let wanted: Option<Vec<&str>> = only.map(|list| list.split(',').map(str::trim).collect());
-    if let Some(wanted) = &wanted {
-        for slug in wanted {
-            if !Invariant::ALL.iter().any(|kind| kind.slug() == *slug) {
+    let mut wanted: Vec<Invariant> = Invariant::ALL.to_vec();
+    if let Some(only) = only {
+        wanted.clear();
+        for slug in only.split(',').map(str::trim) {
+            let Some(invariant) = Invariant::ALL.iter().find(|kind| kind.slug() == slug) else {
                 return Err(miette::miette!(
                     "unknown invariant {slug:?}; --list-invariants prints them"
                 ));
-            }
+            };
+            wanted.push(*invariant);
         }
     }
+    let wanted = wanted.as_slice();
 
     let extensions: Vec<&str> = extensions.split(',').map(str::trim).collect();
     let encoding = get_encoding(encoding.as_ref())?;
@@ -676,17 +679,6 @@ fn check_paths(
         collect_perl_files(path, &extensions, &mut files)?;
     }
 
-    let wanted_by = |violations: Vec<crate::check::Violation>| -> Vec<crate::check::Violation> {
-        violations
-            .into_iter()
-            .filter(|violation| {
-                wanted
-                    .as_ref()
-                    .is_none_or(|wanted| wanted.contains(&violation.invariant.slug()))
-            })
-            .collect()
-    };
-
     // No paths at all means stdin, so the command composes with a pipeline the
     // way `format` does. `None` is a file this command has nothing to say about
     // — unreadable, or not decodable with this encoding, neither of which is a
@@ -695,7 +687,7 @@ fn check_paths(
         let mut bytes = Vec::new();
         io::stdin().read_to_end(&mut bytes).into_diagnostic()?;
         let (decoded, _, _) = encoding.decode(&bytes);
-        vec![Some(("<stdin>".to_string(), wanted_by(check(&decoded))))]
+        vec![Some(("<stdin>".to_string(), check_only(&decoded, wanted)))]
     } else {
         in_parallel(&files, jobs, |path| {
             let bytes = fs::read(path).ok()?;
@@ -703,7 +695,7 @@ fn check_paths(
             if had_errors {
                 return None;
             }
-            Some((path.display().to_string(), wanted_by(check(&decoded))))
+            Some((path.display().to_string(), check_only(&decoded, wanted)))
         })
     };
 
