@@ -181,6 +181,36 @@ cargo run -- dev check --jobs 1 ~/some/perl/tree   # serially, for profiling
 
 Use `-E` instead of `-e` to use character escapes in the input string. e.g. `-E 'sub foo {\n\twarn;\n}'`.
 
+### Profiling
+
+```bash
+# Release, plus the symbols a profiler needs to name a frame
+cargo build --profile profiling
+
+# A flame graph in the browser
+samply record ./target/profiling/camello format --check -j1 <path>
+
+# Or a text profile, without leaving the terminal
+./target/profiling/camello format --check -j1 <path> >/dev/null &
+sample $! 3 -mayDie -file /tmp/sample.txt   # macOS; read "Sort by top of stack"
+```
+
+Profile with `-j1`. The work is one file per core and the threads share nothing,
+so a parallel run tells you about the scheduler and the allocator, not about the
+formatter.
+
+Three measurements bound the answer, over the same tree:
+
+```bash
+camello dev check --only clean-parse -j1 <path>   # lex + parse + build the tree
+camello format --check -j1 <path>                 # ... + build + render + align
+camello dev check -j1 <path>                      # ... + the other seven invariants
+```
+
+The middle one is the interface's cost; the first says how much of it is the
+parser. On an installed CPAN tree (4944 files, 101MB) that is about 0.9s and
+2.3s — so roughly a third parse, two thirds formatter.
+
 ### Testing Strategy
 
 Two kinds of check, and the difference between them is the design.
