@@ -25,6 +25,7 @@ thiserror = "1.0"
 
 # Character encoding conversion
 encoding_rs = "0.8"
+mimalloc = "0.1.52"
 
 [dev-dependencies]
 # スナップショットテスト
@@ -32,3 +33,11 @@ insta = "1.0"
 
 # テスト用の一時ファイル作成
 tempfile = "3.0"
+
+# Release, plus the symbols a profiler needs to name a frame.
+#
+#   cargo build --profile profiling
+#   samply record ./target/profiling/camello format --check -j1 <path>
+[profile.profiling]
+inherits = "release"
+debug = true
