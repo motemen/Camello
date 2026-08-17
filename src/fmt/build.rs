@@ -377,11 +377,23 @@ impl<'a> Builder<'a> {
         // continuation indent, and so none of ADR 0002's fourteen branches.
         // A block's opening brace is placed by the formatter, not the user
         // (formatting.md NEWLINE-2), so a newline before it is not preserved.
-        let brace_follows = next
-            .as_node()
-            .is_some_and(|node| node.node_kind() == NodeKind::BLOCK);
+        // A chained keyword goes on the closing brace's line whatever the user
+        // wrote (formatting.md NEWLINE-3), so the newline before one is no more
+        // preserved than the one before a brace. Keeping it produced `}` and
+        // then an indented `else {` with its body at the same column.
+        let placed_by_the_formatter = next.as_node().is_some_and(|node| {
+            matches!(
+                node.node_kind(),
+                NodeKind::BLOCK
+                    | NodeKind::ELSIF_CLAUSE
+                    | NodeKind::ELSE_CLAUSE
+                    | NodeKind::CATCH_CLAUSE
+                    | NodeKind::FINALLY_CLAUSE
+                    | NodeKind::CONTINUE_CLAUSE
+            )
+        });
 
-        if !brace_follows && self.has_user_newline_between(previous, next) {
+        if !placed_by_the_formatter && self.has_user_newline_between(previous, next) {
             parts.push(Doc::UserLine { broken: true });
         } else {
             parts.push(Doc::Space);
@@ -852,6 +864,7 @@ impl<'a> Builder<'a> {
                         | NodeKind::LOOP_STMT
                         | NodeKind::ELSIF_CLAUSE
                         | NodeKind::ELSE_CLAUSE
+                        | NodeKind::CONTINUE_CLAUSE
                         | NodeKind::GIVEN_STMT
                         | NodeKind::WHEN_CLAUSE
                         | NodeKind::DEFAULT_CLAUSE

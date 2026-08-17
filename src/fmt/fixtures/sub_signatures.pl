@@ -35,3 +35,10 @@ sub multiline(
 ){
     return $alpha + $beta + scalar keys %extra;
 }
+
+# perl reads these two as subroutine definitions without the `sub`
+AUTOLOAD {
+    our $AUTOLOAD;
+    return if $AUTOLOAD =~ /::DESTROY$/;
+}
+DESTROY { }
