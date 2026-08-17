@@ -20,6 +20,10 @@ pub struct Anchor {
     /// rather than re-derived, because a column no longer identifies a position
     /// in the string once one character can be two columns wide.
     pub byte: usize,
+    /// The width of what follows that has to end at the group's column, so that
+    /// `=` and `-=` agree on their `=` rather than on where the operator starts.
+    /// Zero for the classes that agree at the anchor itself.
+    pub tail: usize,
 }
 
 /// One output line, with the alignment anchors on it.
@@ -206,7 +210,7 @@ impl<'a> Renderer<'a> {
                     self.finish_line();
                 }
             }
-            Doc::Anchor(class) => {
+            Doc::Anchor(class, tail) => {
                 // Alignment is a relation between lines, so an anchor inside a
                 // group that stays on one line has nothing to hold. Keeping it
                 // let `bar(b => $y, charlie => $z)` join the vertical group of
@@ -218,6 +222,7 @@ impl<'a> Renderer<'a> {
                         class: *class,
                         column: self.current.text.width(),
                         byte: self.current.text.len(),
+                        tail: *tail,
                     });
                 }
             }
@@ -281,6 +286,7 @@ impl<'a> Renderer<'a> {
                     class: AnchorClass::TrailingComment,
                     column: self.current.text.width(),
                     byte: self.current.text.len(),
+                    tail: 0,
                 };
                 self.current.anchors.push(anchor);
                 for _ in 0..padding {
@@ -383,6 +389,12 @@ impl<'a> Renderer<'a> {
         if !line.verbatim {
             line.text = line.text.trim_end().to_string();
         }
+        // An anchor with nothing after it on the line has nothing to align: the
+        // thing it was going to hold went to the next line. Padding it would put
+        // spaces at the end of a line — which the next pass trims, so the output
+        // would not be its own fixed point (ADR 0008 §6). `$x == 200\n    || $y`
+        // in HTTP::Status leaves one behind on every operand but the last.
+        line.anchors.retain(|anchor| anchor.byte < line.text.len());
         // The shape belongs to the line that carries an anchor, and to every such
         // line of the statement it was declared for — not just the first.
         // Consuming it here is what put `alpha => 1` in a group of its own and

@@ -15,6 +15,11 @@ pub enum AnchorClass {
     /// `=>`, distinguished by nesting depth so that an inner hash aligns
     /// separately from the one containing it.
     FatComma(u8),
+    /// The operator that supplies a default: `$args->{port} // 8080`,
+    /// `$opt->{name} || 'anon'`. One class, so a run of lines mixing the two
+    /// still agrees on one column. `or` is not one of these: it binds loosely
+    /// enough to be flow control rather than a default.
+    Fallback,
     /// A postfix `if` / `unless` / `while` / `until` / `for`.
     PostfixKeyword,
     /// An end-of-line comment.
@@ -92,7 +97,14 @@ pub enum Doc {
     /// One blank line, already normalised to at most one.
     BlankLine,
     /// A zero-width alignment anchor.
-    Anchor(AnchorClass),
+    /// An alignment point, and the width of what follows it that has to end at
+    /// the column the group agrees on.
+    ///
+    /// `=` and `-=` belong to one class and are two widths: what a reader lines
+    /// up on is the `=`, so the shorter operator is the one that gets padded in
+    /// front. A width of 0 means the group agrees at the anchor itself, which is
+    /// what `=>` and a trailing comment want.
+    Anchor(AnchorClass, usize),
     Comment(smol_str::SmolStr, Placement),
     /// Declares the shape of the statement now being emitted, so the align pass
     /// can tell where one group of comparable statements ends and the next

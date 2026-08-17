@@ -5,3 +5,11 @@ sub compound_alignment {
     $flag&&=check();
     $concat .= value();
 }
+
+# The `=` is what lines up, whatever the operator's length
+sub mixed_widths {
+    my $x = 1;
+    $y -= 2;
+    $longer //= 3;
+    $z **= 4;
+}

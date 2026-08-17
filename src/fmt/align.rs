@@ -20,8 +20,9 @@ fn class_order(class: AnchorClass) -> (u8, u8) {
     match class {
         AnchorClass::Assign => (0, 0),
         AnchorClass::FatComma(depth) => (1, depth),
-        AnchorClass::PostfixKeyword => (2, 0),
-        AnchorClass::TrailingComment => (3, 0),
+        AnchorClass::Fallback => (2, 0),
+        AnchorClass::PostfixKeyword => (3, 0),
+        AnchorClass::TrailingComment => (4, 0),
     }
 }
 
@@ -87,8 +88,14 @@ fn anchor_of(line: &Line, class: AnchorClass) -> Option<Anchor> {
         .copied()
 }
 
+/// The column the group has to agree on for this line.
+///
+/// The end of the anchored operator, not its start: `=` and `-=` line up on
+/// their `=`, so what the group agrees on is where the operator *finishes*
+/// (formatting.md ALIGNMENT-2). For a class whose anchor has no width — `=>`, a
+/// trailing comment — the two are the same column.
 fn column_of(line: &Line, class: AnchorClass) -> Option<usize> {
-    anchor_of(line, class).map(|anchor| anchor.column)
+    anchor_of(line, class).map(|anchor| anchor.column + anchor.tail)
 }
 
 /// Insert spaces so that `class`'s anchor sits at `target`.
@@ -99,7 +106,7 @@ fn pad_to(line: &mut Line, class: AnchorClass, target: usize) {
     let Some(anchor) = anchor_of(line, class) else {
         return;
     };
-    let padding = target.saturating_sub(anchor.column);
+    let padding = target.saturating_sub(anchor.column + anchor.tail);
     if padding == 0 {
         return;
     }
