@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 
 use rowan::TextSize;
+use unicode_width::UnicodeWidthStr;
 
 use crate::lang::{
     NodeExt, NodeKind, SyntaxElement, SyntaxNode, SyntaxToken, TokenExt, TokenKind, T,
@@ -364,8 +365,8 @@ impl<'a> Builder<'a> {
         let mut parts = Vec::new();
 
         // An anchor goes immediately before the thing it aligns.
-        if let Some(class) = self.anchor_class(next, parent) {
-            parts.push(Doc::Anchor(class));
+        if let Some((class, tail)) = self.anchor_class(next, parent) {
+            parts.push(Doc::Anchor(class, tail));
         }
 
         if !self.wants_space(previous, next, parent) {
@@ -401,16 +402,29 @@ impl<'a> Builder<'a> {
         parts
     }
 
-    fn anchor_class(&self, next: &SyntaxElement, parent: Option<NodeKind>) -> Option<AnchorClass> {
+    /// The class this token is an alignment point for, and how much of it has to
+    /// end at the group's column.
+    fn anchor_class(
+        &self,
+        next: &SyntaxElement,
+        parent: Option<NodeKind>,
+    ) -> Option<(AnchorClass, usize)> {
         let token = next.as_token()?;
         if token.token_kind().is_assignment_op() && parent == Some(NodeKind::ASSIGN_EXPR) {
-            return Some(AnchorClass::Assign);
+            // The whole operator: `=`, `-=` and `||=` line up on their `=`
+            // (formatting.md ALIGNMENT-2).
+            return Some((AnchorClass::Assign, token.text().width()));
         }
         if token.token_kind() == T!["=>"] {
-            return Some(AnchorClass::FatComma(self.fat_comma_depth));
+            return Some((AnchorClass::FatComma(self.fat_comma_depth), 0));
+        }
+        if matches!(token.token_kind(), T!["//"] | T!["||"])
+            && parent == Some(NodeKind::BINARY_EXPR)
+        {
+            return Some((AnchorClass::Fallback, 0));
         }
         if parent == Some(NodeKind::STMT_MODIFIER) && token.token_kind().is_stmt_modifier() {
-            return Some(AnchorClass::PostfixKeyword);
+            return Some((AnchorClass::PostfixKeyword, 0));
         }
         None
     }
@@ -1102,7 +1116,7 @@ impl<'a> Builder<'a> {
                     let empty_after =
                         adjacent_separator(&token, rowan::Direction::Next) == Some(T![","]);
                     if token.token_kind() == T!["=>"] && !empty_before {
-                        parts.push(Doc::Anchor(AnchorClass::FatComma(self.fat_comma_depth)));
+                        parts.push(Doc::Anchor(AnchorClass::FatComma(self.fat_comma_depth), 0));
                         parts.push(Doc::Space);
                     }
                     let value_on_next_line =
