@@ -272,8 +272,17 @@ pub(crate) fn variable(parser: &mut Parser<'_>) -> CompletedMarker {
 /// `my $x`, `our ($a, $b)`, `local $h{key}`.
 pub(crate) fn var_decl(parser: &mut Parser<'_>) -> CompletedMarker {
     let marker = parser.start();
+    let keyword = parser.current();
     parser.bump();
     parser.expect_term();
+
+    // `local our @X;` — perl lets `local` save the value of a variable the same
+    // statement declares as a package global (perlsub, "Localized variables");
+    // no other pair of declarators combines.
+    if keyword == Some(T!["local"]) && parser.at(T!["our"]) {
+        parser.bump();
+        parser.expect_term();
+    }
 
     let target = parser.start();
     if parser.at(T!["("]) {
