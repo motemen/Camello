@@ -28,6 +28,9 @@ local ($SIG{__WARN__}, $a)    = (\&handler, $old_a);
 local ($array[0], $hash{key}) = ($new_first, $new_value);
 local (undef, $SIG{__DIE__})  = (undef, \&my_die);
 local ($a, undef, $hash{key}) = @list;
+local our @X;
+local our $g2 = 5;
+local our ($m, $n) = (1, 2);
 
 # Undef in declarations and calls
 my (undef, $x)             = @_;
