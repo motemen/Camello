@@ -531,15 +531,15 @@ fn what_the_parser_could_not_read_is_copied_out_unchanged() {
 fn a_header_comment_and_a_brace_comment_both_survive() {
     // F6 moves a comment written before the brace to after it, because the brace
     // does not move. When the brace already carries one of its own, the two
-    // cannot share a line — the second would be inside the first — so the header
-    // comment takes a line inside the block. Both texts survive; their order
-    // does not, which is why this case is here and not in the fixture that the
-    // ordered comment-preservation invariant reads.
+    // cannot share a line — the second would be inside the first — so the later
+    // one takes a line inside the block. Which is later is the order they were
+    // written in: `DBI::DBD::SqlEngine` writes one sentence across the two, and
+    // had it come back in reverse.
     let formatted =
         format("if ($y)    # about the condition\n{ # about the block\n    print 1;\n}\n");
     assert_eq!(
         formatted,
-        "if ($y) {    # about the block\n    # about the condition\n    print 1;\n}\n"
+        "if ($y) {    # about the condition\n    # about the block\n    print 1;\n}\n"
     );
     assert_idempotent(&formatted);
 }

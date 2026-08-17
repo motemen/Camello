@@ -759,13 +759,29 @@ impl<'a> Builder<'a> {
 
         // Error recovery can leave a block without one or both braces; emit what
         // is there rather than assuming a shape the tree does not have.
-        let open = brace(node, T!["{"], false).map(|token| self.token(&token));
+        //
+        // Both comments end up on the brace's line, and they keep the order they
+        // were written in: the one from before the brace first, the brace's own
+        // trailing comment after it. `DBI::DBD::SqlEngine` writes a sentence
+        // across the two and had it come back in reverse.
+        let open = match brace(node, T!["{"], false) {
+            Some(token) => {
+                let leading = self.leading_docs(&token);
+                let trailing = self.trailing_comment(&token);
+                Some(Doc::concat(vec![
+                    leading,
+                    Doc::Token(token),
+                    header_comment,
+                    trailing,
+                ]))
+            }
+            None => Some(header_comment),
+        };
         let close = brace(node, T!["}"], true).map(|token| self.token(&token));
 
         if flat {
             let mut parts = Vec::new();
             parts.extend(open);
-            parts.push(header_comment);
             let empty = body.is_empty();
             parts.push(Doc::Space);
             if !empty {
@@ -778,7 +794,6 @@ impl<'a> Builder<'a> {
 
         let mut parts = Vec::new();
         parts.extend(open);
-        parts.push(header_comment);
         parts.push(Doc::HardLine);
         if !body.is_empty() {
             parts.push(Doc::indent(Doc::concat(body)));
@@ -930,7 +945,21 @@ impl<'a> Builder<'a> {
         let mut inner = Vec::new();
         for child in node.children_with_tokens() {
             match child {
-                SyntaxElement::Node(child) => inner.push(self.list_items(&child, broken)),
+                SyntaxElement::Node(child) => {
+                    // `print( {$fh} @data )` and `map({ $_ } @list)`: the
+                    // handle and the block are children of their own, beside the
+                    // list, and nothing separates the two but the space perl
+                    // needs to tell them apart. A `,` written after the block is
+                    // part of the list and brings its own spacing.
+                    if matches!(child.node_kind(), NodeKind::FILEHANDLE | NodeKind::BLOCK)
+                        && !comma_follows(&child)
+                    {
+                        inner.push(self.list_items(&child, broken));
+                        inner.push(Doc::Space);
+                        continue;
+                    }
+                    inner.push(self.list_items(&child, broken));
+                }
                 SyntaxElement::Token(token) if token.token_kind().is_heredoc_body() => {
                     inner.push(self.token(&token));
                 }
@@ -1413,4 +1442,17 @@ fn brace(node: &SyntaxNode, kind: TokenKind, last: bool) -> Option<SyntaxToken> 
     } else {
         matching.next()
     }
+}
+
+/// Is the next thing written after this node a `,`?
+///
+/// Asked of the block in `map({ $_ }, @list)`, where the comma is the first
+/// token of the list beside it rather than a sibling of its own.
+fn comma_follows(node: &SyntaxNode) -> bool {
+    node.next_sibling_or_token().is_some_and(|next| match next {
+        SyntaxElement::Token(token) => token.token_kind() == T![","],
+        SyntaxElement::Node(node) => {
+            first_token(&node).is_some_and(|token| token.token_kind() == T![","])
+        }
+    })
 }

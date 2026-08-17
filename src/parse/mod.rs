@@ -211,11 +211,26 @@ impl<'a> Parser<'a> {
         self.lexer.peek_text(0)
     }
 
+    pub(crate) fn nth_text(&mut self, n: usize) -> Option<&'a str> {
+        self.lexer.peek_text(n)
+    }
+
     pub(crate) fn current_range(&mut self) -> TextRange {
         self.lexer
             .peek(0)
             .map(|token| token.range)
             .unwrap_or_else(|| self.eof_range())
+    }
+
+    /// The source from the end of the current token onwards.
+    ///
+    /// For the one question that cannot be asked of tokens: whether a `%` was
+    /// written against the name after it, which is the only evidence there is
+    /// that a bareword with no declaration in sight is a list operator taking a
+    /// hash (ADR 0007 §6).
+    pub(crate) fn source_after_current(&mut self) -> &'a str {
+        let end = usize::from(self.current_range().end());
+        &self.lexer.source()[end..]
     }
 
     fn eof_range(&self) -> TextRange {

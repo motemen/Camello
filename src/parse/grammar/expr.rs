@@ -412,13 +412,20 @@ pub(crate) fn arg_list(parser: &mut Parser<'_>) {
 pub(crate) fn bareword_call(parser: &mut Parser<'_>) -> CompletedMarker {
     let text = parser.current_text().unwrap_or_default();
     let builtin = builtins::lookup(text);
+    let sigil_argument_follows = sigil_argument_follows(parser.source_after_current());
     let marker = parser.start();
     name(parser, NodeKind::SUB_NAME);
 
     // Parenthesised call: the shape is unambiguous, whatever the name means —
     // except for the block-taking builtins, handled below.
     let takes_block = builtin.is_some_and(|builtin| builtin.shape == Shape::BlockList);
-    if parser.at(T!["("]) && !(takes_block && parser.nth_at(1, T!["{"])) {
+    // `print( {$fh} @data )` and `print($fh 'text')` put the handle inside the
+    // parentheses, where the ordinary argument-list parser reads it as the first
+    // element and then finds no comma after it.
+    let takes_filehandle = builtin.is_some_and(|builtin| builtin.shape == Shape::FilehandleList)
+        && parser.at(T!["("])
+        && at_filehandle(parser, 1);
+    if parser.at(T!["("]) && !(takes_block && parser.nth_at(1, T!["{"])) && !takes_filehandle {
         arg_list(parser);
         return parser.complete(marker, NodeKind::CALL_EXPR);
     }
@@ -434,6 +441,12 @@ pub(crate) fn bareword_call(parser: &mut Parser<'_>) -> CompletedMarker {
 
     if let Some(builtin) = builtin {
         parser.set_expect(builtin.expect_after_name);
+    } else if sigil_argument_follows {
+        // `_error %state, $cb` in AnyEvent::HTTP, `getdata %^H, $wiz` in
+        // B::Hooks::EndOfScope. Only `%`, `&` and `*` are in doubt at all, and
+        // where the sub's declaration is not in sight the spacing is the only
+        // evidence which reading was meant.
+        parser.expect_term();
     } else {
         // With no declaration in sight, assume `f / 10` divides rather than
         // matching. Perl guesses here too; the difference is that the guess is
@@ -461,9 +474,9 @@ pub(crate) fn bareword_call(parser: &mut Parser<'_>) -> CompletedMarker {
             parser.expect_term();
             block(parser);
             parser.expect_term();
-            if parser.at(T![","]) {
-                parser.bump();
-            }
+            // A `,` after the block is perl's and stays in the list, where the
+            // formatter can see it: consuming it here dropped it from the
+            // output, and `map({$_}, @list)` came back a token short.
             let list = parser.start();
             list_contents(parser, &[T![")"]]);
             parser.complete(list, NodeKind::LIST_EXPR);
@@ -515,8 +528,26 @@ pub(crate) fn bareword_call(parser: &mut Parser<'_>) -> CompletedMarker {
             parser.complete(marker, NodeKind::LIST_CALL_EXPR)
         }
         Shape::FilehandleList => {
+            // `print( {$fh} @data )`: the parentheses are the argument list and
+            // the handle is the first thing inside them, so the group is opened
+            // here rather than by `arg_list`.
+            let parenthesised = parser.at(T!["("]);
+            let args = parenthesised.then(|| parser.start());
+            if parenthesised {
+                parser.bump();
+                parser.expect_term();
+            }
             filehandle(parser);
-            list_arguments(parser);
+            if let Some(args) = args {
+                let list = parser.start();
+                list_contents(parser, &[T![")"]]);
+                parser.complete(list, NodeKind::LIST_EXPR);
+                parser.expect(T![")"]);
+                parser.complete(args, NodeKind::ARG_LIST);
+                parser.expect_operator();
+            } else {
+                list_arguments(parser);
+            }
             parser.complete(marker, NodeKind::LIST_CALL_EXPR)
         }
         Shape::List => {
@@ -575,7 +606,12 @@ fn block_call_follows(parser: &mut Parser<'_>) -> bool {
 ///
 /// Marked as its own node rather than left as an unexplained first argument
 /// (ADR 0007 §2).
-fn filehandle(parser: &mut Parser<'_>) {
+/// Does a filehandle slot start `base` tokens ahead?
+///
+/// Asked at the name (`print $fh @lines`) and one token past a `(`
+/// (`print( {$fh} @lines )`), which is why it takes an offset rather than
+/// looking at the current token.
+fn at_filehandle(parser: &mut Parser<'_>, base: usize) -> bool {
     // perl decides this from its symbol table, and we have none. An all-capital
     // bareword followed by `(` is therefore ambiguous — `print FOO(1)` could be
     // a call — with one exception: perl's own handles are always handles, and
@@ -584,36 +620,42 @@ fn filehandle(parser: &mut Parser<'_>) {
     // `Getopt::Long` and `Debian::AdduserLogging` into a function call.
     const PERL_HANDLES: &[&str] = &["STDIN", "STDOUT", "STDERR", "ARGV", "ARGVOUT", "DATA"];
     let is_perl_handle = parser
-        .current_text()
+        .nth_text(base)
         .is_some_and(|text| PERL_HANDLES.contains(&text));
 
-    let is_bareword_handle = parser.at(TokenKind::IDENT)
+    let is_bareword_handle = parser.nth_at(base, TokenKind::IDENT)
         && parser
-            .current_text()
+            .nth_text(base)
             .is_some_and(|text| text.chars().all(|ch| ch.is_ascii_uppercase() || ch == '_'))
-        && (is_perl_handle || !parser.nth_at(1, T!["("]))
-        && !parser.nth_at(1, T![","])
-        && !parser.nth_at(1, T!["=>"])
-        && !parser.nth_at(1, T![";"]);
+        && (is_perl_handle || !parser.nth_at(base + 1, T!["("]))
+        && !parser.nth_at(base + 1, T![","])
+        && !parser.nth_at(base + 1, T!["=>"])
+        && !parser.nth_at(base + 1, T![";"]);
 
-    let is_block_handle = parser.at(T!["{"]);
+    let is_block_handle = parser.nth_at(base, T!["{"]);
 
     // `print $fh @lines` — a scalar handle, told apart from `print $x, $y` by
     // the absence of a comma. A subscript says the scalar is not the handle:
     // `print $claim{sub}, $rest` prints a hash element, and the handle slot
     // takes a simple scalar and nothing else.
-    let is_scalar_handle = parser.at(TokenKind::SCALAR_SIGIL)
-        && parser.nth_at(1, TokenKind::IDENT)
-        && !parser.nth_at(2, T!["{"])
-        && !parser.nth_at(2, T!["["])
-        && !parser.nth_at(2, T!["->"])
+    let is_scalar_handle = parser.nth_at(base, TokenKind::SCALAR_SIGIL)
+        && parser.nth_at(base + 1, TokenKind::IDENT)
+        && !parser.nth_at(base + 2, T!["{"])
+        && !parser.nth_at(base + 2, T!["["])
+        && !parser.nth_at(base + 2, T!["->"])
         && parser
-            .nth(2)
+            .nth(base + 2)
             .is_some_and(|kind| kind.can_start_term() || kind == TokenKind::HEREDOC_START);
 
-    if !is_bareword_handle && !is_block_handle && !is_scalar_handle {
+    is_bareword_handle || is_block_handle || is_scalar_handle
+}
+
+fn filehandle(parser: &mut Parser<'_>) {
+    if !at_filehandle(parser, 0) {
         return;
     }
+    let is_scalar_handle = parser.at(TokenKind::SCALAR_SIGIL);
+    let is_block_handle = parser.at(T!["{"]);
 
     let marker = parser.start();
     if is_scalar_handle {
@@ -780,4 +822,23 @@ impl Parser<'_> {
             Expect::Operator => self.expect_operator(),
         }
     }
+}
+
+/// Does a `%`, `&` or `*` written against the name after it follow here?
+///
+/// These three characters are a sigil where a term is expected and an operator
+/// where one is not, and after a bareword with no declaration in sight both
+/// readings are open: `f %h` is a call taking a hash, `$x % $y` is a modulus.
+/// The spacing is the only evidence there is — a space in front and none behind
+/// is how `_error %state, $cb` is written and how nobody writes a modulus.
+fn sigil_argument_follows(rest: &str) -> bool {
+    let trimmed = rest.trim_start_matches([' ', '\t']);
+    if trimmed.len() == rest.len() {
+        return false;
+    }
+    let mut chars = trimmed.chars();
+    matches!(chars.next(), Some('%' | '&' | '*'))
+        && chars
+            .next()
+            .is_some_and(|ch| ch.is_alphabetic() || matches!(ch, '_' | '{' | '$' | '^'))
 }
