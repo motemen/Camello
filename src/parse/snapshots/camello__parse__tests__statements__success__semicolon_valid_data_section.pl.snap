@@ -12,5 +12,5 @@ ROOT
           `(` "("
           LIST_EXPR
           `)` ")"
-    ERROR
-      `__DATA__` "__DATA__"
+  DATA_SECTION
+    `__DATA__` "__DATA__"

@@ -91,7 +91,15 @@ impl<'a> Lexer<'a> {
             return;
         }
 
-        if first.is_ascii_digit() {
+        // `.5` is a number where a term is expected and concatenation where an
+        // operator is (perldata, "Numeric literals"): `$x .5` concatenates, and
+        // `$max * -.1` multiplies. The state says which, so nothing here has to
+        // guess.
+        if first.is_ascii_digit()
+            || (first == b'.'
+                && self.expect == Expect::Term
+                && bytes.get(1).is_some_and(u8::is_ascii_digit))
+        {
             self.scan_number();
             return;
         }
@@ -120,7 +128,12 @@ impl<'a> Lexer<'a> {
 
         for (marker, kind) in [("__END__", T!["__END__"]), ("__DATA__", T!["__DATA__"])] {
             if let Some(after) = rest.strip_prefix(marker) {
-                if after.is_empty() || after.starts_with(['\n', '\r']) {
+                // perl ignores the rest of the marker's line, and modules use it
+                // as a label: `__DATA__\t## DEFAULT HINTS` in Net::DNS. It is
+                // not code and it is not trivia the formatter may move, so it
+                // goes into the data section, which is carried verbatim.
+                // `__DATA__foo`, with nothing between, is an identifier.
+                if after.is_empty() || after.starts_with(['\n', '\r', ' ', '\t']) {
                     let start = self.scan_pos;
                     self.push(kind, start, start + marker.len());
                     self.scan_data_section();
@@ -498,11 +511,17 @@ impl<'a> Lexer<'a> {
                 // `$#array`, but `$#` alone is the format-accumulator variable.
                 let follows = bytes.get(2).copied();
                 return match follows {
+                    // `$#+` and `$#-` are the last indices of `@+` and `@-`,
+                    // which PPIx::Regexp reads capture positions out of. `$#`
+                    // itself has not been a variable since 5.10, so preferring
+                    // the array costs nothing.
                     Some(byte)
                         if byte.is_ascii_alphabetic()
                             || byte == b'_'
                             || byte == b'{'
-                            || byte == b'$' =>
+                            || byte == b'$'
+                            || byte == b'+'
+                            || byte == b'-' =>
                     {
                         Some((TokenKind::ARRAY_INDEX_SIGIL, 2))
                     }
@@ -588,14 +607,19 @@ impl<'a> Lexer<'a> {
             return;
         }
 
-        // Only `$`, `@` and `%` have punctuation variables — `$&`, `@-`, `%+`.
-        // There is no `&&` code variable and no `**` glob, so reading one there
-        // takes the `&&` out of `defined && -d` and makes it the argument of
-        // `defined`, which is how `File::Spec::Unix` came out saying something
-        // else.
+        // `$&`, `@-`, `%+`, `*@` — and `$#+`, the last index of `@+`. There is
+        // no `&&` code variable, so reading one takes the `&&` out of `defined
+        // && -d` and makes it the argument of `defined`, which is how
+        // `File::Spec::Unix` came out saying something else. `**` and `*=` are
+        // already excluded before a glob gets here, which leaves `local *@;` —
+        // XML::Parser saving the error variable's glob — a glob.
         let takes_punctuation = matches!(
             sigil,
-            TokenKind::SCALAR_SIGIL | TokenKind::ARRAY_SIGIL | TokenKind::HASH_SIGIL
+            TokenKind::SCALAR_SIGIL
+                | TokenKind::ARRAY_SIGIL
+                | TokenKind::HASH_SIGIL
+                | TokenKind::TYPEGLOB_SIGIL
+                | TokenKind::ARRAY_INDEX_SIGIL
         );
         if takes_punctuation && PUNCT_VAR_CHARS.contains(&first) {
             self.push(TokenKind::RAW_CONTENT, start, start + 1);

@@ -157,6 +157,11 @@ my $value = $$^ 2;
 say ${$^H};
 
 $#arr;
+$#+;
+$#-;
+my $captures = $#+;
+local *@;
+*@;
 my $last = $#items;
 $#Package::array;
 $#main::data;

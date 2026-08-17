@@ -45,6 +45,16 @@ LOOP: while($i<10){next LOOP if $i==5;last if $i==8;redo LOOP if $flag;$i++;}
 
 LOOP : while($i<2){}
 
+# A label is a name, so a keyword may spell one
+CHECK: {
+    if(ref $data){last CHECK;}
+    $data=undef;
+}
+sub _get_behavior {
+    exists $b{$name} and return $b{$name};
+    return:
+}
+
 until($i>10){$i--;}
 
 for(;;){}

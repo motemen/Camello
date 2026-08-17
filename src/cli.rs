@@ -438,7 +438,7 @@ fn check_paths(
 
     // Saturating: reading stdin puts one source in with no file behind it.
     let skipped = files.len().saturating_sub(sources.len());
-    let mut violated = 0usize;
+    let mut offenders: Vec<(&str, Vec<&'static str>)> = Vec::new();
     let mut counts: Vec<(Invariant, usize)> =
         Invariant::ALL.iter().map(|kind| (*kind, 0)).collect();
 
@@ -456,7 +456,13 @@ fn check_paths(
         if violations.is_empty() {
             continue;
         }
-        violated += 1;
+        offenders.push((
+            label.as_str(),
+            violations
+                .iter()
+                .map(|violation| violation.invariant.slug())
+                .collect(),
+        ));
         for violation in violations {
             for entry in &mut counts {
                 if entry.0 == violation.invariant {
@@ -475,6 +481,17 @@ fn check_paths(
                     writeln!(out, "    {line}").into_diagnostic()?;
                 }
             }
+        }
+    }
+
+    let violated = offenders.len();
+
+    // The per-file reports have scrolled away by now; a run over a directory
+    // ends by saying which files to go back to.
+    if violated > 0 && sources.len() > 1 {
+        writeln!(out, "---- files with a violation").into_diagnostic()?;
+        for (label, slugs) in &offenders {
+            writeln!(out, "     {label}\t{}", slugs.join(" ")).into_diagnostic()?;
         }
     }
 

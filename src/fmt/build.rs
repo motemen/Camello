@@ -905,10 +905,18 @@ impl<'a> Builder<'a> {
             .filter(|token| token.token_kind() == close)
             .last();
 
+        // A group that opened a heredoc owes the body to the line its marker is
+        // on, and that body is emitted after the whole statement — so a group
+        // that breaks puts it after the closing bracket instead, which is a
+        // different program. Specio writes `sprintf(\n    <<'EOF', $x, $y );`
+        // and got its format string back as two arguments and a stray block.
+        // A comment still wins: a flat group would comment out the code after
+        // it, and that is the greater loss.
         let broken = self.contains_comment(node)
-            || opening
-                .as_ref()
-                .is_some_and(|token| self.newline_follows(token));
+            || (self.heredoc_markers_in(node) == 0
+                && opening
+                    .as_ref()
+                    .is_some_and(|token| self.newline_follows(token)));
 
         let is_hash = open == T!["{"];
         if is_hash {

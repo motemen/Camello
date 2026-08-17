@@ -212,7 +212,16 @@ fn idempotency(formatted: &str) -> Option<Violation> {
         violation(
             Invariant::Idempotency,
             "format(format(x)) != format(x)".to_string(),
-            format!("--- pass 1 ---\n{formatted}--- pass 2 ---\n{twice}"),
+            {
+                let pass1: Vec<&str> = formatted.lines().collect();
+                let pass2: Vec<&str> = twice.lines().collect();
+                let report = Report {
+                    unit: "line",
+                    sides: ("pass 1", "pass 2"),
+                    base: 1,
+                };
+                describe_divergence(&pass1, &pass2, &report, |line| elide(line))
+            },
         )
     })
 }
@@ -224,7 +233,9 @@ fn semantic_preservation(source: &str, formatted: &str) -> Option<Violation> {
         violation(
             Invariant::SemanticPreservation,
             format!("{} tokens in, {} out", before.len(), after.len()),
-            describe_divergence(&before, &after),
+            describe_divergence(&before, &after, &Report::stream("token"), |(kind, text)| {
+                format!("{kind} {}", elide(text))
+            }),
         )
     })
 }
@@ -236,11 +247,9 @@ fn comment_preservation(source: &str, formatted: &str) -> Option<Violation> {
         violation(
             Invariant::CommentPreservation,
             format!("{} comments in, {} out", before.len(), after.len()),
-            format!(
-                "--- input ---\n{}\n--- output ---\n{}",
-                before.join("\n"),
-                after.join("\n")
-            ),
+            describe_divergence(&before, &after, &Report::stream("comment"), |text| {
+                elide(text)
+            }),
         )
     })
 }
@@ -257,13 +266,14 @@ fn verbatim_preservation(source: &str, formatted: &str) -> Option<Violation> {
         let position = (0..before.len().max(after.len()))
             .find(|&index| before.get(index) != after.get(index))
             .unwrap_or(0);
+        let show = |text: Option<&String>| text.map_or("(none)".to_string(), |text| elide(text));
         return Some(violation(
             Invariant::VerbatimPreservation,
             format!("verbatim token #{position} changed"),
             format!(
-                "  input:  {:?}\n  output: {:?}",
-                before.get(position),
-                after.get(position)
+                "  input:  {}\n  output: {}",
+                show(before.get(position)),
+                show(after.get(position))
             ),
         ));
     }
@@ -277,7 +287,7 @@ fn verbatim_preservation(source: &str, formatted: &str) -> Option<Violation> {
             violation(
                 Invariant::VerbatimPreservation,
                 "verbatim text not present in the input".to_string(),
-                format!("  {text:?}"),
+                format!("  {}", elide(text)),
             )
         })
 }
@@ -335,8 +345,57 @@ fn verbatim_stream(source: &str) -> Vec<String> {
         .collect()
 }
 
-/// Render the first divergence between two token streams for a readable report.
-fn describe_divergence(before: &[(String, String)], after: &[(String, String)]) -> String {
+/// As much of a text as a report can carry: a `__DATA__` section or a heredoc
+/// body is one item of a stream and thousands of lines of a terminal.
+const ELIDE_AT: usize = 120;
+
+/// `text`, quoted, with anything past [`ELIDE_AT`] replaced by a count.
+fn elide(text: &str) -> String {
+    if text.len() <= ELIDE_AT {
+        return format!("{text:?}");
+    }
+    let mut end = ELIDE_AT;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{:?} … {} more bytes", &text[..end], text.len() - end)
+}
+
+/// How to caption a divergence report.
+struct Report<'a> {
+    /// What the stream is made of: `token`, `comment`, `line`.
+    unit: &'a str,
+    /// What the two sides are called.
+    sides: (&'a str, &'a str),
+    /// The number the first item is given: 0 for a stream, 1 for a file's lines.
+    base: usize,
+}
+
+impl<'a> Report<'a> {
+    /// The usual case: a stream taken from the input and from the output.
+    fn stream(unit: &'a str) -> Self {
+        Report {
+            unit,
+            sides: ("input", "output"),
+            base: 0,
+        }
+    }
+}
+
+/// Render the first divergence between two streams, with a little context
+/// either side.
+///
+/// Every one of these comparisons is between two long sequences that agree
+/// almost everywhere, so what a report owes its reader is the place they stop
+/// agreeing — printing both streams in full is how one mislaid comment fills a
+/// screen and says nothing.
+fn describe_divergence<T: PartialEq>(
+    before: &[T],
+    after: &[T],
+    report: &Report<'_>,
+    render_item: impl Fn(&T) -> String,
+) -> String {
+    let Report { unit, sides, base } = *report;
     let Some(position) =
         (0..before.len().max(after.len())).find(|&index| before.get(index) != after.get(index))
     else {
@@ -344,23 +403,61 @@ fn describe_divergence(before: &[(String, String)], after: &[(String, String)]) 
     };
 
     let context = position.saturating_sub(3);
-    let render = |stream: &[(String, String)]| {
+    let render = |stream: &[T]| {
         stream
             .iter()
             .enumerate()
             .skip(context)
             .take(position - context + 4)
-            .map(|(index, (kind, text))| {
+            .map(|(index, item)| {
                 let marker = if index == position { ">>" } else { "  " };
-                format!("{marker} [{index}] {kind} {text:?}")
+                format!("{marker} [{}] {}", index + base, render_item(item))
             })
             .collect::<Vec<_>>()
             .join("\n")
     };
 
     format!(
-        "first divergence at token #{position}\n--- input ---\n{}\n--- output ---\n{}",
+        "first divergence at {unit} #{}\n--- {} ---\n{}\n--- {} ---\n{}",
+        position + base,
+        sides.0,
         render(before),
+        sides.1,
         render(after)
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{describe_divergence, elide, Report, ELIDE_AT};
+
+    #[test]
+    fn a_report_carries_the_divergence_and_not_the_stream() {
+        let before: Vec<String> = (0..500).map(|index| format!("# {index}")).collect();
+        let mut after = before.clone();
+        after.remove(200);
+
+        let detail = describe_divergence(&before, &after, &Report::stream("comment"), |text| {
+            elide(text)
+        });
+
+        assert!(detail.contains("first divergence at comment #200"));
+        assert!(detail.contains("\"# 200\""));
+        assert!(!detail.contains("\"# 300\""));
+        assert!(detail.lines().count() < 20);
+    }
+
+    #[test]
+    fn a_long_text_is_elided_on_a_character_boundary() {
+        let data = format!("__DATA__\n{}", "らくだ\n".repeat(200));
+        let elided = elide(&data);
+
+        assert!(elided.len() < data.len());
+        assert!(elided.contains("more bytes"));
+        assert!(elide("# short").ends_with("\"# short\""));
+        assert_eq!(
+            elide(&"x".repeat(ELIDE_AT)),
+            format!("{:?}", "x".repeat(ELIDE_AT))
+        );
+    }
 }

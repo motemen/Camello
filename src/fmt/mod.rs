@@ -20,7 +20,7 @@ mod render;
 #[cfg(test)]
 mod tests;
 
-use crate::lang::SyntaxNode;
+use crate::lang::{SyntaxNode, TokenExt, TokenKind};
 use crate::parse::trivia::TriviaMap;
 
 #[derive(Debug, Clone)]
@@ -85,7 +85,24 @@ pub fn format(root: &SyntaxNode, trivia: &TriviaMap, options: &FormatterOptions)
         out.push_str(&line.text);
         out.push('\n');
     }
+    // A file whose last content is verbatim ends exactly as that content does.
+    // `__END__` followed by POD that stops at `=cut` with no newline after it is
+    // XML::Parser::Style::Subs, and the newline this loop adds would land inside
+    // a token the formatter must reproduce byte for byte (ADR 0008 §6, I1).
+    if ends_in_unterminated_verbatim(root) {
+        out.pop();
+    }
     out
+}
+
+/// Does the file's last content end without the line terminator it was written
+/// without?
+fn ends_in_unterminated_verbatim(root: &SyntaxNode) -> bool {
+    root.descendants_with_tokens()
+        .filter_map(|element| element.into_token())
+        .filter(|token| token.token_kind() != TokenKind::WHITESPACE)
+        .last()
+        .is_some_and(|token| token.token_kind().is_verbatim() && !token.text().ends_with('\n'))
 }
 
 /// Parse and format in one step.
