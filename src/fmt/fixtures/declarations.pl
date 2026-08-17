@@ -25,8 +25,6 @@ local ($array[0], $hash{key}) = ($new_first, $new_value);
 local (undef, $SIG{__DIE__}) = (undef, \&my_die);
 local ($a, undef, $hash{key}) = @list;
 local our @X;
-my Proc::Daemon $self = shift;
-my TheSchwartz $client=shift;
 local our$g2=5;
 local our($m,$n)=(1,2);
 

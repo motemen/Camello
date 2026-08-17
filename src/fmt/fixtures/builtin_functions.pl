@@ -4,13 +4,11 @@ print   STDOUT    "line\n";
 
 map {$_}@list;
 map({$_}@list);
-map({$_}, @list);
 map {$_}(1,2,3);
 map {$_}[1,2,3];
 
 grep{$_}@list;
 grep({$_}@list);
-grep({$_}, @list);
 sort({$a<=>$b} @list);
 
 print { $fh } "hello";
@@ -19,6 +17,9 @@ print($fh 'do{ my ' . $dump . '}');
 printf($fh "%s\n", $line);
 
 # A bareword with no declaration in sight, taking a hash or a glob
+sub _error;
+sub getdata;
+sub handler;
 _error %state, $cb, { @pseudo };
 getdata %^H, $wiz;
 handler &$callback, 1;
