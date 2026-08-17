@@ -1446,17 +1446,40 @@ fn last_token_of(element: &SyntaxElement) -> Option<SyntaxToken> {
     }
 }
 
+/// The node's first token that is not trivia.
+///
+/// Walked from the node's own edge rather than by iterating its descendants: the
+/// spacing rules ask this of both sides of every adjacent pair, and a subtree
+/// walk makes that quadratic in the size of the statement.
 fn first_token(node: &SyntaxNode) -> Option<SyntaxToken> {
-    node.descendants_with_tokens()
-        .filter_map(|child| child.into_token())
-        .find(|token| !token.token_kind().is_trivia())
+    edge_token(node, node.first_token()?, rowan::Direction::Next)
 }
 
+/// The node's last token that is not trivia.
 fn last_token(node: &SyntaxNode) -> Option<SyntaxToken> {
-    node.descendants_with_tokens()
-        .filter_map(|child| child.into_token())
-        .filter(|token| !token.token_kind().is_trivia())
-        .last()
+    edge_token(node, node.last_token()?, rowan::Direction::Prev)
+}
+
+/// From `token`, the first non-trivia token in `direction` that is still inside
+/// `node`. Stepping past the node's own range is how a node of nothing but
+/// trivia would otherwise answer with its neighbour's token.
+fn edge_token(
+    node: &SyntaxNode,
+    token: SyntaxToken,
+    direction: rowan::Direction,
+) -> Option<SyntaxToken> {
+    let range = node.text_range();
+    let mut token = token;
+    while token.token_kind().is_trivia() {
+        token = match direction {
+            rowan::Direction::Next => token.next_token()?,
+            rowan::Direction::Prev => token.prev_token()?,
+        };
+        if !range.contains_range(token.text_range()) {
+            return None;
+        }
+    }
+    Some(token)
 }
 
 fn brace(node: &SyntaxNode, kind: TokenKind, last: bool) -> Option<SyntaxToken> {

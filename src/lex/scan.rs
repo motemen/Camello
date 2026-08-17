@@ -429,8 +429,15 @@ impl<'a> Lexer<'a> {
             }
         }
 
+        // The table is a linear scan of some sixty spellings, walked for every
+        // punctuation token in the file. Comparing the first byte before the
+        // whole spelling is what keeps that from being sixty string compares.
+        let first = rest.as_bytes()[0];
         for kind in OPERATORS {
             let text = kind.text().expect("operator table holds spelled kinds");
+            if text.as_bytes()[0] != first {
+                continue;
+            }
             if !rest.starts_with(text) {
                 continue;
             }
