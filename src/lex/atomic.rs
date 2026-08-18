@@ -281,10 +281,27 @@ impl<'a> Lexer<'a> {
         let after = &after[space_len..];
 
         let body_len = match after.as_bytes().first()? {
-            b'"' | b'\'' => {
+            b'"' | b'\'' | b'`' => {
                 let quote = after.as_bytes()[0];
-                let end = after[1..].find(quote as char)?;
-                end + 2
+                let mut index = 1;
+                while index < after.len() {
+                    match after.as_bytes()[index] {
+                        b'\\' => index += 2,
+                        byte if byte == quote => break,
+                        _ => index += 1,
+                    }
+                }
+                (index < after.len()).then_some(index + 1)?
+            }
+            b'\\' => {
+                let marker = &after[1..];
+                let first = marker.as_bytes().first()?;
+                if !first.is_ascii_alphabetic() && *first != b'_' {
+                    return None;
+                }
+                1 + marker
+                    .find(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
+                    .unwrap_or(marker.len())
             }
             _ if space_len > 0 => return None,
             byte if byte.is_ascii_alphabetic() || *byte == b'_' => after
@@ -301,11 +318,26 @@ impl<'a> Lexer<'a> {
         let text = &self.source[start..start + len];
         let body = text.trim_start_matches("<<");
         let indentable = body.starts_with('~');
-        let terminator = body
-            .trim_start_matches('~')
-            .trim_start_matches([' ', '\t'])
-            .trim_matches(['"', '\''])
-            .to_string();
+        let marker = body.trim_start_matches('~').trim_start_matches([' ', '\t']);
+        let terminator = match marker.as_bytes().first() {
+            Some(b'\\') => marker[1..].to_string(),
+            Some(quote @ (b'"' | b'\'' | b'`')) => {
+                let quote = char::from(*quote);
+                let content = &marker[1..marker.len() - 1];
+                let mut terminator = String::with_capacity(content.len());
+                let mut chars = content.chars().peekable();
+                while let Some(ch) = chars.next() {
+                    if ch == '\\' && chars.peek() == Some(&quote) {
+                        chars.next();
+                        terminator.push(quote);
+                    } else {
+                        terminator.push(ch);
+                    }
+                }
+                terminator
+            }
+            _ => marker.to_string(),
+        };
 
         self.heredocs.push(Heredoc {
             terminator,

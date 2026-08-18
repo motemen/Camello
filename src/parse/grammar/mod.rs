@@ -753,6 +753,18 @@ pub(crate) fn try_tail(parser: &mut Parser<'_>) {
             }
             parser.expect(T![")"]);
             parser.complete(param, NodeKind::CATCH_PARAM);
+        } else if parser.current().is_some_and(is_name_like) {
+            // Error/Exception::Class-style handlers spell the exception class
+            // between `catch` and `with`: `catch Error::Fatal with { ... }`.
+            // `with` is supplied by the module rather than being a Perl
+            // keyword, so consume it as a name after checking its text.
+            name(parser, NodeKind::CATCH_CLASS);
+            parser.expect_term();
+            if parser.current_text() == Some("with") {
+                parser.bump_name();
+            } else {
+                parser.error("expected `with` after the exception class");
+            }
         }
         block(parser);
         parser.complete(clause, NodeKind::CATCH_CLAUSE);

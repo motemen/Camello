@@ -362,6 +362,22 @@ fn a_space_before_a_quoted_heredoc_terminator_is_allowed() {
 }
 
 #[test]
+fn heredoc_markers_cover_perls_quoted_forms() {
+    for source in [
+        "my $x = <<\\EOF;\nbody\nEOF\n",
+        "my $x = <<`EOF`;\nbody\nEOF\n",
+        "my $x = <<\"foo\\\"bar\";\nbody\nfoo\"bar\n",
+        "my $x = <<'foo\\'bar';\nbody\nfoo'bar\n",
+    ] {
+        let tokens = kinds(source);
+        assert!(tokens.contains(&TokenKind::HEREDOC_START), "{source:?}");
+        assert!(tokens.contains(&TokenKind::HEREDOC_END), "{source:?}");
+        assert!(!tokens.contains(&TokenKind::UNTERMINATED_HEREDOC));
+        assert_lossless(source);
+    }
+}
+
+#[test]
 fn unterminated_heredoc_is_reported_not_guessed() {
     let source = "my $x = <<EOF;\nline1\n";
     assert!(kinds(source).contains(&TokenKind::UNTERMINATED_HEREDOC));

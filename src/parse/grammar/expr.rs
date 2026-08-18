@@ -658,7 +658,22 @@ fn at_filehandle(parser: &mut Parser<'_>, base: usize) -> bool {
             .nth(base + 2)
             .is_some_and(|kind| kind.can_start_term() || kind == TokenKind::HEREDOC_START);
 
-    is_bareword_handle || is_block_handle || is_scalar_handle
+    // `print ${fh} "text"` is the braced spelling of the same scalar
+    // filehandle. Keep the lookahead deliberately narrow: a simple name may be
+    // a handle, while `${expr}` and `${fh}{key}` are ordinary values. The
+    // variable parser already knows how to consume the braced form once this
+    // predicate selects it.
+    let is_braced_scalar_handle = parser.nth_at(base, TokenKind::SCALAR_SIGIL)
+        && parser.nth_at(base + 1, T!["{"])
+        && parser
+            .nth(base + 2)
+            .is_some_and(|kind| kind == TokenKind::IDENT || kind.is_keyword())
+        && parser.nth_at(base + 3, T!["}"])
+        && parser
+            .nth(base + 4)
+            .is_some_and(|kind| kind.can_start_term() || kind == TokenKind::HEREDOC_START);
+
+    is_bareword_handle || is_block_handle || is_scalar_handle || is_braced_scalar_handle
 }
 
 fn filehandle(parser: &mut Parser<'_>) {

@@ -318,6 +318,7 @@ impl<'a> Builder<'a> {
             NodeKind::ANON_ARRAY => self.delimited(node, T!["["], T!["]"]),
             NodeKind::ANON_HASH => self.delimited(node, T!["{"], T!["}"]),
             NodeKind::SUBSCRIPT => self.sequence(node),
+            NodeKind::LIST_CALL_EXPR => self.list_call(node),
             kind if is_quote_like_node(kind) => self.quote_like(node),
             _ => self.sequence(node),
         }
@@ -352,6 +353,62 @@ impl<'a> Builder<'a> {
         Doc::concat(parts)
     }
 
+    /// A bareword call whose continued arguments hang below its first one.
+    fn list_call(&mut self, node: &SyntaxNode) -> Doc {
+        let parent = Some(node.node_kind());
+        let name = node
+            .children()
+            .find(|child| child.node_kind() == NodeKind::SUB_NAME);
+        let arguments = node
+            .children()
+            .find(|child| child.node_kind() == NodeKind::LIST_EXPR);
+        let hanging = name
+            .as_ref()
+            .zip(arguments.as_ref())
+            .and_then(|(name, arguments)| {
+                let is_identifier = name
+                    .first_token()
+                    .is_some_and(|token| token.token_kind() == TokenKind::IDENT);
+                let name = SyntaxElement::Node(name.clone());
+                let arguments = SyntaxElement::Node(arguments.clone());
+                (is_identifier && !self.has_user_newline_between(&name, &arguments))
+                    .then(|| name.to_string().width() + 1)
+            });
+        let has_special_leading_argument = node
+            .children()
+            .any(|child| matches!(child.node_kind(), NodeKind::FILEHANDLE | NodeKind::BLOCK));
+
+        let mut parts = Vec::new();
+        let mut previous: Option<SyntaxElement> = None;
+        for child in node.children_with_tokens() {
+            if child
+                .as_token()
+                .is_some_and(|token| token.token_kind().is_trivia())
+            {
+                continue;
+            }
+            if let Some(previous) = &previous {
+                parts.extend(self.separator(previous, &child, parent));
+            }
+            match &child {
+                SyntaxElement::Node(child)
+                    if child.node_kind() == NodeKind::LIST_EXPR
+                        && !has_special_leading_argument
+                        && hanging.is_some() =>
+                {
+                    parts.push(Doc::hanging(
+                        hanging.expect("checked above"),
+                        self.node(child),
+                    ));
+                }
+                SyntaxElement::Node(child) => parts.push(self.node(child)),
+                SyntaxElement::Token(token) => parts.push(self.token(token)),
+            }
+            previous = Some(child);
+        }
+        Doc::concat(parts)
+    }
+
     /// What goes between two adjacent children.
     ///
     /// One function, with the parent's kind available. The old formatter used a
@@ -369,13 +426,22 @@ impl<'a> Builder<'a> {
             parts.push(Doc::Anchor(class, tail));
         }
 
-        if !self.wants_space(previous, next, parent) {
+        let wants_space = self.wants_space(previous, next, parent);
+        let deferred_terminator = !wants_space
+            && next
+                .as_token()
+                .is_some_and(|token| token.token_kind() == T![";"])
+            && self.has_user_newline_between(previous, next);
+        if !wants_space && !deferred_terminator {
             return parts;
         }
 
         // A newline the user put here is kept, and the continuation is indented
         // by the enclosing Indent (the formatter contract) — no separate rule for
-        // continuation indent, with no separate branch per syntax shape.
+        // continuation indent, with no separate branch per syntax shape. A
+        // deferred `;` is the tight-spacing exception: `$obj->method\n# why\n;`
+        // still needs the break so its comment and terminator remain a
+        // continuation, even though the one-line spelling has no space.
         // A block's opening brace is placed by the formatter, not the user
         // (docs/formatting.md NEWLINE-2), so a newline before it is not preserved.
         // A chained keyword goes on the closing brace's line whatever the user
@@ -396,7 +462,7 @@ impl<'a> Builder<'a> {
 
         if !placed_by_the_formatter && self.has_user_newline_between(previous, next) {
             parts.push(Doc::UserLine { broken: true });
-        } else {
+        } else if wants_space {
             parts.push(Doc::Space);
         }
         parts

@@ -59,6 +59,10 @@ pub struct Renderer<'a> {
     shape: Option<ShapeKey>,
     /// The next line is a continuation of the one before it.
     continuation: bool,
+    /// Exact continuation offset requested by a hanging-indent scope.
+    hanging_continuation: Option<usize>,
+    /// Hanging offset currently in scope, if any.
+    hanging: Option<usize>,
     /// Whether a continuation scope is open, and whether a user break in it has
     /// already taken its indent level (docs/formatting.md INDENT-3): one level for
     /// the whole of a wrapped expression, however many times it wraps.
@@ -93,6 +97,8 @@ impl<'a> Renderer<'a> {
             broken: true,
             shape: None,
             continuation: false,
+            hanging_continuation: None,
+            hanging: None,
             continued: None,
             line_closed: false,
         }
@@ -139,6 +145,11 @@ impl<'a> Renderer<'a> {
                 self.walk(body);
                 self.indent -= 1;
             }
+            Doc::Hanging { columns, body } => {
+                let outer = self.hanging.replace(*columns);
+                self.walk(body);
+                self.hanging = outer;
+            }
             Doc::Continuation(body) => {
                 // The level a user break takes belongs to this scope: an
                 // `Indent` inside it starts from the deeper level, and whatever
@@ -182,7 +193,10 @@ impl<'a> Renderer<'a> {
                         // condition or signature is followed by the block it
                         // belongs to, which starts again from the statement's
                         // own level.
-                        None => self.continuation = true,
+                        None => match self.hanging {
+                            Some(columns) => self.hanging_continuation = Some(columns),
+                            None => self.continuation = true,
+                        },
                     }
                 }
             }
@@ -217,7 +231,14 @@ impl<'a> Renderer<'a> {
                 // the call above it and pad a `=>` that no other line shares —
                 // and, because only the first anchor of a class on a line is
                 // read, it was the padding of an arbitrary one of the pair.
-                if self.broken {
+                // A flat hash nested inside a broken hash still participates
+                // in the outer lines' per-depth alignment. This is how
+                // `{ aaa => 1 }` and `{ b => 2 }` line up when they are values
+                // on adjacent lines. Other flat groups stay anchor-free so a
+                // one-line call cannot leak into a vertical group around it.
+                let nested_flat_fat_comma =
+                    matches!(class, AnchorClass::FatComma(depth) if *depth > 1);
+                if self.broken || nested_flat_fat_comma {
                     self.current.anchors.push(Anchor {
                         class: *class,
                         column: self.current.text.width(),
@@ -258,11 +279,13 @@ impl<'a> Renderer<'a> {
                 // code after it that the continuation indent is for, so the flag
                 // survives the comment.
                 let continuation = self.continuation;
+                let hanging_continuation = self.hanging_continuation;
                 if !self.current.text.trim().is_empty() {
                     self.newline();
                 }
                 self.write(text);
                 self.continuation = continuation;
+                self.hanging_continuation = hanging_continuation;
             }
             Placement::Trailing => {
                 // One rule, one place. The old formatter had two comment output
@@ -336,6 +359,7 @@ impl<'a> Renderer<'a> {
     /// Content that begins its own line at column 0.
     fn write_verbatim_lines(&mut self, text: &str) {
         self.continuation = false;
+        self.hanging_continuation = None;
         if !self.current.text.is_empty() {
             self.finish_line();
         }
@@ -354,12 +378,12 @@ impl<'a> Renderer<'a> {
         if !self.current.text.is_empty() {
             return;
         }
-        let indent = self.indent + usize::from(self.continuation);
+        let hanging = self.hanging_continuation.take();
+        let indent = self.indent + usize::from(self.continuation && hanging.is_none());
         self.continuation = false;
         self.current.indent = indent;
-        self.current
-            .text
-            .push_str(&" ".repeat(indent * self.options.indent_width));
+        let columns = indent * self.options.indent_width + hanging.unwrap_or(0);
+        self.current.text.push_str(&" ".repeat(columns));
     }
 
     /// End the current line — unless there is nothing on it.
@@ -395,6 +419,23 @@ impl<'a> Renderer<'a> {
         // would not be its own fixed point (the formatter contract). `$x == 200\n    || $y`
         // in HTTP::Status leaves one behind on every operand but the last.
         line.anchors.retain(|anchor| anchor.byte < line.text.len());
+        // A flat nested hash may contain several pairs on one physical line.
+        // There is no single column that can represent that class on the line,
+        // so exclude the whole class rather than aligning an arbitrary first
+        // occurrence.
+        let duplicate_classes: Vec<AnchorClass> = line
+            .anchors
+            .iter()
+            .enumerate()
+            .filter_map(|(index, anchor)| {
+                line.anchors[index + 1..]
+                    .iter()
+                    .any(|later| later.class == anchor.class)
+                    .then_some(anchor.class)
+            })
+            .collect();
+        line.anchors
+            .retain(|anchor| !duplicate_classes.contains(&anchor.class));
         // The shape belongs to the line that carries an anchor, and to every such
         // line of the statement it was declared for — not just the first.
         // Consuming it here is what put `alpha => 1` in a group of its own and

@@ -74,6 +74,13 @@ pub enum Doc {
     },
     /// One indent unit for any line break inside.
     Indent(Box<Doc>),
+    /// Continuation lines begin this many columns after the statement's base
+    /// indentation. Bareword calls use the width of `name ` so arguments hang
+    /// from the first argument rather than from an unrelated fixed tab stop.
+    Hanging {
+        columns: usize,
+        body: Box<Doc>,
+    },
     /// The extent of a continuation indent (docs/formatting.md INDENT-3).
     ///
     /// The first line break the user made inside this takes one indent level,
@@ -145,6 +152,13 @@ impl Doc {
     #[must_use]
     pub fn continuation(body: Doc) -> Doc {
         Doc::Continuation(Box::new(body))
+    }
+
+    pub fn hanging(columns: usize, body: Doc) -> Doc {
+        Doc::Hanging {
+            columns,
+            body: Box::new(body),
+        }
     }
 
     /// Whether this contributes nothing to the output.
