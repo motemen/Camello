@@ -1,4 +1,4 @@
-//! Doc → lines (ADR 0008 §4).
+//! Doc → lines (the formatter contract).
 //!
 //! Indentation is applied here, when a line is started — never while appending
 //! text. A `Raw` atom is written as-is, so no indentation can end up inside one.
@@ -60,7 +60,7 @@ pub struct Renderer<'a> {
     /// The next line is a continuation of the one before it.
     continuation: bool,
     /// Whether a continuation scope is open, and whether a user break in it has
-    /// already taken its indent level (formatting.md INDENT-3): one level for
+    /// already taken its indent level (docs/formatting.md INDENT-3): one level for
     /// the whole of a wrapped expression, however many times it wraps.
     continued: Option<bool>,
     /// A trailing comment has claimed the rest of this line.
@@ -167,7 +167,7 @@ impl<'a> Renderer<'a> {
                 if *broken {
                     self.newline();
                     // A line the user wrapped is indented one level
-                    // (formatting.md INDENT-3), and one level is all it takes
+                    // (docs/formatting.md INDENT-3), and one level is all it takes
                     // however many times the expression wraps — so the level is
                     // taken once per continuation scope, not once per break.
                     match self.continued {
@@ -392,7 +392,7 @@ impl<'a> Renderer<'a> {
         // An anchor with nothing after it on the line has nothing to align: the
         // thing it was going to hold went to the next line. Padding it would put
         // spaces at the end of a line — which the next pass trims, so the output
-        // would not be its own fixed point (ADR 0008 §6). `$x == 200\n    || $y`
+        // would not be its own fixed point (the formatter contract). `$x == 200\n    || $y`
         // in HTTP::Status leaves one behind on every operand but the last.
         line.anchors.retain(|anchor| anchor.byte < line.text.len());
         // The shape belongs to the line that carries an anchor, and to every such

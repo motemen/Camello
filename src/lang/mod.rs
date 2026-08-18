@@ -1,8 +1,8 @@
-//! The language vocabulary (ADR 0004).
+//! The language vocabulary.
 //!
-//! Everything here is generated from the single [`define_language!`] invocation
+//! Everything here is generated from the single `define_language!` invocation
 //! below. Semantic predicates that cannot be derived from the declaration order
-//! live in [`predicates`].
+//! live in the private `predicates` module.
 
 mod macros;
 mod predicates;
@@ -14,7 +14,7 @@ define_language! {
     //
     // A keyword is only a keyword where the grammar expects one; `sub if {}` and
     // `package tr;` are legal Perl. The parser funnels those through a single
-    // `name()` routine (ADR 0007 §5) rather than special-casing each site.
+    // `name()` routine (the parser contract) rather than special-casing each site.
     keywords {
         "sub"        => SUB_KW,
         "my"         => MY_KW,
@@ -64,7 +64,7 @@ define_language! {
         "default"    => DEFAULT_KW,
 
         // Quote-like operators. The lexer turns these into atomic sequences
-        // (ADR 0005 §3) rather than leaving a mode switched on.
+        // (the lexer contract) rather than leaving a mode switched on.
         "q"          => Q_KW,
         "qq"         => QQ_KW,
         "qx"         => QX_KW,
@@ -96,7 +96,7 @@ define_language! {
 
         // Repetition. Only recognised in operator position, so `x5` lexes as a
         // single identifier in term position and needs no re-splitting
-        // (ADR 0005 §5).
+        // (the lexer contract).
         "x"          => X_OP,
 
         "format"     => FORMAT_KW,
@@ -163,8 +163,8 @@ define_language! {
         ".."   => RANGE,
         "..."  => ELLIPSIS,
 
-        // Compound assignment is a single token (ADR 0005 §5), which removes the
-        // `COMPOUND_ASSIGNMENT` node entirely (ADR 0004 §4).
+        // Compound assignment is a single token (the lexer contract), which removes the
+        // `COMPOUND_ASSIGNMENT` node entirely (the language model).
         "+="   => PLUS_EQ,
         "-="   => MINUS_EQ,
         "*="   => STAR_EQ,
@@ -195,7 +195,7 @@ define_language! {
     //
     // `%`, `*` and `&` are a sigil in term position and an operator in operator
     // position. Which token the lexer emits is decided by its single `expect`
-    // state (ADR 0005 §2) — the old "look at the raw characters either side"
+    // state (the lexer contract) — the old "look at the raw characters either side"
     // rule is gone. These get no `T!` key precisely because the spelling does
     // not identify the kind.
     punct_ctx {
@@ -207,7 +207,7 @@ define_language! {
         "&"    => BITWISE_AND,
     }
 
-    // ===== Trivia (ADR 0006 §1) =====
+    // ===== Trivia (the trivia model) =====
     //
     // NEWLINE is exactly one line terminator, so consecutive blank lines survive
     // in the token stream and the formatter never has to re-read the source to
@@ -226,7 +226,7 @@ define_language! {
         STRING              : "string literal",
 
         // Quote-like operators are emitted as an atomic run of tokens
-        // (ADR 0005 §3): keyword, delimiter, content, [delimiter, content,]
+        // (the lexer contract): keyword, delimiter, content, [delimiter, content,]
         // delimiter, flags.
         DELIMITER           : "delimiter",
         LITERAL_STRING      : "string contents",
@@ -256,10 +256,10 @@ define_language! {
 
         // A span of source carried through verbatim with a kind attached, which
         // replaces the four ad-hoc escape hatches of the old lexer
-        // (ADR 0004 §5). Prototype bodies and attribute arguments use this.
+        // (the language model). Prototype bodies and attribute arguments use this.
         RAW_CONTENT         : "raw text",
 
-        // Failure is never silent (ADR 0005 §4).
+        // Failure is never silent (the lexer contract).
         UNTERMINATED_REGEX      : "unterminated regex",
         UNTERMINATED_QUOTE_LIKE : "unterminated quote-like operator",
         UNTERMINATED_HEREDOC    : "unterminated heredoc",
@@ -267,7 +267,7 @@ define_language! {
         ERROR_CHAR              : "unexpected character",
     }
 
-    // ===== Syntax nodes (ADR 0007 §2) =====
+    // ===== Syntax nodes (the parser contract) =====
     nodes {
         ROOT,
 
@@ -322,7 +322,7 @@ define_language! {
         DECL_TARGET,
 
         // -- Expressions. Operator classes are distinguished so that the
-        //    formatter and future lints can branch on them (ADR 0007 §2).
+        //    formatter and future lints can branch on them (the parser contract).
         BINARY_EXPR,
         ASSIGN_EXPR,
         TERNARY_EXPR,
@@ -477,7 +477,7 @@ impl rowan::Language for PerlLang {
 
 /// Reads a token's kind back as a [`TokenKind`].
 ///
-/// rowan hands back the untyped `SyntaxKind`; these put the split of ADR 0004 §1
+/// rowan hands back the untyped `SyntaxKind`; these put the split of the language model
 /// back in place at the point of use, so the formatter matches on token kinds
 /// and node kinds rather than on integers.
 pub trait TokenExt {

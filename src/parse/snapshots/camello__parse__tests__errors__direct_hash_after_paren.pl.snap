@@ -2,4 +2,4 @@
 source: src/parse/tests.rs
 expression: rendered
 ---
-
+line 1: hash subscription after a parenthesized expression needs `->`

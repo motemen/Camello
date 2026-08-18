@@ -1,6 +1,4 @@
-//! Formatter tests, including the six reproduced formatting bugs from
-//! `notes/2026-07-28-redesign-assessment.md` appendix A (F1-F6), and the
-//! invariants of ADR 0008 §6.
+//! Formatter tests, including layout regressions and formatter invariants.
 
 use std::time::Instant;
 
@@ -11,7 +9,7 @@ fn format(source: &str) -> String {
     format_source(source, &FormatterOptions::default())
 }
 
-/// `format(format(x)) == format(x)` (ADR 0008 §6).
+/// `format(format(x)) == format(x)` (the formatter contract).
 #[track_caller]
 fn assert_idempotent(source: &str) {
     let once = format(source);
@@ -22,7 +20,7 @@ fn assert_idempotent(source: &str) {
     );
 }
 
-/// The non-trivia token sequence must survive formatting (ADR 0008 §6).
+/// The non-trivia token sequence must survive formatting (the formatter contract).
 fn tokens(source: &str) -> Vec<(TokenKind, String)> {
     use crate::lang::TokenExt;
     crate::parse::parse(source)
@@ -58,7 +56,7 @@ fn multiline_string_literals_are_left_alone() {
     // The old formatter indented the *contents* of a string that began a line,
     // and did it again on every pass, so the string grew without bound. Here a
     // string literal is a `Raw` atom and the renderer has no way to write inside
-    // one (ADR 0008 §2).
+    // one (the formatter contract).
     let source = "sub f {\nmy $s = \"line1\nline2\";\n}\n";
     let formatted = format(source);
     assert!(
@@ -109,7 +107,7 @@ fn alignment_groups_break_on_shape_and_blank_lines() {
 
 #[test]
 fn alignment_is_its_own_fixed_point() {
-    // I3 of ADR 0008 §6: padding is spaces, so it creates no new anchor.
+    // I3 of the formatter contract: padding is spaces, so it creates no new anchor.
     let aligned = "my $x   = 1;\nmy $yy  = 2;\nmy $zzz = 3;\n";
     assert_eq!(format(aligned), aligned);
 }
@@ -175,7 +173,7 @@ fn comment_before_a_block_keeps_the_brace_on_its_line() {
     assert_idempotent(source);
 }
 
-// ===== Layout rules (formatting.md) =====
+// ===== Layout rules (docs/formatting.md) =====
 
 #[test]
 fn blocks_of_control_structures_always_break() {
@@ -195,7 +193,7 @@ fn map_and_sub_blocks_may_stay_on_one_line() {
 
 #[test]
 fn a_bracket_group_breaks_when_the_source_broke_it() {
-    // The seed rule of ADR 0008 §3: a newline straight after the opening
+    // The seed rule of the formatter contract: a newline straight after the opening
     // bracket. Broken output has that newline itself, so re-formatting reaches
     // the same decision (I2).
     assert_formats_to("foo(1, 2);\n", "foo(1, 2);\n");
@@ -215,7 +213,7 @@ fn nested_fat_commas_align_per_depth() {
     assert_preserves_semantics(source);
 }
 
-// ===== Verbatim regions (formatting.md VERBATIM) =====
+// ===== Verbatim regions (docs/formatting.md VERBATIM) =====
 
 #[test]
 fn verbatim_regions_survive_untouched() {
@@ -264,7 +262,7 @@ fn postfix_dereference_binds_tight() {
     assert_formats_to("$r->%{a,b};\n", "$r->%{a, b};\n");
 }
 
-// ===== Comments (formatting.md COMMENT) =====
+// ===== Comments (docs/formatting.md COMMENT) =====
 
 #[test]
 fn comments_keep_their_line_and_their_ownership() {
@@ -359,7 +357,7 @@ fn the_minimum_space_before_a_comment_is_one_option() {
     assert!(formatted.contains("1;   # note"), "{formatted}");
 }
 
-// ===== Blank lines (formatting.md BLANK_LINE) =====
+// ===== Blank lines (docs/formatting.md BLANK_LINE) =====
 
 #[test]
 fn consecutive_blank_lines_collapse_to_one() {
@@ -371,7 +369,7 @@ fn consecutive_blank_lines_collapse_to_one() {
 
 #[test]
 fn definitions_and_phase_blocks_stand_apart() {
-    // formatting.md BLANK_LINE-1. The blank line at the top of the file and the
+    // docs/formatting.md BLANK_LINE-1. The blank line at the top of the file and the
     // one that would land straight after `{` are dropped, so the rule can be
     // stated without exceptions at the point it is applied.
     assert_formats_to(
@@ -632,7 +630,7 @@ fn verbatim_content_keeps_its_trailing_whitespace() {
 #[test]
 fn verbatim_regions_start_in_column_zero() {
     // P1-6. `__END__` and `=head1` are recognised at a line start and nowhere
-    // else (ADR 0005 §5), so a region that begins inside an open block still
+    // else (the lexer contract), so a region that begins inside an open block still
     // begins in column 0 — and indenting it produces output that no longer has
     // a data section in it.
     let source = "sub f {\n    print 1;\n__END__\nrest\n";
@@ -713,7 +711,7 @@ fn layout_decisions_are_stable_across_passes() {
 
 /// Format every fixture and snapshot the result.
 ///
-/// These are the spec-by-example: `formatting.md` says what the rules are, and
+/// These are the spec-by-example: `docs/formatting.md` says what the rules are, and
 /// these say what they produce.
 ///
 /// `regressions/` is excluded. Those fixtures carry their own expected output

@@ -1,6 +1,6 @@
 use super::*;
 
-/// The whole point of ADR 0004 §1: the two spaces must round-trip through the
+/// The whole point of the language model: the two spaces must round-trip through the
 /// single `u16` rowan sees, and must never overlap.
 #[test]
 fn token_and_node_kinds_round_trip_through_syntax_kind() {
@@ -64,7 +64,7 @@ fn t_macro_resolves_to_the_declared_kind() {
     assert_eq!(T!["->@*"], TokenKind::POSTFIX_DEREF_ARRAY);
 }
 
-/// Diagnostics must not leak internal enum names (ADR 0004 §2, ADR 0007 §3).
+/// Diagnostics must not leak internal enum names (the language model, the parser contract).
 #[test]
 fn display_names_are_human_readable() {
     assert_eq!(TokenKind::R_BRACE.to_string(), "`}`");

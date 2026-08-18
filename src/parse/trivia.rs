@@ -1,4 +1,4 @@
-//! The trivia model (ADR 0006).
+//! The trivia model.
 
 use std::collections::HashMap;
 
@@ -9,7 +9,7 @@ use crate::lang::TokenKind;
 
 /// One piece of trivia, with its text.
 ///
-/// Carrying the text matters for comments: the placement rule of ADR 0006 §4
+/// Carrying the text matters for comments: the placement rule of the trivia model
 /// puts a leading comment *outside* the node it belongs to, so a consumer
 /// holding only the node cannot find the token again.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,7 +33,7 @@ pub struct TokenTrivia {
 impl TokenTrivia {
     /// Blank lines lying immediately before this token, after any comment.
     ///
-    /// The formatter's blank-line policy (formatting.md BLANK_LINE) reads this
+    /// The formatter's blank-line policy (docs/formatting.md BLANK_LINE) reads this
     /// rather than re-scanning the source, which is what removes the old
     /// double-check between writer state and the source text.
     #[must_use]
@@ -62,7 +62,7 @@ impl TokenTrivia {
 
 /// Every non-trivia token's trivia, keyed by where the token starts.
 ///
-/// Built during replay (ADR 0006 §5), so the formatter never walks the tree to
+/// Built during replay (the trivia model), so the formatter never walks the tree to
 /// rediscover comments — the old `TriviaTable` rebuilt itself from a full tree
 /// traversal, which is the cost behind issue #266.
 #[derive(Debug, Default)]
@@ -75,7 +75,7 @@ pub struct TriviaMap {
 impl TriviaMap {
     /// Own-line trivia after the last token of the file.
     ///
-    /// ADR 0006 §3 gives such a run to the token that follows it, and at end of
+    /// the trivia model gives such a run to the token that follows it, and at end of
     /// file there is none — EOF is not a token here. Naming the case is what
     /// keeps the comment: left implicit, `# ex: set ro ft=perl:` on the last
     /// line of `feature.pm` was in the tree, owned by nothing, and dropped.
@@ -122,7 +122,7 @@ impl TriviaMap {
     ///
     /// The split is at the first NEWLINE, inclusive: what shares a line with the
     /// preceding token belongs to it, and everything else belongs to the token
-    /// that follows (ADR 0006 §3).
+    /// that follows (the trivia model).
     pub(crate) fn attach_run(
         &mut self,
         run: &[Trivia],

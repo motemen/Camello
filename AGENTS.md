@@ -1,1 +1,1 @@
-Consult CLAUDE.md
+Consult docs/architecture.md

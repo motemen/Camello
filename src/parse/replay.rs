@@ -1,5 +1,5 @@
 //! Turning events into a tree, and attaching trivia while doing it
-//! (ADR 0006 §4, ADR 0007 §1).
+//! (the trivia model, the parser contract).
 
 use rowan::{GreenNode, GreenNodeBuilder, TextSize};
 
@@ -11,7 +11,7 @@ use super::trivia::{Trivia, TriviaMap};
 
 /// Builds the green tree. The only place in the crate that touches
 /// `GreenNodeBuilder`, and it is typed on `NodeKind` / `TokenKind` so a node
-/// kind cannot reach a token slot (ADR 0004 §1).
+/// kind cannot reach a token slot (the language model).
 struct TreeBuilder<'a> {
     inner: GreenNodeBuilder<'static>,
     source: &'a str,
@@ -44,7 +44,7 @@ pub struct Replayed {
 /// opened and *after* a node is closed, never inside the boundary. That makes
 /// every node's range start and end on real code, so the formatter's
 /// "does this span more than one line" questions have exact answers
-/// (ADR 0006 §4).
+/// (the trivia model).
 pub fn replay(source: &str, tokens: &[LexedToken], events: Vec<Event>) -> Replayed {
     let mut builder = TreeBuilder {
         inner: GreenNodeBuilder::new(),
@@ -139,7 +139,7 @@ impl<'a> TokenCursor<'a> {
     /// consume, recording who owns each piece of trivia.
     ///
     /// Heredoc bodies pass through here too: the parser never consumed them, but
-    /// they belong in the tree at the point they appeared (ADR 0007 §7). They
+    /// they belong in the tree at the point they appeared (the parser contract). They
     /// are not trivia, so they take no part in the ownership split.
     fn flush_trivia(&mut self, builder: &mut TreeBuilder<'_>, trivia: &mut TriviaMap) {
         let start = self.index;

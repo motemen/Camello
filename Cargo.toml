@@ -7,9 +7,6 @@ edition = "2021"
 # CST操作のコアライブラリ
 rowan = "0.15"
 
-# 高性能字句解析
-logos = "0.14"
-
 # CLI構築
 clap = { version = "4.0", features = ["derive"] }
 

@@ -7,9 +7,6 @@
 #   scripts/snapshot-diff <fixture>    show one fixture's diff
 #   BEFORE=<rev> scripts/snapshot-diff compare against a different revision
 #
-# The classification of these diffs is in
-# notes/2026-07-28-redesign-snapshot-classification.md.
-
 set -euo pipefail
 
 # The commit that deleted the old stack; its parent still has the old snapshots.

@@ -9,26 +9,23 @@ ROOT
       identifier "f"
     BLOCK
       `{` "{"
-      SUB_DEF
-        `sub` "sub"
-        SUB_NAME
-        ATTR
-          `:` ":"
-          SUB_NAME
-            identifier "method"
-        ATTR
-          `:` ":"
-          SUB_NAME
-            identifier "foo"
-          ATTR_ARGS
-            `(` "("
-            raw text "1"
-            `)` ")"
-        BLOCK
-          `{` "{"
-          EXPR_STMT
-            LIST_EXPR
-              LITERAL
-                number "0"
-          `}` "}"
+      EXPR_STMT
+        LIST_EXPR
+          ANON_SUB_EXPR
+            `sub` "sub"
+            ATTR
+              `:` ":"
+              SUB_NAME
+                identifier "method"
+            ATTR
+              `:` ":"
+              SUB_NAME
+                identifier "lvalue"
+            BLOCK
+              `{` "{"
+              EXPR_STMT
+                LIST_EXPR
+                  LITERAL
+                    number "0"
+              `}` "}"
       `}` "}"

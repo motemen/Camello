@@ -1,8 +1,8 @@
-//! The parser (ADR 0007).
+//! The parser.
 //!
-//! Records [`Event`]s rather than building the tree directly, which is what
+//! Records [`event::Event`]s rather than building the tree directly, which is what
 //! makes speculative parsing possible: try one reading, and if it does not work
-//! out, [`Parser::rollback`] and try another. The old parser could not do this —
+//! out, call `Parser::rollback` and try another. The old parser could not do this —
 //! `GreenNodeBuilder` has no way to abandon a node — so every ambiguity had to
 //! be settled by unbounded lookahead before a node was opened, and 21 separate
 //! heuristics grew out of that constraint.
@@ -35,7 +35,7 @@ impl Parse {
     }
 }
 
-/// Parse Perl source into a CST in the normal form of ADR 0007 §2.
+/// Parse Perl source into a CST in the normal form of the parser contract.
 #[must_use]
 pub fn parse(source: &str) -> Parse {
     let mut parser = Parser::new(source);
@@ -64,8 +64,7 @@ pub struct Parser<'a> {
     /// can discard the ones the abandoned attempt produced.
     diagnostics: Vec<Diagnostic>,
     /// Inspections since the last token was consumed. A rule that loops without
-    /// consuming input trips this instead of hanging — the old parser hit that
-    /// class of bug repeatedly (notes/2025-01-17-infinite-loop-analysis.md).
+    /// consuming input trips this instead of hanging.
     steps_without_progress: u32,
     /// Markers open right now, which is how deeply the tree nests here.
     depth: u32,
@@ -158,7 +157,7 @@ impl<'a> Parser<'a> {
 
     // ===== Lexer-facing =====
 
-    /// Tell the lexer what the grammar expects next (ADR 0005 §2).
+    /// Tell the lexer what the grammar expects next (the lexer contract).
     pub(crate) fn expect_term(&mut self) {
         self.lexer.set_expect(Expect::Term);
     }
@@ -215,7 +214,7 @@ impl<'a> Parser<'a> {
         self.lexer.peek_text(n)
     }
 
-    /// Is the current token the last of an atomic quote-like run (ADR 0005 §3)?
+    /// Is the current token the last of an atomic quote-like run (the lexer contract)?
     pub(crate) fn current_ends_quote_like_run(&mut self) -> bool {
         self.lexer
             .peek(0)
@@ -234,7 +233,7 @@ impl<'a> Parser<'a> {
     /// For the one question that cannot be asked of tokens: whether a `%` was
     /// written against the name after it, which is the only evidence there is
     /// that a bareword with no declaration in sight is a list operator taking a
-    /// hash (ADR 0007 §6).
+    /// hash (the parser contract).
     pub(crate) fn source_after_current(&mut self) -> &'a str {
         let end = usize::from(self.current_range().end());
         &self.lexer.source()[end..]
@@ -252,7 +251,7 @@ impl<'a> Parser<'a> {
     /// lookahead and cannot disagree with the `expect` the next token will be
     /// lexed under. It is evidence about intent and nothing more: the grammar
     /// uses it only where a symbol table would otherwise be needed to choose
-    /// between two readings (ADR 0007 §6).
+    /// between two readings (the parser contract).
     pub(crate) fn current_is_glued_prefix(&mut self) -> bool {
         let range = self.current_range();
         let source = self.lexer.source();
@@ -302,7 +301,7 @@ impl<'a> Parser<'a> {
     /// Used where the grammar overrides the lexer's classification — a keyword
     /// standing in for a name, for instance. All such coercion goes through
     /// [`grammar::name`] so there is one place to look, not eight
-    /// (ADR 0007 §5).
+    /// (the parser contract).
     pub(crate) fn bump_any(&mut self) {
         self.bump();
     }
@@ -325,7 +324,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // ===== Errors and recovery (ADR 0007 §3) =====
+    // ===== Errors and recovery (the parser contract) =====
 
     /// Report without consuming. This is the default, deliberately: the old
     /// `error()` ate a token, and two mistakes turned into six diagnostics.
@@ -382,7 +381,7 @@ impl<'a> Parser<'a> {
         self.complete(marker, NodeKind::ERROR);
     }
 
-    // ===== Speculation (ADR 0007 §1) =====
+    // ===== Speculation (the parser contract) =====
 
     pub(crate) fn checkpoint(&mut self) -> Checkpoint {
         Checkpoint {
@@ -424,7 +423,7 @@ impl<'a> Parser<'a> {
         self.push_diagnostic(message.into(), range);
     }
 
-    /// Consume the current token as a name (ADR 0007 §5).
+    /// Consume the current token as a name (the parser contract).
     pub(crate) fn bump_name(&mut self) -> bool {
         if self.lexer.take_name().is_none() {
             return false;

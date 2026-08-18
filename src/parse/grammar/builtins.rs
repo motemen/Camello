@@ -1,4 +1,4 @@
-//! The builtin function table (ADR 0007 §6).
+//! The builtin function table (the parser contract).
 //!
 //! Two questions are answered here, and only here:
 //!
@@ -22,7 +22,7 @@
 //! Generation runs there and the result is committed, rather than running at
 //! build time: a Rust crate that cannot be built without a perl installation is
 //! a worse trade than a table that has to be regenerated when perl gains a
-//! builtin. Re-run the script and diff. This is deviation L-011.
+//! builtin. Re-run the script and diff.
 //!
 //! Being written from memory instead cost `eval`: with the name missing, the
 //! parser fell through to "unknown, expect an operator next", `eval <<EOT`
@@ -119,5 +119,5 @@ pub(crate) fn lookup(name: &str) -> Option<Builtin> {
 ///
 /// It always should — with no symbol table there is nothing better to go on.
 /// This is written down rather than left implicit so that the approximation is
-/// visible (ADR 0007 §6).
+/// visible (the parser contract).
 pub(crate) const UNKNOWN_IS_LIST_OPERATOR: bool = true;

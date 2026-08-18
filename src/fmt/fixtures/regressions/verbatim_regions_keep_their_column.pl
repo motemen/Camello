@@ -13,7 +13,7 @@ my $multiline = "first line
 second line";
 
 sub reads_data {
-    # `__END__` and `=pod` exist in column 0 and nowhere else (ADR 0005 §5).
+    # `__END__` and `=pod` exist in column 0 and nowhere else (the lexer contract).
     # Indenting one, which is what happens when a guard clause puts it inside a
     # block, produces output with no `__END__` in it at all.
     print "hello\n";

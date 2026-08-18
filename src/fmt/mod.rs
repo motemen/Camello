@@ -1,4 +1,4 @@
-//! The formatter (ADR 0008).
+//! The formatter.
 //!
 //! ```text
 //! CST + TriviaMap
@@ -7,7 +7,7 @@
 //!   → [align]  String     vertical alignment padding
 //! ```
 //!
-//! Splitting it this way is what makes the invariants of ADR 0008 §6 hold by
+//! Splitting it this way is what makes the invariants of the formatter contract hold by
 //! construction rather than by care: verbatim content cannot be indented into
 //! because the renderer never touches a `Raw` atom, and alignment cannot depend
 //! on the source because the align pass only ever sees rendered columns.
@@ -27,18 +27,18 @@ use crate::parse::trivia::TriviaMap;
 pub struct FormatterOptions {
     pub indent_width: usize,
     /// Minimum spaces between code and a trailing comment. One rule, applied in
-    /// one place (ADR 0008 §4).
+    /// one place (the formatter contract).
     pub min_spaces_before_comment: usize,
     /// How far apart a group's anchors may be and still be aligned, so that one
     /// very long line cannot push a whole group across the screen (issue #273).
     ///
     /// A group either agrees on one column or is not aligned at all: capping
     /// each line's own padding instead gave a group whose members ended up in
-    /// three different columns, which is neither (formatting.md §7).
+    /// three different columns, which is neither (docs/formatting.md §7).
     pub max_alignment_padding: usize,
     /// Whether a one-statement `map`/`sub`/`do` block may stay on one line.
     pub allow_single_line_blocks: bool,
-    /// Space inside flat `[...]` and `{...}` literals (formatting.md SPACING-7).
+    /// Space inside flat `[...]` and `{...}` literals (docs/formatting.md SPACING-7).
     /// Parentheses are always tight; blocks always get one space; this only
     /// concerns anonymous array/hash constructors.
     pub delimiter_spacing: DelimiterSpacing,
@@ -47,8 +47,8 @@ pub struct FormatterOptions {
 /// How the inside of a flat `[...]` / `{...}` literal is padded.
 ///
 /// Decided at build time as part of the spacing rules — a `Doc::Space` is or is
-/// not placed next to the bracket — never in the renderer (ADR 0008 §2). This
-/// is the reintroduction the deviation log's L-006 anticipated.
+/// not placed next to the bracket — never in the renderer (the formatter contract). This
+/// concerns anonymous array/hash constructors only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DelimiterSpacing {
     /// Never a space: `[1, 2]`, `{ a => 1 }` becomes `{a => 1}`.
@@ -88,7 +88,7 @@ pub fn format(root: &SyntaxNode, trivia: &TriviaMap, options: &FormatterOptions)
     // A file whose last content is verbatim ends exactly as that content does.
     // `__END__` followed by POD that stops at `=cut` with no newline after it is
     // XML::Parser::Style::Subs, and the newline this loop adds would land inside
-    // a token the formatter must reproduce byte for byte (ADR 0008 §6, I1).
+    // a token the formatter must reproduce byte for byte (the formatter contract, I1).
     if ends_in_unterminated_verbatim(root) {
         out.pop();
     }
@@ -119,9 +119,9 @@ pub fn format_source(source: &str, options: &FormatterOptions) -> String {
 
 /// The flat-or-broken decision of every group in `source`, in document order.
 ///
-/// Layout is decided once, at build time, from the source (ADR 0008 §3), so
+/// Layout is decided once, at build time, from the source (the formatter contract), so
 /// these are the seeds a second pass would have to reproduce for the output to
-/// be stable (ADR 0008 §6 I2).
+/// be stable (the formatter contract I2).
 #[must_use]
 pub fn layout_seeds(source: &str) -> Vec<bool> {
     fn collect(document: &doc::Doc, into: &mut Vec<bool>) {

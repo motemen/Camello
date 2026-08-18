@@ -1,4 +1,4 @@
-//! The event buffer (ADR 0007 §1).
+//! The event buffer (the parser contract).
 //!
 //! The parser records what it decided instead of building the tree as it goes.
 //! That indirection is what buys speculative parsing: a `Marker` can be
@@ -11,7 +11,7 @@ use rowan::TextRange;
 use crate::lang::NodeKind;
 
 /// A parse diagnostic. Messages are written for humans — no internal enum names
-/// (ADR 0007 §3).
+/// (the parser contract).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Diagnostic {
     pub message: String,
@@ -129,7 +129,7 @@ impl Events {
     }
 
     /// Discard everything recorded after `len`. Used to undo a speculative
-    /// parse (ADR 0007 §1).
+    /// parse (the parser contract).
     pub fn truncate(&mut self, len: usize) {
         self.events.truncate(len);
     }

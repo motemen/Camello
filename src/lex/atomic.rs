@@ -1,5 +1,5 @@
 //! Constructs that switch scanning mode, scanned as indivisible runs of tokens
-//! (ADR 0005 §3).
+//! (the lexer contract).
 //!
 //! Each function here enters at the start of a construct and returns only once
 //! the whole construct has been pushed. No caller can observe a half-open quote
@@ -424,7 +424,7 @@ impl<'a> Lexer<'a> {
         Some(keyword_len + offset)
     }
 
-    /// A `format` declaration, scanned whole (ADR 0005 §3).
+    /// A `format` declaration, scanned whole (the lexer contract).
     ///
     /// The picture lines are not code and not an expression: `@<<<<` is a
     /// left-justified field five characters wide, and every space in it counts.

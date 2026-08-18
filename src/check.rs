@@ -1,4 +1,4 @@
-//! The invariants of ADR 0006 §6 and ADR 0008 §6, asked of arbitrary input.
+//! The parser and formatter invariants, asked of arbitrary input.
 //!
 //! These are the properties that can be asserted about formatting *code nobody
 //! has written the answer down for*. A fixture has an expected output and is
@@ -18,19 +18,19 @@ use crate::{format_perl, parse_perl};
 pub enum Invariant {
     /// The input parses without a diagnostic.
     CleanParse,
-    /// The tree's tokens reproduce the source byte for byte (ADR 0006 §6).
+    /// The tree's tokens reproduce the source byte for byte.
     Losslessness,
-    /// No node's range begins or ends on trivia (ADR 0006 §4).
+    /// No node's range begins or ends on trivia.
     TriviaPlacement,
-    /// `format(format(x)) == format(x)` (ADR 0008 §6).
+    /// `format(format(x)) == format(x)`.
     Idempotency,
     /// Re-lexing input and output yields the same non-trivia token sequence.
     SemanticPreservation,
     /// Input and output hold the same comment texts, in the same order.
     CommentPreservation,
-    /// Verbatim content is reproduced byte for byte (ADR 0008 §6, I1).
+    /// Verbatim content is reproduced byte for byte.
     VerbatimPreservation,
-    /// A broken group's own output re-reads as broken (ADR 0008 §6, I2).
+    /// A broken group's own output re-reads as broken.
     SeedStability,
 }
 
@@ -47,18 +47,18 @@ impl Invariant {
         Invariant::SeedStability,
     ];
 
-    /// The name used in reports, with the ADR clause it comes from.
+    /// The name used in reports.
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
             Invariant::CleanParse => "a clean parse",
-            Invariant::Losslessness => "losslessness (ADR 0006 §6)",
-            Invariant::TriviaPlacement => "trivia placement (ADR 0006 §4)",
-            Invariant::Idempotency => "idempotency (ADR 0008 §6)",
-            Invariant::SemanticPreservation => "semantic preservation (ADR 0008 §6)",
+            Invariant::Losslessness => "losslessness",
+            Invariant::TriviaPlacement => "trivia placement",
+            Invariant::Idempotency => "idempotency",
+            Invariant::SemanticPreservation => "semantic preservation",
             Invariant::CommentPreservation => "comment preservation",
-            Invariant::VerbatimPreservation => "verbatim preservation (ADR 0008 §6, I1)",
-            Invariant::SeedStability => "seed stability (ADR 0008 §6, I2)",
+            Invariant::VerbatimPreservation => "verbatim preservation",
+            Invariant::SeedStability => "seed stability",
         }
     }
 
@@ -110,11 +110,10 @@ pub fn check_only(source: &str, wanted: &[Invariant]) -> Vec<Violation> {
 
     // Not a question anyone can opt out of: every answer below is about what the
     // formatter did with a tree, and a tree built by error recovery is not one
-    // it was asked to handle.
+    // it was asked to handle. Even when the caller selected another invariant,
+    // report this prerequisite instead of calling the file clean.
     if let Some(violation) = clean_parse(source) {
-        return asked(Invariant::CleanParse)
-            .then_some(vec![violation])
-            .unwrap_or_default();
+        return vec![violation];
     }
 
     if asked(Invariant::Losslessness) {
@@ -347,7 +346,7 @@ fn seed_stability(source: &str, formatted: &str) -> Option<Violation> {
 
 /// The non-trivia token sequence of `source`, as `(kind, text)` pairs.
 ///
-/// Lexing is parser-driven — `expect` comes from the grammar (ADR 0005 §2) — so
+/// Lexing is parser-driven — `expect` comes from the grammar (the lexer contract) — so
 /// the faithful way to re-lex is to parse and read the leaves.
 fn token_stream(source: &str) -> Vec<(String, String)> {
     parse_perl(source)
@@ -470,7 +469,14 @@ fn describe_divergence<T: PartialEq>(
 
 #[cfg(test)]
 mod tests {
-    use super::{describe_divergence, elide, Report, ELIDE_AT};
+    use super::{check_only, describe_divergence, elide, Invariant, Report, ELIDE_AT};
+
+    #[test]
+    fn a_parse_error_is_reported_even_when_another_invariant_was_selected() {
+        let violations = check_only("my $x = ;\n", &[Invariant::CommentPreservation]);
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].invariant, Invariant::CleanParse);
+    }
 
     #[test]
     fn a_report_carries_the_divergence_and_not_the_stream() {

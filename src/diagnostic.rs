@@ -3,7 +3,7 @@
 //! The parser produces plain messages and ranges (`parse::event::Diagnostic`);
 //! this attaches the source text so `miette` can draw the snippet. Messages are
 //! written for people — the language definition's `Display` is what keeps enum
-//! names out of them (ADR 0004 §2, ADR 0007 §3).
+//! names out of them (the language model, the parser contract).
 
 use std::sync::Arc;
 

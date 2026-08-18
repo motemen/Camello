@@ -1,6 +1,6 @@
 //! A parser and formatter for modern Perl.
 //!
-//! The layers are described by ADRs 0004-0008 in `dev/adr/`:
+//! The layers are described in `docs/architecture.md`:
 //!
 //! * [`lang`] — the language vocabulary, generated from a single definition.
 //! * [`lex`] — a scanner whose `expect` state lives in one place.

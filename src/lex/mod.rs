@@ -1,4 +1,4 @@
-//! The lexer (ADR 0005).
+//! The lexer.
 //!
 //! Three properties distinguish this from the lexer it replaces:
 //!
@@ -43,9 +43,9 @@ pub struct LexedToken {
     pub kind: TokenKind,
     pub range: TextRange,
     /// The `expect` in force when this token was scanned. Used by the debug
-    /// assertion in [`Lexer::bump`] that peek and consume agree (ADR 0005 §2).
+    /// assertion in [`Lexer::bump`] that peek and consume agree (the lexer contract).
     pub expect_at_lex: Expect,
-    /// Whether this token is the last of an atomic quote-like run (ADR 0005 §3).
+    /// Whether this token is the last of an atomic quote-like run (the lexer contract).
     ///
     /// The run's extent is the scanner's knowledge and nobody else's: `s/a/b/gr`
     /// and `s{a}{b}` end after a different number of delimiters, and a parser
@@ -61,7 +61,7 @@ impl LexedToken {
     }
 }
 
-/// A position in the token stream, for speculative parsing (ADR 0007 §1).
+/// A position in the token stream, for speculative parsing (the parser contract).
 ///
 /// Rolling back is just moving the cursor, so it is O(1) — the buffer keeps
 /// everything already scanned.
@@ -92,7 +92,7 @@ struct Heredoc {
 pub struct Lexer<'a> {
     source: &'a str,
     /// Every token, trivia included, in source order. Keeping trivia here is
-    /// what lets the replayer re-attach it (ADR 0006 §4) without re-scanning,
+    /// what lets the replayer re-attach it (the trivia model) without re-scanning,
     /// and what keeps the stream lossless.
     buffer: Vec<LexedToken>,
     /// Index into `buffer` of the next token not yet consumed by the parser.
@@ -168,7 +168,7 @@ impl<'a> Lexer<'a> {
     /// The `n`-th upcoming non-trivia token (`n == 0` is the current one).
     ///
     /// Returns `None` only at end of input; every other failure is a token
-    /// (ADR 0005 §4).
+    /// (the lexer contract).
     pub fn peek(&mut self, n: usize) -> Option<LexedToken> {
         let index = self.non_trivia_index(n)?;
         Some(self.buffer[index])
@@ -220,7 +220,7 @@ impl<'a> Lexer<'a> {
     /// is being undone may have re-scanned the tokens at the mark under a
     /// different expectation — that is usually the whole reason it was
     /// speculative — and those entries are still in the buffer. Leaving them
-    /// there breaks the coherence guarantee of ADR 0005 §2: `peek` would answer
+    /// there breaks the coherence guarantee of the lexer contract: `peek` would answer
     /// from a token scanned under one expectation while `bump` consumed it under
     /// another. In a debug build the assertion in [`Self::bump`] fires
     /// (`foo{sub}`, `sub(@y^`, `t{,**t`); in a release build the mis-scanned
@@ -261,7 +261,7 @@ impl<'a> Lexer<'a> {
     /// `sub tr {}` opens a substitution, and under `Operator`, `sub x100 {}`
     /// splits into the repetition operator and a number. The grammar knows which
     /// positions take a name, and this is how it says so — through one routine
-    /// (ADR 0007 §5), not eight coercions.
+    /// (the parser contract), not eight coercions.
     ///
     /// Returns `None` if there is no identifier here.
     pub fn take_name(&mut self) -> Option<LexedToken> {
@@ -349,7 +349,7 @@ impl<'a> Lexer<'a> {
     /// as ordinary tokens is what made the old parser reject them (D6). The
     /// parser asks for raw text at the one point it knows the grammar calls for
     /// it, and gets a token rather than a poke at the underlying string
-    /// (ADR 0004 §5).
+    /// (the language model).
     ///
     /// Returns `false` if the cursor is not on `(`, leaving the lexer untouched.
     pub fn take_raw_parens(&mut self) -> Option<(LexedToken, LexedToken, LexedToken)> {
@@ -438,7 +438,7 @@ impl<'a> Lexer<'a> {
 /// prototype, and a prototype has no strings in it. A signature default that
 /// does, `sub f($x = "(")`, never reaches here: the signature reading is tried
 /// first and succeeds. Skipping quotes would make camello accept input perl
-/// rejects, which is the trade this file refuses everywhere else. (L-012.)
+/// rejects, which is the trade this file refuses everywhere else.
 fn balanced_paren_body_len(rest: &str) -> Option<usize> {
     let mut depth = 1usize;
     let mut chars = rest.char_indices();
