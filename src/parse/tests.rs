@@ -87,6 +87,44 @@ fn calls_are_split_by_shape() {
 }
 
 #[test]
+fn print_accepts_a_braced_scalar_filehandle() {
+    let source = "print ${fh} \"foo\";\n";
+    assert!(errors(source).is_empty(), "{:#?}", errors(source));
+    let rendered = tree(source);
+    assert!(rendered.contains("FILEHANDLE"), "{rendered}");
+    assert!(rendered.contains("BLOCK_DEREF_EXPR"), "{rendered}");
+    assert_lossless(source);
+}
+
+#[test]
+fn catch_accepts_an_exception_class_and_with() {
+    let source = "try { risky(); } catch ePortal::Exception::Fatal with { my $error = shift; }\n";
+    assert!(errors(source).is_empty(), "{:#?}", errors(source));
+    let rendered = tree(source);
+    assert!(rendered.contains("CATCH_CLASS"), "{rendered}");
+    assert!(rendered.contains(r#"identifier "with""#), "{rendered}");
+    assert_lossless(source);
+}
+
+#[test]
+fn heredocs_accept_backslashed_backtick_and_escaped_quoted_markers() {
+    for source in [
+        "my $x = <<\\EOF;\nbody\nEOF\n",
+        "my $x = <<`EOF`;\nbody\nEOF\n",
+        "my $x = <<\"foo\\\"bar\";\nbody\nfoo\"bar\n",
+        "my $x = <<'foo\\'bar';\nbody\nfoo'bar\n",
+    ] {
+        assert!(
+            errors(source).is_empty(),
+            "{source:?}: {:#?}",
+            errors(source)
+        );
+        assert!(tree(source).contains("HEREDOC_EXPR"), "{source:?}");
+        assert_lossless(source);
+    }
+}
+
+#[test]
 fn operator_classes_are_distinguished() {
     // `BINARY_EXPR` vs `ASSIGN_EXPR` vs `RANGE_EXPR`, rather than everything
     // being an INFIX_EXPR.

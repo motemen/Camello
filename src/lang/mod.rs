@@ -299,6 +299,7 @@ define_language! {
         ELSE_CLAUSE,
         CONTINUE_CLAUSE,
         CATCH_CLAUSE,
+        CATCH_CLASS,
         CATCH_PARAM,
         FINALLY_CLAUSE,
         WHEN_CLAUSE,

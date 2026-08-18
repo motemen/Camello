@@ -184,6 +184,14 @@ fn blocks_of_control_structures_always_break() {
 }
 
 #[test]
+fn catch_with_keeps_its_exception_class() {
+    assert_formats_to(
+        "try { risky(); } catch ePortal::Exception::Fatal with { my $error = shift; }\n",
+        "try {\n    risky();\n} catch ePortal::Exception::Fatal with {\n    my $error = shift;\n}\n",
+    );
+}
+
+#[test]
 fn map_and_sub_blocks_may_stay_on_one_line() {
     assert_formats_to(
         "my @xs = map { $_ * 2 } @ys;\n",
@@ -207,10 +215,34 @@ fn user_newlines_inside_an_expression_are_kept_and_indented() {
 }
 
 #[test]
+fn a_comment_before_a_deferred_method_call_semicolon_is_a_continuation() {
+    assert_formats_to(
+        "$obj->method\n# comment\n;\n",
+        "$obj->method\n    # comment\n    ;\n",
+    );
+}
+
+#[test]
 fn nested_fat_commas_align_per_depth() {
     let source = "my %h = (\n    a => 1,\n    bbb => { x => 1, yy => 2 },\n);\n";
     assert_idempotent(source);
     assert_preserves_semantics(source);
+}
+
+#[test]
+fn fat_commas_in_adjacent_flat_nested_hashes_align() {
+    assert_formats_to(
+        "+{\n    a   => { aaa => 1 },\n    bbb => { b   => 2 },\n};\n",
+        "+{\n    a   => { aaa => 1 },\n    bbb => { b   => 2 },\n};\n",
+    );
+}
+
+#[test]
+fn bareword_call_arguments_hang_from_the_first_argument() {
+    assert_formats_to(
+        "args my $class => 'A',\n     my $arg   => 'B';\n",
+        "args my $class => 'A',\n     my $arg   => 'B';\n",
+    );
 }
 
 // ===== Verbatim regions (docs/formatting.md VERBATIM) =====
