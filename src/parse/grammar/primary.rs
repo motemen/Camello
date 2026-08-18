@@ -1,4 +1,4 @@
-//! Terms (ADR 0007 §2).
+//! Terms (the parser contract).
 
 use crate::lang::{NodeKind, TokenKind, T};
 use crate::parse::event::CompletedMarker;
@@ -43,7 +43,7 @@ pub(crate) fn primary(parser: &mut Parser<'_>) -> Option<CompletedMarker> {
         kind if kind.is_quote_like_keyword() => quote_like(parser, kind),
 
         // A bare `/pattern/flags`. The lexer emitted the whole run
-        // (ADR 0005 §3), so there is nothing to decide here.
+        // (the lexer contract), so there is nothing to decide here.
         TokenKind::DELIMITER => {
             let marker = parser.start();
             while parser.current().is_some_and(is_quote_like_part) {
@@ -187,7 +187,7 @@ pub(crate) fn primary(parser: &mut Parser<'_>) -> Option<CompletedMarker> {
 
         // A keyword in term position that no rule claimed is being used as a
         // name: `Foo::when()`, `$h{default}`. One routine coerces it
-        // (ADR 0007 §5).
+        // (the parser contract).
         kind if kind.is_keyword() => bareword_call(parser),
 
         kind if kind.is_error() => {
@@ -208,7 +208,7 @@ pub(crate) fn primary(parser: &mut Parser<'_>) -> Option<CompletedMarker> {
 /// A variable: sigil plus name, a braced dereference, or a chain of `$`s.
 ///
 /// One implementation, where the old parser had four entry points
-/// (ADR 0007 §5).
+/// (the parser contract).
 pub(crate) fn variable(parser: &mut Parser<'_>) -> CompletedMarker {
     let sigil = parser.current().expect("caller checked for a sigil");
     let marker = parser.start();
@@ -335,7 +335,7 @@ pub(crate) fn var_decl(parser: &mut Parser<'_>) -> CompletedMarker {
     parser.complete(marker, NodeKind::VAR_DECL)
 }
 
-/// A quote-like operator, already lexed as a complete run (ADR 0005 §3), so the
+/// A quote-like operator, already lexed as a complete run (the lexer contract), so the
 /// parser only has to consume the tokens the lexer produced.
 fn quote_like(parser: &mut Parser<'_>, keyword: TokenKind) -> CompletedMarker {
     let marker = parser.start();
@@ -385,7 +385,7 @@ fn is_quote_like_part(kind: TokenKind) -> bool {
 ///
 /// Perl guesses at this too (perlref says so). The difference here is *how*:
 /// parse it as a hash, and if that does not work out, roll back and parse a
-/// block (ADR 0007 §1). The old parser scanned the whole brace body looking for
+/// block (the parser contract). The old parser scanned the whole brace body looking for
 /// a `;` before it dared open a node, and still got `{ $k => 1 }` wrong.
 fn anon_hash_or_block(parser: &mut Parser<'_>) -> CompletedMarker {
     let checkpoint = parser.checkpoint();

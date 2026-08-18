@@ -1,4 +1,4 @@
-//! Semantic predicates over [`TokenKind`] (ADR 0004 §3).
+//! Semantic predicates over [`TokenKind`] (the language model).
 //!
 //! These encode grammar knowledge and so cannot be derived from the declaration
 //! order in `define_language!`. They are hand-written, but because they are
@@ -74,7 +74,7 @@ impl TokenKind {
     /// One of `q qq qx qw m qr s tr y`.
     ///
     /// These are keywords only when a term is expected and the next character is
-    /// not `=>` or `}` (ADR 0005 §5); the lexer owns that decision.
+    /// not `=>` or `}` (the lexer contract); the lexer owns that decision.
     #[must_use]
     pub fn is_quote_like_keyword(self) -> bool {
         matches!(
@@ -96,7 +96,7 @@ impl TokenKind {
     /// The marker `<<EOF` is a token in the expression; the body arrives at the
     /// next line start, in the middle of whatever the expression was doing. The
     /// parser skips it exactly as it skips trivia, and the replayer puts it back
-    /// where it was found (ADR 0007 §7).
+    /// where it was found (the parser contract).
     #[must_use]
     pub fn is_heredoc_body(self) -> bool {
         matches!(
@@ -126,7 +126,7 @@ impl TokenKind {
     }
 
     /// `=` or a compound assignment operator. Compound assignment is a single
-    /// token (ADR 0005 §5), so this is a flat check rather than a two-token
+    /// token (the lexer contract), so this is a flat check rather than a two-token
     /// pattern match.
     #[must_use]
     pub fn is_assignment_op(self) -> bool {
@@ -153,7 +153,7 @@ impl TokenKind {
     }
 
     /// A token that can only appear where the parser has failed to make sense of
-    /// the input. Each one carries its own diagnostic (ADR 0005 §4).
+    /// the input. Each one carries its own diagnostic (the lexer contract).
     #[must_use]
     pub fn is_error(self) -> bool {
         matches!(
@@ -166,7 +166,7 @@ impl TokenKind {
         )
     }
 
-    /// Content the formatter must reproduce byte for byte (ADR 0008 §2 `Raw`).
+    /// Content the formatter must reproduce byte for byte (the formatter contract `Raw`).
     #[must_use]
     pub fn is_verbatim(self) -> bool {
         matches!(
@@ -186,7 +186,7 @@ impl TokenKind {
     }
 
     /// A keyword that can begin a statement. Doubles as the statement-level
-    /// synchronisation set for panic-mode recovery (ADR 0007 §3).
+    /// synchronisation set for panic-mode recovery (the parser contract).
     #[must_use]
     pub fn starts_statement(self) -> bool {
         matches!(

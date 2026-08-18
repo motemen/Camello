@@ -9,16 +9,17 @@ ROOT
       identifier "f"
     BLOCK
       `{` "{"
-      SUB_DEF
-        `sub` "sub"
-        SUB_NAME
-        ATTR
-          `:` ":"
-        BLOCK
-          `{` "{"
-          EXPR_STMT
-            LIST_EXPR
-              LITERAL
-                number "0"
-          `}` "}"
+      EXPR_STMT
+        LIST_EXPR
+          ANON_SUB_EXPR
+            `sub` "sub"
+            ATTR
+              `:` ":"
+            BLOCK
+              `{` "{"
+              EXPR_STMT
+                LIST_EXPR
+                  LITERAL
+                    number "0"
+              `}` "}"
       `}` "}"

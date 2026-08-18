@@ -5,7 +5,7 @@
 # argument list. `PI + 1` is addition applied to a constant. camello has no
 # symbol table and cannot tell the two names apart, so it decides from how the
 # operator was written — glued to its operand and spaced from the name in front
-# of it is the idiom, anything else is arithmetic (ADR 0007 §6).
+# of it is the idiom, anything else is arithmetic (the parser contract).
 
 # The idiom: a PREFIX_EXPR inside the call's arguments.
 ok +Foo::Bar->baz('/x');

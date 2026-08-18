@@ -1,1 +1,1 @@
-sub f { sub :method :foo(1) { 0 } }
+sub f { sub :method :lvalue { 0 } }

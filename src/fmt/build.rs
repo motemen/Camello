@@ -1,4 +1,4 @@
-//! CST → Doc (ADR 0008 §3).
+//! CST → Doc (the formatter contract).
 //!
 //! Every layout decision is made here. In particular the flat-or-broken state of
 //! each group is decided from the source, once, at the point the group is built
@@ -22,7 +22,7 @@ pub struct Builder<'a> {
     trivia: &'a TriviaMap,
     options: &'a FormatterOptions,
     /// Nesting depth of `=>`, so that an inner hash aligns separately from the
-    /// one containing it (ADR 0008 §5).
+    /// one containing it (the formatter contract).
     fat_comma_depth: u8,
     /// Where every comment in the file starts, ascending.
     ///
@@ -91,7 +91,7 @@ impl<'a> Builder<'a> {
 
     /// Own-line comments written after the last statement of the file.
     ///
-    /// Trivia belongs to the token that follows it (ADR 0006 §3), and here
+    /// Trivia belongs to the token that follows it (the trivia model), and here
     /// there is none; the map keeps such a run under its own name, and this is
     /// the one place it is emitted. `feature.pm` ends with
     /// `# ex: set ro ft=perl:` and lost it.
@@ -132,11 +132,11 @@ impl<'a> Builder<'a> {
     /// The statements of a root or a block, plus anything sitting between them.
     ///
     /// A heredoc body is a token, not a statement: it lands wherever the line it
-    /// starts on falls (ADR 0007 §7), which is between two statements. Walking
+    /// starts on falls (the parser contract), which is between two statements. Walking
     /// only the child *nodes* would drop it.
     fn statements_into(&mut self, node: &SyntaxNode, parts: &mut Vec<Doc>) {
         // Heredoc markers whose bodies have not arrived yet. A body begins on
-        // the line after the one its marker is on (ADR 0007 §7), so while any
+        // the line after the one its marker is on (the parser contract), so while any
         // are outstanding the statements have to stay on that line — putting the
         // next one on a line of its own makes it the body.
         // `eval <<EOT; die $@ if $@;` in `URI::data` did exactly that: the
@@ -150,7 +150,7 @@ impl<'a> Builder<'a> {
         for child in node.children_with_tokens() {
             match child {
                 SyntaxElement::Node(statement) => {
-                    // formatting.md BLANK_LINE-1: definitions and phase blocks
+                    // docs/formatting.md BLANK_LINE-1: definitions and phase blocks
                     // stand apart from the code around them. The renderer drops
                     // a blank line at the start of the output and straight after
                     // an opening brace, so these are pushed unconditionally.
@@ -202,11 +202,11 @@ impl<'a> Builder<'a> {
     ///
     /// `package Foo { ... };` and `sub f { }` followed by a stray `;` both put a
     /// semicolon after a closing brace, and the parser reads it as an EMPTY_STMT
-    /// of its own (ADR 0007 §2) — correctly, because that is what it is. On a
+    /// of its own (the parser contract) — correctly, because that is what it is. On a
     /// line of its own it reads as a statement someone forgot to delete; on the
     /// brace's line it reads as what the writer wrote. Where the user put it is
     /// the only evidence of which one it is, and so it decides
-    /// (formatting.md POLICY-4).
+    /// (docs/formatting.md POLICY-4).
     fn empty_statement_hugs(&self, statement: &SyntaxNode) -> bool {
         let Some(next) = statement.next_sibling() else {
             return false;
@@ -236,7 +236,7 @@ impl<'a> Builder<'a> {
     }
 
     /// A statement. Its comments and blank lines come from its tokens, which is
-    /// where every comment in the output comes from (ADR 0008 §4).
+    /// where every comment in the output comes from (the formatter contract).
     fn statement_into(&mut self, node: &SyntaxNode, parts: &mut Vec<Doc>) {
         // Declared for every statement, including the ones with no shape of
         // their own: it is what ends the previous statement's declaration, and
@@ -258,13 +258,13 @@ impl<'a> Builder<'a> {
         }
 
         // The newline that ended the previous line went to that token's
-        // trailing trivia (ADR 0006 §3), so every NEWLINE here is a line the
+        // trailing trivia (the trivia model), so every NEWLINE here is a line the
         // user left empty. The renderer collapses runs of them to one
-        // (formatting.md BLANK_LINE-3).
+        // (docs/formatting.md BLANK_LINE-3).
         let mut parts = Vec::new();
         let mut items = trivia.leading.iter().peekable();
         // With one exception. A heredoc body is invisible to the parser
-        // (ADR 0007 §7), so it holds no trivia of its own and the newline that
+        // (the parser contract), so it holds no trivia of its own and the newline that
         // ended its terminator's line has no token to be trailing trivia of: it
         // arrives here, in front of whatever comes next. It is the terminator's
         // line ending, not a line the user left empty — the ones after it are.
@@ -374,12 +374,12 @@ impl<'a> Builder<'a> {
         }
 
         // A newline the user put here is kept, and the continuation is indented
-        // by the enclosing Indent (ADR 0008 §3(2)) — no separate rule for
-        // continuation indent, and so none of ADR 0002's fourteen branches.
+        // by the enclosing Indent (the formatter contract) — no separate rule for
+        // continuation indent, with no separate branch per syntax shape.
         // A block's opening brace is placed by the formatter, not the user
-        // (formatting.md NEWLINE-2), so a newline before it is not preserved.
+        // (docs/formatting.md NEWLINE-2), so a newline before it is not preserved.
         // A chained keyword goes on the closing brace's line whatever the user
-        // wrote (formatting.md NEWLINE-3), so the newline before one is no more
+        // wrote (docs/formatting.md NEWLINE-3), so the newline before one is no more
         // preserved than the one before a brace. Keeping it produced `}` and
         // then an indented `else {` with its body at the same column.
         let placed_by_the_formatter = next.as_node().is_some_and(|node| {
@@ -412,7 +412,7 @@ impl<'a> Builder<'a> {
         let token = next.as_token()?;
         if token.token_kind().is_assignment_op() && parent == Some(NodeKind::ASSIGN_EXPR) {
             // The whole operator: `=`, `-=` and `||=` line up on their `=`
-            // (formatting.md ALIGNMENT-2).
+            // (docs/formatting.md ALIGNMENT-2).
             return Some((AnchorClass::Assign, token.text().width()));
         }
         if token.token_kind() == T!["=>"] {
@@ -583,8 +583,8 @@ impl<'a> Builder<'a> {
     /// Whether the source has a line break between two adjacent children.
     ///
     /// The gap between them is exactly the previous token's trailing trivia plus
-    /// the next token's leading trivia (ADR 0006 §3), and because no node's
-    /// range includes trivia (§4) that is the whole gap — no guessing from node
+    /// the next token's leading trivia (the trivia model), and because no node's
+    /// range includes trivia, that is the whole gap — no guessing from node
     /// extents, and nothing from *after* `next` can leak in.
     fn has_user_newline_between(&self, previous: &SyntaxElement, next: &SyntaxElement) -> bool {
         let is_newline = |item: &crate::parse::trivia::Trivia| item.kind == TokenKind::NEWLINE;
@@ -605,7 +605,7 @@ impl<'a> Builder<'a> {
         let kind = token.token_kind();
         let text = if kind.is_heredoc_body() {
             // A heredoc body owns whole lines and starts in column 0, wherever
-            // the marker that opened it was written (ADR 0007 §7). Reached
+            // the marker that opened it was written (the parser contract). Reached
             // through a list or an argument list it used to arrive as a `Raw`,
             // which starts at the current column: the first line was indented
             // into the string and the terminator was indented out of being a
@@ -624,7 +624,7 @@ impl<'a> Builder<'a> {
             Doc::Token(token.clone())
         };
 
-        // A quote-like operator is scanned as one atomic run (ADR 0005 §3), so
+        // A quote-like operator is scanned as one atomic run (the lexer contract), so
         // its parts are one lexical unit: a comment can precede the run or
         // follow it, and there is nowhere in between for one to be. Only the
         // outermost tokens ask, which leaves no interior token able to claim a
@@ -637,7 +637,7 @@ impl<'a> Builder<'a> {
             Doc::Nil
         };
         // A comment sitting between a header and its brace belongs after the
-        // brace, because the brace does not move (formatting.md NEWLINE-2).
+        // brace, because the brace does not move (docs/formatting.md NEWLINE-2).
         // `block` emits it there.
         let trailing = if !asks_trailing || brace_follows(token) {
             Doc::Nil
@@ -691,7 +691,7 @@ impl<'a> Builder<'a> {
         Doc::concat(parts)
     }
 
-    /// A quote-like operator: one lexical run (ADR 0005 §3), and so one atom.
+    /// A quote-like operator: one lexical run (the lexer contract), and so one atom.
     ///
     /// Emitted token by token, the closing delimiter of a run whose content
     /// spans lines is a token like any other: it starts a line, and a line that
@@ -718,7 +718,7 @@ impl<'a> Builder<'a> {
     ///
     /// One `VerbatimLines` for the whole node rather than one per token. These
     /// constructs exist in column 0 and nowhere else — the lexer recognises
-    /// `=head1` and `__END__` at a line start and there only (ADR 0005 §5) — so
+    /// `=head1` and `__END__` at a line start and there only (the lexer contract) — so
     /// indenting one produces output that no longer contains it. Emitting them
     /// token by token put the first in column 0 and left the rest to pick up the
     /// enclosing block's indentation, which is the same bug one token along.
@@ -865,9 +865,9 @@ impl<'a> Builder<'a> {
         if !self.options.allow_single_line_blocks {
             return false;
         }
-        // A control structure's block always breaks (formatting.md NEWLINE-2).
+        // A control structure's block always breaks (docs/formatting.md NEWLINE-2).
         // `sub`, `do`, `map` and `try` blocks are not control structures: they
-        // may hold a single value and stay on one line (ADR 0008 §3).
+        // may hold a single value and stay on one line (the formatter contract).
         if node
             .parent()
             .map(|parent| parent.node_kind())
@@ -891,7 +891,7 @@ impl<'a> Builder<'a> {
         }
         // A statement that was written across lines stays across lines, and a
         // statement that ends in `;` reads as a body rather than a value
-        // (ADR 0008 §3: single statement, no semicolon, no comment, no source
+        // (the formatter contract: single statement, no semicolon, no comment, no source
         // newline).
         if self.contains_newline(node) {
             return false;
@@ -927,8 +927,8 @@ impl<'a> Builder<'a> {
     /// A bracketed group: parentheses, an anonymous array or an anonymous hash.
     ///
     /// Broken when the source put a newline straight after the opening bracket
-    /// (formatting.md INDENT-2) — a rule stable under re-formatting, because a
-    /// broken group's own output has the newline there (ADR 0008 §6, I2) — or
+    /// (docs/formatting.md INDENT-2) — a rule stable under re-formatting, because a
+    /// broken group's own output has the newline there (the formatter contract, I2) — or
     /// when the group holds a comment.
     ///
     /// The second half is not a taste judgement. A comment runs to end of line,
@@ -1015,7 +1015,7 @@ impl<'a> Builder<'a> {
             parts.push(Doc::indent(Doc::concat(vec![Doc::SoftLine, body])));
             parts.push(Doc::SoftLine);
         } else {
-            // formatting.md SPACING-7: whether a flat literal pads its inside
+            // docs/formatting.md SPACING-7: whether a flat literal pads its inside
             // depends on the configured spacing and how many items it holds.
             // An `a => 1` pair is two items, so `{ a => 1 }` keeps its spaces
             // under Standard while `[$x]` stays tight. Parentheses are always
@@ -1138,7 +1138,7 @@ impl<'a> Builder<'a> {
                     } else if ends_element && !last {
                         // A broken group puts one element per line; a flat one
                         // still keeps a line break the user put here
-                        // (formatting.md POLICY-4).
+                        // (docs/formatting.md POLICY-4).
                         parts.push(if broken {
                             Doc::Line
                         } else if user_break {
@@ -1201,7 +1201,7 @@ impl<'a> Builder<'a> {
         // decides it: `Mail::Mailer` writes its list with the newline in front
         // of each comma, which is not a break the formatter keeps, so the
         // contents come out on one line — and a closer left on the next line
-        // would be pulled back up by the pass after that (ADR 0008 §6, I2).
+        // would be pulled back up by the pass after that (the formatter contract, I2).
         breaks(body)
     }
 }
@@ -1222,7 +1222,7 @@ fn sole_item(node: &SyntaxNode) -> Option<SyntaxNode> {
 }
 
 /// A term a bracket closes up around: a variable or a literal, and nothing with
-/// its own structure (formatting.md SPACING-7).
+/// its own structure (docs/formatting.md SPACING-7).
 fn is_simple_term(node: &SyntaxNode) -> bool {
     match node.node_kind() {
         NodeKind::SCALAR_VAR
@@ -1324,7 +1324,7 @@ fn run_edges(token: &SyntaxToken) -> (bool, bool) {
 /// Is the next thing after this token the opening brace of a block this token
 /// is part of the header of?
 ///
-/// Both halves matter. The brace does not move (formatting.md NEWLINE-2), so a
+/// Both halves matter. The brace does not move (docs/formatting.md NEWLINE-2), so a
 /// comment written before it comes out after it — but only when the comment was
 /// written *inside the construct*: `if ($x) # why` belongs to the `if`, whereas
 /// the trailing comment of `my $x = 1;` before a bare block belongs to the
@@ -1355,7 +1355,7 @@ fn brace_follows(token: &SyntaxToken) -> bool {
     false
 }
 
-/// Statements that get a blank line on each side (formatting.md BLANK_LINE-1).
+/// Statements that get a blank line on each side (docs/formatting.md BLANK_LINE-1).
 fn wants_surrounding_blank_lines(node: &SyntaxNode) -> bool {
     matches!(node.node_kind(), NodeKind::SUB_DEF | NodeKind::PHASE_BLOCK)
 }

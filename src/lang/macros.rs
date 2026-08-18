@@ -1,4 +1,4 @@
-//! The `define_language!` macro (ADR 0004 §2).
+//! The `define_language!` macro (the language model).
 //!
 //! A single invocation is the sole source of truth for the language vocabulary.
 //! From it we generate:
@@ -26,7 +26,7 @@ macro_rules! define_language {
         tokens    { $($tk_name:ident : $tk_disp:literal),* $(,)? }
         nodes     { $($nd_name:ident),* $(,)? }
     ) => {
-        /// A lexical element. Never a syntax node — see ADR 0004 §1.
+        /// A lexical element. Never a syntax node — see the language model.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
         #[repr(u16)]
         #[allow(non_camel_case_types)]
@@ -38,7 +38,7 @@ macro_rules! define_language {
             $($tk_name,)*
         }
 
-        /// A composite syntax node. Never a token — see ADR 0004 §1.
+        /// A composite syntax node. Never a token — see the language model.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
         #[repr(u16)]
         #[allow(non_camel_case_types)]
@@ -76,7 +76,7 @@ macro_rules! define_language {
                 matches!(self, $(TokenKind::$p_name)|* $(| TokenKind::$pc_name)*)
             }
 
-            /// Whitespace, newlines and comments (ADR 0006 §1).
+            /// Whitespace, newlines and comments (the trivia model).
             #[must_use]
             pub const fn is_trivia(self) -> bool {
                 matches!(self, $(TokenKind::$tv_name)|*)
@@ -93,7 +93,7 @@ macro_rules! define_language {
                 }
             }
 
-            /// Human-readable name for diagnostics (ADR 0004 §2).
+            /// Human-readable name for diagnostics (the language model).
             #[must_use]
             pub const fn display_name(self) -> &'static str {
                 match self {
@@ -106,7 +106,7 @@ macro_rules! define_language {
             }
 
             /// Look up a reserved word by its spelling. Used by the lexer so that
-            /// the keyword table lives in exactly one place (ADR 0004 §2).
+            /// the keyword table lives in exactly one place (the language model).
             #[must_use]
             pub fn from_keyword(text: &str) -> Option<TokenKind> {
                 match text {

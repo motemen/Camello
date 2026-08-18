@@ -1,4 +1,4 @@
-//! The scanner proper (ADR 0005 §1, §5).
+//! The scanner proper.
 //!
 //! Hand-written rather than generated: the constructs a generator could handle
 //! are the easy half, and the old lexer ended up performing surgery on the
@@ -42,7 +42,7 @@ impl<'a> Lexer<'a> {
     /// Scan one step, pushing at least one token unless input is exhausted.
     ///
     /// Some steps push a whole run: a quote-like operator, a heredoc body, POD.
-    /// That is the atomicity guarantee of ADR 0005 §3 — no scanning mode is
+    /// That is the atomicity guarantee of the lexer contract — no scanning mode is
     /// observable between calls.
     pub(super) fn scan_next(&mut self) {
         if self.scan_pos >= self.source.len() {
@@ -72,7 +72,7 @@ impl<'a> Lexer<'a> {
                 return;
             }
             // Exactly one line terminator per token, so blank lines survive as
-            // consecutive NEWLINEs (ADR 0006 §1).
+            // consecutive NEWLINEs (the trivia model).
             b'\n' => {
                 self.push(TokenKind::NEWLINE, start, start + 1);
                 return;
@@ -123,7 +123,7 @@ impl<'a> Lexer<'a> {
         self.scan_punctuation();
     }
 
-    /// POD and `__DATA__` are only recognised in column 0 (ADR 0005 §5).
+    /// POD and `__DATA__` are only recognised in column 0 (the lexer contract).
     fn scan_line_start_construct(&mut self) -> bool {
         let rest = self.rest();
 
@@ -259,7 +259,7 @@ impl<'a> Lexer<'a> {
         }
 
         // `__END__` and `__DATA__` are markers in column 0 and words anywhere
-        // else (ADR 0005 §5) — `scan_line_start_construct` has already taken the
+        // else (the lexer contract) — `scan_line_start_construct` has already taken the
         // ones that are markers, so anything reaching here is a word. Producing
         // the keyword regardless gave an indented `__END__` a data section with
         // no content, and the formatter, moving it to the column the kind
@@ -327,7 +327,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// The bareword exception of ADR 0005 §5.
+    /// The bareword exception of the lexer contract.
     ///
     /// `(s => 1)` and `$h{q}` use quote-like names as plain words. Deciding it
     /// by looking one token ahead — past horizontal space only — keeps `s {a}{b}`
@@ -390,7 +390,7 @@ impl<'a> Lexer<'a> {
             }
         }
         // Never fall back to "not a string after all" — that is how the old
-        // lexer let a stray quote rewrite the rest of the file (ADR 0005 §4).
+        // lexer let a stray quote rewrite the rest of the file (the lexer contract).
         self.push(TokenKind::UNTERMINATED_STRING, start, self.source.len());
     }
 
@@ -567,7 +567,7 @@ impl<'a> Lexer<'a> {
         // whitespace, and the old lexer read the raw bytes either side to guess
         // — which is exactly why the two disagreed (D7). Where a term is
         // expected, a sigil is a sigil; that is the rule, and it is written
-        // down (ADR 0005 §5) rather than emergent.
+        // down (the lexer contract) rather than emergent.
         Some((kind, 1))
     }
 
@@ -576,7 +576,7 @@ impl<'a> Lexer<'a> {
     /// Doing this inside the lexer is what removes the old
     /// `consume_one_char_as_ident` / `consume_digit_prefixed_ident` escape
     /// hatches: `$@` and `$1` are ordinary tokens here, not raw-text pokes from
-    /// the parser (ADR 0004 §5).
+    /// the parser (the language model).
     fn scan_variable_name(&mut self, sigil: TokenKind) {
         let start = self.scan_pos;
         let bytes = self.rest().as_bytes();
@@ -649,7 +649,7 @@ impl<'a> Lexer<'a> {
 /// Length of the identifier at the start of `text`, `::` separators included.
 /// A name ends at the apostrophe. perl 5.42 made the old package separator a
 /// feature that can be switched off, and camello reads every file as though it
-/// were (`no feature "apostrophe_as_package_separator"`; ADR 0005 §5). `Carp
+/// were (`no feature "apostrophe_as_package_separator"`; the lexer contract). `Carp
 /// ::Assert`'s `sub shouldn't ($$)` therefore does not parse, and
 /// `print STDERR'text'` does.
 pub(super) fn ident_len_at(text: &str) -> usize {

@@ -9,7 +9,7 @@
 //! special case, it is one whose B happens to equal its A. Where the answer is
 //! written down, checking the answer is the whole of the job.
 //!
-//! **The invariants** ([`camello::check`], ADR 0006 §6 and ADR 0008 §6). These
+//! **The invariants** ([`camello::check`], the trivia model and the formatter contract). These
 //! are what can be asked of code whose answer *nobody has written down*: that
 //! the string content survives, that the comments survive, that a second pass
 //! changes nothing. Their real home is `camello dev check`, over a corpus; running
@@ -61,7 +61,11 @@ fn collect_fixtures(dir: &Path) -> Vec<PathBuf> {
 /// malformed file reports, and do not parse cleanly by construction.
 fn all_fixture_files() -> Vec<(String, PathBuf)> {
     let mut files = Vec::new();
-    for directory in ["src/fmt/fixtures", "src/parse/fixtures/success"] {
+    for directory in [
+        "src/fmt/fixtures",
+        "src/parse/fixtures/success",
+        "src/parse/fixtures/statements/success",
+    ] {
         for path in collect_fixtures(&root().join(directory)) {
             let label = path
                 .strip_prefix(root())

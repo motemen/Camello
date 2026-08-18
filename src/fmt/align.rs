@@ -1,4 +1,4 @@
-//! Vertical alignment (ADR 0008 §5).
+//! Vertical alignment (the formatter contract).
 //!
 //! An independent pass over rendered lines, in the manner of perltidy's vertical
 //! aligner. It sees columns and nothing else — not the source's whitespace, not
@@ -49,7 +49,7 @@ fn align_class(lines: &mut [Line], class: AnchorClass, options: &FormatterOption
 
         // A group runs while consecutive lines carry the same anchor class at
         // the same nesting, with the same statement shape. Any of those changing
-        // ends it, as does a blank line (formatting.md §7).
+        // ends it, as does a blank line (docs/formatting.md §7).
         let mut end = start + 1;
         while end < lines.len()
             && !lines[end].is_blank()
@@ -92,7 +92,7 @@ fn anchor_of(line: &Line, class: AnchorClass) -> Option<Anchor> {
 ///
 /// The end of the anchored operator, not its start: `=` and `-=` line up on
 /// their `=`, so what the group agrees on is where the operator *finishes*
-/// (formatting.md ALIGNMENT-2). For a class whose anchor has no width — `=>`, a
+/// (docs/formatting.md ALIGNMENT-2). For a class whose anchor has no width — `=>`, a
 /// trailing comment — the two are the same column.
 fn column_of(line: &Line, class: AnchorClass) -> Option<usize> {
     anchor_of(line, class).map(|anchor| anchor.column + anchor.tail)
@@ -101,7 +101,7 @@ fn column_of(line: &Line, class: AnchorClass) -> Option<usize> {
 /// Insert spaces so that `class`'s anchor sits at `target`.
 ///
 /// Padding is only ever spaces, so it creates no new anchor and the pass is its
-/// own fixed point (ADR 0008 §6, I3).
+/// own fixed point (the formatter contract, I3).
 fn pad_to(line: &mut Line, class: AnchorClass, target: usize) {
     let Some(anchor) = anchor_of(line, class) else {
         return;

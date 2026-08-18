@@ -1,5 +1,4 @@
-//! Lexer tests, including the seven reproduced lexing bugs from
-//! `notes/2026-07-28-redesign-assessment.md` appendix A (D1-D7).
+//! Lexer tests, including regression coverage for lexical disambiguation.
 
 use super::{Expect, Lexer};
 use crate::lang::{TokenKind, T};
@@ -9,7 +8,7 @@ use crate::lang::{TokenKind, T};
 /// The real parser sets `expect` from grammar position; here we approximate it
 /// from the token just consumed, which is enough to exercise every lexical rule.
 /// Tokens produced inside an atomic run keep `Term` because the whole run was
-/// scanned under it (ADR 0005 §3).
+/// scanned under it (the lexer contract).
 fn expect_after(kind: TokenKind) -> Expect {
     match kind {
         TokenKind::IDENT
@@ -52,7 +51,7 @@ fn strip_trivia(tokens: Vec<(TokenKind, String)>) -> Vec<TokenKind> {
         .collect()
 }
 
-/// Concatenating every token must reproduce the input exactly (ADR 0006 §6).
+/// Concatenating every token must reproduce the input exactly (the trivia model).
 #[track_caller]
 fn assert_lossless(source: &str) {
     let rebuilt: String = lex(source).into_iter().map(|(_, text)| text).collect();
@@ -77,7 +76,7 @@ fn basic_tokens() {
 
 #[test]
 fn trivia_splits_newlines_one_at_a_time() {
-    // ADR 0006 §1: blank lines have to survive as consecutive NEWLINEs or the
+    // the trivia model: blank lines have to survive as consecutive NEWLINEs or the
     // formatter is forced back to re-reading the source to count them.
     let tokens = lex("1;\n\n\n2;");
     let newlines = tokens
@@ -92,7 +91,7 @@ fn trivia_splits_newlines_one_at_a_time() {
 
 #[test]
 fn compound_assignment_is_one_token() {
-    // ADR 0005 §5 / ADR 0004 §4: no COMPOUND_ASSIGNMENT node, because there is
+    // the lexer contract / the language model: no COMPOUND_ASSIGNMENT node, because there is
     // nothing left to compose.
     assert_eq!(
         kinds("$x //= 1;"),
@@ -279,7 +278,7 @@ fn sigils_win_in_term_position_regardless_of_spacing() {
     assert_eq!(operator.peek_kind(0), Some(TokenKind::MODULO));
 }
 
-// ===== Scanner rules from ADR 0005 §5 =====
+// ===== Scanner rules from the lexer contract =====
 
 #[test]
 fn radix_literals_do_not_swallow_the_range_operator() {
@@ -380,7 +379,7 @@ fn data_section_is_carried_verbatim() {
     assert_lossless(source);
 }
 
-// ===== Buffer and expect mechanics (ADR 0005 §2, §3) =====
+// ===== Buffer and expect mechanics =====
 
 #[test]
 fn changing_expect_rescans_buffered_lookahead() {
@@ -436,7 +435,7 @@ fn heredoc_bookkeeping_survives_lookahead_invalidation() {
 
 #[test]
 fn rollback_drops_lookahead_scanned_under_another_expectation() {
-    // The coherence guarantee of ADR 0005 §2 covers the whole buffer, not just
+    // The coherence guarantee of the lexer contract covers the whole buffer, not just
     // the token at the mark. `foo{sub}` reaches here through
     // `anon_hash_or_block`: the anonymous-hash attempt scans the `}` in operator
     // position, the attempt is rolled back, and the block re-parse arrives at
@@ -605,7 +604,7 @@ fn a_leading_dot_is_a_number_where_a_term_is_expected() {
 #[test]
 fn a_name_ends_at_an_apostrophe() {
     // perl 5.42 made `'` as a package separator a feature that can be switched
-    // off, and camello reads every file as though it were (ADR 0005 §5). So
+    // off, and camello reads every file as though it were (the lexer contract). So
     // `STDERR'text'` is a bareword and a string, not the name `STDERR::text`.
     assert_eq!(
         lex("print STDERR'text'")

@@ -1,4 +1,4 @@
-//! The grammar (ADR 0007 §2, §3, §5).
+//! The grammar.
 
 pub(crate) mod builtins;
 mod expr;
@@ -15,7 +15,7 @@ pub(super) fn root(parser: &mut Parser<'_>) {
 }
 
 /// One statement. Every arm produces a closed statement node — there is no
-/// generic `STMT` wrapper, so nothing is "sometimes wrapped" (ADR 0007 §2).
+/// generic `STMT` wrapper, so nothing is "sometimes wrapped" (the parser contract).
 fn statement(parser: &mut Parser<'_>) {
     parser.expect_term();
     let Some(kind) = parser.current() else { return };
@@ -59,11 +59,17 @@ fn statement(parser: &mut Parser<'_>) {
             }
             parser.complete(marker, NodeKind::DATA_SECTION);
         }
-        // `sub` at statement level names a subroutine unless a body follows
-        // straight away. Deciding it here, rather than by peeking at a name the
-        // lexer may have read as a quote-like operator, is what lets
-        // `sub tr {}` and `sub s {}` work.
-        T!["sub"] if !parser.nth_at(1, T!["{"]) => sub_def(parser),
+        // `sub` at statement level names a subroutine only when a name follows.
+        // An anonymous sub may put a signature/prototype or attributes before
+        // its body (`sub () {}` and `sub :lvalue {}`), so looking only for an
+        // immediately following `{` misclassifies both. `is_name_like` still
+        // lets `sub tr {}` and `sub s {}` work; `name()` rescans those keywords
+        // as names once this arm has established the declaration shape.
+        T!["sub"] if sub_name_follows(parser, 1) => sub_def(parser),
+        // Every other `sub` begins an anonymous-subroutine expression. Keep this
+        // ahead of the generic label arm: `sub :lvalue {}` has a colon, but the
+        // `sub` keyword is not a label.
+        T!["sub"] => expr_stmt(parser),
         // `my sub NAME { ... }` — a lexically scoped named subroutine
         // (perlsub). What follows the declaration keyword is a subroutine, not
         // the variable the declaration rule would look for.
@@ -117,7 +123,7 @@ fn statement(parser: &mut Parser<'_>) {
             // dispatch table written as the last expression of a subroutine is
             // the common case. Deciding it by parsing and reconsidering, rather
             // than by scanning ahead for the closing brace, is the same shape as
-            // `try { ... }->method()` (ADR 0007 §1).
+            // `try { ... }->method()` (the parser contract).
             if parser.at(T!["->"]) {
                 parser.abandon(marker);
                 parser.rollback(checkpoint);
@@ -147,6 +153,23 @@ fn statement(parser: &mut Parser<'_>) {
         }
         _ => expr_stmt(parser),
     }
+}
+
+/// Whether a name can be read after the tokens introducing a subroutine.
+///
+/// This is deliberately speculative instead of ordinary lookahead. In term
+/// position, a legal name such as `tr` starts a quote-like run and may collapse
+/// into one unterminated token before the parser gets to decide that this is a
+/// name position. `bump_name` asks the lexer the right question, and rollback
+/// removes the trial token and event.
+fn sub_name_follows(parser: &mut Parser<'_>, introducers: usize) -> bool {
+    let checkpoint = parser.checkpoint();
+    for _ in 0..introducers {
+        parser.bump();
+    }
+    let found = parser.bump_name();
+    parser.rollback(checkpoint);
+    found
 }
 
 /// An expression statement, plus any postfix modifier and the terminating `;`.
@@ -196,7 +219,7 @@ fn stmt_modifier(parser: &mut Parser<'_>) {
 ///
 /// The old parser reported the missing `;` and then swallowed the next
 /// statement's first token as an `ERROR`, which is how `use A use X;` lost its
-/// second `use` (ADR 0007 §3).
+/// second `use` (the parser contract).
 fn semicolon(parser: &mut Parser<'_>) {
     if parser.at(T![";"]) {
         parser.bump();
@@ -217,7 +240,7 @@ fn semicolon(parser: &mut Parser<'_>) {
 
 /// A block, from `{` to `}`.
 ///
-/// One implementation, where the old parser had three (ADR 0007 §5).
+/// One implementation, where the old parser had three (the parser contract).
 pub(crate) fn block(parser: &mut Parser<'_>) {
     let marker = parser.start();
     parser.expect_term();
@@ -243,7 +266,7 @@ pub(crate) fn block(parser: &mut Parser<'_>) {
 ///
 /// `sub if {}`, `package tr;` and `$h{default}` are all legal Perl. The old
 /// parser forced the coercion in eight separate places; here there is one
-/// (ADR 0007 §5).
+/// (the parser contract).
 pub(crate) fn name(parser: &mut Parser<'_>, node: NodeKind) {
     let marker = parser.start();
     if !parser.bump_name() {
@@ -267,7 +290,7 @@ fn is_name_like(kind: TokenKind) -> bool {
 /// elsewhere. Every rule that would otherwise claim the keyword — the statement
 /// dispatch, the declaration and anonymous-subroutine terms, the postfix
 /// modifiers — asks this first, so the quoting rule is written down once rather
-/// than once per keyword (ADR 0007 §5).
+/// than once per keyword (the parser contract).
 pub(crate) fn quoted_bareword(parser: &mut Parser<'_>) -> bool {
     parser.current().is_some_and(is_name_like) && parser.nth_at(1, T!["=>"])
 }
@@ -555,7 +578,7 @@ fn if_stmt(parser: &mut Parser<'_>) {
 ///
 /// Wrapped in `PAREN_EXPR` like any other parenthesised list, so the formatter
 /// has one rule for "a bracketed group" rather than a separate case for
-/// conditions (ADR 0008 §3).
+/// conditions (the formatter contract).
 fn condition(parser: &mut Parser<'_>) {
     parser.expect_term();
     if !parser.at(T!["("]) {
@@ -625,7 +648,7 @@ fn for_header(parser: &mut Parser<'_>) {
         let header = parser.start();
         if parser.at_any(&[T!["my"], T!["our"], T!["state"], T!["local"]]) {
             // The same builder as any other declaration, so `for my $x` and
-            // `my $x` have the same internal shape (ADR 0007 §5).
+            // `my $x` have the same internal shape (the parser contract).
             primary::var_decl(parser);
         } else {
             primary::variable(parser);
@@ -688,7 +711,7 @@ fn try_stmt(parser: &mut Parser<'_>) {
     // `try { ... }->method();` is an expression that happens to start with a
     // `try`. Rather than deciding in advance which it is, parse the statement
     // form and reconsider if something follows that only an expression can
-    // continue with (ADR 0007 §1).
+    // continue with (the parser contract).
     if parser.at_any(&[T!["->"], T!["?"]])
         || parser
             .current()
@@ -777,7 +800,7 @@ fn labeled_stmt(parser: &mut Parser<'_>) {
     let marker = parser.start();
     let label = parser.start();
     // `CHECK: { ... last CHECK; }` — a label is a name, so a keyword spelling
-    // one is coerced the way every other keyword-as-name is (ADR 0007 §5).
+    // one is coerced the way every other keyword-as-name is (the parser contract).
     if !parser.bump_name() {
         parser.bump_any();
     }

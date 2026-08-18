@@ -21,7 +21,7 @@ a single body still leaves its newline to the scanner
 Z
 
 # Two statements sharing a line with a marker must stay on that line: a body
-# begins on the line *after* its marker's line (ADR 0007 §7), so putting the
+# begins on the line *after* its marker's line (the parser contract), so putting the
 # second statement on a line of its own makes it the first line of the body.
 my $prog = <<'P'; warn "compiled" if $ENV{DEBUG};
 print "hello\n";

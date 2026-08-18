@@ -9,7 +9,7 @@
 # `cargo fmt`: the line breaking here is approximate and rustfmt has the last
 # word on it.
 #
-# ADR 0007 §6 says the table comes from real prototypes rather than from
+# the parser contract says the table comes from real prototypes rather than from
 # memory. It does — but the generation runs here and the result is committed,
 # not run at build time: a Rust crate that cannot be built without a perl
 # installation is a worse trade than a table that has to be regenerated when

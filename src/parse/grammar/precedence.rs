@@ -1,10 +1,7 @@
-//! Operator binding powers (ADR 0007 §4).
+//! Operator binding powers (the parser contract).
 //!
-//! Ordered as `perlop` orders them. Two corrections against the table this
-//! replaces are noted inline; a third — the direction the ADR asked bitwise
-//! operators to move — is recorded in
-//! `notes/2026-07-28-redesign-deviation-log.md` (L-003), because moving them
-//! would have contradicted perlop rather than matched it.
+//! Ordered as `perlop` orders them. Corrections against the preceding table are
+//! noted inline. Bitwise operators retain perlop's binding powers.
 
 use crate::lang::{TokenKind, T};
 
@@ -57,7 +54,7 @@ pub(crate) struct InfixOp {
     pub associativity: Associativity,
     /// The node this operator builds, so the formatter and future lints can
     /// branch on operator class rather than re-inspecting the token
-    /// (ADR 0007 §2).
+    /// (the parser contract).
     pub node: crate::lang::NodeKind,
 }
 

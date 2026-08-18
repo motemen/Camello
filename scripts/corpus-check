@@ -10,16 +10,14 @@
 #
 # ── Why this exists ───────────────────────────────────────────────────────────
 #
-# ADR 0008 §6 asks for the invariants to hold "on the fixtures + a real corpus".
-# The fixture half shipped; this is the other half. Every defect the 2026-07-28
-# review found was invisible to `cargo test` and obvious here, because a fixture
-# is code someone wrote to exercise a rule, and a corpus is code someone wrote to
-# get a job done.
+# Fixtures exercise written-down cases; this script asks the same invariants of
+# code that was written to get a job done. It is the real-corpus half of the
+# validation strategy described in docs/architecture.md.
 #
 # Three indicators, in increasing order of how hard they are to see:
 #
-#   1. dev check     — the invariants of ADR 0006 §6 and ADR 0008 §6, asked by
-#                      the binary itself: idempotency, losslessness, comment and
+#   1. dev check     — the parser and formatter invariants, asked by the binary
+#                      itself: idempotency, losslessness, comment and
 #                      verbatim preservation, seed stability, and the rest. Needs
 #                      no perl, so it runs on every file including the ones perl
 #                      cannot load.

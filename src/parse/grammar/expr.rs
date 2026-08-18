@@ -1,4 +1,4 @@
-//! Expressions (ADR 0007 §2, §4).
+//! Expressions.
 
 use crate::lang::{NodeKind, TokenKind, T};
 use crate::lex::Expect;
@@ -25,7 +25,7 @@ pub(crate) fn expr_assignment(parser: &mut Parser<'_>) -> Option<CompletedMarker
 /// A comma-separated series, always wrapped in `LIST_EXPR`.
 ///
 /// "Always" is the point: the old parser produced a wrapper only when a comma
-/// was present, so every consumer had to handle both shapes (ADR 0007 §2).
+/// was present, so every consumer had to handle both shapes (the parser contract).
 pub(crate) fn list_expr(parser: &mut Parser<'_>, recovery: Recovery) -> CompletedMarker {
     let marker = parser.start();
     let _ = recovery;
@@ -68,7 +68,7 @@ pub(crate) fn list_contents(parser: &mut Parser<'_>, terminators: &[TokenKind]) 
         if parser.at_any(&[T![","], T!["=>"]]) {
             parser.bump();
             // A trailing separator is allowed everywhere, which is one option on
-            // one list parser rather than four implementations (ADR 0007 §5).
+            // one list parser rather than four implementations (the parser contract).
             parser.expect_term();
             if parser.at_any(&[T!["}"], T![")"], T!["]"], T![";"]]) {
                 break;
@@ -109,7 +109,7 @@ fn expr_bp(parser: &mut Parser<'_>, min: Precedence) -> Option<CompletedMarker> 
         parser.bump();
 
         // The one place the builtin table feeds the lexer: after `=~` a pattern
-        // is expected, after `+` a term, and so on (ADR 0005 §2).
+        // is expected, after `+` a term, and so on (the lexer contract).
         parser.expect_term();
         if expr_bp(parser, right_binding_power(op)).is_none() {
             parser.error("expected an expression after the operator");
@@ -150,7 +150,7 @@ fn unary(parser: &mut Parser<'_>) -> Option<CompletedMarker> {
     let kind = parser.current()?;
 
     // File tests bind at named-unary precedence, not prefix precedence, so
-    // `-f $x . "y"` groups as perl groups it (ADR 0007 §4).
+    // `-f $x . "y"` groups as perl groups it (the parser contract).
     if kind == TokenKind::FILE_TEST_OP {
         let marker = parser.start();
         parser.bump();
@@ -213,9 +213,12 @@ pub(crate) fn postfix(parser: &mut Parser<'_>, mut lhs: CompletedMarker) -> Comp
         let Some(kind) = parser.current() else { break };
 
         // `f()[0]` and `f(){k}` are syntax errors in perl; the arrow is not
-        // optional after a call.
+        // optional after a call. A parenthesised expression can be sliced with
+        // `[...]`, but `($x){key}` is likewise invalid without an arrow.
         if matches!(kind, T!["["] | T!["{"]) && is_call(lhs.kind()) {
             parser.error("subscripting the result of a call needs `->`");
+        } else if kind == T!["{"] && lhs.kind() == NodeKind::PAREN_EXPR {
+            parser.error("hash subscription after a parenthesized expression needs `->`");
         }
 
         lhs = match kind {
@@ -391,7 +394,7 @@ fn is_bareword_key(kind: TokenKind) -> bool {
 
 /// A parenthesised argument list, including the parentheses.
 ///
-/// One implementation, where the old parser had four (ADR 0007 §5).
+/// One implementation, where the old parser had four (the parser contract).
 pub(crate) fn arg_list(parser: &mut Parser<'_>) {
     let marker = parser.start();
     parser.expect(T!["("]);
@@ -450,7 +453,7 @@ pub(crate) fn bareword_call(parser: &mut Parser<'_>) -> CompletedMarker {
     } else {
         // With no declaration in sight, assume `f / 10` divides rather than
         // matching. Perl guesses here too; the difference is that the guess is
-        // written down in one place (ADR 0007 §6) instead of being a special
+        // written down in one place (the parser contract) instead of being a special
         // case in the lexer.
         parser.expect_operator();
     }
@@ -490,7 +493,7 @@ pub(crate) fn bareword_call(parser: &mut Parser<'_>) -> CompletedMarker {
             // followed by the list with no comma between them. Parsing it as the
             // first list element would stop at the second, so it gets its own
             // slot — which is also what makes a name-based special case for
-            // `sort` unnecessary (ADR 0007 §2).
+            // `sort` unnecessary (the parser contract).
             if comparator_follows(parser) {
                 let comparator = parser.start();
                 // `unary`, not `primary`: `\&cmp` is a reference expression.
@@ -613,7 +616,7 @@ fn block_call_follows(parser: &mut Parser<'_>) -> bool {
 /// `print STDERR ...` / `print {$fh} ...`.
 ///
 /// Marked as its own node rather than left as an unexplained first argument
-/// (ADR 0007 §2).
+/// (the parser contract).
 /// Does a filehandle slot start `base` tokens ahead?
 ///
 /// Asked at the name (`print $fh @lines`) and one token past a `(`
@@ -722,7 +725,7 @@ fn comparator_follows(parser: &mut Parser<'_>) -> bool {
 /// declaration is unknown that is operator position, so `f / 10` divides; for a
 /// builtin that takes a list it is term position, so `keys %h` keeps its
 /// argument. Deciding it once, in the builtin table, is what keeps the question
-/// out of the lexer (ADR 0007 §6).
+/// out of the lexer (the parser contract).
 fn starts_argument(parser: &mut Parser<'_>, argument_is_optional: bool) -> bool {
     // `shift // 1` is defined-or applied to an argument-less `shift`, and perl
     // special-cases exactly this. Ask in operator position to see it; asking in
@@ -823,7 +826,7 @@ fn starts_argument(parser: &mut Parser<'_>, argument_is_optional: bool) -> bool 
         // position any more than in operator position: `ref and /x/` tests `$_`
         // and then matches, and reading `and` as a bareword argument left the
         // `/x/` to divide by. In term position the lexer hands these back as
-        // identifiers, because `{ or => 1 }` needs it to (ADR 0005 §5), so the
+        // identifiers, because `{ or => 1 }` needs it to (the lexer contract), so the
         // text is what has to be asked. A quoted bareword was settled above.
         Some(TokenKind::IDENT)
             if parser

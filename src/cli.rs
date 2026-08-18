@@ -1,9 +1,10 @@
 use clap::{Parser, Subcommand};
 use encoding_rs::Encoding;
 use miette::{IntoDiagnostic, Report, Result};
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::{format_perl_with_options, parse_perl, DelimiterSpacing, FormatterOptions};
 
@@ -243,7 +244,7 @@ pub struct LayoutArgs {
     #[arg(
         long,
         value_name = "N",
-        help = "Maximum alignment padding, 0 to disable alignment (default: 40)"
+        help = "Maximum alignment padding, 0 to disable alignment (default: 64)"
     )]
     pub max_alignment_padding: Option<usize>,
 
@@ -686,7 +687,13 @@ fn check_paths(
     let checked: Vec<Option<(String, Vec<crate::check::Violation>)>> = if paths.is_empty() {
         let mut bytes = Vec::new();
         io::stdin().read_to_end(&mut bytes).into_diagnostic()?;
-        let (decoded, _, _) = encoding.decode(&bytes);
+        let (decoded, _, had_errors) = encoding.decode(&bytes);
+        if had_errors {
+            return Err(miette::miette!(
+                "stdin is not decodable as {}; refusing a lossy check",
+                encoding.name()
+            ));
+        }
         vec![Some(("<stdin>".to_string(), check_only(&decoded, wanted)))]
     } else {
         in_parallel(&files, jobs, |path| {
@@ -785,11 +792,19 @@ fn collect_perl_files(path: &Path, extensions: &[&str], into: &mut Vec<PathBuf>)
     }
     let mut entries: Vec<PathBuf> = fs::read_dir(path)
         .into_diagnostic()?
-        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
-        .collect();
+        .map(|entry| entry.map(|entry| entry.path()))
+        .collect::<std::io::Result<_>>()
+        .into_diagnostic()?;
     entries.sort();
     for entry in entries {
-        if entry.is_dir() {
+        let metadata = fs::symlink_metadata(&entry).into_diagnostic()?;
+        // Do not follow links found while walking a tree. Besides escaping the
+        // requested root, a link to an ancestor would recurse forever. A link
+        // explicitly named by the user is still handled by the checks above.
+        if metadata.file_type().is_symlink() {
+            continue;
+        }
+        if metadata.is_dir() {
             collect_perl_files(&entry, extensions, into)?;
         } else if entry
             .extension()
@@ -830,10 +845,11 @@ fn read_source(
         let bytes = fs::read(path).into_diagnostic()?;
         let (decoded, _, had_errors) = encoding.decode(&bytes);
         if had_errors {
-            eprintln!(
-                "Warning: encoding errors detected while reading '{}'",
-                path.display()
-            );
+            return Err(miette::miette!(
+                "'{}' is not decodable as {}; refusing lossy formatting",
+                path.display(),
+                encoding.name()
+            ));
         }
         Ok((decoded.into_owned(), path.display().to_string()))
     } else {
@@ -841,7 +857,10 @@ fn read_source(
         io::stdin().read_to_end(&mut bytes).into_diagnostic()?;
         let (decoded, _, had_errors) = encoding.decode(&bytes);
         if had_errors {
-            eprintln!("Warning: encoding errors detected while reading from stdin");
+            return Err(miette::miette!(
+                "stdin is not decodable as {}; refusing lossy formatting",
+                encoding.name()
+            ));
         }
         Ok((decoded.into_owned(), "<stdin>".to_string()))
     }
@@ -865,7 +884,73 @@ fn encode_to_vec(contents: &str, encoding: &'static Encoding) -> Result<Vec<u8>>
 
 fn write_with_encoding(path: &Path, contents: &str, encoding: &'static Encoding) -> Result<()> {
     let encoded = encode_to_vec(contents, encoding)?;
-    fs::write(path, encoded).into_diagnostic()
+    // Preserve the usual meaning of explicitly formatting a symlink: update
+    // its target rather than replacing the link itself with a regular file.
+    let target = match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            fs::canonicalize(path).into_diagnostic()?
+        }
+        _ => path.to_path_buf(),
+    };
+    atomic_write(&target, &encoded)
+}
+
+/// Replace `path` only after the complete output has reached a sibling file.
+///
+/// Keeping the temporary file in the same directory makes the final rename
+/// atomic on the target filesystem. Existing permissions are retained.
+fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
+    static NEXT_TEMP: AtomicUsize = AtomicUsize::new(0);
+
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("output");
+    let permissions = fs::metadata(path)
+        .ok()
+        .map(|metadata| metadata.permissions());
+
+    let (temporary, mut file) = (0..100)
+        .find_map(|_| {
+            let sequence = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
+            let temporary = parent.join(format!(
+                ".{name}.camello.{}.{}.tmp",
+                std::process::id(),
+                sequence
+            ));
+            match OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&temporary)
+            {
+                Ok(file) => Some(Ok((temporary, file))),
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => None,
+                Err(error) => Some(Err(error)),
+            }
+        })
+        .unwrap_or_else(|| {
+            Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "could not allocate a temporary output file",
+            ))
+        })
+        .into_diagnostic()?;
+
+    let result = (|| -> std::io::Result<()> {
+        if let Some(permissions) = permissions {
+            file.set_permissions(permissions)?;
+        }
+        file.write_all(contents)?;
+        file.sync_all()?;
+        drop(file);
+        fs::rename(&temporary, path)
+    })();
+
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result.into_diagnostic()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1241,6 +1326,55 @@ mod tests {
     fn test_invalid_encoding() {
         let result = get_encoding(Some(&"invalid-encoding-name".to_string()));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn decoding_errors_are_rejected_instead_of_replaced() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let dir = tempdir()?;
+        let path = dir.path().join("invalid.pl");
+        fs::write(&path, [0xff, 0xfe, b'\n'])?;
+
+        let result = read_source(Some(&path), None, None, encoding_rs::UTF_8);
+
+        assert!(result.is_err());
+        assert_eq!(fs::read(&path)?, [0xff, 0xfe, b'\n']);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn directory_walk_does_not_follow_symlinks() -> Result<(), Box<dyn std::error::Error>> {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempdir()?;
+        fs::write(dir.path().join("one.pl"), "1;\n")?;
+        symlink(dir.path(), dir.path().join("cycle"))?;
+
+        let mut files = Vec::new();
+        collect_perl_files(dir.path(), &["pl"], &mut files)?;
+
+        assert_eq!(files, [dir.path().join("one.pl")]);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_write_through_a_symlink_preserves_the_link() -> Result<(), Box<dyn std::error::Error>>
+    {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempdir()?;
+        let target = dir.path().join("target.pl");
+        let link = dir.path().join("link.pl");
+        fs::write(&target, "old\n")?;
+        symlink(&target, &link)?;
+
+        write_with_encoding(&link, "new\n", encoding_rs::UTF_8)?;
+
+        assert!(fs::symlink_metadata(&link)?.file_type().is_symlink());
+        assert_eq!(fs::read_to_string(&target)?, "new\n");
+        Ok(())
     }
 
     /// Every worker's result lands in its own slot, so the order out is the

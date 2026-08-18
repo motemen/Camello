@@ -1,5 +1,4 @@
-//! Parser tests: the CST normal form (ADR 0007 §2), error recovery
-//! (ADR 0007 §3) and the trivia model (ADR 0006).
+//! Parser tests: the CST normal form, error recovery, and the trivia model.
 
 use crate::lang::{NodeKind, SyntaxNode};
 
@@ -36,7 +35,7 @@ fn errors(source: &str) -> Vec<String> {
         .collect()
 }
 
-/// Concatenating the tree's tokens must reproduce the source (ADR 0006 §6).
+/// Concatenating the tree's tokens must reproduce the source (the trivia model).
 #[track_caller]
 fn assert_lossless(source: &str) {
     let parsed = parse(source);
@@ -57,7 +56,7 @@ fn nodes_of_kind(source: &str, kind: NodeKind) -> usize {
         .count()
 }
 
-// ===== CST normal form (ADR 0007 §2) =====
+// ===== CST normal form (the parser contract) =====
 
 #[test]
 fn expression_statements_are_always_wrapped() {
@@ -96,13 +95,13 @@ fn operator_classes_are_distinguished() {
 
 #[test]
 fn compound_assignment_has_no_wrapper_node() {
-    // ADR 0004 §4: the operator is one token, so there is nothing to wrap.
+    // the language model: the operator is one token, so there is nothing to wrap.
     let rendered = tree("$x += 1;");
     assert!(rendered.contains("`+=`"), "{rendered}");
     assert!(rendered.contains("ASSIGN_EXPR"));
 }
 
-// ===== Precedence (ADR 0007 §4) =====
+// ===== Precedence (the parser contract) =====
 
 #[test]
 fn file_test_binds_at_named_unary_precedence() {
@@ -113,12 +112,11 @@ fn file_test_binds_at_named_unary_precedence() {
 
 #[test]
 fn bitwise_binds_looser_than_comparison() {
-    // As perlop orders it. See L-003 in the deviation log for why this differs
-    // from the parenthetical in ADR 0007 §4.
+    // As perlop orders it; the current binding powers intentionally follow Perl.
     insta::assert_snapshot!(tree("$a & $b == $c;\n"));
 }
 
-// ===== Speculative parsing (ADR 0007 §1) =====
+// ===== Speculative parsing (the parser contract) =====
 
 #[test]
 fn anon_hash_wins_over_block_when_it_parses() {
@@ -153,7 +151,7 @@ fn signature_and_prototype_are_told_apart_by_trying() {
     }
 }
 
-// ===== Error recovery: the acceptance criteria of ADR 0007 §3 =====
+// ===== Error recovery: the acceptance criteria of the parser contract =====
 
 #[test]
 fn direct_subscription_after_call_reports_two_errors() {
@@ -219,7 +217,7 @@ fn diagnostics_do_not_leak_internal_names() {
     }
 }
 
-// ===== Losslessness and trivia (ADR 0006) =====
+// ===== Losslessness and trivia =====
 
 #[test]
 fn trees_are_lossless() {
@@ -238,7 +236,7 @@ fn trees_are_lossless() {
 
 #[test]
 fn node_ranges_never_include_trivia() {
-    // The placement rule of ADR 0006 §4. Without it, "does this node span more
+    // The placement rule of the trivia model. Without it, "does this node span more
     // than one line" depends on where the trivia happened to land.
     let source = "sub f {\n\n    my $x = 1;   # note\n\n}\n";
     let parsed = parse(source);
@@ -268,7 +266,7 @@ fn node_ranges_never_include_trivia() {
 
 #[test]
 fn trivia_is_attributed_by_line() {
-    // ADR 0006 §3: a comment on the same line as the previous token belongs to
+    // the trivia model: a comment on the same line as the previous token belongs to
     // it; an own-line comment belongs to what follows.
     let source = "my $x = 1;  # trailing\n# own line\nmy $y = 2;\n";
     let parsed = parse(source);
@@ -379,11 +377,17 @@ fn fixture_snapshots() {
 
         // For an error fixture the diagnostics are the point; for the rest the
         // tree is.
-        let rendered = if relative
+        let is_error = relative
             .components()
-            .any(|part| part.as_os_str() == "errors")
-        {
-            let diagnostics = parse(&source).diagnostics;
+            .any(|part| part.as_os_str() == "errors");
+        let parsed = parse(&source);
+        let rendered = if is_error {
+            let diagnostics = parsed.diagnostics;
+            assert!(
+                !diagnostics.is_empty(),
+                "error fixture {} produced no diagnostic",
+                relative.display()
+            );
             diagnostics
                 .iter()
                 .map(|diagnostic| {
@@ -395,6 +399,12 @@ fn fixture_snapshots() {
                 .collect::<Vec<_>>()
                 .join("\n")
         } else {
+            assert!(
+                parsed.diagnostics.is_empty(),
+                "success fixture {} produced diagnostics: {:#?}",
+                relative.display(),
+                parsed.diagnostics
+            );
             tree(&source)
         };
 

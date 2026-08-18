@@ -1,4 +1,4 @@
-//! The document IR (ADR 0008 §2).
+//! The document IR (the formatter contract).
 //!
 //! Everything the formatter decides about layout is decided while building this
 //! and is then fixed. The renderer only walks it. That is the whole point: the
@@ -7,7 +7,7 @@
 
 use crate::lang::SyntaxToken;
 
-/// What a run of vertically alignable things belongs to (ADR 0008 §5).
+/// What a run of vertically alignable things belongs to (the formatter contract).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AnchorClass {
     /// `=` and the compound assignments.
@@ -47,7 +47,7 @@ pub enum Doc {
     /// with every pass — not merely fixed but unrepresentable.
     ///
     /// Text rather than a token, because the unit is not always one token: a
-    /// quote-like operator is one lexical run (ADR 0005 §3) and is written as
+    /// quote-like operator is one lexical run (the lexer contract) and is written as
     /// one atom, delimiters included.
     Raw(smol_str::SmolStr),
     /// Verbatim content that owns whole lines and starts in column 0.
@@ -67,14 +67,14 @@ pub enum Doc {
     Space,
     Concat(Vec<Doc>),
     /// A layout unit whose flat-or-broken state was decided at build time from
-    /// the source (ADR 0008 §3).
+    /// the source (the formatter contract).
     Group {
         broken: bool,
         body: Box<Doc>,
     },
     /// One indent unit for any line break inside.
     Indent(Box<Doc>),
-    /// The extent of a continuation indent (formatting.md INDENT-3).
+    /// The extent of a continuation indent (docs/formatting.md INDENT-3).
     ///
     /// The first line break the user made inside this takes one indent level,
     /// and every line until the end of it is written at that level — so an
@@ -90,7 +90,7 @@ pub enum Doc {
     /// Always a newline.
     HardLine,
     /// A place the user may have put a newline, preserved individually
-    /// (formatting.md POLICY-4).
+    /// (docs/formatting.md POLICY-4).
     UserLine {
         broken: bool,
     },
@@ -159,14 +159,14 @@ impl Doc {
 }
 
 /// A statement's shape, used to decide where an alignment group ends
-/// (ADR 0008 §5(c), formatting.md §7).
+/// (the formatter contract, docs/formatting.md §7).
 ///
 /// Two statements only align with each other if these match, which is what stops
 /// `my $x = 1;` from aligning with `$y = 2;`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ShapeKey {
     pub statement: crate::lang::NodeKind,
-    /// Whether the statement declares. formatting.md §7 keys on the *presence*
+    /// Whether the statement declares. docs/formatting.md §7 keys on the *presence*
     /// of `my`/`our`/`state`/`local`, not on which one, so a run of mixed
     /// declarations still aligns.
     pub declares: bool,

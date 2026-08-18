@@ -9,17 +9,18 @@ ROOT
       identifier "f"
     BLOCK
       `{` "{"
-      SUB_DEF
-        `sub` "sub"
-        SUB_NAME
-        SUB_SIGNATURE
-          `(` "("
-          `)` ")"
-        BLOCK
-          `{` "{"
-          EXPR_STMT
-            LIST_EXPR
-              LITERAL
-                number "0"
-          `}` "}"
+      EXPR_STMT
+        LIST_EXPR
+          ANON_SUB_EXPR
+            `sub` "sub"
+            SUB_SIGNATURE
+              `(` "("
+              `)` ")"
+            BLOCK
+              `{` "{"
+              EXPR_STMT
+                LIST_EXPR
+                  LITERAL
+                    number "0"
+              `}` "}"
       `}` "}"
