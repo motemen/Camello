@@ -182,12 +182,27 @@ impl Workspace {
             return Asked::Failed(format!("{}: {error}", self.path.display()));
         }
         if let Some(errors) = compile_errors(&self.path) {
-            return Asked::Failed(errors);
+            return Asked::Failed(self.scrub(&errors));
         }
         match deparse(&self.path) {
-            Some(lines) => Asked::Deparsed(lines),
+            Some(lines) => Asked::Deparsed(
+                lines
+                    .iter()
+                    .map(|line| self.scrub(line))
+                    .collect::<Vec<_>>(),
+            ),
             None => Asked::Silent,
         }
+    }
+
+    /// The temporary path, out of anything perl says or deparses.
+    ///
+    /// Both sides are read from it, so taking it out changes no comparison —
+    /// and leaving it in makes every message unique to the file it came from,
+    /// which is exactly the property a report has to fold them by. `input.pl`
+    /// is what perl was given; it is also all the reader wants to be told.
+    fn scrub(&self, text: &str) -> String {
+        text.replace(&*self.path.to_string_lossy(), "input.pl")
     }
 }
 
@@ -197,26 +212,26 @@ impl Drop for Workspace {
     }
 }
 
-/// What perl said, as a report can carry it: the first few lines, each cut off
-/// before the paragraph of `@INC` entries that follows every missing module.
+/// What perl said, whole.
+///
+/// It used to be cut to three lines of 120 characters, which took the reader's
+/// answer away in the middle of the sentence carrying it: the path perl went
+/// looking in, the line it gave up on. A message is only ever printed once per
+/// run now, so its length is not what makes a report long.
 fn evidence(errors: &str) -> String {
-    const WIDTH: usize = 120;
-    errors
+    /// Enough for any diagnostic worth reading, and a stop for the file that
+    /// answers with a thousand of them.
+    const LINES: usize = 40;
+    let mut kept: Vec<String> = errors
         .lines()
-        .take(3)
-        .map(|line| {
-            let mut end = line.len().min(WIDTH);
-            while !line.is_char_boundary(end) {
-                end -= 1;
-            }
-            if end < line.len() {
-                format!("  {}…", &line[..end])
-            } else {
-                format!("  {line}")
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+        .take(LINES)
+        .map(|line| format!("  {}", line.trim_end()))
+        .collect();
+    let rest = errors.lines().count().saturating_sub(kept.len());
+    if rest > 0 {
+        kept.push(format!("  … {rest} more lines"));
+    }
+    kept.join("\n")
 }
 
 /// What `perl -c` said, if it did not say the file is fine.

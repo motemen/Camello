@@ -204,6 +204,16 @@ pub enum DevCommands {
         #[arg(short, long, help = "One line per violation, without the evidence")]
         quiet: bool,
 
+        /// Every unanswered file and every message, not a few of each
+        #[arg(
+            short,
+            long,
+            conflicts_with = "quiet",
+            help = "Every message a check could not be answered with, and every file it \
+                    came from"
+        )]
+        verbose: bool,
+
         /// File extensions to walk into when given a directory
         #[arg(
             long,
@@ -414,6 +424,7 @@ pub fn run() -> Result<()> {
                 list_invariants,
                 deparse,
                 quiet,
+                verbose,
                 extensions,
                 encoding,
             } => {
@@ -424,6 +435,7 @@ pub fn run() -> Result<()> {
                     list_invariants,
                     deparse,
                     quiet,
+                    verbose,
                     &extensions,
                     encoding,
                 );
@@ -666,6 +678,125 @@ fn wrapped(text: &str, width: usize) -> Vec<String> {
     lines
 }
 
+/// A message with its line numbers taken out, which is what makes two of them
+/// the same message.
+///
+/// `Can't locate Foo.pm ... at input.pl line 4.` and the same sentence about
+/// line 6 are one thing that is wrong with a tree, reported by two of its
+/// files. The text printed is still the real one, from the file named with it.
+fn fold_key(message: &str) -> String {
+    let mut key = String::with_capacity(message.len());
+    let mut rest = message;
+    while let Some(at) = rest.find("line ") {
+        let (before, after) = rest.split_at(at + "line ".len());
+        key.push_str(before);
+        let digits = after
+            .find(|character: char| !character.is_ascii_digit())
+            .unwrap_or(after.len());
+        if digits > 0 {
+            key.push('N');
+        }
+        rest = &after[digits..];
+    }
+    key.push_str(rest);
+    key
+}
+
+/// The messages a run could not be answered with, folded.
+///
+/// Grouped by the exact text, because that is what makes them the same message:
+/// a tree checked away from where it was installed answers `Can't locate ... in
+/// @INC` for every file in it, and the reader needs that sentence once, whole,
+/// with a count and somewhere to start looking.
+#[derive(Default)]
+struct Messages {
+    groups: Vec<Group>,
+    /// Where each (invariant, reason, message) already sits in `groups`.
+    seen: std::collections::HashMap<(&'static str, &'static str, String), usize>,
+}
+
+struct Group {
+    slug: &'static str,
+    why: &'static str,
+    message: String,
+    files: Vec<String>,
+}
+
+impl Messages {
+    fn is_empty(&self) -> bool {
+        self.groups.is_empty()
+    }
+
+    fn record(&mut self, unanswered: &crate::check::Unanswered, label: &str) {
+        let key = (
+            unanswered.invariant.slug(),
+            unanswered.why,
+            fold_key(&unanswered.detail),
+        );
+        let index = *self.seen.entry(key).or_insert_with(|| {
+            self.groups.push(Group {
+                slug: unanswered.invariant.slug(),
+                why: unanswered.why,
+                message: unanswered.detail.clone(),
+                files: Vec::new(),
+            });
+            self.groups.len() - 1
+        });
+        self.groups[index].files.push(label.to_string());
+    }
+
+    /// The distinct messages, most files first; a few of them unless asked for
+    /// all, since the tail of this list is usually the same story once more.
+    fn report(&self, out: &mut impl Write, verbose: bool) -> Result<()> {
+        /// How many distinct messages are worth reading before the reader knows
+        /// what kind of run this was.
+        const SHOWN: usize = 3;
+        /// And how many of the files that got one, before the list is a corpus.
+        const NAMED: usize = 3;
+
+        let mut order: Vec<&Group> = self.groups.iter().collect();
+        order.sort_by_key(|group| std::cmp::Reverse(group.files.len()));
+        let shown = if verbose {
+            order.len()
+        } else {
+            SHOWN.min(order.len())
+        };
+
+        for group in &order[..shown] {
+            let files = group.files.len();
+            writeln!(
+                out,
+                "     {} ({}), {files} file{}",
+                group.why,
+                group.slug,
+                if files == 1 { "" } else { "s" }
+            )
+            .into_diagnostic()?;
+            for line in group.message.lines() {
+                writeln!(out, "     {line}").into_diagnostic()?;
+            }
+            let named = if verbose { files } else { NAMED.min(files) };
+            for file in &group.files[..named] {
+                writeln!(out, "         {file}").into_diagnostic()?;
+            }
+            if named < files {
+                writeln!(out, "         … and {} more", files - named).into_diagnostic()?;
+            }
+        }
+
+        if shown < order.len() {
+            let rest: usize = order[shown..].iter().map(|group| group.files.len()).sum();
+            writeln!(
+                out,
+                "     … and {} more message(s) over {rest} file(s); --verbose for all of them",
+                order.len() - shown
+            )
+            .into_diagnostic()?;
+        }
+        Ok(())
+    }
+}
+
 /// A line on stderr saying how far along a run over many files is.
 ///
 /// Checking an installed CPAN tree is minutes of silence, and with `--deparse`
@@ -815,6 +946,7 @@ fn check_paths(
     list_invariants: bool,
     deparse: bool,
     quiet: bool,
+    verbose: bool,
     extensions: &str,
     encoding: Option<String>,
 ) -> Result<()> {
@@ -940,6 +1072,7 @@ fn check_paths(
     let stdout = io::stdout();
     let mut out = stdout.lock();
     let mut reported = false;
+    let mut messages = Messages::default();
     for (label, outcome) in checked.iter().flatten() {
         for entry in &mut tally {
             // `clean-parse` is asked whether or not it was selected: it is the
@@ -967,23 +1100,13 @@ fn check_paths(
         }
 
         // An invariant nobody could answer is not a violation and does not
-        // colour the exit status, but it is the reader's business why: a run
-        // whose oracle went quiet on two files in three has to say so where the
-        // files are named, not only as a number at the bottom.
+        // colour the exit status, but it is the reader's business why. It is
+        // collected rather than printed here: a corpus checked outside the tree
+        // it was installed in answers the same sentence about @INC three
+        // hundred times, and three hundred copies of one sentence is not more
+        // information than one copy and a count.
         for unanswered in outcome.unanswered.iter().filter(|it| !it.detail.is_empty()) {
-            reported = true;
-            writeln!(
-                out,
-                "{label}\t{}\tn/a: {}",
-                unanswered.invariant.slug(),
-                unanswered.why
-            )
-            .into_diagnostic()?;
-            if !quiet {
-                for line in unanswered.detail.lines() {
-                    writeln!(out, "    {line}").into_diagnostic()?;
-                }
-            }
+            messages.record(unanswered, label);
         }
 
         if outcome.violations.is_empty() {
@@ -1015,6 +1138,19 @@ fn check_paths(
     }
 
     let violated = offenders.len();
+
+    // Why the unanswered went unanswered, in the words of whatever declined,
+    // once each. `--quiet` is a request for one line per finding and no
+    // evidence, which this is; `--verbose` asks for every message and every
+    // file that got it.
+    if !quiet && !messages.is_empty() {
+        if reported {
+            writeln!(out).into_diagnostic()?;
+        }
+        reported = true;
+        writeln!(out, "---- what could not be answered, and why").into_diagnostic()?;
+        messages.report(&mut out, verbose)?;
+    }
 
     // Which questions were asked, and how each of them came out. The old
     // summary named only the invariants that were violated, which left the
