@@ -14,7 +14,6 @@
 //! emits a few kinds of line from a hash walk, so two deparses of the *same*
 //! file can differ in their order.
 
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -66,7 +65,7 @@ pub fn available() -> bool {
 
 /// Ask perl whether `formatted` is the program `source` was.
 pub fn meaning(source: &str, formatted: &str) -> Verdict {
-    let Some(work) = Workspace::new(source, formatted) else {
+    let Some(work) = Workspace::new() else {
         return Verdict::NotLoadable {
             why: "a working directory could not be made",
             detail: String::new(),
@@ -78,29 +77,42 @@ pub fn meaning(source: &str, formatted: &str) -> Verdict {
     // perl said comes along: the answer is usually a dependency this file was
     // separated from, and that is worth knowing before reading anything into
     // the size of the n/a column.
-    if let Some(errors) = compile_errors(&work.before) {
-        return Verdict::NotLoadable {
-            why: if errors.contains("Can't locate ") && errors.contains("in @INC") {
-                NOT_IN_INC
-            } else {
-                "perl cannot load the input"
-            },
-            detail: evidence(&errors),
-        };
-    }
-    if let Some(errors) = compile_errors(&work.after) {
-        return Verdict::Differs {
-            summary: "perl rejects the output".to_string(),
-            detail: evidence(&errors),
-        };
-    }
-
-    let (Some(before), Some(after)) = (deparse(&work.before), deparse(&work.after)) else {
-        return Verdict::NotLoadable {
-            why: "perl deparsed the input to nothing",
-            detail: String::new(),
-        };
+    let before = match work.ask(source) {
+        Asked::Deparsed(lines) => lines,
+        Asked::Failed(errors) => {
+            return Verdict::NotLoadable {
+                why: if errors.contains("Can't locate ") && errors.contains("in @INC") {
+                    NOT_IN_INC
+                } else {
+                    "perl cannot load the input"
+                },
+                detail: evidence(&errors),
+            }
+        }
+        Asked::Silent => {
+            return Verdict::NotLoadable {
+                why: "perl deparsed the input to nothing",
+                detail: String::new(),
+            }
+        }
     };
+
+    let after = match work.ask(formatted) {
+        Asked::Deparsed(lines) => lines,
+        Asked::Failed(errors) => {
+            return Verdict::Differs {
+                summary: "perl rejects the output".to_string(),
+                detail: evidence(&errors),
+            }
+        }
+        Asked::Silent => {
+            return Verdict::Differs {
+                summary: "perl deparsed the output to nothing".to_string(),
+                detail: String::new(),
+            }
+        }
+    };
+
     if before == after {
         return Verdict::Same;
     }
@@ -124,40 +136,58 @@ pub fn meaning(source: &str, formatted: &str) -> Verdict {
     }
 }
 
-/// Two sibling directories holding the same file name.
+/// One temporary file, asked twice.
 ///
-/// perl's answer depends on where the file is: a module deparsed from its own
-/// `@INC` location is already in `%INC` by the time its `use base` chain comes
-/// back round to it, and deparses without its own preamble. Same path, same
-/// answer — so the two sides differ in their parent directory and nothing else.
+/// Both texts are written to the *same* path, one after the other, rather than
+/// to two files in sibling directories. perl's answer carries the path it read
+/// the file from — `__FILE__`, and a `#line` directive built out of it, which
+/// is a thing real modules do — so two paths would deparse to two different
+/// programs for no reason at all.
+///
+/// That is also what lets perl run from wherever camello was run from.
+/// Changing into the temporary directory would put the check somewhere the
+/// file has never been: a relative `PERL5LIB`, a `use lib 'lib'`, a `do
+/// './config.pl'` all resolve against the working directory, and every one of
+/// them would fail there while working perfectly for the person who asked.
 struct Workspace {
     root: PathBuf,
-    before: PathBuf,
-    after: PathBuf,
+    path: PathBuf,
+}
+
+/// What came of putting one text in front of perl.
+enum Asked {
+    /// It compiled, and this is what perl says it means.
+    Deparsed(Vec<String>),
+    /// perl would not compile it, and this is what it said.
+    Failed(String),
+    /// It compiled and deparsed to nothing.
+    Silent,
 }
 
 impl Workspace {
-    fn new(source: &str, formatted: &str) -> Option<Self> {
+    fn new() -> Option<Self> {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         let root = std::env::temp_dir().join(format!(
             "camello-deparse-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
-        let write = |side: &str, text: &str| -> std::io::Result<PathBuf> {
-            let directory = root.join(side);
-            std::fs::create_dir_all(&directory)?;
-            let path = directory.join("input.pl");
-            std::fs::File::create(&path)?.write_all(text.as_bytes())?;
-            Ok(path)
-        };
-        let before = write("a", source).ok()?;
-        let after = write("b", formatted).ok()?;
-        Some(Workspace {
-            root,
-            before,
-            after,
-        })
+        std::fs::create_dir_all(&root).ok()?;
+        let path = root.join("input.pl");
+        Some(Workspace { root, path })
+    }
+
+    fn ask(&self, text: &str) -> Asked {
+        if let Err(error) = std::fs::write(&self.path, text) {
+            return Asked::Failed(format!("{}: {error}", self.path.display()));
+        }
+        if let Some(errors) = compile_errors(&self.path) {
+            return Asked::Failed(errors);
+        }
+        match deparse(&self.path) {
+            Some(lines) => Asked::Deparsed(lines),
+            None => Asked::Silent,
+        }
     }
 }
 
@@ -302,15 +332,16 @@ fn anonymise_addresses(line: &str) -> String {
     out
 }
 
-/// Run perl on `path`, from its own directory, and kill it if it will not stop.
+/// Run perl on `path` — from camello's own working directory, which is the one
+/// the caller's `PERL5LIB` and `use lib` were written against — and kill it if
+/// it will not stop.
 ///
 /// A corpus is full of files that do something surprising at `BEGIN` time, and
 /// a check that hangs on one of them is a check nobody runs twice.
 fn perl(path: &Path, args: &[&str]) -> Option<std::process::Output> {
     let mut child = Command::new("perl")
         .args(args)
-        .arg(path.file_name()?)
-        .current_dir(path.parent()?)
+        .arg(path)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

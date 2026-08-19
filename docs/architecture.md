@@ -177,7 +177,11 @@ The formatter, asked of input against output:
   deparsed output is normalised before comparison: forward declarations are
   dropped, inlinable constant stubs sorted, stringified addresses masked, since
   `B::Deparse` emits those from a hash walk and their order is not stable across
-  runs of the same file.
+  runs of the same file. Both texts are put at one temporary path in turn rather
+  than at two paths at once, because perl's answer carries the path it read —
+  and because that leaves perl running in camello's own working directory,
+  where a relative `PERL5LIB` or a `use lib 'lib'` means what the caller meant
+  by it.
 
 `Invariant::ALL` is what camello asks of itself and is what the fixture tests
 run; `Invariant::OPT_IN` holds the checks that need something outside it.
