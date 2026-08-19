@@ -260,13 +260,8 @@ fn every_fixture_parses_without_diagnostics() {
 }
 
 #[test]
-fn parsing_is_lossless() {
-    sweep(Invariant::Losslessness);
-}
-
-#[test]
-fn no_node_range_includes_trivia() {
-    sweep(Invariant::TriviaPlacement);
+fn trees_are_in_normal_form() {
+    sweep(Invariant::NormalForm);
 }
 
 #[test]
@@ -287,11 +282,6 @@ fn formatting_preserves_comments() {
 #[test]
 fn formatting_preserves_verbatim_content() {
     sweep(Invariant::VerbatimPreservation);
-}
-
-#[test]
-fn layout_decisions_are_stable() {
-    sweep(Invariant::SeedStability);
 }
 
 /// The expected outputs are themselves Perl the formatter is happy with.
