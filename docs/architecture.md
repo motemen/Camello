@@ -188,11 +188,13 @@ run; `Invariant::OPT_IN` holds the checks that need something outside it.
 
 A check can also go unanswered rather than pass or fail: a file that does not
 parse leaves the formatter's questions unanswered, and one perl declines to load
-leaves the oracle's. Those are counted in their own column and reported where
-the file is named, carrying what the tool that declined actually said — a
-corpus checked out of the tree it was installed in answers `Can't locate ... in
-@INC` to almost everything, and the run says so and names `PERL5LIB`, which the
-spawned perl inherits like any other environment variable.
+leaves the oracle's. Those are counted in their own column, and the messages
+behind them are reported whole, once each: grouped by their text with line
+numbers folded together, most files first, a few messages and a few of their
+files unless `--verbose` asks for all of them. A corpus checked away from the
+tree it was installed in answers `Can't locate ... in @INC` to almost
+everything, so the run also names `PERL5LIB`, which the spawned perl inherits
+like any other environment variable.
 
 Each check carries a slug, a name, a description, and its group; `dev check
 --list-invariants` prints them all. A run ends with a table of every check that
