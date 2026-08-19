@@ -131,7 +131,7 @@ pub fn meaning(source: &str, formatted: &str) -> Verdict {
                 sides: ("input", "output"),
                 base: 1,
             },
-            |line| super::elide(line),
+            |line| (String::new(), line.clone()),
         ),
     }
 }
