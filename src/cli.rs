@@ -666,6 +666,103 @@ fn wrapped(text: &str, width: usize) -> Vec<String> {
     lines
 }
 
+/// A line on stderr saying how far along a run over many files is.
+///
+/// Checking an installed CPAN tree is minutes of silence, and with `--deparse`
+/// it is minutes of silence with a perl behind it — long enough that the honest
+/// question is whether the thing is working at all. It goes to stderr because
+/// stdout is the report, which is read by `scripts/corpus-check` among others,
+/// and it stays off unless stderr is a terminal: a progress line in a log file
+/// is just noise with carriage returns in it.
+struct Progress {
+    total: usize,
+    done: AtomicUsize,
+    violated: AtomicUsize,
+    started: std::time::Instant,
+    /// Milliseconds into the run at the last repaint, so that a fast corpus
+    /// does not spend its time formatting a line nobody can read at that rate.
+    last: std::sync::atomic::AtomicU64,
+    on: bool,
+}
+
+impl Progress {
+    fn new(total: usize) -> Self {
+        use std::io::IsTerminal;
+        Progress {
+            total,
+            done: AtomicUsize::new(0),
+            violated: AtomicUsize::new(0),
+            started: std::time::Instant::now(),
+            last: std::sync::atomic::AtomicU64::new(0),
+            on: total > 1 && io::stderr().is_terminal(),
+        }
+    }
+
+    /// One more file is done, and whether it had anything wrong with it.
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
+    fn item(&self, violated: bool) {
+        if !self.on {
+            return;
+        }
+        let done = self.done.fetch_add(1, Ordering::Relaxed) + 1;
+        if violated {
+            self.violated.fetch_add(1, Ordering::Relaxed);
+        }
+
+        let elapsed = self.started.elapsed();
+        let millis = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
+        let last = self.last.load(Ordering::Relaxed);
+        if millis < last + 100 {
+            return;
+        }
+        if self
+            .last
+            .compare_exchange(last, millis, Ordering::Relaxed, Ordering::Relaxed)
+            .is_err()
+        {
+            return;
+        }
+
+        // A rate is only worth quoting once there is one: the first few files
+        // of a corpus are the ones perl is warming up on.
+        let left = if done >= 8 && elapsed.as_secs() >= 1 {
+            let per_file = elapsed.as_secs_f64() / done as f64;
+            let remaining = per_file * self.total.saturating_sub(done) as f64;
+            format!(", ~{} left", clock(remaining.max(0.0) as u64))
+        } else {
+            String::new()
+        };
+        let line = format!(
+            "  checked {done}/{}, violated {}, {}{left}",
+            self.total,
+            self.violated.load(Ordering::Relaxed),
+            clock(elapsed.as_secs()),
+        );
+        let mut stderr = io::stderr().lock();
+        let _ = write!(stderr, "{line:<72}\r");
+        let _ = stderr.flush();
+    }
+
+    /// Take the line back before anything is printed on top of it.
+    fn clear(&self) {
+        if !self.on {
+            return;
+        }
+        let mut stderr = io::stderr().lock();
+        let _ = write!(stderr, "{:<72}\r", "");
+        let _ = stderr.flush();
+    }
+}
+
+/// Seconds as `m:ss`, which is what a wait is read in.
+fn clock(seconds: u64) -> String {
+    format!("{}:{:02}", seconds / 60, seconds % 60)
+}
+
 /// How one invariant came out over a run: asked and passed, asked and failed,
 /// or asked and unanswerable, with the reasons it went unanswered.
 struct Tally {
@@ -801,14 +898,27 @@ fn check_paths(
             check_report(&decoded, wanted),
         ))]
     } else {
-        in_parallel(&files, jobs, |path| {
-            let bytes = fs::read(path).ok()?;
-            let (decoded, _, had_errors) = encoding.decode(&bytes);
-            if had_errors {
-                return None;
-            }
-            Some((path.display().to_string(), check_report(&decoded, wanted)))
-        })
+        let progress = Progress::new(files.len());
+        let checked = in_parallel(&files, jobs, |path| {
+            let checked = (|| {
+                let bytes = fs::read(path).ok()?;
+                let (decoded, _, had_errors) = encoding.decode(&bytes);
+                if had_errors {
+                    return None;
+                }
+                Some((path.display().to_string(), check_report(&decoded, wanted)))
+            })();
+            progress.item(
+                checked
+                    .as_ref()
+                    .is_some_and(|(_, outcome)| !outcome.violations.is_empty()),
+            );
+            checked
+        });
+        // Before a single line of the report: the progress line is written
+        // without a newline, and anything printed over it inherits its tail.
+        progress.clear();
+        checked
     };
 
     let sources = checked.iter().flatten().count();
