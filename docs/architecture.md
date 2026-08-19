@@ -140,25 +140,62 @@ is touched, written and synchronized to a temporary sibling, and atomically
 renamed over the target while preserving its permissions.
 
 The hidden `camello dev` namespace contains development interfaces. `dump`
-prints a CST, and `check` evaluates formatter invariants on files, directory
-trees, or standard input. These commands may change independently of the
+prints a CST, and `check` evaluates parser and formatter invariants on files,
+directory trees, or standard input; `check --deparse` additionally asks perl
+whether the output is the same program. These commands may change independently of the
 formatter interface.
 
 ## Validation
 
-`src/check.rs` defines eight checks:
+`src/check.rs` defines six checks in two groups. The group is what a violation
+answers first: a parser check is asked of the input alone, so a failure is the
+parser's; a formatter check compares an input against its output.
 
-- clean parsing;
-- CST losslessness;
-- trivia placement outside node boundaries;
-- formatting idempotency;
-- preservation of non-trivia token sequence;
-- comment preservation;
-- verbatim-content preservation;
-- layout-seed stability.
+The parser, asked of the input:
 
-A parse diagnostic is a prerequisite failure for every formatter check, even
-when `dev check --only` selects another invariant. Parser success fixtures must
+- `clean-parse` — parsing reports no diagnostic;
+- `normal-form` — the tree's tokens reproduce the source byte for byte, and no
+  node's range begins or ends on trivia.
+
+The formatter, asked of input against output:
+
+- `semantics` — the non-trivia token sequence is unchanged;
+- `comments` — the comment texts are unchanged, in order;
+- `verbatim` — verbatim content is reproduced byte for byte and is present in
+  the input;
+- `idempotency` — the output is a fixed point of the formatter, and the layout
+  seeds read back out of it are the ones the input gave. Seeds and text are one
+  check because the seeds are the cause and the text the symptom: camello breaks
+  a group from a newline in the input, never from a line's length, so seeds that
+  move while the text holds still are a shape that will move on a later edit.
+- `deparse` — perl reads the output as the program the input was: both compile
+  under `perl -c`, and `B::Deparse` renders them the same. Opt-in, via `dev check
+  --deparse` or by naming it under `--only`, and it is the only check that runs
+  another program: `perl -c` executes the `BEGIN` blocks of the file it is
+  pointed at. It is also the only one that sees what a token stream cannot —
+  `${^MATCH}` against `${^ MATCH}` is one token sequence and two variables. The
+  deparsed output is normalised before comparison: forward declarations are
+  dropped, inlinable constant stubs sorted, stringified addresses masked, since
+  `B::Deparse` emits those from a hash walk and their order is not stable across
+  runs of the same file.
+
+`Invariant::ALL` is what camello asks of itself and is what the fixture tests
+run; `Invariant::OPT_IN` holds the checks that need something outside it.
+
+A check can also go unanswered rather than pass or fail: a file that does not
+parse leaves the formatter's questions unanswered, and one perl declines to load
+leaves the oracle's. Those are counted in their own column and reported where
+the file is named, carrying what the tool that declined actually said — a
+corpus checked out of the tree it was installed in answers `Can't locate ... in
+@INC` to almost everything, and the run says so and names `PERL5LIB`, which the
+spawned perl inherits like any other environment variable.
+
+Each check carries a slug, a name, a description, and its group; `dev check
+--list-invariants` prints them all. A run ends with a table of every check that
+was asked, counting the sources that passed it, failed it, and were never asked
+it. A parse diagnostic is a prerequisite failure for every formatter check, even
+when `dev check --only` selects another invariant; such a source is counted as
+unanswered — not passing — in every other row. Parser success fixtures must
 have no diagnostics, and error fixtures must have at least one. The invariant
 integration test covers formatter fixtures and both parser success-fixture
 directories.

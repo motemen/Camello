@@ -192,6 +192,14 @@ pub enum DevCommands {
         #[arg(long, help = "List the invariants and exit")]
         list_invariants: bool,
 
+        /// Also ask perl whether the output is the same program
+        #[arg(
+            long,
+            help = "Also ask perl whether the output is the same program (runs perl -c and \
+                    B::Deparse on every file, which executes its BEGIN blocks)"
+        )]
+        deparse: bool,
+
         /// One line per violation, without the evidence
         #[arg(short, long, help = "One line per violation, without the evidence")]
         quiet: bool,
@@ -404,6 +412,7 @@ pub fn run() -> Result<()> {
                 jobs,
                 only,
                 list_invariants,
+                deparse,
                 quiet,
                 extensions,
                 encoding,
@@ -413,6 +422,7 @@ pub fn run() -> Result<()> {
                     jobs,
                     only.as_deref(),
                     list_invariants,
+                    deparse,
                     quiet,
                     &extensions,
                     encoding,
@@ -637,23 +647,102 @@ fn format_one(
     }
 }
 
+/// `text` broken into lines of at most `width` columns, on word boundaries.
+///
+/// A paragraph written as one long string in the source is the only sane way to
+/// keep it editable; a terminal wants it in lines. Words longer than `width`
+/// get their own line rather than being cut.
+fn wrapped(text: &str, width: usize) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    for word in text.split_whitespace() {
+        match lines.last_mut() {
+            Some(line) if line.chars().count() + 1 + word.chars().count() <= width => {
+                line.push(' ');
+                line.push_str(word);
+            }
+            _ => lines.push(word.to_string()),
+        }
+    }
+    lines
+}
+
+/// How one invariant came out over a run: asked and passed, asked and failed,
+/// or asked and unanswerable, with the reasons it went unanswered.
+struct Tally {
+    invariant: crate::check::Invariant,
+    ok: usize,
+    failed: usize,
+    unanswered: Vec<&'static str>,
+}
+
+impl Tally {
+    /// The one word the reader is looking for. A row with nothing but
+    /// unanswered files is neither a pass nor a failure, and says so.
+    fn result(&self) -> &'static str {
+        if self.failed > 0 {
+            "FAIL"
+        } else if self.ok > 0 {
+            "ok"
+        } else {
+            "n/a"
+        }
+    }
+
+    /// Why the unanswered ones went unanswered, most common first. Silent when
+    /// there is one reason and it is the ordinary one, which is a parse failure
+    /// the table has already reported on its own row.
+    fn reasons(&self) -> Vec<(&'static str, usize)> {
+        let mut counted: Vec<(&'static str, usize)> = Vec::new();
+        for why in &self.unanswered {
+            match counted.iter_mut().find(|(seen, _)| seen == why) {
+                Some((_, count)) => *count += 1,
+                None => counted.push((why, 1)),
+            }
+        }
+        if counted.len() == 1 && counted[0].0 == "no clean parse" {
+            return Vec::new();
+        }
+        counted.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
+        counted
+    }
+}
+
 /// `camello dev check`: run the invariants over files, directories, or stdin.
 ///
 /// Exits non-zero when anything is violated, so it can gate a corpus run.
+#[allow(clippy::too_many_arguments)]
 fn check_paths(
     paths: Vec<PathBuf>,
     jobs: Option<usize>,
     only: Option<&str>,
     list_invariants: bool,
+    deparse: bool,
     quiet: bool,
     extensions: &str,
     encoding: Option<String>,
 ) -> Result<()> {
-    use crate::check::{check_only, Invariant};
+    use crate::check::{check_report, Invariant};
 
     if list_invariants {
-        for invariant in Invariant::ALL {
-            println!("{:<16} {}", invariant.slug(), invariant.name());
+        let mut heading = None;
+        for (index, invariant) in Invariant::every().enumerate() {
+            if index > 0 {
+                println!();
+            }
+            if heading != Some(invariant.subject()) {
+                heading = Some(invariant.subject());
+                println!("---- {}", invariant.subject().heading());
+                println!();
+            }
+            let opt_in = if invariant.needs_perl() {
+                "   (opt-in: --deparse)"
+            } else {
+                ""
+            };
+            println!("{:<17}{}{opt_in}", invariant.slug(), invariant.name());
+            for line in wrapped(invariant.description(), 72) {
+                println!("    {line}");
+            }
         }
         return Ok(());
     }
@@ -662,13 +751,26 @@ fn check_paths(
     if let Some(only) = only {
         wanted.clear();
         for slug in only.split(',').map(str::trim) {
-            let Some(invariant) = Invariant::ALL.iter().find(|kind| kind.slug() == slug) else {
+            let Some(invariant) = Invariant::every().find(|kind| kind.slug() == slug) else {
                 return Err(miette::miette!(
                     "unknown invariant {slug:?}; --list-invariants prints them"
                 ));
             };
-            wanted.push(*invariant);
+            wanted.push(invariant);
         }
+    }
+    // Naming it under `--only` is opting in as much as the flag is; the flag is
+    // for the common case of wanting everything plus the oracle.
+    if deparse && !wanted.contains(&Invariant::Deparse) {
+        wanted.push(Invariant::Deparse);
+    }
+    // Better here than 4000 files later, one failed spawn at a time.
+    if wanted.iter().any(|invariant| invariant.needs_perl()) && !crate::check::deparse::available()
+    {
+        return Err(miette::miette!(
+            "no working perl on PATH, and {} needs one",
+            Invariant::Deparse.slug()
+        ));
     }
     let wanted = wanted.as_slice();
 
@@ -684,7 +786,7 @@ fn check_paths(
     // way `format` does. `None` is a file this command has nothing to say about
     // — unreadable, or not decodable with this encoding, neither of which is a
     // violation.
-    let checked: Vec<Option<(String, Vec<crate::check::Violation>)>> = if paths.is_empty() {
+    let checked: Vec<Option<(String, crate::check::Outcome)>> = if paths.is_empty() {
         let mut bytes = Vec::new();
         io::stdin().read_to_end(&mut bytes).into_diagnostic()?;
         let (decoded, _, had_errors) = encoding.decode(&bytes);
@@ -694,7 +796,10 @@ fn check_paths(
                 encoding.name()
             ));
         }
-        vec![Some(("<stdin>".to_string(), check_only(&decoded, wanted)))]
+        vec![Some((
+            "<stdin>".to_string(),
+            check_report(&decoded, wanted),
+        ))]
     } else {
         in_parallel(&files, jobs, |path| {
             let bytes = fs::read(path).ok()?;
@@ -702,35 +807,88 @@ fn check_paths(
             if had_errors {
                 return None;
             }
-            Some((path.display().to_string(), check_only(&decoded, wanted)))
+            Some((path.display().to_string(), check_report(&decoded, wanted)))
         })
     };
 
     let sources = checked.iter().flatten().count();
     let skipped = checked.len() - sources;
     let mut offenders: Vec<(&str, Vec<&'static str>)> = Vec::new();
-    let mut counts: Vec<(Invariant, usize)> =
-        Invariant::ALL.iter().map(|kind| (*kind, 0)).collect();
+    // Three columns per invariant, not one count: an invariant that was never
+    // answered for a file — it did not parse, perl would not load it — is not
+    // one that passed, and a report that says so is a corpus called clean when
+    // most of it was never looked at.
+    let mut tally: Vec<Tally> = Invariant::every()
+        .map(|kind| Tally {
+            invariant: kind,
+            ok: 0,
+            failed: 0,
+            unanswered: Vec::new(),
+        })
+        .collect();
 
     let stdout = io::stdout();
     let mut out = stdout.lock();
-    for (label, violations) in checked.iter().flatten() {
-        if violations.is_empty() {
+    let mut reported = false;
+    for (label, outcome) in checked.iter().flatten() {
+        for entry in &mut tally {
+            // `clean-parse` is asked whether or not it was selected: it is the
+            // prerequisite the rest are unanswered without.
+            let asked =
+                entry.invariant == Invariant::CleanParse || wanted.contains(&entry.invariant);
+            if !asked {
+                continue;
+            }
+            if outcome
+                .violations
+                .iter()
+                .any(|violation| violation.invariant == entry.invariant)
+            {
+                entry.failed += 1;
+            } else if let Some(unanswered) = outcome
+                .unanswered
+                .iter()
+                .find(|unanswered| unanswered.invariant == entry.invariant)
+            {
+                entry.unanswered.push(unanswered.why);
+            } else {
+                entry.ok += 1;
+            }
+        }
+
+        // An invariant nobody could answer is not a violation and does not
+        // colour the exit status, but it is the reader's business why: a run
+        // whose oracle went quiet on two files in three has to say so where the
+        // files are named, not only as a number at the bottom.
+        for unanswered in outcome.unanswered.iter().filter(|it| !it.detail.is_empty()) {
+            reported = true;
+            writeln!(
+                out,
+                "{label}\t{}\tn/a: {}",
+                unanswered.invariant.slug(),
+                unanswered.why
+            )
+            .into_diagnostic()?;
+            if !quiet {
+                for line in unanswered.detail.lines() {
+                    writeln!(out, "    {line}").into_diagnostic()?;
+                }
+            }
+        }
+
+        if outcome.violations.is_empty() {
             continue;
         }
         offenders.push((
             label.as_str(),
-            violations
+            outcome
+                .violations
                 .iter()
                 .map(|violation| violation.invariant.slug())
                 .collect(),
         ));
-        for violation in violations {
-            for entry in &mut counts {
-                if entry.0 == violation.invariant {
-                    entry.1 += 1;
-                }
-            }
+        for violation in &outcome.violations {
+            reported = true;
             writeln!(
                 out,
                 "{label}\t{}\t{}",
@@ -748,15 +906,62 @@ fn check_paths(
 
     let violated = offenders.len();
 
+    // Which questions were asked, and how each of them came out. The old
+    // summary named only the invariants that were violated, which left the
+    // reader unable to tell a run where everything passed from a run where
+    // nothing was asked.
+    if reported {
+        writeln!(out).into_diagnostic()?;
+    }
+    writeln!(
+        out,
+        "---- {:<20}{:<8}{:>5}{:>8}{:>6}",
+        "invariants", "result", "ok", "failed", "n/a"
+    )
+    .into_diagnostic()?;
+    // Grouped, because the group is the answer to the reader's next question.
+    // A parser row and a formatter row that failed send them to different files.
+    let mut heading = None;
+    for entry in tally
+        .iter()
+        .filter(|entry| entry.ok + entry.failed + entry.unanswered.len() > 0)
+    {
+        let subject = entry.invariant.subject();
+        if heading != Some(subject) {
+            writeln!(out, "   {}", subject.heading()).into_diagnostic()?;
+            heading = Some(subject);
+        }
+        writeln!(
+            out,
+            "     {:<20}{:<8}{:>5}{:>8}{:>6}",
+            entry.invariant.slug(),
+            entry.result(),
+            entry.ok,
+            entry.failed,
+            entry.unanswered.len()
+        )
+        .into_diagnostic()?;
+        // A file the oracle could not be asked about is a different thing from
+        // one that did not parse, and the number alone does not say which.
+        for (why, count) in entry.reasons() {
+            writeln!(out, "       n/a: {count} {why}").into_diagnostic()?;
+            if let Some(hint) = crate::check::deparse::hint(why) {
+                writeln!(out, "            {hint}").into_diagnostic()?;
+            }
+        }
+    }
+
     // The per-file reports have scrolled away by now; a run over a directory
     // ends by saying which files to go back to.
     if violated > 0 && sources > 1 {
+        writeln!(out).into_diagnostic()?;
         writeln!(out, "---- files with a violation").into_diagnostic()?;
         for (label, slugs) in &offenders {
             writeln!(out, "     {label}\t{}", slugs.join(" ")).into_diagnostic()?;
         }
     }
 
+    writeln!(out).into_diagnostic()?;
     writeln!(
         out,
         "---- checked {sources}, clean {}, violated {violated}{}",
@@ -768,9 +973,6 @@ fn check_paths(
         }
     )
     .into_diagnostic()?;
-    for (invariant, count) in counts.iter().filter(|(_, count)| *count > 0) {
-        writeln!(out, "     {:<16} {count}", invariant.slug()).into_diagnostic()?;
-    }
 
     if violated > 0 {
         std::process::exit(1);
