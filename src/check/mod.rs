@@ -472,7 +472,12 @@ fn idempotency(source: &str, formatted: &str) -> Option<Violation> {
     }
 
     let seeds = (seeds_in != seeds_out).then(|| {
-        let render = |broken: &bool| if *broken { "broken" } else { "flat" }.to_string();
+        let render = |broken: &bool| {
+            (
+                String::new(),
+                if *broken { "broken" } else { "flat" }.to_string(),
+            )
+        };
         format!(
             "the layout decisions differ: {} group(s) in, {} out\n{}",
             seeds_in.len(),
@@ -489,7 +494,9 @@ fn idempotency(source: &str, formatted: &str) -> Option<Violation> {
             sides: ("pass 1", "pass 2"),
             base: 1,
         };
-        describe_divergence(&pass1, &pass2, &report, |line| elide(line))
+        describe_divergence(&pass1, &pass2, &report, |line| {
+            (String::new(), (*line).to_string())
+        })
     });
 
     let summary = match (&text, &seeds) {
@@ -532,7 +539,7 @@ fn semantic_preservation(source: &str, formatted: &str) -> Option<Violation> {
             Invariant::SemanticPreservation,
             format!("{} tokens in, {} out", before.len(), after.len()),
             describe_divergence(&before, &after, &Report::stream("token"), |(kind, text)| {
-                format!("{kind} {}", elide(text))
+                (kind.clone(), text.clone())
             }),
         )
     })
@@ -546,7 +553,7 @@ fn comment_preservation(source: &str, formatted: &str) -> Option<Violation> {
             Invariant::CommentPreservation,
             format!("{} comments in, {} out", before.len(), after.len()),
             describe_divergence(&before, &after, &Report::stream("comment"), |text| {
-                elide(text)
+                (String::new(), text.clone())
             }),
         )
     })
@@ -675,17 +682,39 @@ impl<'a> Report<'a> {
 /// almost everywhere, so what a report owes its reader is the place they stop
 /// agreeing — printing both streams in full is how one mislaid comment fills a
 /// screen and says nothing.
+///
+/// `render_item` gives back the item in two parts: whatever labels it, which is
+/// always printed, and its text, which is not — a deparsed line or a `__DATA__`
+/// token is thousands of characters of which the report can carry a hundred and
+/// twenty, and it is this function that knows which hundred and twenty.
 fn describe_divergence<T: PartialEq>(
     before: &[T],
     after: &[T],
     report: &Report<'_>,
-    render_item: impl Fn(&T) -> String,
+    render_item: impl Fn(&T) -> (String, String),
 ) -> String {
     let Report { unit, sides, base } = *report;
     let Some(position) =
         (0..before.len().max(after.len())).find(|&index| before.get(index) != after.get(index))
     else {
         return "streams are equal".to_string();
+    };
+
+    // The two items that disagree may be long and disagree late — two deparsed
+    // lines differing in a line number four hundred bytes in. A window taken
+    // from the front of those shows the reader four hundred bytes of the part
+    // that matched. Both sides are cut at the same place, so what is on the
+    // screen is the same stretch of two texts.
+    let focus = match (
+        before.get(position).map(&render_item),
+        after.get(position).map(&render_item),
+    ) {
+        (Some((_, left)), Some((_, right))) => left
+            .bytes()
+            .zip(right.bytes())
+            .position(|(left, right)| left != right)
+            .unwrap_or_else(|| left.len().min(right.len())),
+        _ => 0,
     };
 
     let context = position.saturating_sub(3);
@@ -697,7 +726,16 @@ fn describe_divergence<T: PartialEq>(
             .take(position - context + 4)
             .map(|(index, item)| {
                 let marker = if index == position { ">>" } else { "  " };
-                format!("{marker} [{}] {}", index + base, render_item(item))
+                let (label, text) = render_item(item);
+                // Context items are cut from the front: they agree, so there is
+                // nothing in them to point at.
+                let at = if index == position { focus } else { 0 };
+                let space = if label.is_empty() { "" } else { " " };
+                format!(
+                    "{marker} [{}] {label}{space}{}",
+                    index + base,
+                    window_on(&text, at)
+                )
             })
             .collect::<Vec<_>>()
             .join("\n")
@@ -710,6 +748,33 @@ fn describe_divergence<T: PartialEq>(
         render(before),
         sides.1,
         render(after)
+    )
+}
+
+/// `text`, quoted, as [`ELIDE_AT`] bytes of it around `at`.
+///
+/// The window sits a third of the way in rather than in the middle: the place
+/// two texts stop agreeing is where reading starts, so most of the room goes to
+/// what follows it. Where anything was left out the report says which bytes
+/// these are, because a reader who wants the rest has the file.
+fn window_on(text: &str, at: usize) -> String {
+    if text.len() <= ELIDE_AT {
+        return format!("{text:?}");
+    }
+
+    let mut start = at.saturating_sub(ELIDE_AT / 3).min(text.len() - ELIDE_AT);
+    while !text.is_char_boundary(start) {
+        start -= 1;
+    }
+    let mut end = (start + ELIDE_AT).min(text.len());
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+
+    format!(
+        "{:?} (bytes {start}..{end} of {})",
+        &text[start..end],
+        text.len()
     )
 }
 
@@ -753,13 +818,39 @@ mod tests {
         after.remove(200);
 
         let detail = describe_divergence(&before, &after, &Report::stream("comment"), |text| {
-            elide(text)
+            (String::new(), text.clone())
         });
 
         assert!(detail.contains("first divergence at comment #200"));
         assert!(detail.contains("\"# 200\""));
         assert!(!detail.contains("\"# 300\""));
         assert!(detail.lines().count() < 20);
+    }
+
+    /// The point of a window: two long items that agree for longer than a
+    /// report is wide are shown where they stop agreeing, not where they start.
+    #[test]
+    fn a_divergence_late_in_a_long_item_is_the_part_that_is_shown() {
+        let before = vec![format!(
+            "{}NEEDLE-BEFORE{}",
+            "x".repeat(400),
+            "y".repeat(400)
+        )];
+        let after = vec![format!(
+            "{}NEEDLE-AFTER{}",
+            "x".repeat(400),
+            "y".repeat(400)
+        )];
+
+        let detail = describe_divergence(&before, &after, &Report::stream("line"), |text| {
+            (String::new(), text.clone())
+        });
+
+        assert!(detail.contains("NEEDLE-BEFORE"), "{detail}");
+        assert!(detail.contains("NEEDLE-AFTER"), "{detail}");
+        assert!(detail.contains("bytes 3"), "{detail}");
+        // And what it shows is still a window, not the item.
+        assert!(detail.len() < before[0].len(), "{detail}");
     }
 
     #[test]
