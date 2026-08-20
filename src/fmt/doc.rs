@@ -81,6 +81,21 @@ pub enum Doc {
         columns: usize,
         body: Box<Doc>,
     },
+    /// A construct placed from the line it begins on rather than from the
+    /// statement's own level (docs/formatting.md INDENT-4).
+    ///
+    /// A block's body is one level below the construct that owns it and its
+    /// closing brace is back at that construct's level — and when the user
+    /// wrapped the line first, that level is not the statement's. `$cond\n? do
+    /// {` writes the `do` on a continuation line, and without this its body and
+    /// its closing brace came back at the statement's level, shallower than
+    /// their own header.
+    ///
+    /// The scope is the construct and not the block, because a wrapped
+    /// condition or signature belongs to the block after it: `if ($a\n&& $b) {`
+    /// begins where the `if` does, and its body takes the statement's level
+    /// however far the condition wrapped.
+    Rooted(Box<Doc>),
     /// The extent of a continuation indent (docs/formatting.md INDENT-3).
     ///
     /// The first line break the user made inside this takes one indent level,
@@ -162,6 +177,11 @@ impl Doc {
     #[must_use]
     pub fn continuation(body: Doc) -> Doc {
         Doc::Continuation(Box::new(body))
+    }
+
+    #[must_use]
+    pub fn rooted(body: Doc) -> Doc {
+        Doc::Rooted(Box::new(body))
     }
 
     pub fn hanging(columns: usize, body: Doc) -> Doc {
