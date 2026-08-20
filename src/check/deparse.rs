@@ -27,15 +27,36 @@ const TIMEOUT: Duration = Duration::from_secs(60);
 /// cannot find what it uses.
 pub const NOT_IN_INC: &str = "a module it uses is not in @INC";
 
+/// The file compiled and means nothing at run time — POD, `package`, `use`,
+/// forward declarations, and no ops under any of it. There is no program here
+/// for perl to read differently, so there is nothing to ask about the output.
+const NO_OPS: &str = "the input deparses to nothing: no runtime ops in it";
+
+/// perl never ran. Not something a file can be blamed for: no perl on PATH any
+/// more, or no room to start a process.
+const COULD_NOT_RUN: &str = "perl could not be run";
+
+/// perl started and would not stop, and was killed at the timeout.
+const TIMED_OUT: &str = "perl did not finish before the timeout";
+
+/// `perl -c` was happy and `B::Deparse` was not — it exited non-zero, or the
+/// file's own `BEGIN` time did.
+const WOULD_NOT_DEPARSE: &str = "perl would not deparse it";
+
 /// What to do about a reason, where there is something to do.
 ///
 /// perl runs with this process's environment, so the fix is the ordinary one
 /// and it needs no flag from us.
 #[must_use]
 pub fn hint(why: &str) -> Option<&'static str> {
-    (why == NOT_IN_INC).then_some(
-        "perl inherits this shell's environment: PERL5LIB=<the tree's lib> answers these",
-    )
+    match why {
+        NOT_IN_INC => {
+            Some("perl inherits this shell's environment: PERL5LIB=<the tree's lib> answers these")
+        }
+        NO_OPS => Some("nothing camello can do to such a file changes what it means"),
+        COULD_NOT_RUN => Some("perl was there when the run started; it is not being reached now"),
+        _ => None,
+    }
 }
 
 /// What perl had to say about a pair.
@@ -91,10 +112,13 @@ pub fn meaning(source: &str, formatted: &str) -> Verdict {
         }
         Asked::Silent => {
             return Verdict::NotLoadable {
-                why: "perl deparsed the input to nothing",
+                why: NO_OPS,
                 detail: String::new(),
             }
         }
+        // perl not answering is not the file's doing, on either side of the
+        // pair: it is this check going missing, and it says which way.
+        Asked::Unanswered(NoAnswer { why, detail }) => return Verdict::NotLoadable { why, detail },
     };
 
     let after = match work.ask(formatted) {
@@ -105,12 +129,15 @@ pub fn meaning(source: &str, formatted: &str) -> Verdict {
                 detail: evidence(&errors),
             }
         }
+        // The input had ops — it is above — so an output that has none is
+        // camello having deleted the program, and that is a violation.
         Asked::Silent => {
             return Verdict::Differs {
                 summary: "perl deparsed the output to nothing".to_string(),
                 detail: String::new(),
             }
         }
+        Asked::Unanswered(NoAnswer { why, detail }) => return Verdict::NotLoadable { why, detail },
     };
 
     if before == after {
@@ -160,8 +187,21 @@ enum Asked {
     Deparsed(Vec<String>),
     /// perl would not compile it, and this is what it said.
     Failed(String),
-    /// It compiled and deparsed to nothing.
+    /// It compiled and deparsed to nothing: there are no runtime ops in it.
     Silent,
+    /// perl never answered — which is about this run, not about the text.
+    Unanswered(NoAnswer),
+}
+
+/// perl gave no answer, and why.
+///
+/// `why` is the class the report counts and folds by, so it is one of the
+/// constants above rather than a sentence built here; `detail` is whatever
+/// evidence there is, which for a timeout or a process that never started is
+/// nothing at all.
+struct NoAnswer {
+    why: &'static str,
+    detail: String,
 }
 
 impl Workspace {
@@ -181,17 +221,28 @@ impl Workspace {
         if let Err(error) = std::fs::write(&self.path, text) {
             return Asked::Failed(format!("{}: {error}", self.path.display()));
         }
-        if let Some(errors) = compile_errors(&self.path) {
-            return Asked::Failed(self.scrub(&errors));
+        match compile_errors(&self.path) {
+            Ok(Some(errors)) => return Asked::Failed(self.scrub(&errors)),
+            Ok(None) => {}
+            Err(no_answer) => return Asked::Unanswered(self.scrubbed(no_answer)),
         }
         match deparse(&self.path) {
-            Some(lines) => Asked::Deparsed(
+            Ok(Some(lines)) => Asked::Deparsed(
                 lines
                     .iter()
                     .map(|line| self.scrub(line))
                     .collect::<Vec<_>>(),
             ),
-            None => Asked::Silent,
+            Ok(None) => Asked::Silent,
+            Err(no_answer) => Asked::Unanswered(self.scrubbed(no_answer)),
+        }
+    }
+
+    /// A reason, with the temporary path taken out of its evidence.
+    fn scrubbed(&self, no_answer: NoAnswer) -> NoAnswer {
+        NoAnswer {
+            why: no_answer.why,
+            detail: self.scrub(&no_answer.detail),
         }
     }
 
@@ -235,22 +286,34 @@ fn evidence(errors: &str) -> String {
 }
 
 /// What `perl -c` said, if it did not say the file is fine.
-fn compile_errors(path: &Path) -> Option<String> {
+///
+/// `Ok(None)` is the file compiling. A perl that never answered is an `Err`
+/// rather than that: it used to be the same value, so a machine with no perl
+/// reachable any more read every file in the corpus as compiling and then
+/// deparsing to nothing.
+fn compile_errors(path: &Path) -> Result<Option<String>, NoAnswer> {
     let output = perl(path, &["-c"])?;
     let said = String::from_utf8_lossy(&output.stderr).into_owned();
-    (!said.contains("syntax OK")).then(|| {
+    Ok((!said.contains("syntax OK")).then(|| {
         said.lines()
             .filter(|line| !line.contains("syntax OK"))
             .collect::<Vec<_>>()
             .join("\n")
-    })
+    }))
 }
 
 /// What perl says the program means, normalised.
-fn deparse(path: &Path) -> Option<Vec<String>> {
+///
+/// `Ok(None)` is a program with nothing in it to run, which is a real answer
+/// about a real file: POD, `package`, `use`, forward declarations. A deparse
+/// that exited non-zero is not that answer and does not pretend to be.
+fn deparse(path: &Path) -> Result<Option<Vec<String>>, NoAnswer> {
     let output = perl(path, &["-MO=Deparse,-p"])?;
     if !output.status.success() {
-        return None;
+        return Err(NoAnswer {
+            why: WOULD_NOT_DEPARSE,
+            detail: evidence(&String::from_utf8_lossy(&output.stderr)),
+        });
     }
     let raw = String::from_utf8_lossy(&output.stdout);
 
@@ -280,7 +343,7 @@ fn deparse(path: &Path) -> Option<Vec<String>> {
     }
     constants.sort();
     body.extend(constants);
-    (!body.is_empty()).then_some(body)
+    Ok((!body.is_empty()).then_some(body))
 }
 
 /// The two shapes of `sub` line that deparse order is not stable in.
@@ -353,7 +416,15 @@ fn anonymise_addresses(line: &str) -> String {
 ///
 /// A corpus is full of files that do something surprising at `BEGIN` time, and
 /// a check that hangs on one of them is a check nobody runs twice.
-fn perl(path: &Path, args: &[&str]) -> Option<std::process::Output> {
+///
+/// The two ways this returns nothing are told apart, because they are read
+/// differently: a file that took longer than a minute of perl is a fact about
+/// that file, and a perl that would not start is a fact about the machine.
+fn perl(path: &Path, args: &[&str]) -> Result<std::process::Output, NoAnswer> {
+    let no_answer = |why| NoAnswer {
+        why,
+        detail: String::new(),
+    };
     let mut child = Command::new("perl")
         .args(args)
         .arg(path)
@@ -361,7 +432,7 @@ fn perl(path: &Path, args: &[&str]) -> Option<std::process::Output> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .ok()?;
+        .map_err(|_| no_answer(COULD_NOT_RUN))?;
 
     // The pipes are drained on their own threads: a deparse of a large file
     // fills the buffer, and a child blocked on a full pipe never exits, which
@@ -377,13 +448,13 @@ fn perl(path: &Path, args: &[&str]) -> Option<std::process::Output> {
             Ok(None) => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return None;
+                return Err(no_answer(TIMED_OUT));
             }
-            Err(_) => return None,
+            Err(_) => return Err(no_answer(COULD_NOT_RUN)),
         }
     };
 
-    Some(std::process::Output {
+    Ok(std::process::Output {
         status,
         stdout: stdout.take().map(join).unwrap_or_default(),
         stderr: stderr.take().map(join).unwrap_or_default(),
@@ -448,5 +519,25 @@ mod tests {
             meaning(source, "my $x = ;\n"),
             Verdict::Differs { .. }
         ));
+    }
+
+    /// A file with no ops in it is unanswerable for that reason and no other.
+    /// The three shapes below all compile and all deparse to nothing.
+    #[test]
+    fn a_file_with_nothing_to_run_says_so() {
+        if !super::available() {
+            return;
+        }
+        for source in [
+            "=head1 NAME\n\nFoo - a file that is documentation\n\n=cut\n",
+            "package Foo;\n",
+            "use strict;\n",
+        ] {
+            let verdict = meaning(source, source);
+            assert!(
+                matches!(&verdict, Verdict::NotLoadable { why, .. } if *why == super::NO_OPS),
+                "{source:?} should be unanswered for having no ops"
+            );
+        }
     }
 }
