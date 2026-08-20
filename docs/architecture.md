@@ -128,11 +128,18 @@ The library exports:
 - syntax kinds, syntax nodes and tokens, parse diagnostics, trivia, and
   formatter option types.
 
-The stable command-line surface is `camello format`. It reads one source from a
-path, `-e`/`-E`, or standard input. A directory or multiple paths require
-`--write` or `--check`; directory traversal is recursive and does not follow
-symlinks discovered below a requested root. Work across files is parallelized,
-but reports remain in input order.
+The stable command-line surface is `camello format`. It reads its sources from
+paths, `-e`/`-E`, or standard input, and writes each one back over the file it
+came from — a file, a directory, or several of either. Directory traversal is
+recursive and does not follow symlinks discovered below a requested root. Work
+across files is parallelized, but reports remain in input order.
+
+Writing it back is the default because formatting a file is a thing done to the
+file, and a tree of them has nowhere else to go. A source with no file behind it
+— standard input, `-e` — goes to standard output instead, and `--output` is how
+to ask for that of a file too: it names somewhere else to put the result, or `-`
+for standard output, for one source at a time. `--write` asks for the default
+and does nothing; it stays because it is what the hand types.
 
 Reporting is quiet by default. Formatting one source writes it and says
 nothing; `--check` says nothing when the source is already formatted and
@@ -143,10 +150,16 @@ could not be read, or that the parser had something to say about and was
 therefore left alone, is always named: `--list-different` additionally prints
 its diagnostics, which are in any case what `camello format <that file>` shows.
 
-Input is decoded with the selected encoding and invalid byte sequences are
-rejected rather than replaced. In-place output is encoded before the original
-is touched, written and synchronized to a temporary sibling, and atomically
-renamed over the target while preserving its permissions.
+`--encoding` names the encodings a source may be in, in the order they are
+tried: the first that decodes a file's bytes without replacing any of them is
+the one it is read as, and the one it is written back in. Bytes that no
+candidate can read are refused rather than decoded with replacement characters,
+so a file in an encoding nobody named is reported and left alone rather than
+rewritten. One candidate — utf-8, unless another is named — is the usual case;
+several are for a tree whose files are not all in the same encoding, where the
+answer belongs to each file rather than to the run. In-place output is encoded
+before the original is touched, written and synchronized to a temporary sibling,
+and atomically renamed over the target while preserving its permissions.
 
 The hidden `camello dev` namespace contains development interfaces. `dump`
 prints a CST, and `check` evaluates parser and formatter invariants on files,
@@ -155,6 +168,12 @@ one question `check` cannot: whether perl reads the output as the program the
 input was. It is a command of its own because asking runs perl over the file,
 and `perl -c` executes that file's `BEGIN` blocks. These commands may change
 independently of the formatter interface.
+
+The layout flags on `format` — `--indent-width` and its four siblings — are
+hidden for the same reason. What camello answers is how Perl is written, and a
+formatter that answers it five ways depending on its flags has not answered it;
+they exist so that a question about the layout can be *asked* — of a fixture, in
+a bug report — and they may change with the layout they describe.
 
 ## Validation
 

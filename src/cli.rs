@@ -47,11 +47,15 @@ pub enum Commands {
         #[arg(long, help = "Check if file is already formatted")]
         check: bool,
 
-        /// Overwrite the input file with the formatted result
+        // Formatting a file writes it: that is what the command is for, and
+        // what a tree of them leaves nowhere else to put. So this asks for what
+        // already happens, and does nothing. It stays because it is what the
+        // hand types, and because saying so is better than an error about an
+        // unknown flag.
         #[arg(
             short = 'w',
             long = "write",
-            help = "Overwrite the input files with the formatted result",
+            help = "Overwrite the input files with the formatted result (default)",
             requires = "paths",
             conflicts_with_all = ["check", "output"]
         )]
@@ -90,12 +94,24 @@ pub enum Commands {
         )]
         list_different: bool,
 
-        /// Output to file instead of stdout
-        #[arg(short, long, help = "Output file path")]
+        // The one way to say "do not overwrite it": name somewhere else, or `-`
+        // for standard output. One source at a time, since a tree has no single
+        // place to go.
+        #[arg(
+            short,
+            long,
+            value_name = "PATH",
+            conflicts_with = "check",
+            help = "Write the result here instead of over the input; - for standard output"
+        )]
         output: Option<PathBuf>,
 
-        /// Input file encoding (e.g., utf-8, euc-jp, shift_jis)
-        #[arg(long, help = "Input file encoding (default: utf-8)")]
+        /// Encodings a source may be in, tried in order
+        #[arg(
+            long,
+            value_name = "NAME,...",
+            help = "Encodings to try, in order, until one reads the file (default: utf-8)"
+        )]
         encoding: Option<String>,
 
         #[command(flatten)]
@@ -163,8 +179,12 @@ pub enum DevCommands {
         )]
         stop_on_first_error: bool,
 
-        /// Input file encoding (e.g., utf-8, euc-jp, shift_jis)
-        #[arg(long, help = "Input file encoding (default: utf-8)")]
+        /// Encodings a source may be in, tried in order
+        #[arg(
+            long,
+            value_name = "NAME,...",
+            help = "Encodings to try, in order, until one reads the file (default: utf-8)"
+        )]
         encoding: Option<String>,
     },
     /// Ask the formatter's invariants of arbitrary Perl
@@ -223,8 +243,12 @@ pub enum DevCommands {
         )]
         extensions: String,
 
-        /// Input file encoding (e.g., utf-8, euc-jp, shift_jis)
-        #[arg(long, help = "Input file encoding (default: utf-8)")]
+        /// Encodings a source may be in, tried in order
+        #[arg(
+            long,
+            value_name = "NAME,...",
+            help = "Encodings to try, in order, until one reads the file (default: utf-8)"
+        )]
         encoding: Option<String>,
     },
 
@@ -275,8 +299,12 @@ pub enum DevCommands {
         )]
         extensions: String,
 
-        /// Input file encoding (e.g., utf-8, euc-jp, shift_jis)
-        #[arg(long, help = "Input file encoding (default: utf-8)")]
+        /// Encodings a source may be in, tried in order
+        #[arg(
+            long,
+            value_name = "NAME,...",
+            help = "Encodings to try, in order, until one reads the file (default: utf-8)"
+        )]
         encoding: Option<String>,
     },
 }
@@ -287,16 +315,28 @@ pub enum DevCommands {
 /// was reachable from the library and from nowhere else — including
 /// `max_alignment_padding`, which is a guard against one long line pushing a
 /// whole group across the screen.
+///
+/// Hidden, all of them, for the reason the `dev` namespace is: what camello
+/// answers is "how is this written", and a formatter that answers it four ways
+/// depending on the flags has not answered it. They exist so that a question
+/// about the layout can be *asked* — of a fixture, in a bug report — and they
+/// may change with the layout they describe.
 #[derive(clap::Args, Debug, Clone)]
 pub struct LayoutArgs {
     /// Spaces per indent level
-    #[arg(long, value_name = "N", help = "Spaces per indent level (default: 4)")]
+    #[arg(
+        long,
+        value_name = "N",
+        hide = true,
+        help = "Spaces per indent level (default: 4)"
+    )]
     pub indent_width: Option<usize>,
 
     /// Minimum spaces between code and a trailing comment
     #[arg(
         long,
         value_name = "N",
+        hide = true,
         help = "Minimum spaces before a trailing comment (default: 4)"
     )]
     pub min_spaces_before_comment: Option<usize>,
@@ -305,6 +345,7 @@ pub struct LayoutArgs {
     #[arg(
         long,
         value_name = "STYLE",
+        hide = true,
         help = "Inside of [...] and {...} literals: tight, standard (space when \
                 holding two or more items; default), or loose (always a space)"
     )]
@@ -314,12 +355,17 @@ pub struct LayoutArgs {
     #[arg(
         long,
         value_name = "N",
+        hide = true,
         help = "Maximum alignment padding, 0 to disable alignment (default: 64)"
     )]
     pub max_alignment_padding: Option<usize>,
 
     /// Keep a one-statement `map`/`sub`/`do` block on one line
-    #[arg(long, help = "Never keep a one-statement map/sub/do block on one line")]
+    #[arg(
+        long,
+        hide = true,
+        help = "Never keep a one-statement map/sub/do block on one line"
+    )]
     pub no_single_line_blocks: bool,
 }
 
@@ -414,7 +460,8 @@ pub fn run() -> Result<()> {
             eval,
             eval_escape,
             check,
-            write,
+            // Asks for the default; see the flag.
+            write: _,
             extensions,
             jobs,
             stop_on_first_error,
@@ -423,15 +470,19 @@ pub fn run() -> Result<()> {
             encoding,
             layout,
         } => {
-            // One source is a thing to look at, and its formatted text goes to
-            // stdout. A tree is a thing to do something to, and there is nowhere
-            // for five hundred files of stdout to go — so the two are different
-            // commands wearing one name, and this is where they part.
+            // One source can be sent somewhere. A tree cannot: there is no one
+            // place for five hundred files to go, and nothing to say about them
+            // afterwards but a tally — so the two are different commands
+            // wearing one name, and this is where they part.
             if is_a_tree(&paths) {
+                if output.is_some() {
+                    return Err(miette::miette!(
+                        "--output takes one source; a tree is written back over itself"
+                    ));
+                }
                 return format_tree(
                     paths,
                     check,
-                    write,
                     list_different,
                     &extensions,
                     jobs,
@@ -444,7 +495,6 @@ pub fn run() -> Result<()> {
                 eval,
                 eval_escape,
                 check,
-                write,
                 stop_on_first_error,
                 output,
                 encoding,
@@ -596,9 +646,10 @@ struct Formatted {
 
 /// `camello format` over files and directories, in parallel.
 ///
-/// Writing is asked for, never assumed: the formatted text of a tree has
-/// nowhere to go but back over the tree, and doing that because someone typed a
-/// path is not undoable.
+/// The formatted text of a tree has nowhere to go but back over the tree, so
+/// that is where it goes. `--check` is how to ask without being answered in
+/// rewritten files, and version control is what makes a run that was not wanted
+/// undoable — the same bargain every formatter that walks a directory makes.
 ///
 /// A run that did what it was asked says so in one line. Naming five hundred
 /// files that were reformatted is a list nobody reads, and the version control
@@ -609,20 +660,13 @@ struct Formatted {
 fn format_tree(
     paths: Vec<PathBuf>,
     check: bool,
-    write: bool,
     list_different: bool,
     extensions: &str,
     jobs: Option<usize>,
     encoding: Option<String>,
     options: &FormatterOptions,
 ) -> Result<()> {
-    if !check && !write {
-        return Err(miette::miette!(
-            "formatting more than one file needs --write (rewrite them) or --check (report which would change)"
-        ));
-    }
-
-    let encoding = get_encoding(encoding.as_ref())?;
+    let encodings = Encodings::parse(encoding.as_ref())?;
     let extensions: Vec<&str> = extensions.split(',').map(str::trim).collect();
 
     let mut files = Vec::new();
@@ -631,7 +675,7 @@ fn format_tree(
     }
 
     let reports = in_parallel(&files, jobs, |path| {
-        format_one(path, check, encoding, options)
+        format_one(path, check, &encodings, options)
     });
 
     let stdout = io::stdout();
@@ -707,7 +751,7 @@ fn format_tree(
 fn format_one(
     path: &Path,
     check: bool,
-    encoding: &'static Encoding,
+    encodings: &Encodings,
     options: &FormatterOptions,
 ) -> Formatted {
     let failed = |failure: String| Formatted {
@@ -720,10 +764,9 @@ fn format_one(
         Ok(bytes) => bytes,
         Err(error) => return failed(error.to_string()),
     };
-    let (input, _, had_errors) = encoding.decode(&bytes);
-    if had_errors {
-        return failed("not decodable with this encoding".to_string());
-    }
+    let Some((input, encoding)) = encodings.decode(&bytes) else {
+        return failed(format!("not decodable as {}", encodings.names()));
+    };
 
     let (formatted, errors) = format_perl_with_options(&input, options);
     let diagnostics: Vec<String> = errors
@@ -1301,7 +1344,7 @@ fn check_paths(
     use crate::check::{check_report, Invariant};
 
     let extensions: Vec<&str> = extensions.split(',').map(str::trim).collect();
-    let encoding = get_encoding(encoding.as_ref())?;
+    let encodings = Encodings::parse(encoding.as_ref())?;
 
     let mut files = Vec::new();
     for path in &paths {
@@ -1323,13 +1366,12 @@ fn check_paths(
     let checked: Vec<Option<(String, crate::check::Outcome)>> = if paths.is_empty() {
         let mut bytes = Vec::new();
         io::stdin().read_to_end(&mut bytes).into_diagnostic()?;
-        let (decoded, _, had_errors) = encoding.decode(&bytes);
-        if had_errors {
+        let Some((decoded, _)) = encodings.decode(&bytes) else {
             return Err(miette::miette!(
                 "stdin is not decodable as {}; refusing a lossy check",
-                encoding.name()
+                encodings.names()
             ));
-        }
+        };
         vec![Some((
             "<stdin>".to_string(),
             check_report(&decoded, wanted),
@@ -1341,10 +1383,7 @@ fn check_paths(
             let slot = progress.taken(path);
             let checked = (|| {
                 let bytes = fs::read(path).ok()?;
-                let (decoded, _, had_errors) = encoding.decode(&bytes);
-                if had_errors {
-                    return None;
-                }
+                let (decoded, _) = encodings.decode(&bytes)?;
                 Some((path.display().to_string(), check_report(&decoded, wanted)))
             })();
             let violated = checked
@@ -1660,52 +1699,113 @@ fn collect_perl_files(path: &Path, extensions: &[&str], into: &mut Vec<PathBuf>)
     Ok(())
 }
 
-/// Get encoding from encoding name string
-fn get_encoding(encoding_name: Option<&String>) -> Result<&'static Encoding> {
-    let encoding = match encoding_name {
-        Some(name) => Encoding::for_label(name.as_bytes())
-            .ok_or_else(|| miette::miette!("Unknown encoding: {}", name))?,
-        None => encoding_rs::UTF_8,
-    };
-    Ok(encoding)
+/// The encodings a source may be in, in the order they are tried.
+///
+/// One candidate is the whole of the usual case: the file is utf-8, or it is
+/// not and that is something to hear about rather than to guess around. A tree
+/// older than utf-8 is the other case — some of it euc-jp, some of it already
+/// converted, and no flag that is right for the run because the encoding is a
+/// property of each file. So the run names what a file may be, and the file
+/// answers: the first candidate that reads its bytes without replacing any of
+/// them is the one it is in, and the one it is written back in.
+///
+/// Order is what settles a file that more than one candidate can read. Every
+/// candidate reads pure ASCII, and euc-jp bytes are rarely valid utf-8, so
+/// utf-8 first is the order that means "already converted, or not yet".
+struct Encodings(Vec<&'static Encoding>);
+
+impl Encodings {
+    /// The candidates named on the command line, or utf-8 when none were.
+    fn parse(names: Option<&String>) -> Result<Self> {
+        let Some(names) = names else {
+            return Ok(Self(vec![encoding_rs::UTF_8]));
+        };
+
+        let mut candidates: Vec<&'static Encoding> = Vec::new();
+        for name in names.split(',').map(str::trim).filter(|n| !n.is_empty()) {
+            let encoding = Encoding::for_label(name.as_bytes())
+                .ok_or_else(|| miette::miette!("Unknown encoding: {name}"))?;
+            // A candidate that already had its turn cannot decode anything the
+            // earlier one did not.
+            if !candidates.contains(&encoding) {
+                candidates.push(encoding);
+            }
+        }
+        if candidates.is_empty() {
+            return Err(miette::miette!("--encoding names no encoding"));
+        }
+        Ok(Self(candidates))
+    }
+
+    /// Decode `bytes` with the first candidate that reads all of them.
+    ///
+    /// `None` is a source that none of them could read: rejected rather than
+    /// decoded with replacement characters, which would be a rewrite of the
+    /// file's contents wearing the name of a formatting run.
+    fn decode(&self, bytes: &[u8]) -> Option<(String, &'static Encoding)> {
+        self.0.iter().find_map(|encoding| {
+            let (decoded, _, had_errors) = encoding.decode(bytes);
+            (!had_errors).then(|| (decoded.into_owned(), *encoding))
+        })
+    }
+
+    /// What to write text that never came from a file — `-e`, and its escaping
+    /// sibling — in: the first thing the run said the sources are.
+    fn first(&self) -> &'static Encoding {
+        self.0[0]
+    }
+
+    /// `utf-8`, or `utf-8, euc-jp`: the candidates, for a message that has to
+    /// say which ones were tried.
+    fn names(&self) -> String {
+        self.0
+            .iter()
+            .map(|encoding| encoding.name())
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
 }
 
+/// A source, what to call it in a message, and the encoding it turned out to be
+/// in — which is the one it is written back in.
 fn read_source(
     path: Option<&Path>,
     eval: Option<String>,
     eval_escape: Option<String>,
-    encoding: &'static Encoding,
-) -> Result<(String, String)> {
+    encodings: &Encodings,
+) -> Result<(String, String, &'static Encoding)> {
     if let Some(code) = eval {
-        return Ok((code, "<command-line>".to_string()));
+        return Ok((code, "<command-line>".to_string(), encodings.first()));
     }
     if let Some(code) = eval_escape {
         let interpreted_code = interpret_escape_sequences(&code);
-        return Ok((interpreted_code, "<command-line>".to_string()));
+        return Ok((
+            interpreted_code,
+            "<command-line>".to_string(),
+            encodings.first(),
+        ));
     }
 
     if let Some(path) = path {
         let bytes = fs::read(path).into_diagnostic()?;
-        let (decoded, _, had_errors) = encoding.decode(&bytes);
-        if had_errors {
+        let Some((decoded, encoding)) = encodings.decode(&bytes) else {
             return Err(miette::miette!(
                 "'{}' is not decodable as {}; refusing lossy formatting",
                 path.display(),
-                encoding.name()
+                encodings.names()
             ));
-        }
-        Ok((decoded.into_owned(), path.display().to_string()))
+        };
+        Ok((decoded, path.display().to_string(), encoding))
     } else {
         let mut bytes = Vec::new();
         io::stdin().read_to_end(&mut bytes).into_diagnostic()?;
-        let (decoded, _, had_errors) = encoding.decode(&bytes);
-        if had_errors {
+        let Some((decoded, encoding)) = encodings.decode(&bytes) else {
             return Err(miette::miette!(
                 "stdin is not decodable as {}; refusing lossy formatting",
-                encoding.name()
+                encodings.names()
             ));
-        }
-        Ok((decoded.into_owned(), "<stdin>".to_string()))
+        };
+        Ok((decoded, "<stdin>".to_string(), encoding))
     }
 }
 
@@ -1796,28 +1896,28 @@ fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
     result.into_diagnostic()
 }
 
+/// `camello format` over the one source it was given.
+///
+/// Where the result goes is the whole of what is decided here, and a file it
+/// came from is where it goes: formatting a file is a thing done *to* the file.
+/// A source that is not a file — stdin, `-e` — has nowhere to be put back, so
+/// it goes to stdout, which is also what `--output -` asks for by name.
 #[allow(clippy::too_many_arguments)]
 fn format_file(
     path: Option<PathBuf>,
     eval: Option<String>,
     eval_escape: Option<String>,
     check: bool,
-    write: bool,
     stop_on_first_error: bool,
     output: Option<PathBuf>,
     encoding: Option<String>,
     options: &FormatterOptions,
 ) -> Result<()> {
-    if write && path.is_none() {
-        return Err(miette::miette!(
-            "The --write option requires a file path to be provided"
-        ));
-    }
-
-    let encoding = get_encoding(encoding.as_ref())?;
+    let encodings = Encodings::parse(encoding.as_ref())?;
 
     // Read from file or standard input
-    let (input, source_name) = read_source(path.as_deref(), eval, eval_escape, encoding)?;
+    let (input, source_name, encoding) =
+        read_source(path.as_deref(), eval, eval_escape, &encodings)?;
 
     // Execute formatting
     let (formatted, errors) = format_perl_with_options(&input, options);
@@ -1845,16 +1945,20 @@ fn format_file(
             println!("{source_name}");
             std::process::exit(1);
         }
-    } else if write {
-        let path = path.expect("path should be present when write is enabled");
-        write_with_encoding(path.as_path(), &formatted, encoding)?;
-    } else {
-        // Format mode: output the result
-        if let Some(output_path) = output {
-            // Write to file
-            write_with_encoding(output_path.as_path(), &formatted, encoding)?;
-        } else {
-            // Write to standard output using UTF-8 as before
+        return Ok(());
+    }
+
+    // `-` is standard output under the flag that otherwise names a file, so
+    // that "do not write it back" is one thing to say however it is meant.
+    let destination = match output {
+        Some(named) if named == Path::new("-") => None,
+        Some(named) => Some(named),
+        None => path,
+    };
+
+    match destination {
+        Some(path) => write_with_encoding(path.as_path(), &formatted, encoding)?,
+        None => {
             print!("{formatted}");
             io::stdout().flush().into_diagnostic()?;
         }
@@ -1872,10 +1976,10 @@ fn dump_file(
     stop_on_first_error: bool,
     encoding: Option<String>,
 ) -> Result<()> {
-    let encoding = get_encoding(encoding.as_ref())?;
+    let encodings = Encodings::parse(encoding.as_ref())?;
 
     // Read from file or standard input
-    let (input, source_name) = read_source(path.as_deref(), eval, eval_escape, encoding)?;
+    let (input, source_name, _) = read_source(path.as_deref(), eval, eval_escape, &encodings)?;
     let (syntax, errors) = parse_perl(&input);
 
     if !errors.is_empty() {
@@ -1942,36 +2046,11 @@ mod tests {
             Some("my$var=1;\\nprint $var;".to_string()),
             false,
             false,
-            false,
             None,
             None,
             &layout()
         )
         .is_ok());
-        Ok(())
-    }
-
-    #[test]
-    fn test_format_file_to_stdout() -> Result<(), Box<dyn std::error::Error>> {
-        // Create a temporary file
-        let dir = tempdir()?;
-        let file_path = dir.path().join("test.pl");
-        fs::write(&file_path, "my$var=1;")?;
-
-        // Execute formatting (not actually executed, but confirm no errors)
-        assert!(format_file(
-            Some(file_path),
-            None,
-            None,
-            false,
-            false,
-            false,
-            None,
-            None,
-            &layout()
-        )
-        .is_ok());
-
         Ok(())
     }
 
@@ -1984,7 +2063,6 @@ mod tests {
             None,
             false,
             false,
-            false,
             None,
             None,
             &layout()
@@ -1995,7 +2073,7 @@ mod tests {
     }
 
     #[test]
-    fn test_format_write_to_same_file() -> Result<(), Box<dyn std::error::Error>> {
+    fn a_file_is_formatted_over_itself() -> Result<(), Box<dyn std::error::Error>> {
         let dir = tempdir()?;
         let file_path = dir.path().join("write_test.pl");
         fs::write(&file_path, "my$var=1;")?;
@@ -2005,7 +2083,6 @@ mod tests {
             None,
             None,
             false,
-            true,
             false,
             None,
             None,
@@ -2019,41 +2096,27 @@ mod tests {
         Ok(())
     }
 
+    /// `--output -` is the way to ask for the formatted text without the file
+    /// it came from being the place it lands.
     #[test]
-    fn test_format_write_preserves_encoding() -> Result<(), Box<dyn std::error::Error>> {
-        use encoding_rs::SHIFT_JIS;
-
+    fn output_to_stdout_leaves_the_input_alone() -> Result<(), Box<dyn std::error::Error>> {
         let dir = tempdir()?;
-        let file_path = dir.path().join("write_encoding_test.pl");
-        let text = "my $var = \"こんにちは\";";
-        let (encoded, _, _) = SHIFT_JIS.encode(text);
-        fs::write(&file_path, &*encoded)?;
+        let file_path = dir.path().join("untouched.pl");
+        fs::write(&file_path, "my$var=1;")?;
 
         format_file(
             Some(file_path.clone()),
             None,
             None,
             false,
-            true,
             false,
+            Some(PathBuf::from("-")),
             None,
-            Some("shift_jis".to_string()),
             &layout(),
         )?;
 
-        let bytes = fs::read(&file_path)?;
-        let (decoded, _, had_errors) = SHIFT_JIS.decode(&bytes);
-        assert!(!had_errors);
-        let (expected, _) = format_perl(text);
-        assert_eq!(decoded.into_owned(), expected);
-
+        assert_eq!(fs::read_to_string(&file_path)?, "my$var=1;");
         Ok(())
-    }
-
-    #[test]
-    fn test_format_write_requires_path() {
-        let result = format_file(None, None, None, false, true, false, None, None, &layout());
-        assert!(result.is_err());
     }
 
     #[test]
@@ -2069,7 +2132,6 @@ mod tests {
             None,
             true,
             false,
-            false,
             None,
             None,
             &layout()
@@ -2079,94 +2141,103 @@ mod tests {
         Ok(())
     }
 
+    /// A file goes out in the encoding it came in: formatting is a question
+    /// about the layout, and answering it in other bytes than the ones asked
+    /// about is a second change nobody asked for.
     #[test]
-    fn test_encoding_utf8() -> Result<(), Box<dyn std::error::Error>> {
-        let dir = tempdir()?;
-        let file_path = dir.path().join("test_utf8.pl");
-
-        // Create a file with UTF-8 content
-        let content = "my $var = \"こんにちは\";";
-        fs::write(&file_path, content)?;
-
-        // Read with UTF-8 encoding
-        assert!(format_file(
-            Some(file_path),
-            None,
-            None,
-            false,
-            false,
-            false,
-            None,
-            Some("utf-8".to_string()),
-            &layout()
-        )
-        .is_ok());
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_encoding_eucjp() -> Result<(), Box<dyn std::error::Error>> {
-        use encoding_rs::EUC_JP;
-
-        let dir = tempdir()?;
-        let file_path = dir.path().join("test_eucjp.pl");
-
-        // Create a file with EUC-JP encoded content
+    fn a_file_is_written_back_in_its_own_encoding() -> Result<(), Box<dyn std::error::Error>> {
         let text = "my $var = \"こんにちは\";";
-        let (encoded, _, _) = EUC_JP.encode(text);
-        fs::write(&file_path, &*encoded)?;
+        let (expected, _) = format_perl(text);
 
-        // Read with EUC-JP encoding
-        assert!(format_file(
-            Some(file_path),
-            None,
-            None,
-            false,
-            false,
-            false,
-            None,
-            Some("euc-jp".to_string()),
-            &layout()
-        )
-        .is_ok());
+        for label in ["utf-8", "euc-jp", "shift_jis"] {
+            let encoding = Encoding::for_label(label.as_bytes()).expect("a known encoding");
+            let dir = tempdir()?;
+            let path = dir.path().join("greeting.pl");
+            let (encoded, _, _) = encoding.encode(text);
+            fs::write(&path, &*encoded)?;
+
+            format_file(
+                Some(path.clone()),
+                None,
+                None,
+                false,
+                false,
+                None,
+                Some(label.to_string()),
+                &layout(),
+            )?;
+
+            let written = fs::read(&path)?;
+            let (decoded, _, had_errors) = encoding.decode(&written);
+            assert!(!had_errors, "{label}: came back in some other encoding");
+            assert_eq!(decoded, expected, "{label}");
+        }
 
         Ok(())
     }
 
+    /// Which encoding a file is in is a property of the file, not of the run:
+    /// half a tree converted to utf-8 is one `--encoding` away from being
+    /// formatted, and each half comes back the way it was.
     #[test]
-    fn test_encoding_shiftjis() -> Result<(), Box<dyn std::error::Error>> {
-        use encoding_rs::SHIFT_JIS;
+    fn each_file_gets_the_first_candidate_that_reads_it() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let text = "my $var=\"こんにちは\";\n";
+        let (expected, _) = format_perl(text);
+        let encodings = Encodings::parse(Some(&"utf-8,euc-jp".to_string()))?;
 
         let dir = tempdir()?;
-        let file_path = dir.path().join("test_sjis.pl");
+        for (name, encoding) in [
+            ("converted.pl", encoding_rs::UTF_8),
+            ("legacy.pl", encoding_rs::EUC_JP),
+        ] {
+            let path = dir.path().join(name);
+            let (encoded, _, _) = encoding.encode(text);
+            fs::write(&path, &*encoded)?;
 
-        // Create a file with Shift_JIS encoded content
-        let text = "my $var = \"こんにちは\";";
-        let (encoded, _, _) = SHIFT_JIS.encode(text);
-        fs::write(&file_path, &*encoded)?;
+            let report = format_one(&path, false, &encodings, &layout());
 
-        // Read with Shift_JIS encoding
-        assert!(format_file(
-            Some(file_path),
-            None,
-            None,
-            false,
-            false,
-            false,
-            None,
-            Some("shift_jis".to_string()),
-            &layout()
-        )
-        .is_ok());
+            assert_eq!(report.failure, None, "{name}");
+            assert!(report.changed, "{name}");
+            let written = fs::read(&path)?;
+            let (decoded, _, had_errors) = encoding.decode(&written);
+            assert!(!had_errors, "{name}: came back in some other encoding");
+            assert_eq!(decoded, expected, "{name}");
+        }
 
         Ok(())
     }
 
+    /// Bytes no candidate can read are a file left alone, named in the report.
     #[test]
-    fn test_invalid_encoding() {
-        let result = get_encoding(Some(&"invalid-encoding-name".to_string()));
-        assert!(result.is_err());
+    fn a_file_no_candidate_reads_is_left_alone() -> Result<(), Box<dyn std::error::Error>> {
+        let encodings = Encodings::parse(Some(&"utf-8".to_string()))?;
+        let dir = tempdir()?;
+        let path = dir.path().join("legacy.pl");
+        let (encoded, _, _) = encoding_rs::EUC_JP.encode("my $var = \"こんにちは\";\n");
+        fs::write(&path, &*encoded)?;
+
+        let report = format_one(&path, false, &encodings, &layout());
+
+        assert_eq!(report.failure.as_deref(), Some("not decodable as UTF-8"));
+        assert_eq!(fs::read(&path)?, *encoded);
+        Ok(())
+    }
+
+    #[test]
+    fn candidates_are_named_once_each_and_must_be_known() {
+        let parsed = |names: &str| Encodings::parse(Some(&names.to_string()));
+
+        assert_eq!(
+            parsed("utf-8, euc-jp").expect("known").names(),
+            "UTF-8, EUC-JP"
+        );
+        // The same encoding twice cannot decode anything its first turn did not.
+        assert_eq!(parsed("utf-8,utf8").expect("known").names(), "UTF-8");
+        assert!(parsed("invalid-encoding-name").is_err());
+        assert!(parsed(",").is_err());
+        // None of them named is utf-8, which is what it was before candidates.
+        assert_eq!(Encodings::parse(None).expect("a default").names(), "UTF-8");
     }
 
     #[test]
@@ -2176,7 +2247,7 @@ mod tests {
         let path = dir.path().join("invalid.pl");
         fs::write(&path, [0xff, 0xfe, b'\n'])?;
 
-        let result = read_source(Some(&path), None, None, encoding_rs::UTF_8);
+        let result = read_source(Some(&path), None, None, &Encodings::parse(None)?);
 
         assert!(result.is_err());
         assert_eq!(fs::read(&path)?, [0xff, 0xfe, b'\n']);
@@ -2248,7 +2319,14 @@ mod tests {
                 dir.path().join("notes.txt"),
             ],
             None,
-            |path| format_one(path, false, encoding_rs::UTF_8, &layout()),
+            |path| {
+                format_one(
+                    path,
+                    false,
+                    &Encodings::parse(None).expect("a default"),
+                    &layout(),
+                )
+            },
         );
         assert!(reports.iter().all(|report| report.failure.is_none()));
         assert_eq!(fs::read_to_string(dir.path().join("a.pl"))?, "my $x = 1;\n");
@@ -2267,7 +2345,7 @@ mod tests {
         let path = dir.path().join("broken.pl");
         fs::write(&path, "my $z=;\n")?;
 
-        let report = format_one(&path, false, encoding_rs::UTF_8, &layout());
+        let report = format_one(&path, false, &Encodings::parse(None)?, &layout());
 
         assert!(!report.diagnostics.is_empty());
         assert!(!report.changed);
