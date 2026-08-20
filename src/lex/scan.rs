@@ -429,22 +429,19 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        // The table is a linear scan of some sixty spellings, walked for every
-        // punctuation token in the file. Comparing the first byte before the
-        // whole spelling is what keeps that from being sixty string compares.
+        // Only the operators that begin with this byte can match, and the table
+        // is grouped so that they are the only ones looked at: this is walked
+        // for every punctuation token in the file, and the table holds seventy
+        // spellings.
         let first = rest.as_bytes()[0];
-        for kind in OPERATORS {
-            let text = kind.text().expect("operator table holds spelled kinds");
-            if text.as_bytes()[0] != first {
-                continue;
-            }
+        for &(kind, text) in operator_table().beginning_with(first) {
             if !rest.starts_with(text) {
                 continue;
             }
-            if !self.operator_applies_here(*kind) {
+            if !self.operator_applies_here(kind) {
                 continue;
             }
-            self.push(*kind, start, start + text.len());
+            self.push(kind, start, start + text.len());
             return;
         }
 
@@ -666,20 +663,28 @@ pub(super) fn ident_len_at(text: &str) -> usize {
         end = first.len_utf8();
     }
     while end < bytes.len() {
-        if bytes[end] == b':' {
+        let byte = bytes[end];
+        // Every byte of a non-ASCII character continues an identifier, so the
+        // bytes can be counted without decoding the character they spell — and
+        // `end` still lands on a boundary, because the run of them ends where
+        // the character does. This is asked of every word in the file, and
+        // decoding here made the common case, which is ASCII, pay for the rare
+        // one.
+        if !byte.is_ascii() {
+            end += 1;
+            continue;
+        }
+        if byte == b':' {
             if bytes.get(end + 1) == Some(&b':') {
                 end += 2;
                 continue;
             }
             break;
         }
-        let Some(ch) = text[end..].chars().next() else {
-            break;
-        };
-        if !continues_identifier(ch) {
+        if !byte.is_ascii_alphanumeric() && byte != b'_' {
             break;
         }
-        end += ch.len_utf8();
+        end += 1;
     }
     end
 }
@@ -698,10 +703,6 @@ pub(super) fn ident_len_at(text: &str) -> usize {
 /// alone, not to adjudicate it.
 fn starts_identifier(ch: char) -> bool {
     ch.is_ascii_alphabetic() || ch == '_' || !ch.is_ascii()
-}
-
-fn continues_identifier(ch: char) -> bool {
-    ch.is_ascii_alphanumeric() || ch == '_' || !ch.is_ascii()
 }
 
 /// Symbolic operators, longest first so that `**=` wins over `**` and `*`.
@@ -792,3 +793,40 @@ static OPERATORS: &[TokenKind] = &{
         TokenKind::CODE_SIGIL,
     ]
 };
+
+/// [`OPERATORS`], grouped by the byte an operator begins with.
+///
+/// The order inside a group is the order written above — longest first, so
+/// `**=` wins over `**` — because the grouping pass is stable.
+struct OperatorTable {
+    spellings: Vec<(TokenKind, &'static str)>,
+    /// Where each first byte's group begins and ends in `spellings`.
+    groups: [(u8, u8); 256],
+}
+
+impl OperatorTable {
+    fn beginning_with(&self, byte: u8) -> &[(TokenKind, &'static str)] {
+        let (from, to) = self.groups[byte as usize];
+        &self.spellings[from as usize..to as usize]
+    }
+}
+
+fn operator_table() -> &'static OperatorTable {
+    static TABLE: std::sync::OnceLock<OperatorTable> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let mut spellings = Vec::with_capacity(OPERATORS.len());
+        let mut groups = [(0u8, 0u8); 256];
+        for byte in 0..=u8::MAX {
+            let from = u8::try_from(spellings.len()).expect("the table is far short of 255");
+            for kind in OPERATORS {
+                let text = kind.text().expect("operator table holds spelled kinds");
+                if text.as_bytes()[0] == byte {
+                    spellings.push((*kind, text));
+                }
+            }
+            let to = u8::try_from(spellings.len()).expect("the table is far short of 255");
+            groups[byte as usize] = (from, to);
+        }
+        OperatorTable { spellings, groups }
+    })
+}
