@@ -1407,6 +1407,7 @@ fn check_paths(
     let sources = checked.iter().flatten().count();
     let skipped = checked.len() - sources;
     let mut offenders: Vec<(&str, Vec<&'static str>)> = Vec::new();
+    let mut unanswered_for: Vec<(&str, Vec<&'static str>)> = Vec::new();
     // Three columns per invariant, not one count: an invariant that was never
     // answered for a file — it did not parse, perl would not load it — is not
     // one that passed, and a report that says so is a corpus called clean when
@@ -1466,6 +1467,24 @@ fn check_paths(
         // information than one copy and a count.
         for unanswered in outcome.unanswered.iter().filter(|it| !it.detail.is_empty()) {
             messages.record(unanswered, label);
+        }
+
+        // The messages above are grouped by what was said, which answers why a
+        // run went unanswered and not which files it went unanswered for. That
+        // is the same question the violation list below answers, and it is
+        // asked of the unanswered too — but not of a file that is about to be
+        // named as violating something, because its questions went unanswered
+        // *because* of that, and the same list twice says nothing the second
+        // time.
+        if outcome.violations.is_empty() && !outcome.unanswered.is_empty() {
+            let mut why: Vec<&'static str> = outcome
+                .unanswered
+                .iter()
+                .map(|unanswered| unanswered.why)
+                .collect();
+            why.sort_unstable();
+            why.dedup();
+            unanswered_for.push((label.as_str(), why));
         }
 
         if outcome.violations.is_empty() {
@@ -1554,6 +1573,32 @@ fn check_paths(
         writeln!(out, "---- files with a violation").into_diagnostic()?;
         for (label, slugs) in &offenders {
             writeln!(out, "     {label}\t{}", slugs.join(" ")).into_diagnostic()?;
+        }
+    }
+
+    // And which files nobody answered for. A corpus checked outside the tree it
+    // was installed in is mostly this, so the list is cut where the violations
+    // are not: a few hundred names is not a list anybody reads, and the count
+    // above already said how many there were.
+    if !unanswered_for.is_empty() && sources > 1 {
+        const NAMED: usize = 20;
+        let named = if verbose {
+            unanswered_for.len()
+        } else {
+            NAMED.min(unanswered_for.len())
+        };
+        writeln!(out).into_diagnostic()?;
+        writeln!(out, "---- files with an unanswered check").into_diagnostic()?;
+        for (label, why) in &unanswered_for[..named] {
+            writeln!(out, "     {label}\t{}", why.join(", ")).into_diagnostic()?;
+        }
+        if named < unanswered_for.len() {
+            writeln!(
+                out,
+                "     … and {} more file(s); --verbose for all of them",
+                unanswered_for.len() - named
+            )
+            .into_diagnostic()?;
         }
     }
 
