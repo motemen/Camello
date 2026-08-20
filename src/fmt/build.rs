@@ -625,7 +625,12 @@ impl<'a> Builder<'a> {
         {
             return false;
         }
-        // `$h->{key}`, `$h{a}{b}` — a subscript's braces hug their contents.
+        // A subscript hugs what it applies to — `$h{a}{b}` — and its brackets
+        // hug a name and open up around anything else: `$h->{key}`, `$h->{$k}`,
+        // but `$h->{ $o->meth }` and `@x{ 'a', 'b' }` (docs/formatting.md
+        // SPACING-7). The same reading as a dereference's braces below, and as a
+        // literal's: a bracket closes up around a name because the two read as
+        // one word, and a subscript holding an expression is not one word.
         if matches!(
             parent,
             Some(
@@ -634,10 +639,32 @@ impl<'a> Builder<'a> {
                     | NodeKind::POSTFIX_ARRAY_SLICE_EXPR
                     | NodeKind::POSTFIX_HASH_SLICE_EXPR
             )
-        ) && (matches!(after, Some(T!["{"] | T!["}"] | T!["["] | T!["]"]))
-            || matches!(before, Some(T!["{"] | T!["["])))
-        {
-            return false;
+        ) {
+            if matches!(after, Some(T!["{"] | T!["["])) {
+                return false;
+            }
+            if matches!(after, Some(T!["}"] | T!["]"])) || matches!(before, Some(T!["{"] | T!["["]))
+            {
+                let subscript = previous
+                    .parent()
+                    .or_else(|| next.parent())
+                    .and_then(|node| {
+                        node.children()
+                            .find(|child| child.node_kind() == NodeKind::SUBSCRIPT)
+                    });
+                // No `SUBSCRIPT` node means empty brackets, which stay empty.
+                let Some(subscript) = subscript else {
+                    return false;
+                };
+                return match self.options.delimiter_spacing {
+                    DelimiterSpacing::Tight => false,
+                    DelimiterSpacing::Standard => {
+                        Self::item_count(&subscript) >= 2
+                            || sole_item(&subscript).is_some_and(|item| !is_simple_term(&item))
+                    }
+                    DelimiterSpacing::Loose => true,
+                };
+            }
         }
         // A dereference's braces hug a name and open up around anything else:
         // `@{$x}`, but `@{ $ref->{bar} }` (SPACING-7). The sigil rule above has
@@ -1364,11 +1391,23 @@ fn is_simple_term(node: &SyntaxNode) -> bool {
         // different variable, which no token-stream comparison can see.
         | NodeKind::SUB_NAME => true,
         // `-1` is a number with a sign on it and `\$x` a variable with a
-        // backslash: what the brackets close up around is the operand.
-        NodeKind::PREFIX_EXPR | NodeKind::REFERENCE_EXPR => node
+        // backslash: what the brackets close up around is the operand. `$$sv`
+        // and `@$pair` are the same shape, a variable with a sigil in front of
+        // it.
+        NodeKind::PREFIX_EXPR | NodeKind::REFERENCE_EXPR | NodeKind::DEREF_EXPR => node
             .children()
             .next()
             .is_some_and(|inner| is_simple_term(&inner)),
+        // A bareword standing alone is a name — `$time->[c_sec]`, `$h->{-key}`.
+        // With arguments beside it, it is a call, and a call has structure of
+        // its own. A `qw(a b)` is not one of these: it is one lexical run
+        // (the lexer contract) but it spells a list, and a list opens up.
+        NodeKind::LIST_CALL_EXPR => {
+            let mut children = node.children();
+            let name = children.next();
+            children.next().is_none()
+                && name.is_some_and(|child| child.node_kind() == NodeKind::SUB_NAME)
+        }
         _ => false,
     }
 }

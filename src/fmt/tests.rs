@@ -286,12 +286,14 @@ fn caret_variables_are_never_split() {
 #[test]
 fn postfix_dereference_binds_tight() {
     // `->@*` is an arrow with its target glued on, so nothing goes between the
-    // subject and it. Postfix slices are subscripts and hug their contents.
+    // subject and it. A postfix slice is a subscript and takes a subscript's
+    // spacing: it holds a list, so it opens up (SPACING-7), the same as the
+    // `@x[ 0, 1 ]` it is another spelling of.
     assert_formats_to("$r->@*;\n", "$r->@*;\n");
     assert_formats_to("$r->%*;\n", "$r->%*;\n");
     assert_formats_to("$r->$#*;\n", "$r->$#*;\n");
-    assert_formats_to("$r->@[0,1];\n", "$r->@[0, 1];\n");
-    assert_formats_to("$r->%{a,b};\n", "$r->%{a, b};\n");
+    assert_formats_to("$r->@[0,1];\n", "$r->@[ 0, 1 ];\n");
+    assert_formats_to("$r->%{a,b};\n", "$r->%{ a, b };\n");
 }
 
 // ===== Comments (docs/formatting.md COMMENT) =====
