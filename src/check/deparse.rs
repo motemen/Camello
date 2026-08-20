@@ -8,7 +8,8 @@
 //!
 //! This is the only check that runs another program, and `perl -c` executes
 //! `BEGIN` blocks — which is to say it runs arbitrary code out of the file being
-//! checked. That is why it is opt-in and always will be.
+//! checked. That is why it is `dev ask-perl`, a command of its own: opting in is
+//! the command typed, not a flag that some other run could carry along.
 //!
 //! The normalisation below is `scripts/corpus-check`'s, in Rust: B::Deparse
 //! emits a few kinds of line from a hash walk, so two deparses of the *same*

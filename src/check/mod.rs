@@ -64,8 +64,15 @@ pub enum Invariant {
 }
 
 impl Invariant {
-    /// Every invariant, in the order they are reported: by group, and within a
-    /// group, prerequisites first.
+    /// The invariants `dev check` asks: everything camello can assert about
+    /// itself, in the order they are reported — by group, and within a group,
+    /// prerequisites first.
+    ///
+    /// [`Invariant::Deparse`] is not among them. It needs a perl, and running a
+    /// perl over a file runs that file's `BEGIN` blocks, which is not something
+    /// a checker may do to somebody's corpus without being told to. Being told
+    /// to is `dev ask-perl`: a command to type on purpose, rather than a flag on
+    /// this one that a `--only` could reach by name.
     pub const ALL: &'static [Invariant] = &[
         Invariant::CleanParse,
         Invariant::NormalForm,
@@ -74,28 +81,6 @@ impl Invariant {
         Invariant::VerbatimPreservation,
         Invariant::Idempotency,
     ];
-
-    /// The invariants that are not asked unless they are asked for by name.
-    ///
-    /// Everything in [`Invariant::ALL`] is a question camello can answer about
-    /// itself. These need something else — here, a perl — and running a perl
-    /// over a file means running the file's `BEGIN` blocks, which is not
-    /// something a checker may do to somebody's corpus without being told to.
-    pub const OPT_IN: &'static [Invariant] = &[Invariant::Deparse];
-
-    /// Every invariant there is, asked-by-default or not.
-    pub fn every() -> impl Iterator<Item = Invariant> {
-        Invariant::ALL
-            .iter()
-            .chain(Invariant::OPT_IN.iter())
-            .copied()
-    }
-
-    /// Does asking this invariant run perl?
-    #[must_use]
-    pub fn needs_perl(self) -> bool {
-        matches!(self, Invariant::Deparse)
-    }
 
     /// Whose defect a violation of this invariant is.
     #[must_use]
@@ -193,8 +178,9 @@ impl Invariant {
                  outside camello, and it is the only one that can see what a token stream \
                  cannot — ${^MATCH} against ${^ MATCH} is one token sequence and two \
                  different variables, and a comment that migrated into a replacement string \
-                 is code that still lexes. Opt-in with --deparse, and note what that opts \
-                 into: `perl -c` runs the BEGIN blocks of every file it is pointed at."
+                 is code that still lexes. Asked by `dev ask-perl` and by nothing else, and \
+                 note what asking does: `perl -c` runs the BEGIN blocks of every file it is \
+                 pointed at."
             }
         }
     }
@@ -258,8 +244,8 @@ pub fn check_only(source: &str, wanted: &[Invariant]) -> Vec<Violation> {
 /// the file, formatted it twice, re-lexed both, and then threw the other answers
 /// away — asking one question of a corpus cost several times what it should.
 ///
-/// Naming an invariant from [`Invariant::OPT_IN`] here is what opting in means:
-/// nothing reaches for a perl unless the caller put one of those in `wanted`.
+/// Naming [`Invariant::Deparse`] here is what opting in means: nothing reaches
+/// for a perl unless the caller put it in `wanted`.
 #[must_use]
 pub fn check_report(source: &str, wanted: &[Invariant]) -> Outcome {
     let asked = |invariant: Invariant| wanted.contains(&invariant);

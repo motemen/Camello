@@ -200,14 +200,6 @@ pub enum DevCommands {
         #[arg(long, help = "List the invariants and exit")]
         list_invariants: bool,
 
-        /// Also ask perl whether the output is the same program
-        #[arg(
-            long,
-            help = "Also ask perl whether the output is the same program (runs perl -c and \
-                    B::Deparse on every file, which executes its BEGIN blocks)"
-        )]
-        deparse: bool,
-
         /// One line per violation, without the evidence
         #[arg(short, long, help = "One line per violation, without the evidence")]
         quiet: bool,
@@ -218,6 +210,58 @@ pub enum DevCommands {
             long,
             conflicts_with = "quiet",
             help = "Every message a check could not be answered with, and every file it \
+                    came from"
+        )]
+        verbose: bool,
+
+        /// File extensions to walk into when given a directory
+        #[arg(
+            long,
+            value_name = "EXT,...",
+            default_value = "pl,pm,t,psgi",
+            help = "Extensions to consider when walking a directory"
+        )]
+        extensions: String,
+
+        /// Input file encoding (e.g., utf-8, euc-jp, shift_jis)
+        #[arg(long, help = "Input file encoding (default: utf-8)")]
+        encoding: Option<String>,
+    },
+
+    /// Ask perl whether the formatter's output is the same program
+    ///
+    /// The invariants under `check` are what camello can assert about itself,
+    /// which is also the limit of what they can see: a token stream says the
+    /// same tokens came out in the same order, not that a comment stayed out of
+    /// a replacement string. perl can say it, by reading both programs back.
+    ///
+    /// Its own command rather than a flag on `check`, because asking runs perl
+    /// over the file, and `perl -c` runs that file's BEGIN blocks — arbitrary
+    /// code out of somebody's corpus. That is a thing to type on purpose.
+    AskPerl {
+        /// Files or directories to ask about (reads from stdin if not provided)
+        #[arg(help = "Files or directories to ask about (recursive; stdin if omitted)")]
+        paths: Vec<PathBuf>,
+
+        /// How many files to ask about at once
+        #[arg(
+            short = 'j',
+            long,
+            value_name = "N",
+            help = "How many files to ask about at once (default: one per core)"
+        )]
+        jobs: Option<usize>,
+
+        /// One line per violation, without the evidence
+        #[arg(short, long, help = "One line per violation, without the evidence")]
+        quiet: bool,
+
+        /// Every unanswered file and every message, not a few of each
+        #[arg(
+            short,
+            long,
+            conflicts_with = "quiet",
+            help = "Every message a file could not be answered with, and every file it \
                     came from"
         )]
         verbose: bool,
@@ -432,18 +476,33 @@ pub fn run() -> Result<()> {
                 jobs,
                 only,
                 list_invariants,
-                deparse,
                 quiet,
                 verbose,
                 extensions,
                 encoding,
             } => {
+                if list_invariants {
+                    return list_invariants_and_exit();
+                }
+                let wanted = wanted_invariants(only.as_deref())?;
+                return check_paths(paths, jobs, &wanted, quiet, verbose, &extensions, encoding);
+            }
+            DevCommands::AskPerl {
+                paths,
+                jobs,
+                quiet,
+                verbose,
+                extensions,
+                encoding,
+            } => {
+                // Better here than 4000 files later, one failed spawn at a time.
+                if !crate::check::deparse::available() {
+                    return Err(miette::miette!("no working perl on PATH"));
+                }
                 return check_paths(
                     paths,
                     jobs,
-                    only.as_deref(),
-                    list_invariants,
-                    deparse,
+                    &[crate::check::Invariant::Deparse],
                     quiet,
                     verbose,
                     &extensions,
@@ -842,7 +901,7 @@ impl Messages {
 
 /// A line on stderr saying how far along a run over many files is.
 ///
-/// Checking an installed CPAN tree is minutes of silence, and with `--deparse`
+/// Checking an installed CPAN tree is minutes of silence, and under `ask-perl`
 /// it is minutes of silence with a perl behind it — long enough that the honest
 /// question is whether the thing is working at all. It goes to stderr because
 /// stdout is the report, which is read by `scripts/corpus-check` among others,
@@ -1004,70 +1063,79 @@ fn write_violation(
 /// `camello dev check`: run the invariants over files, directories, or stdin.
 ///
 /// Exits non-zero when anything is violated, so it can gate a corpus run.
+fn list_invariants_and_exit() -> Result<()> {
+    use crate::check::Invariant;
+
+    let mut heading = None;
+    for (index, invariant) in Invariant::ALL.iter().enumerate() {
+        if index > 0 {
+            println!();
+        }
+        if heading != Some(invariant.subject()) {
+            heading = Some(invariant.subject());
+            println!("---- {}", invariant.subject().heading());
+            println!();
+        }
+        println!("{:<17}{}", invariant.slug(), invariant.name());
+        for line in wrapped(invariant.description(), 72) {
+            println!("    {line}");
+        }
+    }
+    // The one question that is not asked here, said once so that a reader
+    // looking for it in this list finds where it went instead of concluding
+    // that camello does not ask it.
+    println!();
+    println!("---- asked by a command of its own, because asking runs perl");
+    println!();
+    println!(
+        "{:<17}{}   (camello dev ask-perl)",
+        Invariant::Deparse.slug(),
+        Invariant::Deparse.name()
+    );
+    for line in wrapped(Invariant::Deparse.description(), 72) {
+        println!("    {line}");
+    }
+    Ok(())
+}
+
+/// Which invariants `--only` named, or all the ones `check` asks.
+fn wanted_invariants(only: Option<&str>) -> Result<Vec<crate::check::Invariant>> {
+    use crate::check::Invariant;
+
+    let Some(only) = only else {
+        return Ok(Invariant::ALL.to_vec());
+    };
+    let mut wanted = Vec::new();
+    for slug in only.split(',').map(str::trim) {
+        // It used to be selectable here, and selecting it was how one opted in
+        // to running a perl. Now that opting in is the command, say so rather
+        // than call a name this command knows unknown.
+        if slug == Invariant::Deparse.slug() {
+            return Err(miette::miette!(
+                "{slug} is not asked here; `camello dev ask-perl` is the command that asks it"
+            ));
+        }
+        let Some(invariant) = Invariant::ALL.iter().find(|kind| kind.slug() == slug) else {
+            return Err(miette::miette!(
+                "unknown invariant {slug:?}; --list-invariants prints them"
+            ));
+        };
+        wanted.push(*invariant);
+    }
+    Ok(wanted)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn check_paths(
     paths: Vec<PathBuf>,
     jobs: Option<usize>,
-    only: Option<&str>,
-    list_invariants: bool,
-    deparse: bool,
+    wanted: &[crate::check::Invariant],
     quiet: bool,
     verbose: bool,
     extensions: &str,
     encoding: Option<String>,
 ) -> Result<()> {
     use crate::check::{check_report, Invariant};
-
-    if list_invariants {
-        let mut heading = None;
-        for (index, invariant) in Invariant::every().enumerate() {
-            if index > 0 {
-                println!();
-            }
-            if heading != Some(invariant.subject()) {
-                heading = Some(invariant.subject());
-                println!("---- {}", invariant.subject().heading());
-                println!();
-            }
-            let opt_in = if invariant.needs_perl() {
-                "   (opt-in: --deparse)"
-            } else {
-                ""
-            };
-            println!("{:<17}{}{opt_in}", invariant.slug(), invariant.name());
-            for line in wrapped(invariant.description(), 72) {
-                println!("    {line}");
-            }
-        }
-        return Ok(());
-    }
-
-    let mut wanted: Vec<Invariant> = Invariant::ALL.to_vec();
-    if let Some(only) = only {
-        wanted.clear();
-        for slug in only.split(',').map(str::trim) {
-            let Some(invariant) = Invariant::every().find(|kind| kind.slug() == slug) else {
-                return Err(miette::miette!(
-                    "unknown invariant {slug:?}; --list-invariants prints them"
-                ));
-            };
-            wanted.push(invariant);
-        }
-    }
-    // Naming it under `--only` is opting in as much as the flag is; the flag is
-    // for the common case of wanting everything plus the oracle.
-    if deparse && !wanted.contains(&Invariant::Deparse) {
-        wanted.push(Invariant::Deparse);
-    }
-    // Better here than 4000 files later, one failed spawn at a time.
-    if wanted.iter().any(|invariant| invariant.needs_perl()) && !crate::check::deparse::available()
-    {
-        return Err(miette::miette!(
-            "no working perl on PATH, and {} needs one",
-            Invariant::Deparse.slug()
-        ));
-    }
-    let wanted = wanted.as_slice();
 
     let extensions: Vec<&str> = extensions.split(',').map(str::trim).collect();
     let encoding = get_encoding(encoding.as_ref())?;
@@ -1144,7 +1212,15 @@ fn check_paths(
     // answered for a file — it did not parse, perl would not load it — is not
     // one that passed, and a report that says so is a corpus called clean when
     // most of it was never looked at.
-    let mut tally: Vec<Tally> = Invariant::every()
+    let mut tally: Vec<Tally> = Invariant::ALL
+        .iter()
+        .copied()
+        .chain(
+            wanted
+                .iter()
+                .copied()
+                .filter(|kind| !Invariant::ALL.contains(kind)),
+        )
         .map(|kind| Tally {
             invariant: kind,
             ok: 0,
