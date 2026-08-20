@@ -978,6 +978,29 @@ impl Tally {
     }
 }
 
+/// One violation, in the shape the report gives it: the line that names it, and
+/// the evidence under it unless the reader asked for less.
+fn write_violation(
+    out: &mut impl Write,
+    label: &str,
+    violation: &crate::check::Violation,
+    quiet: bool,
+) -> Result<()> {
+    writeln!(
+        out,
+        "{label}\t{}\t{}",
+        violation.invariant.slug(),
+        violation.summary
+    )
+    .into_diagnostic()?;
+    if !quiet {
+        for line in violation.detail.lines() {
+            writeln!(out, "    {line}").into_diagnostic()?;
+        }
+    }
+    Ok(())
+}
+
 /// `camello dev check`: run the invariants over files, directories, or stdin.
 ///
 /// Exits non-zero when anything is violated, so it can gate a corpus run.
@@ -1058,6 +1081,12 @@ fn check_paths(
     // way `format` does. `None` is a file this command has nothing to say about
     // — unreadable, or not decodable with this encoding, neither of which is a
     // violation.
+    // A run over a tree takes long enough that a violation is worth having when
+    // it is found rather than when the last file is done, and `--verbose` is the
+    // reader asking for everything anyway. Not for stdin: there is one file, and
+    // the report is already at the end of it.
+    let as_found = verbose && !paths.is_empty();
+
     let checked: Vec<Option<(String, crate::check::Outcome)>> = if paths.is_empty() {
         let mut bytes = Vec::new();
         io::stdin().read_to_end(&mut bytes).into_diagnostic()?;
@@ -1083,11 +1112,23 @@ fn check_paths(
                 }
                 Some((path.display().to_string(), check_report(&decoded, wanted)))
             })();
-            progress.item(
-                checked
-                    .as_ref()
-                    .is_some_and(|(_, outcome)| !outcome.violations.is_empty()),
-            );
+            let violated = checked
+                .as_ref()
+                .is_some_and(|(_, outcome)| !outcome.violations.is_empty());
+            // In whatever order the workers arrive in, which is the price of not
+            // waiting for the ones still running. The tally below is still in
+            // the order the files were asked about.
+            if as_found && violated {
+                if let Some((label, outcome)) = &checked {
+                    progress.clear();
+                    let stdout = io::stdout();
+                    let mut out = stdout.lock();
+                    for violation in &outcome.violations {
+                        let _ = write_violation(&mut out, label, violation, quiet);
+                    }
+                }
+            }
+            progress.item(violated);
             checked
         });
         // Before a single line of the report: the progress line is written
@@ -1165,17 +1206,8 @@ fn check_paths(
         ));
         for violation in &outcome.violations {
             reported = true;
-            writeln!(
-                out,
-                "{label}\t{}\t{}",
-                violation.invariant.slug(),
-                violation.summary
-            )
-            .into_diagnostic()?;
-            if !quiet {
-                for line in violation.detail.lines() {
-                    writeln!(out, "    {line}").into_diagnostic()?;
-                }
+            if !as_found {
+                write_violation(&mut out, label, violation, quiet)?;
             }
         }
     }
