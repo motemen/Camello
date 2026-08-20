@@ -20,6 +20,7 @@ pub mod deparse;
 
 use crate::lang::{TokenExt, TokenKind};
 use crate::{format_perl, parse_perl};
+use std::ops::Range;
 
 /// Whose defect a violation is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -681,16 +682,108 @@ impl<'a> Report<'a> {
 /// Asked of the terminal once: the answer holds for the run, and a corpus with
 /// a thousand divergences in it would otherwise ask a thousand times.
 /// `supports-color` reads `NO_COLOR` and `CLICOLOR_FORCE` on the way past.
-fn palette() -> (&'static str, &'static str, &'static str) {
+fn palette() -> Paint {
     use std::sync::OnceLock;
 
     static ON: OnceLock<bool> = OnceLock::new();
-    let on = *ON.get_or_init(|| supports_color::on(supports_color::Stream::Stdout).is_some());
-    if on {
-        ("\x1b[31m", "\x1b[32m", "\x1b[0m")
+    if *ON.get_or_init(|| supports_color::on(supports_color::Stream::Stdout).is_some()) {
+        Paint {
+            read: "\x1b[31m",
+            back: "\x1b[32m",
+            // Reversed rather than recoloured: the line is already carrying the
+            // colour that says which side it is, and this has to show through
+            // it without arguing with it.
+            changed: "\x1b[7m",
+            same: "\x1b[27m",
+            off: "\x1b[0m",
+        }
     } else {
-        ("", "", "")
+        Paint {
+            read: "",
+            back: "",
+            changed: "",
+            same: "",
+            off: "",
+        }
     }
+}
+
+/// The escapes a divergence is painted with, all empty when nothing is
+/// listening for them.
+struct Paint {
+    /// The side that was read.
+    read: &'static str,
+    /// The side that came back.
+    back: &'static str,
+    /// Into the stretch the two sides do not share.
+    changed: &'static str,
+    /// Out of it, back to whatever the line is wearing.
+    same: &'static str,
+    off: &'static str,
+}
+
+/// The stretch of each line that the other does not share.
+///
+/// What is left after the common prefix and the common suffix, widened to whole
+/// words: `foo_bar` against `foo_baz` differs in one letter, and pointing at
+/// that letter is worse than pointing at the name it is in.
+fn diverging_ranges(left: &str, right: &str) -> (Range<usize>, Range<usize>) {
+    let word = |character: char| character.is_alphanumeric() || character == '_';
+    let inside_a_word = |text: &str, at: usize| {
+        text[..at].chars().next_back().is_some_and(word)
+            && text[at..].chars().next().is_some_and(word)
+    };
+
+    let mut prefix = left
+        .bytes()
+        .zip(right.bytes())
+        .take_while(|(left, right)| left == right)
+        .count();
+    // The two agree up to here, so a boundary in one is a boundary in the other.
+    while prefix > 0
+        && (!left.is_char_boundary(prefix)
+            || inside_a_word(left, prefix)
+            || inside_a_word(right, prefix))
+    {
+        prefix -= 1;
+    }
+
+    let mut suffix = left[prefix..]
+        .bytes()
+        .rev()
+        .zip(right[prefix..].bytes().rev())
+        .take_while(|(left, right)| left == right)
+        .count();
+    while suffix > 0 && {
+        let (left_at, right_at) = (left.len() - suffix, right.len() - suffix);
+        !left.is_char_boundary(left_at)
+            || !right.is_char_boundary(right_at)
+            || inside_a_word(left, left_at)
+            || inside_a_word(right, right_at)
+    } {
+        suffix -= 1;
+    }
+
+    (
+        prefix..left.len().saturating_sub(suffix).max(prefix),
+        prefix..right.len().saturating_sub(suffix).max(prefix),
+    )
+}
+
+/// `text` as `{:?}` renders it, without the quotes around it.
+///
+/// [`str::escape_debug`] is not that: it escapes `'` as well, which turns every
+/// Perl string in a report into one with backslashes that are not in the file.
+fn escaped(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for character in text.chars() {
+        match character {
+            '\'' => out.push('\''),
+            '"' => out.push_str("\\\""),
+            _ => out.extend(character.escape_debug()),
+        }
+    }
+    out
 }
 
 fn describe_divergence<T: PartialEq>(
@@ -709,25 +802,24 @@ fn describe_divergence<T: PartialEq>(
     // The two items that disagree may be long and disagree late — two deparsed
     // lines differing in a line number four hundred bytes in. A window taken
     // from the front of those shows the reader four hundred bytes of the part
-    // that matched. Both sides are cut at the same place, so what is on the
-    // screen is the same stretch of two texts.
-    let focus = match (
+    // that matched, so each side is shown around the stretch that differs, and
+    // that stretch is picked out inside it.
+    let (before_span, after_span) = match (
         before.get(position).map(&render_item),
         after.get(position).map(&render_item),
     ) {
-        (Some((_, left)), Some((_, right))) => left
-            .bytes()
-            .zip(right.bytes())
-            .position(|(left, right)| left != right)
-            .unwrap_or_else(|| left.len().min(right.len())),
-        _ => 0,
+        (Some((_, left)), Some((_, right))) => {
+            let (left, right) = diverging_ranges(&left, &right);
+            (Some(left), Some(right))
+        }
+        _ => (None, None),
     };
 
-    let (read, back, off) = palette();
+    let paint = palette();
     let context = position.saturating_sub(3);
     // Only the line they disagree on is painted: the three above it are there
     // to be read past, and a screen of colour points at nothing.
-    let render = |stream: &[T], paint: &str| {
+    let render = |stream: &[T], side: &str, span: Option<Range<usize>>| {
         stream
             .iter()
             .enumerate()
@@ -738,17 +830,17 @@ fn describe_divergence<T: PartialEq>(
                 let (label, text) = render_item(item);
                 // Context items are cut from the front: they agree, so there is
                 // nothing in them to point at.
-                let at = if index == position { focus } else { 0 };
+                let here = (index == position).then(|| span.clone()).flatten();
                 let space = if label.is_empty() { "" } else { " " };
                 let (open, close) = if index == position {
-                    (paint, off)
+                    (side, paint.off)
                 } else {
                     ("", "")
                 };
                 format!(
                     "{open}{marker} [{}] {label}{space}{}{close}",
                     index + base,
-                    window_on(&text, at)
+                    window_on(&text, here, &paint)
                 )
             })
             .collect::<Vec<_>>()
@@ -756,45 +848,89 @@ fn describe_divergence<T: PartialEq>(
     };
 
     format!(
-        "first divergence at {unit} #{}\n{read}--- {} ---{off}\n{}\n{back}--- {} ---{off}\n{}",
+        "first divergence at {unit} #{}\n{}--- {} ---{}\n{}\n{}--- {} ---{}\n{}",
         position + base,
+        paint.read,
         sides.0,
-        render(before, read),
+        paint.off,
+        render(before, paint.read, before_span),
+        paint.back,
         sides.1,
-        render(after, back)
+        paint.off,
+        render(after, paint.back, after_span)
     )
 }
 
-/// `text`, quoted, as [`ELIDE_AT`] bytes of it around `at`.
+/// `text`, quoted, as [`ELIDE_AT`] bytes of it around `span`, with `span`
+/// itself picked out of what is shown.
 ///
 /// The window sits a third of the way in rather than in the middle: the place
 /// two texts stop agreeing is where reading starts, so most of the room goes to
 /// what follows it. Where anything was left out the report says which bytes
 /// these are, because a reader who wants the rest has the file.
-fn window_on(text: &str, at: usize) -> String {
+fn window_on(text: &str, span: Option<Range<usize>>, paint: &Paint) -> String {
+    let at = span.as_ref().map_or(0, |span| span.start);
+    let (start, end) = if text.len() <= ELIDE_AT {
+        (0, text.len())
+    } else {
+        let mut start = at.saturating_sub(ELIDE_AT / 3).min(text.len() - ELIDE_AT);
+        while !text.is_char_boundary(start) {
+            start -= 1;
+        }
+        let mut end = (start + ELIDE_AT).min(text.len());
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        (start, end)
+    };
+
+    let window = &text[start..end];
+    // The span is in the whole text's bytes; what is left of it after the
+    // window took its bite is what there is to point at.
+    let body = match span.filter(|span| span.start < end && span.end > start) {
+        Some(span) => {
+            let from = span.start.max(start) - start;
+            let to = span.end.min(end) - start;
+            format!(
+                "{}{}{}{}{}",
+                escaped(&window[..from]),
+                paint.changed,
+                escaped(&window[from..to]),
+                paint.same,
+                escaped(&window[to..])
+            )
+        }
+        None => escaped(window),
+    };
+
     if text.len() <= ELIDE_AT {
-        return format!("{text:?}");
+        format!("\"{body}\"")
+    } else {
+        format!("\"{body}\" (bytes {start}..{end} of {})", text.len())
     }
-
-    let mut start = at.saturating_sub(ELIDE_AT / 3).min(text.len() - ELIDE_AT);
-    while !text.is_char_boundary(start) {
-        start -= 1;
-    }
-    let mut end = (start + ELIDE_AT).min(text.len());
-    while !text.is_char_boundary(end) {
-        end -= 1;
-    }
-
-    format!(
-        "{:?} (bytes {start}..{end} of {})",
-        &text[start..end],
-        text.len()
-    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::{check_only, describe_divergence, elide, idempotency, Invariant, Report, ELIDE_AT};
+
+    /// What a report says, with any colour taken back out.
+    ///
+    /// These tests are about what is in the window; whether the terminal the
+    /// run happened on wanted escapes in it is none of their business, and
+    /// `CLICOLOR_FORCE` in an environment should not fail a build.
+    fn plain(text: &str) -> String {
+        let mut out = String::new();
+        let mut rest = text;
+        while let Some(at) = rest.find('\x1b') {
+            out.push_str(&rest[..at]);
+            rest = &rest[at..];
+            let end = rest.find('m').map_or(rest.len(), |end| end + 1);
+            rest = &rest[end..];
+        }
+        out.push_str(rest);
+        out
+    }
 
     #[test]
     fn a_parse_error_is_reported_even_when_another_invariant_was_selected() {
@@ -831,9 +967,12 @@ mod tests {
         let mut after = before.clone();
         after.remove(200);
 
-        let detail = describe_divergence(&before, &after, &Report::stream("comment"), |text| {
-            (String::new(), text.clone())
-        });
+        let detail = plain(&describe_divergence(
+            &before,
+            &after,
+            &Report::stream("comment"),
+            |text| (String::new(), text.clone()),
+        ));
 
         assert!(detail.contains("first divergence at comment #200"));
         assert!(detail.contains("\"# 200\""));
@@ -856,9 +995,12 @@ mod tests {
             "y".repeat(400)
         )];
 
-        let detail = describe_divergence(&before, &after, &Report::stream("line"), |text| {
-            (String::new(), text.clone())
-        });
+        let detail = plain(&describe_divergence(
+            &before,
+            &after,
+            &Report::stream("line"),
+            |text| (String::new(), text.clone()),
+        ));
 
         assert!(detail.contains("NEEDLE-BEFORE"), "{detail}");
         assert!(detail.contains("NEEDLE-AFTER"), "{detail}");
