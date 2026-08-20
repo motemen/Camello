@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 #
-# Build a Linux x86_64 binary from this machine, with nothing beyond rustup.
+# Build a Linux binary from this machine, with nothing beyond rustup.
 #
-#   scripts/build-linux                 target/x86_64-unknown-linux-musl/release/camello
+#   scripts/build-linux                      x86_64, the default
+#   scripts/build-linux --arch aarch64       arm64
 #   scripts/build-linux --features mimalloc
+#
+# The binary lands in target/<triple>/release/camello.
 #
 # ── Why this works ────────────────────────────────────────────────────────────
 #
@@ -15,21 +18,39 @@
 # name it is invoked by, and as `ld.lld` it speaks GNU ld — hence the symlink.
 #
 # The result is musl and static-pie: no interpreter, no libc to find at run
-# time, and so no glibc version to be too old for. It runs on any x86_64 Linux.
+# time, and so no glibc version to be too old for. It runs on any Linux of that
+# architecture.
 #
 # Passing --features mimalloc gives that up: the allocator is C, and building it
 # for Linux from here needs a cross compiler this script does not set up.
 #
 # ── The one requirement ───────────────────────────────────────────────────────
 #
-#   rustup target add x86_64-unknown-linux-musl
+#   rustup target add x86_64-unknown-linux-musl        (or the aarch64 one)
 #
 set -euo pipefail
 
 base_dir=$(cd "$(dirname "$0")/.." && pwd)
 cd "$base_dir"
 
-target=x86_64-unknown-linux-musl
+# --arch is read here rather than passed through; everything after it is cargo's.
+arch=x86_64
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --arch) arch=${2:-}; shift 2 ;;
+        --arch=*) arch=${1#--arch=}; shift ;;
+        *) break ;;
+    esac
+done
+
+case "$arch" in
+    x86_64 | amd64) target=x86_64-unknown-linux-musl ;;
+    aarch64 | arm64) target=aarch64-unknown-linux-musl ;;
+    *)
+        echo "scripts/build-linux: unknown --arch $arch; x86_64 or aarch64" >&2
+        exit 1
+        ;;
+esac
 
 if ! rustup target list --installed | grep -qx "$target"; then
     echo "scripts/build-linux: the target is not installed. Run:" >&2
