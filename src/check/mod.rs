@@ -675,6 +675,24 @@ impl<'a> Report<'a> {
 /// always printed, and its text, which is not — a deparsed line or a `__DATA__`
 /// token is thousands of characters of which the report can carry a hundred and
 /// twenty, and it is this function that knows which hundred and twenty.
+/// Red for the side that was read, green for the side that came back, the way
+/// a diff is read. Empty where nothing that reads escapes is listening.
+///
+/// Asked of the terminal once: the answer holds for the run, and a corpus with
+/// a thousand divergences in it would otherwise ask a thousand times.
+/// `supports-color` reads `NO_COLOR` and `CLICOLOR_FORCE` on the way past.
+fn palette() -> (&'static str, &'static str, &'static str) {
+    use std::sync::OnceLock;
+
+    static ON: OnceLock<bool> = OnceLock::new();
+    let on = *ON.get_or_init(|| supports_color::on(supports_color::Stream::Stdout).is_some());
+    if on {
+        ("\x1b[31m", "\x1b[32m", "\x1b[0m")
+    } else {
+        ("", "", "")
+    }
+}
+
 fn describe_divergence<T: PartialEq>(
     before: &[T],
     after: &[T],
@@ -705,8 +723,11 @@ fn describe_divergence<T: PartialEq>(
         _ => 0,
     };
 
+    let (read, back, off) = palette();
     let context = position.saturating_sub(3);
-    let render = |stream: &[T]| {
+    // Only the line they disagree on is painted: the three above it are there
+    // to be read past, and a screen of colour points at nothing.
+    let render = |stream: &[T], paint: &str| {
         stream
             .iter()
             .enumerate()
@@ -719,8 +740,13 @@ fn describe_divergence<T: PartialEq>(
                 // nothing in them to point at.
                 let at = if index == position { focus } else { 0 };
                 let space = if label.is_empty() { "" } else { " " };
+                let (open, close) = if index == position {
+                    (paint, off)
+                } else {
+                    ("", "")
+                };
                 format!(
-                    "{marker} [{}] {label}{space}{}",
+                    "{open}{marker} [{}] {label}{space}{}{close}",
                     index + base,
                     window_on(&text, at)
                 )
@@ -730,12 +756,12 @@ fn describe_divergence<T: PartialEq>(
     };
 
     format!(
-        "first divergence at {unit} #{}\n--- {} ---\n{}\n--- {} ---\n{}",
+        "first divergence at {unit} #{}\n{read}--- {} ---{off}\n{}\n{back}--- {} ---{off}\n{}",
         position + base,
         sides.0,
-        render(before),
+        render(before, read),
         sides.1,
-        render(after)
+        render(after, back)
     )
 }
 
