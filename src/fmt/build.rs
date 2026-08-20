@@ -5,11 +5,10 @@
 //! — replacing the seven separate "does the source have a newline here"
 //! predicates the old formatter had scattered across five files.
 
-use std::collections::HashMap;
-
 use rowan::TextSize;
 use unicode_width::UnicodeWidthStr;
 
+use crate::hash::OffsetMap;
 use crate::lang::{
     NodeExt, NodeKind, SyntaxElement, SyntaxNode, SyntaxToken, TokenExt, TokenKind, T,
 };
@@ -40,10 +39,17 @@ pub struct Builder<'a> {
     /// both ascending. Used to count how many bodies a statement is still owed.
     heredoc_marker_starts: Vec<TextSize>,
     heredoc_end_starts: Vec<TextSize>,
+    /// Where every token that a block's brace follows starts, ascending.
+    ///
+    /// "Does a block open right after this token" is asked of every token in the
+    /// file, and answering it from the token walked up to the block's header and
+    /// back down. It is a property of the pair, so it is read off the same pass
+    /// as the rest: see [`Self::mark_positions`].
+    brace_headers: Vec<TextSize>,
     /// Answers already given by [`Self::block_can_be_flat`], keyed on where the
     /// block starts. A block's answer depends on the blocks inside it, so
     /// without this the recursion re-derives every level from every level above.
-    flat_blocks: HashMap<TextSize, bool>,
+    flat_blocks: OffsetMap<TextSize, bool>,
 }
 
 impl<'a> Builder<'a> {
@@ -56,30 +62,13 @@ impl<'a> Builder<'a> {
             newline_starts: Vec::new(),
             heredoc_marker_starts: Vec::new(),
             heredoc_end_starts: Vec::new(),
-            flat_blocks: HashMap::new(),
+            brace_headers: Vec::new(),
+            flat_blocks: OffsetMap::default(),
         }
     }
 
     pub fn file(&mut self, root: &SyntaxNode) -> Doc {
-        for token in root
-            .descendants_with_tokens()
-            .filter_map(|child| child.into_token())
-        {
-            if token.token_kind() == TokenKind::COMMENT {
-                self.comment_starts.push(token.text_range().start());
-            }
-            if token.token_kind() == TokenKind::HEREDOC_START {
-                self.heredoc_marker_starts.push(token.text_range().start());
-            }
-            if token.token_kind() == TokenKind::HEREDOC_END {
-                self.heredoc_end_starts.push(token.text_range().start());
-            }
-            let start = usize::from(token.text_range().start());
-            for (offset, _) in token.text().match_indices('\n') {
-                self.newline_starts
-                    .push(TextSize::try_from(start + offset).expect("offset is in range"));
-            }
-        }
+        self.mark_positions(&root.green(), 0, None, &mut None);
 
         let mut parts = Vec::new();
         self.statements_into(root, &mut parts);
@@ -87,6 +76,91 @@ impl<'a> Builder<'a> {
         // A file ends with exactly one newline.
         parts.push(Doc::HardLine);
         Doc::concat(parts)
+    }
+
+    /// Where the comments, the heredoc markers and the line ends are, collected
+    /// in one pass before anything is built.
+    ///
+    /// Walked over the green tree rather than with a cursor: a cursor allocates
+    /// a node of its own for every step it takes, and this step visits every
+    /// token in the file to ask three questions of it. The green nodes carry no
+    /// position, so the offset is carried down instead.
+    fn mark_positions(
+        &mut self,
+        node: &rowan::GreenNodeData,
+        start: u32,
+        // Where the node containing this one begins and ends. A block's brace
+        // belongs to the token before it only when that token was written
+        // inside the block's header, which is this node's parent.
+        parent: Option<(u32, u32)>,
+        // The last token seen that was not trivia, wherever in the file it was.
+        last_code: &mut Option<u32>,
+    ) {
+        let kind = crate::lang::SyntaxKind(node.kind().0).as_node();
+        let extent = Some((start, start + u32::from(node.text_len())));
+        let mut offset = start;
+        for child in node.children() {
+            match child {
+                rowan::NodeOrToken::Node(node) => {
+                    self.mark_positions(node, offset, extent, last_code);
+                    offset += u32::from(node.text_len());
+                }
+                rowan::NodeOrToken::Token(token) => {
+                    let token_kind = crate::lang::SyntaxKind(token.kind().0).as_token();
+                    match token_kind {
+                        Some(TokenKind::COMMENT) => {
+                            self.comment_starts.push(TextSize::from(offset));
+                        }
+                        Some(TokenKind::HEREDOC_START) => {
+                            self.heredoc_marker_starts.push(TextSize::from(offset));
+                        }
+                        Some(TokenKind::HEREDOC_END) => {
+                            self.heredoc_end_starts.push(TextSize::from(offset));
+                        }
+                        _ => {}
+                    }
+                    if let Some(token_kind) = token_kind {
+                        if !token_kind.is_trivia() {
+                            if kind == Some(NodeKind::BLOCK) && token_kind == T!["{"] {
+                                if let (Some((from, to)), Some(code)) = (parent, *last_code) {
+                                    if (from..to).contains(&code) {
+                                        self.brace_headers.push(TextSize::from(code));
+                                    }
+                                }
+                            }
+                            *last_code = Some(offset);
+                        }
+                    }
+                    // Most tokens hold no newline at all; the ones that do are
+                    // heredoc bodies, POD and multi-line literals.
+                    for (index, _) in token.text().match_indices('\n') {
+                        self.newline_starts
+                            .push(TextSize::from(offset + index as u32));
+                    }
+                    offset += u32::from(token.text_len());
+                }
+            }
+        }
+    }
+
+    /// Is the next thing after this token the opening brace of a block this
+    /// token is part of the header of?
+    ///
+    /// Both halves matter. The brace does not move (docs/formatting.md
+    /// NEWLINE-2), so a comment written before it comes out after it — but only
+    /// when the comment was written *inside the construct*: `if ($x) # why`
+    /// belongs to the `if`, whereas the trailing comment of `my $x = 1;` before
+    /// a bare block belongs to the statement that ended. Claiming the second
+    /// moved a comment across a statement boundary and, with the comment then
+    /// emitted from two places, put two of them on the brace's line.
+    ///
+    /// Read off [`Self::mark_positions`], which sees both halves at once: the
+    /// walk this replaced climbed from the token to the block's header and back
+    /// down again, once for every token in the file.
+    fn brace_follows(&self, token: &SyntaxToken) -> bool {
+        self.brace_headers
+            .binary_search(&token.text_range().start())
+            .is_ok()
     }
 
     /// Own-line comments written after the last statement of the file.
@@ -862,7 +936,7 @@ impl<'a> Builder<'a> {
         // A comment sitting between a header and its brace belongs after the
         // brace, because the brace does not move (docs/formatting.md NEWLINE-2).
         // `block` emits it there.
-        let trailing = if !asks_trailing || brace_follows(token) {
+        let trailing = if !asks_trailing || self.brace_follows(token) {
             Doc::Nil
         } else {
             self.trailing_comment(token)
@@ -979,7 +1053,7 @@ impl<'a> Builder<'a> {
         let mut previous = first.prev_token();
         while let Some(token) = previous {
             if !token.token_kind().is_trivia() {
-                if !brace_follows(&token) {
+                if !self.brace_follows(&token) {
                     return Doc::Nil;
                 }
                 return self.trailing_comment(&token);
@@ -1562,40 +1636,6 @@ fn run_edges(token: &SyntaxToken) -> (bool, bool) {
     (first.as_ref() == Some(token), last.as_ref() == Some(token))
 }
 
-/// Is the next thing after this token the opening brace of a block this token
-/// is part of the header of?
-///
-/// Both halves matter. The brace does not move (docs/formatting.md NEWLINE-2), so a
-/// comment written before it comes out after it — but only when the comment was
-/// written *inside the construct*: `if ($x) # why` belongs to the `if`, whereas
-/// the trailing comment of `my $x = 1;` before a bare block belongs to the
-/// statement that ended. Claiming the second moved a comment across a statement
-/// boundary and, with the comment then emitted from two places, put two of them
-/// on the brace's line.
-fn brace_follows(token: &SyntaxToken) -> bool {
-    let mut next = token.next_token();
-    while let Some(candidate) = next {
-        if candidate.token_kind().is_trivia() {
-            next = candidate.next_token();
-            continue;
-        }
-        if candidate.token_kind() != T!["{"] {
-            return false;
-        }
-        let Some(block) = candidate.parent() else {
-            return false;
-        };
-        if block.node_kind() != NodeKind::BLOCK {
-            return false;
-        }
-        let Some(header) = block.parent() else {
-            return false;
-        };
-        return token.parent_ancestors().any(|ancestor| ancestor == header);
-    }
-    false
-}
-
 /// Statements that get a blank line on each side (docs/formatting.md BLANK_LINE-1).
 fn wants_surrounding_blank_lines(node: &SyntaxNode) -> bool {
     matches!(node.node_kind(), NodeKind::SUB_DEF | NodeKind::PHASE_BLOCK)
@@ -1654,17 +1694,25 @@ fn shape_key(node: &SyntaxNode) -> Option<ShapeKey> {
     if !matches!(kind, NodeKind::EXPR_STMT | NodeKind::VAR_DECL_STMT) {
         return None;
     }
-    let declares = node
-        .descendants()
-        .any(|child| child.node_kind() == NodeKind::VAR_DECL);
-    let list_assignment = node
-        .descendants()
-        .filter(|child| child.node_kind() == NodeKind::DECL_TARGET)
-        .any(|target| {
-            target
-                .first_token()
-                .is_some_and(|token| token.text() == "(")
-        });
+    // One walk, not two: this is asked of every statement in the file, and the
+    // two questions it answers are both about nodes it passes on the way.
+    let mut declares = false;
+    let mut list_assignment = false;
+    for child in node.descendants() {
+        match child.node_kind() {
+            NodeKind::VAR_DECL => declares = true,
+            NodeKind::DECL_TARGET => {
+                list_assignment = list_assignment
+                    || child
+                        .first_token()
+                        .is_some_and(|token| token.token_kind() == T!["("]);
+            }
+            _ => {}
+        }
+        if declares && list_assignment {
+            break;
+        }
+    }
 
     Some(ShapeKey {
         statement: kind,
