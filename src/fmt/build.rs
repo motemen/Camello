@@ -331,6 +331,7 @@ impl<'a> Builder<'a> {
             NodeKind::ANON_ARRAY => self.delimited(node, T!["["], T!["]"]),
             NodeKind::ANON_HASH => self.delimited(node, T!["{"], T!["}"]),
             NodeKind::SUBSCRIPT => self.sequence(node),
+            NodeKind::BLOCK_DEREF_EXPR => self.deref_block(node),
             NodeKind::LIST_CALL_EXPR => self.list_call(node),
             kind if is_quote_like_node(kind) => self.quote_like(node),
             _ => self.sequence(node),
@@ -364,6 +365,79 @@ impl<'a> Builder<'a> {
         }
 
         Doc::concat(parts)
+    }
+
+    /// `@{ ... }` — a sigil and a brace pair around one expression.
+    ///
+    /// Not a `delimited` group: that one puts its contents through the list
+    /// rules and drops the tokens those do not account for, and here the sigil
+    /// and the caret of `${^MATCH}` are exactly such tokens. What is shared is
+    /// the shape a group takes when the user wrote a newline after the opening
+    /// brace (docs/formatting.md INDENT-2): the contents take one level and the
+    /// closing brace comes back to where the construct started. Left to the
+    /// ordinary sequence rules both were continuation lines, and `@{\n
+    /// $self->list\n}` closed one level in from the `@` that opened it.
+    fn deref_block(&mut self, node: &SyntaxNode) -> Doc {
+        let children: Vec<SyntaxElement> = node
+            .children_with_tokens()
+            .filter(|child| {
+                !child
+                    .as_token()
+                    .is_some_and(|token| token.token_kind().is_trivia())
+            })
+            .collect();
+        let brace = |child: &SyntaxElement, kind: TokenKind| {
+            child
+                .as_token()
+                .is_some_and(|token| token.token_kind() == kind)
+        };
+        let opening = children.iter().position(|child| brace(child, T!["{"]));
+        let closing = children.iter().rposition(|child| brace(child, T!["}"]));
+        let (Some(opening), Some(closing)) = (opening, closing) else {
+            return self.sequence(node);
+        };
+        let broken = self.contains_comment(node)
+            || children[opening]
+                .as_token()
+                .is_some_and(|token| self.newline_follows(token));
+        if !broken || opening + 1 >= closing {
+            return self.sequence(node);
+        }
+
+        let parent = Some(node.node_kind());
+        let mut parts = Vec::new();
+        let mut body = Vec::new();
+        let mut previous: Option<&SyntaxElement> = None;
+        for (index, child) in children.iter().enumerate() {
+            let doc = match child {
+                SyntaxElement::Node(child) => self.node(child),
+                SyntaxElement::Token(token) => self.token(token),
+            };
+            // Against a brace the group's own line break is the separator; what
+            // the user wrote there is the shape, not spacing.
+            let separator = match previous {
+                Some(_) if index == opening + 1 || index == closing => Vec::new(),
+                Some(previous) => self.separator(previous, child, parent),
+                None => Vec::new(),
+            };
+            if index == closing {
+                parts.push(Doc::indent(Doc::concat(
+                    std::iter::once(Doc::HardLine)
+                        .chain(body.drain(..))
+                        .collect(),
+                )));
+                parts.push(Doc::HardLine);
+            }
+            let sink = if index > opening && index < closing {
+                &mut body
+            } else {
+                &mut parts
+            };
+            sink.extend(separator);
+            sink.push(doc);
+            previous = Some(child);
+        }
+        Doc::group(true, Doc::concat(parts))
     }
 
     /// A bareword call whose continued arguments hang below its first one.
