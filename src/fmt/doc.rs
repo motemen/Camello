@@ -100,6 +100,16 @@ pub enum Doc {
     /// (docs/formatting.md POLICY-4).
     UserLine {
         broken: bool,
+        /// Whether the break is the user wrapping a line, and so takes a
+        /// continuation indent (docs/formatting.md INDENT-3).
+        ///
+        /// The newline after a block written across lines is not one: the
+        /// block's own layout ended that line, at the level the statement
+        /// started from. Indenting what follows would put it deeper than the
+        /// `}` above it — and, when what follows opens a block of its own,
+        /// deeper than that block's body, which is placed from the statement's
+        /// level and knows nothing of the continuation.
+        wraps: bool,
     },
     /// One blank line, already normalised to at most one.
     BlankLine,

@@ -174,9 +174,20 @@ impl<'a> Renderer<'a> {
                 }
             }
             Doc::HardLine => self.newline(),
-            Doc::UserLine { broken } => {
+            Doc::UserLine { broken, wraps } => {
                 if *broken {
                     self.newline();
+                    if !*wraps {
+                        // Not a wrap: the line was ended by the layout of what
+                        // came before it, so there is no level to take. A
+                        // bareword call's arguments still hang from where they
+                        // started — that column is not a continuation indent
+                        // but where the argument list began.
+                        if let Some(columns) = self.hanging {
+                            self.hanging_continuation = Some(columns);
+                        }
+                        return;
+                    }
                     // A line the user wrapped is indented one level
                     // (docs/formatting.md INDENT-3), and one level is all it takes
                     // however many times the expression wraps — so the level is

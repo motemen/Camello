@@ -461,11 +461,35 @@ impl<'a> Builder<'a> {
         });
 
         if !placed_by_the_formatter && self.has_user_newline_between(previous, next) {
-            parts.push(Doc::UserLine { broken: true });
+            // A block written across lines ended that line itself, so the
+            // newline after its `}` is not a wrap and takes no continuation
+            // indent. `map {\n}\nsort {\n} @array` came back with `sort {`
+            // indented and its contents and closing brace not.
+            let wraps = !self.ends_its_own_line(previous);
+            parts.push(Doc::UserLine {
+                broken: true,
+                wraps,
+            });
         } else if wants_space {
             parts.push(Doc::Space);
         }
         parts
+    }
+
+    /// Does this element finish on a line of its own, at the level the
+    /// statement started at?
+    ///
+    /// A block that cannot be flat does: its closing brace is the last thing on
+    /// its line and sits where the construct began.
+    fn ends_its_own_line(&mut self, element: &SyntaxElement) -> bool {
+        let Some(node) = element.as_node() else {
+            return false;
+        };
+        if node.node_kind() != NodeKind::BLOCK {
+            return false;
+        }
+        let statements: Vec<SyntaxNode> = node.children().collect();
+        !self.block_can_be_flat(node, &statements)
     }
 
     /// The class this token is an alignment point for, and how much of it has to
@@ -1200,7 +1224,10 @@ impl<'a> Builder<'a> {
                     if empty_after {
                         // Nothing at all: the next separator follows straight on.
                     } else if value_on_next_line {
-                        parts.push(Doc::UserLine { broken: true });
+                        parts.push(Doc::UserLine {
+                            broken: true,
+                            wraps: true,
+                        });
                     } else if ends_element && !last {
                         // A broken group puts one element per line; a flat one
                         // still keeps a line break the user put here
@@ -1208,7 +1235,10 @@ impl<'a> Builder<'a> {
                         parts.push(if broken {
                             Doc::Line
                         } else if user_break {
-                            Doc::UserLine { broken: true }
+                            Doc::UserLine {
+                                broken: true,
+                                wraps: true,
+                            }
                         } else {
                             Doc::Space
                         });
@@ -1318,7 +1348,7 @@ fn is_simple_term(node: &SyntaxNode) -> bool {
 fn breaks(doc: &Doc) -> bool {
     match doc {
         Doc::HardLine | Doc::BlankLine | Doc::VerbatimLines(_) | Doc::Comment(_, _) => true,
-        Doc::UserLine { broken } => *broken,
+        Doc::UserLine { broken, .. } => *broken,
         Doc::Raw(text) => text.contains('\n'),
         Doc::Group { broken, body } => *broken || breaks(body),
         Doc::Indent(body) | Doc::Continuation(body) => breaks(body),
