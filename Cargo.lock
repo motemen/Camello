@@ -114,6 +114,7 @@ dependencies = [
  "mimalloc",
  "rowan",
  "smol_str",
+ "supports-color",
  "tempfile",
  "terminal_size",
  "thiserror",

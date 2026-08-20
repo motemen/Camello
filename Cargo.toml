@@ -28,6 +28,9 @@ unicode-width = "0.2"
 # How wide the progress line may be before the terminal wraps it
 terminal_size = "0.4"
 
+# Whether the terminal reading a divergence would read colour in it
+supports-color = "3.0"
+
 # エラー診断とレポート
 miette = { version = "7.0", features = ["fancy"] }
 thiserror = "1.0"
