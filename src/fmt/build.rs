@@ -308,6 +308,19 @@ impl<'a> Builder<'a> {
     }
 
     fn node(&mut self, node: &SyntaxNode) -> Doc {
+        let doc = self.node_body(node);
+        // A construct that owns a block written across lines is placed from the
+        // line it begins on, which is not the statement's own level once the
+        // user has wrapped the line (docs/formatting.md INDENT-4).
+        if self.owns_a_broken_block(node) {
+            Doc::rooted(doc)
+        } else {
+            doc
+        }
+    }
+
+    /// The construct's own document, before it is rooted.
+    fn node_body(&mut self, node: &SyntaxNode) -> Doc {
         match node.node_kind() {
             NodeKind::BLOCK => self.block(node),
             NodeKind::POD | NodeKind::DATA_SECTION => self.verbatim(node),
@@ -476,6 +489,29 @@ impl<'a> Builder<'a> {
         parts
     }
 
+    /// Does this node hold a block that will be written across lines?
+    ///
+    /// Its own children only. A block deeper than that belongs to a construct
+    /// of its own, which is rooted where *it* begins.
+    fn owns_a_broken_block(&mut self, node: &SyntaxNode) -> bool {
+        node.children()
+            .filter(|child| child.node_kind() == NodeKind::BLOCK)
+            .any(|block| self.block_breaks(&block))
+    }
+
+    /// Will this block be written across lines?
+    ///
+    /// The memo is consulted before the block's statements are collected: this
+    /// is asked of every node that has a block under it, and by then the block
+    /// has almost always answered for itself already.
+    fn block_breaks(&mut self, block: &SyntaxNode) -> bool {
+        if let Some(&flat) = self.flat_blocks.get(&block.text_range().start()) {
+            return !flat;
+        }
+        let statements: Vec<SyntaxNode> = block.children().collect();
+        !self.block_can_be_flat(block, &statements)
+    }
+
     /// Does this element finish on a line of its own, at the level the
     /// statement started at?
     ///
@@ -485,11 +521,7 @@ impl<'a> Builder<'a> {
         let Some(node) = element.as_node() else {
             return false;
         };
-        if node.node_kind() != NodeKind::BLOCK {
-            return false;
-        }
-        let statements: Vec<SyntaxNode> = node.children().collect();
-        !self.block_can_be_flat(node, &statements)
+        node.node_kind() == NodeKind::BLOCK && self.block_breaks(node)
     }
 
     /// The class this token is an alignment point for, and how much of it has to
@@ -1351,7 +1383,7 @@ fn breaks(doc: &Doc) -> bool {
         Doc::UserLine { broken, .. } => *broken,
         Doc::Raw(text) => text.contains('\n'),
         Doc::Group { broken, body } => *broken || breaks(body),
-        Doc::Indent(body) | Doc::Continuation(body) => breaks(body),
+        Doc::Indent(body) | Doc::Continuation(body) | Doc::Rooted(body) => breaks(body),
         Doc::Concat(parts) => parts.iter().any(breaks),
         _ => false,
     }

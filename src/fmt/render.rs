@@ -150,6 +150,25 @@ impl<'a> Renderer<'a> {
                 self.walk(body);
                 self.hanging = outer;
             }
+            Doc::Rooted(body) => {
+                // The level of the line this begins on. Once something is on
+                // the line, that line's own level is the answer — the
+                // continuation, if there was one, is already in it. On a line
+                // nobody has written to, a pending continuation is taken here
+                // instead of one line later, so it holds for the whole
+                // construct rather than for its first line.
+                let outer = self.indent;
+                if self.current.text.is_empty() {
+                    if self.continuation && self.hanging_continuation.is_none() {
+                        self.indent += 1;
+                        self.continuation = false;
+                    }
+                } else {
+                    self.indent = self.current.indent;
+                }
+                self.walk(body);
+                self.indent = outer;
+            }
             Doc::Continuation(body) => {
                 // The level a user break takes belongs to this scope: an
                 // `Indent` inside it starts from the deeper level, and whatever
