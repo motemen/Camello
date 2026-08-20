@@ -530,6 +530,16 @@ fn is_a_tree(paths: &[PathBuf]) -> bool {
 /// the *output*, which it does by writing each result into its own slot. The
 /// alternative is printing from the workers, which makes a run's output depend
 /// on how the scheduler felt.
+/// How many threads [`in_parallel`] will put on this many items.
+fn worker_count(jobs: Option<usize>, items: usize) -> usize {
+    jobs.filter(|&jobs| jobs > 0)
+        .unwrap_or_else(|| {
+            std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get)
+        })
+        .min(items)
+        .max(1)
+}
+
 fn in_parallel<T, R>(items: &[T], jobs: Option<usize>, job: impl Fn(&T) -> R + Sync) -> Vec<R>
 where
     T: Sync,
@@ -538,13 +548,7 @@ where
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;
 
-    let workers = jobs
-        .filter(|&jobs| jobs > 0)
-        .unwrap_or_else(|| {
-            std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get)
-        })
-        .min(items.len())
-        .max(1);
+    let workers = worker_count(jobs, items.len());
 
     if workers == 1 {
         return items.iter().map(job).collect();
@@ -899,25 +903,39 @@ impl Messages {
     }
 }
 
-/// The files as they are looked at, and a line under them saying how far along
-/// the run is.
+/// The files in hand now, the ones already done scrolling away above them, and
+/// a line under them saying how far along the run is.
 ///
-/// Checking an installed CPAN tree is minutes of silence, and under `ask-perl`
-/// it is minutes of silence with a perl behind it — long enough that the honest
-/// question is whether the thing is working at all. It goes to stderr because
-/// stdout is the report, which is read by `scripts/corpus-check` among others,
-/// and it stays off unless stderr is a terminal: a progress line in a log file
-/// is just noise with carriage returns in it.
+/// The block at the bottom is redrawn in place, so what is on the screen is
+/// everything that has happened, then what is happening, then how much is left.
+///
+/// It goes to stderr because stdout is the report, which is read by
+/// `scripts/corpus-check` among others, and it stays off unless stderr is a
+/// terminal: a redrawn block in a log file is noise with escape codes in it.
 struct Progress {
     total: usize,
     done: AtomicUsize,
     violated: AtomicUsize,
     started: std::time::Instant,
-    /// The width the line is painted into, asked once. It is repainted from
-    /// every worker thread, and a run over a tree is not the place to ask the
-    /// terminal its size four thousand times.
+    /// Asked of the terminal once. The block is repainted from every worker,
+    /// and a run over a tree is not the place to ask four thousand times.
     width: usize,
+    /// How many files in hand to name before the rest become a count. Half the
+    /// screen at most: the block says what is happening, it is not the thing
+    /// that happens.
+    room: usize,
+    live: std::sync::Mutex<Live>,
     on: bool,
+}
+
+/// What the bottom of the screen is showing.
+struct Live {
+    /// One slot per worker, holding the file it has in hand. A worker that
+    /// finishes leaves its slot for the next file to take.
+    running: Vec<Option<String>>,
+    /// Lines the last paint left on the screen, so the next one knows how far
+    /// up to go to take them back.
+    painted: usize,
 }
 
 /// The last `room` columns of a path.
@@ -943,39 +961,173 @@ fn path_tail(path: &str, room: usize) -> String {
     format!("…{}", tail.chars().rev().collect::<String>())
 }
 
+/// The first `room` columns of a line, for the lines that are read from the
+/// left — which is every line here that is not a bare path.
+fn head_within(line: &str, room: usize) -> String {
+    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+    if line.width() <= room {
+        return line.to_string();
+    }
+    let mut head = String::new();
+    let mut used = 1;
+    for ch in line.chars() {
+        let w = ch.width().unwrap_or(0);
+        if used + w > room {
+            break;
+        }
+        used += w;
+        head.push(ch);
+    }
+    head.push('…');
+    head
+}
+
 impl Progress {
-    fn new(total: usize) -> Self {
+    fn new(total: usize, workers: usize) -> Self {
         use std::io::IsTerminal;
+
+        let (width, height) = terminal_size::terminal_size_of(io::stderr()).map_or(
+            (72, 24),
+            |(terminal_size::Width(width), terminal_size::Height(height))| {
+                (usize::from(width), usize::from(height))
+            },
+        );
         Progress {
             total,
             done: AtomicUsize::new(0),
             violated: AtomicUsize::new(0),
             started: std::time::Instant::now(),
-            width: terminal_size::terminal_size_of(io::stderr())
-                .map_or(72, |(terminal_size::Width(width), _)| usize::from(width)),
+            width: width.max(24),
+            room: (height / 2).max(1),
+            live: std::sync::Mutex::new(Live {
+                running: vec![None; workers],
+                painted: 0,
+            }),
             on: total > 1 && io::stderr().is_terminal(),
         }
     }
 
-    /// One more file is done: whether anything was wrong with it, and which it
-    /// was — unless it has just been named by a violation printed over this
-    /// line, in which case saying it again is a line of noise per finding.
+    /// A worker has this file in hand. What comes back is the slot to give to
+    /// [`Progress::finished`] when it is done with it.
+    fn taken(&self, path: &std::path::Path) -> usize {
+        if !self.on {
+            return 0;
+        }
+        let mut live = self.lock();
+        // There is always a free slot: a worker asks for one only after giving
+        // its last one back, and there are as many slots as there are workers.
+        let slot = live.running.iter().position(Option::is_none).unwrap_or(0);
+        live.running[slot] = Some(path.display().to_string());
+        self.paint(&mut live, &[]);
+        slot
+    }
+
+    /// That file is done. `said` scrolls away above the block: what the run has
+    /// to say about the file, and under it whatever evidence was asked for.
+    fn finished(&self, slot: usize, violated: bool, said: &[String]) {
+        if !self.on {
+            return;
+        }
+        self.done.fetch_add(1, Ordering::Relaxed);
+        if violated {
+            self.violated.fetch_add(1, Ordering::Relaxed);
+        }
+        let mut live = self.lock();
+        live.running[slot] = None;
+        self.paint(&mut live, said);
+    }
+
+    /// One finished file as the line that scrolls away: the path from the end
+    /// that names it, and what came of it.
+    fn verdict(&self, path: &std::path::Path, result: &str) -> String {
+        let room = self.width.saturating_sub(result.len() + 6);
+        format!(
+            "{} ... {result}",
+            path_tail(&path.display().to_string(), room)
+        )
+    }
+
+    /// Take the block back before anything is printed on top of it.
+    fn clear(&self) {
+        if !self.on {
+            return;
+        }
+        let mut live = self.lock();
+        if live.painted == 0 {
+            return;
+        }
+        let mut out = String::new();
+        Self::to_top(&mut out, live.painted);
+        out.push_str("\x1b[J");
+        live.painted = 0;
+        Self::write(&out);
+    }
+
+    /// A worker panicking mid-paint leaves a poisoned lock and a half-drawn
+    /// block; neither is a reason to bring the run down.
+    fn lock(&self) -> std::sync::MutexGuard<'_, Live> {
+        self.live
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Back to the first line of the block, from wherever in it the cursor was
+    /// left.
+    fn to_top(out: &mut String, painted: usize) {
+        use std::fmt::Write as _;
+
+        out.push('\r');
+        if painted > 1 {
+            let _ = write!(out, "\x1b[{}A", painted - 1);
+        }
+    }
+
+    /// Redraw the block, having scrolled `said` away above it first.
+    ///
+    /// One string and one write: the cursor arithmetic only holds if nothing
+    /// else writes between the moves, and two workers painting a line each
+    /// would interleave them.
+    fn paint(&self, live: &mut Live, said: &[String]) {
+        use std::fmt::Write as _;
+
+        let mut out = String::new();
+        Self::to_top(&mut out, live.painted);
+
+        let room = self.width.saturating_sub(1);
+        for line in said {
+            let _ = writeln!(out, "\x1b[2K{}", head_within(line, room));
+        }
+
+        let mut painted = 0;
+        let running: Vec<&String> = live.running.iter().flatten().collect();
+        for name in running.iter().take(self.room) {
+            let _ = writeln!(out, "\x1b[2K  {}", path_tail(name, room.saturating_sub(2)));
+            painted += 1;
+        }
+        if running.len() > self.room {
+            let _ = writeln!(out, "\x1b[2K  … and {} more", running.len() - self.room);
+            painted += 1;
+        }
+        // No newline after the counts: the cursor stays on the line the next
+        // paint measures from, and `\x1b[J` takes back whatever a taller block
+        // left below it.
+        let _ = write!(out, "\x1b[2K{}\x1b[J", head_within(&self.counts(), room));
+        painted += 1;
+
+        live.painted = painted;
+        Self::write(&out);
+    }
+
+    /// How far along, in the words the reader is waiting for.
     #[allow(
         clippy::cast_precision_loss,
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss
     )]
-    fn item(&self, violated: bool, label: Option<&std::path::Path>) {
-        if !self.on {
-            return;
-        }
-        let done = self.done.fetch_add(1, Ordering::Relaxed) + 1;
-        if violated {
-            self.violated.fetch_add(1, Ordering::Relaxed);
-        }
-
+    fn counts(&self) -> String {
+        let done = self.done.load(Ordering::Relaxed);
         let elapsed = self.started.elapsed();
-
         // A rate is only worth quoting once there is one: the first few files
         // of a corpus are the ones perl is warming up on.
         let left = if done >= 8 && elapsed.as_secs() >= 1 {
@@ -985,43 +1137,17 @@ impl Progress {
         } else {
             String::new()
         };
-        let counts = format!(
+        format!(
             "  checked {done}/{}, violated {}, {}{left}",
             self.total,
             self.violated.load(Ordering::Relaxed),
             clock(elapsed.as_secs()),
-        );
-
-        // The file scrolls away and the counts stay put: what has been looked at
-        // is a list, and how far along the run is is one line that keeps being
-        // the same line. Both under one lock, or a worker paints its path over
-        // somebody else's counts.
-        let width = self.paint_width();
-        let mut stderr = io::stderr().lock();
-        let _ = match label {
-            Some(label) => {
-                let file = path_tail(&label.display().to_string(), width);
-                write!(stderr, "{:<width$}\r{file}\n{counts:<width$}\r", "")
-            }
-            None => write!(stderr, "{counts:<width$}\r"),
-        };
-        let _ = stderr.flush();
+        )
     }
 
-    /// How wide to paint, which is one short of the terminal: a line written
-    /// to the last column wraps, and a wrapped progress line scrolls the report
-    /// off the screen one file at a time.
-    fn paint_width(&self) -> usize {
-        self.width.saturating_sub(1).max(24)
-    }
-
-    /// Take the line back before anything is printed on top of it.
-    fn clear(&self) {
-        if !self.on {
-            return;
-        }
+    fn write(text: &str) {
         let mut stderr = io::stderr().lock();
-        let _ = write!(stderr, "{:<width$}\r", "", width = self.paint_width());
+        let _ = stderr.write_all(text.as_bytes());
         let _ = stderr.flush();
     }
 }
@@ -1186,9 +1312,11 @@ fn check_paths(
     // violation.
     // A run over a tree takes long enough that a violation is worth having when
     // it is found rather than when the last file is done, and `--verbose` is the
-    // reader asking for everything anyway. Not for stdin: there is one file, and
-    // the report is already at the end of it.
-    let as_found = verbose && !paths.is_empty();
+    // reader asking for everything anyway. Only where there is a block to scroll
+    // it away from, though: piped into a file, the report at the end is the one
+    // that is in a settled order, and stdin is one file with the report already
+    // under it.
+    let mut as_found = false;
 
     let checked: Vec<Option<(String, crate::check::Outcome)>> = if paths.is_empty() {
         let mut bytes = Vec::new();
@@ -1205,8 +1333,10 @@ fn check_paths(
             check_report(&decoded, wanted),
         ))]
     } else {
-        let progress = Progress::new(files.len());
+        let progress = Progress::new(files.len(), worker_count(jobs, files.len()));
+        as_found = verbose && progress.on;
         let checked = in_parallel(&files, jobs, |path| {
+            let slot = progress.taken(path);
             let checked = (|| {
                 let bytes = fs::read(path).ok()?;
                 let (decoded, _, had_errors) = encoding.decode(&bytes);
@@ -1218,25 +1348,56 @@ fn check_paths(
             let violated = checked
                 .as_ref()
                 .is_some_and(|(_, outcome)| !outcome.violations.is_empty());
-            // In whatever order the workers arrive in, which is the price of not
-            // waiting for the ones still running. The tally below is still in
-            // the order the files were asked about.
-            let named_by_a_violation = as_found && violated;
-            if named_by_a_violation {
+
+            // What the run has to say about this file, if it has anything: a
+            // file that answered every question asked of it is not news, and
+            // four thousand lines saying so would bury the few that are. The
+            // order is the one the workers arrive in, which is the price of
+            // saying it now rather than when the last one is done; the tally
+            // below is still in the order the files were asked about.
+            let verdict = match &checked {
+                None => Some("skipped".to_string()),
+                Some((_, outcome)) if !outcome.violations.is_empty() => {
+                    let mut slugs: Vec<&str> = outcome
+                        .violations
+                        .iter()
+                        .map(|violation| violation.invariant.slug())
+                        .collect();
+                    slugs.dedup();
+                    Some(format!("FAIL {}", slugs.join(" ")))
+                }
+                // Not a failure and not a pass: nobody could answer, and which
+                // files those were is the thing the closing table can only
+                // count.
+                Some((_, outcome)) => outcome
+                    .unanswered
+                    .first()
+                    .map(|unanswered| format!("n/a {}", unanswered.why)),
+            };
+            let mut said: Vec<String> = verdict
+                .map(|verdict| progress.verdict(path, &verdict))
+                .into_iter()
+                .collect();
+            // The evidence under the verdict, for the run that asked to see it
+            // as it happens. It stays on the screen; the block scrolls it up.
+            if as_found && violated {
                 if let Some((label, outcome)) = &checked {
-                    progress.clear();
-                    let stdout = io::stdout();
-                    let mut out = stdout.lock();
+                    let mut evidence = Vec::new();
                     for violation in &outcome.violations {
-                        let _ = write_violation(&mut out, label, violation, quiet);
+                        let _ = write_violation(&mut evidence, label, violation, quiet);
                     }
+                    said.extend(
+                        String::from_utf8_lossy(&evidence)
+                            .lines()
+                            .map(str::to_string),
+                    );
                 }
             }
-            progress.item(violated, (!named_by_a_violation).then_some(path.as_path()));
+            progress.finished(slot, violated, &said);
             checked
         });
-        // Before a single line of the report: the progress line is written
-        // without a newline, and anything printed over it inherits its tail.
+        // Before a single line of the report: the block is written without a
+        // trailing newline, and anything printed over it inherits its tail.
         progress.clear();
         checked
     };
