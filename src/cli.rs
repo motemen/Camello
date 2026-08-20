@@ -1268,10 +1268,12 @@ fn wanted_invariants(only: Option<&str>) -> Result<Vec<crate::check::Invariant>>
     };
     let mut wanted = Vec::new();
     for slug in only.split(',').map(str::trim) {
-        // It used to be selectable here, and selecting it was how one opted in
-        // to running a perl. Now that opting in is the command, say so rather
-        // than call a name this command knows unknown.
-        if slug == Invariant::Deparse.slug() {
+        // It used to be selectable here under the bare name, and selecting it
+        // was how one opted in to running a perl. Now that opting in is the
+        // command, say so rather than call a name this command knows unknown —
+        // under either spelling, since the old one is what is in anybody's
+        // shell history.
+        if slug == Invariant::Deparse.slug() || slug == "deparse" {
             return Err(miette::miette!(
                 "{slug} is not asked here; `camello dev ask-perl` is the command that asks it"
             ));

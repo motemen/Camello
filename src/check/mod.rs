@@ -119,7 +119,9 @@ impl Invariant {
             Invariant::CommentPreservation => "comments",
             Invariant::VerbatimPreservation => "verbatim",
             Invariant::Idempotency => "idempotency",
-            Invariant::Deparse => "deparse",
+            // The perl is in the name: every other slug is something camello
+            // asks of itself, and this one is a program being run.
+            Invariant::Deparse => "perl-deparse",
         }
     }
 

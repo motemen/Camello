@@ -179,7 +179,7 @@ The formatter, asked of input against output:
   check because the seeds are the cause and the text the symptom: camello breaks
   a group from a newline in the input, never from a line's length, so seeds that
   move while the text holds still are a shape that will move on a later edit.
-- `deparse` — perl reads the output as the program the input was: both compile
+- `perl-deparse` — perl reads the output as the program the input was: both compile
   under `perl -c`, and `B::Deparse` renders them the same. Asked by `dev
   ask-perl` and by nothing else — not by `dev check`, and not reachable from its
   `--only` — because it is the only check that runs another program: `perl -c`
