@@ -79,7 +79,7 @@ changed=0
 # carry no behaviour, so they take no part in the comparison.
 deparse() { # deparse <dialect-flags> <file>
   perl -I "$lib" -I "$work/lib" -MCamelloOracle "$1" \
-    -MCamelloPredeclare -MO=Deparse,-p "$2" 2>/dev/null \
+    -MCamelloPredeclare -MO=Deparse,-p,-d "$2" 2>/dev/null \
     | grep -vE '^sub [A-Za-z_][A-Za-z0-9_:]* ;$'
 }
 

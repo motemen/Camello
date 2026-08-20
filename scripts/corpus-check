@@ -56,7 +56,7 @@ base_dir="$(cd "$(dirname "$0")/.." && pwd)"
 # changed *value* still shows up.
 deparse() { # deparse <dir>
   local raw
-  raw=$(cd "$1" && timeout 60 perl -MO=Deparse,-p input.pl 2>/dev/null) || return
+  raw=$(cd "$1" && timeout 60 perl -MO=Deparse,-p,-d input.pl 2>/dev/null) || return
   local constant='^sub [A-Za-z_][A-Za-z0-9_:]*\s*\(\)\s*\{.*\}$'
   local forward='^sub [A-Za-z_][A-Za-z0-9_:]*\s*(\([^)]*\)\s*)?;$'
   # Two more things the same hash walk moves around. A reference stringified
