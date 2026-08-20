@@ -899,7 +899,8 @@ impl Messages {
     }
 }
 
-/// A line on stderr saying how far along a run over many files is.
+/// The files as they are looked at, and a line under them saying how far along
+/// the run is.
 ///
 /// Checking an installed CPAN tree is minutes of silence, and under `ask-perl`
 /// it is minutes of silence with a perl behind it — long enough that the honest
@@ -912,10 +913,34 @@ struct Progress {
     done: AtomicUsize,
     violated: AtomicUsize,
     started: std::time::Instant,
-    /// Milliseconds into the run at the last repaint, so that a fast corpus
-    /// does not spend its time formatting a line nobody can read at that rate.
-    last: std::sync::atomic::AtomicU64,
+    /// The width the line is painted into, asked once. It is repainted from
+    /// every worker thread, and a run over a tree is not the place to ask the
+    /// terminal its size four thousand times.
+    width: usize,
     on: bool,
+}
+
+/// The last `room` columns of a path.
+///
+/// From the right, because the end of a path is the part that says which file
+/// it is: forty files under `local/lib/perl5/` share every column on the left.
+fn path_tail(path: &str, room: usize) -> String {
+    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+    if path.width() <= room {
+        return path.to_string();
+    }
+    let mut tail = String::new();
+    let mut used = 1; // the ellipsis standing in for what was cut
+    for ch in path.chars().rev() {
+        let w = ch.width().unwrap_or(0);
+        if used + w > room {
+            break;
+        }
+        used += w;
+        tail.push(ch);
+    }
+    format!("…{}", tail.chars().rev().collect::<String>())
 }
 
 impl Progress {
@@ -926,18 +951,21 @@ impl Progress {
             done: AtomicUsize::new(0),
             violated: AtomicUsize::new(0),
             started: std::time::Instant::now(),
-            last: std::sync::atomic::AtomicU64::new(0),
+            width: terminal_size::terminal_size_of(io::stderr())
+                .map_or(72, |(terminal_size::Width(width), _)| usize::from(width)),
             on: total > 1 && io::stderr().is_terminal(),
         }
     }
 
-    /// One more file is done, and whether it had anything wrong with it.
+    /// One more file is done: whether anything was wrong with it, and which it
+    /// was — unless it has just been named by a violation printed over this
+    /// line, in which case saying it again is a line of noise per finding.
     #[allow(
         clippy::cast_precision_loss,
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss
     )]
-    fn item(&self, violated: bool) {
+    fn item(&self, violated: bool, label: Option<&std::path::Path>) {
         if !self.on {
             return;
         }
@@ -947,18 +975,6 @@ impl Progress {
         }
 
         let elapsed = self.started.elapsed();
-        let millis = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
-        let last = self.last.load(Ordering::Relaxed);
-        if millis < last + 100 {
-            return;
-        }
-        if self
-            .last
-            .compare_exchange(last, millis, Ordering::Relaxed, Ordering::Relaxed)
-            .is_err()
-        {
-            return;
-        }
 
         // A rate is only worth quoting once there is one: the first few files
         // of a corpus are the ones perl is warming up on.
@@ -969,15 +985,34 @@ impl Progress {
         } else {
             String::new()
         };
-        let line = format!(
+        let counts = format!(
             "  checked {done}/{}, violated {}, {}{left}",
             self.total,
             self.violated.load(Ordering::Relaxed),
             clock(elapsed.as_secs()),
         );
+
+        // The file scrolls away and the counts stay put: what has been looked at
+        // is a list, and how far along the run is is one line that keeps being
+        // the same line. Both under one lock, or a worker paints its path over
+        // somebody else's counts.
+        let width = self.paint_width();
         let mut stderr = io::stderr().lock();
-        let _ = write!(stderr, "{line:<72}\r");
+        let _ = match label {
+            Some(label) => {
+                let file = path_tail(&label.display().to_string(), width);
+                write!(stderr, "{:<width$}\r{file}\n{counts:<width$}\r", "")
+            }
+            None => write!(stderr, "{counts:<width$}\r"),
+        };
         let _ = stderr.flush();
+    }
+
+    /// How wide to paint, which is one short of the terminal: a line written
+    /// to the last column wraps, and a wrapped progress line scrolls the report
+    /// off the screen one file at a time.
+    fn paint_width(&self) -> usize {
+        self.width.saturating_sub(1).max(24)
     }
 
     /// Take the line back before anything is printed on top of it.
@@ -986,7 +1021,7 @@ impl Progress {
             return;
         }
         let mut stderr = io::stderr().lock();
-        let _ = write!(stderr, "{:<72}\r", "");
+        let _ = write!(stderr, "{:<width$}\r", "", width = self.paint_width());
         let _ = stderr.flush();
     }
 }
@@ -1186,7 +1221,8 @@ fn check_paths(
             // In whatever order the workers arrive in, which is the price of not
             // waiting for the ones still running. The tally below is still in
             // the order the files were asked about.
-            if as_found && violated {
+            let named_by_a_violation = as_found && violated;
+            if named_by_a_violation {
                 if let Some((label, outcome)) = &checked {
                     progress.clear();
                     let stdout = io::stdout();
@@ -1196,7 +1232,7 @@ fn check_paths(
                     }
                 }
             }
-            progress.item(violated);
+            progress.item(violated, (!named_by_a_violation).then_some(path.as_path()));
             checked
         });
         // Before a single line of the report: the progress line is written

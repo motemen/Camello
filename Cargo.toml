@@ -25,6 +25,9 @@ smol_str = "0.2"
 # 桁揃えのための表示幅（全角は2桁）
 unicode-width = "0.2"
 
+# How wide the progress line may be before the terminal wraps it
+terminal_size = "0.4"
+
 # エラー診断とレポート
 miette = { version = "7.0", features = ["fancy"] }
 thiserror = "1.0"
