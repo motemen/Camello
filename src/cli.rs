@@ -82,6 +82,14 @@ pub enum Commands {
         )]
         stop_on_first_error: bool,
 
+        /// Name every file that differs, instead of only counting them
+        #[arg(
+            short = 'l',
+            long = "list-different",
+            help = "Name every file that was (or would be) reformatted, one path per line"
+        )]
+        list_different: bool,
+
         /// Output to file instead of stdout
         #[arg(short, long, help = "Output file path")]
         output: Option<PathBuf>,
@@ -366,6 +374,7 @@ pub fn run() -> Result<()> {
             extensions,
             jobs,
             stop_on_first_error,
+            list_different,
             output,
             encoding,
             layout,
@@ -379,6 +388,7 @@ pub fn run() -> Result<()> {
                     paths,
                     check,
                     write,
+                    list_different,
                     &extensions,
                     jobs,
                     encoding,
@@ -526,10 +536,18 @@ struct Formatted {
 /// Writing is asked for, never assumed: the formatted text of a tree has
 /// nowhere to go but back over the tree, and doing that because someone typed a
 /// path is not undoable.
+///
+/// A run that did what it was asked says so in one line. Naming five hundred
+/// files that were reformatted is a list nobody reads, and the version control
+/// the tree is under already keeps it — so the names are behind
+/// `--list-different`, and what stays is what a run cannot be understood
+/// without: the files that were left alone, and why.
+#[allow(clippy::too_many_arguments)]
 fn format_tree(
     paths: Vec<PathBuf>,
     check: bool,
     write: bool,
+    list_different: bool,
     extensions: &str,
     jobs: Option<usize>,
     encoding: Option<String>,
@@ -555,48 +573,64 @@ fn format_tree(
 
     let stdout = io::stdout();
     let mut out = stdout.lock();
+    // `--check` is a question about which files those are, so it answers with
+    // them; `--write` has already done the thing and only names them on request.
+    let name_them = list_different || check;
     let (mut changed, mut with_diagnostics, mut failed) = (0usize, 0usize, 0usize);
     for (path, report) in files.iter().zip(&reports) {
         let path = path.display();
+        // A file camello could not read, or would not rewrite, is not routine
+        // and is named whatever was asked for: it is the difference between a
+        // tree that is formatted and one that was skipped in places.
         if let Some(failure) = &report.failure {
             failed += 1;
-            writeln!(out, "{path}\t{failure}").into_diagnostic()?;
+            writeln!(out, "{path}: {failure}").into_diagnostic()?;
             continue;
         }
         if !report.diagnostics.is_empty() {
             with_diagnostics += 1;
-            writeln!(out, "{path}\t{} diagnostic(s)", report.diagnostics.len())
-                .into_diagnostic()?;
-            for diagnostic in &report.diagnostics {
-                for line in diagnostic.lines() {
-                    writeln!(out, "    {line}").into_diagnostic()?;
+            let count = report.diagnostics.len();
+            let diagnostic = if count == 1 {
+                "diagnostic"
+            } else {
+                "diagnostics"
+            };
+            writeln!(out, "{path}: left alone, {count} {diagnostic}").into_diagnostic()?;
+            // The diagnostics themselves are a screenful each, and they are all
+            // still there in `camello format <that file>`.
+            if list_different {
+                for diagnostic in &report.diagnostics {
+                    for line in diagnostic.lines() {
+                        writeln!(out, "    {line}").into_diagnostic()?;
+                    }
                 }
             }
+            continue;
         }
         if report.changed {
             changed += 1;
-            let what = if check { "would reformat" } else { "formatted" };
-            writeln!(out, "{path}\t{what}").into_diagnostic()?;
+            if name_them {
+                writeln!(out, "{path}").into_diagnostic()?;
+            }
         }
     }
 
-    let what = if check { "would reformat" } else { "formatted" };
-    writeln!(
-        out,
-        "---- checked {}, {what} {changed}{}{}",
-        files.len(),
-        if with_diagnostics > 0 {
-            format!(", left alone {with_diagnostics}")
-        } else {
-            String::new()
-        },
-        if failed > 0 {
-            format!(", unreadable {failed}")
-        } else {
-            String::new()
-        }
-    )
-    .into_diagnostic()?;
+    let total = files.len();
+    let mut summary = if check {
+        format!(
+            "{changed} of {total} {} would be reformatted",
+            plural(total)
+        )
+    } else {
+        format!("formatted {changed} of {total} {}", plural(total))
+    };
+    if with_diagnostics > 0 {
+        summary.push_str(&format!(", {with_diagnostics} left alone"));
+    }
+    if failed > 0 {
+        summary.push_str(&format!(", {failed} unreadable"));
+    }
+    writeln!(out, "{summary}").into_diagnostic()?;
 
     // A file nobody could parse cleanly is not "formatted", and `--check` in a
     // pipeline wants to hear about it.
@@ -656,6 +690,15 @@ fn format_one(
         diagnostics,
         changed,
         failure: None,
+    }
+}
+
+/// `file` or `files`, for a count that is read as English.
+fn plural(count: usize) -> &'static str {
+    if count == 1 {
+        "file"
+    } else {
+        "files"
     }
 }
 
@@ -1443,23 +1486,21 @@ fn format_file(
     }
 
     if check {
-        // Check mode: check if already formatted
-        if input == formatted {
-            println!("Source '{source_name}' is already formatted");
-        } else {
-            eprintln!("Source '{source_name}' is not formatted");
+        // A file that is already formatted is the answer nobody needs a
+        // sentence for; one that is not is named, so that the name can be piped
+        // somewhere, and the exit status carries the rest.
+        if input != formatted {
+            println!("{source_name}");
             std::process::exit(1);
         }
     } else if write {
         let path = path.expect("path should be present when write is enabled");
         write_with_encoding(path.as_path(), &formatted, encoding)?;
-        println!("Formatted code written to '{}'", path.display());
     } else {
         // Format mode: output the result
         if let Some(output_path) = output {
             // Write to file
             write_with_encoding(output_path.as_path(), &formatted, encoding)?;
-            println!("Formatted code written to '{}'", output_path.display());
         } else {
             // Write to standard output using UTF-8 as before
             print!("{formatted}");
