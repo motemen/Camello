@@ -25,9 +25,9 @@
 #   3. B::Deparse    — both compile and perl reads them as different programs.
 #                      This is the one that catches a comment migrating into a
 #                      replacement string, which no invariant over token streams
-#                      can see. `camello dev check --deparse` now asks the same
-#                      question per file; what this script adds over it is the
-#                      corpus-wide classification and summary below.
+#                      can see. `camello dev ask-perl` now asks the same question
+#                      per file; what this script adds over it is the corpus-wide
+#                      classification and summary below.
 #
 # A file camello reports a diagnostic on is *counted and set aside*: the parser
 # not covering some construct is a known, separate matter from the formatter
