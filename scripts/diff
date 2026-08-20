@@ -14,6 +14,6 @@ elif [ "$1" = "-" ]; then
   git diff --no-index -- <(printf '%s' "$content") <(cargo -q run -- format "-e" "$content")
 else
   file_path="$1"
-  git diff --no-index -- "$file_path" <(cargo -q run -- format "$file_path")
+  git diff --no-index -- "$file_path" <(cargo -q run -- format "$file_path" -o -)
 fi
 
