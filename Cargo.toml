@@ -3,6 +3,15 @@ name = "camello"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+# The allocator is the only C dependency, and the whole of what a Linux build
+# needs a C toolchain for. Off by default so the binary cross-compiles from a
+# Mac with nothing beyond rustup; on when the run is large enough to notice the
+# fifth of the time it saves — see the commit that introduced it.
+#
+#   cargo build --release --features mimalloc
+mimalloc = ["dep:mimalloc"]
+
 [dependencies]
 # CST操作のコアライブラリ
 rowan = "0.15"
@@ -22,7 +31,7 @@ thiserror = "1.0"
 
 # Character encoding conversion
 encoding_rs = "0.8"
-mimalloc = "0.1.52"
+mimalloc = { version = "0.1.52", optional = true }
 
 [dev-dependencies]
 # スナップショットテスト

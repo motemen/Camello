@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+#
+# Build a Linux x86_64 binary from this machine, with nothing beyond rustup.
+#
+#   scripts/build-linux                 target/x86_64-unknown-linux-musl/release/camello
+#   scripts/build-linux --features mimalloc
+#
+# ── Why this works ────────────────────────────────────────────────────────────
+#
+# The default feature set has no C dependency (see Cargo.toml), so nothing in
+# the build needs a cross C toolchain: rustc compiles for the target on its own,
+# and the only remaining question is who links. Apple's ld does not speak the
+# GNU options the target's linker arguments are written in, so the job goes to
+# the rust-lld that ships with the toolchain. It decides its flavor from the
+# name it is invoked by, and as `ld.lld` it speaks GNU ld — hence the symlink.
+#
+# The result is musl and static-pie: no interpreter, no libc to find at run
+# time, and so no glibc version to be too old for. It runs on any x86_64 Linux.
+#
+# Passing --features mimalloc gives that up: the allocator is C, and building it
+# for Linux from here needs a cross compiler this script does not set up.
+#
+# ── The one requirement ───────────────────────────────────────────────────────
+#
+#   rustup target add x86_64-unknown-linux-musl
+#
+set -euo pipefail
+
+base_dir=$(cd "$(dirname "$0")/.." && pwd)
+cd "$base_dir"
+
+target=x86_64-unknown-linux-musl
+
+if ! rustup target list --installed | grep -qx "$target"; then
+    echo "scripts/build-linux: the target is not installed. Run:" >&2
+    echo "    rustup target add $target" >&2
+    exit 1
+fi
+
+host=$(rustc -vV | awk '/^host:/ { print $2 }')
+rust_lld="$(rustc --print sysroot)/lib/rustlib/$host/bin/rust-lld"
+
+if [ ! -x "$rust_lld" ]; then
+    echo "scripts/build-linux: no rust-lld at $rust_lld" >&2
+    exit 1
+fi
+
+# Called as `ld.lld`, rust-lld links the way the target's arguments assume.
+lld_dir="$base_dir/target/lld"
+mkdir -p "$lld_dir"
+ln -sf "$rust_lld" "$lld_dir/ld.lld"
+
+RUSTFLAGS="-C linker=$lld_dir/ld.lld ${RUSTFLAGS:-}" \
+    cargo build --release --target "$target" "$@"
+
+echo
+echo "target/$target/release/camello"
+file "target/$target/release/camello" 2>/dev/null || true
