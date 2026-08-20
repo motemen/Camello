@@ -134,6 +134,15 @@ path, `-e`/`-E`, or standard input. A directory or multiple paths require
 symlinks discovered below a requested root. Work across files is parallelized,
 but reports remain in input order.
 
+Reporting is quiet by default. Formatting one source writes it and says
+nothing; `--check` says nothing when the source is already formatted and
+otherwise prints its name and exits 1. Over a tree, a run ends in one summary
+line, and the files it reformatted are named only under `--check` — which is a
+question about which files those are — or under `--list-different`. A file that
+could not be read, or that the parser had something to say about and was
+therefore left alone, is always named: `--list-different` additionally prints
+its diagnostics, which are in any case what `camello format <that file>` shows.
+
 Input is decoded with the selected encoding and invalid byte sequences are
 rejected rather than replaced. In-place output is encoded before the original
 is touched, written and synchronized to a temporary sibling, and atomically
