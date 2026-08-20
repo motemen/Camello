@@ -71,7 +71,7 @@ impl Invariant {
     /// [`Invariant::Deparse`] is not among them. It needs a perl, and running a
     /// perl over a file runs that file's `BEGIN` blocks, which is not something
     /// a checker may do to somebody's corpus without being told to. Being told
-    /// to is `dev ask-perl`: a command to type on purpose, rather than a flag on
+    /// to is `dev perl-deparse`: a command to type on purpose, rather than a flag on
     /// this one that a `--only` could reach by name.
     pub const ALL: &'static [Invariant] = &[
         Invariant::CleanParse,
@@ -180,7 +180,7 @@ impl Invariant {
                  outside camello, and it is the only one that can see what a token stream \
                  cannot — ${^MATCH} against ${^ MATCH} is one token sequence and two \
                  different variables, and a comment that migrated into a replacement string \
-                 is code that still lexes. Asked by `dev ask-perl` and by nothing else, and \
+                 is code that still lexes. Asked by `dev perl-deparse` and by nothing else, and \
                  note what asking does: `perl -c` runs the BEGIN blocks of every file it is \
                  pointed at."
             }
