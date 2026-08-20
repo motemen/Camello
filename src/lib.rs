@@ -11,6 +11,7 @@ pub mod check;
 pub mod cli;
 pub mod diagnostic;
 pub mod fmt;
+pub(crate) mod hash;
 pub mod lang;
 pub mod lex;
 pub mod parse;
@@ -35,13 +36,21 @@ pub fn parse_perl(input: &str) -> (PerlNode, Vec<ParseError>) {
 /// Parse, keeping the trivia map the formatter needs.
 #[must_use]
 pub fn parse_perl_with_trivia(input: &str) -> (PerlNode, TriviaMap, Vec<ParseError>) {
-    let source: Arc<str> = Arc::from(input);
     let parsed = parse::parse(input);
-    let errors = parsed
-        .diagnostics
-        .into_iter()
-        .map(|diagnostic| ParseError::from_parse(diagnostic, &source))
-        .collect();
+    // The source is copied for the diagnostics to point into, and only then: a
+    // file that parses cleanly is the common case, and copying it whole to hand
+    // an empty iterator something to borrow was a copy of every byte of every
+    // file in a run.
+    let errors = if parsed.diagnostics.is_empty() {
+        Vec::new()
+    } else {
+        let source: Arc<str> = Arc::from(input);
+        parsed
+            .diagnostics
+            .into_iter()
+            .map(|diagnostic| ParseError::from_parse(diagnostic, &source))
+            .collect()
+    };
     (SyntaxNode::new_root(parsed.green), parsed.trivia, errors)
 }
 
