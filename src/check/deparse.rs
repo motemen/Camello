@@ -309,7 +309,10 @@ fn compile_errors(path: &Path) -> Result<Option<String>, NoAnswer> {
 /// about a real file: POD, `package`, `use`, forward declarations. A deparse
 /// that exited non-zero is not that answer and does not pretend to be.
 fn deparse(path: &Path) -> Result<Option<Vec<String>>, NoAnswer> {
-    let output = perl(path, &["-MO=Deparse,-p"])?;
+    // `-d` puts constants through Data::Dumper instead of leaving them as the
+    // integers they are underneath, so a value that changed reads as a changed
+    // value rather than as the same number twice.
+    let output = perl(path, &["-MO=Deparse,-p,-d"])?;
     if !output.status.success() {
         return Err(NoAnswer {
             why: WOULD_NOT_DEPARSE,
