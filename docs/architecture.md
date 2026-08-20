@@ -150,7 +150,7 @@ renamed over the target while preserving its permissions.
 
 The hidden `camello dev` namespace contains development interfaces. `dump`
 prints a CST, and `check` evaluates parser and formatter invariants on files,
-directory trees, or standard input. `ask-perl` takes the same paths and asks the
+directory trees, or standard input. `perl-deparse` takes the same paths and asks the
 one question `check` cannot: whether perl reads the output as the program the
 input was. It is a command of its own because asking runs perl over the file,
 and `perl -c` executes that file's `BEGIN` blocks. These commands may change
@@ -181,7 +181,7 @@ The formatter, asked of input against output:
   move while the text holds still are a shape that will move on a later edit.
 - `perl-deparse` — perl reads the output as the program the input was: both compile
   under `perl -c`, and `B::Deparse` renders them the same. Asked by `dev
-  ask-perl` and by nothing else — not by `dev check`, and not reachable from its
+  perl-deparse` and by nothing else — not by `dev check`, and not reachable from its
   `--only` — because it is the only check that runs another program: `perl -c`
   executes the `BEGIN` blocks of the file it is pointed at. Opting in is the
   command typed, so no run of `check` can carry it along. It is also the only one that sees what a token stream cannot —
@@ -210,7 +210,7 @@ like any other environment variable.
 
 Each check carries a slug, a name, a description, and its group; `dev check
 --list-invariants` prints the ones it asks, and names `deparse` as living under
-`dev ask-perl`. A run ends with a table of every check that
+`dev perl-deparse`. A run ends with a table of every check that
 was asked, counting the sources that passed it, failed it, and were never asked
 it. A parse diagnostic is a prerequisite failure for every formatter check, even
 when `dev check --only` selects another invariant; such a source is counted as

@@ -238,7 +238,7 @@ pub enum DevCommands {
     /// Its own command rather than a flag on `check`, because asking runs perl
     /// over the file, and `perl -c` runs that file's BEGIN blocks — arbitrary
     /// code out of somebody's corpus. That is a thing to type on purpose.
-    AskPerl {
+    PerlDeparse {
         /// Files or directories to ask about (reads from stdin if not provided)
         #[arg(help = "Files or directories to ask about (recursive; stdin if omitted)")]
         paths: Vec<PathBuf>,
@@ -487,7 +487,7 @@ pub fn run() -> Result<()> {
                 let wanted = wanted_invariants(only.as_deref())?;
                 return check_paths(paths, jobs, &wanted, quiet, verbose, &extensions, encoding);
             }
-            DevCommands::AskPerl {
+            DevCommands::PerlDeparse {
                 paths,
                 jobs,
                 quiet,
@@ -1246,10 +1246,10 @@ fn list_invariants_and_exit() -> Result<()> {
     // looking for it in this list finds where it went instead of concluding
     // that camello does not ask it.
     println!();
-    println!("---- asked by a command of its own, because asking runs perl");
+    println!("---- not asked here: `camello dev perl-deparse` asks it, by running perl");
     println!();
     println!(
-        "{:<17}{}   (camello dev ask-perl)",
+        "{:<17}{}",
         Invariant::Deparse.slug(),
         Invariant::Deparse.name()
     );
@@ -1275,7 +1275,7 @@ fn wanted_invariants(only: Option<&str>) -> Result<Vec<crate::check::Invariant>>
         // shell history.
         if slug == Invariant::Deparse.slug() || slug == "deparse" {
             return Err(miette::miette!(
-                "{slug} is not asked here; `camello dev ask-perl` is the command that asks it"
+                "{slug} is not asked here; `camello dev perl-deparse` is the command that asks it"
             ));
         }
         let Some(invariant) = Invariant::ALL.iter().find(|kind| kind.slug() == slug) else {
