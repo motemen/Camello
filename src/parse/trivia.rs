@@ -1,10 +1,9 @@
 //! The trivia model.
 
-use std::collections::HashMap;
-
 use rowan::{TextRange, TextSize};
 use smol_str::SmolStr;
 
+use crate::hash::OffsetMap;
 use crate::lang::TokenKind;
 
 /// One piece of trivia, with its text.
@@ -67,7 +66,7 @@ impl TokenTrivia {
 /// traversal, which is the cost behind issue #266.
 #[derive(Debug, Default)]
 pub struct TriviaMap {
-    by_token_start: HashMap<TextSize, TokenTrivia>,
+    by_token_start: OffsetMap<TextSize, TokenTrivia>,
     empty: TokenTrivia,
     at_end: Vec<Trivia>,
 }
