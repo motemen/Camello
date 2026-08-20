@@ -1,3 +1,5 @@
+// Opt-in; Cargo.toml says why it is not on by default.
+#[cfg(feature = "mimalloc")]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
