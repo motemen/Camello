@@ -7,7 +7,7 @@ sub foo {
     {
         bar => 'one',
         baz => 'two',
-    }->{$self->qux};
+    }->{ $self->qux };
 }
 
 sub quux {
@@ -16,5 +16,5 @@ sub quux {
     {
         bar => sub { return $self->id },
         baz => sub { return undef },
-    }->{$self->qux}->();
+    }->{ $self->qux }->();
 }

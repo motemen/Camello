@@ -37,7 +37,7 @@ ${ '$var_' . $suffix };
 %{"Package::HASH"};
 %{ '%hash_' . $suffix };
 
-&{ $handlers{$type || 'default'} };
+&{ $handlers{ $type || 'default' } };
 ${ $refs->[0] };
 @{ $data->{arrays}->[0] };
 %{ $config->{$env}->{hashes} };
