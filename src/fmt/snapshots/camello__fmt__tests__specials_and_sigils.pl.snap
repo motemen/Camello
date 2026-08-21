@@ -171,8 +171,10 @@ $#Package::array;
 $#main::data;
 $#$arrayref;
 my $size = $#$ref + 1;
-for my $i (0 .. $#array) { }
-if ($#data >= 0) { }
+for my $i (0 .. $#array) {
+}
+if ($#data >= 0) {
+}
 
 my $fh = \*STDIN;
 *STDOUT;

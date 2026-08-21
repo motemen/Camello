@@ -23,8 +23,10 @@ $obj->count--;
 $ref->[0]++;
 $data->{items}->[0]--;
 
-for (my $i = 0; $i < 10; $i++) { }
-while ($n--) { }
+for (my $i = 0; $i < 10; $i++) {
+}
+while ($n--) {
+}
 
 my $post_inc = $x++;
 my $post_dec = $y--;
