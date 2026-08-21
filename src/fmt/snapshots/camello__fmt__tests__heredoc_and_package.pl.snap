@@ -59,13 +59,17 @@ my $array = [ 1, 2, 3 ];
 
 ($foo || $bar) && ($x // $y);
 
-BEGIN { }
+BEGIN {
+}
 
-CHECK { }
+CHECK {
+}
 
-INIT { }
+INIT {
+}
 
-END { }
+END {
+}
 
 sub attr_test : bar : baz { }
 

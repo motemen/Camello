@@ -1151,18 +1151,10 @@ impl<'a> Builder<'a> {
         if brace(node, T!["}"], true).is_none() {
             return false;
         }
-        // An empty block is `{ }` wherever it appears; there is nothing to put
-        // on a line of its own.
-        if statements.is_empty() {
-            return !self.contains_comment(node);
-        }
-        if statements.len() != 1 {
-            return false;
-        }
-        if !self.options.allow_single_line_blocks {
-            return false;
-        }
-        // A control structure's block always breaks (docs/formatting.md NEWLINE-2).
+        // A control structure's block always breaks (docs/formatting.md NEWLINE-2),
+        // and an empty one is still a block: `if (1) {} else { 1; }` kept `{ }`
+        // on the `if` line while the `else` broke, so the two branches of one
+        // statement read as two different shapes.
         // `sub`, `do`, `map` and `try` blocks are not control structures: they
         // may hold a single value and stay on one line (the formatter contract).
         if node
@@ -1184,6 +1176,17 @@ impl<'a> Builder<'a> {
                 )
             })
         {
+            return false;
+        }
+        // An empty block elsewhere is `{ }`; there is nothing to put on a line
+        // of its own.
+        if statements.is_empty() {
+            return !self.contains_comment(node);
+        }
+        if statements.len() != 1 {
+            return false;
+        }
+        if !self.options.allow_single_line_blocks {
             return false;
         }
         // A statement that was written across lines stays across lines, and a
