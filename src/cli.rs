@@ -10,7 +10,7 @@ use crate::{format_perl_with_options, parse_perl, DelimiterSpacing, FormatterOpt
 
 #[derive(Parser)]
 #[command(name = "camello")]
-#[command(about = "A Perl code formatter built with Rust and Rowan")]
+#[command(about = "Formats Perl source code")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 pub struct Cli {
     #[command(subcommand)]
