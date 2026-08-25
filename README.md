@@ -73,9 +73,10 @@ Snapshot and fixture tests live beside the code they cover. Beyond them:
 | --- | --- |
 | `scripts/diff` | the diff for one file or snippet, while iterating |
 | `scripts/perl-check` | `perl -c` and `B::Deparse` over the fixtures |
-| `scripts/corpus-check` | the same questions asked of a real Perl corpus |
+| `scripts/corpus-check` | picks a corpus out of `@INC` and asks the two below about it |
 | `scripts/generate-builtins` | regenerate the builtin table from perl's prototypes |
 | `camello dev check` | the invariants, asked of arbitrary source |
+| `camello dev perl-deparse` | perl's own reading of the input against the output |
 
 `camello dev` is a hidden subcommand holding the tools used to work on camello
 itself. It is not an interface to depend on.

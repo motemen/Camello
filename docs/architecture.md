@@ -246,7 +246,9 @@ Tests and fixtures live beside their implementation:
   `src/fmt/fixtures`;
 - cross-component invariant coverage in `tests/invariants.rs`;
 - `scripts/perl-check` for compilation and `B::Deparse` comparison;
-- `scripts/corpus-check` for invariant and Perl-oracle checks over real code.
+- `scripts/corpus-check` for selecting a real corpus — the `.pm` files below
+  `@INC` — and asking `dev check` and `dev perl-deparse` about it. The questions
+  are the binary's; the script contributes the corpus.
 
 The required local verification sequence before pushing is:
 
