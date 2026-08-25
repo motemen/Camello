@@ -53,8 +53,9 @@ pub struct FormatterOptions {
 pub enum DelimiterSpacing {
     /// Never a space: `[1, 2]`, `{ a => 1 }` becomes `{a => 1}`.
     Tight,
-    /// A space when the literal holds two or more items: `[ 1, 2 ]` but `[$x]`.
-    /// A lone `key => value` pair counts as two items, matching SPACING-7's
+    /// A space unless the literal holds a single simple term — one word to the
+    /// eye: `[ 1, 2 ]` and `[ foo($body) ]`, but `[$x]`, `[-1]`, `[@$pair]`.
+    /// A lone `key => value` pair is not one term, matching SPACING-7's
     /// `my $h = { key => 'val' };`.
     Standard,
     /// Always a space when non-empty: `[ $x ]`.
