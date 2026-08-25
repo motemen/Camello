@@ -346,8 +346,9 @@ pub struct LayoutArgs {
         long,
         value_name = "STYLE",
         hide = true,
-        help = "Inside of [...] and {...} literals: tight, standard (space when \
-                holding two or more items; default), or loose (always a space)"
+        help = "Inside of [...] and {...} literals: tight, standard (space unless \
+                the contents are a single simple term; default), or loose (always \
+                a space)"
     )]
     pub delimiter_spacing: Option<DelimiterSpacingArg>,
 
