@@ -245,10 +245,21 @@ Tests and fixtures live beside their implementation:
 - formatter snapshots and input/expected-output regression pairs under
   `src/fmt/fixtures`;
 - cross-component invariant coverage in `tests/invariants.rs`;
-- `scripts/perl-check` for compilation and `B::Deparse` comparison;
+- `scripts/perl-check` for compilation and `B::Deparse` comparison over the
+  fixtures. Not the same question as `dev perl-deparse`, which asks a bare perl:
+  a fixture is a fragment that assumes a context, so this one supplies one —
+  `CamelloOracle` stubs the modules it uses, undeclared list operators are
+  predeclared from perl's own complaint, and each file is tried under both
+  dialects. Whether a fragment is Perl depends on which features are on, and
+  the answer flips: without `signatures`, `sub f ($x = 1)` is a prototype whose
+  text `B::Deparse` echoes verbatim, so respacing it reads as a changed program.
+  Asking a bare perl leaves 22 of the fixtures unanswered and calls that one a
+  violation; asking this way answers 142 of 146;
 - `scripts/corpus-check` for selecting a real corpus — the `.pm` files below
   `@INC` — and asking `dev check` and `dev perl-deparse` about it. The questions
-  are the binary's; the script contributes the corpus.
+  are the binary's; the script contributes the corpus. Installed code carries
+  its own `use feature`, so the dialect search that the fixtures need is not
+  wanted here.
 
 The required local verification sequence before pushing is:
 

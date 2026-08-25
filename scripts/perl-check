@@ -109,7 +109,10 @@ for file in "${files[@]}"; do
   fi
 
   formatted="$work/formatted.pl"
-  if ! "$camello" format "$file" > "$formatted" 2>/dev/null; then
+  # `-o`, not a redirect: `format <path>` writes the file it was given and puts
+  # a summary on stdout, so capturing stdout both emptied the comparison and
+  # rewrote the fixture in place.
+  if ! "$camello" format "$file" -o "$formatted" 2>/dev/null; then
     echo "FORMAT FAILED  $file"
     broken=$((broken + 1))
     continue
