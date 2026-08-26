@@ -515,6 +515,12 @@ impl<'a> Builder<'a> {
     }
 
     /// A bareword call whose continued arguments hang below its first one.
+    ///
+    /// The hanging offset is the width of the name plus a space, counted from
+    /// the line's own indent — so it lands under the first argument only when
+    /// the name is what the line starts with. A call written mid-line takes the
+    /// ordinary continuation indent instead; measured from an indent the name is
+    /// nowhere near, the offset put `bbb` two columns right of its own list.
     fn list_call(&mut self, node: &SyntaxNode) -> Doc {
         let parent = Some(node.node_kind());
         let name = node
@@ -523,6 +529,7 @@ impl<'a> Builder<'a> {
         let arguments = node
             .children()
             .find(|child| child.node_kind() == NodeKind::LIST_EXPR);
+        let mid_list = !begins_its_line(node) && follows_a_list_separator(node);
         let hanging = name
             .as_ref()
             .zip(arguments.as_ref())
@@ -555,12 +562,17 @@ impl<'a> Builder<'a> {
                 SyntaxElement::Node(child)
                     if child.node_kind() == NodeKind::LIST_EXPR
                         && !has_special_leading_argument
-                        && hanging.is_some() =>
+                        && (hanging.is_some() || mid_list) =>
                 {
-                    parts.push(Doc::hanging(
-                        hanging.expect("checked above"),
-                        self.node(child),
-                    ));
+                    // Zero for a call written along a list: the lines under it
+                    // keep the list's own level, and the offset of any hanging
+                    // scope around them is shadowed rather than added to.
+                    let columns = if mid_list {
+                        0
+                    } else {
+                        hanging.expect("checked above")
+                    };
+                    parts.push(Doc::hanging(columns, self.node(child)));
                 }
                 SyntaxElement::Node(child) => parts.push(self.node(child)),
                 SyntaxElement::Token(token) => parts.push(self.token(token)),
@@ -1791,6 +1803,51 @@ fn brace(node: &SyntaxNode, kind: TokenKind, last: bool) -> Option<SyntaxToken> 
     } else {
         matching.next()
     }
+}
+
+/// Is this node written after a `,` or a `=>` of the list it sits in?
+///
+/// GUESS: the lines under a bareword call written along a list are the list's,
+/// not the call's arguments.
+/// Evidence: none — `a => f Str,` and the `bbb => 1` written under it are one
+/// argument list to camello, because an unknown bareword is a list operator
+/// (`grammar/builtins.rs`), and perl's own answer is in a prototype camello
+/// cannot see.
+/// Wrong: only the indent of those lines, never the meaning — they keep the
+/// list's level instead of hanging under an argument list perl may not agree
+/// the call has.
+fn follows_a_list_separator(node: &SyntaxNode) -> bool {
+    let mut cursor = node.prev_sibling_or_token();
+    while let Some(element) = cursor {
+        match element {
+            SyntaxElement::Token(token) if token.token_kind().is_trivia() => {
+                cursor = token.prev_sibling_or_token();
+            }
+            SyntaxElement::Token(token) => {
+                return matches!(token.token_kind(), T![","] | T!["=>"]);
+            }
+            SyntaxElement::Node(_) => return false,
+        }
+    }
+    false
+}
+
+/// Is this node the first thing written on its line?
+fn begins_its_line(node: &SyntaxNode) -> bool {
+    let Some(first) = node.first_token() else {
+        return true;
+    };
+    let mut token = first.prev_token();
+    while let Some(current) = token {
+        if current.token_kind() == TokenKind::NEWLINE {
+            return true;
+        }
+        if !current.token_kind().is_trivia() {
+            return false;
+        }
+        token = current.prev_token();
+    }
+    true
 }
 
 /// Is the next thing written after this node a `,`?
