@@ -67,6 +67,11 @@ thiserror = { workspace = true }
 
 # Character encoding conversion
 encoding_rs = "0.8"
+
+# camello.toml, and --format json (docs/typecheck.md, milestone 6)
+toml = "0.8"
+serde = { workspace = true }
+serde_json = { workspace = true }
 mimalloc = { version = "0.1.52", optional = true }
 
 [dev-dependencies]

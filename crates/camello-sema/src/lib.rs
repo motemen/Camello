@@ -24,6 +24,7 @@ pub mod interp;
 pub mod program;
 pub mod resolve;
 pub mod scope;
+pub mod suppress;
 pub mod types;
 
 use std::path::Path;
@@ -51,6 +52,7 @@ pub const COVERED_CODES: &[Code] = &[
     Code::MaybeDeref,
     Code::ReturnMismatch,
     Code::UnknownType,
+    Code::MissingAnnotation,
 ];
 
 /// What a run asks for.
@@ -60,6 +62,8 @@ pub struct Options {
     pub types: bool,
     /// Report a public sub with no annotation.
     pub strict_annotations: bool,
+    /// Codes this project has turned off (`camello.toml`).
+    pub disabled: Vec<Code>,
 }
 
 impl Options {
@@ -68,6 +72,7 @@ impl Options {
         Options {
             types: false,
             strict_annotations: false,
+            disabled: Vec::new(),
         }
     }
 
@@ -76,6 +81,7 @@ impl Options {
         Options {
             types: true,
             strict_annotations: false,
+            disabled: Vec::new(),
         }
     }
 
@@ -87,11 +93,13 @@ impl Options {
     #[must_use]
     pub fn for_fixture(path: &Path) -> Self {
         let text = path.to_string_lossy();
-        if text.contains("typecheck") {
+        let mut options = if text.contains("typecheck") {
             Options::typecheck()
         } else {
             Options::lint()
-        }
+        };
+        options.strict_annotations = text.contains("strict-annotations");
+        options
     }
 }
 
@@ -231,15 +239,59 @@ impl Analysis {
             if let Some(entry) = self.program.file(file) {
                 if entry.in_roots {
                     diagnostics.extend(entry.decls.diagnostics.iter().cloned());
+                    if options.strict_annotations {
+                        diagnostics.extend(unannotated(&entry.decls));
+                    }
                 }
             }
         }
         if !options.types {
             diagnostics.retain(|diagnostic| !diagnostic.code.needs_types());
         }
+        if !options.disabled.is_empty() {
+            diagnostics.retain(|diagnostic| !options.disabled.contains(&diagnostic.code));
+        }
+        // Per-line suppression is read last, so that a marker names a code the
+        // run would otherwise have reported.
+        let suppressions = suppress::Suppressions::of(root, source);
+        if !suppressions.is_empty() {
+            let index = LineIndex::new(source);
+            diagnostics.retain(|diagnostic| !suppressions.silences(diagnostic, source, &index));
+        }
         diagnostics.sort_by_key(|diagnostic| (diagnostic.range.start(), diagnostic.code));
         diagnostics
     }
+}
+
+/// Every public sub in a file that says nothing about its own shape.
+///
+/// "Public" is the language-wide reading of a leading underscore, and
+/// "annotated" is a signature, an `args` list or a `Returns:` — anything the
+/// checker could have used. Reported at `info`, because it is a thing a user
+/// asked to be told rather than a contradiction between two declared things.
+fn unannotated(decls: &decl::FileDecls) -> Vec<Diagnostic> {
+    decls
+        .subs
+        .iter()
+        .filter(|symbol| {
+            symbol.source != decl::SymbolSource::Annotated
+                && !symbol.name.starts_with('_')
+                && !symbol
+                    .name
+                    .chars()
+                    .all(|ch| ch.is_ascii_uppercase() || ch == '_')
+        })
+        .map(|symbol| {
+            Diagnostic::new(
+                Code::MissingAnnotation,
+                symbol.range,
+                format!(
+                    "`{}` is public and says nothing about what it takes or returns",
+                    symbol.name
+                ),
+            )
+        })
+        .collect()
 }
 
 /// Parse and check one file on its own, for a caller that has only the text.
