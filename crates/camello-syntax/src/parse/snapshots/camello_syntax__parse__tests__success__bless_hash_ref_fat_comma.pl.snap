@@ -1,0 +1,30 @@
+---
+source: crates/camello-syntax/src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          `return` "return"
+        LIST_EXPR
+          LIST_CALL_EXPR
+            SUB_NAME
+              identifier "bless"
+            LIST_EXPR
+              ANON_HASH
+                `{` "{"
+                LIST_EXPR
+                  SUB_NAME
+                    identifier "package"
+                  `=>` "=>"
+                  LIST_CALL_EXPR
+                    SUB_NAME
+                      identifier "__PACKAGE__"
+                `}` "}"
+              `=>` "=>"
+              LIST_CALL_EXPR
+                SUB_NAME
+                  identifier "__PACKAGE__"
+    `;` ";"

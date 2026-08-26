@@ -1,0 +1,18 @@
+---
+source: crates/camello-fmt/src/tests.rs
+expression: format(&source)
+---
+# try as a function (Try::Tiny style)
+try {
+    do_something();
+};
+
+try {
+    risky();
+} catch {
+    handle($_);
+};
+
+my $result = try {
+    compute();
+};

@@ -1,0 +1,51 @@
+---
+source: crates/camello-syntax/src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            ARRAY_VAR
+              `@` "@"
+              identifier "sorted"
+        `=` "="
+        LIST_CALL_EXPR
+          SUB_NAME
+            identifier "sort"
+          LIST_EXPR
+            SCALAR_VAR
+              `$` "$"
+              identifier "cmp"
+            `,` ","
+            ARRAY_VAR
+              `@` "@"
+              identifier "values"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            ARRAY_VAR
+              `@` "@"
+              identifier "other"
+        `=` "="
+        LIST_CALL_EXPR
+          SUB_NAME
+            identifier "sort"
+          LIST_EXPR
+            REFERENCE_EXPR
+              `\` "\\"
+              CODE_VAR
+                `&` "&"
+                identifier "custom"
+            `,` ","
+            ARRAY_VAR
+              `@` "@"
+              identifier "values"
+    `;` ";"

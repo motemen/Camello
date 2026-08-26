@@ -1,0 +1,5 @@
+---
+source: crates/camello-fmt/src/tests.rs
+expression: format(&source)
+---
+say "Found it!" when $_ ~~ /pattern/;

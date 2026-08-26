@@ -1,0 +1,20 @@
+[package]
+name = "camello-fmt"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+camello-syntax = { path = "../camello-syntax" }
+
+# CST操作のコアライブラリ
+rowan = { workspace = true }
+
+# 効率的な文字列処理
+smol_str = { workspace = true }
+
+# 桁揃えのための表示幅（全角は2桁）
+unicode-width = { workspace = true }
+
+[dev-dependencies]
+# スナップショットテスト
+insta = { workspace = true }

@@ -1,7 +1,0 @@
----
-source: src/parse/tests.rs
-expression: rendered
----
-ROOT
-  POD
-    POD block "=cut"

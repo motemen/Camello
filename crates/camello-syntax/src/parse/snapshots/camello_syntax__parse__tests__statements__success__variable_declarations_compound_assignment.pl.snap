@@ -1,0 +1,101 @@
+---
+source: crates/camello-syntax/src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "x"
+        `+=` "+="
+        LITERAL
+          number "1"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `state` "state"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "count"
+        `||=` "||="
+        LITERAL
+          number "0"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `our` "our"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "total"
+        `//=` "//="
+        LITERAL
+          number "0"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "say"
+        LIST_EXPR
+          ASSIGN_EXPR
+            VAR_DECL
+              `my` "my"
+              DECL_TARGET
+                SCALAR_VAR
+                  `$` "$"
+                  identifier "value"
+            `+=` "+="
+            LITERAL
+              number "2"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      BINARY_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "x"
+        `+` "+"
+        LITERAL
+          number "1"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      BINARY_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "y"
+        `//` "//"
+        LITERAL
+          string literal "'abc'"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      VAR_DECL
+        `my` "my"
+        DECL_TARGET
+          SCALAR_VAR
+            `$` "$"
+            identifier "z"
+      `=>` "=>"
+      ANON_HASH
+        `{` "{"
+        LIST_EXPR
+        `}` "}"
+    `;` ";"

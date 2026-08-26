@@ -3,7 +3,7 @@
 //! Two different kinds of check live here, and the difference between them is
 //! the whole design.
 //!
-//! **The expected output.** A fixture under `src/fmt/fixtures/regressions/` is
+//! **The expected output.** A fixture under `crates/camello-fmt/src/fixtures/regressions/` is
 //! an A→B pair: the `.pl` file is A, and B is its `.expected.pl` sibling, or A
 //! itself when there is none — a fixture that must come back unchanged is not a
 //! special case, it is one whose B happens to equal its A. Where the answer is
@@ -17,7 +17,7 @@
 //! is itself wrong.
 //!
 //! A defect found before it is fixed goes in the ledger — see
-//! `src/fmt/fixtures/regressions/known-broken.txt`.
+//! `crates/camello-fmt/src/fixtures/regressions/known-broken.txt`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -62,9 +62,9 @@ fn collect_fixtures(dir: &Path) -> Vec<PathBuf> {
 fn all_fixture_files() -> Vec<(String, PathBuf)> {
     let mut files = Vec::new();
     for directory in [
-        "src/fmt/fixtures",
-        "src/parse/fixtures/success",
-        "src/parse/fixtures/statements/success",
+        "crates/camello-fmt/src/fixtures",
+        "crates/camello-syntax/src/parse/fixtures/success",
+        "crates/camello-syntax/src/parse/fixtures/statements/success",
     ] {
         for path in collect_fixtures(&root().join(directory)) {
             let label = path
@@ -81,7 +81,7 @@ fn all_fixture_files() -> Vec<(String, PathBuf)> {
 
 /// The A→B pairs: (label, A, B).
 fn regression_cases() -> Vec<(String, String, String)> {
-    collect_fixtures(&root().join("src/fmt/fixtures/regressions"))
+    collect_fixtures(&root().join("crates/camello-fmt/src/fixtures/regressions"))
         .into_iter()
         .map(|path| {
             let label = path
@@ -109,7 +109,7 @@ fn regression_cases() -> Vec<(String, String, String)> {
 /// already known to be wrong; asking eight more questions about it spreads one
 /// fact across eight lists, and the fix would then have to remember all eight.
 fn known_broken() -> Vec<String> {
-    let path = root().join("src/fmt/fixtures/regressions/known-broken.txt");
+    let path = root().join("crates/camello-fmt/src/fixtures/regressions/known-broken.txt");
     let text = fs::read_to_string(&path).expect("failed to read the ledger");
     let entries: Vec<String> = text
         .lines()

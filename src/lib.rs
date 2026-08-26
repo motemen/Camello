@@ -1,58 +1,24 @@
 //! A parser and formatter for modern Perl.
 //!
-//! The layers are described in `docs/architecture.md`:
+//! The layers are described in `docs/architecture.md`, and since the workspace
+//! split (`docs/typecheck.md`, "Where it lives") they are crates:
 //!
-//! * [`lang`] — the language vocabulary, generated from a single definition.
-//! * [`lex`] — a scanner whose `expect` state lives in one place.
-//! * [`parse`] — an event-recording parser, so speculative parsing is possible.
-//! * [`fmt`] — a document IR, so layout is decided once and rendered once.
+//! * [`camello_syntax`] — vocabulary, scanner, event-recording parser, AST views.
+//! * [`camello_fmt`] — a document IR, so layout is decided once and rendered once.
+//!
+//! This crate is the command line and the invariants that compare the two.
 
 pub mod check;
 pub mod cli;
-pub mod diagnostic;
-pub mod fmt;
-pub(crate) mod hash;
-pub mod lang;
-pub mod lex;
-pub mod parse;
 
-use std::sync::Arc;
+pub use camello_fmt as fmt;
+pub use camello_syntax::{diagnostic, lang, lex, parse};
 
-pub use diagnostic::ParseError;
-pub use fmt::{DelimiterSpacing, FormatterOptions};
-pub use lang::{NodeKind, SyntaxKind, SyntaxNode, SyntaxToken, TokenKind};
-pub use parse::TriviaMap;
-
-/// The root of a parsed file.
-pub type PerlNode = SyntaxNode;
-
-/// Parse Perl source into a lossless CST.
-#[must_use]
-pub fn parse_perl(input: &str) -> (PerlNode, Vec<ParseError>) {
-    let (node, _trivia, errors) = parse_perl_with_trivia(input);
-    (node, errors)
-}
-
-/// Parse, keeping the trivia map the formatter needs.
-#[must_use]
-pub fn parse_perl_with_trivia(input: &str) -> (PerlNode, TriviaMap, Vec<ParseError>) {
-    let parsed = parse::parse(input);
-    // The source is copied for the diagnostics to point into, and only then: a
-    // file that parses cleanly is the common case, and copying it whole to hand
-    // an empty iterator something to borrow was a copy of every byte of every
-    // file in a run.
-    let errors = if parsed.diagnostics.is_empty() {
-        Vec::new()
-    } else {
-        let source: Arc<str> = Arc::from(input);
-        parsed
-            .diagnostics
-            .into_iter()
-            .map(|diagnostic| ParseError::from_parse(diagnostic, &source))
-            .collect()
-    };
-    (SyntaxNode::new_root(parsed.green), parsed.trivia, errors)
-}
+pub use camello_fmt::{DelimiterSpacing, FormatterOptions};
+pub use camello_syntax::{
+    parse_perl, parse_perl_with_trivia, NodeKind, ParseError, PerlNode, SyntaxKind, SyntaxNode,
+    SyntaxToken, TokenKind, TriviaMap,
+};
 
 /// Format Perl source with the default options.
 #[must_use]
@@ -67,5 +33,5 @@ pub fn format_perl_with_options(
     options: &FormatterOptions,
 ) -> (String, Vec<ParseError>) {
     let (node, trivia, errors) = parse_perl_with_trivia(input);
-    (fmt::format(&node, &trivia, options), errors)
+    (camello_fmt::format(&node, &trivia, options), errors)
 }

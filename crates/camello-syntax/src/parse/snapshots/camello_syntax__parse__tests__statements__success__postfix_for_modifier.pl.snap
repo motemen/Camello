@@ -1,0 +1,21 @@
+---
+source: crates/camello-syntax/src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "print"
+        LIST_EXPR
+          SCALAR_VAR
+            `$` "$"
+            identifier "_"
+    STMT_MODIFIER
+      `for` "for"
+      LIST_EXPR
+        ARRAY_VAR
+          `@` "@"
+          identifier "values"
+    `;` ";"

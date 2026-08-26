@@ -1,0 +1,57 @@
+---
+source: crates/camello-syntax/src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  EXPR_STMT
+    LIST_EXPR
+      CALL_EXPR
+        SUB_NAME
+          identifier "::diag"
+        ARG_LIST
+          `(` "("
+          LIST_EXPR
+            LITERAL
+              string literal "\"ok\""
+          `)` ")"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "::diag"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "value"
+        `=` "="
+        SCALAR_VAR
+          `$` "$"
+          identifier "::foo::bar"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `our` "our"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "global"
+        `=` "="
+        SCALAR_VAR
+          `$` "$"
+          identifier "::Root::leaf"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      CODE_VAR
+        `&` "&"
+        identifier "::helper"
+    `;` ";"

@@ -1,0 +1,6 @@
+---
+source: crates/camello-syntax/src/parse/tests.rs
+expression: rendered
+---
+line 1: subscripting the result of a call needs `->`
+line 2: subscripting the result of a call needs `->`

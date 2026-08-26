@@ -1,0 +1,28 @@
+---
+source: crates/camello-syntax/src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "func"
+        LIST_EXPR
+          DO_BLOCK_EXPR
+            BLOCK
+              `{` "{"
+              EXPR_STMT
+                LIST_EXPR
+                  SUB_NAME
+                    identifier "a"
+                  `=>` "=>"
+                  LIST_CALL_EXPR
+                    SUB_NAME
+                      identifier "b"
+                  `,` ","
+                  LIST_CALL_EXPR
+                    SUB_NAME
+                      identifier "z"
+                `;` ";"
+              `}` "}"

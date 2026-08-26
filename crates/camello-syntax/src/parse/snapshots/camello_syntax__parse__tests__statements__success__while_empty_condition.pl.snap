@@ -1,0 +1,14 @@
+---
+source: crates/camello-syntax/src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  LOOP_STMT
+    `while` "while"
+    PAREN_EXPR
+      `(` "("
+      LIST_EXPR
+      `)` ")"
+    BLOCK
+      `{` "{"
+      `}` "}"

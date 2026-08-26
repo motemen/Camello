@@ -1,0 +1,19 @@
+[package]
+name = "camello-syntax"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+# CST操作のコアライブラリ
+rowan = { workspace = true }
+
+# 効率的な文字列処理
+smol_str = { workspace = true }
+
+# エラー診断とレポート
+miette = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+# スナップショットテスト
+insta = { workspace = true }

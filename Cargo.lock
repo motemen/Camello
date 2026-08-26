@@ -107,18 +107,41 @@ checksum = "1b8e56985ec62d17e9c1001dc89c88ecd7dc08e47eba5ec7c29c7b5eeecde967"
 name = "camello"
 version = "0.1.1"
 dependencies = [
+ "camello-fmt",
+ "camello-syntax",
  "clap",
  "encoding_rs",
  "insta",
  "miette",
  "mimalloc",
  "rowan",
- "smol_str",
  "supports-color",
  "tempfile",
  "terminal_size",
  "thiserror",
  "unicode-width 0.2.1",
+]
+
+[[package]]
+name = "camello-fmt"
+version = "0.1.1"
+dependencies = [
+ "camello-syntax",
+ "insta",
+ "rowan",
+ "smol_str",
+ "unicode-width 0.2.1",
+]
+
+[[package]]
+name = "camello-syntax"
+version = "0.1.1"
+dependencies = [
+ "insta",
+ "miette",
+ "rowan",
+ "smol_str",
+ "thiserror",
 ]
 
 [[package]]

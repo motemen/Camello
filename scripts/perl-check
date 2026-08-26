@@ -31,7 +31,7 @@ set -uo pipefail
 
 files=("$@")
 if [ ${#files[@]} -eq 0 ]; then
-  mapfile -t files < <(find src/fmt/fixtures src/parse/fixtures/success -name '*.pl' | sort)
+  mapfile -t files < <(find crates/camello-fmt/src/fixtures crates/camello-syntax/src/parse/fixtures/success -name '*.pl' | sort)
 fi
 
 work=$(mktemp -d)

@@ -1,0 +1,5 @@
+---
+source: crates/camello-syntax/src/parse/tests.rs
+expression: rendered
+---
+line 1: expected a variable to declare
