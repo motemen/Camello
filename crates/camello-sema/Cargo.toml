@@ -8,3 +8,7 @@ camello-syntax = { path = "../camello-syntax" }
 
 # CST操作のコアライブラリ
 rowan = { workspace = true }
+
+# 宣言キャッシュの直列化（docs/typecheck.md「Dependencies」）
+serde = { workspace = true }
+serde_json = { workspace = true }

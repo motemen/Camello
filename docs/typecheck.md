@@ -704,6 +704,27 @@ reviewed as a decision rather than discovered as a difference.
   more argument than it writes, because that is what perl passes. Stripping it
   from one side and not the other reported `Dpkg::Email::Address->new()` as
   passing nothing to a sub that wants one.
+- **One type-expression parser, not two** (milestone 4). The document has the
+  string syntax parsed from text and the bareword syntax walked as a CST
+  subtree. They are the same grammar written the same way —
+  `ArrayRef[HashRef[Str]]` is one string either way — and a declaration keeps
+  the annotation's *text* rather than its subtree, because a declaration
+  outlives the tree it was read from and a rowan node is not `Send`. So there
+  is one parser, and the bareword form reaches it as the source text the CST
+  covered.
+- **An annotation is told from prose** (milestone 4). "A `Returns:` that fails
+  to parse is a diagnostic" met `File::Temp`, which writes `# Returns:
+  modified template` as a sentence and predates the syntax by twenty years.
+  So a `Returns:` or an `isa` whose text is not *shaped* like a type — two
+  bare names side by side outside any bracket, or anything holding a sigil, an
+  arrow or a call — is read as prose or as code, and nothing is said about it.
+  What is still reported is `'ArrayRef[Str'`, which is a type expression with
+  a bracket missing.
+- **A dependency is followed only by `typecheck`** (milestone 4). `lint`'s
+  questions are about the roots' own calls, so asking perl for its `@INC` and
+  reading a hundred modules to answer them would buy nothing. `require Foo` is
+  followed as well as `use Foo`: `HTTP::Date` reaches `Time::Local` that way
+  and no other.
 - **A lone parenthesised list is that list** (milestone 1). `Args::elements`
   and `Args::pairs` descend into a `PAREN_EXPR` that is a list's only element,
   so `use Foo (a => 1)` and `use Foo a => 1` reach a recogniser as the same
@@ -722,3 +743,7 @@ reviewed as a decision rather than discovered as a difference.
   `XML::XPathEngine` calls `XML::XPathEngine::NodeSet->new($results)`, and
   that constructor shifts its class and ignores everything after it — the
   argument is silently dropped, which is what the warning is for.
+- **Milestone 4, annotations over @INC.** Zero `bad-annotation`. Every
+  annotation the corpus carries parses or is correctly read as something that
+  is not one; the single finding of the first run was `File::Temp`'s prose
+  `Returns:` line, which the "shaped like a type" test above now leaves alone.
