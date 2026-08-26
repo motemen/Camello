@@ -16,6 +16,7 @@ mod align;
 mod build;
 pub mod doc;
 mod render;
+mod skip;
 
 #[cfg(test)]
 mod tests;
@@ -80,6 +81,13 @@ pub fn format(root: &SyntaxNode, trivia: &TriviaMap, options: &FormatterOptions)
     let document = build::Builder::new(trivia, options).file(root);
     let mut lines = render::Renderer::new(options).render(&document);
     align::align(&mut lines, options);
+    // Last, and over the rendered lines: a `#<<<` region is a run of lines the
+    // writer settled, so what it replaces is the formatter's whole answer for
+    // them — indentation, spacing and alignment together.
+    let regions = skip::regions(root);
+    if !regions.is_empty() {
+        skip::restore(&mut lines, &root.text().to_string(), &regions);
+    }
 
     let mut out = String::new();
     for line in &lines {

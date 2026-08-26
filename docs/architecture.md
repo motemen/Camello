@@ -20,6 +20,7 @@ Perl source
   -> formatter Doc IR
   -> rendered lines
   -> vertical alignment
+  -> format skipping
   -> formatted source
 ```
 
@@ -144,6 +145,8 @@ Formatting has three phases:
 2. `src/fmt/render.rs` applies indentation and spacing while rendering the
    document into lines.
 3. `src/fmt/align.rs` performs vertical alignment over rendered columns.
+4. `src/fmt/skip.rs` puts the source's own lines back over the regions perltidy's
+   `#<<<` / `#>>>` markers cover.
 
 Explicit `Doc::Space` values control spacing; the renderer does not infer
 spaces between arbitrary tokens. Layout groups retain relevant source-newline
@@ -152,7 +155,9 @@ decisions so a formatted result is a fixed point on the next pass.
 String contents, heredoc bodies, POD, formats, and data sections use raw or
 verbatim document atoms. The renderer cannot insert indentation or other text
 inside those atoms. Alignment is independent of parsing and only sees rendered
-lines and anchors.
+lines and anchors. Format skipping is later still and sees only lines: a marked
+region is a run of *lines* the writer settled, so what it replaces is the
+formatter's whole answer for them.
 
 `FormatterOptions` currently controls indentation width, minimum spacing before
 trailing comments, delimiter spacing, single-line blocks, and the maximum
