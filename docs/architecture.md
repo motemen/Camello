@@ -190,6 +190,15 @@ could not be read, or that the parser had something to say about and was
 therefore left alone, is always named: `--list-different` additionally prints
 its diagnostics, which are in any case what `camello format <that file>` shows.
 
+Left alone means left alone however the source was handed over. One path is how
+an editor's save hook and a pre-commit hook both ask, so it is the path a
+best-effort rewrite of an unparsed file would actually take, and it used to take
+it: `camello format one.pl` reported the diagnostics, rewrote the file anyway
+and exited 0. It now reports them, writes nothing and exits 1. A source with no
+file behind it comes back out as it went in — standard input echoed, `-o -`
+echoed — because that is what leaving it alone means when the result was going
+to standard output; under `--check` nothing is written at all.
+
 `--encoding` names the encodings a source may be in, in the order they are
 tried: the first that decodes a file's bytes without replacing any of them is
 the one it is read as, and the one it is written back in. Bytes that no
