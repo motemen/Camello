@@ -117,6 +117,25 @@ pub enum Commands {
         #[command(flatten)]
         layout: LayoutArgs,
     },
+    /// Report what the scopes say: undeclared, unused and shadowed lexicals,
+    /// and arity against a signature or an `args` list
+    ///
+    /// Everything here needs no type lattice, which is what makes it fast
+    /// enough to run where `perlcritic` runs. `typecheck` is this plus what
+    /// the lattice adds.
+    Lint {
+        #[command(flatten)]
+        args: CheckArgs,
+    },
+    /// Everything `lint` reports, plus what the type annotations add
+    ///
+    /// The annotations Perl code already carries — `has ... isa => 'Str'`,
+    /// `args my $x => 'Int'`, `Class::Accessor::Typed` — are read as
+    /// declarations, and a `Returns:` comment annotates a sub's result.
+    Typecheck {
+        #[command(flatten)]
+        args: CheckArgs,
+    },
     /// Developer tools (hidden): not an interface to depend on
     ///
     /// Everything here exists to work on camello itself — asking the invariants
@@ -307,6 +326,68 @@ pub enum DevCommands {
         )]
         encoding: Option<String>,
     },
+}
+
+/// What `lint` and `typecheck` share, which is everything but the lattice.
+#[derive(clap::Args, Debug, Clone)]
+pub struct CheckArgs {
+    /// Files or directories to check (reads from stdin if not provided)
+    #[arg(help = "Files or directories to check (recursive; stdin if omitted)")]
+    pub paths: Vec<PathBuf>,
+
+    /// The severity that makes the run fail
+    #[arg(
+        long = "error-on",
+        value_name = "SEVERITY",
+        default_value = "error",
+        help = "Exit 1 when anything at or above this severity was reported"
+    )]
+    pub error_on: String,
+
+    /// File extensions to walk into when given a directory
+    #[arg(
+        long,
+        value_name = "EXT,...",
+        default_value = "pl,pm,t,psgi",
+        help = "Extensions to consider when walking a directory"
+    )]
+    pub extensions: String,
+
+    /// How many files to check at once
+    #[arg(
+        short = 'j',
+        long,
+        value_name = "N",
+        help = "How many files to check at once (default: one per core)"
+    )]
+    pub jobs: Option<usize>,
+
+    /// Encodings a source may be in, tried in order
+    #[arg(
+        long,
+        value_name = "NAME,...",
+        help = "Encodings to try, in order, until one reads the file (default: utf-8)"
+    )]
+    pub encoding: Option<String>,
+}
+
+impl CheckArgs {
+    fn into_request(self, options: camello_sema::Options) -> Result<crate::report::Request> {
+        let error_on = camello_sema::Severity::parse(&self.error_on).ok_or_else(|| {
+            miette::miette!(
+                "--error-on takes `error`, `warning` or `info`, not `{}`",
+                self.error_on
+            )
+        })?;
+        Ok(crate::report::Request {
+            paths: self.paths,
+            error_on,
+            extensions: self.extensions,
+            jobs: self.jobs,
+            encoding: self.encoding,
+            options,
+        })
+    }
 }
 
 /// The formatter's options, as command-line flags.
@@ -511,6 +592,12 @@ pub fn run() -> Result<()> {
                 &layout.to_options(),
             )?;
         }
+        Commands::Lint { args } => {
+            return crate::report::run(&args.into_request(camello_sema::Options::lint())?);
+        }
+        Commands::Typecheck { args } => {
+            return crate::report::run(&args.into_request(camello_sema::Options::typecheck())?);
+        }
         Commands::Dev { command } => match command {
             DevCommands::Dump {
                 path,
@@ -600,7 +687,11 @@ fn worker_count(jobs: Option<usize>, items: usize) -> usize {
         .max(1)
 }
 
-fn in_parallel<T, R>(items: &[T], jobs: Option<usize>, job: impl Fn(&T) -> R + Sync) -> Vec<R>
+pub(crate) fn in_parallel<T, R>(
+    items: &[T],
+    jobs: Option<usize>,
+    job: impl Fn(&T) -> R + Sync,
+) -> Vec<R>
 where
     T: Sync,
     R: Send,
@@ -1671,7 +1762,11 @@ fn check_paths(
 }
 
 /// Every file below `path` whose extension is one this command reads.
-fn collect_perl_files(path: &Path, extensions: &[&str], into: &mut Vec<PathBuf>) -> Result<()> {
+pub(crate) fn collect_perl_files(
+    path: &Path,
+    extensions: &[&str],
+    into: &mut Vec<PathBuf>,
+) -> Result<()> {
     if path.is_file() {
         into.push(path.to_path_buf());
         return Ok(());
@@ -1722,11 +1817,11 @@ fn collect_perl_files(path: &Path, extensions: &[&str], into: &mut Vec<PathBuf>)
 /// Order is what settles a file that more than one candidate can read. Every
 /// candidate reads pure ASCII, and euc-jp bytes are rarely valid utf-8, so
 /// utf-8 first is the order that means "already converted, or not yet".
-struct Encodings(Vec<&'static Encoding>);
+pub(crate) struct Encodings(Vec<&'static Encoding>);
 
 impl Encodings {
     /// The candidates named on the command line, or utf-8 when none were.
-    fn parse(names: Option<&String>) -> Result<Self> {
+    pub(crate) fn parse(names: Option<&String>) -> Result<Self> {
         let Some(names) = names else {
             return Ok(Self(vec![encoding_rs::UTF_8]));
         };
@@ -1778,7 +1873,7 @@ impl Encodings {
 
 /// A source, what to call it in a message, and the encoding it turned out to be
 /// in — which is the one it is written back in.
-fn read_source(
+pub(crate) fn read_source(
     path: Option<&Path>,
     eval: Option<String>,
     eval_escape: Option<String>,

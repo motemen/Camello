@@ -108,6 +108,7 @@ name = "camello"
 version = "0.1.1"
 dependencies = [
  "camello-fmt",
+ "camello-sema",
  "camello-syntax",
  "clap",
  "encoding_rs",
@@ -131,6 +132,14 @@ dependencies = [
  "rowan",
  "smol_str",
  "unicode-width 0.2.1",
+]
+
+[[package]]
+name = "camello-sema"
+version = "0.1.1"
+dependencies = [
+ "camello-syntax",
+ "rowan",
 ]
 
 [[package]]

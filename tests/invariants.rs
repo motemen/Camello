@@ -313,3 +313,47 @@ fn expected_outputs_are_fixed_points() {
 
     report("their expected output being a fixed point", failures, total);
 }
+
+/// A `#~` expectation must stay on the line it belongs to.
+///
+/// The checker's fixtures (`docs/typecheck.md`, "Testing") put their expected
+/// diagnostics in a comment on the line they are about, so `camello format`
+/// moving one would silently rewrite the test. It is asked of the fixtures
+/// because it is the same question a `Returns:` comment asks of the `sub`
+/// below it, and that one has no test of its own to fail.
+#[test]
+fn formatting_keeps_a_marker_on_its_line() {
+    let directory = root().join("crates/camello-sema/src/fixtures");
+    let cases = collect_fixtures(&directory);
+    assert!(!cases.is_empty(), "no checker fixtures found");
+
+    let mut failures = Vec::new();
+    let total = cases.len();
+    for path in cases {
+        let source = fs::read_to_string(&path).expect("a readable fixture");
+        let (formatted, errors) = format_perl(&source);
+        assert!(
+            errors.is_empty(),
+            "{} does not parse: {errors:?}",
+            path.display()
+        );
+        let before = marker_lines(&source);
+        let after = marker_lines(&formatted);
+        if before != after {
+            failures.push(Failure {
+                fixture: path.display().to_string(),
+                detail: format!("markers were on lines {before:?} and are now on {after:?}"),
+            });
+        }
+    }
+    report("keeping every `#~` marker on its line", failures, total);
+}
+
+fn marker_lines(source: &str) -> Vec<usize> {
+    source
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| line.contains("#~"))
+        .map(|(index, _)| index + 1)
+        .collect()
+}

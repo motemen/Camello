@@ -1,9 +1,14 @@
 [workspace]
-members = ["crates/camello-syntax", "crates/camello-fmt"]
+members = ["crates/camello-syntax", "crates/camello-fmt", "crates/camello-sema"]
 # The root package is a member too, and cargo would otherwise take it alone as
 # the default — `cargo test -q`, which is the sequence docs/architecture.md
 # asks for before pushing, has to mean the whole workspace.
-default-members = [".", "crates/camello-syntax", "crates/camello-fmt"]
+default-members = [
+    ".",
+    "crates/camello-syntax",
+    "crates/camello-fmt",
+    "crates/camello-sema",
+]
 
 # The split of `docs/typecheck.md` ("Where it lives"): the checker must not be
 # able to reach the formatter's Doc IR, and Cargo is what enforces the direction
@@ -37,6 +42,7 @@ mimalloc = ["dep:mimalloc"]
 [dependencies]
 camello-syntax = { path = "crates/camello-syntax" }
 camello-fmt = { path = "crates/camello-fmt" }
+camello-sema = { path = "crates/camello-sema" }
 
 # CST操作のコアライブラリ
 rowan = { workspace = true }
