@@ -791,8 +791,9 @@ fn use_alignment_groups_end_where_alignment_groups_end() {
             "use Foo::A    qw(a);\n",
             "use Foo::BBBB qw(b);\n",
             "\n",
-            // A blank line ends the group, and a `no` is a different statement.
-            "use Foo::CC qw(c);\n",
+            // A blank line ends the group. A `no` does not: it is written in
+            // the same block and read as part of the same table.
+            "use Foo::CC  qw(c);\n",
             "no Foo::DDDD qw(d);\n",
         )
     );

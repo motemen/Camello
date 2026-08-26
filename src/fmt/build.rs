@@ -1786,10 +1786,13 @@ fn shape_key(node: &SyntaxNode) -> Option<ShapeKey> {
     let kind = node.node_kind();
     // A `use` and a `no` have nothing to walk for: what they declare is that
     // the statement above was one too, which is what keeps a block of them one
-    // alignment group and ends it where the block does.
+    // alignment group and ends it where the block does. One shape for both,
+    // because `use` and `no` are written in one block and read as one table —
+    // the keywords are the same width, so the columns were already agreeing on
+    // paper before anything lined them up.
     if matches!(kind, NodeKind::USE_STMT | NodeKind::NO_STMT) {
         return Some(ShapeKey {
-            statement: kind,
+            statement: NodeKind::USE_STMT,
             declares: false,
             list_assignment: false,
         });
