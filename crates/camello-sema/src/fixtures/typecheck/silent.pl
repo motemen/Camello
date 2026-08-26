@@ -28,4 +28,8 @@ package main;
 my $legacy = Legacy->new(input => 'x', handler => sub { { value => 1 } });
 print $legacy->run;
 print $legacy->describe;
-print $legacy->whatever_it_likes;
+
+# A class the run never saw might have any method, so nothing is said about
+# one of them.
+my $elsewhere = Somewhere::Else->new;
+print $elsewhere->whatever_it_likes;
