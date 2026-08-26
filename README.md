@@ -90,8 +90,10 @@ A `stubs/` directory holds ordinary `.pm` files that declare a dependency's
 subs with signatures and `Returns:` and no bodies — the `.pyi` idea with no new
 syntax, and how a project types the corner of a module no recogniser can read.
 
-[docs/typecheck.md](docs/typecheck.md) is the design, and records the decisions
-the real-world corpus forced on it.
+[docs/types.md](docs/types.md) is the specification: which types you can write,
+where camello reads them from, what it infers, and what each diagnostic means.
+[docs/typecheck.md](docs/typecheck.md) is the design behind it, and records the
+decisions the real-world corpus forced on it.
 
 Other flags worth knowing: `-j/--jobs` for the worker count, `--extensions` for
 which files a directory walk picks up, and `--encoding` for sources that are not
@@ -103,6 +105,7 @@ format --help` lists them all.
 The rules — indentation, line breaking, spacing, blank lines, comment handling,
 and vertical alignment — are written down in
 [docs/formatting.md](docs/formatting.md), with the options that adjust them.
+The checker has its own specification in [docs/types.md](docs/types.md).
 
 The short version: your line breaks are kept. Camello does not reflow code to a
 target width; it decides indentation, spacing, and alignment, and leaves the

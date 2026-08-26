@@ -9,8 +9,9 @@ changes trivia and layout rather than program tokens.
 Camello is also a static checker. `camello lint` and `camello typecheck` run
 over the same CST and read the type annotations Perl code already carries —
 `has ... isa => 'Str'`, `args my $x => 'Int'`, `Class::Accessor::Typed`, and a
-`Returns:` comment — as declarations rather than as strings. The design, and
-the decisions the corpus forced on it, are in [typecheck.md](typecheck.md).
+`Returns:` comment — as declarations rather than as strings. What it concludes
+from them is specified in [types.md](types.md); the design behind it, and the
+decisions the corpus forced on it, are in [typecheck.md](typecheck.md).
 
 The formatting rules themselves are documented in [formatting.md](formatting.md).
 The rules the source holds to — the five contracts its comments refer to by
@@ -283,8 +284,11 @@ not there:
   `@ISA` is computed, or which assigns a glob — might have any method, so "no
   such method" is never said of it.
 
-`docs/typecheck.md` is the design and carries the decisions the corpus forced,
-along with where each milestone's corpus bar landed.
+What the checker knows and what it deliberately leaves unknown is specified in
+[types.md](types.md), which is to the checker what `formatting.md` is to the
+formatter. `docs/typecheck.md` is the design behind it, and carries the
+decisions the corpus forced along with where each milestone's corpus bar
+landed.
 
 The hidden `camello dev` namespace contains development interfaces. `dump`
 prints a CST, and `check` evaluates parser and formatter invariants on files,
