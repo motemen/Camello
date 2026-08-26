@@ -2016,17 +2016,62 @@ fn dump_file(
             // Still dump the parsed AST for debugging, but exit with code 2.
             if !quiet {
                 println!("Parsed AST for '{source_name}':");
-                println!("{syntax:#?}");
+                print!("{}", dump_tree(&syntax));
             }
         }
         std::process::exit(2);
     } else {
         if !quiet && !very_quiet {
             println!("Parsed AST for '{source_name}':");
-            println!("{syntax:#?}");
+            print!("{}", dump_tree(&syntax));
         }
         Ok(())
     }
+}
+
+/// The tree as `dev dump` prints it: rowan's own shape, plus the name of the
+/// `ast` view that casts from each node.
+///
+/// The second column is the point (`docs/typecheck.md`, milestone 1). A reader
+/// looking at a dump is usually about to write a recogniser, and the question
+/// they have is "what do I cast this to" — which the kind alone does not
+/// answer, since `SUBSCRIPT` and `HASH_SUBSCRIPT_EXPR` are different nodes and
+/// `has` is a `LIST_CALL_EXPR` like every other bareword.
+fn dump_tree(root: &camello_syntax::SyntaxNode) -> String {
+    use camello_syntax::lang::NodeExt;
+
+    fn walk(node: &camello_syntax::SyntaxNode, depth: usize, out: &mut String) {
+        let kind = node.node_kind();
+        let range = node.text_range();
+        out.push_str(&"  ".repeat(depth));
+        out.push_str(&format!(
+            "{}@{}..{}  {}\n",
+            kind.name(),
+            usize::from(range.start()),
+            usize::from(range.end()),
+            kind.view_name()
+        ));
+        for child in node.children_with_tokens() {
+            match child {
+                rowan::NodeOrToken::Node(node) => walk(&node, depth + 1, out),
+                rowan::NodeOrToken::Token(token) => {
+                    let range = token.text_range();
+                    out.push_str(&"  ".repeat(depth + 1));
+                    out.push_str(&format!(
+                        "{:?}@{}..{} {:?}\n",
+                        token.kind(),
+                        usize::from(range.start()),
+                        usize::from(range.end()),
+                        token.text()
+                    ));
+                }
+            }
+        }
+    }
+
+    let mut out = String::new();
+    walk(root, 0, &mut out);
+    out
 }
 
 #[cfg(test)]
