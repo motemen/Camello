@@ -13,9 +13,30 @@ use camello_sema::{Code, Diagnostic, LineIndex, Options, Severity};
 use miette::Result;
 
 /// What one run of `lint` or `typecheck` was asked for.
+/// How the diagnostics are printed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Format {
+    /// `path:line:col: severity: message [code]`, one per line.
+    Text,
+    /// One JSON array, for tooling.
+    Json,
+}
+
+impl Format {
+    #[must_use]
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "text" => Some(Format::Text),
+            "json" => Some(Format::Json),
+            _ => None,
+        }
+    }
+}
+
 pub struct Request {
     pub paths: Vec<PathBuf>,
     pub error_on: Severity,
+    pub format: Format,
     pub extensions: String,
     pub jobs: Option<usize>,
     pub encoding: Option<String>,
@@ -129,6 +150,7 @@ pub fn run(request: &Request) -> Result<()> {
 
     let mut counts = [0usize; 3];
     let mut unreadable = 0usize;
+    let mut json = Vec::new();
     for report in &reports {
         let report = match report {
             Ok(report) => report,
@@ -140,7 +162,10 @@ pub fn run(request: &Request) -> Result<()> {
         };
         if !report.parse_errors.is_empty() {
             for message in &report.parse_errors {
-                println!("{}: parse error: {message}", report.path);
+                match request.format {
+                    Format::Text => println!("{}: parse error: {message}", report.path),
+                    Format::Json => json.push(Entry::parse_error(&report.path, message)),
+                }
             }
             unreadable += 1;
             continue;
@@ -149,19 +174,39 @@ pub fn run(request: &Request) -> Result<()> {
         for diagnostic in &report.diagnostics {
             counts[diagnostic.severity as usize] += 1;
             let position = index.position(&report.source, usize::from(diagnostic.range.start()));
-            println!(
-                "{}:{}:{}: {}: {} [{}]",
-                report.path,
-                position.line,
-                position.column,
-                diagnostic.severity,
-                diagnostic.message,
-                diagnostic.code
-            );
+            let end = index.position(&report.source, usize::from(diagnostic.range.end()));
+            match request.format {
+                Format::Text => println!(
+                    "{}:{}:{}: {}: {} [{}]",
+                    report.path,
+                    position.line,
+                    position.column,
+                    diagnostic.severity,
+                    diagnostic.message,
+                    diagnostic.code
+                ),
+                Format::Json => json.push(Entry {
+                    file: report.path.clone(),
+                    line: position.line,
+                    column: position.column,
+                    end_line: end.line,
+                    end_column: end.column,
+                    severity: diagnostic.severity.to_string(),
+                    code: diagnostic.code.to_string(),
+                    message: diagnostic.message.clone(),
+                }),
+            }
         }
     }
 
-    summarise(&counts, files.len(), unreadable);
+    if request.format == Format::Json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json).unwrap_or_else(|_| "[]".to_string())
+        );
+    } else {
+        summarise(&counts, files.len(), unreadable);
+    }
 
     let reportable: usize = counts
         .iter()
@@ -216,6 +261,40 @@ fn check_one(
     })
 }
 
+/// One diagnostic, as `--format json` prints it.
+///
+/// Positions are one-based and columns count characters, which is what the
+/// text form prints too; `end_line`/`end_column` are what an editor needs to
+/// underline the span rather than the point.
+#[derive(serde::Serialize)]
+struct Entry {
+    file: String,
+    line: usize,
+    column: usize,
+    end_line: usize,
+    end_column: usize,
+    severity: String,
+    code: String,
+    message: String,
+}
+
+impl Entry {
+    /// A file the parser had something to say about is reported as itself, so
+    /// that a tool reading the JSON is not told the file was clean.
+    fn parse_error(path: &str, message: &str) -> Self {
+        Entry {
+            file: path.to_string(),
+            line: 1,
+            column: 1,
+            end_line: 1,
+            end_column: 1,
+            severity: "error".to_string(),
+            code: "parse-error".to_string(),
+            message: message.to_string(),
+        }
+    }
+}
+
 /// One line at the end, the way `format` ends a tree with one.
 ///
 /// Quiet when there is nothing to say: a clean run over a clean tree prints
@@ -251,9 +330,8 @@ fn summarise(counts: &[usize; 3], files: usize, unreadable: usize) {
 
 /// The codes a run may be told to ignore, parsed from a comma-separated list.
 ///
-/// Used by the config file and `--disable` (milestone 6); parsing lives here
-/// so that both spell a code the same way.
-#[allow(dead_code)]
+/// Used by the config file and `--disable`; parsing lives here so that both
+/// spell a code the same way.
 pub fn parse_codes(list: &str) -> Result<Vec<Code>> {
     list.split(',')
         .map(str::trim)

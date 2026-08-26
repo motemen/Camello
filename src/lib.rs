@@ -10,6 +10,7 @@
 
 pub mod check;
 pub mod cli;
+pub mod config;
 pub mod report;
 
 pub use camello_fmt as fmt;
