@@ -14,7 +14,12 @@ has coerced  => (is => 'ro', isa => 'Int', coerce => 1);
 has dict     => (is => 'ro', isa => Dict[name => Str, age => Optional[Int]]);
 has slurpy   => (is => 'ro', isa => Dict[name => Str, slurpy HashRef[Str]]);
 has union    => (is => 'ro', isa => 'Str|Undef');
+# A class nothing in the run declares is `Unknown` and silent — but saying so
+# once, at `info`, is what catches a typo in a type name.
 has instance => (is => 'ro', isa => InstanceOf['IO::Handle']);
+#~ info unknown-type: `IO::Handle` is not known
+has typo     => (is => 'ro', isa => 'Srt');
+#~ info unknown-type: `Srt` is not known
 has refined  => (is => 'ro', isa => 'PositiveInt');
 
 sub greet {
@@ -34,6 +39,7 @@ sub at {
 sub listed { return [] }
 
 # Returns: Maybe[InstanceOf['IO::Handle']]
+#~ info unknown-type: `IO::Handle` is not known
 sub handle { return undef }
 
 # Returns: Str | list: (Str, Int)

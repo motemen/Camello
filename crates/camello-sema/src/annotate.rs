@@ -111,6 +111,34 @@ pub struct AttributeDecl {
     pub range: TextRange,
 }
 
+/// What reading a file's annotations produced.
+///
+/// The diagnostics are the pass's own; the ledger is for the questions that
+/// need the whole program and cannot be asked here — whether a class named in
+/// a type is one anything declares (`unknown-type`).
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct Sink {
+    pub diagnostics: Vec<Diagnostic>,
+    pub annotations: Vec<Annotated>,
+}
+
+/// One annotation, as read, and where it was written.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Annotated {
+    pub ty: Type,
+    #[serde(with = "crate::serde_range")]
+    pub range: TextRange,
+}
+
+impl Sink {
+    fn note(&mut self, ty: &Type, range: TextRange) {
+        self.annotations.push(Annotated {
+            ty: ty.clone(),
+            range,
+        });
+    }
+}
+
 /// Read a type annotation's text, reporting when it does not parse.
 ///
 /// An annotation that is silently ignored is worse than none
@@ -119,12 +147,15 @@ pub struct AttributeDecl {
 /// `Foo->meta->type` is code the checker cannot read, not an annotation it
 /// read wrongly, and it is `Unknown` and silent.
 #[must_use]
-pub fn read_annotation(annotation: &crate::decl::Annotation, into: &mut Vec<Diagnostic>) -> Type {
+pub fn read_annotation(annotation: &crate::decl::Annotation, into: &mut Sink) -> Type {
     match types::parse(&annotation.text) {
-        Ok(ty) => ty,
+        Ok(ty) => {
+            into.note(&ty, annotation.range);
+            ty
+        }
         Err(error) => {
             if looks_like_a_type(&annotation.text) {
-                into.push(Diagnostic::new(
+                into.diagnostics.push(Diagnostic::new(
                     Code::BadAnnotation,
                     annotation.range,
                     format!("`{}` is not a type: {}", annotation.text, error.message),
@@ -167,7 +198,7 @@ fn looks_like_a_type(text: &str) -> bool {
 /// Also `has [qw(a b)] => (...)` for several at once, and `has '+name' => (...)`
 /// for an override, whose type comes from the parent.
 #[must_use]
-pub fn read_has(call: &ast::Call, into: &mut Vec<Diagnostic>) -> Vec<AttributeDecl> {
+pub fn read_has(call: &ast::Call, into: &mut Sink) -> Vec<AttributeDecl> {
     let arguments = call.args();
     let Some(first) = arguments.first() else {
         return Vec::new();
@@ -317,10 +348,7 @@ fn is_true(node: &SyntaxNode) -> bool {
 ///
 /// A `use` statement whose argument list is a declaration.
 #[must_use]
-pub fn read_accessor_typed(
-    arguments: &SyntaxNode,
-    into: &mut Vec<Diagnostic>,
-) -> (Vec<AttributeDecl>, bool) {
+pub fn read_accessor_typed(arguments: &SyntaxNode, into: &mut Sink) -> (Vec<AttributeDecl>, bool) {
     let mut attributes = Vec::new();
     let mut constructor = true;
     for pair in Args::pairs(arguments) {
@@ -358,7 +386,7 @@ pub fn read_accessor_typed(
 }
 
 /// A slot's value: a type, or a hashref with `isa` / `default` / `builder`.
-fn read_slot(node: &SyntaxNode, into: &mut Vec<Diagnostic>) -> (Type, bool, bool) {
+fn read_slot(node: &SyntaxNode, into: &mut Sink) -> (Type, bool, bool) {
     if node.node_kind() == NodeKind::ANON_HASH {
         let hash = AnonHash::cast(node.clone()).expect("kind checked");
         let mut ty = Type::Unknown;
@@ -405,7 +433,7 @@ pub struct NamedType {
 /// constraint is what the checker can use, and the predicate is a run-time
 /// refinement it cannot.
 #[must_use]
-pub fn read_type_library(call: &ast::Call, into: &mut Vec<Diagnostic>) -> Option<NamedType> {
+pub fn read_type_library(call: &ast::Call, into: &mut Sink) -> Option<NamedType> {
     let callee = call.callee_name()?;
     let arguments = call.args();
     let name = arguments.first().and_then(ast::key_text)?;
@@ -451,7 +479,7 @@ pub fn read_type_library(call: &ast::Call, into: &mut Vec<Diagnostic>) -> Option
 }
 
 /// `as Int` — the parent of a declared type.
-fn as_clause(node: &SyntaxNode, into: &mut Vec<Diagnostic>) -> Option<Type> {
+fn as_clause(node: &SyntaxNode, into: &mut Sink) -> Option<Type> {
     let call = ast::Call::cast(node.clone())?;
     if call.callee_name().as_deref() != Some("as") {
         return None;
@@ -460,7 +488,7 @@ fn as_clause(node: &SyntaxNode, into: &mut Vec<Diagnostic>) -> Option<Type> {
     Some(member_type(&inner, into))
 }
 
-fn member_type(node: &SyntaxNode, into: &mut Vec<Diagnostic>) -> Type {
+fn member_type(node: &SyntaxNode, into: &mut Sink) -> Type {
     crate::decl::annotation_of(node).map_or(Type::Unknown, |annotation| {
         read_annotation(&annotation, into)
     })
@@ -513,7 +541,7 @@ pub enum ListShape {
 /// `<type>` for scalar context, `list: (<type>, ...)` for list context, both
 /// joined by `|`, or `()` for "returns nothing".
 #[must_use]
-pub fn read_returns(definition: &SubDef, into: &mut Vec<Diagnostic>) -> Option<Returns> {
+pub fn read_returns(definition: &SubDef, into: &mut Sink) -> Option<Returns> {
     let comment = definition
         .leading_comments()
         .into_iter()
@@ -529,10 +557,10 @@ fn annotation_body(token: &SyntaxToken) -> Option<String> {
         .map(|rest| rest.trim().to_string())
 }
 
-fn parse_returns(body: &str, range: TextRange, into: &mut Vec<Diagnostic>) -> Returns {
+fn parse_returns(body: &str, range: TextRange, into: &mut Sink) -> Returns {
     let mut returns = Returns::default();
-    let bad = |message: String, into: &mut Vec<Diagnostic>| {
-        into.push(Diagnostic::new(
+    let bad = |message: String, into: &mut Sink| {
+        into.diagnostics.push(Diagnostic::new(
             Code::BadAnnotation,
             range,
             format!("`Returns: {body}` does not parse: {message}"),
@@ -559,7 +587,10 @@ fn parse_returns(body: &str, range: TextRange, into: &mut Vec<Diagnostic>) -> Re
         returns.scalar = Type::Undef;
     } else if !scalar_part.is_empty() {
         match types::parse(scalar_part) {
-            Ok(ty) => returns.scalar = ty,
+            Ok(ty) => {
+                into.note(&ty, range);
+                returns.scalar = ty;
+            }
             Err(error) => bad(error.message, into),
         }
     }
@@ -575,7 +606,10 @@ fn parse_returns(body: &str, range: TextRange, into: &mut Vec<Diagnostic>) -> Re
                 let mut ok = true;
                 for part in split_top_level(inner) {
                     match types::parse(part.trim()) {
-                        Ok(ty) => members.push(ty),
+                        Ok(ty) => {
+                            into.note(&ty, range);
+                            members.push(ty);
+                        }
                         Err(error) => {
                             bad(error.message, into);
                             ok = false;

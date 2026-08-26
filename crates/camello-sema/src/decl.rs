@@ -189,6 +189,10 @@ pub struct PackageFacts {
     /// A `BUILDARGS` turns the constructor's argument check off: the class
     /// rewrites what it was given before anything sees it.
     pub buildargs: bool,
+    /// The package makes methods by means this pass cannot read: an XS
+    /// `bootstrap`, an `@ISA` computed at run time, a glob assignment. Such a
+    /// class might have any method, so "no such method" is never said of it.
+    pub dynamic: bool,
 }
 
 /// What one file declares.
@@ -206,6 +210,10 @@ pub struct FileDecls {
     /// What the declaration pass had to say. Reported only for a file in the
     /// roots; a dependency contributes declarations and nothing else.
     pub diagnostics: Vec<Diagnostic>,
+    /// Every type annotation the pass read, with where it was written. The
+    /// questions that need the whole program — is this class one anything
+    /// declares — are asked of this, later.
+    pub annotations: Vec<crate::annotate::Annotated>,
 }
 
 impl FileDecls {
@@ -244,21 +252,36 @@ pub fn declare(root: &SyntaxNode) -> FileDecls {
 
     let mut pass = Pass {
         decls: FileDecls::default(),
+        sink: annotate::Sink::default(),
         frameworks,
+        dynamic: false,
     };
     pass.walk(root, "main");
+    // XS registers methods into whichever package it likes, and a glob
+    // assignment can too, so a file that does either makes every package in it
+    // one whose method set nobody here can enumerate.
+    if pass.dynamic {
+        for facts in &mut pass.decls.facts {
+            facts.dynamic = true;
+        }
+    }
     // A package with a framework generates a constructor unless it said not to.
     for facts in &mut pass.decls.facts {
         if facts.framework == Framework::Moose {
             facts.constructor = true;
         }
     }
+    pass.decls.diagnostics.append(&mut pass.sink.diagnostics);
+    pass.decls.annotations = std::mem::take(&mut pass.sink.annotations);
     pass.decls
 }
 
 struct Pass {
     decls: FileDecls,
+    sink: annotate::Sink,
     frameworks: Frameworks,
+    /// The file loads XS or assigns a glob.
+    dynamic: bool,
 }
 
 impl Pass {
@@ -304,13 +327,17 @@ impl Pass {
                 NodeKind::SUB_DEF => self.sub(&child, &package),
                 NodeKind::USE_STMT | NodeKind::NO_STMT => self.use_statement(&child, &package),
                 NodeKind::EXPR_STMT => {
+                    self.glob_assignment(&child);
                     self.require_statement(&child);
                     self.expression_statement(&child, &package);
                     self.walk(&child, &package);
                 }
                 // `our @ISA = ('Base');` is a declaration statement, not an
                 // expression one.
-                NodeKind::VAR_DECL_STMT => self.isa_assignment(&child, &package),
+                NodeKind::VAR_DECL_STMT => {
+                    self.isa_assignment(&child, &package);
+                    self.glob_assignment(&child);
+                }
                 // A block, an `if`, a `BEGIN` — a sub inside one is still a sub
                 // of the package, so the walk goes on rather than stopping at
                 // the first thing that is not a declaration.
@@ -327,10 +354,8 @@ impl Pass {
         if name == "BUILDARGS" {
             self.facts(package).buildargs = true;
         }
-        let mut diagnostics = Vec::new();
-        let params = parameters(&definition, self.frameworks.smart_args, &mut diagnostics);
-        let annotated = annotate::read_returns(&definition, &mut diagnostics);
-        self.decls.diagnostics.append(&mut diagnostics);
+        let params = parameters(&definition, self.frameworks.smart_args, &mut self.sink);
+        let annotated = annotate::read_returns(&definition, &mut self.sink);
         let source = if annotated.is_some()
             || matches!(
                 params.source(),
@@ -378,6 +403,15 @@ impl Pass {
             self.decls.uses.push(module.clone());
         }
 
+        // A module that loads XS has its methods written in C, where no
+        // recogniser can reach them.
+        if matches!(
+            module.as_str(),
+            "XSLoader" | "DynaLoader" | "Inline" | "Alien::Base"
+        ) {
+            self.dynamic = true;
+        }
+
         match module.as_str() {
             "parent" | "base" => {
                 if let Some(arguments) = &arguments {
@@ -391,10 +425,8 @@ impl Pass {
             }
             "Class::Accessor::Typed" => {
                 if let Some(arguments) = &arguments {
-                    let mut diagnostics = Vec::new();
                     let (attributes, constructor) =
-                        annotate::read_accessor_typed(arguments, &mut diagnostics);
-                    self.decls.diagnostics.append(&mut diagnostics);
+                        annotate::read_accessor_typed(arguments, &mut self.sink);
                     let facts = self.facts(package);
                     facts.attributes.extend(attributes);
                     facts.constructor = constructor;
@@ -408,6 +440,27 @@ impl Pass {
             for name in imported_names(arguments) {
                 self.decls.imports.insert(name, module.clone());
             }
+        }
+    }
+
+    /// `*Foo::bar = sub {...};` and `*{"${class}::$name"} = ...` make a method
+    /// out of nothing this pass can name (`docs/typecheck.md`, non-goals), so
+    /// the package they are in might have any method.
+    fn glob_assignment(&mut self, node: &SyntaxNode) {
+        let Some(assign) = node.descendants().find_map(ast::Assign::cast) else {
+            return;
+        };
+        let Some(target) = assign.target() else {
+            return;
+        };
+        let is_glob = matches!(
+            target.node_kind(),
+            NodeKind::TYPEGLOB_VAR | NodeKind::BLOCK_DEREF_EXPR
+        ) && ast::tokens(&target)
+            .chain(target.descendants().flat_map(|inner| ast::tokens(&inner)))
+            .any(|token| token.token_kind() == TokenKind::TYPEGLOB_SIGIL);
+        if is_glob {
+            self.dynamic = true;
         }
     }
 
@@ -442,9 +495,7 @@ impl Pass {
         };
         match callee.as_str() {
             "has" if self.frameworks.moose => {
-                let mut diagnostics = Vec::new();
-                let attributes = annotate::read_has(&call, &mut diagnostics);
-                self.decls.diagnostics.append(&mut diagnostics);
+                let attributes = annotate::read_has(&call, &mut self.sink);
                 self.facts(package).attributes.extend(attributes);
             }
             "extends" if self.frameworks.moose => {
@@ -458,13 +509,15 @@ impl Pass {
             "declare" | "subtype" | "class_type" | "role_type" | "duck_type" | "enum" | "union"
                 if self.frameworks.type_library =>
             {
-                let mut diagnostics = Vec::new();
-                if let Some(named) = annotate::read_type_library(&call, &mut diagnostics) {
+                if let Some(named) = annotate::read_type_library(&call, &mut self.sink) {
                     self.facts(package).types.push(named);
                 }
-                self.decls.diagnostics.append(&mut diagnostics);
             }
-            "__PACKAGE__" | "mk_accessors" | "mk_ro_accessors" | "mk_wo_accessors" => {}
+            // `Foo->bootstrap($VERSION)` and `XSLoader::load(...)`: the
+            // methods are in the shared library, not in the file.
+            "bootstrap" | "XSLoader::load" | "DynaLoader::bootstrap" => {
+                self.dynamic = true;
+            }
             _ => {}
         }
     }
@@ -477,24 +530,25 @@ impl Pass {
         let Some(target) = assign.target() else {
             return;
         };
-        let names: Vec<String> = target
+        let is_isa = target
             .descendants()
             .filter_map(Variable::cast)
-            .filter(|variable| {
+            .any(|variable| {
                 variable.sigil() == Sigil::Array && variable.name().as_deref() == Some("ISA")
-            })
-            .map(|_| String::new())
-            .collect();
-        if names.is_empty() {
+            });
+        if !is_isa {
             return;
         }
         let Some(value) = assign.value() else {
             return;
         };
-        let parents: Vec<String> = Args::elements(&value)
-            .iter()
-            .filter_map(ast::key_text)
-            .collect();
+        let elements = Args::elements(&value);
+        let parents: Vec<String> = elements.iter().filter_map(ast::key_text).collect();
+        // `@ISA = ($module)` — `File::Spec` picks its parent at run time, and
+        // a class whose ancestry is computed might have any method.
+        if parents.len() != elements.len() {
+            self.facts(package).dynamic = true;
+        }
         self.facts(package).isa.extend(parents);
     }
 }
@@ -541,7 +595,7 @@ fn imported_names(arguments: &SyntaxNode) -> Vec<String> {
 /// that matches wins, and no match is `Unknown` — which is never reported
 /// against.
 #[must_use]
-pub fn parameters(definition: &SubDef, smart_args: bool, into: &mut Vec<Diagnostic>) -> Params {
+pub fn parameters(definition: &SubDef, smart_args: bool, into: &mut annotate::Sink) -> Params {
     if let Some(signature) = definition.signature() {
         return from_signature(&signature);
     }
@@ -618,7 +672,7 @@ fn is_invocant_name(display: &str) -> bool {
 /// The *first statement* of the body being an `args` or `args_pos` call is
 /// what makes this a parameter list; an `args` anywhere else is a call that
 /// declares nothing.
-fn from_args(body: &ast::Block, into: &mut Vec<Diagnostic>) -> Option<Params> {
+fn from_args(body: &ast::Block, into: &mut annotate::Sink) -> Option<Params> {
     let first = body.statements().next()?;
     let call = first
         .descendants()
