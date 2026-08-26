@@ -726,14 +726,29 @@ reviewed as a decision rather than discovered as a difference.
   reading a hundred modules to answer them would buy nothing. `require Foo` is
   followed as well as `use Foo`: `HTTP::Date` reaches `Time::Local` that way
   and no other.
-- **A hand-written `new` is not assumed to return its own class**
-  (milestone 5). The document has `Foo->new(...)` yield `InstanceOf['Foo']`
-  "when `Foo` resolves". Over @INC that produced 380 `unknown-method`
-  warnings, and every one of them was the same two mistakes: `URI::new`
-  returns a `URI::http`, and `Crypt::Mode::CBC->new` lives in a shared
-  library. So an instance comes from a constructor a *framework* generates,
-  or from a `Returns:`, and a hand-written `new` returns what it says it
-  returns — which is usually nothing, which is silence.
+- **A hand-written `new` *does* return its own class** (milestone 5, revised).
+  This first read the other way — an instance came only from a
+  framework-generated constructor or a `Returns:` — on the strength of 380
+  `unknown-method` warnings over @INC. That was measured wrong: the 380 fell
+  to 31 when opaque packages started reading as `Unknown`, and only 31 to 8
+  from refusing to type `Foo->new`. The refusal cost every plain `bless`
+  class in the language its types, so the design's reading is back: `Foo->new`
+  is an `InstanceOf['Foo']` wherever the run actually read a `sub new`. A
+  class it never saw stays `Unknown`, a `Returns:` wins, and a framework's
+  constructor never came this way.
+- **Four rules keep `$self` honest** (milestone 5, revised). Restoring the
+  above made `$self` and `$class` reachable in every body and lit up four
+  things that had been quietly wrong: the unpacking statement overwrote the
+  parameters it declared (`my ($class, %args) = @_` assigned `Unknown` over
+  what `from_unpacking` had just read); an empty `()` is a prototype and not a
+  zero-parameter signature, which the body reading `@_` is the evidence for;
+  `SUPER::init` was resolved as a method of that name; and a `bless` whose
+  class could not be read left the old type in place, when a `bless` always
+  changes what its argument is and "unreadable" means nobody knows any more.
+- **A dynamic package makes its whole namespace dynamic** (milestone 5,
+  revised). XS registers into a distribution's namespace and a distribution's
+  namespace is a name prefix: `Net::DBus` calls `XSLoader::load` and the
+  methods land on `Net::DBus::Binding::Iterator`, whose own file has no idea.
 - **A class the run knows only the name of is `Unknown`** (milestone 5).
   Three more shapes make a package one whose method set nobody can enumerate,
   and each was a run of warnings over @INC: a file that loads XS (every
@@ -791,9 +806,20 @@ reviewed as a decision rather than discovered as a difference.
   is not one; the single finding of the first run was `File::Temp`'s prose
   `Returns:` line, which the "shaped like a type" test above now leaves alone.
 - **Milestone 5, type flow over @INC.** Zero errors from the type
-  diagnostics — no `type-mismatch`, no `unknown-key`, no `maybe-deref`, no
-  `return-mismatch`, no `unknown-type`. 599 warnings in all: 457
-  `unused-variable`, 133 `shadowed-variable`, 8 `unknown-method`, 1 `arity`.
-  The 8 are XS constructors — `Crypt::Mode::CBC->new` and `JSON->new`, whose
-  `new` is in a shared library that the `.pm` declaring the package does not
-  itself load. That is exactly what a stub is for.
+  diagnostics — no `type-mismatch`, no `unknown-key`, no `return-mismatch`,
+  no `unknown-type`. 627 warnings in all: 457 `unused-variable`, 133
+  `shadowed-variable`, 30 `unknown-method`, 5 `maybe-deref`, 2 `arity`.
+
+  The 5 `maybe-deref` are one file (`LWP::Protocol::nntp`) setting `$nntp =
+  undef` in one branch and calling a method on it in another, which is the
+  documented cost of an analysis with no path-sensitivity beyond narrowing.
+
+  The 30 `unknown-method` are two kinds of thing. 23 are three families whose
+  `new` hands back something that is not an instance of them: `URI` (a
+  `URI::http`), `JSON` (a backend chosen at run time), `Crypt::Mode::*` (XS
+  bootstrapped from `CryptX`, which is not a prefix of them). That is a fact
+  about those three and a stub is what it is for. The other 7 are template
+  methods — a base class calling something its subclasses supply, as
+  `Dpkg::Interface::Storable` does after asking `$self->can('parse')`. `$self`
+  is really "this class or any subclass" and a subclass may define anything;
+  reading it that way is the honest fix and is not built.
