@@ -55,6 +55,9 @@ The short version: your line breaks are kept. Camello does not reflow code to a
 target width; it decides indentation, spacing, and alignment, and leaves the
 choice of where a long expression breaks to whoever wrote it.
 
+A region between perltidy's `#<<<` and `#>>>` markers comes back exactly as it
+was written — the escape hatch for a table whose columns were lined up by hand.
+
 ## Develop
 
 [docs/architecture.md](docs/architecture.md) describes the layers — `src/lang`

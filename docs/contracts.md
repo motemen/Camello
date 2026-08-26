@@ -156,7 +156,11 @@ state, and the grammar owns it.
 
 `src/fmt`, in three phases: **build** (CST + `TriviaMap` → `Doc`, where every
 flat/broken decision is made), **render** (`Doc` → `Vec<Line>`, applying spacing
-and indentation), **align** (inserting padding). `docs/formatting.md` is the
+and indentation), **align** (inserting padding). A fourth, **skip**, is the one
+place the source's own text is put back over the answer: the lines a `#<<<` /
+`#>>>` pair covers (`docs/formatting.md` VERBATIM-2). It runs last and over
+lines, because a marked region is a run of lines and what it overrides is
+indentation, spacing and alignment together. `docs/formatting.md` is the
 specification of what comes out; these are the rules of how.
 
 - **Spacing is decided at build time** and emitted as `Doc::Space`. The renderer
