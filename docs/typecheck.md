@@ -5,6 +5,10 @@ now the authority, in the same way `docs/contracts.md` treats its ADRs. Where
 the two disagree, the code is right and "Decisions made during implementation"
 at the end of this file says why.
 
+This is the *design*. What the checker concludes about a program, and what it
+deliberately leaves unknown, is specified for its users in
+[types.md](types.md) — the checker's `formatting.md`.
+
 ## What is being built
 
 A static checker for Perl that runs over the CST camello already produces,
