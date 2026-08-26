@@ -25,6 +25,40 @@ Perl source
 records and replays syntax events, and `src/fmt` builds and renders the output.
 `src/check.rs` exposes the invariants used to validate arbitrary source.
 
+## Guesses
+
+perl answers some questions from its symbol table or at run time, and camello
+has neither. Where a reading is settled on weak evidence rather than on what the
+grammar already knows, the comment carries a `GUESS:` label:
+
+```rust
+// GUESS: `f / 10` divides rather than starting a match.
+// Evidence: none — no declaration in sight. Perl guesses here too.
+// Wrong: the match runs to the next `/`, taking whatever lies between.
+parser.expect_operator();
+```
+
+All three lines are required. `Evidence:` names what the reading rests on — the
+spacing, the capitals, a newline in the source, or nothing at all; `Evidence:
+none` is the honest and common answer, and it is what marks the places worth
+re-reading first. `Wrong:` says what the output becomes when the guess goes the
+other way. For the formatter's guesses that is always the shape and never the
+meaning, and saying so is what separates the cheap ones from the expensive ones.
+
+The label is narrow on purpose, because a label on every judgement indexes
+nothing. It goes on a decision only when all three hold:
+
+- perl would answer it from its symbol table or at run time, and camello cannot;
+- the reading rests on weak evidence, not on what the grammar or the lexer
+  expectation already knows;
+- getting it wrong changes the output.
+
+So `.5` is no guess — the expectation state says whether a number or a
+concatenation is due. `&&` is not a sigil under any reading, not merely under
+this one. And `{` opening an anonymous hash is not a guess either: it is parsed
+as a hash and rolled back if that does not work out, which is evidence rather
+than inference. `grep -rn 'GUESS:' src` is the list.
+
 ## Language vocabulary and CST
 
 The `define_language!` invocation in `src/lang/mod.rs` is the source of truth

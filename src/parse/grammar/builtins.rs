@@ -117,7 +117,10 @@ pub(crate) fn lookup(name: &str) -> Option<Builtin> {
 
 /// Whether an unknown bareword should be treated as a list operator.
 ///
-/// It always should — with no symbol table there is nothing better to go on.
-/// This is written down rather than left implicit so that the approximation is
-/// visible (the parser contract).
+/// GUESS: it always should.
+/// Evidence: none — with no symbol table there is nothing better to go on. The
+/// constant exists so that the approximation is visible rather than implicit
+/// (the parser contract).
+/// Wrong: the name takes no arguments, and what was written as its argument
+/// list is left to be read as something else.
 pub(crate) const UNKNOWN_IS_LIST_OPERATOR: bool = true;

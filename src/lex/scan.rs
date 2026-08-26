@@ -329,9 +329,12 @@ impl<'a> Lexer<'a> {
 
     /// The bareword exception of the lexer contract.
     ///
-    /// `(s => 1)` and `$h{q}` use quote-like names as plain words. Deciding it
-    /// by looking one token ahead — past horizontal space only — keeps `s {a}{b}`
-    /// working, which a "next character is `{`" rule would break.
+    /// GUESS: a quote-like name here is a plain word — `(s => 1)`, `$h{q}`.
+    /// Evidence: the next token past horizontal space is `=>` or `}`. Looking a
+    /// token ahead rather than at the next character keeps `s {a}{b}` working,
+    /// which a "next character is `{`" rule would break.
+    /// Wrong: a quote-like operator opens instead, and its body runs until it
+    /// finds a terminator somewhere in the code that follows.
     ///
     /// A following `,` is *not* on the list, though it reads like it should be.
     /// perl has no such exception: `m,b,` is a match on `b` and `(q, 1)` is a

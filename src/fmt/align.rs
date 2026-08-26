@@ -47,9 +47,11 @@ fn align_class(lines: &mut [Line], class: AnchorClass, options: &FormatterOption
             continue;
         };
 
-        // A group runs while consecutive lines carry the same anchor class at
-        // the same nesting, with the same statement shape. Any of those changing
-        // ends it, as does a blank line (docs/formatting.md §7).
+        // GUESS: consecutive lines of the same shape were meant as one table.
+        // Evidence: the same anchor class at the same nesting with the same
+        // statement shape, and no blank line between them. Any of those
+        // changing ends the group (docs/formatting.md §7).
+        // Wrong: only the padding changes, never the meaning.
         let mut end = start + 1;
         while end < lines.len()
             && !lines[end].is_blank()
