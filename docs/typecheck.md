@@ -725,6 +725,33 @@ reviewed as a decision rather than discovered as a difference.
   reading a hundred modules to answer them would buy nothing. `require Foo` is
   followed as well as `use Foo`: `HTTP::Date` reaches `Time::Local` that way
   and no other.
+- **A hand-written `new` is not assumed to return its own class**
+  (milestone 5). The document has `Foo->new(...)` yield `InstanceOf['Foo']`
+  "when `Foo` resolves". Over @INC that produced 380 `unknown-method`
+  warnings, and every one of them was the same two mistakes: `URI::new`
+  returns a `URI::http`, and `Crypt::Mode::CBC->new` lives in a shared
+  library. So an instance comes from a constructor a *framework* generates,
+  or from a `Returns:`, and a hand-written `new` returns what it says it
+  returns — which is usually nothing, which is silence.
+- **A class the run knows only the name of is `Unknown`** (milestone 5).
+  Three more shapes make a package one whose method set nobody can enumerate,
+  and each was a run of warnings over @INC: a file that loads XS (every
+  package *in that file*, because XS registers methods where it likes), an
+  `@ISA` assigned something computed (`File::Spec` picks its parent at run
+  time), and a glob assignment. `UNIVERSAL`'s methods — `isa`, `can`, `DOES`,
+  `VERSION` — and `import`/`unimport` are on every class and are never
+  missing.
+- **An element names its container in the flow pass too** (milestone 5).
+  `$options{"suffixlen"}` reads `%options`, and reading it as `$options` gave
+  every such subscript the scalar's type — which was where all eleven
+  `maybe-deref` warnings over @INC came from. The scope pass had this rule
+  from the start; the flow pass needed it too.
+- **Return inference does not cross a sub boundary** (milestone 5). The
+  design has a sub with no `Returns:` take its type from the join of its
+  return sites, in dependency order with recursion cut to `Unknown`. That is
+  the one place inference crosses a boundary, and it is what would need a
+  fixpoint over the program; without it every unannotated sub returns
+  `Unknown`, which is silence. `Returns:` is how a sub says otherwise.
 - **A lone parenthesised list is that list** (milestone 1). `Args::elements`
   and `Args::pairs` descend into a `PAREN_EXPR` that is a list's only element,
   so `use Foo (a => 1)` and `use Foo a => 1` reach a recogniser as the same
@@ -747,3 +774,10 @@ reviewed as a decision rather than discovered as a difference.
   annotation the corpus carries parses or is correctly read as something that
   is not one; the single finding of the first run was `File::Temp`'s prose
   `Returns:` line, which the "shaped like a type" test above now leaves alone.
+- **Milestone 5, type flow over @INC.** Zero errors from the type
+  diagnostics — no `type-mismatch`, no `unknown-key`, no `maybe-deref`, no
+  `return-mismatch`, no `unknown-type`. 599 warnings in all: 457
+  `unused-variable`, 133 `shadowed-variable`, 8 `unknown-method`, 1 `arity`.
+  The 8 are XS constructors — `Crypt::Mode::CBC->new` and `JSON->new`, whose
+  `new` is in a shared library that the `.pm` declaring the package does not
+  itself load. That is exactly what a stub is for.

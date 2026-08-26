@@ -19,6 +19,7 @@ pub mod annotate;
 pub mod arity;
 pub mod decl;
 pub mod diag;
+pub mod flow;
 pub mod interp;
 pub mod program;
 pub mod resolve;
@@ -44,6 +45,12 @@ pub const COVERED_CODES: &[Code] = &[
     Code::ShadowedVariable,
     Code::Arity,
     Code::BadAnnotation,
+    Code::TypeMismatch,
+    Code::UnknownKey,
+    Code::UnknownMethod,
+    Code::MaybeDeref,
+    Code::ReturnMismatch,
+    Code::UnknownType,
 ];
 
 /// What a run asks for.
@@ -214,6 +221,9 @@ impl Analysis {
         let mut diagnostics = scope::analyse(root, source).diagnostics;
         if let Some(file) = self.program.index_of(path) {
             diagnostics.extend(arity::analyse(root, file, &self.program));
+            if options.types {
+                diagnostics.extend(flow::analyse(root, file, &self.program));
+            }
             // What the declaration pass had to say about this file's
             // annotations. It ran once, over every file; a dependency's
             // diagnostics are read and dropped, because no diagnostic is ever

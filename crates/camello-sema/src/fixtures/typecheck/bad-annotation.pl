@@ -37,3 +37,12 @@ sub broken_list { return 'a' }
 # A comment that is not an annotation is a comment.
 # Returns nothing in particular.
 sub plain { return 1 }
+
+# The annotation wins, and the inferred shape is checked against it.
+# Returns: Int
+sub counted { return 'not a number'; }
+#~ error return-mismatch: declared `Returns: Int`
+
+# Returns: ()
+sub silent_sub { return 1; }
+#~ warning return-mismatch: declared `Returns: ()`
