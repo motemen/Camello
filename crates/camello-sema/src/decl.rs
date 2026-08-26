@@ -597,7 +597,21 @@ fn imported_names(arguments: &SyntaxNode) -> Vec<String> {
 #[must_use]
 pub fn parameters(definition: &SubDef, smart_args: bool, into: &mut annotate::Sink) -> Params {
     if let Some(signature) = definition.signature() {
-        return from_signature(&signature);
+        // GUESS: `sub f()` with a body that reads `@_` was a prototype.
+        // Evidence: the body. An empty `()` is a signature only where the
+        // feature is on, and is otherwise a prototype saying "call me with no
+        // arguments" that a method still receives `$self` through —
+        // `Mail::Internet::cleaned_header_dup()` shifts its invocant out of
+        // one. Wrong: a real empty signature whose body reads `@_` anyway,
+        // which perl would have made unreachable.
+        let empty = signature.params().next().is_none();
+        let reads_arguments = definition
+            .body()
+            .is_some_and(|body| touches_arguments_elsewhere(&body, &[]));
+        if !(empty && reads_arguments) {
+            return from_signature(&signature);
+        }
+        return Params::Unknown;
     }
     let Some(body) = definition.body() else {
         return Params::Unknown;
