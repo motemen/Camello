@@ -666,7 +666,9 @@ impl Pass<'_> {
         };
 
         // A bareword invocant is a class; a value's class comes from its type.
-        let class = match bareword_class(&invocant) {
+        let bareword = bareword_class(&invocant);
+        let through_a_value = bareword.is_none();
+        let class = match bareword {
             Some(class) => Some(class),
             None => {
                 let ty = self.type_of(&invocant);
@@ -685,13 +687,35 @@ impl Pass<'_> {
             MethodLookup::Sub(symbol) => {
                 let params = symbol.params.clone();
                 let returns = symbol.returns.clone();
+                // The count as well as the types — but only for a method
+                // reached through the *type* of its invocant, which is the one
+                // the arity pass never saw: that pass resolves a bareword
+                // invocant and nothing else, and would otherwise say it twice.
+                if through_a_value {
+                    let shape = crate::arity::CallShape::of(&arguments, &call.pairs());
+                    crate::arity::check_shape(
+                        &params,
+                        &shape,
+                        true,
+                        symbol,
+                        call.method_range(),
+                        &mut self.diagnostics,
+                    );
+                }
                 self.check_arguments(&params, &call.pairs(), &arguments, &method);
-                // A hand-written `new` is not assumed to return an instance of
-                // its own class. `URI::new` returns a `URI::http`, and
-                // `Crypt::Mode::CBC->new` is in a shared library; guessing
-                // otherwise made "no such method" a claim about a class the
-                // value was never in.
-                returns.scalar
+                // `Foo->new(...)` is an `InstanceOf['Foo']` (`docs/typecheck.md`,
+                // "Inference"). Only where the run actually read a `sub new`,
+                // so a class it never saw stays `Unknown`; a `Returns:` wins
+                // over it; and a framework's generated constructor never
+                // reaches here. The classes this is wrong about are the ones
+                // whose `new` hands back something else — `URI->new` returns a
+                // `URI::http` — and what they need is to be marked opaque,
+                // which is a fact about them and not about every `new`.
+                if returns.scalar.is_unknown() && method == "new" {
+                    Type::InstanceOf(class)
+                } else {
+                    returns.scalar
+                }
             }
             MethodLookup::Attribute(attribute) => attribute.ty.clone(),
             MethodLookup::Constructor => {

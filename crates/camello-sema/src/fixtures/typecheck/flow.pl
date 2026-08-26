@@ -28,3 +28,21 @@ $widget->missing;               #~ warning unknown-method: declares no method `m
 my $opaque = get_it();
 $opaque->anything_at_all;
 sub get_it { return }
+
+# A hand-written `new` in a class the run read through is an instance of that
+# class — which is what gives a plain `bless` class any types at all.
+package Counter;
+sub new { my ($class, $start) = @_; return bless { count => $start }, $class }
+sub add ($self, $amount) { $self->{count} += $amount; return $self }
+
+package main;
+
+my $counter = Counter->new(0);
+$counter->add(1);
+$counter->reset;                #~ warning unknown-method: declares no method `reset`
+$counter->add(1, 2, 3);         #~ error arity: takes at most 2 arguments including its invocant; 4 passed
+Counter->new(0)->add(1);
+
+# A class the run never read keeps its `new` opaque, so nothing follows from it.
+my $foreign = Somewhere::Else->new;
+$foreign->anything_at_all;
