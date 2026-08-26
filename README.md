@@ -56,8 +56,9 @@ choice of where a long expression breaks to whoever wrote it.
 
 [docs/architecture.md](docs/architecture.md) describes the layers — `src/lang`
 (vocabulary), `src/lex` (parser-directed scanner), `src/parse` (event-recording
-parser), `src/fmt` (Doc IR and renderer) — and the invariants the formatter
-holds itself to.
+parser), `src/fmt` (Doc IR and renderer). The rules those layers hold to, which
+their comments refer to by name, are in
+[docs/contracts.md](docs/contracts.md).
 
 Before pushing:
 
