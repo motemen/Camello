@@ -776,8 +776,8 @@ fn format_one(
         .collect();
 
     // A file the parser had something to say about is reported and left alone.
-    // One such file, formatted on purpose, is a best-effort the writer can look
-    // at; a tree of them, rewritten because someone typed a directory, is not.
+    // The same answer whichever way it was asked for: one path, several, or the
+    // directory above them ([`format_file`]).
     if !diagnostics.is_empty() {
         return Formatted {
             diagnostics,
@@ -1923,19 +1923,37 @@ fn format_file(
     // Execute formatting
     let (formatted, errors) = format_perl_with_options(&input, options);
 
-    // If there are errors, display them, and optionally stop immediately
+    // `-` is standard output under the flag that otherwise names a file, so
+    // that "do not write it back" is one thing to say however it is meant.
+    let destination = match output {
+        Some(named) if named == Path::new("-") => None,
+        Some(named) => Some(named),
+        None => path,
+    };
+
+    // A source the parser had something to say about is reported and left
+    // alone, and one source is no exception: an editor that formats on save and
+    // a pre-commit hook both hand over a file at a time, so the one-source path
+    // is the one a best-effort rewrite of an unparsed file actually takes. A
+    // `.pl` holding SQL is what it cost. What comes out is what went in — "left
+    // alone" says the same thing wherever the result was going — and the exit
+    // status carries the rest.
     if !errors.is_empty() {
         eprintln!("Parse error in '{source_name}':");
         if stop_on_first_error {
             let error = errors.into_iter().next().unwrap();
             eprintln!("{:?}", Report::new(error));
             std::process::exit(2);
-        } else {
-            for e in errors {
-                eprintln!("{:?}", Report::new(e));
-            }
-            eprintln!("Proceeding with best-effort formatting...\n");
         }
+        for e in errors {
+            eprintln!("{:?}", Report::new(e));
+        }
+        eprintln!("Left '{source_name}' alone.");
+        if !check && destination.is_none() {
+            print!("{input}");
+            io::stdout().flush().into_diagnostic()?;
+        }
+        std::process::exit(1);
     }
 
     if check {
@@ -1948,14 +1966,6 @@ fn format_file(
         }
         return Ok(());
     }
-
-    // `-` is standard output under the flag that otherwise names a file, so
-    // that "do not write it back" is one thing to say however it is meant.
-    let destination = match output {
-        Some(named) if named == Path::new("-") => None,
-        Some(named) => Some(named),
-        None => path,
-    };
 
     match destination {
         Some(path) => write_with_encoding(path.as_path(), &formatted, encoding)?,

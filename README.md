@@ -35,7 +35,10 @@ camello format --check lib              # names what would change; exits 1 if an
 
 `--check` and `-l/--list-different` print one path per line, which makes them
 the shape a CI step or a pre-commit hook wants. A file the parser reports a
-diagnostic on is left alone, and counted in the summary rather than rewritten.
+diagnostic on is left alone and the run exits 1 — whether it was named on its
+own, named beside others, or found under a directory. A source read from
+standard input is handed back the way it arrived, so a filter in an editor's
+save hook is safe to wire up without a wrapper around it.
 
 Other flags worth knowing: `-j/--jobs` for the worker count, `--extensions` for
 which files a directory walk picks up, and `--encoding` for sources that are not
