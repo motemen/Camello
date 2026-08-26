@@ -35,26 +35,6 @@ pub use program::Program;
 
 pub use diag::{Code, Diagnostic, LineIndex, Position, Severity};
 
-/// The codes that are implemented and therefore owe a fixture.
-///
-/// It grows a milestone at a time, and `every_code_has_a_fixture` is what
-/// keeps it honest: a code added to [`Code`] and to this list without a
-/// fixture is a failing test.
-pub const COVERED_CODES: &[Code] = &[
-    Code::UndeclaredVariable,
-    Code::UnusedVariable,
-    Code::ShadowedVariable,
-    Code::Arity,
-    Code::BadAnnotation,
-    Code::TypeMismatch,
-    Code::UnknownKey,
-    Code::UnknownMethod,
-    Code::MaybeDeref,
-    Code::ReturnMismatch,
-    Code::UnknownType,
-    Code::MissingAnnotation,
-];
-
 /// What a run asks for.
 #[derive(Debug, Clone, Default)]
 pub struct Options {

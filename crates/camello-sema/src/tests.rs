@@ -257,7 +257,7 @@ fn every_code_has_a_fixture() {
     }
     let missing: Vec<_> = Code::ALL
         .iter()
-        .filter(|code| !seen.contains(code) && crate::COVERED_CODES.contains(code))
+        .filter(|code| !seen.contains(code))
         .map(|code| code.as_str())
         .collect();
     assert!(missing.is_empty(), "no fixture reports {missing:?}");
