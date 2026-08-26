@@ -17,7 +17,9 @@ use rowan::TextRange;
 /// contradiction between two *declared* things, a `warning` has an inferred
 /// thing on one side or rests on narrowing, and `info` is something a user
 /// asked to be told.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub enum Severity {
     Info,
     Warning,
@@ -66,7 +68,9 @@ impl fmt::Display for Severity {
 /// Adding one means adding a fixture for it (`docs/typecheck.md`, "Testing");
 /// [`Code::ALL`] is what the fixture test walks, so a code with no coverage is
 /// a failing test rather than a gap nobody notices.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub enum Code {
     /// A name used under `strict` that no declaration reaches.
     UndeclaredVariable,
@@ -179,10 +183,11 @@ impl fmt::Display for Code {
 }
 
 /// One thing the checker has to say about one place.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Diagnostic {
     pub code: Code,
     pub severity: Severity,
+    #[serde(with = "crate::serde_range")]
     pub range: TextRange,
     pub message: String,
 }

@@ -15,11 +15,16 @@
 //! Marker grammar: `#~ <severity> <code>` and, optionally, `: <text>` that the
 //! message must contain. Several markers may share a comment, each opened by
 //! its own `#~`.
+//!
+//! A marker that is the only thing on its line belongs to the line *above*.
+//! That is for the diagnostics whose span is itself a comment — a `Returns:`
+//! that does not parse — where a trailing marker would become part of the
+//! annotation it is about.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::diag::{Code, Diagnostic, LineIndex, Severity};
+use crate::diag::{Code, LineIndex, Severity};
 
 #[derive(Debug, PartialEq, Eq)]
 struct Expectation {
@@ -33,7 +38,62 @@ fn fixtures_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("src/fixtures")
 }
 
-fn collect(dir: &Path, acc: &mut Vec<PathBuf>) {
+/// One fixture: a file on its own, or a directory with a `roots` marker.
+///
+/// A multi-file fixture is a directory holding a `roots` file, whose lines are
+/// `root: <dir>` and `stub: <dir>`. Everything under a root is checked;
+/// everything under a stub contributes declarations and is never reported on,
+/// which is what makes the stub mechanism something a fixture can ask about.
+#[derive(Debug)]
+struct Fixture {
+    /// The files whose `#~` markers are the expectation.
+    checked: Vec<PathBuf>,
+    /// The files that contribute declarations only.
+    stubs: Vec<PathBuf>,
+    label: PathBuf,
+}
+
+fn perl_files(dir: &Path, acc: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(dir).expect("the directory exists") {
+        let path = entry.expect("a directory entry").path();
+        if path.is_dir() {
+            perl_files(&path, acc);
+        } else if path
+            .extension()
+            .is_some_and(|ext| ext == "pl" || ext == "pm")
+        {
+            acc.push(path);
+        }
+    }
+    acc.sort();
+}
+
+fn collect(dir: &Path, acc: &mut Vec<Fixture>) {
+    let marker = dir.join("roots");
+    if marker.is_file() {
+        let mut fixture = Fixture {
+            checked: Vec::new(),
+            stubs: Vec::new(),
+            label: dir.to_path_buf(),
+        };
+        for line in fs::read_to_string(&marker)
+            .expect("a readable marker")
+            .lines()
+        {
+            let Some((kind, name)) = line.split_once(':') else {
+                continue;
+            };
+            let mut files = Vec::new();
+            perl_files(&dir.join(name.trim()), &mut files);
+            match kind.trim() {
+                "root" => fixture.checked.extend(files),
+                "stub" => fixture.stubs.extend(files),
+                other => panic!("unknown marker `{other}` in {}", marker.display()),
+            }
+        }
+        acc.push(fixture);
+        return;
+    }
     for entry in fs::read_dir(dir).expect("the fixture directory exists") {
         let path = entry.expect("a directory entry").path();
         if path.is_dir() {
@@ -42,15 +102,19 @@ fn collect(dir: &Path, acc: &mut Vec<PathBuf>) {
             .extension()
             .is_some_and(|ext| ext == "pl" || ext == "pm")
         {
-            acc.push(path);
+            acc.push(Fixture {
+                checked: vec![path.clone()],
+                stubs: Vec::new(),
+                label: path,
+            });
         }
     }
 }
 
-fn fixtures() -> Vec<PathBuf> {
+fn fixtures() -> Vec<Fixture> {
     let mut acc = Vec::new();
     collect(&fixtures_dir(), &mut acc);
-    acc.sort();
+    acc.sort_by(|left, right| left.label.cmp(&right.label));
     acc
 }
 
@@ -59,6 +123,12 @@ fn parse_expectations(source: &str) -> Vec<Expectation> {
     for (index, line) in source.lines().enumerate() {
         let Some(position) = line.find("#~") else {
             continue;
+        };
+        // An own-line marker is about the line above it.
+        let line_number = if line[..position].trim().is_empty() {
+            index
+        } else {
+            index + 1
         };
         for marker in line[position..].split("#~").skip(1) {
             let marker = marker.trim();
@@ -79,7 +149,7 @@ fn parse_expectations(source: &str) -> Vec<Expectation> {
                 .and_then(Code::parse)
                 .unwrap_or_else(|| panic!("bad code in `#~{marker}`"));
             acc.push(Expectation {
-                line: index + 1,
+                line: line_number,
                 severity,
                 code,
                 contains,
@@ -89,7 +159,11 @@ fn parse_expectations(source: &str) -> Vec<Expectation> {
     acc
 }
 
-fn actual(source: &str, path: &Path) -> Vec<Diagnostic> {
+fn read(path: &Path) -> String {
+    fs::read_to_string(path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
+}
+
+fn parse_one(path: &Path, source: &str) -> camello_syntax::lang::SyntaxNode {
     let parsed = camello_syntax::parse::parse(source);
     assert!(
         parsed.diagnostics.is_empty(),
@@ -97,65 +171,70 @@ fn actual(source: &str, path: &Path) -> Vec<Diagnostic> {
         path.display(),
         parsed.diagnostics
     );
-    let mut analysis = crate::Analysis::new();
-    analysis.declare(path, &parsed.syntax(), true);
-    analysis.check(
-        path,
-        &parsed.syntax(),
-        source,
-        &crate::Options::for_fixture(path),
-    )
+    parsed.syntax()
 }
 
 #[test]
 fn fixtures_report_exactly_what_they_say() {
-    let files = fixtures();
-    assert!(!files.is_empty(), "no fixtures found");
+    let fixtures = fixtures();
+    assert!(!fixtures.is_empty(), "no fixtures found");
     let mut failures = Vec::new();
 
-    for path in &files {
-        let source = fs::read_to_string(path).expect("a readable fixture");
-        let index = LineIndex::new(&source);
-        let expected = parse_expectations(&source);
-        let found = actual(&source, path);
-
-        let mut remaining: Vec<&Expectation> = expected.iter().collect();
-        let mut unexpected = Vec::new();
-
-        for diagnostic in &found {
-            let line = index
-                .position(&source, usize::from(diagnostic.range.start()))
-                .line;
-            let matched = remaining.iter().position(|expectation| {
-                expectation.line == line
-                    && expectation.severity == diagnostic.severity
-                    && expectation.code == diagnostic.code
-                    && expectation
-                        .contains
-                        .as_ref()
-                        .is_none_or(|text| diagnostic.message.contains(text.as_str()))
-            });
-            match matched {
-                Some(position) => {
-                    remaining.remove(position);
-                }
-                None => unexpected.push(format!(
-                    "  line {line}: unexpected {} {}: {}",
-                    diagnostic.severity, diagnostic.code, diagnostic.message
-                )),
-            }
+    for fixture in &fixtures {
+        // Every file's declarations first, the way a run does it, so that a
+        // call in one file can see a sub declared in another.
+        let mut analysis = crate::Analysis::new();
+        for path in fixture.checked.iter().chain(&fixture.stubs) {
+            let source = read(path);
+            let root = parse_one(path, &source);
+            analysis.declare(path, &root, fixture.checked.contains(path));
         }
 
-        if !remaining.is_empty() || !unexpected.is_empty() {
-            let mut report = format!("{}:\n", path.display());
-            report.push_str(&unexpected.join("\n"));
-            for expectation in remaining {
-                report.push_str(&format!(
-                    "\n  line {}: expected {} {} and it was not reported",
-                    expectation.line, expectation.severity, expectation.code
-                ));
+        for path in &fixture.checked {
+            let source = read(path);
+            let root = parse_one(path, &source);
+            let index = LineIndex::new(&source);
+            let expected = parse_expectations(&source);
+            let found = analysis.check(path, &root, &source, &crate::Options::for_fixture(path));
+
+            let mut remaining: Vec<&Expectation> = expected.iter().collect();
+            let mut unexpected = Vec::new();
+
+            for diagnostic in &found {
+                let line = index
+                    .position(&source, usize::from(diagnostic.range.start()))
+                    .line;
+                let matched = remaining.iter().position(|expectation| {
+                    expectation.line == line
+                        && expectation.severity == diagnostic.severity
+                        && expectation.code == diagnostic.code
+                        && expectation
+                            .contains
+                            .as_ref()
+                            .is_none_or(|text| diagnostic.message.contains(text.as_str()))
+                });
+                match matched {
+                    Some(position) => {
+                        remaining.remove(position);
+                    }
+                    None => unexpected.push(format!(
+                        "  line {line}: unexpected {} {}: {}",
+                        diagnostic.severity, diagnostic.code, diagnostic.message
+                    )),
+                }
             }
-            failures.push(report);
+
+            if !remaining.is_empty() || !unexpected.is_empty() {
+                let mut report = format!("{}:\n", path.display());
+                report.push_str(&unexpected.join("\n"));
+                for expectation in remaining {
+                    report.push_str(&format!(
+                        "\n  line {}: expected {} {} and it was not reported",
+                        expectation.line, expectation.severity, expectation.code
+                    ));
+                }
+                failures.push(report);
+            }
         }
     }
 
@@ -167,11 +246,12 @@ fn every_code_has_a_fixture() {
     // A code with no coverage is a failing test rather than a gap nobody
     // notices (`docs/typecheck.md`, "Testing").
     let mut seen = Vec::new();
-    for path in fixtures() {
-        let source = fs::read_to_string(&path).expect("a readable fixture");
-        for expectation in parse_expectations(&source) {
-            if !seen.contains(&expectation.code) {
-                seen.push(expectation.code);
+    for fixture in fixtures() {
+        for path in &fixture.checked {
+            for expectation in parse_expectations(&read(path)) {
+                if !seen.contains(&expectation.code) {
+                    seen.push(expectation.code);
+                }
             }
         }
     }

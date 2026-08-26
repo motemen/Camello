@@ -19,9 +19,13 @@ use camello_syntax::ast::{
 use camello_syntax::lang::{NodeExt, NodeKind, SyntaxNode, TokenExt, TokenKind};
 use rowan::TextRange;
 
+use crate::annotate::{self, AttributeDecl, Framework, Frameworks, NamedType, Returns};
+use crate::diag::Diagnostic;
+use crate::types::Type;
+
 /// Where a parameter list came from, which is what decides how loudly a
 /// mismatch against it is reported.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ParamSource {
     /// `sub f ($x, $y = 1)`. perl dies on a mismatch, so reporting one
     /// statically is free of false positives.
@@ -35,13 +39,13 @@ pub enum ParamSource {
 }
 
 /// One parameter of a sub.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Param {
     pub name: String,
     /// A default, an `optional => 1`, or a position past the first default.
     pub optional: bool,
-    /// The type annotation's source text, parsed in milestone 4.
-    pub annotation: Option<Annotation>,
+    /// What the annotation says, `Unknown` when there is none.
+    pub ty: Type,
 }
 
 /// A type annotation as it was written, before the type-expression parser.
@@ -52,17 +56,18 @@ pub struct Param {
 /// not `Send`, so a graph holding one could not be built by more than one
 /// thread. The bareword syntax is Perl, so re-parsing the text gives the
 /// subtree back when milestone 4's parser wants it.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Annotation {
     pub text: String,
     /// Whether it arrived as a string (`'ArrayRef[Str]'`, the Moose grammar)
     /// rather than as an expression (`ArrayRef[Str]`, which is Perl).
     pub quoted: bool,
+    #[serde(with = "crate::serde_range")]
     pub range: TextRange,
 }
 
 /// What a call has to supply.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub enum Params {
     /// Nothing is known, and nothing is ever reported against it.
     #[default]
@@ -138,29 +143,78 @@ impl Params {
     }
 }
 
+/// Where a sub's shape came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum SymbolSource {
+    /// A signature, an `args` list, a `Returns:` — something written down.
+    Annotated,
+    /// Read off the body.
+    Inferred,
+    /// Nothing is known.
+    Unknown,
+}
+
 /// A sub, as the program graph holds it.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SubDecl {
     pub package: String,
     pub name: String,
     pub params: Params,
+    pub returns: Returns,
+    pub source: SymbolSource,
     /// Where the name is, for "declared at".
+    #[serde(with = "crate::serde_range")]
     pub range: TextRange,
     /// Filled in by [`crate::program::Program::add`].
     pub file: usize,
 }
 
+/// What a package is, beyond the subs in it (`docs/typecheck.md`, "Files,
+/// packages, symbols").
+///
+/// These are the package-level facts that are not symbols: the ancestors, the
+/// roles, and the object framework — which is what decides whether `new`
+/// exists and what it accepts.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct PackageFacts {
+    pub name: String,
+    pub isa: Vec<String>,
+    pub roles: Vec<String>,
+    pub framework: Framework,
+    pub attributes: Vec<AttributeDecl>,
+    /// What a `Type::Library` in this package declares.
+    pub types: Vec<NamedType>,
+    /// Whether the framework generates a `new`.
+    pub constructor: bool,
+    /// A `BUILDARGS` turns the constructor's argument check off: the class
+    /// rewrites what it was given before anything sees it.
+    pub buildargs: bool,
+}
+
 /// What one file declares.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct FileDecls {
     pub subs: Vec<SubDecl>,
     /// `use Foo qw(bar)` — the name and the package it came from.
     pub imports: HashMap<String, String>,
     /// The packages this file opens, with the offset each takes effect at.
     pub packages: Vec<(u32, String)>,
+    /// What each package here is, beyond its subs.
+    pub facts: Vec<PackageFacts>,
+    /// Every module this file `use`s or `require`s, for the resolver.
+    pub uses: Vec<String>,
+    /// What the declaration pass had to say. Reported only for a file in the
+    /// roots; a dependency contributes declarations and nothing else.
+    pub diagnostics: Vec<Diagnostic>,
 }
 
 impl FileDecls {
+    /// What the pass learned about one package.
+    #[must_use]
+    pub fn facts_for(&self, name: &str) -> Option<&PackageFacts> {
+        self.facts.iter().find(|facts| facts.name == name)
+    }
+
     /// The package in effect at an offset.
     #[must_use]
     pub fn package_at(&self, offset: u32) -> &str {
@@ -175,59 +229,273 @@ impl FileDecls {
 /// Read what a file declares.
 #[must_use]
 pub fn declare(root: &SyntaxNode) -> FileDecls {
-    let mut decls = FileDecls::default();
-    walk(root, &mut decls, "main");
-    decls
+    // The imports first, and all of them: recognition is by callee name *and*
+    // by an import that could have provided it, and `use Moose` may sit below
+    // the `has` it explains (a `package Foo { use Moose; ... }` block, or a
+    // second package in the same file).
+    let mut frameworks = Frameworks::default();
+    for node in root.descendants() {
+        if node.node_kind() == NodeKind::USE_STMT {
+            if let Some(module) = ast::UseStmt::cast(node).and_then(|view| view.module()) {
+                frameworks.note(&module);
+            }
+        }
+    }
+
+    let mut pass = Pass {
+        decls: FileDecls::default(),
+        frameworks,
+    };
+    pass.walk(root, "main");
+    // A package with a framework generates a constructor unless it said not to.
+    for facts in &mut pass.decls.facts {
+        if facts.framework == Framework::Moose {
+            facts.constructor = true;
+        }
+    }
+    pass.decls
 }
 
-fn walk(node: &SyntaxNode, decls: &mut FileDecls, outer: &str) {
-    let mut package = outer.to_string();
-    for child in node.children() {
-        match child.node_kind() {
-            NodeKind::PACKAGE_STMT => {
-                let statement = ast::PackageStmt::cast(child.clone()).expect("kind checked");
-                if let Some(name) = statement.name() {
-                    match statement.block() {
-                        // `package Foo { ... }` scopes the name to the block.
-                        Some(block) => walk(block.syntax(), decls, &name),
-                        None => {
-                            decls
-                                .packages
-                                .push((u32::from(child.text_range().start()), name.clone()));
-                            package = name;
+struct Pass {
+    decls: FileDecls,
+    frameworks: Frameworks,
+}
+
+impl Pass {
+    /// The facts for `package`, created on first mention.
+    fn facts(&mut self, package: &str) -> &mut PackageFacts {
+        if let Some(index) = self
+            .decls
+            .facts
+            .iter()
+            .position(|facts| facts.name == package)
+        {
+            return &mut self.decls.facts[index];
+        }
+        self.decls.facts.push(PackageFacts {
+            name: package.to_string(),
+            framework: self.frameworks.framework(),
+            constructor: self.frameworks.framework() == Framework::AccessorTyped,
+            ..PackageFacts::default()
+        });
+        self.decls.facts.last_mut().expect("just pushed")
+    }
+
+    fn walk(&mut self, node: &SyntaxNode, outer: &str) {
+        let mut package = outer.to_string();
+        for child in node.children() {
+            match child.node_kind() {
+                NodeKind::PACKAGE_STMT => {
+                    let statement = ast::PackageStmt::cast(child.clone()).expect("kind checked");
+                    if let Some(name) = statement.name() {
+                        self.facts(&name);
+                        match statement.block() {
+                            // `package Foo { ... }` scopes the name to the block.
+                            Some(block) => self.walk(block.syntax(), &name),
+                            None => {
+                                self.decls
+                                    .packages
+                                    .push((u32::from(child.text_range().start()), name.clone()));
+                                package = name;
+                            }
                         }
                     }
                 }
-            }
-            NodeKind::SUB_DEF => {
-                let definition = SubDef::cast(child.clone()).expect("kind checked");
-                if let Some(name) = definition.name_text() {
-                    decls.subs.push(SubDecl {
-                        package: package.clone(),
-                        name,
-                        params: parameters(&definition),
-                        range: definition
-                            .name()
-                            .map_or_else(|| child.text_range(), |view| view.range()),
-                        file: 0,
-                    });
+                NodeKind::SUB_DEF => self.sub(&child, &package),
+                NodeKind::USE_STMT | NodeKind::NO_STMT => self.use_statement(&child, &package),
+                NodeKind::EXPR_STMT => {
+                    self.require_statement(&child);
+                    self.expression_statement(&child, &package);
+                    self.walk(&child, &package);
                 }
-                // A body declares nothing another file can see.
+                // `our @ISA = ('Base');` is a declaration statement, not an
+                // expression one.
+                NodeKind::VAR_DECL_STMT => self.isa_assignment(&child, &package),
+                // A block, an `if`, a `BEGIN` — a sub inside one is still a sub
+                // of the package, so the walk goes on rather than stopping at
+                // the first thing that is not a declaration.
+                _ => self.walk(&child, &package),
             }
-            NodeKind::USE_STMT => {
-                let statement = ast::UseStmt::cast(child.clone()).expect("kind checked");
-                if let (Some(module), Some(arguments)) = (statement.module(), statement.arguments())
-                {
-                    for name in imported_names(&arguments) {
-                        decls.imports.insert(name, module.clone());
-                    }
-                }
-            }
-            // A block, an `if`, a `BEGIN` — a sub inside one is still a sub of
-            // the package, so the walk goes on rather than stopping at the
-            // first thing that is not a declaration.
-            _ => walk(&child, decls, &package),
         }
+    }
+
+    fn sub(&mut self, node: &SyntaxNode, package: &str) {
+        let definition = SubDef::cast(node.clone()).expect("kind checked");
+        let Some(name) = definition.name_text() else {
+            return;
+        };
+        if name == "BUILDARGS" {
+            self.facts(package).buildargs = true;
+        }
+        let mut diagnostics = Vec::new();
+        let params = parameters(&definition, self.frameworks.smart_args, &mut diagnostics);
+        let annotated = annotate::read_returns(&definition, &mut diagnostics);
+        self.decls.diagnostics.append(&mut diagnostics);
+        let source = if annotated.is_some()
+            || matches!(
+                params.source(),
+                Some(ParamSource::Signature | ParamSource::Args)
+            ) {
+            SymbolSource::Annotated
+        } else if params.source().is_some() {
+            SymbolSource::Inferred
+        } else {
+            SymbolSource::Unknown
+        };
+        self.decls.subs.push(SubDecl {
+            package: package.to_string(),
+            name,
+            params,
+            returns: annotated.unwrap_or_default(),
+            source,
+            range: definition
+                .name()
+                .map_or_else(|| node.text_range(), |view| view.range()),
+            file: 0,
+        });
+        // A body declares nothing another file can see.
+    }
+
+    /// `use Foo qw(bar)`, `use parent -norequire, 'Base'`, `use vars`, and the
+    /// `Class::Accessor::Typed` declaration, which is a `use` statement whose
+    /// argument list is one.
+    fn use_statement(&mut self, node: &SyntaxNode, package: &str) {
+        let module = match node.node_kind() {
+            NodeKind::USE_STMT => ast::UseStmt::cast(node.clone()).and_then(|view| view.module()),
+            _ => ast::NoStmt::cast(node.clone()).and_then(|view| view.module()),
+        };
+        let Some(module) = module else {
+            return;
+        };
+        let arguments = match node.node_kind() {
+            NodeKind::USE_STMT => {
+                ast::UseStmt::cast(node.clone()).and_then(|view| view.arguments())
+            }
+            _ => ast::NoStmt::cast(node.clone()).and_then(|view| view.arguments()),
+        };
+
+        if node.node_kind() == NodeKind::USE_STMT {
+            self.decls.uses.push(module.clone());
+        }
+
+        match module.as_str() {
+            "parent" | "base" => {
+                if let Some(arguments) = &arguments {
+                    let parents: Vec<String> = imported_names(arguments)
+                        .into_iter()
+                        .filter(|name| name != "norequire")
+                        .collect();
+                    self.facts(package).isa.extend(parents);
+                }
+                return;
+            }
+            "Class::Accessor::Typed" => {
+                if let Some(arguments) = &arguments {
+                    let mut diagnostics = Vec::new();
+                    let (attributes, constructor) =
+                        annotate::read_accessor_typed(arguments, &mut diagnostics);
+                    self.decls.diagnostics.append(&mut diagnostics);
+                    let facts = self.facts(package);
+                    facts.attributes.extend(attributes);
+                    facts.constructor = constructor;
+                }
+                return;
+            }
+            _ => {}
+        }
+
+        if let Some(arguments) = &arguments {
+            for name in imported_names(arguments) {
+                self.decls.imports.insert(name, module.clone());
+            }
+        }
+    }
+
+    /// `require Foo::Bar;` is a dependency the resolver should follow, the
+    /// same as a `use`. `HTTP::Date` reaches `Time::Local` this way and
+    /// nothing else does.
+    fn require_statement(&mut self, node: &SyntaxNode) {
+        for inner in node.descendants() {
+            if inner.node_kind() != NodeKind::REQUIRE_EXPR {
+                continue;
+            }
+            if let Some(name) = ast::child::<ast::SubName>(&inner) {
+                self.decls.uses.push(name.text());
+            }
+        }
+    }
+
+    /// The recognisers that are calls: `has`, `extends`, `with`, and the
+    /// `Type::Library` family.
+    fn expression_statement(&mut self, node: &SyntaxNode, package: &str) {
+        let Some(call) = node
+            .descendants()
+            .find_map(ast::Call::cast)
+            .filter(|call| call.syntax().text_range().start() == node.text_range().start())
+        else {
+            // `our @ISA = ('Base');` is an assignment, not a call.
+            self.isa_assignment(node, package);
+            return;
+        };
+        let Some(callee) = call.callee_name() else {
+            return;
+        };
+        match callee.as_str() {
+            "has" if self.frameworks.moose => {
+                let mut diagnostics = Vec::new();
+                let attributes = annotate::read_has(&call, &mut diagnostics);
+                self.decls.diagnostics.append(&mut diagnostics);
+                self.facts(package).attributes.extend(attributes);
+            }
+            "extends" if self.frameworks.moose => {
+                let parents: Vec<String> = call.args().iter().filter_map(ast::key_text).collect();
+                self.facts(package).isa.extend(parents);
+            }
+            "with" if self.frameworks.moose => {
+                let roles: Vec<String> = call.args().iter().filter_map(ast::key_text).collect();
+                self.facts(package).roles.extend(roles);
+            }
+            "declare" | "subtype" | "class_type" | "role_type" | "duck_type" | "enum" | "union"
+                if self.frameworks.type_library =>
+            {
+                let mut diagnostics = Vec::new();
+                if let Some(named) = annotate::read_type_library(&call, &mut diagnostics) {
+                    self.facts(package).types.push(named);
+                }
+                self.decls.diagnostics.append(&mut diagnostics);
+            }
+            "__PACKAGE__" | "mk_accessors" | "mk_ro_accessors" | "mk_wo_accessors" => {}
+            _ => {}
+        }
+    }
+
+    /// `our @ISA = ('Base');` and `push @ISA, 'Base';`.
+    fn isa_assignment(&mut self, node: &SyntaxNode, package: &str) {
+        let Some(assign) = node.descendants().find_map(ast::Assign::cast) else {
+            return;
+        };
+        let Some(target) = assign.target() else {
+            return;
+        };
+        let names: Vec<String> = target
+            .descendants()
+            .filter_map(Variable::cast)
+            .filter(|variable| {
+                variable.sigil() == Sigil::Array && variable.name().as_deref() == Some("ISA")
+            })
+            .map(|_| String::new())
+            .collect();
+        if names.is_empty() {
+            return;
+        }
+        let Some(value) = assign.value() else {
+            return;
+        };
+        let parents: Vec<String> = Args::elements(&value)
+            .iter()
+            .filter_map(ast::key_text)
+            .collect();
+        self.facts(package).isa.extend(parents);
     }
 }
 
@@ -273,15 +541,19 @@ fn imported_names(arguments: &SyntaxNode) -> Vec<String> {
 /// that matches wins, and no match is `Unknown` — which is never reported
 /// against.
 #[must_use]
-pub fn parameters(definition: &SubDef) -> Params {
+pub fn parameters(definition: &SubDef, smart_args: bool, into: &mut Vec<Diagnostic>) -> Params {
     if let Some(signature) = definition.signature() {
         return from_signature(&signature);
     }
     let Some(body) = definition.body() else {
         return Params::Unknown;
     };
-    if let Some(params) = from_args(&body) {
-        return params;
+    // Recognition is by callee name *and* by an import that could have
+    // provided it: a project's own `sub args` is not Smart::Args'.
+    if smart_args {
+        if let Some(params) = from_args(&body, into) {
+            return params;
+        }
     }
     from_unpacking(&body)
 }
@@ -318,7 +590,10 @@ fn from_signature(signature: &ast::SubSignature) -> Params {
         params.push(Param {
             name: variable.display(),
             optional,
-            annotation: None,
+            // A signature says nothing about types (`docs/typecheck.md`,
+            // "Signatures"): every parameter is `Any` and only the arity is
+            // exact.
+            ty: Type::Any,
         });
     }
     let invocant = params
@@ -343,7 +618,7 @@ fn is_invocant_name(display: &str) -> bool {
 /// The *first statement* of the body being an `args` or `args_pos` call is
 /// what makes this a parameter list; an `args` anywhere else is a call that
 /// declares nothing.
-fn from_args(body: &ast::Block) -> Option<Params> {
+fn from_args(body: &ast::Block, into: &mut Vec<Diagnostic>) -> Option<Params> {
     let first = body.statements().next()?;
     let call = first
         .descendants()
@@ -376,10 +651,13 @@ fn from_args(body: &ast::Block) -> Option<Params> {
             continue;
         }
         let (optional, annotation) = rule.map_or((false, None), |node| read_rule(&node));
+        let ty = annotation.map_or(Type::Unknown, |annotation| {
+            annotate::read_annotation(&annotation, into)
+        });
         params.push(Param {
             name: variable,
             optional,
-            annotation,
+            ty,
         });
     }
 
@@ -503,7 +781,8 @@ fn from_unpacking(body: &ast::Block) -> Params {
         .map(|(index, name)| Param {
             name,
             optional: optionals.get(index).copied().unwrap_or(false),
-            annotation: None,
+            // `@_` unpacking says nothing about types either.
+            ty: Type::Any,
         })
         .collect();
     Params::Positional {
