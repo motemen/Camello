@@ -145,7 +145,7 @@ pub fn format_source(source: &str, options: &FormatterOptions) -> String {
 pub fn layout_seeds(source: &str) -> Vec<bool> {
     fn collect(document: &doc::Doc, into: &mut Vec<bool>) {
         match document {
-            doc::Doc::Group { broken, body } => {
+            doc::Doc::Group { broken, body, .. } => {
                 into.push(*broken);
                 collect(body, into);
             }

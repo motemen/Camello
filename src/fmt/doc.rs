@@ -74,6 +74,17 @@ pub enum Doc {
     /// the source (the formatter contract).
     Group {
         broken: bool,
+        /// Whether the anchors written directly inside are worth recording —
+        /// that is, whether this construct occupies more than one line.
+        ///
+        /// Usually the same answer as `broken`, and for the same reason: a group
+        /// that stays on one line has no second line for its anchors to agree
+        /// with. They part company where the writer put something after the
+        /// opening bracket and then broke the line anyway. `f($o,` seeds no
+        /// break, so `broken` is false and nothing inside it may take a
+        /// `Doc::Line` — and the lines the writer went on to write are a table
+        /// like any other.
+        anchored: bool,
         body: Box<Doc>,
     },
     /// One indent unit for any line break inside.
@@ -169,6 +180,20 @@ impl Doc {
     pub fn group(broken: bool, body: Doc) -> Doc {
         Doc::Group {
             broken,
+            anchored: broken,
+            body: Box::new(body),
+        }
+    }
+
+    /// A group the writer broke across lines without seeding a break.
+    ///
+    /// Flat, so nothing inside it takes a `Doc::Line`; anchored, because it has
+    /// the several lines that alignment is a relation between.
+    #[must_use]
+    pub fn group_across_lines(body: Doc) -> Doc {
+        Doc::Group {
+            broken: false,
+            anchored: true,
             body: Box::new(body),
         }
     }

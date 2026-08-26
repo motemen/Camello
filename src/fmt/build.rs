@@ -1446,7 +1446,18 @@ impl<'a> Builder<'a> {
             }
         }
         parts.extend(closing_doc);
-        Doc::group(broken, Doc::concat(parts))
+        if broken {
+            return Doc::group(true, Doc::concat(parts));
+        }
+        // Flat, because the writer put something after the opening bracket and
+        // so seeded no break — but written across lines all the same, and its
+        // anchors have the several lines that alignment is a relation between.
+        // `f($o,` and the `key => value` lines under it are a table, and were
+        // the one table camello would not lay out.
+        if self.contains_newline(node) {
+            return Doc::group_across_lines(Doc::concat(parts));
+        }
+        Doc::group(false, Doc::concat(parts))
     }
 
     /// How many items a delimited literal holds, where both `,` and `=>`
@@ -1662,7 +1673,7 @@ fn breaks(doc: &Doc) -> bool {
         Doc::HardLine | Doc::BlankLine | Doc::VerbatimLines(_) | Doc::Comment(_, _) => true,
         Doc::UserLine { broken, .. } => *broken,
         Doc::Raw(text) => text.contains('\n'),
-        Doc::Group { broken, body } => *broken || breaks(body),
+        Doc::Group { broken, body, .. } => *broken || breaks(body),
         Doc::Indent(body) | Doc::Continuation(body) | Doc::Rooted(body) => breaks(body),
         Doc::Concat(parts) => parts.iter().any(breaks),
         _ => false,
