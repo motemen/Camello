@@ -339,28 +339,14 @@ Call sites of an `args` sub are checked as `f(key => value, ...)` against a
 Moose `new`. `args` in Smart::Args accepts a single hashref as well as pairs;
 both shapes are accepted.
 
-**Data::Validator.**
-
-```perl
-my $rule = Data::Validator->new(
-    uri  => 'Str',
-    port => { isa => 'Int', optional => 1 },
-)->with('Method');
-sub fetch { my ($self, $args) = $rule->validate(@_); ... }
-```
-
-The validator is a value, and the checker follows it as one: a lexical
-assigned a `Data::Validator->new(...)` (with any chain of `->with(...)`)
-gets a `Validator { params, modes }` type, and `$rule->validate(@_)` as the
-first statement of a sub is the parameter list. `Method` and `Sequenced`/
-`StrictSequenced` change the arity shape; `AllowExtra` turns the unknown-key
-check off; `NoThrow` is ignored (it affects what happens, not what is
-accepted). The returned `$args` is a `Dict` of the rule, and reading a key
-that the rule does not declare is a diagnostic — the hash is restricted at
-run time, so this one is an error rather than a warning.
-
-A validator that is not assigned to a lexical in the same file, or that is
-built from anything other than literal pairs, is `Unknown`.
+**Data::Validator** — deferred. The validator is a value (`my $rule =
+Data::Validator->new(...)->with('Method')`) and the parameter list is a call
+on it, so recognising it means following a lexical across statements and
+interpreting `->with` modes; that is a flow analysis dressed as an annotation
+and is not worth doing before the flow pass exists. Until then a sub that
+validates through it has `Unknown` parameters and is silent. The recogniser
+belongs after milestone 5, and the `Dict` from `validate` makes a restricted
+hash, so an unknown key read off it would be an `error` then.
 
 **Class::Accessor::Typed.**
 
@@ -536,8 +522,8 @@ parameter `$count` declared `Int` at lib/Foo.pm:12"). Severities:
   under `--strict-annotations`, and other things a user asked to be told.
 
 `--error-on warning` promotes for CI. Codes can be disabled per project in
-the config and per line with `## no camello: <code>` (a comment, so
-`format` keeps it; the sigil is chosen not to collide with `## no critic`).
+the config and per line with `## camello-disable: <code>` (a comment, so
+`format` keeps it; the form is chosen not to collide with `## no critic`).
 
 The `GUESS:` discipline from `docs/architecture.md` applies unchanged: a
 diagnostic that depends on a parser guess (`foo %h` read as a call, an
@@ -617,9 +603,9 @@ under the type work is used by something before the type work needs it.
    interpolation scanning; `args` and signatures as declarations. Run over
    `@INC`: zero false undeclared-variable errors is the bar.
 3. **`camello lint`: arity.** Signatures, `@_` unpacking, `args`/`args_pos`,
-   `Data::Validator` modes; call sites within the roots.
+   call sites within the roots.
 4. **Types: declarations.** The type-expression parser, both syntaxes; the
-   five annotation recognisers; `Returns:`; `Type::Library`; stubs; the
+   four annotation recognisers; `Returns:`; `Type::Library`; stubs; the
    dependency resolver and its cache. `camello typecheck` exists and reports
    `bad-annotation` and nothing else — the point is that every annotation in
    the corpus parses.
