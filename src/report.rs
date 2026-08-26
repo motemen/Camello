@@ -59,8 +59,32 @@ pub fn run(request: &Request) -> Result<()> {
         files.extend(collected.into_iter().map(|path| (path, None)));
     }
 
+    // Two phases (`docs/typecheck.md`, "Data flow"): every file's declarations
+    // first, so that a call in the first file can see a sub declared in the
+    // last, and the bodies afterwards. A file is parsed once in each phase
+    // rather than held between them — a rowan tree is not `Send`, and a corpus
+    // the size of @INC would be a lot of trees to keep.
+    let declared = crate::cli::in_parallel(&files, request.jobs, |(path, inline)| {
+        let source = read_one(path, inline.as_deref(), &encodings)?;
+        let parsed = camello_syntax::parse::parse(&source);
+        Ok::<_, String>(camello_sema::decl::declare(&parsed.syntax()))
+    });
+
+    let mut analysis = camello_sema::Analysis::new();
+    for ((path, _), decls) in files.iter().zip(declared) {
+        if let Ok(decls) = decls {
+            analysis.add(path, decls, true);
+        }
+    }
+
     let reports = crate::cli::in_parallel(&files, request.jobs, |(path, inline)| {
-        check_one(path, inline.as_deref(), &encodings, &request.options)
+        check_one(
+            path,
+            inline.as_deref(),
+            &encodings,
+            &analysis,
+            &request.options,
+        )
     });
 
     let mut counts = [0usize; 3];
@@ -111,19 +135,28 @@ pub fn run(request: &Request) -> Result<()> {
     Ok(())
 }
 
+fn read_one(
+    path: &Path,
+    inline: Option<&str>,
+    encodings: &crate::cli::Encodings,
+) -> std::result::Result<String, String> {
+    match inline {
+        Some(text) => Ok(text.to_string()),
+        None => match crate::cli::read_source(Some(path), None, None, encodings) {
+            Ok((source, _, _)) => Ok(source),
+            Err(error) => Err(format!("{}: {error}", path.display())),
+        },
+    }
+}
+
 fn check_one(
     path: &Path,
     inline: Option<&str>,
     encodings: &crate::cli::Encodings,
+    analysis: &camello_sema::Analysis,
     options: &Options,
 ) -> std::result::Result<FileReport, String> {
-    let source = match inline {
-        Some(text) => text.to_string(),
-        None => match crate::cli::read_source(Some(path), None, None, encodings) {
-            Ok((source, _, _)) => source,
-            Err(error) => return Err(format!("{}: {error}", path.display())),
-        },
-    };
+    let source = read_one(path, inline, encodings)?;
     let parsed = camello_syntax::parse::parse(&source);
     let parse_errors: Vec<String> = parsed
         .diagnostics
@@ -131,7 +164,7 @@ fn check_one(
         .map(|diagnostic| diagnostic.message.clone())
         .collect();
     let diagnostics = if parse_errors.is_empty() {
-        camello_sema::check(&parsed.syntax(), &source, options)
+        analysis.check(path, &parsed.syntax(), &source, options)
     } else {
         Vec::new()
     };

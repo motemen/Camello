@@ -97,7 +97,14 @@ fn actual(source: &str, path: &Path) -> Vec<Diagnostic> {
         path.display(),
         parsed.diagnostics
     );
-    crate::check(&parsed.syntax(), source, &crate::Options::for_fixture(path))
+    let mut analysis = crate::Analysis::new();
+    analysis.declare(path, &parsed.syntax(), true);
+    analysis.check(
+        path,
+        &parsed.syntax(),
+        source,
+        &crate::Options::for_fixture(path),
+    )
 }
 
 #[test]

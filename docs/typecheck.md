@@ -681,6 +681,29 @@ reviewed as a decision rather than discovered as a difference.
   this pass never sees, so scanning it reported the use two lines later.
   Between them these were 402 of the 408 undeclared-variable errors the first
   run over @INC produced.
+- **An unpacking list has no minimum** (milestone 3). `my ($data, $header,
+  $password, $cipher) = @_` is routinely called with two arguments: perl fills
+  the rest with `undef` and the body asks `if defined`. All 285 of the arity
+  findings the first run over @INC produced were that shape. So a parameter
+  list read off an `@_` unpacking bounds only the *maximum*, and the design's
+  "for arity's sake" is read as "for the maximum's sake". A signature and an
+  `args` list still bound both, because perl and Smart::Args both die.
+- **A bare `shift` past the leading run means the list is unknown**
+  (milestone 3). `Net::DBus::RemoteService::new` shifts its class and then
+  shifts three more into a hash; `Carp::str_len_trim` writes `shift || 0` on
+  its second line. The second is a parameter with a default and is read as
+  one; the first makes the whole parameter list `Unknown`.
+- **`($)` is a prototype, whatever the parser called it** (milestone 3). The
+  parser reads `sub is_info ($)` as a signature with one nameless parameter,
+  which is a `GUESS:` — perl has no such signature, since every signature
+  parameter is named. A "signature" with a nameless parameter is therefore a
+  prototype and the sub's parameters are `Unknown`. This was a run of arity
+  errors across `HTTP::Status`, `Crypt::PRNG` and `Getopt::Long`.
+- **A method call counts its invocant on both sides** (milestone 3). The
+  parameter list keeps its leading `$self` and a call through `->` counts one
+  more argument than it writes, because that is what perl passes. Stripping it
+  from one side and not the other reported `Dpkg::Email::Address->new()` as
+  passing nothing to a sub that wants one.
 - **A lone parenthesised list is that list** (milestone 1). `Args::elements`
   and `Args::pairs` descend into a `PAREN_EXPR` that is a list's only element,
   so `use Foo (a => 1)` and `use Foo a => 1` reach a recogniser as the same
@@ -695,3 +718,7 @@ reviewed as a decision rather than discovered as a difference.
   that does not compile, so the bar — zero *false* undeclared-variable errors —
   is met. 590 warnings (457 unused, 133 shadowed) and 18 files not checked (17
   in an encoding the run was not told about, 1 a parse error).
+- **Milestone 3, arity over @INC.** Zero errors. One warning:
+  `XML::XPathEngine` calls `XML::XPathEngine::NodeSet->new($results)`, and
+  that constructor shifts its class and ignores everything after it — the
+  argument is silently dropped, which is what the warning is for.
