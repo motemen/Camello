@@ -633,3 +633,26 @@ Decided provisionally; written down so that the decision is visible.
 - **Where the config lives.** `camello.toml` at the root the command is
   run from, shared with the formatter's options when those become
   configurable. Not `.perlcriticrc`.
+
+## Decisions made during implementation
+
+The document above was written before the code. Where the code found it wrong
+or short of an answer, the reading that keeps the checker *quiet* was taken,
+the section was corrected, and the decision is recorded here so that it can be
+reviewed as a decision rather than discovered as a difference.
+
+- **`Subscript` is `SubscriptChain`** (milestone 1). Views are generated one
+  per `NodeKind` and named after the kind, so `SUBSCRIPT` — the node holding
+  one key between one pair of braces — already claims `Subscript`. The union
+  the document describes, base plus steps, is `SubscriptChain`. `Call`,
+  `MethodCall`, `Assign` and `AnonSub` keep their names, the last three as
+  aliases for the generated `MethodCallExpr` / `AssignExpr` / `AnonSubExpr`.
+- **A view for every kind, not only the meaningful ones** (milestone 1). The
+  document says "one newtype per `NodeKind` that carries meaning", which would
+  need a list of which kinds those are and a second list for `dev dump` to
+  print from. Generating all of them costs nothing, and `NodeKind::view_name`
+  is then total, which is what makes the dump's second column exhaustive.
+- **A lone parenthesised list is that list** (milestone 1). `Args::elements`
+  and `Args::pairs` descend into a `PAREN_EXPR` that is a list's only element,
+  so `use Foo (a => 1)` and `use Foo a => 1` reach a recogniser as the same
+  import. perl flattens `f((1, 2))` to two arguments for the same reason.
