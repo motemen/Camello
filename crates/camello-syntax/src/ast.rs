@@ -745,10 +745,8 @@ impl Args {
                             value: node,
                         });
                         fat = false;
-                    } else {
-                        if let Some(previous) = pending.replace(node) {
-                            acc.push(Arg::Positional(previous));
-                        }
+                    } else if let Some(previous) = pending.replace(node) {
+                        acc.push(Arg::Positional(previous));
                     }
                 }
             }
