@@ -158,6 +158,18 @@ impl Program {
         if !self.knows_package(package) {
             return true;
         }
+        // XS registers its methods into the distribution's namespace, and a
+        // distribution's namespace is a name prefix: `Net::DBus` calls
+        // `XSLoader::load` and the methods land on
+        // `Net::DBus::Binding::Iterator`, whose own file has no idea. So a
+        // dynamic package makes everything below its name dynamic too.
+        let mut prefix = package;
+        while let Some((outer, _)) = prefix.rsplit_once("::") {
+            if self.facts(outer).iter().any(|facts| facts.dynamic) {
+                return true;
+            }
+            prefix = outer;
+        }
         for class in self.linearise(package) {
             if !self.knows_package(&class) {
                 return true;
