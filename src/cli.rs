@@ -397,23 +397,101 @@ pub struct CheckArgs {
     /// Read every dependency afresh
     #[arg(long, help = "Do not read or write the declaration cache")]
     pub no_cache: bool,
+
+    /// How to print the diagnostics
+    #[arg(
+        long,
+        value_name = "FORMAT",
+        default_value = "text",
+        help = "How to print the diagnostics: text or json"
+    )]
+    pub format: String,
+
+    /// Codes to leave unreported
+    #[arg(
+        long,
+        value_name = "CODE,...",
+        help = "Diagnostic codes to leave unreported, on top of camello.toml"
+    )]
+    pub disable: Option<String>,
+
+    /// Report a public sub that says nothing about its own shape
+    #[arg(
+        long,
+        help = "Report a public sub with no signature, `args` list or `Returns:`"
+    )]
+    pub strict_annotations: bool,
+
+    /// Where camello.toml lives
+    #[arg(
+        long,
+        value_name = "DIR",
+        help = "Where to look for camello.toml (default: the working directory)"
+    )]
+    pub config_dir: Option<PathBuf>,
+
+    /// Ignore camello.toml
+    #[arg(long, help = "Do not read camello.toml")]
+    pub no_config: bool,
 }
 
 impl CheckArgs {
-    fn into_request(self, options: camello_sema::Options) -> Result<crate::report::Request> {
-        let error_on = camello_sema::Severity::parse(&self.error_on).ok_or_else(|| {
-            miette::miette!(
-                "--error-on takes `error`, `warning` or `info`, not `{}`",
-                self.error_on
-            )
+    fn into_request(self, mut options: camello_sema::Options) -> Result<crate::report::Request> {
+        // The file says what the project is; a flag says what this run is, so
+        // the flag wins.
+        let config = if self.no_config {
+            crate::config::Config::default()
+        } else {
+            crate::config::Config::read(
+                self.config_dir.as_deref().unwrap_or_else(|| Path::new(".")),
+            )?
+        };
+
+        let severity = match &self.error_on[..] {
+            // clap's default; a config `error-on` is only reached when the
+            // flag was not typed.
+            "error" => config
+                .check
+                .error_on
+                .clone()
+                .unwrap_or_else(|| "error".into()),
+            typed => typed.to_string(),
+        };
+        let error_on = camello_sema::Severity::parse(&severity).ok_or_else(|| {
+            miette::miette!("--error-on takes `error`, `warning` or `info`, not `{severity}`")
         })?;
+
+        let format = crate::report::Format::parse(&self.format)
+            .ok_or_else(|| miette::miette!("--format takes `text` or `json`"))?;
+
+        options.strict_annotations = self.strict_annotations || config.check.strict_annotations;
+        options.disabled = crate::report::parse_codes(self.disable.as_deref().unwrap_or(""))?;
+        for name in &config.check.disable {
+            options
+                .disabled
+                .push(camello_sema::Code::parse(name).ok_or_else(|| {
+                    miette::miette!(
+                        "unknown diagnostic code `{name}` in {}",
+                        crate::config::FILE_NAME
+                    )
+                })?);
+        }
+
+        let mut paths = self.paths;
+        if paths.is_empty() && !config.check.lib.is_empty() {
+            paths = config.check.lib.clone();
+        }
+        let mut stubs = split_paths(self.stubs.as_deref());
+        stubs.extend(config.check.stubs.iter().cloned());
+
         Ok(crate::report::Request {
-            paths: self.paths,
+            paths,
             error_on,
+            format,
             extensions: self.extensions,
             jobs: self.jobs,
             encoding: self.encoding,
-            stubs: split_paths(self.stubs.as_deref()),
+            stubs,
             inc: self.inc.as_deref().map(split_paths_owned),
             cache_dir: if self.no_cache {
                 None

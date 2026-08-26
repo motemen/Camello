@@ -20,7 +20,7 @@ jobs:
         toolchain: 1.91.0
     - uses: Swatinem/rust-cache@v2
     - name: Check
-      run: cargo check
+      run: cargo check --workspace --all-targets
 
   test:
     name: Test Suite
@@ -32,7 +32,7 @@ jobs:
         toolchain: 1.91.0
     - uses: Swatinem/rust-cache@v2
     - name: Run tests
-      run: cargo test
+      run: cargo test --workspace
 
   fmt:
     name: Rustfmt
@@ -44,7 +44,7 @@ jobs:
         toolchain: 1.91.0
         components: rustfmt
     - name: Enforce formatting
-      run: cargo fmt --check
+      run: cargo fmt --all --check
 
   clippy:
     name: Clippy
@@ -57,4 +57,4 @@ jobs:
         components: clippy
     - uses: Swatinem/rust-cache@v2
     - name: Linting
-      run: cargo clippy -- -D warnings
+      run: cargo clippy --workspace --all-targets -- -D warnings

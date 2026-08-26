@@ -1,8 +1,9 @@
 # Design: `camello typecheck` and `camello lint`
 
-Status: proposal, 2026-08-26. Nothing below is implemented. This document
-decides the shape; the code that follows it is the authority once it exists,
-in the same way `docs/contracts.md` treats its ADRs.
+Status: implemented, 2026-08-26. This document decided the shape; the code is
+now the authority, in the same way `docs/contracts.md` treats its ADRs. Where
+the two disagree, the code is right and "Decisions made during implementation"
+at the end of this file says why.
 
 ## What is being built
 
@@ -752,6 +753,21 @@ reviewed as a decision rather than discovered as a difference.
   the one place inference crosses a boundary, and it is what would need a
   fixpoint over the program; without it every unannotated sub returns
   `Unknown`, which is silence. `Returns:` is how a sub says otherwise.
+- **A suppression comment reads two ways** (milestone 6). `##
+  camello-disable: <code>` on a line of code is about that line, and on a line
+  of its own is about the line below it. The second is what a long line needs,
+  and what a diagnostic whose span *is* a comment needs: a marker about a
+  `# Returns:` line cannot sit on that line without becoming part of the
+  annotation. A marker naming nothing, or naming something that is not a code,
+  silences the whole line — guessing which code was meant would be worse than
+  taking the user at their word.
+- **`camello.toml` has one table** (milestone 6). `[check]`, not `[lint]` and
+  `[typecheck]`: what it holds is true of both subcommands, and a project that
+  wanted them to differ would be asking the same question two ways. A flag on
+  the command line wins over it, because the file says what the project is and
+  the flag says what this run is. A file that does not parse is an error, not a
+  shrug: a config silently ignored is a project checked under rules nobody
+  asked for.
 - **A lone parenthesised list is that list** (milestone 1). `Args::elements`
   and `Args::pairs` descend into a `PAREN_EXPR` that is a list's only element,
   so `use Foo (a => 1)` and `use Foo a => 1` reach a recogniser as the same

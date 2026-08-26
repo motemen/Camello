@@ -6,12 +6,37 @@ legacy Perl grammar feature. The implementation is lossless: source text is
 first represented as tokens and a concrete syntax tree (CST), and formatting
 changes trivia and layout rather than program tokens.
 
+Camello is also a static checker. `camello lint` and `camello typecheck` run
+over the same CST and read the type annotations Perl code already carries —
+`has ... isa => 'Str'`, `args my $x => 'Int'`, `Class::Accessor::Typed`, and a
+`Returns:` comment — as declarations rather than as strings. The design, and
+the decisions the corpus forced on it, are in [typecheck.md](typecheck.md).
+
 The formatting rules themselves are documented in [formatting.md](formatting.md).
 The rules the source holds to — the five contracts its comments refer to by
 name, and the invariants numbered in them — are in [contracts.md](contracts.md).
-[typecheck.md](typecheck.md) is the design for `camello lint` and `camello
-typecheck`, a static checker over the same CST; it is a proposal and nothing in
-it is built.
+
+## The crates
+
+```text
+crates/camello-syntax   lang, lex, parse, ast   the front end
+crates/camello-fmt      the Doc IR              the formatter
+crates/camello-sema     symbols, types, flow    the checker
+camello (root)          cli, check              the binary and the invariants
+```
+
+The split is enforced by Cargo rather than by review, and the direction it
+enforces is the one that matters: **nothing under `sema` can reach `fmt`**. The
+lossless-CST and trivia machinery the formatter is built around is irrelevant
+to a checker, and a build of the checker should not carry the Doc IR.
+
+`camello-syntax` is what both sit on. `camello_syntax::lang` defines the shared
+vocabulary, `lex` scans source, `parse` records and replays syntax events, and
+`ast` offers typed views over the result. `camello-fmt` builds and renders the
+output. `camello-sema` reads declarations and checks bodies. The root crate is
+the command line, plus `src/check.rs`, which holds the invariants — it is the
+one place that compares a formatter against a parser and so the one place that
+depends on both.
 
 ## Data flow
 
@@ -20,16 +45,9 @@ Perl source
   -> lexer token buffer
   -> parser events
   -> rowan CST + TriviaMap
-  -> formatter Doc IR
-  -> rendered lines
-  -> vertical alignment
-  -> format skipping
-  -> formatted source
+  -> formatter Doc IR          -> rendered lines -> alignment -> format skipping -> formatted source
+  -> ast views -> declarations -> program graph  -> body pass  -> diagnostics
 ```
-
-`src/lang` defines the shared vocabulary, `src/lex` scans source, `src/parse`
-records and replays syntax events, and `src/fmt` builds and renders the output.
-`src/check.rs` exposes the invariants used to validate arbitrary source.
 
 ## Guesses
 
@@ -68,6 +86,21 @@ concatenation is due. `&&` is not a sigil under any reading, not merely under
 this one. And `{` opening an anonymous hash is not a guess either: it is parsed
 as a hash and rolled back if that does not work out, which is evidence rather
 than inference. `grep -rn 'GUESS:' src` is the list.
+
+## The AST layer
+
+`camello_syntax::ast` is a typed view per `NodeKind`: `AstNode::cast(SyntaxNode)
+-> Option<Self>`, and accessors that return other views or tokens. The
+`cast`/`syntax` boilerplate is generated from the `nodes` section of
+`define_language!` — the section carries a view name beside each kind — and the
+accessors are hand-written beside it, the way `predicates.rs` is hand-written
+beside the generated enums.
+
+The formatter does not use it: the formatter's questions are about tokens and
+trivia, and it walks kinds directly. The checker's questions are about
+structure, and asking them by kind-matching over child iterators in every pass
+is how a checker becomes unmaintainable. `camello dev dump` prints the view name
+beside every node kind, which is the question a reader of a dump has.
 
 ## Language vocabulary and CST
 
@@ -218,6 +251,41 @@ answer belongs to each file rather than to the run. In-place output is encoded
 before the original is touched, written and synchronized to a temporary sibling,
 and atomically renamed over the target while preserving its permissions.
 
+## The checker
+
+`camello lint lib t` reports what needs no type lattice: undeclared, unused and
+shadowed lexicals, and arity against a signature, an `args` list or an `@_`
+unpacking. `camello typecheck lib t` reports everything `lint` does plus what
+the annotations add — a `Str` passed where an `ArrayRef[Int]` was declared, a
+method called on a class that declares none such, a key read off a `Dict` that
+has no such key, a `Maybe[...]` used with nothing having checked it.
+
+Both print one diagnostic per line as `path:line:col: severity: message [code]`,
+take `--format json` for tooling, and exit 1 when anything at or above
+`--error-on` (default `error`) was reported. Both take `--stubs`, `--inc`,
+`--cache-dir` / `--no-cache`, and read `camello.toml` from the directory they
+are run in.
+
+The analysis is two passes, and the split is what makes it cheap. The
+**declaration pass** reads no sub body — a body can only *use* a declaration,
+never make one another file could see — so the program graph is complete after
+it, a dependency contributes its declarations and nothing else, and the result
+is cached on disk. The **body pass** is per sub and reads only symbols.
+
+Three rules keep it quiet, and each is the reason a class of false positive is
+not there:
+
+- `Unknown` is a top that means "not analysed". It propagates through every
+  operation and is never reported against, so a program with no annotations
+  gets no type diagnostics at all.
+- an element names its container: `$h{k}` reads `%h` and `$a[0]` reads `@a`.
+- a class with an unknown ancestor — including one whose file loads XS, whose
+  `@ISA` is computed, or which assigns a glob — might have any method, so "no
+  such method" is never said of it.
+
+`docs/typecheck.md` is the design and carries the decisions the corpus forced,
+along with where each milestone's corpus bar landed.
+
 The hidden `camello dev` namespace contains development interfaces. `dump`
 prints a CST, and `check` evaluates parser and formatter invariants on files,
 directory trees, or standard input. `perl-deparse` takes the same paths and asks the
@@ -310,10 +378,17 @@ Tests and fixtures live beside their implementation:
   dialects. Whether a fragment is Perl depends on which features are on, and
   the answer flips: without `signatures`, `sub f ($x = 1)` is a prototype whose
   text `B::Deparse` echoes verbatim, so respacing it reads as a changed program.
-  Asking a bare perl leaves 18 of the fixtures unanswered and calls that one a
-  violation; asking this way answers 145 of 149;
+  Asking a bare perl leaves 24 of the fixtures unanswered and calls that one a
+  violation; asking this way answers 151 of 155;
+- checker fixtures under `crates/camello-sema/src/fixtures`, whose expected
+  diagnostics are `#~` comments on the line they belong to, and whose harness
+  requires the two sets to be *equal* — so a fixture with no `#~` is how "the
+  checker stays silent here" is written down. A multi-file fixture is a
+  directory with a `roots` marker naming which directories are checked and
+  which only declare;
 - `scripts/corpus-check` for selecting a real corpus — the `.pm` files below
-  `@INC` — and asking `dev check` and `dev perl-deparse` about it. The questions
+  `@INC` — and asking `dev check` and `dev perl-deparse` about it, or the
+  checker under `--lint` / `--typecheck`, whose bar is zero errors. The questions
   are the binary's; the script contributes the corpus. Installed code carries
   its own `use feature`, so the dialect search that the fixtures need is not
   wanted here.
