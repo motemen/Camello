@@ -20,6 +20,10 @@ pub enum AnchorClass {
     /// still agrees on one column. `or` is not one of these: it binds loosely
     /// enough to be flow control rather than a default.
     Fallback,
+    /// The import list of a `use` or a `no`, so that a block of them reads as
+    /// the table it is: module name, then what is taken from it. Off by default
+    /// (`align_use_imports`).
+    UseImports,
     /// A postfix `if` / `unless` / `while` / `until` / `for`.
     PostfixKeyword,
     /// An end-of-line comment.

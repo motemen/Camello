@@ -307,8 +307,8 @@ Tests and fixtures live beside their implementation:
   dialects. Whether a fragment is Perl depends on which features are on, and
   the answer flips: without `signatures`, `sub f ($x = 1)` is a prototype whose
   text `B::Deparse` echoes verbatim, so respacing it reads as a changed program.
-  Asking a bare perl leaves 22 of the fixtures unanswered and calls that one a
-  violation; asking this way answers 142 of 146;
+  Asking a bare perl leaves 18 of the fixtures unanswered and calls that one a
+  violation; asking this way answers 145 of 149;
 - `scripts/corpus-check` for selecting a real corpus — the `.pm` files below
   `@INC` — and asking `dev check` and `dev perl-deparse` about it. The questions
   are the binary's; the script contributes the corpus. Installed code carries

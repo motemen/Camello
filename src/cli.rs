@@ -368,6 +368,14 @@ pub struct LayoutArgs {
         help = "Never keep a one-statement map/sub/do block on one line"
     )]
     pub no_single_line_blocks: bool,
+
+    /// Line up the import lists of a run of `use` — or of `no` — lines
+    #[arg(
+        long,
+        hide = true,
+        help = "Line up the import lists of consecutive use (or no) statements"
+    )]
+    pub align_use_imports: bool,
 }
 
 /// `DelimiterSpacing`, spelled for clap. The library enum stays clap-free.
@@ -403,6 +411,7 @@ impl LayoutArgs {
             delimiter_spacing: self
                 .delimiter_spacing
                 .map_or(defaults.delimiter_spacing, Into::into),
+            align_use_imports: self.align_use_imports,
         }
     }
 }

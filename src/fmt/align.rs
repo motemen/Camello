@@ -21,8 +21,9 @@ fn class_order(class: AnchorClass) -> (u8, u8) {
         AnchorClass::Assign => (0, 0),
         AnchorClass::FatComma(depth) => (1, depth),
         AnchorClass::Fallback => (2, 0),
-        AnchorClass::PostfixKeyword => (3, 0),
-        AnchorClass::TrailingComment => (4, 0),
+        AnchorClass::UseImports => (3, 0),
+        AnchorClass::PostfixKeyword => (4, 0),
+        AnchorClass::TrailingComment => (5, 0),
     }
 }
 

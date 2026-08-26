@@ -741,6 +741,63 @@ fn layout_decisions_are_stable_across_passes() {
     }
 }
 
+// ===== `use` alignment, which is off by default =====
+
+/// A run of `use` lines is a two-column table — the module, then what is taken
+/// from it — and under `align_use_imports` it is laid out as one.
+#[test]
+fn use_imports_align_only_when_asked() {
+    let source = "use Foo::Bar qw(f);\nuse Foo::BazBaz qw(g h i);\nuse Foo::Q ();\n";
+
+    // The default leaves one space, which is what a repository adopting camello
+    // gets whether or not it wants this.
+    assert_eq!(format(source), source);
+
+    let options = FormatterOptions {
+        align_use_imports: true,
+        ..FormatterOptions::default()
+    };
+    let aligned = format_source(source, &options);
+    assert_eq!(
+        aligned,
+        "use Foo::Bar    qw(f);\nuse Foo::BazBaz qw(g h i);\nuse Foo::Q      ();\n"
+    );
+    // And the pass is its own fixed point (the formatter contract, I3).
+    assert_eq!(format_source(&aligned, &options), aligned);
+}
+
+/// The group ends where any alignment group does: at a blank line, at a line
+/// with nothing to align, and at a different kind of statement.
+#[test]
+fn use_alignment_groups_end_where_alignment_groups_end() {
+    let options = FormatterOptions {
+        align_use_imports: true,
+        ..FormatterOptions::default()
+    };
+    let source = concat!(
+        "use strict;\n",
+        "use Foo::A qw(a);\n",
+        "use Foo::BBBB qw(b);\n",
+        "\n",
+        "use Foo::CC qw(c);\n",
+        "no Foo::DDDD qw(d);\n",
+    );
+    assert_eq!(
+        format_source(source, &options),
+        concat!(
+            // `use strict;` imports nothing, so there is no column to agree on
+            // and the group starts after it.
+            "use strict;\n",
+            "use Foo::A    qw(a);\n",
+            "use Foo::BBBB qw(b);\n",
+            "\n",
+            // A blank line ends the group, and a `no` is a different statement.
+            "use Foo::CC qw(c);\n",
+            "no Foo::DDDD qw(d);\n",
+        )
+    );
+}
+
 // ===== Fixture snapshots =====
 
 /// Format every fixture and snapshot the result.
