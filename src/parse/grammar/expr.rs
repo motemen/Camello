@@ -445,16 +445,18 @@ pub(crate) fn bareword_call(parser: &mut Parser<'_>) -> CompletedMarker {
     if let Some(builtin) = builtin {
         parser.set_expect(builtin.expect_after_name);
     } else if sigil_argument_follows {
-        // `_error %state, $cb` in AnyEvent::HTTP, `getdata %^H, $wiz` in
-        // B::Hooks::EndOfScope. Only `%`, `&` and `*` are in doubt at all, and
-        // where the sub's declaration is not in sight the spacing is the only
-        // evidence which reading was meant.
+        // GUESS: `foo %h` passes a hash where `foo % h` takes a remainder.
+        // Evidence: the spacing alone. Only `%`, `&` and `*` are in doubt at
+        // all, and the sub's declaration is not in sight.
+        // Wrong: `_error %state, $cb` in AnyEvent::HTTP and `getdata %^H, $wiz`
+        // in B::Hooks::EndOfScope lose their argument to an operator.
         parser.expect_term();
     } else {
-        // With no declaration in sight, assume `f / 10` divides rather than
-        // matching. Perl guesses here too; the difference is that the guess is
-        // written down in one place (the parser contract) instead of being a special
-        // case in the lexer.
+        // GUESS: `f / 10` divides rather than starting a match.
+        // Evidence: none — no declaration in sight. Perl guesses here too; the
+        // difference is that the guess is written down in one place (the parser
+        // contract) instead of being a special case in the lexer.
+        // Wrong: the match runs to the next `/`, taking whatever lies between.
         parser.expect_operator();
     }
 
@@ -623,12 +625,14 @@ fn block_call_follows(parser: &mut Parser<'_>) -> bool {
 /// (`print( {$fh} @lines )`), which is why it takes an offset rather than
 /// looking at the current token.
 fn at_filehandle(parser: &mut Parser<'_>, base: usize) -> bool {
-    // perl decides this from its symbol table, and we have none. An all-capital
-    // bareword followed by `(` is therefore ambiguous — `print FOO(1)` could be
-    // a call — with one exception: perl's own handles are always handles, and
-    // `print STDERR ("x")` prints to standard error rather than calling a sub
-    // named STDERR. Reading it the other way turned every such line in
-    // `Getopt::Long` and `Debian::AdduserLogging` into a function call.
+    // GUESS: an all-capital bareword in the first slot is a filehandle.
+    // Evidence: the capitals, and that no `(`, `,`, `=>` or `;` follows. perl
+    // decides this from its symbol table, and we have none, so `print FOO(1)`
+    // stays ambiguous — with one exception: perl's own handles are always
+    // handles, and `print STDERR ("x")` prints to standard error rather than
+    // calling a sub named STDERR.
+    // Wrong: every such line in `Getopt::Long` and `Debian::AdduserLogging`
+    // becomes a function call.
     const PERL_HANDLES: &[&str] = &["STDIN", "STDOUT", "STDERR", "ARGV", "ARGVOUT", "DATA"];
     let is_perl_handle = parser
         .nth_text(base)
@@ -797,12 +801,12 @@ fn starts_argument(parser: &mut Parser<'_>, argument_is_optional: bool) -> bool 
             parser.expect_operator();
             return false;
         }
-        // `ok -f $path` is a file test and `PI - 1` is subtraction, and the same
-        // question separates them: does a file test lex here. The letters are
-        // what makes getting this wrong expensive — `s`, `y` and `m` are file
-        // tests and quote-like operators both, so `ok -s $path` read as
-        // subtraction starts a substitution whose body runs to the end of the
-        // file.
+        // GUESS: `-` here starts a file test rather than a subtraction.
+        // Evidence: whether a file test operator lexes at all. `ok -f $path`
+        // and `PI - 1` differ by nothing else.
+        // Wrong: `s`, `y` and `m` are file tests and quote-like operators both,
+        // so `ok -s $path` read as subtraction starts a substitution whose body
+        // runs to the end of the file.
         if parser.at(T!["-"]) {
             parser.expect_term();
             if parser.at(TokenKind::FILE_TEST_OP) {
@@ -811,13 +815,14 @@ fn starts_argument(parser: &mut Parser<'_>, argument_is_optional: bool) -> bool 
             parser.expect_operator();
             return false;
         }
-        // `ok +Foo->bar` — perl's documented disambiguating unary plus. Its only
-        // purpose is to open an argument list where a bare `{` or `(` would be
-        // read as something else, so addition applied to an argument-less call is
-        // the one reading it cannot have. Without a declaration in sight the
-        // evidence is how it was written: the idiom hugs its operand and leaves a
-        // space in front, where arithmetic on a constant (`PI + 1`, `MAX-1`) does
-        // not.
+        // GUESS: a `+` glued to its operand is perl's documented disambiguating
+        // unary plus, whose only purpose is to open an argument list where a
+        // bare `{` or `(` would be read as something else.
+        // Evidence: the spacing, with no declaration in sight. The idiom hugs
+        // its operand and leaves a space in front — `ok +Foo->bar` — where
+        // arithmetic on a constant (`PI + 1`, `MAX-1`) does not.
+        // Wrong: the argument list becomes addition applied to an argument-less
+        // call, the one reading the idiom cannot have.
         if parser.at(T!["+"]) && parser.current_is_glued_prefix() {
             parser.expect_term();
             if parser.nth(1).is_some_and(TokenKind::can_start_term) {

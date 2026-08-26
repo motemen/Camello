@@ -1125,6 +1125,11 @@ impl<'a> Builder<'a> {
         Doc::group(true, Doc::concat(parts))
     }
 
+    /// GUESS: a block written on one line was meant to stay on one line.
+    /// Evidence: one statement at most, no `;`, no comment, and no newline in
+    /// the source (docs/formatting.md NEWLINE-2).
+    /// Wrong: only the shape changes, never the meaning.
+    ///
     /// The single rule that replaces `is_simple_block`'s seven rejections plus
     /// the `suppress_newlines` flag that leaked past them.
     ///
@@ -1226,16 +1231,18 @@ impl<'a> Builder<'a> {
 
     /// A bracketed group: parentheses, an anonymous array or an anonymous hash.
     ///
-    /// Broken when the source put a newline straight after the opening bracket
-    /// (docs/formatting.md INDENT-2) — a rule stable under re-formatting, because a
-    /// broken group's own output has the newline there (the formatter contract, I2) — or
-    /// when the group holds a comment.
+    /// GUESS: a newline straight after the opening bracket means the group was
+    /// meant to stand open (docs/formatting.md INDENT-2).
+    /// Evidence: that newline, and nothing else. The rule is stable under
+    /// re-formatting because a broken group's own output has the newline there
+    /// (the formatter contract, I2).
+    /// Wrong: only the shape changes, never the meaning.
     ///
-    /// The second half is not a taste judgement. A comment runs to end of line,
-    /// so it *is* a hard line break; a flat group is by definition one that
-    /// contains none. Leaving it out is how `my %h = ( # c\n a => 1,\n);`
-    /// formatted to `my %h = ( # ca => 1,);`, with the entry commented out of
-    /// existence.
+    /// A group holding a comment is broken too, and that half is no guess: a
+    /// comment runs to end of line, so it *is* a hard line break, and a flat
+    /// group is by definition one that contains none. Leaving it out is how
+    /// `my %h = ( # c\n a => 1,\n);` formatted to `my %h = ( # ca => 1,);`,
+    /// with the entry commented out of existence.
     fn delimited(&mut self, node: &SyntaxNode, open: TokenKind, close: TokenKind) -> Doc {
         let opening = node
             .children_with_tokens()
