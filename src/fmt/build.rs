@@ -483,9 +483,13 @@ impl<'a> Builder<'a> {
         let mut body = Vec::new();
         let mut previous: Option<&SyntaxElement> = None;
         for (index, child) in children.iter().enumerate() {
-            let doc = match child {
-                SyntaxElement::Node(child) => self.node(child),
-                SyntaxElement::Token(token) => self.token(token),
+            // The closing brace comes back to the level the construct began at,
+            // but a comment written before it was written inside and stays with
+            // the contents.
+            let (written_inside, doc) = match child {
+                SyntaxElement::Node(child) => (Doc::Nil, self.node(child)),
+                SyntaxElement::Token(token) if index == closing => self.closing_delimiter(token),
+                SyntaxElement::Token(token) => (Doc::Nil, self.token(token)),
             };
             // Against a brace the group's own line break is the separator; what
             // the user wrote there is the shape, not spacing.
@@ -495,6 +499,7 @@ impl<'a> Builder<'a> {
                 None => Vec::new(),
             };
             if index == closing {
+                body.push(written_inside);
                 parts.push(Doc::indent(Doc::concat(
                     std::iter::once(Doc::HardLine)
                         .chain(body.drain(..))
@@ -1039,6 +1044,30 @@ impl<'a> Builder<'a> {
         ])
     }
 
+    /// A closing delimiter, split into what was written inside it and the
+    /// delimiter itself.
+    ///
+    /// The two go in different places. An own-line comment takes the
+    /// indentation of where it is (docs/formatting.md COMMENT-2), and where it
+    /// is, is inside the brackets — it is the last line of the contents, not the
+    /// first of whatever the delimiter closes onto. Left attached to the
+    /// delimiter it came back at the enclosing level, so `#>>>` sat in column 0
+    /// under a `#<<<` the contents had indented.
+    fn closing_delimiter(&mut self, token: &SyntaxToken) -> (Doc, Doc) {
+        let inside = self.leading_docs(token);
+        let trailing = if self.brace_follows(token) {
+            Doc::Nil
+        } else {
+            self.trailing_comment(token)
+        };
+        let delimiter = if trailing.is_nil() {
+            Doc::Token(token.clone())
+        } else {
+            Doc::concat(vec![Doc::Token(token.clone()), trailing])
+        };
+        (inside, delimiter)
+    }
+
     /// The own-line comments and blank lines written before this node.
     ///
     /// Nodes emitted as one verbatim region never reach [`Self::token`], so
@@ -1112,7 +1141,15 @@ impl<'a> Builder<'a> {
             }
             None => Some(header_comment),
         };
-        let close = brace(node, T!["}"], true).map(|token| self.token(&token));
+        // A comment written before the closing brace is the block's last line,
+        // not the brace's first: it goes inside, at the statements' level.
+        let (written_inside, close) = match brace(node, T!["}"], true) {
+            Some(token) => {
+                let (inside, delimiter) = self.closing_delimiter(&token);
+                (inside, Some(delimiter))
+            }
+            None => (Doc::Nil, None),
+        };
 
         if flat {
             let mut parts = Vec::new();
@@ -1130,9 +1167,8 @@ impl<'a> Builder<'a> {
         let mut parts = Vec::new();
         parts.extend(open);
         parts.push(Doc::HardLine);
-        if !body.is_empty() {
-            parts.push(Doc::indent(Doc::concat(body)));
-        }
+        body.push(written_inside);
+        parts.push(Doc::indent(Doc::concat(body)));
         parts.extend(close);
         Doc::group(true, Doc::concat(parts))
     }
@@ -1322,16 +1358,41 @@ impl<'a> Builder<'a> {
             parts.push(self.token(token));
         }
 
+        // What was written between the last element and the closing bracket
+        // belongs with the elements, at their level.
+        let (written_inside, closing_doc) = match &closing {
+            Some(token) => {
+                let (inside, delimiter) = self.closing_delimiter(token);
+                (inside, Some(delimiter))
+            }
+            None => (Doc::Nil, None),
+        };
+
         let body = Doc::concat(inner);
         if body.is_nil() {
-            if let Some(token) = &closing {
-                parts.push(self.token(token));
+            // Empty but for a comment: the brackets break so that the comment
+            // has a line of its own to be indented on. Empty but for a blank
+            // line is not that — there is nothing on either side for it to
+            // separate, and the brackets close up (BLANK_LINE-3).
+            if self.contains_comment(node) {
+                parts.push(Doc::indent(Doc::concat(vec![
+                    Doc::HardLine,
+                    written_inside,
+                ])));
+                parts.extend(closing_doc);
+                return Doc::group(true, Doc::concat(parts));
             }
+            parts.push(written_inside);
+            parts.extend(closing_doc);
             return Doc::group(false, Doc::concat(parts));
         }
 
         if broken {
-            parts.push(Doc::indent(Doc::concat(vec![Doc::SoftLine, body])));
+            parts.push(Doc::indent(Doc::concat(vec![
+                Doc::SoftLine,
+                body,
+                written_inside,
+            ])));
             parts.push(Doc::SoftLine);
         } else {
             // docs/formatting.md SPACING-7: whether a flat literal pads its inside
@@ -1372,9 +1433,7 @@ impl<'a> Builder<'a> {
                 parts.push(Doc::Space);
             }
         }
-        if let Some(token) = &closing {
-            parts.push(self.token(token));
-        }
+        parts.extend(closing_doc);
         Doc::group(broken, Doc::concat(parts))
     }
 
