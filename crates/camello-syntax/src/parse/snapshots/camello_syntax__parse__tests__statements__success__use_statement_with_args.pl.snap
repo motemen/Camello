@@ -1,0 +1,38 @@
+---
+source: crates/camello-syntax/src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  USE_STMT
+    `use` "use"
+    SUB_NAME
+      identifier "Some::Module"
+    LIST_EXPR
+      SUB_NAME
+        identifier "option"
+      `=>` "=>"
+      LITERAL
+        number "1"
+    `;` ";"
+  USE_STMT
+    `use` "use"
+    SUB_NAME
+      identifier "Another::Module"
+    LIST_EXPR
+      QW_EXPR
+        `qw` "qw"
+        delimiter "("
+        word list contents "foo bar"
+        delimiter ")"
+    `;` ";"
+  USE_STMT
+    `use` "use"
+    SUB_NAME
+      identifier "Yet::Another"
+    LIST_EXPR
+      LITERAL
+        string literal "'arg1'"
+      `,` ","
+      LITERAL
+        string literal "'arg2'"
+    `;` ";"

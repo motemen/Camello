@@ -1,0 +1,172 @@
+---
+source: crates/camello-syntax/src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  SUB_DEF
+    `sub` "sub"
+    SUB_NAME
+      identifier "decode"
+    `;` ";"
+  SUB_DEF
+    `sub` "sub"
+    SUB_NAME
+      identifier "process"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "decode"
+        LIST_EXPR
+          IO_EXPR
+            readline operator "<$fh>"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "result"
+        `=` "="
+        BINARY_EXPR
+          BINARY_EXPR
+            LIST_CALL_EXPR
+              SUB_NAME
+                identifier "f"
+            `<` "<"
+            SCALAR_VAR
+              `$` "$"
+              identifier "x"
+          `>` ">"
+          LITERAL
+            number "1"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "line"
+        `=` "="
+        IO_EXPR
+          readline operator "<STDIN>"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "line"
+        `=` "="
+        IO_EXPR
+          readline operator "<>"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "data"
+        `=` "="
+        IO_EXPR
+          readline operator "<$handle>"
+    `;` ";"
+  LOOP_STMT
+    `while` "while"
+    PAREN_EXPR
+      `(` "("
+      LIST_EXPR
+        IO_EXPR
+          readline operator "<$fh>"
+      `)` ")"
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          LIST_CALL_EXPR
+            SUB_NAME
+              identifier "process"
+            LIST_EXPR
+              IO_EXPR
+                readline operator "<STDERR>"
+        `;` ";"
+      `}` "}"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "process"
+        LIST_EXPR
+          IO_EXPR
+            readline operator "<$in>"
+          `,` ","
+          SCALAR_VAR
+            `$` "$"
+            identifier "output"
+    `;` ";"
+  IF_STMT
+    `if` "if"
+    PAREN_EXPR
+      `(` "("
+      LIST_EXPR
+        BINARY_EXPR
+          BINARY_EXPR
+            SCALAR_VAR
+              `$` "$"
+              identifier "a"
+            `<` "<"
+            SCALAR_VAR
+              `$` "$"
+              identifier "b"
+          `&&` "&&"
+          BINARY_EXPR
+            SCALAR_VAR
+              `$` "$"
+              identifier "c"
+            `>` ">"
+            SCALAR_VAR
+              `$` "$"
+              identifier "d"
+      `)` ")"
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          LIST_CALL_EXPR
+            SUB_NAME
+              identifier "print"
+            LIST_EXPR
+              LITERAL
+                string literal "\"ok\\n\""
+        `;` ";"
+      `}` "}"
+  EXPR_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "test"
+        `=` "="
+        BINARY_EXPR
+          BINARY_EXPR
+            SCALAR_VAR
+              `$` "$"
+              identifier "a"
+            `<` "<"
+            SCALAR_VAR
+              `$` "$"
+              identifier "b"
+          `>` ">"
+          LITERAL
+            number "0"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "print"
+        LIST_EXPR
+          IO_EXPR
+            readline operator "<DATA>"
+    `;` ";"

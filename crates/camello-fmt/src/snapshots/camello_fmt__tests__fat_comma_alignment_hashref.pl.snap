@@ -1,0 +1,15 @@
+---
+source: crates/camello-fmt/src/tests.rs
+expression: format(&source)
+---
+my $h = +{
+    aaa => { xyz => '' },
+    b   => { x   => '' },
+};
+
+map {
+    +{
+        time  => scalar @_,
+        count => 2,
+    };
+} @list;

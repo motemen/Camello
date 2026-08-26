@@ -1,0 +1,146 @@
+---
+source: crates/camello-syntax/src/parse/tests.rs
+expression: tree(source)
+---
+ROOT
+  PACKAGE_STMT
+    `package` "package"
+    SUB_NAME
+      identifier "Foo::Bar"
+    `;` ";"
+  USE_STMT
+    `use` "use"
+    SUB_NAME
+      identifier "strict"
+    `;` ";"
+  USE_STMT
+    `use` "use"
+    SUB_NAME
+      identifier "warnings"
+    `;` ";"
+  SUB_DEF
+    `sub` "sub"
+    SUB_NAME
+      identifier "greet"
+    SUB_SIGNATURE
+      `(` "("
+      LIST_EXPR
+        SIGNATURE_PARAM
+          SCALAR_VAR
+            `$` "$"
+            identifier "name"
+        `,` ","
+        SIGNATURE_PARAM
+          SCALAR_VAR
+            `$` "$"
+            identifier "greeting"
+          SIGNATURE_DEFAULT
+            `=` "="
+            LITERAL
+              string literal "'hello'"
+      `)` ")"
+    BLOCK
+      `{` "{"
+      VAR_DECL_STMT
+        LIST_EXPR
+          VAR_DECL
+            `my` "my"
+            DECL_TARGET
+              HASH_VAR
+                `%` "%"
+                identifier "seen"
+        `;` ";"
+      LOOP_STMT
+        `for` "for"
+        FOREACH_HEADER
+          VAR_DECL
+            `my` "my"
+            DECL_TARGET
+              SCALAR_VAR
+                `$` "$"
+                identifier "word"
+          PAREN_EXPR
+            `(` "("
+            LIST_EXPR
+              LIST_CALL_EXPR
+                SUB_NAME
+                  identifier "split"
+                LIST_EXPR
+                  M_EXPR
+                    delimiter "/"
+                    regex pattern "\\s+"
+                    delimiter "/"
+                  `,` ","
+                  SCALAR_VAR
+                    `$` "$"
+                    identifier "name"
+            `)` ")"
+        BLOCK
+          `{` "{"
+          EXPR_STMT
+            LIST_EXPR
+              LIST_CALL_EXPR
+                SUB_NAME
+                  `next` "next"
+            STMT_MODIFIER
+              `if` "if"
+              LIST_EXPR
+                POSTFIX_EXPR
+                  HASH_SUBSCRIPT_EXPR
+                    SCALAR_VAR
+                      `$` "$"
+                      identifier "seen"
+                    `{` "{"
+                    SUBSCRIPT
+                      SCALAR_VAR
+                        `$` "$"
+                        identifier "word"
+                    `}` "}"
+                  `++` "++"
+            `;` ";"
+          EXPR_STMT
+            LIST_EXPR
+              LIST_CALL_EXPR
+                SUB_NAME
+                  identifier "print"
+                FILEHANDLE
+                  identifier "STDERR"
+                LIST_EXPR
+                  LITERAL
+                    string literal "\"$greeting, $word\\n\""
+            `;` ";"
+          `}` "}"
+      EXPR_STMT
+        LIST_EXPR
+          LIST_CALL_EXPR
+            SUB_NAME
+              `return` "return"
+            LIST_EXPR
+              TERNARY_EXPR
+                LIST_CALL_EXPR
+                  SUB_NAME
+                    identifier "wantarray"
+                `?` "?"
+                LIST_CALL_EXPR
+                  SUB_NAME
+                    identifier "keys"
+                  HASH_VAR
+                    `%` "%"
+                    identifier "seen"
+                `:` ":"
+                LIST_CALL_EXPR
+                  SUB_NAME
+                    identifier "scalar"
+                  LIST_CALL_EXPR
+                    SUB_NAME
+                      identifier "keys"
+                    HASH_VAR
+                      `%` "%"
+                      identifier "seen"
+        `;` ";"
+      `}` "}"
+  EXPR_STMT
+    LIST_EXPR
+      LITERAL
+        number "1"
+    `;` ";"

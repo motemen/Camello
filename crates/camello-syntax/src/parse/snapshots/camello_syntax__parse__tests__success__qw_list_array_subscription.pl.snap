@@ -1,0 +1,27 @@
+---
+source: crates/camello-syntax/src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "first"
+        `=` "="
+        ARRAY_SUBSCRIPT_EXPR
+          QW_EXPR
+            `qw` "qw"
+            delimiter "("
+            word list contents "foo bar"
+            delimiter ")"
+          `[` "["
+          SUBSCRIPT
+            LITERAL
+              number "0"
+          `]` "]"
+    `;` ";"

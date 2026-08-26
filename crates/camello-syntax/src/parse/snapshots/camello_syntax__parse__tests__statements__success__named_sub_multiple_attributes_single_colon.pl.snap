@@ -1,0 +1,43 @@
+---
+source: crates/camello-syntax/src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  SUB_DEF
+    `sub` "sub"
+    SUB_NAME
+      identifier "foo"
+    ATTR
+      `:` ":"
+      SUB_NAME
+        identifier "A"
+    ATTR
+      SUB_NAME
+        identifier "B"
+    BLOCK
+      `{` "{"
+      `}` "}"
+  SUB_DEF
+    `sub` "sub"
+    SUB_NAME
+      identifier "bar"
+    SUB_SIGNATURE
+      `(` "("
+      LIST_EXPR
+        SIGNATURE_PARAM
+          `$` "$"
+      `)` ")"
+    ATTR
+      `:` ":"
+      SUB_NAME
+        identifier "attr1"
+    ATTR
+      SUB_NAME
+        identifier "attr2"
+      ATTR_ARGS
+        `(` "("
+        raw text "1"
+        `)` ")"
+    BLOCK
+      `{` "{"
+      `}` "}"

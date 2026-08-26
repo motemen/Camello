@@ -1,0 +1,7 @@
+---
+source: crates/camello-syntax/src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  POD
+    POD block "=pod\nContent without cut\n"

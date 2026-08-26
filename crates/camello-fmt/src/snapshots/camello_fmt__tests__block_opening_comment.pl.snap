@@ -1,0 +1,7 @@
+---
+source: crates/camello-fmt/src/tests.rs
+expression: format(&source)
+---
+sub foo {    # comment
+    ;
+}

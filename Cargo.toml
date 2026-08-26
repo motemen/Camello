@@ -1,7 +1,29 @@
-[package]
-name = "camello"
+[workspace]
+members = ["crates/camello-syntax", "crates/camello-fmt"]
+# The root package is a member too, and cargo would otherwise take it alone as
+# the default — `cargo test -q`, which is the sequence docs/architecture.md
+# asks for before pushing, has to mean the whole workspace.
+default-members = [".", "crates/camello-syntax", "crates/camello-fmt"]
+
+# The split of `docs/typecheck.md` ("Where it lives"): the checker must not be
+# able to reach the formatter's Doc IR, and Cargo is what enforces the direction
+# rather than review.
+[workspace.package]
 version = "0.1.1"
 edition = "2021"
+
+[workspace.dependencies]
+rowan = "0.15"
+smol_str = "0.2"
+unicode-width = "0.2"
+miette = { version = "7.0", features = ["fancy"] }
+thiserror = "1.0"
+insta = "1.0"
+
+[package]
+name = "camello"
+version.workspace = true
+edition.workspace = true
 
 [features]
 # The allocator is the only C dependency, and the whole of what a Linux build
@@ -13,17 +35,17 @@ edition = "2021"
 mimalloc = ["dep:mimalloc"]
 
 [dependencies]
+camello-syntax = { path = "crates/camello-syntax" }
+camello-fmt = { path = "crates/camello-fmt" }
+
 # CST操作のコアライブラリ
-rowan = "0.15"
+rowan = { workspace = true }
 
 # CLI構築
 clap = { version = "4.0", features = ["derive"] }
 
-# 効率的な文字列処理
-smol_str = "0.2"
-
 # 桁揃えのための表示幅（全角は2桁）
-unicode-width = "0.2"
+unicode-width = { workspace = true }
 
 # How wide the progress line may be before the terminal wraps it
 terminal_size = "0.4"
@@ -32,8 +54,8 @@ terminal_size = "0.4"
 supports-color = "3.0"
 
 # エラー診断とレポート
-miette = { version = "7.0", features = ["fancy"] }
-thiserror = "1.0"
+miette = { workspace = true }
+thiserror = { workspace = true }
 
 # Character encoding conversion
 encoding_rs = "0.8"
@@ -41,7 +63,7 @@ mimalloc = { version = "0.1.52", optional = true }
 
 [dev-dependencies]
 # スナップショットテスト
-insta = "1.0"
+insta = { workspace = true }
 
 # テスト用の一時ファイル作成
 tempfile = "3.0"

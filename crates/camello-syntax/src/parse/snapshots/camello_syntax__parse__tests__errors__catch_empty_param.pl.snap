@@ -1,0 +1,5 @@
+---
+source: crates/camello-syntax/src/parse/tests.rs
+expression: rendered
+---
+line 3: expected a variable to bind the caught error to

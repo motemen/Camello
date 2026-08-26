@@ -1,0 +1,52 @@
+---
+source: crates/camello-syntax/src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  GIVEN_STMT
+    `given` "given"
+    PAREN_EXPR
+      `(` "("
+      LIST_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "variable"
+      `)` ")"
+    BLOCK
+      `{` "{"
+      WHEN_CLAUSE
+        `when` "when"
+        PAREN_EXPR
+          `(` "("
+          LIST_EXPR
+            LITERAL
+              string literal "'foo'"
+          `)` ")"
+        BLOCK
+          `{` "{"
+          EXPR_STMT
+            LIST_EXPR
+              LIST_CALL_EXPR
+                SUB_NAME
+                  identifier "say"
+                LIST_EXPR
+                  LITERAL
+                    string literal "'It was foo'"
+            `;` ";"
+          EXPR_STMT
+            LIST_EXPR
+              LIST_CALL_EXPR
+                SUB_NAME
+                  identifier "continue"
+            `;` ";"
+          `}` "}"
+      EXPR_STMT
+        LIST_EXPR
+          LIST_CALL_EXPR
+            SUB_NAME
+              identifier "say"
+            LIST_EXPR
+              LITERAL
+                string literal "'This is not reached after foo'"
+        `;` ";"
+      `}` "}"

@@ -1,0 +1,23 @@
+---
+source: crates/camello-syntax/src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  EXPR_STMT
+    LIST_EXPR
+      ARRAY_SUBSCRIPT_EXPR
+        CODE_CALL_EXPR
+          SCALAR_VAR
+            `$` "$"
+            identifier "code"
+          `->` "->"
+          ARG_LIST
+            `(` "("
+            LIST_EXPR
+            `)` ")"
+        `[` "["
+        SUBSCRIPT
+          LITERAL
+            number "0"
+        `]` "]"
+    `;` ";"

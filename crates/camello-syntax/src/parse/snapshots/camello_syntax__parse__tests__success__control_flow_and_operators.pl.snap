@@ -1,0 +1,273 @@
+---
+source: crates/camello-syntax/src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          `return` "return"
+        LIST_EXPR
+          LITERAL
+            number "1"
+          `,` ","
+          LITERAL
+            number "2"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "grep"
+        LIST_EXPR
+          PREFIX_EXPR
+            `+` "+"
+            SCALAR_VAR
+              `$` "$"
+              identifier "_"
+          `,` ","
+          ARRAY_VAR
+            `@` "@"
+            identifier "list"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      BINARY_EXPR
+        LIST_CALL_EXPR
+          SUB_NAME
+            identifier "shift"
+        `//` "//"
+        LITERAL
+          number "1"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      BINARY_EXPR
+        LIST_CALL_EXPR
+          SUB_NAME
+            identifier "pop"
+        `//` "//"
+        LITERAL
+          number "1"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      BINARY_EXPR
+        FILE_TEST_EXPR
+          file test operator "-f"
+        `//` "//"
+        LITERAL
+          number "0"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "x"
+        `=` "="
+        BINARY_EXPR
+          BINARY_EXPR
+            LIST_CALL_EXPR
+              SUB_NAME
+                identifier "f"
+            `/` "/"
+            LITERAL
+              number "10"
+          `/` "/"
+          LITERAL
+            number "2"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      BINARY_EXPR
+        LIST_CALL_EXPR
+          SUB_NAME
+            identifier "time"
+        `//` "//"
+        LITERAL
+          number "1"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      BINARY_EXPR
+        LIST_CALL_EXPR
+          SUB_NAME
+            identifier "fork"
+        `+` "+"
+        LITERAL
+          number "1"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      BINARY_EXPR
+        LIST_CALL_EXPR
+          SUB_NAME
+            identifier "wait"
+        `or` "or"
+        LIST_CALL_EXPR
+          SUB_NAME
+            identifier "die"
+          LIST_EXPR
+            LITERAL
+              string literal "'oops'"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      TERNARY_EXPR
+        LIST_CALL_EXPR
+          SUB_NAME
+            identifier "wantarray"
+        `?` "?"
+        LITERAL
+          number "1"
+        `:` ":"
+        LITERAL
+          number "0"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "say"
+        LIST_EXPR
+          METHOD_CALL_EXPR
+            LIST_CALL_EXPR
+              SUB_NAME
+                identifier "Foo::Bar"
+            `->` "->"
+            SUB_NAME
+              identifier "method"
+            ARG_LIST
+              `(` "("
+              LIST_EXPR
+              `)` ")"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "warn"
+        LIST_EXPR
+          LITERAL
+            number "1"
+    `;` ";"
+  BLOCK_STMT
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          LIST_CALL_EXPR
+            SUB_NAME
+              identifier "warn"
+            LIST_EXPR
+              LITERAL
+                number "2"
+      `}` "}"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "warn"
+        LIST_EXPR
+          LITERAL
+            number "3"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "hash"
+        `=` "="
+        PREFIX_EXPR
+          `+` "+"
+          ANON_HASH
+            `{` "{"
+            LIST_EXPR
+              SUB_NAME
+                identifier "a"
+              `=>` "=>"
+              LITERAL
+                number "1"
+            `}` "}"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      PREFIX_EXPR
+        `+` "+"
+        HASH_SUBSCRIPT_EXPR
+          ANON_HASH
+            `{` "{"
+            LIST_EXPR
+            `}` "}"
+          `->` "->"
+          `{` "{"
+          SUBSCRIPT
+            SUB_NAME
+              identifier "key"
+          `}` "}"
+    `;` ";"
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            SCALAR_VAR
+              `$` "$"
+              identifier "hash_kw"
+        `=` "="
+        PREFIX_EXPR
+          `+` "+"
+          ANON_HASH
+            `{` "{"
+            LIST_EXPR
+              SUB_NAME
+                identifier "package"
+              `=>` "=>"
+              LITERAL
+                number "1"
+              `,` ","
+              SUB_NAME
+                identifier "and"
+              `=>` "=>"
+              LITERAL
+                number "2"
+            `}` "}"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      PAREN_EXPR
+        `(` "("
+        LIST_EXPR
+          SUB_NAME
+            identifier "a"
+          `=>` "=>"
+          ANON_ARRAY
+            `[` "["
+            LIST_EXPR
+            `]` "]"
+        `)` ")"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      PAREN_EXPR
+        `(` "("
+        LIST_EXPR
+          SUB_NAME
+            identifier "a"
+          `=>` "=>"
+          ANON_ARRAY
+            `[` "["
+            LIST_EXPR
+            `]` "]"
+        `)` ")"
+    `;` ";"

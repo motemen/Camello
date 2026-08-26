@@ -1,0 +1,17 @@
+---
+source: crates/camello-syntax/src/parse/tests.rs
+expression: "tree(\"-f $x . \\\"y\\\";\\n\")"
+---
+ROOT
+  EXPR_STMT
+    LIST_EXPR
+      FILE_TEST_EXPR
+        file test operator "-f"
+        BINARY_EXPR
+          SCALAR_VAR
+            `$` "$"
+            identifier "x"
+          `.` "."
+          LITERAL
+            string literal "\"y\""
+    `;` ";"

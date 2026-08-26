@@ -18,8 +18,8 @@
 
 pub mod deparse;
 
-use crate::lang::{TokenExt, TokenKind};
 use crate::{format_perl, parse_perl};
+use camello_syntax::lang::{TokenExt, TokenKind};
 use std::ops::Range;
 
 /// Whose defect a violation is.
@@ -367,7 +367,7 @@ fn normal_form(source: &str) -> Option<Violation> {
     losslessness(source, &root).or_else(|| trivia_placement(&root))
 }
 
-fn losslessness(source: &str, root: &crate::lang::SyntaxNode) -> Option<Violation> {
+fn losslessness(source: &str, root: &camello_syntax::lang::SyntaxNode) -> Option<Violation> {
     let rebuilt: String = root
         .descendants_with_tokens()
         .filter_map(|element| element.into_token())
@@ -400,7 +400,7 @@ fn losslessness(source: &str, root: &crate::lang::SyntaxNode) -> Option<Violatio
     ))
 }
 
-fn trivia_placement(root: &crate::lang::SyntaxNode) -> Option<Violation> {
+fn trivia_placement(root: &camello_syntax::lang::SyntaxNode) -> Option<Violation> {
     let mut offenders = Vec::new();
     for node in root.descendants() {
         // ROOT covers the file, trailing newline and all.
@@ -453,8 +453,8 @@ fn trivia_placement(root: &crate::lang::SyntaxNode) -> Option<Violation> {
 /// differently, whether or not this particular file's text moved.
 fn idempotency(source: &str, formatted: &str) -> Option<Violation> {
     let (twice, _) = format_perl(formatted);
-    let seeds_in = crate::fmt::layout_seeds(source);
-    let seeds_out = crate::fmt::layout_seeds(formatted);
+    let seeds_in = camello_fmt::layout_seeds(source);
+    let seeds_out = camello_fmt::layout_seeds(formatted);
 
     if twice == *formatted && seeds_in == seeds_out {
         return None;

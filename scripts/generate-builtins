@@ -4,7 +4,7 @@
 #
 #   scripts/generate-builtins            print the match arms
 #
-# Paste the output into `lookup` in src/parse/grammar/builtins.rs, replacing
+# Paste the output into `lookup` in crates/camello-syntax/src/parse/grammar/builtins.rs, replacing
 # everything between the `match name {` and the `_ => return None,`, then run
 # `cargo fmt`: the line breaking here is approximate and rustfmt has the last
 # word on it.

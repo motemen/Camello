@@ -1,0 +1,8 @@
+---
+source: crates/camello-fmt/src/tests.rs
+expression: format(&source)
+---
+[
+    1,    # one
+    2,    # two
+];

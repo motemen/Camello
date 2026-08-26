@@ -1,0 +1,19 @@
+---
+source: crates/camello-fmt/src/tests.rs
+expression: format(&source)
+---
+# array
+[
+    (
+        "a"
+    )
+];
+
+# hash
+[
+    {
+        "a" => (
+            999
+        )
+    }
+];
