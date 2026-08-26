@@ -7,6 +7,8 @@ first represented as tokens and a concrete syntax tree (CST), and formatting
 changes trivia and layout rather than program tokens.
 
 The formatting rules themselves are documented in [formatting.md](formatting.md).
+The rules the source holds to — the five contracts its comments refer to by
+name, and the invariants numbered in them — are in [contracts.md](contracts.md).
 
 ## Data flow
 
@@ -52,6 +54,10 @@ nothing. It goes on a decision only when all three hold:
 - the reading rests on weak evidence, not on what the grammar or the lexer
   expectation already knows;
 - getting it wrong changes the output.
+
+The contracts ([contracts.md](contracts.md)) are the other half of this: what is
+decided by rule lives there, and what is decided on thin evidence carries the
+label.
 
 So `.5` is no guess — the expectation state says whether a number or a
 concatenation is due. `&&` is not a sigil under any reading, not merely under
