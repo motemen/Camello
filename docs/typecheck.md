@@ -652,7 +652,46 @@ reviewed as a decision rather than discovered as a difference.
   need a list of which kinds those are and a second list for `dev dump` to
   print from. Generating all of them costs nothing, and `NodeKind::view_name`
   is then total, which is what makes the dump's second column exhaustive.
+- **`strict` is read, and positional** (milestone 2). The "Scopes" section
+  said `use strict` is taken as on by default. Over @INC that reported an
+  undeclared variable in every file written before the pragma was common —
+  code perl accepts, because without `strict` an undeclared name *is* a
+  package variable. So `strict` is read from the file (`use strict`, a module
+  whose import turns it on, `use v5.12` and up), and it is read *positionally*:
+  it is a lexical pragma, and `WWW::RobotRules` sets `$VERSION` on line 3 and
+  says `use strict` on line 6. `no strict` (bare, or naming `vars`) turns it
+  off from where it appears to the end of the file — taking it to the end of
+  its block would be more precise and less quiet.
+- **`use vars` declares for the file, `our` for its scope** (milestone 2). The
+  `vars` pragma's own documentation calls its declarations package-wide rather
+  than lexical, and `Time::Zone` relies on it: `use vars qw(%zoneOff)` inside a
+  block, read in a sub two hundred lines below. `our` stays lexical, which is
+  what perl does with it.
+- **Modules that export variables are a table for now** (milestone 2). `use
+  English` binds sixty long names to punctuation variables and `use Config`
+  binds `%Config`, and neither is visible without running the module's
+  `import`. Until the dependency resolver of milestone 4 can read an `@EXPORT`,
+  those two are a table, and an import list that names a variable
+  (`use POSIX qw($errno)`) declares it.
+- **The interpolation scanner has four rules the corpus wrote** (milestone 2).
+  A single colon ends a name (`"$filename: not found"`), a subscript after a
+  dereference belongs to the dereference (`"$$argv[0]"` reads `$argv`, not
+  `@argv`), an `/x` pattern's `#` comments hold no interpolation, and an
+  `s///e` replacement is code rather than a string — its `my` is a declaration
+  this pass never sees, so scanning it reported the use two lines later.
+  Between them these were 402 of the 408 undeclared-variable errors the first
+  run over @INC produced.
 - **A lone parenthesised list is that list** (milestone 1). `Args::elements`
   and `Args::pairs` descend into a `PAREN_EXPR` that is a list's only element,
   so `use Foo (a => 1)` and `use Foo a => 1` reach a recogniser as the same
   import. perl flattens `f((1, 2))` to two arguments for the same reason.
+
+### Where the corpus bars actually landed
+
+- **Milestone 2, undeclared variables over @INC.** Six remain, all of them in
+  `Debconf::Element::Noninteractive::Error`, and `perl -c` reports the same
+  six: the file opens `my $mail` in the condition of an `unless` and reads it
+  after the statement, which is out of scope. They are true positives in a file
+  that does not compile, so the bar — zero *false* undeclared-variable errors —
+  is met. 590 warnings (457 unused, 133 shadowed) and 18 files not checked (17
+  in an encoding the run was not told about, 1 a parse error).

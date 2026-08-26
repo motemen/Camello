@@ -1,0 +1,10 @@
+[package]
+name = "camello-sema"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+camello-syntax = { path = "../camello-syntax" }
+
+# CST操作のコアライブラリ
+rowan = { workspace = true }

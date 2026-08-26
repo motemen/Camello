@@ -10,8 +10,10 @@
 
 pub mod check;
 pub mod cli;
+pub mod report;
 
 pub use camello_fmt as fmt;
+pub use camello_sema as sema;
 pub use camello_syntax::{diagnostic, lang, lex, parse};
 
 pub use camello_fmt::{DelimiterSpacing, FormatterOptions};
