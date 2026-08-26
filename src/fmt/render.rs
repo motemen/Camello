@@ -54,6 +54,10 @@ pub struct Renderer<'a> {
     /// Set while rendering the body of a broken group; `Line` and `SoftLine`
     /// only break inside one.
     broken: bool,
+    /// Set while rendering the body of a group that occupies more than one line
+    /// — usually the same thing as `broken`, and not always (`Doc::Group`).
+    /// Anchors written where this is false have no second line to agree with.
+    anchored: bool,
     /// The shape key most recently declared, applied to lines as they are
     /// finished.
     shape: Option<ShapeKey>,
@@ -95,6 +99,7 @@ impl<'a> Renderer<'a> {
             current: Line::default(),
             indent: 0,
             broken: true,
+            anchored: true,
             shape: None,
             continuation: false,
             hanging_continuation: None,
@@ -135,10 +140,16 @@ impl<'a> Renderer<'a> {
                     self.walk(part);
                 }
             }
-            Doc::Group { broken, body } => {
-                let outer = std::mem::replace(&mut self.broken, *broken);
+            Doc::Group {
+                broken,
+                anchored,
+                body,
+            } => {
+                let outer_broken = std::mem::replace(&mut self.broken, *broken);
+                let outer_anchored = std::mem::replace(&mut self.anchored, *anchored);
                 self.walk(body);
-                self.broken = outer;
+                self.broken = outer_broken;
+                self.anchored = outer_anchored;
             }
             Doc::Indent(body) => {
                 self.indent += 1;
@@ -256,7 +267,7 @@ impl<'a> Renderer<'a> {
             }
             Doc::Anchor(class, tail) => {
                 // Alignment is a relation between lines, so an anchor inside a
-                // group that stays on one line has nothing to hold. Keeping it
+                // group that occupies one line has nothing to hold. Keeping it
                 // let `bar(b => $y, charlie => $z)` join the vertical group of
                 // the call above it and pad a `=>` that no other line shares —
                 // and, because only the first anchor of a class on a line is
@@ -264,11 +275,11 @@ impl<'a> Renderer<'a> {
                 // A flat hash nested inside a broken hash still participates
                 // in the outer lines' per-depth alignment. This is how
                 // `{ aaa => 1 }` and `{ b => 2 }` line up when they are values
-                // on adjacent lines. Other flat groups stay anchor-free so a
+                // on adjacent lines. Other one-line groups stay anchor-free so a
                 // one-line call cannot leak into a vertical group around it.
                 let nested_flat_fat_comma =
                     matches!(class, AnchorClass::FatComma(depth) if *depth > 1);
-                if self.broken || nested_flat_fat_comma {
+                if self.anchored || nested_flat_fat_comma {
                     self.current.anchors.push(Anchor {
                         class: *class,
                         column: self.current.text.width(),

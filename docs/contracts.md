@@ -180,6 +180,14 @@ specification of what comes out; these are the rules of how.
   extent of a wrap (INDENT-3), `Hanging` starts continuation lines at a computed
   column, and `Rooted` places a construct from the line it begins on rather than
   from its statement's level (INDENT-4).
+- **A group carries two decisions, not one.** `broken` is whether the writer
+  seeded a break after the opening delimiter, and settles what may take a
+  `Doc::Line`. `anchored` is whether the construct occupies more than one line,
+  and settles whether the anchors written directly inside it are recorded —
+  alignment is a relation between lines, and a construct with one line has no
+  second line to agree with. They are usually the same answer and part company
+  where the writer put something after the bracket and broke the line anyway:
+  `f($o,` seeds nothing and is still a table.
 - **Align reads columns, never the source.** The pass runs over rendered lines.
   `AnchorClass` is `Assign`, `FatComma(depth)`, `Fallback`, `PostfixKeyword`,
   `TrailingComment`; an `Anchor` carries the width of what must end at the
