@@ -43,6 +43,15 @@ pub struct FormatterOptions {
     /// Parentheses are always tight; blocks always get one space; this only
     /// concerns anonymous array/hash constructors.
     pub delimiter_spacing: DelimiterSpacing,
+    /// Whether a run of `use` — or of `no` — lines up its import lists
+    /// (docs/formatting.md ALIGNMENT-2).
+    ///
+    /// Off. A `use` block is a table by the same reading a hash is, so the rule
+    /// fits; but it is the single largest diff a repository adopting camello
+    /// sees — twelve thousand lines across three thousand files in the one this
+    /// was measured on — and which way that block should read is not settled
+    /// enough to be the answer everybody gets.
+    pub align_use_imports: bool,
 }
 
 /// How the inside of a flat `[...]` / `{...}` literal is padded.
@@ -71,6 +80,7 @@ impl Default for FormatterOptions {
             max_alignment_padding: 64,
             allow_single_line_blocks: true,
             delimiter_spacing: DelimiterSpacing::Standard,
+            align_use_imports: false,
         }
     }
 }

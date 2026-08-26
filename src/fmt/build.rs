@@ -696,6 +696,18 @@ impl<'a> Builder<'a> {
         next: &SyntaxElement,
         parent: Option<NodeKind>,
     ) -> Option<(AnchorClass, usize)> {
+        // A `use` line is a table of two columns — the module, then what is
+        // taken from it — so what the lines agree on is where the second
+        // begins. The anchor is on the import list, which is a node and not a
+        // token: there is no operator here to align on, only a gap.
+        if self.options.align_use_imports
+            && matches!(parent, Some(NodeKind::USE_STMT | NodeKind::NO_STMT))
+            && next
+                .as_node()
+                .is_some_and(|node| node.node_kind() == NodeKind::LIST_EXPR)
+        {
+            return Some((AnchorClass::UseImports, 0));
+        }
         let token = next.as_token()?;
         if token.token_kind().is_assignment_op() && parent == Some(NodeKind::ASSIGN_EXPR) {
             // The whole operator: `=`, `-=` and `||=` line up on their `=`
@@ -1772,6 +1784,16 @@ fn is_quote_like_node(kind: NodeKind) -> bool {
 
 fn shape_key(node: &SyntaxNode) -> Option<ShapeKey> {
     let kind = node.node_kind();
+    // A `use` and a `no` have nothing to walk for: what they declare is that
+    // the statement above was one too, which is what keeps a block of them one
+    // alignment group and ends it where the block does.
+    if matches!(kind, NodeKind::USE_STMT | NodeKind::NO_STMT) {
+        return Some(ShapeKey {
+            statement: kind,
+            declares: false,
+            list_assignment: false,
+        });
+    }
     if !matches!(kind, NodeKind::EXPR_STMT | NodeKind::VAR_DECL_STMT) {
         return None;
     }

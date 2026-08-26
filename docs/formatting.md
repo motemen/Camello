@@ -430,6 +430,7 @@ my $z = 10;
 - **ファットカンマ (`=>`)**
 - **既定値を与える演算子 (`//`, `||`)**
 - **行末コメント (`# ...`)**
+- **`use` / `no` のインポートリスト**（既定オフ。`align_use_imports`）
 
 代入演算子は**`=` の桁で揃えます**。長さの違う演算子が並ぶとき、揃うのは
 演算子の先頭ではなく末尾です——読み手が目で追うのは `=` の縦線だからです。
@@ -467,6 +468,21 @@ my %hash = (
 my $a = 1;    # TODO: fix this
 my $b = 2;    # OK
 ```
+
+`use` 文の並びは「モジュール名 → そこから取るもの」の 2 列の表なので、同じ考え方が
+当てはまります。揃えるのはインポートリストの開始桁です。ただし**既定はオフ**です
+（`--align-use-imports` / `align_use_imports`）。既存のコードベースに camello を
+入れるとき、この 1 項目が差分の大半を占めることがあり、どちらの見え方を採るかは
+まだ決めきれていないからです。
+
+```perl
+use Foo::Bar    qw(f);
+use Foo::BazBaz qw(g h i);
+use Foo::Q      ();
+```
+
+インポートリストのない `use strict;` には揃える桁がないので、そこでグループは
+終わります。`use` と `no` は別種の文なので、別のグループになります (ALIGNMENT-1)。
 
 ### 7.3 揃える桁 (ALIGNMENT-3)
 
@@ -537,6 +553,7 @@ my @table = (
 | `--delimiter-spacing <tight\|standard\|loose>` | `standard` | SPACING-7 |
 | `--max-alignment-padding <N>`（`0` で整列を止める） | `64` | ALIGNMENT-3 |
 | `--no-single-line-blocks` | オフ | NEWLINE-2 |
+| `--align-use-imports` | オフ | ALIGNMENT-2 |
 
 隠しフラグなのは、これらがまだ設計の途中だからです。名前も既定値も変わりえます。
 
