@@ -9,6 +9,9 @@ changes trivia and layout rather than program tokens.
 The formatting rules themselves are documented in [formatting.md](formatting.md).
 The rules the source holds to — the five contracts its comments refer to by
 name, and the invariants numbered in them — are in [contracts.md](contracts.md).
+[typecheck.md](typecheck.md) is the design for `camello lint` and `camello
+typecheck`, a static checker over the same CST; it is a proposal and nothing in
+it is built.
 
 ## Data flow
 
