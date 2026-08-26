@@ -337,23 +337,32 @@ fn formatting_keeps_a_marker_on_its_line() {
             "{} does not parse: {errors:?}",
             path.display()
         );
-        let before = marker_lines(&source);
-        let after = marker_lines(&formatted);
+        let before = marked_lines(&source);
+        let after = marked_lines(&formatted);
         if before != after {
             failures.push(Failure {
                 fixture: path.display().to_string(),
-                detail: format!("markers were on lines {before:?} and are now on {after:?}"),
+                detail: format!("markers sat on {before:?} and now sit on {after:?}"),
             });
         }
     }
     report("keeping every `#~` marker on its line", failures, total);
 }
 
-fn marker_lines(source: &str) -> Vec<usize> {
+/// Every `#~` marker with the code it sits beside, spacing normalised.
+///
+/// The line *number* is not the question — the formatter is free to add a
+/// blank line above a `sub`, which moves every marker below it. The question
+/// is whether a marker still sits beside the same statement, which is what
+/// would silently rewrite a test if it stopped being true.
+fn marked_lines(source: &str) -> Vec<(String, String)> {
     source
         .lines()
-        .enumerate()
-        .filter(|(_, line)| line.contains("#~"))
-        .map(|(index, _)| index + 1)
+        .filter_map(|line| line.split_once("#~"))
+        .map(|(code, marker)| (squeeze(code), squeeze(marker)))
         .collect()
+}
+
+fn squeeze(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
