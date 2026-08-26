@@ -369,6 +369,34 @@ pub struct CheckArgs {
         help = "Encodings to try, in order, until one reads the file (default: utf-8)"
     )]
     pub encoding: Option<String>,
+
+    /// Directories holding stub `.pm` files, which shadow the real modules
+    #[arg(
+        long,
+        value_name = "DIR,...",
+        help = "Directories of stub modules; a stub shadows the real module's declarations"
+    )]
+    pub stubs: Option<String>,
+
+    /// The include path to resolve dependencies against
+    #[arg(
+        long,
+        value_name = "DIR,...",
+        help = "Where to look for a `use`d module (default: the @INC of the perl on PATH)"
+    )]
+    pub inc: Option<String>,
+
+    /// Where the declaration cache lives
+    #[arg(
+        long,
+        value_name = "DIR",
+        help = "Where to cache dependency declarations (default: .camello-cache)"
+    )]
+    pub cache_dir: Option<PathBuf>,
+
+    /// Read every dependency afresh
+    #[arg(long, help = "Do not read or write the declaration cache")]
+    pub no_cache: bool,
 }
 
 impl CheckArgs {
@@ -385,9 +413,32 @@ impl CheckArgs {
             extensions: self.extensions,
             jobs: self.jobs,
             encoding: self.encoding,
+            stubs: split_paths(self.stubs.as_deref()),
+            inc: self.inc.as_deref().map(split_paths_owned),
+            cache_dir: if self.no_cache {
+                None
+            } else {
+                Some(
+                    self.cache_dir
+                        .unwrap_or_else(|| PathBuf::from(".camello-cache")),
+                )
+            },
             options,
         })
     }
+}
+
+/// A comma-separated list of directories.
+fn split_paths(list: Option<&str>) -> Vec<PathBuf> {
+    list.map(split_paths_owned).unwrap_or_default()
+}
+
+fn split_paths_owned(list: &str) -> Vec<PathBuf> {
+    list.split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(PathBuf::from)
+        .collect()
 }
 
 /// The formatter's options, as command-line flags.

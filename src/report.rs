@@ -19,6 +19,12 @@ pub struct Request {
     pub extensions: String,
     pub jobs: Option<usize>,
     pub encoding: Option<String>,
+    /// Directories of stub modules, which shadow the real ones.
+    pub stubs: Vec<PathBuf>,
+    /// The include path, or `None` for "ask the perl on PATH".
+    pub inc: Option<Vec<PathBuf>>,
+    /// Where the declaration cache lives, or `None` for no cache.
+    pub cache_dir: Option<PathBuf>,
     pub options: Options,
 }
 
@@ -70,11 +76,45 @@ pub fn run(request: &Request) -> Result<()> {
         Ok::<_, String>(camello_sema::decl::declare(&parsed.syntax()))
     });
 
-    let mut analysis = camello_sema::Analysis::new();
+    // The roots are the directories the command was pointed at; a file named
+    // on its own contributes the directory it is in, which is what makes
+    // `camello typecheck lib/Foo.pm` resolve `use Foo::Bar` next door.
+    let roots: Vec<PathBuf> = request
+        .paths
+        .iter()
+        .map(|path| {
+            if path.is_dir() {
+                path.clone()
+            } else {
+                path.parent().unwrap_or(Path::new(".")).to_path_buf()
+            }
+        })
+        .collect();
+    let inc = match &request.inc {
+        Some(inc) => inc.clone(),
+        // Only `typecheck` needs what a dependency declares, and asking perl
+        // for its `@INC` is a process to spawn.
+        None if request.options.types => camello_sema::resolve::perl_inc(),
+        None => Vec::new(),
+    };
+    let cache = match &request.cache_dir {
+        Some(directory) => camello_sema::resolve::Cache::new(Some(directory.clone())),
+        None => camello_sema::resolve::Cache::disabled(),
+    };
+    let mut analysis = camello_sema::Analysis::new().with_resolver(
+        camello_sema::resolve::Resolver::new(roots, request.stubs.clone(), inc),
+        cache,
+    );
     for ((path, _), decls) in files.iter().zip(declared) {
         if let Ok(decls) = decls {
             analysis.add(path, decls, true);
         }
+    }
+    // Only `typecheck` follows a `use` out of the roots: `lint`'s questions
+    // are about the roots' own calls, and reading @INC to answer them would
+    // buy nothing.
+    if request.options.types {
+        analysis.resolve_dependencies();
     }
 
     let reports = crate::cli::in_parallel(&files, request.jobs, |(path, inline)| {

@@ -15,12 +15,15 @@
 //! `typecheck` is everything `lint` reports plus what the lattice adds.
 //! [`Code::needs_types`] is the line between them.
 
+pub mod annotate;
 pub mod arity;
 pub mod decl;
 pub mod diag;
 pub mod interp;
 pub mod program;
+pub mod resolve;
 pub mod scope;
+pub mod types;
 
 use std::path::Path;
 
@@ -40,6 +43,7 @@ pub const COVERED_CODES: &[Code] = &[
     Code::UnusedVariable,
     Code::ShadowedVariable,
     Code::Arity,
+    Code::BadAnnotation,
 ];
 
 /// What a run asks for.
@@ -93,12 +97,88 @@ impl Options {
 #[derive(Default)]
 pub struct Analysis {
     program: Program,
+    resolver: resolve::Resolver,
+    cache: Option<resolve::Cache>,
 }
 
 impl Analysis {
     #[must_use]
     pub fn new() -> Self {
         Analysis::default()
+    }
+
+    /// The search path and the cache a run resolves dependencies against.
+    #[must_use]
+    pub fn with_resolver(mut self, resolver: resolve::Resolver, cache: resolve::Cache) -> Self {
+        self.resolver = resolver;
+        self.cache = Some(cache);
+        self
+    }
+
+    /// Follow every `use` out of the files already added, and fold what it
+    /// finds into the graph as declarations.
+    ///
+    /// Transitive, because an ancestor two modules up is what decides whether
+    /// "no such method" may be said at all. Bounded by the fact that a module
+    /// is read once: the visited set is the program's own `by_path`.
+    ///
+    /// A dependency is added with `in_roots = false` whatever it resolved to.
+    /// No diagnostic is ever reported against a file the command was not
+    /// pointed at, and a file that *was* pointed at is already in the graph.
+    pub fn resolve_dependencies(&mut self) {
+        let mut pending: Vec<String> = self
+            .program
+            .files()
+            .flat_map(|entry| entry.decls.uses.clone())
+            .collect();
+        let mut seen: std::collections::HashSet<String> = pending.iter().cloned().collect();
+
+        while let Some(module) = pending.pop() {
+            if !resolve::Resolver::worth_resolving(&module) {
+                continue;
+            }
+            let Some((path, _origin)) = self.resolver.locate(&module) else {
+                continue;
+            };
+            if self.program.index_of(&path).is_some() {
+                continue;
+            }
+            let Ok(source) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let decls = self.read_declarations(&path, &source);
+            for used in &decls.uses {
+                if seen.insert(used.clone()) {
+                    pending.push(used.clone());
+                }
+            }
+            self.program.add(&path, decls, false);
+        }
+    }
+
+    /// A dependency's declarations, off the cache when the file has not
+    /// changed since they were written.
+    fn read_declarations(&self, path: &std::path::Path, source: &str) -> decl::FileDecls {
+        let key = self
+            .cache
+            .as_ref()
+            .filter(|cache| cache.is_enabled())
+            .map(|_| resolve::Cache::key(path, source));
+        if let (Some(cache), Some(key)) = (&self.cache, &key) {
+            if let Some(text) = cache.read(key) {
+                if let Ok(decls) = serde_json::from_str(&text) {
+                    return decls;
+                }
+            }
+        }
+        let parsed = camello_syntax::parse::parse(source);
+        let decls = decl::declare(&parsed.syntax());
+        if let (Some(cache), Some(key)) = (&self.cache, &key) {
+            if let Ok(text) = serde_json::to_string(&decls) {
+                cache.write(key, &text);
+            }
+        }
+        decls
     }
 
     /// Fold one file's declarations into the graph.
@@ -134,6 +214,15 @@ impl Analysis {
         let mut diagnostics = scope::analyse(root, source).diagnostics;
         if let Some(file) = self.program.index_of(path) {
             diagnostics.extend(arity::analyse(root, file, &self.program));
+            // What the declaration pass had to say about this file's
+            // annotations. It ran once, over every file; a dependency's
+            // diagnostics are read and dropped, because no diagnostic is ever
+            // reported against a file outside the roots.
+            if let Some(entry) = self.program.file(file) {
+                if entry.in_roots {
+                    diagnostics.extend(entry.decls.diagnostics.iter().cloned());
+                }
+            }
         }
         if !options.types {
             diagnostics.retain(|diagnostic| !diagnostic.code.needs_types());
@@ -156,6 +245,24 @@ pub fn check_file(path: &Path, source: &str, options: &Options) -> Vec<Diagnosti
     let mut analysis = Analysis::new();
     analysis.declare(path, &parsed.syntax(), true);
     analysis.check(path, &parsed.syntax(), source, options)
+}
+
+/// A `TextRange` as two numbers, so that a declaration can be cached.
+///
+/// rowan's own types know nothing about serde, and the cache is the only
+/// place a range crosses a process boundary.
+pub(crate) mod serde_range {
+    use rowan::{TextRange, TextSize};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(range: &TextRange, into: S) -> Result<S::Ok, S::Error> {
+        (u32::from(range.start()), u32::from(range.end())).serialize(into)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(from: D) -> Result<TextRange, D::Error> {
+        let (start, end) = <(u32, u32)>::deserialize(from)?;
+        Ok(TextRange::new(TextSize::from(start), TextSize::from(end)))
+    }
 }
 
 #[cfg(test)]

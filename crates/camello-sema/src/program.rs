@@ -83,6 +83,10 @@ impl Program {
         self.files.get(index)
     }
 
+    pub fn files(&self) -> impl Iterator<Item = &FileEntry> {
+        self.files.iter()
+    }
+
     #[must_use]
     pub fn index_of(&self, path: &Path) -> Option<usize> {
         self.by_path.get(path).copied()
