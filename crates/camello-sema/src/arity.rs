@@ -95,6 +95,22 @@ fn bareword_name(node: &SyntaxNode) -> Option<String> {
     call.args().is_empty().then(|| call.callee_name()).flatten()
 }
 
+/// The count comparison, for a caller that resolved the callee some other way.
+///
+/// The flow pass reaches a method through the *type* of its invocant, which is
+/// the only way `$counter->add(1, 2, 3)` is ever resolved — a bareword
+/// invocant is all this pass can see on its own.
+pub fn check_shape(
+    params: &Params,
+    call: &CallShape,
+    through_arrow: bool,
+    symbol: &SubDecl,
+    range: rowan::TextRange,
+    into: &mut Vec<Diagnostic>,
+) {
+    compare(params, call, through_arrow, symbol, range, into);
+}
+
 fn compare(
     params: &Params,
     call: &CallShape,
