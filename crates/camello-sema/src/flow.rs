@@ -522,6 +522,14 @@ impl Pass<'_> {
         if declaration.as_ref().and_then(ast::VarDecl::keyword) == Some(DeclKeyword::Local) {
             return ty;
         }
+        // `my ($class, %args) = @_;` and `my $self = shift;` are the statements
+        // the parameter list was *read from* (`decl::from_unpacking`), so the
+        // types are already bound and this would only overwrite them with the
+        // `Unknown` that a list assignment hands out. Which it did: every
+        // `$class` in the corpus was `Unknown` by the time its `bless` asked.
+        if view.value().is_some_and(|value| unpacks_arguments(&value)) {
+            return ty;
+        }
 
         for variable in &targets {
             let Some(name) = variable.name() else {
@@ -638,6 +646,9 @@ impl Pass<'_> {
             self.check_return(&arguments);
             return Type::Unknown;
         }
+        if name == "bless" {
+            return self.bless(&arguments);
+        }
         if let Some(builtin) = builtin_return(&name) {
             return builtin;
         }
@@ -683,7 +694,10 @@ impl Pass<'_> {
             return Type::Unknown;
         };
 
-        match self.program.resolve_method(&class, &method) {
+        match self
+            .program
+            .resolve_method_from(&class, &method, &self.package)
+        {
             MethodLookup::Sub(symbol) => {
                 let params = symbol.params.clone();
                 let returns = symbol.returns.clone();
@@ -724,13 +738,79 @@ impl Pass<'_> {
             }
             MethodLookup::Universal | MethodLookup::Unknown => Type::Unknown,
             MethodLookup::Missing => {
+                // Name what was actually searched: `SUPER::` looked above the
+                // package holding the line, and `A::b` looked in `A`.
+                let message = match method.rsplit_once("::") {
+                    Some(("SUPER", bare)) => {
+                        format!("no parent of `{}` declares a method `{bare}`", self.package)
+                    }
+                    Some((qualified, bare)) => {
+                        format!("`{qualified}` declares no method `{bare}`")
+                    }
+                    None => format!("`{class}` declares no method `{method}`"),
+                };
                 self.diagnostics.push(Diagnostic::new(
                     Code::UnknownMethod,
                     call.method_range(),
-                    format!("`{class}` declares no method `{method}`"),
+                    message,
                 ));
                 Type::Unknown
             }
+        }
+    }
+
+    /// `bless $self, $class` — the value's class, and the variable's from here on.
+    ///
+    /// The second half is what makes a constructor that borrows a parent's
+    /// readable: `XML::Twig::new` writes `$self = XML::Parser->new(%args)` and
+    /// then blesses `$self` into its own class four lines later, and without
+    /// the re-bless every method called on it afterwards is looked up on
+    /// `XML::Parser`.
+    fn bless(&mut self, arguments: &[SyntaxNode]) -> Type {
+        let class = arguments
+            .get(1)
+            .map_or(Type::Unknown, |node| self.class_named(node));
+        // A `bless` always changes what its first argument is. Where the
+        // class cannot be read, the honest answer is that nobody knows what
+        // the value is now — not that it is still whatever it was before.
+        if let Some(variable) = arguments.first().cloned().and_then(Variable::cast) {
+            if let Some(name) = variable.name() {
+                self.env.set(variable.sigil(), &name, class.clone());
+            }
+        }
+        for argument in arguments {
+            self.expression(argument);
+        }
+        class
+    }
+
+    /// What class an expression in `bless`'s second slot names.
+    ///
+    /// A literal names itself; `__PACKAGE__` and a `ClassName` — which is what
+    /// a sub's `$class` invocant is bound to — name the package the `bless` is
+    /// written in, since that is what `Package->new` passes. `ref($proto) ||
+    /// $proto` reaches here as a union holding a `ClassName` and is read the
+    /// same way; a subclass calling it inherits the answer, which is the
+    /// assumption every `$self` in the file is already bound under.
+    fn class_named(&mut self, node: &SyntaxNode) -> Type {
+        if let Some(text) = ast::key_text(node) {
+            if text == "__PACKAGE__" {
+                return Type::InstanceOf(self.package.clone());
+            }
+            if text
+                .chars()
+                .next()
+                .is_some_and(|ch| ch.is_uppercase() || ch == '_')
+            {
+                return Type::InstanceOf(text);
+            }
+            return Type::Unknown;
+        }
+        let ty = self.type_of(node);
+        if names_a_class(&ty) {
+            Type::InstanceOf(self.package.clone())
+        } else {
+            Type::Unknown
         }
     }
 
@@ -1026,6 +1106,28 @@ fn collect_classes(ty: &Type, into: &mut Vec<String>) {
     }
 }
 
+/// Whether an expression is the one a parameter list was unpacked from.
+fn unpacks_arguments(node: &SyntaxNode) -> bool {
+    if Variable::cast(node.clone()).is_some_and(|variable| {
+        variable.sigil() == Sigil::Array && variable.name().as_deref() == Some("_")
+    }) {
+        return true;
+    }
+    ast::Call::cast(node.clone()).is_some_and(|call| {
+        matches!(call.callee_name().as_deref(), Some("shift" | "pop"))
+            && call.args().iter().all(unpacks_arguments)
+    })
+}
+
+/// Whether a type is, or may be, the name of a class.
+fn names_a_class(ty: &Type) -> bool {
+    match ty {
+        Type::ClassName => true,
+        Type::Union(members) => members.iter().any(names_a_class),
+        _ => false,
+    }
+}
+
 /// Whether a step reaches its base through `->`.
 fn arrowed(step: Option<&ast::Step>) -> bool {
     step.is_some_and(|step| {
@@ -1257,7 +1359,6 @@ fn builtin_return(name: &str) -> Option<Type> {
         "defined" | "exists" | "wantarray" | "eof" => Type::Bool,
         "keys" | "values" => Type::Int,
         "sort" | "reverse" | "map" | "grep" | "split" => Type::Unknown,
-        "bless" => Type::Object,
         _ => return None,
     })
 }

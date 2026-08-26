@@ -46,3 +46,43 @@ Counter->new(0)->add(1);
 # A class the run never read keeps its `new` opaque, so nothing follows from it.
 my $foreign = Somewhere::Else->new;
 $foreign->anything_at_all;
+
+# `SUPER::` is relative to the package the *line* is in, not to whatever the
+# invocant turned out to be.
+package Base;
+sub new { my ($class) = @_; return bless {}, $class }
+sub greet { return 'base' }
+
+package Derived;
+our @ISA = ('Base');
+sub greet {
+    my ($self) = @_;
+    $self->SUPER::greet;
+    $self->SUPER::nope;         #~ warning unknown-method: no parent of `Derived` declares
+    return 'derived';
+}
+
+package main;
+
+# An empty `()` on a sub whose body reads `@_` was a prototype, not a
+# signature: perl still hands a method its invocant through one.
+package Legacy2;
+sub new { my ($class) = @_; return bless {}, $class }
+sub header()
+  { my $self = shift;
+    return $self;
+  }
+
+package main;
+Legacy2->new->header;
+
+# A `bless` whose class cannot be read leaves nobody knowing what the value is
+# — not still holding what it held before.
+package Borrower;
+sub build {
+    my ($class, $how) = @_;
+    my $self = Base->new;
+    bless $self, $how;
+    $self->anything_at_all;
+    return $self;
+}
