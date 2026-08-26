@@ -240,6 +240,38 @@ impl Program {
     ];
 
     /// What `$obj->name` resolves to on a class.
+    ///
+    /// `from` is the package the call is *written* in, which is what `SUPER::`
+    /// is relative to: `$self->SUPER::init(...)` looks in the parents of the
+    /// package holding the line, not in the parents of whatever `$self` turned
+    /// out to be.
+    #[must_use]
+    pub fn resolve_method_from(&self, package: &str, name: &str, from: &str) -> MethodLookup<'_> {
+        if let Some(bare) = name.strip_prefix("SUPER::") {
+            let parents: Vec<String> = self
+                .facts(from)
+                .iter()
+                .flat_map(|facts| facts.isa.iter().cloned())
+                .collect();
+            if parents.is_empty() {
+                return MethodLookup::Unknown;
+            }
+            for parent in parents {
+                match self.resolve_method(&parent, bare) {
+                    MethodLookup::Missing => {}
+                    found => return found,
+                }
+            }
+            return MethodLookup::Missing;
+        }
+        // `$self->Other::method(...)` says where to look.
+        if let Some((class, bare)) = name.rsplit_once("::") {
+            return self.resolve_method(class, bare);
+        }
+        self.resolve_method(package, name)
+    }
+
+    /// What `$obj->name` resolves to on a class.
     #[must_use]
     pub fn resolve_method(&self, package: &str, name: &str) -> MethodLookup<'_> {
         if Self::UNIVERSAL.contains(&name) {
