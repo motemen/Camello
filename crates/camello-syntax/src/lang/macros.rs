@@ -24,7 +24,7 @@ macro_rules! define_language {
         punct_ctx { $($pc_text:tt => $pc_name:ident),* $(,)? }
         trivia    { $($tv_name:ident : $tv_disp:literal),* $(,)? }
         tokens    { $($tk_name:ident : $tk_disp:literal),* $(,)? }
-        nodes     { $($nd_name:ident),* $(,)? }
+        nodes     { $($nd_name:ident => $nd_view:ident),* $(,)? }
     ) => {
         /// A lexical element. Never a syntax node — see the language model.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -129,6 +129,19 @@ macro_rules! define_language {
                     $(NodeKind::$nd_name => stringify!($nd_name),)*
                 }
             }
+
+            /// The `ast` view that casts from this kind (`docs/typecheck.md`,
+            /// "The AST layer").
+            ///
+            /// The name rather than the type, because this is what a dumped
+            /// tree prints: `dev dump` says which view a reader would reach
+            /// for, and a caller who wants the type writes it.
+            #[must_use]
+            pub const fn view_name(self) -> &'static str {
+                match self {
+                    $(NodeKind::$nd_name => stringify!($nd_view),)*
+                }
+            }
         }
 
         impl ::std::fmt::Display for NodeKind {
@@ -163,6 +176,40 @@ macro_rules! define_language {
         }
 
         pub use T;
+
+        /// One newtype per [`NodeKind`], with its `cast`/`syntax` boilerplate.
+        ///
+        /// Expanded once, by `crate::ast`. The accessors are hand-written
+        /// beside it, the way `predicates.rs` is hand-written beside the
+        /// generated enums (`docs/typecheck.md`, "The AST layer").
+        macro_rules! ast_views {
+            () => {
+                $(
+                    #[doc = concat!("A [`", stringify!($nd_name), "`](crate::lang::NodeKind::", stringify!($nd_name), ") node.")]
+                    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+                    pub struct $nd_view(pub(crate) $crate::lang::SyntaxNode);
+
+                    impl $crate::ast::AstNode for $nd_view {
+                        const KIND_NAME: &'static str = stringify!($nd_name);
+
+                        fn can_cast(kind: $crate::lang::NodeKind) -> bool {
+                            kind == $crate::lang::NodeKind::$nd_name
+                        }
+
+                        fn cast(node: $crate::lang::SyntaxNode) -> Option<Self> {
+                            use $crate::lang::NodeExt;
+                            (node.node_kind() == $crate::lang::NodeKind::$nd_name).then_some($nd_view(node))
+                        }
+
+                        fn syntax(&self) -> &$crate::lang::SyntaxNode {
+                            &self.0
+                        }
+                    }
+                )*
+            };
+        }
+
+        pub(crate) use ast_views;
     };
 }
 
