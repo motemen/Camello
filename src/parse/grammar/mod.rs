@@ -113,6 +113,14 @@ fn statement(parser: &mut Parser<'_>) {
             subroutine_tail(parser, false);
             parser.complete(marker, NodeKind::SUB_DEF);
         }
+        // A `{` opening a statement is a block — unless a `key =>` pair opens
+        // it, which is what perl reads as an anonymous hash and from the same
+        // three tokens (toke.c calls the lookahead a hack for disambiguating a
+        // pair of curlies, and perlref says the guess is there). A hash written
+        // as the last expression of a subroutine is the common case, and read
+        // as a block its pairs were a wrapped expression statement, indented a
+        // level under the first of them.
+        T!["{"] if opens_a_pair(parser) => expr_stmt(parser),
         T!["{"] => {
             let checkpoint = parser.checkpoint();
             let marker = parser.start();
@@ -277,6 +285,22 @@ pub(crate) fn name(parser: &mut Parser<'_>, node: NodeKind) {
         }
     }
     parser.complete(marker, node);
+}
+
+/// Does a `key => ...` pair open the braces the parser is on?
+///
+/// Three tokens of lookahead — the brace, a one-token key, and the `=>` —
+/// which is bounded and so allowed (the parser contract). It is also as far as
+/// perl looks, so `{ $k => 1 }` is a block to both: a key spelled with a sigil
+/// is one neither of them sees.
+fn opens_a_pair(parser: &mut Parser<'_>) -> bool {
+    let key = parser.nth(1).is_some_and(|kind| {
+        matches!(
+            kind,
+            TokenKind::IDENT | TokenKind::STRING | TokenKind::NUMBER
+        ) || kind.is_keyword()
+    });
+    key && parser.nth_at(2, T!["=>"])
 }
 
 fn is_name_like(kind: TokenKind) -> bool {
