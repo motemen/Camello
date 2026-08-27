@@ -22,14 +22,13 @@ warn "aaa",
 my $y = foo 1,
     2;
 
-# The lines after an element written on its own line still hang under the call's
-# first argument: a broken list gives that element a line whether or not the
-# writer did, so asking the input where it sat would answer differently once
-# the formatter had answered (the formatter contract, I2).
+# Where the brackets break it makes no difference that the call was written on a
+# line of its own: every element of such a list is, and what it swallowed sits
+# at the same level.
 my $one = (
     'x',
     f Str,
-      bbb => 2,
+    bbb => 2,
 );
 
 # A list whose brackets do not break keeps the writer's own lines, and there a
