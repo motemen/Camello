@@ -89,6 +89,16 @@ pub enum Doc {
     },
     /// One indent unit for any line break inside.
     Indent(Box<Doc>),
+    /// Statements that begin their own continuation scopes.
+    ///
+    /// A line the writer wrapped takes one indent level for the whole of the
+    /// expression it wraps (docs/formatting.md INDENT-3), and what holds that
+    /// level is the bracket the expression is written inside. A block written
+    /// in one is not part of that expression: `f(sub {` puts the body of the
+    /// subroutine inside the argument list's scope, and a wrap in one of its
+    /// statements took the level away with it — every line after it, the
+    /// brackets closing the call included, came back a level deeper.
+    Statements(Box<Doc>),
     /// Continuation lines begin this many columns after the statement's base
     /// indentation. Bareword calls use the width of `name ` so arguments hang
     /// from the first argument rather than from an unrelated fixed tab stop.
@@ -206,6 +216,11 @@ impl Doc {
     #[must_use]
     pub fn continuation(body: Doc) -> Doc {
         Doc::Continuation(Box::new(body))
+    }
+
+    #[must_use]
+    pub fn statements(body: Doc) -> Doc {
+        Doc::Statements(Box::new(body))
     }
 
     #[must_use]

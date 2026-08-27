@@ -1257,7 +1257,7 @@ impl<'a> Builder<'a> {
         parts.extend(open);
         parts.push(Doc::HardLine);
         body.push(written_inside);
-        parts.push(Doc::indent(Doc::concat(body)));
+        parts.push(Doc::indent(Doc::statements(Doc::concat(body))));
         parts.extend(close);
         Doc::group(true, Doc::concat(parts))
     }

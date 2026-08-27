@@ -189,6 +189,16 @@ impl<'a> Renderer<'a> {
                 self.walk(body);
                 self.indent = outer;
             }
+            Doc::Statements(body) => {
+                // A wrap inside takes its level from the block, not from the
+                // scope the block was written in, and gives it back at the
+                // closing brace.
+                let indent = self.indent;
+                let outer = self.continued.take();
+                self.walk(body);
+                self.indent = indent;
+                self.continued = outer;
+            }
             Doc::Continuation(body) => {
                 // The level a user break takes belongs to this scope: an
                 // `Indent` inside it starts from the deeper level, and whatever

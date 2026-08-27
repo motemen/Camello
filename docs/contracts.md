@@ -183,9 +183,11 @@ specification of what comes out; these are the rules of how.
   a flat group cannot contain a `HardLine`, and that is guaranteed by how
   builders nest rather than by a flag that travels.
 - **Indentation is structural.** `Indent` is one level, `Continuation` is the
-  extent of a wrap (INDENT-3), `Hanging` starts continuation lines at a computed
-  column, and `Rooted` places a construct from the line it begins on rather than
-  from its statement's level (INDENT-4).
+  extent of a wrap (INDENT-3), `Statements` is where a wrap's extent ends because
+  a block's statements begin their own, `Hanging` starts continuation lines at a
+  computed column — the one around it where it asks for none of its own — and
+  `Rooted` places a construct from the line it begins on rather than from its
+  statement's level (INDENT-4).
 - **A group carries two decisions, not one.** `broken` is whether the writer
   seeded a break after the opening delimiter, and settles what may take a
   `Doc::Line`. `anchored` is whether the construct occupies more than one line,
