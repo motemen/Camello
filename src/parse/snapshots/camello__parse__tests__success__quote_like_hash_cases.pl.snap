@@ -72,10 +72,10 @@ ROOT
             transliteration replacement list "b"
             delimiter "#"
       `}` "}"
-  BLOCK_STMT
-    BLOCK
-      `{` "{"
-      EXPR_STMT
+  EXPR_STMT
+    LIST_EXPR
+      ANON_HASH
+        `{` "{"
         LIST_EXPR
           LIST_CALL_EXPR
             SUB_NAME
@@ -83,13 +83,12 @@ ROOT
           `=>` "=>"
           LITERAL
             number "1"
-      `}` "}"
-  EMPTY_STMT
+        `}` "}"
     `;` ";"
-  BLOCK_STMT
-    BLOCK
-      `{` "{"
-      EXPR_STMT
+  EXPR_STMT
+    LIST_EXPR
+      ANON_HASH
+        `{` "{"
         LIST_EXPR
           LIST_CALL_EXPR
             SUB_NAME
@@ -97,6 +96,5 @@ ROOT
           `=>` "=>"
           LITERAL
             number "2"
-      `}` "}"
-  EMPTY_STMT
+        `}` "}"
     `;` ";"
