@@ -151,20 +151,31 @@ pub enum BindingKind {
     Our,
     /// `use vars qw($x)`.
     Vars,
-    /// A signature parameter, a `foreach my $x`, a `catch ($e)`, an `args` item.
+    /// What a sub takes: a signature parameter, an `args` item, or a name in a
+    /// `my (...) = @_` unpacking.
     Param,
+    /// `catch ($e)` — bound by the construct whether the body wants it or not.
+    Caught,
     /// `$_`, `@_`, `%ENV` — bound by perl, not by the file.
     Implicit,
 }
 
 impl BindingKind {
-    /// Whether never reading it is worth saying so.
+    /// What never reading it is reported as, or `None` when it is not worth
+    /// saying.
     ///
-    /// A parameter is declared by its caller's shape rather than by a choice
-    /// to hold a value, and `our` names a package variable that another file
-    /// may be the reader of, so neither is unused in the sense meant here.
-    const fn reports_unused(self) -> bool {
-        matches!(self, BindingKind::My | BindingKind::State)
+    /// `our` names a package variable that another file may be the reader of,
+    /// and a `catch` variable is bound by the construct rather than by a
+    /// choice to hold a value, so neither is unused in the sense meant here. A
+    /// parameter is its own code: it is declared by the caller's shape, and it
+    /// goes on saying what the sub takes whether or not the body reads it
+    /// (`docs/types.md`, DIAG-12).
+    const fn unused_code(self) -> Option<Code> {
+        match self {
+            BindingKind::My | BindingKind::State => Some(Code::UnusedVariable),
+            BindingKind::Param => Some(Code::UnusedParameter),
+            _ => None,
+        }
     }
 
     const fn reports_shadowing(self) -> bool {
@@ -179,6 +190,9 @@ struct Binding {
     range: TextRange,
     kind: BindingKind,
     used: bool,
+    /// A value held for its destructor (`docs/types.md`, DIAG-12d): bound on
+    /// purpose, never read on purpose.
+    guard: bool,
 }
 
 #[derive(Debug, Default)]
@@ -195,9 +209,12 @@ pub struct ScopeReport {
 }
 
 /// Walk a file and report what its scopes say.
+///
+/// `guards` names the classes a project holds values of for their destructors,
+/// beyond the ones [`GUARD_NAMES`] knows.
 #[must_use]
-pub fn analyse(root: &SyntaxNode, source: &str) -> ScopeReport {
-    let mut pass = Pass::new(source, StrictRegions::of(root));
+pub fn analyse(root: &SyntaxNode, source: &str, guards: &[String]) -> ScopeReport {
+    let mut pass = Pass::new(source, guards, StrictRegions::of(root));
     pass.run(root);
     ScopeReport {
         diagnostics: pass.diagnostics,
@@ -297,6 +314,8 @@ fn disables_vars(statement: &ast::NoStmt) -> bool {
 
 struct Pass<'a> {
     source: &'a str,
+    /// Guard classes beyond [`GUARD_NAMES`], from `camello.toml`.
+    guards: &'a [String],
     bindings: Vec<Binding>,
     scopes: Vec<Scope>,
     diagnostics: Vec<Diagnostic>,
@@ -307,9 +326,10 @@ struct Pass<'a> {
 }
 
 impl<'a> Pass<'a> {
-    fn new(source: &'a str, strict: StrictRegions) -> Self {
+    fn new(source: &'a str, guards: &'a [String], strict: StrictRegions) -> Self {
         Pass {
             source,
+            guards,
             bindings: Vec::new(),
             scopes: Vec::new(),
             diagnostics: Vec::new(),
@@ -354,16 +374,20 @@ impl<'a> Pass<'a> {
         };
         for index in scope.bindings {
             let binding = &self.bindings[index];
-            if binding.used || !binding.kind.reports_unused() || !reports_unused_name(&binding.name)
-            {
+            if binding.used || binding.guard || !reports_unused_name(&binding.name) {
                 continue;
             }
+            let Some(code) = binding.kind.unused_code() else {
+                continue;
+            };
             let display = format!("{}{}", binding.sigil.as_str(), binding.name);
-            self.diagnostics.push(Diagnostic::new(
-                Code::UnusedVariable,
-                binding.range,
-                format!("`{display}` is declared and never read"),
-            ));
+            let message = if code == Code::UnusedParameter {
+                format!("`{display}` is taken as a parameter and never read")
+            } else {
+                format!("`{display}` is declared and never read")
+            };
+            self.diagnostics
+                .push(Diagnostic::new(code, binding.range, message));
         }
     }
 
@@ -381,6 +405,7 @@ impl<'a> Pass<'a> {
             range,
             kind,
             used: false,
+            guard: false,
         });
         let scope = self.scopes.last_mut().expect("a scope is always open");
         scope.bindings.push(index);
@@ -388,10 +413,8 @@ impl<'a> Pass<'a> {
         index
     }
 
-    fn declare(&mut self, variable: &Variable, kind: BindingKind) {
-        let Some(name) = variable.name() else {
-            return;
-        };
+    fn declare(&mut self, variable: &Variable, kind: BindingKind) -> Option<usize> {
+        let name = variable.name()?;
         if kind.reports_shadowing() && reports_unused_name(&name) {
             if let Some(outer) = self.lookup_outer(variable.sigil(), &name) {
                 let display = format!("{}{name}", variable.sigil().as_str());
@@ -403,7 +426,7 @@ impl<'a> Pass<'a> {
                 ));
             }
         }
-        self.declare_raw(variable.sigil(), name, variable.range(), kind);
+        Some(self.declare_raw(variable.sigil(), name, variable.range(), kind))
     }
 
     /// The binding this name would have resolved to before the declaration,
@@ -505,7 +528,7 @@ impl<'a> Pass<'a> {
             NodeKind::VAR_DECL => self.walk_var_decl(node),
             NodeKind::CATCH_PARAM => {
                 for variable in node.children().filter_map(Variable::cast) {
-                    self.declare(&variable, BindingKind::Param);
+                    self.declare(&variable, BindingKind::Caught);
                 }
             }
             NodeKind::SIGNATURE_PARAM => {
@@ -642,8 +665,20 @@ impl<'a> Pass<'a> {
                 return;
             }
         };
+        // A `my` that unpacks `@_`, or that stands inside an `args` list, is
+        // a parameter however it is written: it says what the sub takes, and
+        // a body that does not read it is a different thing to be told about
+        // than a value nobody wanted.
+        let kind = if kind == BindingKind::My && declares_parameters(node) {
+            BindingKind::Param
+        } else {
+            kind
+        };
+        let guard = kind != BindingKind::Param && holds_a_guard(node, self.guards);
         for variable in declaration.targets() {
-            self.declare(&variable, kind);
+            if let Some(index) = self.declare(&variable, kind) {
+                self.bindings[index].guard = guard;
+            }
         }
     }
 
@@ -741,6 +776,7 @@ impl<'a> Pass<'a> {
             range,
             kind,
             used: false,
+            guard: false,
         });
         let scope = self.scopes.first_mut().expect("the file scope is open");
         scope.bindings.push(index);
@@ -802,6 +838,116 @@ impl<'a> Pass<'a> {
             self.use_name(found.sigil, &found.name, range);
         }
     }
+}
+
+/// Classes and functions that hand back a value held for its destructor.
+///
+/// `my $guard = Scope::Guard->new(sub { ... })` binds a name it will never
+/// read: the value's whole job is to go out of scope. Recognition is by what
+/// produced it rather than by what the name is, so a project that calls it
+/// `$_g` gets the same answer as one that calls it `$guard`; a project with a
+/// guard class of its own names it in `camello.toml`.
+pub const GUARD_NAMES: &[&str] = &[
+    "Scope::Guard",
+    "Guard",
+    "guard",
+    "scope_guard",
+    "SCOPE_GUARD",
+];
+
+/// The value a `my` was given, or `None` when it was given none.
+fn initialiser(node: &SyntaxNode) -> Option<SyntaxNode> {
+    let assign = ast::Assign::cast(node.parent()?)?;
+    let target = assign.target()?;
+    if target.text_range() != node.text_range() {
+        return None;
+    }
+    assign.value()
+}
+
+/// Whether this `my` is the sub's parameter list rather than a local.
+///
+/// The two shapes `docs/types.md` calls unpacking (ANNOT-6) — `my (...) = @_` and `my $x
+/// = shift` — and Smart::Args' `args my $x => T`, which is a `my` written
+/// inside a call.
+fn declares_parameters(node: &SyntaxNode) -> bool {
+    for ancestor in node.ancestors().skip(1) {
+        match ancestor.node_kind() {
+            NodeKind::EXPR_STMT | NodeKind::VAR_DECL_STMT | NodeKind::BLOCK => break,
+            _ => {}
+        }
+        let named_args = ast::Call::cast(ancestor)
+            .and_then(|call| call.callee_name())
+            .is_some_and(|name| name == "args" || name == "args_pos");
+        if named_args {
+            return true;
+        }
+    }
+    let Some(value) = initialiser(node) else {
+        return false;
+    };
+    if value.node_kind() == NodeKind::ARRAY_VAR {
+        return names_the_argument_array(&value);
+    }
+    let Some(call) = ast::Call::cast(value) else {
+        return false;
+    };
+    if call.callee_name().as_deref() != Some("shift") {
+        return false;
+    }
+    // `shift @list` is a list operation; `shift` and `shift @_` are the
+    // parameter list, one name at a time.
+    //
+    // A one-argument list call holds its argument as a child of its own, with
+    // no `LIST_EXPR` around it, so `Call::args` is empty there and the
+    // children are what has to be read.
+    let operands: Vec<SyntaxNode> = match call.args().as_slice() {
+        [] => call
+            .syntax()
+            .children()
+            .filter(|child| !matches!(child.node_kind(), NodeKind::SUB_NAME | NodeKind::ARG_LIST))
+            .collect(),
+        found => found.to_vec(),
+    };
+    match operands.as_slice() {
+        [] => true,
+        [only] => names_the_argument_array(only),
+        _ => false,
+    }
+}
+
+/// Whether this node is `@_` itself.
+fn names_the_argument_array(node: &SyntaxNode) -> bool {
+    node.node_kind() == NodeKind::ARRAY_VAR
+        && Variable::cast(node.clone())
+            .and_then(|variable| variable.name())
+            .as_deref()
+            == Some("_")
+}
+
+/// Whether this `my` holds a value for its destructor ([`GUARD_NAMES`]).
+fn holds_a_guard(node: &SyntaxNode, extra: &[String]) -> bool {
+    let Some(value) = initialiser(node) else {
+        return false;
+    };
+    let is_guard =
+        |name: &str| GUARD_NAMES.contains(&name) || extra.iter().any(|guard| guard == name);
+    if value.node_kind() == NodeKind::METHOD_CALL_EXPR {
+        // `Scope::Guard->new(...)`, and any other constructor on the class.
+        return ast::MethodCallExpr::cast(value)
+            .and_then(|call| call.invocant())
+            .and_then(ast::Call::cast)
+            .and_then(|invocant| invocant.callee_name())
+            .is_some_and(|name| is_guard(&name));
+    }
+    let Some(name) = ast::Call::cast(value).and_then(|call| call.callee_name()) else {
+        return false;
+    };
+    // `guard { ... }`, `Guard::guard { ... }`, `Scope::Guard::guard(...)`.
+    is_guard(&name)
+        || name
+            .rsplit_once("::")
+            .is_some_and(|(package, _)| is_guard(package))
 }
 
 /// Whether never reading this name is worth a word.

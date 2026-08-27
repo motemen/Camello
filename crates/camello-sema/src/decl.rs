@@ -11,7 +11,7 @@
 //! a declaration about the sub, not about the program, and it is read from the
 //! body's leading statements rather than from the body.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use camello_syntax::ast::{
     self, AnonHash, Args, AstNode, DeclKeyword, Literal, Sigil, SubDef, VarDecl, Variable,
@@ -19,7 +19,9 @@ use camello_syntax::ast::{
 use camello_syntax::lang::{NodeExt, NodeKind, SyntaxNode, TokenExt, TokenKind};
 use rowan::TextRange;
 
-use crate::annotate::{self, AttributeDecl, Framework, Frameworks, NamedType, Returns};
+use crate::annotate::{
+    self, Access, AccessorMaker, AttributeDecl, Framework, Frameworks, NamedType, Returns,
+};
 use crate::diag::Diagnostic;
 use crate::types::Type;
 
@@ -189,6 +191,11 @@ pub struct PackageFacts {
     /// A `BUILDARGS` turns the constructor's argument check off: the class
     /// rewrites what it was given before anything sees it.
     pub buildargs: bool,
+    /// The generated `new` blesses whatever hash it was handed rather than
+    /// checking it against the attributes — `Class::Accessor::Lite` and the
+    /// `mk_new` family. A key it declares no accessor for is legal there, so
+    /// `unknown-key` has nothing to contradict.
+    pub open_constructor: bool,
     /// The package makes methods by means this pass cannot read: an XS
     /// `bootstrap`, an `@ISA` computed at run time, a glob assignment. Such a
     /// class might have any method, so "no such method" is never said of it.
@@ -243,10 +250,20 @@ pub fn declare(root: &SyntaxNode) -> FileDecls {
     // second package in the same file).
     let mut frameworks = Frameworks::default();
     for node in root.descendants() {
-        if node.node_kind() == NodeKind::USE_STMT {
-            if let Some(module) = ast::UseStmt::cast(node).and_then(|view| view.module()) {
-                frameworks.note(&module);
-            }
+        if node.node_kind() != NodeKind::USE_STMT {
+            continue;
+        }
+        let Some(statement) = ast::UseStmt::cast(node) else {
+            continue;
+        };
+        let Some(module) = statement.module() else {
+            continue;
+        };
+        frameworks.note(&module);
+        // `use base 'Class::Accessor'` names the framework in its arguments,
+        // and `use Class::Accessor 'antlers'` is the spelling that has `has`.
+        if let Some(arguments) = statement.arguments() {
+            frameworks.note_arguments(&module, &imported_names(&arguments));
         }
     }
 
@@ -255,6 +272,8 @@ pub fn declare(root: &SyntaxNode) -> FileDecls {
         sink: annotate::Sink::default(),
         frameworks,
         dynamic: false,
+        best_practice: HashSet::new(),
+        decided_constructor: HashSet::new(),
     };
     pass.walk(root, "main");
     // XS registers methods into whichever package it likes, and a glob
@@ -266,8 +285,14 @@ pub fn declare(root: &SyntaxNode) -> FileDecls {
         }
     }
     // A package with a framework generates a constructor unless it said not to.
+    //
+    // Not one that decided for itself: `Frameworks` is read per *file*, so a
+    // file holding both a Mouse role and a `use Class::Accessor::Typed (new
+    // => 0)` — which is how `Class-Accessor-Typed-0.03/t/02_does.t` is written
+    // — would otherwise hand the second package back the constructor it just
+    // turned down.
     for facts in &mut pass.decls.facts {
-        if facts.framework == Framework::Moose {
+        if facts.framework == Framework::Moose && !pass.decided_constructor.contains(&facts.name) {
             facts.constructor = true;
         }
     }
@@ -282,6 +307,11 @@ struct Pass {
     frameworks: Frameworks,
     /// The file loads XS or assigns a glob.
     dynamic: bool,
+    /// Packages that have called `follow_best_practice`. Positional, because
+    /// the renaming only applies to the `mk_*` calls below it.
+    best_practice: HashSet<String>,
+    /// Packages whose accessor declaration said whether there is a `new`.
+    decided_constructor: HashSet<String>,
 }
 
 impl Pass {
@@ -330,6 +360,7 @@ impl Pass {
                     self.glob_assignment(&child);
                     self.require_statement(&child);
                     self.expression_statement(&child, &package);
+                    self.accessor_statement(&child, &package);
                     self.walk(&child, &package);
                 }
                 // `our @ISA = ('Base');` is a declaration statement, not an
@@ -427,10 +458,25 @@ impl Pass {
                 if let Some(arguments) = &arguments {
                     let (attributes, constructor) =
                         annotate::read_accessor_typed(arguments, &mut self.sink);
+                    self.decided_constructor.insert(package.to_string());
                     let facts = self.facts(package);
                     facts.attributes.extend(attributes);
                     facts.constructor = constructor;
                 }
+                return;
+            }
+            "Class::Accessor::Lite" | "Class::Accessor::Lite::Lazy" => {
+                if let Some(arguments) = &arguments {
+                    let (attributes, constructor) = annotate::read_accessor_lite(arguments);
+                    let facts = self.facts(package);
+                    facts.attributes.extend(attributes);
+                    if constructor {
+                        facts.constructor = true;
+                        facts.open_constructor = true;
+                    }
+                }
+                // `rw`, `ro` and `new` are the declaration's own words, not
+                // subs this file imported.
                 return;
             }
             _ => {}
@@ -506,7 +552,8 @@ impl Pass {
                 let roles: Vec<String> = call.args().iter().filter_map(ast::key_text).collect();
                 self.facts(package).roles.extend(roles);
             }
-            "declare" | "subtype" | "class_type" | "role_type" | "duck_type" | "enum" | "union"
+            "declare" | "subtype" | "type" | "class_type" | "role_type" | "duck_type" | "enum"
+            | "union" | "intersection"
                 if self.frameworks.type_library =>
             {
                 if let Some(named) = annotate::read_type_library(&call, &mut self.sink) {
@@ -520,6 +567,86 @@ impl Pass {
             }
             _ => {}
         }
+    }
+
+    /// `__PACKAGE__->mk_accessors(qw(foo bar));` and the rest of the family.
+    ///
+    /// ```perl
+    /// use base 'Class::Accessor';
+    /// __PACKAGE__->follow_best_practice;
+    /// __PACKAGE__->mk_accessors(qw(name role));
+    ///
+    /// use Class::Accessor::Lite;
+    /// Class::Accessor::Lite->mk_new_and_accessors(qw(foo bar));
+    /// ```
+    ///
+    /// The two spellings differ only in what they are written on:
+    /// `Class::Accessor::Lite` installs into `caller`, and a `Class::Accessor`
+    /// subclass calls the inherited method on itself. Either way the
+    /// accessors belong to the package the statement is in — unless it names
+    /// another class outright, which is the one case worth following.
+    fn accessor_statement(&mut self, node: &SyntaxNode, package: &str) {
+        if !self.frameworks.accessor_lite {
+            return;
+        }
+        let Some(call) = node
+            .descendants()
+            .find_map(ast::MethodCallExpr::cast)
+            .filter(|call| call.syntax().text_range().start() == node.text_range().start())
+        else {
+            return;
+        };
+        let Some(maker) = call.method_name().as_deref().and_then(AccessorMaker::of) else {
+            return;
+        };
+        let Some(target) = self.accessor_target(&call, package) else {
+            return;
+        };
+        let range = call.method_range();
+        if maker == AccessorMaker::BestPractice {
+            self.best_practice.insert(target);
+            return;
+        }
+        if matches!(maker, AccessorMaker::New | AccessorMaker::NewAndAccessors) {
+            let facts = self.facts(&target);
+            facts.constructor = true;
+            facts.open_constructor = true;
+        }
+        let access = match maker {
+            AccessorMaker::Accessors { access, .. } => access,
+            AccessorMaker::NewAndAccessors => Access::Rw,
+            // `mk_new` takes no names.
+            AccessorMaker::New | AccessorMaker::BestPractice => return,
+        };
+        let names: Vec<String> = call
+            .args()
+            .iter()
+            .flat_map(annotate::listed_names)
+            .collect();
+        let mut attributes = annotate::accessor_attributes(&names, access, range);
+        if self.best_practice.contains(&target) {
+            for attribute in &mut attributes {
+                attribute.methods = annotate::best_practice_methods(&attribute.name, access);
+            }
+        }
+        self.facts(&target).attributes.extend(attributes);
+    }
+
+    /// Which package a `mk_accessors` call puts its accessors in.
+    ///
+    /// `Class::Accessor::Lite->mk_accessors(...)` installs into its caller, so
+    /// the module's own name means "here", as `__PACKAGE__` does. A dynamic
+    /// invocant (`$class->mk_accessors(...)`) names a package this pass cannot
+    /// know, and is left alone rather than guessed at.
+    fn accessor_target(&self, call: &ast::MethodCallExpr, package: &str) -> Option<String> {
+        let invocant = call.invocant()?;
+        let name = ast::Call::cast(invocant.clone())
+            .and_then(|view| view.callee_name())
+            .or_else(|| ast::key_text(&invocant))?;
+        if name == "__PACKAGE__" || name.starts_with("Class::Accessor") {
+            return Some(package.to_string());
+        }
+        Some(name)
     }
 
     /// `our @ISA = ('Base');` and `push @ISA, 'Base';`.

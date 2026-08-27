@@ -28,6 +28,9 @@ pub enum Framework {
     Moose,
     /// `use Class::Accessor::Typed (rw => {...})`.
     AccessorTyped,
+    /// `Class::Accessor::Lite` and the `mk_accessors` family it belongs to:
+    /// accessors and, when asked for, a `new`, and no types anywhere.
+    AccessorLite,
     /// A `bless` with no framework behind it.
     Bless,
 }
@@ -42,6 +45,7 @@ pub struct Frameworks {
     pub moose: bool,
     pub smart_args: bool,
     pub accessor_typed: bool,
+    pub accessor_lite: bool,
     pub type_library: bool,
 }
 
@@ -56,14 +60,50 @@ impl Frameworks {
             | "Moo::Role"
             | "Mouse::Role"
             | "MooseX::Declare"
+            | "Mojo::Base"
             | "Moose::Util::TypeConstraints"
-            | "Mojo::Base" => {
+            | "Mouse::Util::TypeConstraints" => {
                 self.moose = true;
             }
             "Smart::Args" | "Smart::Args::TypeTiny" => self.smart_args = true,
             "Class::Accessor::Typed" => self.accessor_typed = true,
-            "Type::Library" | "Type::Utils" | "MooseX::Types" | "MooseX::Types::Moose" => {
-                self.type_library = true;
+            // `Class::Accessor::Lite` installs its accessors from `import`;
+            // the other three are inherited from and hand out the same
+            // `mk_accessors` family. Reached by `use`, and by the `use base`
+            // that is how a `Class::Accessor` subclass says it.
+            "Class::Accessor::Lite"
+            | "Class::Accessor::Lite::Lazy"
+            | "Class::Accessor"
+            | "Class::Accessor::Fast"
+            | "Class::Accessor::Faster" => self.accessor_lite = true,
+            _ => {}
+        }
+        if supplies_the_type_dsl(module) {
+            self.type_library = true;
+        }
+    }
+
+    /// Fold what a `use` was *given* into the same picture.
+    ///
+    /// Two things are only visible in the import list: `use base
+    /// 'Class::Accessor'` names the framework in its arguments rather than in
+    /// its module, and `use Class::Accessor 'antlers'` is the one spelling of
+    /// `Class::Accessor` that exports `has`.
+    pub fn note_arguments(&mut self, module: &str, names: &[String]) {
+        match module {
+            "parent" | "base" => {
+                for name in names {
+                    if name != "-norequire" && name != "norequire" {
+                        self.note(name);
+                    }
+                }
+            }
+            "Class::Accessor" | "Class::Accessor::Fast" | "Class::Accessor::Faster"
+                if names
+                    .iter()
+                    .any(|name| name == "antlers" || name == "moose-like") =>
+            {
+                self.moose = true;
             }
             _ => {}
         }
@@ -75,10 +115,35 @@ impl Frameworks {
             Framework::Moose
         } else if self.accessor_typed {
             Framework::AccessorTyped
+        } else if self.accessor_lite {
+            Framework::AccessorLite
         } else {
             Framework::None
         }
     }
+}
+
+/// Whether a module could have supplied the type-library DSL (`docs/types.md`,
+/// ANNOT-8d).
+///
+/// A family rather than a list, which is a departure from how the other
+/// recognisers are gated. The DSL is one vocabulary — `declare`, `type`, `as`,
+/// `enum`, `class_type` — and half a dozen distributions supply it under
+/// half a dozen names: `Type::Utils` exports `type` only under `-all`,
+/// `Type::Library -base` re-exports it, `MooseX::Types` has its own, and a
+/// file commonly names only the `Types::` module its constants come from. A
+/// list of exporters would have to be right about which one a given file's
+/// `type` came from, and being wrong there costs a whole library's worth of
+/// annotations; the family costs a bareword `enum` in a `Types::`-importing
+/// file being read as a declaration, which resolves to nothing and is silent.
+fn supplies_the_type_dsl(module: &str) -> bool {
+    let family = |prefix: &str| module == prefix || module.starts_with(&format!("{prefix}::"));
+    family("Type")
+        || family("Types")
+        || family("MooseX::Types")
+        || family("MouseX::Types")
+        // `Moose::Util::TypeConstraints` and the Mouse and Moo spellings of it.
+        || module.ends_with("::Util::TypeConstraints")
 }
 
 /// How a reader may reach an attribute.
@@ -374,7 +439,9 @@ pub fn read_accessor_typed(arguments: &SyntaxNode, into: &mut Sink) -> (Vec<Attr
                 name: name.to_string(),
                 ty,
                 access,
-                required,
+                // A lazy slot is filled by its builder, so `new` skips it
+                // rather than finding it missing.
+                required: required && !lazy,
                 defaulted: defaulted || lazy,
                 methods: Vec::new(),
                 opaque_delegation: false,
@@ -386,20 +453,26 @@ pub fn read_accessor_typed(arguments: &SyntaxNode, into: &mut Sink) -> (Vec<Attr
 }
 
 /// A slot's value: a type, or a hashref with `isa` / `default` / `builder`.
+///
+/// Requiredness follows `Class::Accessor::Typed`'s rule, which is the reverse
+/// of Moose's: a slot is **mandatory** unless it says `optional`, gives a
+/// `default`, or is lazy. The generated `new` dies with "missing mandatory
+/// parameter named '$x'" otherwise, so this is a rule and not a guess.
 fn read_slot(node: &SyntaxNode, into: &mut Sink) -> (Type, bool, bool) {
     if node.node_kind() == NodeKind::ANON_HASH {
         let hash = AnonHash::cast(node.clone()).expect("kind checked");
         let mut ty = Type::Unknown;
-        let mut required = false;
+        let mut required = true;
         let mut defaulted = false;
         for option in hash.pairs() {
             match option.key() {
-                Some("isa") => {
+                Some("isa" | "does") => {
                     if let Some(annotation) = crate::decl::annotation_of(option.node()) {
                         ty = read_annotation(&annotation, into);
                     }
                 }
                 Some("required") => required = is_true(option.node()),
+                Some("optional") => required = !is_true(option.node()),
                 Some("default" | "builder" | "lazy") => defaulted = true,
                 _ => {}
             }
@@ -409,7 +482,157 @@ fn read_slot(node: &SyntaxNode, into: &mut Sink) -> (Type, bool, bool) {
     let ty = crate::decl::annotation_of(node).map_or(Type::Unknown, |annotation| {
         read_annotation(&annotation, into)
     });
-    (ty, false, false)
+    (ty, true, false)
+}
+
+// ===== `Class::Accessor::Lite` =====
+
+/// Which of the `mk_*` family a name is, and what it makes.
+///
+/// The family is shared: `Class::Accessor::Lite` installs into `caller`, and
+/// `Class::Accessor` and its two speed variants are inherited from. Both are
+/// read the same way, because both say the same thing — these names are
+/// accessors of this package, and nothing about their types.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccessorMaker {
+    /// Accessors, at this access, lazy or not.
+    Accessors { access: Access, lazy: bool },
+    /// `mk_new` — the constructor and nothing else.
+    New,
+    /// `mk_new_and_accessors` — both.
+    NewAndAccessors,
+    /// `follow_best_practice` — from here on the accessors are `get_x`/`set_x`.
+    BestPractice,
+}
+
+impl AccessorMaker {
+    /// What a method name in the family makes, or `None` for a name outside it.
+    #[must_use]
+    pub fn of(method: &str) -> Option<Self> {
+        let accessors = |access, lazy| Some(AccessorMaker::Accessors { access, lazy });
+        match method {
+            "mk_accessors" => accessors(Access::Rw, false),
+            "mk_ro_accessors" => accessors(Access::Ro, false),
+            "mk_wo_accessors" => accessors(Access::Wo, false),
+            "mk_lazy_accessors" => accessors(Access::Rw, true),
+            "mk_ro_lazy_accessors" => accessors(Access::Ro, true),
+            "mk_new" => Some(AccessorMaker::New),
+            "mk_new_and_accessors" => Some(AccessorMaker::NewAndAccessors),
+            "follow_best_practice" => Some(AccessorMaker::BestPractice),
+            _ => None,
+        }
+    }
+}
+
+/// ```perl
+/// use Class::Accessor::Lite (
+///     new => 1,
+///     rw  => [ qw(foo bar) ],
+///     ro  => [ qw(baz) ],
+///     wo  => [ qw(hoge) ],
+/// );
+/// use Class::Accessor::Lite::Lazy (
+///     ro_lazy => [ 'hoge', { poyo => \&make_poyo, poe => 'make_poe' } ],
+///     rw_lazy => { baz => 'make_baz' },
+/// );
+/// ```
+///
+/// A `use` statement whose argument list is a declaration, as
+/// [`read_accessor_typed`] is — but the values are *names*, not types, so
+/// every attribute here is [`Type::Unknown`]. Saying `Any` instead would be a
+/// claim the module never made.
+///
+/// The constructor is opt-in: no `new => 1`, no `new`.
+#[must_use]
+pub fn read_accessor_lite(arguments: &SyntaxNode) -> (Vec<AttributeDecl>, bool) {
+    let mut attributes = Vec::new();
+    let mut constructor = false;
+    for pair in Args::pairs(arguments) {
+        let access = match pair.key() {
+            Some("rw" | "rw_lazy") => Access::Rw,
+            Some("ro" | "ro_lazy") => Access::Ro,
+            Some("wo") => Access::Wo,
+            Some("new") => {
+                constructor = is_true(pair.node());
+                continue;
+            }
+            _ => continue,
+        };
+        let names = accessor_names(pair.node());
+        attributes.extend(accessor_attributes(&names, access, pair.range()));
+    }
+    (attributes, constructor)
+}
+
+/// The names one argument of a `mk_accessors(...)` call spells out.
+///
+/// `qw(foo bar)`, `'foo'`, and a bareword all name accessors; anything
+/// computed names none this pass can read.
+#[must_use]
+pub fn listed_names(node: &SyntaxNode) -> Vec<String> {
+    attribute_names(node)
+}
+
+/// The property names in one `rw => [...]` value.
+///
+/// An arrayref of names, a hashref of `name => builder`, or — the shape
+/// `Class::Accessor::Lite::Lazy` documents — an arrayref holding both.
+fn accessor_names(node: &SyntaxNode) -> Vec<String> {
+    match node.node_kind() {
+        NodeKind::ANON_HASH => AnonHash::cast(node.clone())
+            .expect("kind checked")
+            .pairs()
+            .iter()
+            .filter_map(|slot| slot.key().map(str::to_string))
+            .collect(),
+        NodeKind::ANON_ARRAY => ast::AnonArray::cast(node.clone())
+            .expect("kind checked")
+            .elements()
+            .iter()
+            .flat_map(accessor_names)
+            .collect(),
+        _ => attribute_names(node),
+    }
+}
+
+/// One `mk_accessors` list, as attributes.
+///
+/// Everything here is `defaulted`: this family's `new` requires nothing, and
+/// a lazy slot is filled by its builder, so either may be absent from a call.
+#[must_use]
+pub fn accessor_attributes(
+    names: &[String],
+    access: Access,
+    range: TextRange,
+) -> Vec<AttributeDecl> {
+    names
+        .iter()
+        .map(|name| AttributeDecl {
+            name: name.clone(),
+            ty: Type::Unknown,
+            access,
+            required: false,
+            // Nothing here is required by the constructor, and a lazy slot is
+            // filled by its builder, so `new` may leave either out.
+            defaulted: true,
+            methods: Vec::new(),
+            opaque_delegation: false,
+            range,
+        })
+        .collect()
+}
+
+/// The `get_x` / `set_x` names `follow_best_practice` puts an accessor under.
+#[must_use]
+pub fn best_practice_methods(name: &str, access: Access) -> Vec<String> {
+    let mut methods = Vec::new();
+    if access != Access::Wo {
+        methods.push(format!("get_{name}"));
+    }
+    if access != Access::Ro {
+        methods.push(format!("set_{name}"));
+    }
+    methods
 }
 
 // ===== `Type::Library` =====
@@ -423,10 +646,12 @@ pub struct NamedType {
 
 /// ```perl
 /// declare 'PositiveInt', as Int, where { $_ > 0 };
+/// type 'FooBar', as Foo | Bar;
 /// class_type 'User', { class => 'MyApp::User' };
 /// role_type 'Loggable';
 /// enum 'Color', [qw(red green blue)];
 /// union 'Id', [Int, Str];
+/// intersection 'Both', [Foo, Bar];
 /// ```
 ///
 /// `as T` gives the parent and `where` is ignored: the structural part of a
@@ -439,7 +664,7 @@ pub fn read_type_library(call: &ast::Call, into: &mut Sink) -> Option<NamedType>
     let name = arguments.first().and_then(ast::key_text)?;
 
     let ty = match callee.as_str() {
-        "declare" | "subtype" => {
+        "declare" | "subtype" | "type" => {
             // `as T` is a call whose argument is the parent type.
             arguments
                 .iter()
@@ -457,6 +682,11 @@ pub fn read_type_library(call: &ast::Call, into: &mut Sink) -> Option<NamedType>
             .map_or_else(|| Type::ConsumerOf(name.clone()), Type::ConsumerOf),
         "duck_type" => Type::Object,
         "enum" => Type::Enum(arguments.get(1).map(attribute_names).unwrap_or_default()),
+        // The lattice has no intersection, so the name resolves to `Unknown`:
+        // not analysed, never reported against. That is still worth reading —
+        // a name nothing declares is read as a *class* instead, and a class the
+        // run cannot find is what `unknown-type` fires on.
+        "intersection" => Type::Unknown,
         "union" => Type::union(
             arguments
                 .get(1)

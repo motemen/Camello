@@ -9,8 +9,8 @@ legacy corner of the grammar.
 
 Over the same tree it also checks: `camello lint` for what needs no types, and
 `camello typecheck` for what the annotations Perl code already carries — `has
-... isa => 'Str'`, `args my $x => 'Int'`, `Class::Accessor::Typed` — can be made
-to say.
+... isa => 'Str'`, `args my $x => 'Int'`, `Class::Accessor::Typed`, the
+`mk_accessors` family — can be made to say.
 
 > **Status: early.** The output is not yet stable across versions, and the
 > layout options below are hidden from `--help` because their names and
@@ -53,6 +53,7 @@ save hook is safe to wire up without a wrapper around it.
 camello lint lib t                      # scopes and arity; no type lattice
 camello typecheck lib t                 # everything lint says, plus the types
 camello typecheck --error-on warning    # exit 1 on a warning too, for CI
+camello typecheck --min-severity error  # print the errors and nothing else
 camello typecheck --format json lib     # one JSON array, for tooling
 ```
 
@@ -60,12 +61,26 @@ Both print one diagnostic per line as `path:line:col: severity: message [code]`
 and exit 1 when anything at or above `--error-on` (default `error`) was
 reported.
 
+`--error-on` decides the exit status; `--min-severity` decides what is printed,
+and what it drops is dropped whole — not counted, and not a reason to fail.
+
 `lint` reports undeclared, unused and shadowed lexicals, and arity against a
-signature, a Smart::Args list or an `@_` unpacking. `typecheck` adds what the
-annotations say: a value that contradicts a declared type, a key a class does
-not declare, a method a class does not have, a `Maybe[...]` used with nothing
-having checked it. A `# Returns: ArrayRef[Str]` comment above a `sub` annotates
-what it gives back.
+signature, a Smart::Args list or an `@_` unpacking. An unread *parameter* is
+its own code, `unused-parameter`, reported at `info`: a parameter goes on
+saying what the sub takes whether or not the body wants the value. A value held
+for its destructor — `my $guard = Scope::Guard->new(...)` — is neither.
+
+`typecheck` adds what the annotations say: a value that contradicts a declared
+type, a key a class does not declare, a name a call had to pass and did not, a
+method a class does not have, a `Maybe[...]` used with nothing having checked
+it. `Class::Accessor::Lite` and
+the `mk_accessors` family it belongs to declare no types, but they do say which
+names are accessors and whether there is a `new`, and that is enough to answer
+"no such method". A `# Returns: ArrayRef[Str]`
+comment above a `sub` annotates what it gives back, and a name a project's own
+type library declares — `type FooBar => as Foo | Bar`, under any of the
+`Type::` / `Types::` / `MooseX::Types` family — stands behind every annotation
+that writes it.
 
 The rule underneath is that **the checker is silent when it does not know**. A
 program with no annotations and no recognisable constructors gets no type
@@ -81,8 +96,10 @@ my $thing = $legacy->whatever;   ## camello-disable: unknown-method
 [check]
 lib = ["lib", "t"]
 stubs = ["stubs"]
-disable = ["unused-variable"]
+disable = ["unused-parameter"]
 error-on = "warning"
+min-severity = "warning"
+guard-classes = ["My::Lock"]
 strict-annotations = true
 ```
 

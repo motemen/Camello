@@ -14,7 +14,9 @@ use std::path::{Path, PathBuf};
 
 use camello_syntax::lang::SyntaxNode;
 
-use crate::decl::{self, FileDecls, SubDecl};
+use crate::annotate::ListShape;
+use crate::decl::{self, FileDecls, Params, SubDecl};
+use crate::types::Type;
 
 /// One file, as the graph holds it.
 pub struct FileEntry {
@@ -322,6 +324,58 @@ impl Program {
             .map(|named| &named.ty)
     }
 
+    /// Substitute what the run's type libraries declare into every annotation
+    /// that named one (`docs/types.md`, ANNOT-8a).
+    ///
+    /// Once, after the last file is in: a library is as likely to be read
+    /// after the file that uses it as before, so this cannot be folded into
+    /// [`Program::add`]. Names are global rather than per-package, because a
+    /// type library exists to be imported and the importing file writes the
+    /// bare name.
+    pub fn link_named_types(&mut self) {
+        let declared: HashMap<String, Type> = {
+            let mut collected: HashMap<String, Type> = HashMap::new();
+            for named in self
+                .files
+                .iter()
+                .flat_map(|entry| entry.decls.facts.iter())
+                .flat_map(|facts| facts.types.iter())
+            {
+                // First wins, the way `sub` redefinition does.
+                collected
+                    .entry(named.name.clone())
+                    .or_insert_with(|| named.ty.clone());
+            }
+            collected
+        };
+        if declared.is_empty() {
+            return;
+        }
+        let lookup = |name: &str| declared.get(name).cloned();
+
+        for entry in &mut self.files {
+            for symbol in &mut entry.decls.subs {
+                link_sub(symbol, &lookup);
+            }
+            for facts in &mut entry.decls.facts {
+                for attribute in &mut facts.attributes {
+                    attribute.ty = attribute.ty.substituted(&lookup);
+                }
+                for named in &mut facts.types {
+                    named.ty = named.ty.substituted(&lookup);
+                }
+            }
+            for annotated in &mut entry.decls.annotations {
+                annotated.ty = annotated.ty.substituted(&lookup);
+            }
+        }
+        // The flattened copy the name lookup answers from is a copy, so it is
+        // linked too rather than rebuilt.
+        for symbol in &mut self.subs {
+            link_sub(symbol, &lookup);
+        }
+    }
+
     /// What a bareword call in this file at this offset names.
     ///
     /// perl looks in the current package and then at what was imported, and so
@@ -338,5 +392,23 @@ impl Program {
         }
         let from = entry.decls.imports.get(name)?;
         self.sub(from, name)
+    }
+}
+
+/// One sub's parameters and `Returns:`, with the named types substituted in.
+fn link_sub(symbol: &mut SubDecl, lookup: &dyn Fn(&str) -> Option<Type>) {
+    match &mut symbol.params {
+        Params::Unknown => {}
+        Params::Positional { params, .. } | Params::Named { params, .. } => {
+            for param in params {
+                param.ty = param.ty.substituted(lookup);
+            }
+        }
+    }
+    symbol.returns.scalar = symbol.returns.scalar.substituted(lookup);
+    if let ListShape::Fixed(types) = &mut symbol.returns.list {
+        for ty in types {
+            *ty = ty.substituted(lookup);
+        }
     }
 }

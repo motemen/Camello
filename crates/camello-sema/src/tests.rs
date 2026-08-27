@@ -189,6 +189,7 @@ fn fixtures_report_exactly_what_they_say() {
             let root = parse_one(path, &source);
             analysis.declare(path, &root, fixture.checked.contains(path));
         }
+        analysis.link();
 
         for path in &fixture.checked {
             let source = read(path);

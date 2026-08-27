@@ -344,6 +344,15 @@ pub struct CheckArgs {
     )]
     pub error_on: String,
 
+    /// The quietest severity worth printing
+    #[arg(
+        long = "min-severity",
+        value_name = "SEVERITY",
+        default_value = "info",
+        help = "Print nothing below this severity (`--min-severity error` for errors only)"
+    )]
+    pub min_severity: String,
+
     /// File extensions to walk into when given a directory
     #[arg(
         long,
@@ -461,11 +470,24 @@ impl CheckArgs {
             miette::miette!("--error-on takes `error`, `warning` or `info`, not `{severity}`")
         })?;
 
+        let quietest = match &self.min_severity[..] {
+            "info" => config
+                .check
+                .min_severity
+                .clone()
+                .unwrap_or_else(|| "info".into()),
+            typed => typed.to_string(),
+        };
+        let min_severity = camello_sema::Severity::parse(&quietest).ok_or_else(|| {
+            miette::miette!("--min-severity takes `error`, `warning` or `info`, not `{quietest}`")
+        })?;
+
         let format = crate::report::Format::parse(&self.format)
             .ok_or_else(|| miette::miette!("--format takes `text` or `json`"))?;
 
         options.strict_annotations = self.strict_annotations || config.check.strict_annotations;
         options.disabled = crate::report::parse_codes(self.disable.as_deref().unwrap_or(""))?;
+        options.guard_classes = config.check.guard_classes.clone();
         for name in &config.check.disable {
             options
                 .disabled
@@ -487,6 +509,7 @@ impl CheckArgs {
         Ok(crate::report::Request {
             paths,
             error_on,
+            min_severity,
             format,
             extensions: self.extensions,
             jobs: self.jobs,

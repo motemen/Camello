@@ -19,8 +19,41 @@ sub uses_its_parameter ($count) {
     return $count;
 }
 
-# A parameter is declared by the caller's shape, not by a choice to hold a
-# value, so an unread one is not reported.
+# A parameter goes on saying what the sub takes whether or not the body reads
+# it, so an unread one is its own code rather than `unused-variable`.
 sub ignores_its_parameter ($count) {
+                                #~ info unused-parameter: `$count`
+    return 1;
+}
+
+sub ignores_an_unpacked_one {
+    my ($self, $wanted, $spare) = @_;
+                                #~ info unused-parameter: `$spare`
+    return $wanted;
+}
+
+sub ignores_a_shifted_one {
+    my $self = shift;
+    my $spare = shift;          #~ info unused-parameter: `$spare`
+    return 1;
+}
+
+# `catch ($e)` is bound by the construct whether the body wants it or not, so
+# it is neither a variable nobody wanted nor a parameter.
+use feature 'try';
+sub guarded {
+    try {
+        return 1;
+    }
+    catch ($e) {
+        return 0;
+    }
+}
+
+# A value held for its destructor is bound on purpose and never read on
+# purpose, so neither code fires on it.
+sub takes_a_lock {
+    my $guard = Scope::Guard->new(sub { print "released" });
+    my $other = Guard::guard { print "released" };
     return 1;
 }
