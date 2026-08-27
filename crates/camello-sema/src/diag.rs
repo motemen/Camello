@@ -99,6 +99,14 @@ pub enum Code {
     UnknownType,
     /// A public sub with no annotation, under `--strict-annotations`.
     MissingAnnotation,
+    /// A required named argument the call does not pass.
+    MissingArgument,
+    /// A parameter the body never reads. Its own code rather than
+    /// [`Code::UnusedVariable`]'s, because a parameter list is a signature:
+    /// the name goes on saying what the sub takes whether or not the body
+    /// wants the value, and a project may reasonably want to be told about the
+    /// one and not the other.
+    UnusedParameter,
 }
 
 impl Code {
@@ -115,6 +123,8 @@ impl Code {
         Code::ReturnMismatch,
         Code::UnknownType,
         Code::MissingAnnotation,
+        Code::MissingArgument,
+        Code::UnusedParameter,
     ];
 
     #[must_use]
@@ -132,6 +142,8 @@ impl Code {
             Code::ReturnMismatch => "return-mismatch",
             Code::UnknownType => "unknown-type",
             Code::MissingAnnotation => "missing-annotation",
+            Code::MissingArgument => "missing-argument",
+            Code::UnusedParameter => "unused-parameter",
         }
     }
 
@@ -156,6 +168,7 @@ impl Code {
                 | Code::ReturnMismatch
                 | Code::UnknownType
                 | Code::MissingAnnotation
+                | Code::MissingArgument
         )
     }
 
@@ -163,15 +176,20 @@ impl Code {
     #[must_use]
     pub const fn default_severity(self) -> Severity {
         match self {
-            Code::UndeclaredVariable | Code::Arity | Code::TypeMismatch | Code::UnknownKey => {
-                Severity::Error
-            }
+            Code::UndeclaredVariable
+            | Code::Arity
+            | Code::TypeMismatch
+            | Code::UnknownKey
+            | Code::MissingArgument => Severity::Error,
             Code::UnusedVariable
             | Code::ShadowedVariable
             | Code::UnknownMethod
             | Code::MaybeDeref
             | Code::ReturnMismatch => Severity::Warning,
-            Code::BadAnnotation | Code::UnknownType | Code::MissingAnnotation => Severity::Info,
+            Code::BadAnnotation
+            | Code::UnknownType
+            | Code::MissingAnnotation
+            | Code::UnusedParameter => Severity::Info,
         }
     }
 }

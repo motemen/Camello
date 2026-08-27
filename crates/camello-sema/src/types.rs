@@ -146,7 +146,60 @@ impl Type {
     pub fn is_optional(&self) -> bool {
         matches!(self, Type::Optional(_))
     }
+
+    /// The same type with every name a project's own type library declares
+    /// replaced by what it declared (`docs/types.md`, ANNOT-8a).
+    ///
+    /// A bareword in a type position reads as `InstanceOf[name]`, because a
+    /// name nothing declares is a class name; this is what turns the ones
+    /// something *does* declare back into the shape they stand for. A lookup
+    /// that answers with the name itself — `class_type 'DateTime'` — is a
+    /// class after all and is left alone, which is also what stops a cycle.
+    #[must_use]
+    pub fn substituted(&self, lookup: &dyn Fn(&str) -> Option<Type>) -> Type {
+        self.substituted_within(lookup, SUBSTITUTION_DEPTH)
+    }
+
+    fn substituted_within(&self, lookup: &dyn Fn(&str) -> Option<Type>, fuel: u32) -> Type {
+        let Some(fuel) = fuel.checked_sub(1) else {
+            // `type A => as B; type B => as A;` is not a type, and the depth
+            // is what says so rather than a stack overflow.
+            return Type::Unknown;
+        };
+        let inside = |ty: &Type| Box::new(ty.substituted_within(lookup, fuel));
+        let each = |types: &[Type]| -> Vec<Type> {
+            types
+                .iter()
+                .map(|ty| ty.substituted_within(lookup, fuel))
+                .collect()
+        };
+        match self {
+            Type::InstanceOf(name) => match lookup(name) {
+                Some(found) if found != *self => found.substituted_within(lookup, fuel),
+                _ => self.clone(),
+            },
+            Type::ScalarRef(inner) => Type::ScalarRef(inside(inner)),
+            Type::ArrayRef(inner) => Type::ArrayRef(inside(inner)),
+            Type::HashRef(inner) => Type::HashRef(inside(inner)),
+            Type::Optional(inner) => Type::Optional(inside(inner)),
+            Type::Tuple(members) => Type::Tuple(each(members)),
+            Type::Union(members) => Type::union(each(members)),
+            Type::Map(key, value) => Type::Map(inside(key), inside(value)),
+            Type::Dict { slots, slurpy } => Type::Dict {
+                slots: slots
+                    .iter()
+                    .map(|(name, ty)| (name.clone(), ty.substituted_within(lookup, fuel)))
+                    .collect(),
+                slurpy: slurpy.as_ref().map(|ty| inside(ty)),
+            },
+            other => other.clone(),
+        }
+    }
 }
+
+/// How far a named type may stand for another before the chain is called a
+/// cycle. Type libraries nest a few deep; nothing legitimate goes further.
+const SUBSTITUTION_DEPTH: u32 = 16;
 
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

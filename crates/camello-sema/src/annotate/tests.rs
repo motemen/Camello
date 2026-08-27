@@ -124,6 +124,96 @@ fn new_zero_removes_the_constructor() {
 }
 
 #[test]
+fn class_accessor_lite_declares_its_accessors() {
+    let root = parse(
+        "package L;\nuse Class::Accessor::Lite (\n  new => 1,\n  rw => [qw(foo bar)],\n  ro => [qw(baz)],\n  wo => [qw(quux)],\n);\n",
+    );
+    let decls = decl::declare(&root);
+    let facts = decls.facts_for("L").expect("the package");
+    assert!(facts.constructor, "`new => 1` asked for one");
+    assert!(facts.open_constructor, "it blesses whatever it is handed");
+    let names: Vec<(&str, Access)> = facts
+        .attributes
+        .iter()
+        .map(|attribute| (attribute.name.as_str(), attribute.access))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            ("foo", Access::Rw),
+            ("bar", Access::Rw),
+            ("baz", Access::Ro),
+            ("quux", Access::Wo),
+        ]
+    );
+    assert!(
+        facts.attributes.iter().all(|one| one.ty == Type::Unknown),
+        "the module says nothing about types"
+    );
+}
+
+#[test]
+fn a_lazy_accessor_is_named_however_its_builder_is_given() {
+    let root = parse(
+        "package L;\nuse Class::Accessor::Lite::Lazy (\n  ro_lazy => ['hoge', { poyo => \\&make_poyo, poe => 'make_poe' }],\n  rw_lazy => { baz => 'make_baz' },\n);\n",
+    );
+    let decls = decl::declare(&root);
+    let mut names: Vec<&str> = decls
+        .facts_for("L")
+        .expect("the package")
+        .attributes
+        .iter()
+        .map(|attribute| attribute.name.as_str())
+        .collect();
+    names.sort_unstable();
+    assert_eq!(names, ["baz", "hoge", "poe", "poyo"]);
+    assert!(
+        !decls.facts_for("L").expect("the package").constructor,
+        "no `new => 1`, no `new`"
+    );
+}
+
+#[test]
+fn mk_accessors_installs_into_the_package_it_is_written_in() {
+    // `Class::Accessor::Lite->mk_accessors` installs into `caller`, and a
+    // `Class::Accessor` subclass calls the inherited method on itself. Both
+    // mean the package the statement is in.
+    let root = parse(
+        "package K;\nuse Class::Accessor::Lite;\nClass::Accessor::Lite->mk_new_and_accessors(qw(foo));\npackage S;\nuse base 'Class::Accessor';\n__PACKAGE__->mk_ro_accessors(qw(bar));\n",
+    );
+    let decls = decl::declare(&root);
+    let k = decls.facts_for("K").expect("K");
+    assert_eq!(k.attributes.len(), 1);
+    assert_eq!(k.attributes[0].name, "foo");
+    assert!(k.constructor && k.open_constructor);
+    let s = decls.facts_for("S").expect("S");
+    assert_eq!(s.attributes.len(), 1);
+    assert_eq!(s.attributes[0].access, Access::Ro);
+    assert!(!s.constructor, "`new` is the parent's, not generated here");
+}
+
+#[test]
+fn follow_best_practice_renames_what_comes_after_it() {
+    let root = parse(
+        "package S;\nuse base 'Class::Accessor';\n__PACKAGE__->mk_accessors(qw(before));\n__PACKAGE__->follow_best_practice;\n__PACKAGE__->mk_accessors(qw(after));\n__PACKAGE__->mk_ro_accessors(qw(readable));\n",
+    );
+    let decls = decl::declare(&root);
+    let facts = decls.facts_for("S").expect("S");
+    let methods = |name: &str| {
+        facts
+            .attributes
+            .iter()
+            .find(|one| one.name == name)
+            .expect("the attribute")
+            .methods
+            .clone()
+    };
+    assert!(methods("before").is_empty(), "declared above the call");
+    assert_eq!(methods("after"), ["get_after", "set_after"]);
+    assert_eq!(methods("readable"), ["get_readable"]);
+}
+
+#[test]
 fn a_type_library_declares_names() {
     let root = parse(
         "package MyApp::Types;\nuse Type::Library;\ndeclare 'PositiveInt', as Int;\nclass_type 'User', { class => 'MyApp::User' };\nrole_type 'Loggable';\nenum 'Color', [qw(red green blue)];\n",
@@ -138,6 +228,24 @@ fn a_type_library_declares_names() {
     assert_eq!(
         types[3].ty,
         Type::Enum(vec!["red".into(), "green".into(), "blue".into()])
+    );
+}
+
+#[test]
+fn a_type_library_reads_type_and_unions_of_its_own_names() {
+    let root = parse(
+        "package MyApp::Types;\nuse Type::Utils;\ntype Foo => as Enum[qw(foo)];\ntype Bar => as Enum[qw(bar)];\ntype FooBar => as Foo | Bar;\n",
+    );
+    let decls = decl::declare(&root);
+    let types = &decls.facts_for("MyApp::Types").expect("the package").types;
+    assert_eq!(types.len(), 3, "{types:?}");
+    assert_eq!(
+        types[2].ty,
+        Type::Union(vec![
+            Type::InstanceOf("Foo".into()),
+            Type::InstanceOf("Bar".into())
+        ]),
+        "the members stay names until the program links them"
     );
 }
 

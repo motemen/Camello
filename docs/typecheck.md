@@ -13,9 +13,9 @@ deliberately leaves unknown, is specified for its users in
 
 A static checker for Perl that runs over the CST camello already produces,
 and that treats the type annotations Perl code actually carries — `has ...
-isa => 'Str'`, `args my $x => 'Int'`, `Class::Accessor::Typed`, and a
-`Returns:` comment introduced here — as first-class input rather than as
-strings it happens to see.
+isa => 'Str'`, `args my $x => 'Int'`, `Class::Accessor::Typed`, the
+`mk_accessors` family, and a `Returns:` comment introduced here — as
+first-class input rather than as strings it happens to see.
 
 Perl has no static types, so almost every answer is a derivation from
 evidence: a sigil, a literal, a constructor call, an annotation on the callee.
@@ -168,7 +168,8 @@ A **symbol** belongs to a package and is one of:
   Unknown }`
 - `Attribute { name, type: Type, access: Ro | Rw | Wo, required, default,
   source }` — produced by `has`, `Class::Accessor::Typed`, and the
-  `__PACKAGE__->mk_accessors` family
+  `Class::Accessor::Lite` / `__PACKAGE__->mk_accessors` family, whose
+  attributes have no type at all
 - `Constant { name, type }` from `use constant`
 - `Import { name, from: package }` from `use Foo qw(bar)` when `Foo` is
   analysable and exports `bar`
@@ -176,8 +177,9 @@ A **symbol** belongs to a package and is one of:
 Package-level facts that are not symbols: `isa: Vec<Package>` (from
 `use parent`, `use base`, `extends`, `our @ISA = (...)`), `roles` (`with`,
 `does`), and the object framework in use (Moose, Moo, Mouse,
-Class::Accessor::Typed, plain `bless`, or none), because the framework
-decides whether `new` exists and what it accepts.
+Class::Accessor::Typed, Class::Accessor::Lite, plain `bless`, or none),
+because the framework decides whether `new` exists and what it accepts — and
+whether it *checks* what it accepts, which the `mk_new` family's does not.
 
 Method resolution is C3 over `isa` with roles flattened in, and falls back to
 `Unknown` — not an error — when any ancestor is itself `Unknown`. A class
@@ -372,6 +374,28 @@ view exposes the arguments as an expression, and the recogniser reads the
 `has` does. `new => 0` removes the generated constructor; otherwise `new`
 takes a `Dict` of the attributes.
 
+**Class::Accessor::Lite, and the `mk_accessors` family.**
+
+```perl
+use Class::Accessor::Lite (new => 1, rw => [qw(foo bar)], ro => [qw(baz)]);
+
+use base 'Class::Accessor';
+__PACKAGE__->mk_accessors(qw(foo bar));
+```
+
+The same idea with the types taken out: the values are names, so every
+attribute is `Unknown` rather than `Any` — the module never said `Any`. Two
+things about it are their own decisions. The `mk_*` spelling is a *statement*
+rather than a `use`, and where its accessors land is decided by the invocant:
+`Class::Accessor::Lite->mk_accessors` installs into `caller` and a
+`Class::Accessor` subclass calls the inherited method on itself, so both mean
+the package the statement is in, while a variable invocant means a package
+this pass cannot name and is left alone. And the generated `new` blesses the
+hash it was handed without looking at it, so the constructor is *open*: a key
+with no accessor behind it contradicts nothing, and `unknown-key` stays quiet.
+`follow_best_practice` renames the accessors below it to `get_x`/`set_x`; the
+attribute keeps its own name, because that is still the hash key.
+
 **Signatures.**
 
 ```perl
@@ -516,21 +540,25 @@ stubbed.
 ## Diagnostics
 
 Every diagnostic has a stable code (`undeclared-variable`, `unknown-method`,
-`arity`, `type-mismatch`, `unknown-key`, `maybe-deref`, `bad-annotation`,
-…), a severity, a span, and a message that names both sides ("`Str` passed to
+`arity`, `type-mismatch`, `unknown-key`, `missing-argument`, `maybe-deref`,
+`bad-annotation`, …), a severity, a span, and a message that names both sides ("`Str` passed to
 parameter `$count` declared `Int` at lib/Foo.pm:12"). Severities:
 
 - `error` — a contradiction between two declared things, or a scope error:
   arity against a signature, a literal against an annotation, a key not in a
-  restricted `Dict`, an undeclared variable under `strict`.
+  restricted `Dict`, a name the callee requires and the call omits, an
+  undeclared variable under `strict`.
 - `warning` — a contradiction between a declared thing and an *inferred*
   one, or anything resting on narrowing.
 - `info` — the annotation is unparseable, the sub is public and unannotated
   under `--strict-annotations`, and other things a user asked to be told.
 
-`--error-on warning` promotes for CI. Codes can be disabled per project in
-the config and per line with `## camello-disable: <code>` (a comment, so
-`format` keeps it; the form is chosen not to collide with `## no critic`).
+`--error-on warning` promotes for CI, and `--min-severity` decides what is
+printed at all — a filter on the report rather than on the analysis, so what it
+drops is not counted and not a reason to fail. Codes can be disabled per
+project in the config and per line with `## camello-disable: <code>` (a
+comment, so `format` keeps it; the form is chosen not to collide with `## no
+critic`).
 
 The `GUESS:` discipline from `docs/architecture.md` applies unchanged: a
 diagnostic that depends on a parser guess (`foo %h` read as a call, an
