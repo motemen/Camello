@@ -19,4 +19,4 @@
 #
 # One path per line, relative to the repository root.
 
-# (empty: every fixture under regressions/ produces its expected output)
+src/fmt/fixtures/regressions/bracket_opened_on_a_wrapped_line.pl
