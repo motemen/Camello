@@ -629,7 +629,14 @@ impl<'a> Builder<'a> {
                 .as_token()
                 .is_some_and(|token| token.token_kind() == T![";"])
             && self.has_user_newline_between(previous, next);
-        if !wants_space && !deferred_terminator {
+        // A comment written in a gap that takes no space still has to go on a
+        // line, and the line it goes on is a continuation of the expression it
+        // was written inside. `$bar->foo()\n# why\n->bar()` had no separator at
+        // all, so the comment and the rest of the chain under it came back at
+        // the statement's own level — the comment in column 0 of a statement
+        // indented four.
+        let deferred_comment = !wants_space && self.has_user_comment_between(previous, next);
+        if !wants_space && !deferred_terminator && !deferred_comment {
             return parts;
         }
 
@@ -931,6 +938,26 @@ impl<'a> Builder<'a> {
     /// the next token's leading trivia (the trivia model), and because no node's
     /// range includes trivia, that is the whole gap — no guessing from node
     /// extents, and nothing from *after* `next` can leak in.
+    /// Whether the source has a comment between two adjacent children.
+    ///
+    /// The same gap `has_user_newline_between` reads, asked about the trivia
+    /// that cannot be dropped: a comment is kept whatever the spacing rule
+    /// between its neighbours is, so the line break carrying it is kept too.
+    fn has_user_comment_between(&self, previous: &SyntaxElement, next: &SyntaxElement) -> bool {
+        let is_comment = |item: &crate::parse::trivia::Trivia| item.kind == TokenKind::COMMENT;
+
+        let after_previous = last_token_of(previous)
+            .map(|token| self.trivia.of(token.text_range()))
+            .is_some_and(|trivia| trivia.trailing.iter().any(is_comment));
+        if after_previous {
+            return true;
+        }
+
+        first_token_of(next)
+            .map(|token| self.trivia.of(token.text_range()))
+            .is_some_and(|trivia| trivia.leading.iter().any(is_comment))
+    }
+
     fn has_user_newline_between(&self, previous: &SyntaxElement, next: &SyntaxElement) -> bool {
         let is_newline = |item: &crate::parse::trivia::Trivia| item.kind == TokenKind::NEWLINE;
 
