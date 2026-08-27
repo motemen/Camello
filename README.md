@@ -10,6 +10,8 @@ legacy corner of the grammar.
 > **Status: early.** The output is not yet stable across versions, and the
 > layout options below are hidden from `--help` because their names and
 > defaults may still change. There is no release yet; build it from source.
+> What moved between tags, and what it does to a file already formatted, is in
+> [CHANGELOG.md](CHANGELOG.md).
 
 ## Build
 
