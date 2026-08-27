@@ -556,13 +556,7 @@ impl<'a> Builder<'a> {
                 (is_identifier && !self.has_user_newline_between(&name, &arguments))
                     .then(|| name.to_string().width() + 1)
             });
-        // A filehandle and a block are placed beside the name rather than in the
-        // argument list, so the list has no first argument for anything to hang
-        // under — and no level of its own either: `print $fh "a",\n "b"` is one
-        // call whose arguments wrap, wherever it is written.
-        let placed_beside_the_name = node
-            .children()
-            .any(|child| matches!(child.node_kind(), NodeKind::FILEHANDLE | NodeKind::BLOCK));
+        let placed_beside_the_name = placed_beside_the_name(node);
         // A first argument that ends at a brace of its own gives no column to
         // hang under either: `foo {\n 1;\n}` ends its line at the `}` rather
         // than beside the name, and an offset counted from the name put what
@@ -572,18 +566,18 @@ impl<'a> Builder<'a> {
             .and_then(|arguments| arguments.children().next())
             .is_some_and(|first| self.owns_a_broken_block(&first));
 
-        // Zero puts the lines the call swallowed at the level of the list
-        // around them — its own hanging column where it has one, and the
+        // `Some(None)` puts the lines the call swallowed at the level of the
+        // list around them — its own hanging column where it has one, and the
         // statement's level where it has none; `None` leaves them to the
         // ordinary continuation indent.
         let offset = if placed_beside_the_name {
             None
         } else if list_level {
-            Some(0)
+            Some(None)
         } else if leading_broken_block {
             None
         } else {
-            hanging
+            hanging.map(Some)
         };
 
         let mut parts = Vec::new();
@@ -678,7 +672,14 @@ impl<'a> Builder<'a> {
             // newline after its `}` is not a wrap and takes no continuation
             // indent. `map {\n}\nsort {\n} @array` came back with `sort {`
             // indented and its contents and closing brace not.
-            let wraps = !self.ends_its_own_line(previous);
+            //
+            // A bareword call swallows the rest of the list it was written
+            // along (`list_separator_before`), and what it swallowed is still
+            // the list's elements to whoever wrote them. The break after one of
+            // them ends an element rather than wrapping a line, so it takes the
+            // level the list is written at and not a continuation indent.
+            let wraps = !self.ends_its_own_line(previous)
+                && !self.ends_a_swallowed_element(previous, parent);
             parts.push(Doc::UserLine {
                 broken: true,
                 wraps,
@@ -687,6 +688,40 @@ impl<'a> Builder<'a> {
             parts.push(Doc::Space);
         }
         parts
+    }
+
+    /// Does this separator end an element a bareword call swallowed?
+    ///
+    /// `[\n    object {...},\n    object {...},\n]` is one call to camello:
+    /// an unknown bareword is a list operator, so the second `object` is an
+    /// argument of the first. The brackets break, so they put one element on
+    /// each line, and the two the writer wrote are two of them — the break
+    /// between them ends an element rather than wrapping a line, and takes the
+    /// brackets' own level. [`Self::element_of_a_broken_list`] is that reading,
+    /// asked of the call instead of the break after it.
+    ///
+    /// Brackets that stay flat keep the writer's lines as they are, and a wrap
+    /// in them is a wrap: `('x', f Str,\n    bbb => 2)` indents. Neither is a
+    /// call that swallowed nothing: `unless (\n    print $fh "a",\n    $b,\n)`
+    /// is the arguments of one `print` wrapping, and they take the indent a
+    /// wrap takes.
+    fn ends_a_swallowed_element(&self, previous: &SyntaxElement, parent: Option<NodeKind>) -> bool {
+        if parent != Some(NodeKind::LIST_EXPR) {
+            return false;
+        }
+        let Some(separator) = previous
+            .as_token()
+            .filter(|token| matches!(token.token_kind(), T![","] | T!["=>"]))
+        else {
+            return false;
+        };
+        separator
+            .parent()
+            .and_then(|list| list.parent())
+            .filter(|call| call.node_kind() == NodeKind::LIST_CALL_EXPR)
+            .is_some_and(|call| {
+                !placed_beside_the_name(&call) && self.element_of_a_broken_list(&call)
+            })
     }
 
     /// Does this node hold a block that will be written across lines?
@@ -1132,7 +1167,17 @@ impl<'a> Builder<'a> {
         else {
             return false;
         };
-        let Some(brackets) = list.parent().filter(|parent| {
+        let Some(parent) = list.parent() else {
+            return false;
+        };
+        // A bareword call swallows the rest of the list it was written along
+        // (`list_separator_before`), so what the tree calls its argument is an
+        // element of whatever list the call itself is an element of: `[\n f 1,\n
+        // g 2,\n]` is one call to camello and two elements to whoever wrote it.
+        if parent.node_kind() == NodeKind::LIST_CALL_EXPR {
+            return list_separator_before(node).is_some() && self.element_of_a_broken_list(&parent);
+        }
+        let Some(brackets) = Some(parent).filter(|parent| {
             matches!(
                 parent.node_kind(),
                 NodeKind::ARG_LIST
@@ -1509,11 +1554,17 @@ impl<'a> Builder<'a> {
         }
 
         if broken {
-            parts.push(Doc::indent(Doc::concat(vec![
-                Doc::SoftLine,
-                body,
-                written_inside,
-            ])));
+            // The contents are placed from the bracket. A broken group puts one
+            // element on each line, so each of them begins a continuation scope
+            // of its own the way a block's statements do — a wrap in one takes
+            // its level for that element and hands it back at the `,`, rather
+            // than carrying it to the closing bracket. And the column the call
+            // around the bracket hangs its arguments from is not one the
+            // contents know anything about: they hang from nowhere but here.
+            parts.push(Doc::indent(Doc::hanging(
+                Some(0),
+                Doc::statements(Doc::concat(vec![Doc::SoftLine, body, written_inside])),
+            )));
             parts.push(Doc::SoftLine);
         } else {
             // docs/formatting.md SPACING-7: whether a flat literal pads its inside
@@ -2036,6 +2087,17 @@ fn list_separator_before(node: &SyntaxNode) -> Option<TokenKind> {
         }
     }
     None
+}
+
+/// Is a filehandle or a block written beside this call's name?
+///
+/// Both are placed there rather than in the argument list, so the list has no
+/// first argument for anything to hang under — and no level of its own either:
+/// `print $fh "a",\n "b"` is one call whose arguments wrap, wherever it is
+/// written, and the lines under `sort { ... }` are the sort's own.
+fn placed_beside_the_name(node: &SyntaxNode) -> bool {
+    node.children()
+        .any(|child| matches!(child.node_kind(), NodeKind::FILEHANDLE | NodeKind::BLOCK))
 }
 
 /// Is this node the first thing written on its line?
