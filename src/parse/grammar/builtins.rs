@@ -123,4 +123,7 @@ pub(crate) fn lookup(name: &str) -> Option<Builtin> {
 /// (the parser contract).
 /// Wrong: the name takes no arguments, and what was written as its argument
 /// list is left to be read as something else.
+///
+/// Where that list runs out is a second guess, at `list_arguments`
+/// (`grammar/expr.rs`).
 pub(crate) const UNKNOWN_IS_LIST_OPERATOR: bool = true;
