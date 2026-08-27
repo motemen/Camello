@@ -534,7 +534,7 @@ impl<'a> Builder<'a> {
         let arguments = node
             .children()
             .find(|child| child.node_kind() == NodeKind::LIST_EXPR);
-        let mid_list = !begins_its_line(node) && follows_a_list_separator(node);
+        let mid_list = self.is_written_along_a_list(node);
         let hanging = name
             .as_ref()
             .zip(arguments.as_ref())
@@ -1056,6 +1056,65 @@ impl<'a> Builder<'a> {
         ])
     }
 
+    /// Does this bracketed construct break at its seed — a newline straight
+    /// after the opening delimiter (docs/formatting.md INDENT-2), or a comment
+    /// it has to break for?
+    fn breaks_at_its_seed(&self, node: &SyntaxNode, opening: Option<&SyntaxToken>) -> bool {
+        self.contains_comment(node)
+            || (self.heredoc_markers_in(node) == 0
+                && opening.is_some_and(|token| self.newline_follows(token)))
+    }
+
+    /// Is this node an element of a list whose brackets break?
+    ///
+    /// Such a list puts one element per line ([`Self::list_items`]), so an
+    /// element written after a `,` begins a line whether or not the writer put
+    /// it on one.
+    fn element_of_a_broken_list(&self, node: &SyntaxNode) -> bool {
+        let Some(list) = node
+            .parent()
+            .filter(|parent| parent.node_kind() == NodeKind::LIST_EXPR)
+        else {
+            return false;
+        };
+        let Some(brackets) = list.parent().filter(|parent| {
+            matches!(
+                parent.node_kind(),
+                NodeKind::ARG_LIST
+                    | NodeKind::PAREN_EXPR
+                    | NodeKind::ANON_ARRAY
+                    | NodeKind::ANON_HASH
+            )
+        }) else {
+            return false;
+        };
+        // No node's range begins on trivia (the trivia model), so the first
+        // token is the opening bracket.
+        let opening = brackets.first_token();
+        self.breaks_at_its_seed(&brackets, opening.as_ref())
+    }
+
+    /// Is this call written along a list — after one of its separators, on the
+    /// same output line as what came before?
+    ///
+    /// Asked of the *output*, not of the input. A broken list gives every
+    /// element after a `,` a line of its own, so asking whether the writer put
+    /// it on one answers differently once the formatter has: `('x', f Str,` on
+    /// one line comes back as two, and a second pass would then take the other
+    /// branch. Layout has to be a fixed point (the formatter contract, I2). The
+    /// value of a `key => value` pair is the case that never moves — it is
+    /// written on its key's line and stays there — and it is the case the bug
+    /// was reported for.
+    fn is_written_along_a_list(&self, node: &SyntaxNode) -> bool {
+        let Some(separator) = list_separator_before(node) else {
+            return false;
+        };
+        if begins_its_line(node) {
+            return false;
+        }
+        separator == T!["=>"] || !self.element_of_a_broken_list(node)
+    }
+
     /// A closing delimiter, split into what was written inside it and the
     /// delimiter itself.
     ///
@@ -1321,11 +1380,7 @@ impl<'a> Builder<'a> {
         // and got its format string back as two arguments and a stray block.
         // A comment still wins: a flat group would comment out the code after
         // it, and that is the greater loss.
-        let broken = self.contains_comment(node)
-            || (self.heredoc_markers_in(node) == 0
-                && opening
-                    .as_ref()
-                    .is_some_and(|token| self.newline_follows(token)));
+        let broken = self.breaks_at_its_seed(node, opening.as_ref());
 
         let is_hash = open == T!["{"];
         if is_hash {
@@ -1900,7 +1955,8 @@ fn brace(node: &SyntaxNode, kind: TokenKind, last: bool) -> Option<SyntaxToken> 
     }
 }
 
-/// Is this node written after a `,` or a `=>` of the list it sits in?
+/// The list separator this node was written after, if it is an element of a
+/// list at all.
 ///
 /// GUESS: the lines under a bareword call written along a list are the list's,
 /// not the call's arguments.
@@ -1911,7 +1967,7 @@ fn brace(node: &SyntaxNode, kind: TokenKind, last: bool) -> Option<SyntaxToken> 
 /// Wrong: only the indent of those lines, never the meaning — they keep the
 /// list's level instead of hanging under an argument list perl may not agree
 /// the call has.
-fn follows_a_list_separator(node: &SyntaxNode) -> bool {
+fn list_separator_before(node: &SyntaxNode) -> Option<TokenKind> {
     let mut cursor = node.prev_sibling_or_token();
     while let Some(element) = cursor {
         match element {
@@ -1919,12 +1975,13 @@ fn follows_a_list_separator(node: &SyntaxNode) -> bool {
                 cursor = token.prev_sibling_or_token();
             }
             SyntaxElement::Token(token) => {
-                return matches!(token.token_kind(), T![","] | T!["=>"]);
+                return matches!(token.token_kind(), T![","] | T!["=>"])
+                    .then(|| token.token_kind());
             }
-            SyntaxElement::Node(_) => return false,
+            SyntaxElement::Node(_) => return None,
         }
     }
-    false
+    None
 }
 
 /// Is this node the first thing written on its line?
