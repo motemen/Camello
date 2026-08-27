@@ -35,8 +35,8 @@ to a checker, and a build of the checker should not carry the Doc IR.
 vocabulary, `lex` scans source, `parse` records and replays syntax events, and
 `ast` offers typed views over the result. `camello-fmt` builds and renders the
 output. `camello-sema` reads declarations and checks bodies. The root crate is
-the command line, plus `src/check.rs`, which holds the invariants — it is the
-one place that compares a formatter against a parser and so the one place that
+the command line, plus `src/check`, which holds the invariants — it is the one
+place that compares a formatter against a parser and so the one place that
 depends on both.
 
 ## Data flow
@@ -105,14 +105,15 @@ beside every node kind, which is the question a reader of a dump has.
 
 ## Language vocabulary and CST
 
-The `define_language!` invocation in `src/lang/mod.rs` is the source of truth
-for `TokenKind`, `NodeKind`, conversions through `SyntaxKind`, the `T![...]`
-macro, keyword lookup, token classification, and diagnostic display names.
-Tokens and nodes occupy disjoint ranges of the rowan syntax-kind space.
+The `define_language!` invocation in `crates/camello-syntax/src/lang/mod.rs` is
+the source of truth for `TokenKind`, `NodeKind`, conversions through
+`SyntaxKind`, the `T![...]` macro, keyword lookup, token classification, and
+diagnostic display names. Tokens and nodes occupy disjoint ranges of the rowan
+syntax-kind space.
 
-Only `src/parse/replay.rs` writes to `GreenNodeBuilder`. Its wrapper accepts a
-`TokenKind` for tokens and a `NodeKind` for nodes, preventing the two categories
-from being mixed while building the CST.
+Only `crates/camello-syntax/src/parse/replay.rs` writes to `GreenNodeBuilder`.
+Its wrapper accepts a `TokenKind` for tokens and a `NodeKind` for nodes,
+preventing the two categories from being mixed while building the CST.
 
 The CST is concrete and lossless: concatenating its token texts reproduces the
 input. Non-root node ranges begin and end on non-trivia tokens. Error recovery
@@ -120,16 +121,18 @@ may create `ERROR` nodes, but it does not discard source text.
 
 ## Lexer
 
-The lexer in `src/lex` is hand-written and parser-directed. Perl tokens such as
-`/` and `%` are ambiguous without knowing whether the grammar expects a term or
-an operator, so that expectation is stored as lexer state. `peek` and `bump`
-therefore observe the same context. Changing the expectation invalidates
-buffered lookahead from the current cursor and rescans it.
+The lexer in `crates/camello-syntax/src/lex` is hand-written and
+parser-directed. Perl tokens such as `/` and `%` are ambiguous without knowing
+whether the grammar expects a term or an operator, so that expectation is stored
+as lexer state. `peek` and `bump` therefore observe the same context. Changing
+the expectation invalidates buffered lookahead from the current cursor and
+rescans it.
 
 Quote-like operators, heredoc bodies, POD, formats, and data sections are
-scanned as complete token runs in `src/lex/atomic.rs`. No partially open lexical
-mode escapes a scanning call. Scanner failures are represented by error tokens
-and diagnostics rather than silently dropping input.
+scanned as complete token runs in `crates/camello-syntax/src/lex/atomic.rs`. No
+partially open lexical mode escapes a scanning call. Scanner failures are
+represented by error tokens and diagnostics rather than silently dropping
+input.
 
 The token buffer also makes speculative parsing cheap: a checkpoint records the
 cursor and expectation, and rollback restores them without rescanning the
@@ -137,10 +140,10 @@ already accepted prefix.
 
 ## Parser and error recovery
 
-The parser in `src/parse` emits `Start`, `Token`, `Finish`, and `Error` events.
-Grammar code does not write rowan nodes directly. After parsing, the replay pass
-combines events with the full token stream to build the green tree and the
-`TriviaMap`.
+The parser in `crates/camello-syntax/src/parse` emits `Start`, `Token`,
+`Finish`, and `Error` events. Grammar code does not write rowan nodes directly.
+After parsing, the replay pass combines events with the full token stream to
+build the green tree and the `TriviaMap`.
 
 Grammar rules are split across:
 
@@ -175,14 +178,14 @@ does not rediscover them by rescanning the CST or source.
 
 ## Formatter
 
-Formatting has three phases:
+Formatting has four phases, all under `crates/camello-fmt/src`:
 
-1. `src/fmt/build.rs` turns the CST and trivia into `Doc`, making layout and
-   spacing decisions.
-2. `src/fmt/render.rs` applies indentation and spacing while rendering the
-   document into lines.
-3. `src/fmt/align.rs` performs vertical alignment over rendered columns.
-4. `src/fmt/skip.rs` puts the source's own lines back over the regions perltidy's
+1. `build.rs` turns the CST and trivia into `Doc`, making layout and spacing
+   decisions.
+2. `render.rs` applies indentation and spacing while rendering the document into
+   lines.
+3. `align.rs` performs vertical alignment over rendered columns.
+4. `skip.rs` puts the source's own lines back over the regions perltidy's
    `#<<<` / `#>>>` markers cover.
 
 Explicit `Doc::Space` values control spacing; the renderer does not infer
@@ -306,7 +309,7 @@ a bug report — and they may change with the layout they describe.
 
 ## Validation
 
-`src/check.rs` defines six checks in two groups. The group is what a violation
+`src/check` defines six checks in two groups. The group is what a violation
 answers first: a parser check is asked of the input alone, so a failure is the
 parser's; a formatter check compares an input against its output.
 
@@ -369,10 +372,10 @@ directories.
 
 Tests and fixtures live beside their implementation:
 
-- lexer and parser unit tests and parser snapshots under `src/lex` and
-  `src/parse`;
+- lexer and parser unit tests and parser snapshots under
+  `crates/camello-syntax/src/lex` and `crates/camello-syntax/src/parse`;
 - formatter snapshots and input/expected-output regression pairs under
-  `src/fmt/fixtures`;
+  `crates/camello-fmt/src/fixtures`;
 - cross-component invariant coverage in `tests/invariants.rs`;
 - `scripts/perl-check` for compilation and `B::Deparse` comparison over the
   fixtures. Not the same question as `dev perl-deparse`, which asks a bare perl:
