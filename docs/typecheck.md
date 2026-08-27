@@ -105,11 +105,12 @@ pass and nothing else.
 
 ## The AST layer
 
-`src/parse` produces a rowan CST and `src/lang` offers `NodeExt` and nothing
-more. The formatter walks kinds directly because its questions are about
-tokens and trivia. The checker's questions are about structure, and asking
-them by kind-matching over child iterators in every pass is how a checker
-becomes unmaintainable.
+`crates/camello-syntax/src/parse` produces a rowan CST and
+`crates/camello-syntax/src/lang` offers `NodeExt` and nothing more. The
+formatter walks kinds directly because its questions are about tokens and
+trivia. The checker's questions are about structure, and asking them by
+kind-matching over child iterators in every pass is how a checker becomes
+unmaintainable.
 
 `ast` is the standard rowan pattern: one newtype per `NodeKind` that carries
 meaning, `AstNode::cast(SyntaxNode) -> Option<Self>`, and accessors that
@@ -131,9 +132,10 @@ and the checker cannot do without: it is where `Returns:` lives.
 
 Views are generated from the `nodes` section of `define_language!` for the
 `cast`/`syntax` boilerplate, and hand-written for accessors, the way
-`src/lang/predicates.rs` is hand-written beside the generated enums. The
-generation must not change the CST, `SyntaxKind` numbering, or any formatter
-output — `cargo test -q` over the formatter fixtures is the check.
+`crates/camello-syntax/src/lang/predicates.rs` is hand-written beside the
+generated enums. The generation must not change the CST, `SyntaxKind`
+numbering, or any formatter output — `cargo test -q` over the formatter
+fixtures is the check.
 
 Expression views that matter most, because the checker spends its time in
 them:
@@ -189,14 +191,14 @@ signature parameters, `foreach my $x`, `catch ($e)`, and the implicit `$_`
 / `@_` / `%ENV` / `$0` set. `our $x` binds a lexical alias to a package
 variable; `local` does not declare. String interpolation is the notable
 extra: `"hi $who"` and `"$h->{k}[0]"` contain variable uses, so the
-`INTERPOLATED_STRING` token (one token today, `src/lex/atomic.rs`) is
-re-scanned by a small interpolation scanner in `sema` that finds `$name`,
-`@name`, `${...}`, `@{[ ... ]}` and subscripts. It produces uses, not a
-CST; the CST is not changed. Getting this wrong means either a phantom
-"unused variable" or a missed "undeclared variable", both of which are
-`lint` bread and butter, so the scanner is tested against perl's own
-interpolation rules (`perldoc perlop`, "Gory details of parsing quoted
-constructs") as a fixture set.
+`INTERPOLATED_STRING` token (one token today,
+`crates/camello-syntax/src/lex/atomic.rs`) is re-scanned by a small
+interpolation scanner in `sema` that finds `$name`, `@name`, `${...}`,
+`@{[ ... ]}` and subscripts. It produces uses, not a CST; the CST is not
+changed. Getting this wrong means either a phantom "unused variable" or a
+missed "undeclared variable", both of which are `lint` bread and butter, so
+the scanner is tested against perl's own interpolation rules (`perldoc
+perlop`, "Gory details of parsing quoted constructs") as a fixture set.
 
 `use strict` is taken as on by default (a project with `no strict` in it
 almost certainly wants it reported); `no strict 'vars'` in scope suppresses
@@ -493,8 +495,8 @@ local, forward, and gives up early.
   `Unknown` symbol, an unresolved bareword, a `&$code`, or a dynamic method
   name yields `Unknown`. Builtins get a table (`length` → `Int`, `keys` →
   list of `Str`, `shift` → the element type when the array is known…),
-  derived from `src/parse/grammar/builtins.rs`'s list and extended with a
-  return column.
+  derived from `crates/camello-syntax/src/parse/grammar/builtins.rs`'s list
+  and extended with a return column.
 - **Subscripts.** `$x->{k}` on a `Dict` yields the slot's type or a
   diagnostic when the key is a literal not in the `Dict` and the `Dict` is
   not slurpy; on a `HashRef[T]` yields `Maybe[T]`; on `Unknown` yields
