@@ -402,6 +402,14 @@ impl<'a> Builder<'a> {
             NodeKind::HEREDOC_BODY => self.verbatim(node),
             NodeKind::ERROR => self.error(node),
             NodeKind::ARG_LIST | NodeKind::PAREN_EXPR => self.delimited(node, T!["("], T![")"]),
+            // `my ($a, $b)` holds its list in parentheses like any other, and
+            // the parentheses are optional — `my $x` is the same node without
+            // them. Read as an ordinary sequence they seeded no break, so a
+            // declaration list the writer opened on a line of its own came back
+            // hung under the `my` with its `)` on the last element's line.
+            NodeKind::DECL_TARGET if brace(node, T!["("], false).is_some() => {
+                self.delimited(node, T!["("], T![")"])
+            }
             NodeKind::ANON_ARRAY => self.delimited(node, T!["["], T!["]"]),
             NodeKind::ANON_HASH => self.delimited(node, T!["{"], T!["}"]),
             NodeKind::SUBSCRIPT => self.sequence(node),
