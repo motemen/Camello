@@ -563,8 +563,9 @@ impl<'a> Builder<'a> {
             .and_then(|arguments| arguments.children().next())
             .is_some_and(|first| self.owns_a_broken_block(&first));
 
-        // Zero puts the lines the call swallowed at the list's own level and
-        // shadows any hanging scope around them; `None` leaves them to the
+        // Zero puts the lines the call swallowed at the level of the list
+        // around them — its own hanging column where it has one, and the
+        // statement's level where it has none; `None` leaves them to the
         // ordinary continuation indent.
         let offset = if placed_beside_the_name {
             None

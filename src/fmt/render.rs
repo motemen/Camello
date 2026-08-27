@@ -157,7 +157,16 @@ impl<'a> Renderer<'a> {
                 self.indent -= 1;
             }
             Doc::Hanging { columns, body } => {
-                let outer = self.hanging.replace(*columns);
+                // An offset of zero asks for where the lines already are rather
+                // than for a column of its own, so a scope around it that hangs
+                // is the answer and the line's base indentation is what is left
+                // when none does. `args a => f [],` hangs its arguments under
+                // `a`, and the call written as the value of that pair takes the
+                // lines under it back to the same column — column zero put them
+                // out at the margin, and further out still with the statement
+                // indented.
+                let columns = self.hanging.filter(|_| *columns == 0).unwrap_or(*columns);
+                let outer = self.hanging.replace(columns);
                 self.walk(body);
                 self.hanging = outer;
             }
