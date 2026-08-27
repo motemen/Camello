@@ -22,8 +22,9 @@ ROOT
       identifier "bar"
     SUB_SIGNATURE
       `(` "("
-      SIGNATURE_PARAM
-        `$` "$"
+      LIST_EXPR
+        SIGNATURE_PARAM
+          `$` "$"
       `)` ")"
     BLOCK
       `{` "{"

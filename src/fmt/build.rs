@@ -410,6 +410,7 @@ impl<'a> Builder<'a> {
             NodeKind::DECL_TARGET if brace(node, T!["("], false).is_some() => {
                 self.delimited(node, T!["("], T![")"])
             }
+            NodeKind::SUB_SIGNATURE => self.delimited(node, T!["("], T![")"]),
             NodeKind::ANON_ARRAY => self.delimited(node, T!["["], T!["]"]),
             NodeKind::ANON_HASH => self.delimited(node, T!["{"], T!["}"]),
             NodeKind::SUBSCRIPT => self.sequence(node),

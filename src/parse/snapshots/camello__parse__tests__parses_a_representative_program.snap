@@ -24,19 +24,20 @@ ROOT
       identifier "greet"
     SUB_SIGNATURE
       `(` "("
-      SIGNATURE_PARAM
-        SCALAR_VAR
-          `$` "$"
-          identifier "name"
-      `,` ","
-      SIGNATURE_PARAM
-        SCALAR_VAR
-          `$` "$"
-          identifier "greeting"
-        SIGNATURE_DEFAULT
-          `=` "="
-          LITERAL
-            string literal "'hello'"
+      LIST_EXPR
+        SIGNATURE_PARAM
+          SCALAR_VAR
+            `$` "$"
+            identifier "name"
+        `,` ","
+        SIGNATURE_PARAM
+          SCALAR_VAR
+            `$` "$"
+            identifier "greeting"
+          SIGNATURE_DEFAULT
+            `=` "="
+            LITERAL
+              string literal "'hello'"
       `)` ")"
     BLOCK
       `{` "{"
