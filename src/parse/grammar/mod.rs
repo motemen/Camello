@@ -373,6 +373,13 @@ fn signature_or_prototype(parser: &mut Parser<'_>) {
     parser.bump();
     parser.expect_term();
 
+    // The parameters go in a list of their own, so a signature has the shape
+    // every other bracketed list has — `( LIST_EXPR )` — and the formatter's
+    // one rule for brackets reaches it (docs/formatting.md INDENT-2). Held as
+    // direct children of the signature they were out of that rule's reach, and
+    // a signature the writer opened on a line of its own came back hung under
+    // the subroutine's name.
+    let list = parser.start();
     let mut ok = true;
     while !parser.at_end() && !parser.at(T![")"]) {
         // A signature parameter is a sigil and a name. `$1` is a perfectly good
@@ -424,12 +431,14 @@ fn signature_or_prototype(parser: &mut Parser<'_>) {
     }
 
     if ok && parser.at(T![")"]) && parser.diagnostic_count() == errors_before {
+        parser.complete(list, NodeKind::LIST_EXPR);
         parser.bump();
         parser.expect_operator();
         parser.complete(marker, NodeKind::SUB_SIGNATURE);
         return;
     }
 
+    parser.abandon(list);
     parser.abandon(marker);
     parser.rollback(checkpoint);
 

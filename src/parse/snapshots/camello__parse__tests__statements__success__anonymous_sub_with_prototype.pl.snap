@@ -15,6 +15,7 @@ ROOT
             `sub` "sub"
             SUB_SIGNATURE
               `(` "("
+              LIST_EXPR
               `)` ")"
             BLOCK
               `{` "{"

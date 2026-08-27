@@ -14,8 +14,9 @@ ROOT
       identifier "bar"
     SUB_SIGNATURE
       `(` "("
-      SIGNATURE_PARAM
-        `$` "$"
+      LIST_EXPR
+        SIGNATURE_PARAM
+          `$` "$"
       `)` ")"
     `;` ";"
   SUB_DEF
@@ -33,8 +34,9 @@ ROOT
       identifier "quux"
     SUB_SIGNATURE
       `(` "("
-      SIGNATURE_PARAM
-        `$` "$"
+      LIST_EXPR
+        SIGNATURE_PARAM
+          `$` "$"
       `)` ")"
     ATTR
       `:` ":"

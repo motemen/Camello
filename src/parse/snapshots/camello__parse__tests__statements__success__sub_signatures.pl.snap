@@ -9,19 +9,20 @@ ROOT
       identifier "greet"
     SUB_SIGNATURE
       `(` "("
-      SIGNATURE_PARAM
-        SCALAR_VAR
-          `$` "$"
-          identifier "name"
-      `,` ","
-      SIGNATURE_PARAM
-        SCALAR_VAR
-          `$` "$"
-          identifier "greeting"
-        SIGNATURE_DEFAULT
-          `=` "="
-          LITERAL
-            string literal "\"Hello\""
+      LIST_EXPR
+        SIGNATURE_PARAM
+          SCALAR_VAR
+            `$` "$"
+            identifier "name"
+        `,` ","
+        SIGNATURE_PARAM
+          SCALAR_VAR
+            `$` "$"
+            identifier "greeting"
+          SIGNATURE_DEFAULT
+            `=` "="
+            LITERAL
+              string literal "\"Hello\""
       `)` ")"
     BLOCK
       `{` "{"
@@ -36,27 +37,28 @@ ROOT
       identifier "flexible"
     SUB_SIGNATURE
       `(` "("
-      SIGNATURE_PARAM
-        SCALAR_VAR
+      LIST_EXPR
+        SIGNATURE_PARAM
+          SCALAR_VAR
+            `$` "$"
+            identifier "first"
+        `,` ","
+        SIGNATURE_PARAM
           `$` "$"
-          identifier "first"
-      `,` ","
-      SIGNATURE_PARAM
-        `$` "$"
-      `,` ","
-      SIGNATURE_PARAM
-        SCALAR_VAR
-          `$` "$"
-          identifier "third"
-        SIGNATURE_DEFAULT
-          `//=` "//="
-          LITERAL
-            number "3"
-      `,` ","
-      SIGNATURE_PARAM
-        ARRAY_VAR
-          `@` "@"
-          identifier "rest"
+        `,` ","
+        SIGNATURE_PARAM
+          SCALAR_VAR
+            `$` "$"
+            identifier "third"
+          SIGNATURE_DEFAULT
+            `//=` "//="
+            LITERAL
+              number "3"
+        `,` ","
+        SIGNATURE_PARAM
+          ARRAY_VAR
+            `@` "@"
+            identifier "rest"
       `)` ")"
     BLOCK
       `{` "{"
@@ -82,19 +84,20 @@ ROOT
       identifier "configure"
     SUB_SIGNATURE
       `(` "("
-      SIGNATURE_PARAM
-        SCALAR_VAR
-          `$` "$"
-          identifier "debug"
-        SIGNATURE_DEFAULT
-          `||=` "||="
-          LITERAL
-            number "0"
-      `,` ","
-      SIGNATURE_PARAM
-        HASH_VAR
-          `%` "%"
-          identifier "opts"
+      LIST_EXPR
+        SIGNATURE_PARAM
+          SCALAR_VAR
+            `$` "$"
+            identifier "debug"
+          SIGNATURE_DEFAULT
+            `||=` "||="
+            LITERAL
+              number "0"
+        `,` ","
+        SIGNATURE_PARAM
+          HASH_VAR
+            `%` "%"
+            identifier "opts"
       `)` ")"
     BLOCK
       `{` "{"
@@ -126,14 +129,15 @@ ROOT
       identifier "placeholder_only"
     SUB_SIGNATURE
       `(` "("
-      SIGNATURE_PARAM
-        `$` "$"
-      `,` ","
-      SIGNATURE_PARAM
-        `@` "@"
-      `,` ","
-      SIGNATURE_PARAM
-        `%` "%"
+      LIST_EXPR
+        SIGNATURE_PARAM
+          `$` "$"
+        `,` ","
+        SIGNATURE_PARAM
+          `@` "@"
+        `,` ","
+        SIGNATURE_PARAM
+          `%` "%"
       `)` ")"
     BLOCK
       `{` "{"
@@ -154,8 +158,9 @@ ROOT
       identifier "scalar_placeholder"
     SUB_SIGNATURE
       `(` "("
-      SIGNATURE_PARAM
-        `$` "$"
+      LIST_EXPR
+        SIGNATURE_PARAM
+          `$` "$"
       `)` ")"
     BLOCK
       `{` "{"
@@ -175,17 +180,18 @@ ROOT
       identifier "placeholder_default"
     SUB_SIGNATURE
       `(` "("
-      SIGNATURE_PARAM
-        SCALAR_VAR
+      LIST_EXPR
+        SIGNATURE_PARAM
+          SCALAR_VAR
+            `$` "$"
+            identifier "thing"
+        `,` ","
+        SIGNATURE_PARAM
           `$` "$"
-          identifier "thing"
-      `,` ","
-      SIGNATURE_PARAM
-        `$` "$"
-        SIGNATURE_DEFAULT
-          `=` "="
-          LITERAL
-            number "1"
+          SIGNATURE_DEFAULT
+            `=` "="
+            LITERAL
+              number "1"
       `)` ")"
     BLOCK
       `{` "{"
@@ -210,20 +216,21 @@ ROOT
       identifier "complex_default"
     SUB_SIGNATURE
       `(` "("
-      SIGNATURE_PARAM
-        SCALAR_VAR
-          `$` "$"
-          identifier "value"
-        SIGNATURE_DEFAULT
-          `=` "="
-          BINARY_EXPR
-            SCALAR_VAR
-              `$` "$"
-              identifier "primary"
-            `||` "||"
-            SCALAR_VAR
-              `$` "$"
-              identifier "fallback"
+      LIST_EXPR
+        SIGNATURE_PARAM
+          SCALAR_VAR
+            `$` "$"
+            identifier "value"
+          SIGNATURE_DEFAULT
+            `=` "="
+            BINARY_EXPR
+              SCALAR_VAR
+                `$` "$"
+                identifier "primary"
+              `||` "||"
+              SCALAR_VAR
+                `$` "$"
+                identifier "fallback"
       `)` ")"
     BLOCK
       `{` "{"
@@ -244,27 +251,28 @@ ROOT
       identifier "grouped_default"
     SUB_SIGNATURE
       `(` "("
-      SIGNATURE_PARAM
-        SCALAR_VAR
-          `$` "$"
-          identifier "name"
-        SIGNATURE_DEFAULT
-          `=` "="
-          PAREN_EXPR
-            `(` "("
-            LIST_EXPR
-              BINARY_EXPR
-                CALL_EXPR
-                  SUB_NAME
-                    identifier "default_name"
-                  ARG_LIST
-                    `(` "("
-                    LIST_EXPR
-                    `)` ")"
-                `or` "or"
-                LITERAL
-                  string literal "\"anon\""
-            `)` ")"
+      LIST_EXPR
+        SIGNATURE_PARAM
+          SCALAR_VAR
+            `$` "$"
+            identifier "name"
+          SIGNATURE_DEFAULT
+            `=` "="
+            PAREN_EXPR
+              `(` "("
+              LIST_EXPR
+                BINARY_EXPR
+                  CALL_EXPR
+                    SUB_NAME
+                      identifier "default_name"
+                    ARG_LIST
+                      `(` "("
+                      LIST_EXPR
+                      `)` ")"
+                  `or` "or"
+                  LITERAL
+                    string literal "\"anon\""
+              `)` ")"
       `)` ")"
     BLOCK
       `{` "{"
@@ -285,13 +293,14 @@ ROOT
       identifier "mixed_placeholders"
     SUB_SIGNATURE
       `(` "("
-      SIGNATURE_PARAM
-        `%` "%"
-      `,` ","
-      SIGNATURE_PARAM
-        SCALAR_VAR
-          `$` "$"
-          identifier "x"
+      LIST_EXPR
+        SIGNATURE_PARAM
+          `%` "%"
+        `,` ","
+        SIGNATURE_PARAM
+          SCALAR_VAR
+            `$` "$"
+            identifier "x"
       `)` ")"
     BLOCK
       `{` "{"
@@ -312,15 +321,16 @@ ROOT
       identifier "slurpy_end"
     SUB_SIGNATURE
       `(` "("
-      SIGNATURE_PARAM
-        SCALAR_VAR
-          `$` "$"
-          identifier "first"
-      `,` ","
-      SIGNATURE_PARAM
-        ARRAY_VAR
-          `@` "@"
-          identifier "rest"
+      LIST_EXPR
+        SIGNATURE_PARAM
+          SCALAR_VAR
+            `$` "$"
+            identifier "first"
+        `,` ","
+        SIGNATURE_PARAM
+          ARRAY_VAR
+            `@` "@"
+            identifier "rest"
       `)` ")"
     BLOCK
       `{` "{"
@@ -349,30 +359,31 @@ ROOT
       identifier "multiline"
     SUB_SIGNATURE
       `(` "("
-      SIGNATURE_PARAM
-        SCALAR_VAR
-          `$` "$"
-          identifier "alpha"
-      `,` ","
-      SIGNATURE_PARAM
-        SCALAR_VAR
-          `$` "$"
-          identifier "beta"
-        SIGNATURE_DEFAULT
-          `||=` "||="
-          CALL_EXPR
-            SUB_NAME
-              identifier "compute_default"
-            ARG_LIST
-              `(` "("
-              LIST_EXPR
-              `)` ")"
-      `,` ","
-      SIGNATURE_PARAM
-        HASH_VAR
-          `%` "%"
-          identifier "extra"
-      `,` ","
+      LIST_EXPR
+        SIGNATURE_PARAM
+          SCALAR_VAR
+            `$` "$"
+            identifier "alpha"
+        `,` ","
+        SIGNATURE_PARAM
+          SCALAR_VAR
+            `$` "$"
+            identifier "beta"
+          SIGNATURE_DEFAULT
+            `||=` "||="
+            CALL_EXPR
+              SUB_NAME
+                identifier "compute_default"
+              ARG_LIST
+                `(` "("
+                LIST_EXPR
+                `)` ")"
+        `,` ","
+        SIGNATURE_PARAM
+          HASH_VAR
+            `%` "%"
+            identifier "extra"
+        `,` ","
       `)` ")"
     BLOCK
       `{` "{"
@@ -417,19 +428,20 @@ ROOT
           `sub` "sub"
           SUB_SIGNATURE
             `(` "("
-            SIGNATURE_PARAM
-              SCALAR_VAR
-                `$` "$"
-                identifier "value"
-              SIGNATURE_DEFAULT
-                `||=` "||="
-                LITERAL
-                  number "10"
-            `,` ","
-            SIGNATURE_PARAM
-              HASH_VAR
-                `%` "%"
-                identifier "opts"
+            LIST_EXPR
+              SIGNATURE_PARAM
+                SCALAR_VAR
+                  `$` "$"
+                  identifier "value"
+                SIGNATURE_DEFAULT
+                  `||=` "||="
+                  LITERAL
+                    number "10"
+              `,` ","
+              SIGNATURE_PARAM
+                HASH_VAR
+                  `%` "%"
+                  identifier "opts"
             `)` ")"
           BLOCK
             `{` "{"
