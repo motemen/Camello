@@ -55,6 +55,9 @@ pub struct Checkpoint {
     /// without consuming anything has recorded events and still made no
     /// progress, which is exactly how a non-advancing loop hides.
     offset: Option<TextSize>,
+    /// Part of the parser's state like the rest, so an abandoned attempt does
+    /// not consume it on the way out.
+    at_pair_value: bool,
 }
 
 pub struct Parser<'a> {
@@ -68,6 +71,14 @@ pub struct Parser<'a> {
     steps_without_progress: u32,
     /// Markers open right now, which is how deeply the tree nests here.
     depth: u32,
+    /// The element now being parsed is the value of a `key =>` pair.
+    ///
+    /// Set by the list that bumped the `=>` and taken by the argument list of
+    /// the paren-less call inside it (`grammar/expr.rs`), which is the one
+    /// question about an element that cannot be asked from where it is answered:
+    /// by the time the call is reached the `=>` is consumed, and `Event::Token`
+    /// does not say what a consumed token was.
+    at_pair_value: bool,
     /// Set once a limit has been reached. From then on the parser reports end of
     /// input, every rule unwinds, and [`Self::drain_into_error`] puts what is
     /// left into one ERROR node.
@@ -97,6 +108,7 @@ impl<'a> Parser<'a> {
             diagnostics: Vec::new(),
             steps_without_progress: 0,
             depth: 0,
+            at_pair_value: false,
             stopped: false,
         }
     }
@@ -383,12 +395,23 @@ impl<'a> Parser<'a> {
 
     // ===== Speculation (the parser contract) =====
 
+    pub(crate) fn set_at_pair_value(&mut self, value: bool) {
+        self.at_pair_value = value;
+    }
+
+    /// Whether this is the value of a `key =>` pair, cleared by the asking so
+    /// that only the outermost call in the value can act on it.
+    pub(crate) fn take_at_pair_value(&mut self) -> bool {
+        std::mem::take(&mut self.at_pair_value)
+    }
+
     pub(crate) fn checkpoint(&mut self) -> Checkpoint {
         Checkpoint {
             events: self.events.len(),
             lexer: self.lexer.mark(),
             diagnostics: self.diagnostics.len(),
             offset: self.offset(),
+            at_pair_value: self.at_pair_value,
         }
     }
 
@@ -402,6 +425,7 @@ impl<'a> Parser<'a> {
         self.events.truncate(checkpoint.events);
         self.lexer.rollback(checkpoint.lexer);
         self.diagnostics.truncate(checkpoint.diagnostics);
+        self.at_pair_value = checkpoint.at_pair_value;
     }
 
     /// Number of diagnostics recorded so far, for a speculative parse to judge

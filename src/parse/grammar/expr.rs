@@ -35,11 +35,35 @@ pub(crate) fn list_expr(parser: &mut Parser<'_>, recovery: Recovery) -> Complete
 
 /// Parse elements until a terminator, without opening a node.
 pub(crate) fn list_contents(parser: &mut Parser<'_>, terminators: &[TokenKind]) {
+    list_elements(parser, terminators, false);
+}
+
+/// Does a `key => ...` pair start just past the separator the parser is on?
+///
+/// Three tokens of lookahead — the separator, a one-token key, and the `=>` —
+/// which is bounded and so allowed (the parser contract). A key spelled with
+/// more than one token, `$name => 1`, is not seen, and the list operator keeps
+/// everything as it always did.
+///
+/// The peek happens under whichever expectation the last element left, which
+/// settles nothing on its own: the answer is used to decide and never consumed,
+/// and `set_expect` rescans from the cursor before anything is (the lexer
+/// contract).
+fn pair_follows_separator(parser: &mut Parser<'_>) -> bool {
+    let key = matches!(parser.nth(1), Some(kind) if kind == TokenKind::IDENT
+        || kind == TokenKind::STRING
+        || kind == TokenKind::NUMBER
+        || kind.is_keyword());
+    key && parser.nth(2) == Some(T!["=>"])
+}
+
+fn list_elements(parser: &mut Parser<'_>, terminators: &[TokenKind], cut_at_pair: bool) {
     let recovery = if terminators.is_empty() {
         Recovery::Statement
     } else {
         Recovery::List
     };
+    let mut pair_value = false;
     loop {
         parser.expect_term();
         if parser.at_end() || parser.at_any(terminators) {
@@ -57,6 +81,7 @@ pub(crate) fn list_contents(parser: &mut Parser<'_>, terminators: &[TokenKind]) 
         }
 
         let before = parser.checkpoint();
+        parser.set_at_pair_value(pair_value);
         if expr(parser).is_none() {
             parser.rollback(before);
             parser.error_recover("expected an expression", recovery);
@@ -66,6 +91,13 @@ pub(crate) fn list_contents(parser: &mut Parser<'_>, terminators: &[TokenKind]) 
         }
 
         if parser.at_any(&[T![","], T!["=>"]]) {
+            // The `,` is deliberately left unconsumed: it separates two elements
+            // of the list around this one, and taking it here would leave that
+            // list with two elements and nothing between them — `f Strbbb`.
+            if cut_at_pair && parser.at(T![","]) && pair_follows_separator(parser) {
+                break;
+            }
+            pair_value = parser.at(T!["=>"]);
             parser.bump();
             // A trailing separator is allowed everywhere, which is one option on
             // one list parser rather than four implementations (the parser contract).
@@ -502,7 +534,7 @@ pub(crate) fn bareword_call(parser: &mut Parser<'_>) -> CompletedMarker {
                 unary(parser);
                 parser.complete(comparator, NodeKind::FILEHANDLE);
                 parser.expect_term();
-                list_arguments(parser);
+                list_arguments(parser, builtin.is_none());
                 return parser.complete(marker, NodeKind::LIST_CALL_EXPR);
             }
             if parser.at(T!["{"]) {
@@ -511,10 +543,10 @@ pub(crate) fn bareword_call(parser: &mut Parser<'_>) -> CompletedMarker {
                 if parser.at(T![","]) {
                     parser.bump();
                 }
-                list_arguments(parser);
+                list_arguments(parser, builtin.is_none());
                 return parser.complete(marker, NodeKind::BLOCK_CALL_EXPR);
             }
-            list_arguments(parser);
+            list_arguments(parser, builtin.is_none());
             parser.complete(marker, NodeKind::LIST_CALL_EXPR)
         }
         Shape::BlockOrTerm => {
@@ -551,7 +583,7 @@ pub(crate) fn bareword_call(parser: &mut Parser<'_>) -> CompletedMarker {
                 parser.complete(args, NodeKind::ARG_LIST);
                 parser.expect_operator();
             } else {
-                list_arguments(parser);
+                list_arguments(parser, builtin.is_none());
             }
             parser.complete(marker, NodeKind::LIST_CALL_EXPR)
         }
@@ -565,10 +597,10 @@ pub(crate) fn bareword_call(parser: &mut Parser<'_>) -> CompletedMarker {
                 filehandle(parser);
             }
             if block_call_follows(parser) {
-                list_arguments(parser);
+                list_arguments(parser, builtin.is_none());
                 return parser.complete(marker, NodeKind::BLOCK_CALL_EXPR);
             }
-            list_arguments(parser);
+            list_arguments(parser, builtin.is_none());
             parser.complete(marker, NodeKind::LIST_CALL_EXPR)
         }
     }
@@ -702,14 +734,32 @@ fn filehandle(parser: &mut Parser<'_>) {
     parser.expect_term();
 }
 
-fn list_arguments(parser: &mut Parser<'_>) {
+/// The arguments of a call written without parentheses.
+///
+/// GUESS: a bareword written as the value of a pair takes no argument past the
+/// next pair.
+/// Evidence: the name is not in the builtin table, so nothing is known about
+/// its arity; the list around it is already a table of pairs, because this call
+/// is the value of one; and the next element is a pair too. perl reads the
+/// arity off a prototype camello cannot see, and reading it the other way is
+/// reading it as `($)` rather than as no prototype at all — both are Perl, and
+/// neither is more the program than the other.
+/// Wrong: only the shape. The pairs stay in the call's argument list, where the
+/// one-element-per-line rule of the brackets around them does not reach them
+/// (docs/formatting.md INDENT-2).
+///
+/// Written after anything else — `getopt \@args, 'a|all' => \$all, ...` — the
+/// call keeps the whole list, which is what the option table of every `getopt`
+/// in the wild wants.
+fn list_arguments(parser: &mut Parser<'_>, unknown_name: bool) {
+    let cut_at_pair = parser.take_at_pair_value() && unknown_name;
     // A list operator's argument is not optional in the sense `shift`'s is:
     // `split //, $s` really does take a pattern.
     if !starts_argument(parser, false) {
         return;
     }
     let marker = parser.start();
-    list_contents(parser, &[]);
+    list_elements(parser, &[], cut_at_pair);
     parser.complete(marker, NodeKind::LIST_EXPR);
     parser.expect_operator();
 }

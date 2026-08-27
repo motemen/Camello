@@ -118,7 +118,13 @@ state, and the grammar owns it.
 - A name that is not in the table is a list operator (`GUESS:`), and a bareword
   whose declaration is not in sight is read by the rules at
   `grammar/expr.rs` — all of them labelled, because there is no symbol table to
-  ask.
+  ask. Such a list operator stops before the next `key => value` pair when it is
+  itself the value of one (`GUESS:`): where the list around it is already a
+  table of pairs, the next pair is read as the table's rather than as an
+  argument. Reading it either way is reading a prototype nobody can see — `($)`
+  against none at all — so neither is the faithful answer and the label says
+  which was chosen. `getopt \@args, 'a|all' => \$all` is not the value of a
+  pair and keeps its whole list.
 - A heredoc body is a token that lands where the line its marker is on ends,
   which is between two statements. Anything walking only child *nodes* drops it.
 
