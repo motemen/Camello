@@ -1,9 +1,10 @@
-# `f Str` is written after a `,` on a line it shares, and the brackets break, so
-# the formatter is about to give it a line of its own. Asking the input where it
-# sat answered "along the list" on the first pass and "on its own line" on the
-# second, and the lines under it moved between them: the layout has to be a
-# fixed point (the formatter contract, I2).
+# Inside brackets that break, every element takes a line at the brackets' level
+# — including the ones a paren-less call swallowed. Deciding that from where the
+# writer had put the call answered "along the list" on the first pass and "on a
+# line of its own" on the second, and the lines under it moved between them: the
+# layout has to be a fixed point (the formatter contract, I2).
 my $foo = (
-    'bar', f Str,
+    'bar',
+    f Str,
     baz => 2,
 );

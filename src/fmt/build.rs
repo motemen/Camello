@@ -534,7 +534,7 @@ impl<'a> Builder<'a> {
         let arguments = node
             .children()
             .find(|child| child.node_kind() == NodeKind::LIST_EXPR);
-        let mid_list = self.is_written_along_a_list(node);
+        let list_level = self.takes_the_list_level(node);
         let hanging = name
             .as_ref()
             .zip(arguments.as_ref())
@@ -547,9 +547,34 @@ impl<'a> Builder<'a> {
                 (is_identifier && !self.has_user_newline_between(&name, &arguments))
                     .then(|| name.to_string().width() + 1)
             });
-        let has_special_leading_argument = node
+        // A filehandle and a block are placed beside the name rather than in the
+        // argument list, so the list has no first argument for anything to hang
+        // under — and no level of its own either: `print $fh "a",\n "b"` is one
+        // call whose arguments wrap, wherever it is written.
+        let placed_beside_the_name = node
             .children()
             .any(|child| matches!(child.node_kind(), NodeKind::FILEHANDLE | NodeKind::BLOCK));
+        // A first argument that ends at a brace of its own gives no column to
+        // hang under either: `foo {\n 1;\n}` ends its line at the `}` rather
+        // than beside the name, and an offset counted from the name put what
+        // followed four columns right of the brace that closed it.
+        let leading_broken_block = arguments
+            .as_ref()
+            .and_then(|arguments| arguments.children().next())
+            .is_some_and(|first| self.owns_a_broken_block(&first));
+
+        // Zero puts the lines the call swallowed at the list's own level and
+        // shadows any hanging scope around them; `None` leaves them to the
+        // ordinary continuation indent.
+        let offset = if placed_beside_the_name {
+            None
+        } else if list_level {
+            Some(0)
+        } else if leading_broken_block {
+            None
+        } else {
+            hanging
+        };
 
         let mut parts = Vec::new();
         let mut previous: Option<SyntaxElement> = None;
@@ -565,19 +590,12 @@ impl<'a> Builder<'a> {
             }
             match &child {
                 SyntaxElement::Node(child)
-                    if child.node_kind() == NodeKind::LIST_EXPR
-                        && !has_special_leading_argument
-                        && (hanging.is_some() || mid_list) =>
+                    if child.node_kind() == NodeKind::LIST_EXPR && offset.is_some() =>
                 {
-                    // Zero for a call written along a list: the lines under it
-                    // keep the list's own level, and the offset of any hanging
-                    // scope around them is shadowed rather than added to.
-                    let columns = if mid_list {
-                        0
-                    } else {
-                        hanging.expect("checked above")
-                    };
-                    parts.push(Doc::hanging(columns, self.node(child)));
+                    parts.push(Doc::hanging(
+                        offset.expect("checked above"),
+                        self.node(child),
+                    ));
                 }
                 SyntaxElement::Node(child) => parts.push(self.node(child)),
                 SyntaxElement::Token(token) => parts.push(self.token(token)),
@@ -1094,25 +1112,24 @@ impl<'a> Builder<'a> {
         self.breaks_at_its_seed(&brackets, opening.as_ref())
     }
 
-    /// Is this call written along a list — after one of its separators, on the
-    /// same output line as what came before?
+    /// Should the lines this call swallowed sit at the level of the list around
+    /// it, rather than hang under its first argument?
     ///
-    /// Asked of the *output*, not of the input. A broken list gives every
-    /// element after a `,` a line of its own, so asking whether the writer put
-    /// it on one answers differently once the formatter has: `('x', f Str,` on
-    /// one line comes back as two, and a second pass would then take the other
-    /// branch. Layout has to be a fixed point (the formatter contract, I2). The
-    /// value of a `key => value` pair is the case that never moves — it is
-    /// written on its key's line and stays there — and it is the case the bug
-    /// was reported for.
-    fn is_written_along_a_list(&self, node: &SyntaxNode) -> bool {
-        let Some(separator) = list_separator_before(node) else {
-            return false;
-        };
-        if begins_its_line(node) {
-            return false;
+    /// A list whose brackets break puts every element on a line at the
+    /// brackets' level, so anything below one of them belongs there too — they
+    /// are elements to whoever wrote them, whatever camello made of them. Where
+    /// the brackets do not break, the output keeps the writer's own lines, and
+    /// a call written after a separator on a line it shares is the same case
+    /// one line at a time.
+    ///
+    /// The second half asks the input, and may: with the brackets flat there is
+    /// no break for the formatter to add, so the answer is the same on the next
+    /// pass (the formatter contract, I2). The first half does not ask at all.
+    fn takes_the_list_level(&self, node: &SyntaxNode) -> bool {
+        if self.element_of_a_broken_list(node) {
+            return true;
         }
-        separator == T!["=>"] || !self.element_of_a_broken_list(node)
+        list_separator_before(node).is_some() && !begins_its_line(node)
     }
 
     /// A closing delimiter, split into what was written inside it and the
