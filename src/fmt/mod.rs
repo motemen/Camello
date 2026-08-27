@@ -153,6 +153,7 @@ pub fn layout_seeds(source: &str) -> Vec<bool> {
             doc::Doc::Indent(body)
             | doc::Doc::Continuation(body)
             | doc::Doc::Rooted(body)
+            | doc::Doc::Statements(body)
             | doc::Doc::Hanging { body, .. } => collect(body, into),
             _ => {}
         }
