@@ -143,7 +143,10 @@ Dict[name => Str, slurpy HashRef[Str]]            # 他の鍵もあってよい
 | `has` | `Moose`, `Moo`, `Mouse`, それぞれの `::Role`, `Mojo::Base` ほか |
 | `args` / `args_pos` | `Smart::Args`, `Smart::Args::TypeTiny` |
 | `rw`/`ro`/... の宣言 | `Class::Accessor::Typed` |
-| `declare` / `class_type` / ... | `Type::Library`, `Type::Utils`, `MooseX::Types` |
+| `mk_accessors` 一族 | `Class::Accessor::Lite`, 同 `::Lazy`, `Class::Accessor`, 同 `::Fast`, 同 `::Faster` |
+| 型 DSL (`type` / `declare` / ...) | `Type::` / `Types::` / `MooseX::Types` の各一族、`*::Util::TypeConstraints` |
+
+型 DSL だけは、一覧ではなく**一族**で裏付けます（ANNOT-8d）。理由はそこに書きます。
 
 ### 3.2 `has` (ANNOT-2)
 
@@ -205,6 +208,14 @@ use Class::Accessor::Typed (
 引数リストがそのまま宣言です。`rw` / `ro` / `wo` とその `_lazy` 版が `has` と
 同じように属性になります。`new => 0` は生成されるコンストラクタを消します。
 
+- (ANNOT-4a) **必須かどうかの既定が Moose と逆です。** ここではスロットは
+  `optional` と書くか、`default` を与えるか、lazy であるかしない限り**必須**です。
+  生成される `new` が `missing mandatory parameter named '$x'` で死ぬからで、
+  これは推測ではなく規則です（[DIAG-13](#73-missing-argument-について)）。
+- (ANNOT-4b) `Frameworks` はファイル単位なので、同じファイルに `use Mouse` が
+  あっても、`new => 0` と書いたパッケージのコンストラクタは消えたままです。
+  自分で決めたパッケージには一括処理が触りません。
+
 ### 3.5 シグネチャ (ANNOT-5)
 
 ```perl
@@ -236,6 +247,9 @@ my $x = shift;                   # の連続（`shift || 'default'` も可）
 - (ANNOT-6c) 本体が他の場所で `@_` に触れていたら（`$_[0]`、`scalar @_`、
   裸の `shift` / `pop`、`goto &sub`）、引数リストは `Unknown` になり、
   個数について何も言いません。
+- (ANNOT-6d) ここで束縛された名前は**引数**であって、値を持つために選ばれた
+  ローカル変数ではありません。読まれていないときの扱いも別です
+  ([DIAG-12](#7-診断-diag))。
 
 ### 3.7 `Returns:` コメント (ANNOT-7)
 
@@ -276,6 +290,9 @@ sub notify { ... }
 ```perl
 declare 'PositiveInt', as Int, where { $_ > 0 };   # Int の部分型
 declare 'Handle', as InstanceOf['IO::Handle'];
+subtype Name => as Str;                            # `subtype` も `type` も同じ
+type FooBar  => as Foo | Bar;                      # 宣言済みの名前どうしの合併
+intersection 'Both', [Foo, Bar];                   # 格子に交差はないので Unknown
 class_type 'User', { class => 'MyApp::User' };     # InstanceOf
 role_type 'Loggable';                              # ConsumerOf
 enum 'Color', [qw(red green blue)];                # Enum
@@ -283,6 +300,32 @@ union 'Id', [Int, Str];                            # Int | Str
 ```
 
 `as T` が親を与え、`where` は無視されます。`as` を持たない `declare` は `Any` です。
+
+- (ANNOT-8a) **宣言された名前は、それを書いたすべてのアノテーションの後ろに立ちます。**
+  型の位置にある裸の名前は、どこも宣言していなければクラス名として読まれます
+  ([TYPE-3](#23-知らない名前はクラス名-type-3))。宣言があればその形に置き換わり、
+  `args my $n => Count` は `Count` の中身で検査されます。置き換えは宣言の中でも
+  起こるので、`as ArrayRef[Count]` や `as Foo | Bar` のように名前を重ねられます。
+- (ANNOT-8b) 名前はパッケージごとではなく**実行全体で一つ**です。型ライブラリは
+  インポートされるために存在し、インポートした側は裸の名前を書くからです。
+  同じ名前が二度宣言されていたら、最初のものが答えです。
+- (ANNOT-8c) 自分自身に解決する名前（`class_type 'DateTime'`）はクラス名のままです。
+  互いを指し合う名前（`type A => as B; type B => as A;`）は型ではないので `Unknown`
+  になります。スタックが溢れることはありません。
+- (ANNOT-8d) 認識されるのは、それを供給しうる `use` がある場合だけです
+  ([ANNOT-1](#31-どれもインポートで裏付けられている-annot-1))。ただしここだけは
+  一覧ではなく**一族**で判定します。`Type::*`、`Types::*`、`MooseX::Types*`、
+  `MouseX::Types*`、および `*::Util::TypeConstraints` のいずれかを `use` していれば、
+  このファイルは型 DSL を書いている、と読みます。
+
+  一覧にしないのは、この語彙（`declare` / `type` / `as` / `enum` / `class_type`）を
+  供給するディストリビューションが複数あり、しかも**どれが供給したかを言い当てるのが
+  難しい**からです。`Type::Utils` は `type` を `-all` のときしか出さず、
+  `Type::Library -base` は再エクスポートし、`MooseX::Types` は自前のものを持ち、
+  実際のファイルは定数の出どころである `Types::Standard` しか書いていないことが
+  よくあります。外すと**ライブラリ一つ分のアノテーションが丸ごと死にます**。
+  逆に緩めて外した場合の代償は、`Types::` を `use` しているファイルの裸の `enum` が
+  宣言として読まれることですが、それは何にも解決しないので黙ったままです。
 
 ### 3.9 スタブ (ANNOT-9)
 
@@ -302,6 +345,64 @@ sub selectrow_hashref ($self, $sql, $attr = undef, @bind) {}
 - スタブはただの Perl で、通常の宣言パスを通ります。新しい構文はありません。
 - あるパッケージにスタブがあれば、**実物の宣言を丸ごと置き換えます**。
 - スタブ自身に対して診断が出ることはありません。
+
+### 3.10 `Class::Accessor::Lite` 一族 (ANNOT-10)
+
+同じ「アクセサを生やす」でも、こちらは**型を一切持ちません**。読めるのは
+名前とアクセスの向き、そして `new` があるかどうかです。属性の型は `Any` ではなく
+`Unknown` です — モジュールが何も言っていないので、こちらも何も言いません。
+
+書き方は二つあります。`use` の引数リストが宣言であるもの、
+
+```perl
+use Class::Accessor::Lite (
+    new => 1,
+    rw  => [ qw(foo bar) ],
+    ro  => [ qw(baz) ],
+    wo  => [ qw(hoge) ],
+);
+
+use Class::Accessor::Lite::Lazy (
+    ro_lazy => [ 'hoge', { poyo => \&make_poyo, poe => 'make_poe' } ],
+    rw_lazy => { baz => 'make_baz' },
+);
+```
+
+と、クラスメソッドを呼ぶものです。
+
+```perl
+use base 'Class::Accessor';
+__PACKAGE__->follow_best_practice;
+__PACKAGE__->mk_accessors(qw(name role));
+
+use Class::Accessor::Lite;
+Class::Accessor::Lite->mk_new_and_accessors(qw(foo bar));
+```
+
+- (ANNOT-10a) `mk_accessors` / `mk_ro_accessors` / `mk_wo_accessors` /
+  `mk_lazy_accessors` / `mk_ro_lazy_accessors` / `mk_new` /
+  `mk_new_and_accessors` を読みます。アクセサが生えるのは、**その文が書かれている
+  パッケージ**です。`Class::Accessor::Lite->mk_accessors` は `caller` に生やし、
+  `Class::Accessor` のサブクラスは自分自身に対して呼ぶので、どちらも同じ答えに
+  なります。`Foo->mk_accessors(...)` のように別のクラス名を書いてあればそちらです。
+  invocant が変数（`$class->mk_accessors(...)`）ならどのパッケージか分からないので、
+  何もしません。
+- (ANNOT-10b) `follow_best_practice` はそれ**以降**の `mk_*` に効き、アクセサが
+  `get_x` / `set_x` になります。属性の名前は `x` のままです — ハッシュの鍵であり、
+  `new` に渡す名前でもあるからです。なお `x` 自体はもうメソッドではありませんが、
+  camello はそこまでは言いません（言わない方の間違いです）。
+- (ANNOT-10c) **`new` は名乗り出たときだけあります。** `new => 1` も `mk_new` も
+  `mk_new_and_accessors` もないクラスに `new` はなく、`Foo->new` は
+  `unknown-method` です。`use base 'Class::Accessor'` の場合は親が `new` を
+  持っているので、通常のメソッド解決でそちらに解決します。
+- (ANNOT-10d) この `new` は**渡されたハッシュをそのまま bless します**
+  ([INFER-2g](#42-コンストラクタ-infer-2))。アクセサのない鍵も通り、
+  `$self->{key}` として読めるので、`unknown-key` は `error` ではなく `warning`
+  です（[DIAG-6a](#71-重大度が動くもの)）。必須の鍵もありません — 渡されたものを
+  見ないので、足りないと気づきようがないからです。
+- (ANNOT-10e) `use Class::Accessor 'antlers'`（または `'moose-like'`）は `has` を
+  export する唯一の綴りなので、そのファイルは Moose 系として読まれます。そちらは
+  型を持つので、`unknown-key` も型検査も普通に効きます。
 
 ## 4. 推論 (INFER)
 
@@ -344,6 +445,14 @@ sub selectrow_hashref ($self, $sql, $attr = undef, @bind) {}
   `bless` の後は、その変数は `Unknown` になります（もう誰にも分からないからです）。
   親のコンストラクタを借りてから自分のクラスに bless し直す書き方は、これで
   正しく追えます。
+- (INFER-2f) 必須のスロットを渡していない呼び出しは `missing-argument` です。
+  どの規則で「必須」かはフレームワークごとに違います
+  （[DIAG-13](#73-missing-argument-について)）。
+- (INFER-2g) `Class::Accessor::Lite` 一族の `new` は**開いています**。渡された
+  ハッシュをそのまま bless するだけなので、アクセサのない鍵も
+  `$self->{key}` として読める正しいプログラムでありえます。インスタンスの型は
+  分かり、知らない鍵は `warning` として言いますが、足りない鍵は言いません
+  （[ANNOT-10d](#310-classaccessorlite-一族-annot-10)）。
 
 ### 4.3 変数 (INFER-3)
 
@@ -464,6 +573,8 @@ print $row->id;             # 診断なし
 | (DIAG-9) `return-mismatch` | error / warning | | `Returns:` と食い違う `return` |
 | (DIAG-10) `missing-annotation` | info | | 公開サブルーチンに何のアノテーションもない |
 | (DIAG-11) `unknown-type` | info | | どこも宣言していない型名・クラス名 |
+| (DIAG-12) `unused-parameter` | info | ○ | 本体が一度も読まない引数 |
+| (DIAG-13) `missing-argument` | error | | 必須の名前付き引数を渡していない呼び出し |
 
 ### 7.1 重大度が動くもの
 
@@ -473,11 +584,67 @@ print $row->id;             # 診断なし
   形であり、プログラムは動くからです。
 - (DIAG-5a) `type-mismatch` は、値がリテラルのとき `error` です（両側が
   書かれているからです）。推論された値のときは `warning` です。
+- (DIAG-6a) `unknown-key` は、コンストラクタが**開いている**とき `warning` です。
+  `Class::Accessor::Lite` の `new` は渡されたハッシュをそのまま bless するので、
+  アクセサの無い鍵も `$self->{key}` として読める正しいプログラムでありえます
+  ([ANNOT-10d](#310-classaccessorlite-一族-annot-10))。鍵を拒否するコンストラクタに
+  対しては、これは宣言された二つのものの矛盾なので `error` のままです。
 - (DIAG-9a) `return-mismatch` も同じ規則に従います。
 - (DIAG-x) パーサの推測（[architecture.md](architecture.md) の `GUESS:`）に
   依存する診断は一段下げて報告されます。
 
-### 7.2 `unknown-method` について
+### 7.2 `unused-variable` と `unused-parameter`
+
+読まれない名前が二つのコードに分かれているのは、止めたい理由が別だからです。
+
+- (DIAG-12a) **引数はシグネチャです。** `sub f ($self, $format, $indent)` の
+  `$indent` を本体が読まなくても、その名前は呼び出し側に何を渡すかを言い続けます。
+  消せば呼び出しが壊れるので、「宣言されて読まれない」とは別のことです。既定が
+  `info` なのはそのためで、既定の `--error-on error` では CI を落としません。
+  うるさければ `disable = ["unused-parameter"]` で丸ごと止められます。
+- (DIAG-12b) 引数とみなされるのは、シグネチャの引数、`args` / `args_pos` の項目、
+  そして `my (...) = @_` と `my $x = shift` / `my $x = shift @_` で束縛された名前です
+  ([ANNOT-6](#36-_-の展開-annot-6))。`my $x = shift @list` はリスト操作であって
+  引数ではありません。
+- (DIAG-12c) `catch ($e)` は構文が束縛するもので、本体が要求したものではないので、
+  どちらのコードでも報告されません。`foreach my $x` は普通のレキシカルです。
+- (DIAG-12d) **デストラクタのために持たれている値**は、どちらでも報告されません。
+
+```perl
+my $guard = Scope::Guard->new(sub { $lock->release });   # 読まれなくて当然
+```
+
+  判断の根拠は名前ではなく**何が作ったか**です。`Scope::Guard` と `Guard` の
+  コンストラクタ、および `guard` / `scope_guard` / `SCOPE_GUARD` という名前の
+  呼び出し（`Guard::guard { ... }` のような修飾付きも含む）がそれにあたります。
+  プロジェクト自身のガードクラスは `camello.toml` の `guard-classes` に書きます。
+
+### 7.3 `missing-argument` について
+
+呼び出しが必須の名前を渡していないというものです。名前付きの引数リストにだけ
+効きます（位置引数の個数は `arity` の仕事です）。
+
+- (DIAG-13a) 必須かどうかは**フレームワークごとに違い**、camello はそれぞれの
+  規則に従います。Moose 系は `required => 1` と書いたときだけ必須、
+  `Class::Accessor::Typed` は逆で、`optional` でも `default` でも lazy でもない
+  スロットが必須です（[ANNOT-4a](#34-classaccessortyped-annot-4)）。
+  `Smart::Args` は `optional` / `default` / `builder` が無ければ必須です。
+- (DIAG-13b) `error` なのは、どれも**実行時に die する**からです。Moose も
+  Smart::Args も `Class::Accessor::Typed` も、足りない引数でコンストラクタや
+  サブルーチンを呼ぶとそこで止まります。
+- (DIAG-13c) 報告は**呼び出しにつき一回**で、足りない名前を並べます。直すべきものが
+  引数リストという一箇所だからです。
+- (DIAG-13d) 引数リストが**読めないときは何も言いません**。`Foo->new(%args)`、
+  `Foo->new($args)`、`Foo->new({ ... })` のように書かれた鍵が一つも無いものは、
+  数えられるリストではありません。`BUILDARGS` があるクラスと、祖先に未知の
+  パッケージがあるクラスも同じく対象外です。
+- (DIAG-13e) ある名前が必須なのは、その名前の**すべての宣言**が必須と言っている
+  ときだけです。`has '+name' => (default => 'x')` は継承した属性を埋め直すもので、
+  親の `required => 1` はもう最後の言葉ではありません。
+- (DIAG-13f) 開いたコンストラクタ（[ANNOT-10d](#310-classaccessorlite-一族-annot-10)）は
+  何も必須にしません。渡されたものを見ないので、足りないと気づきようがないからです。
+
+### 7.4 `unknown-method` について
 
 これは `warning` です。クラスの側が正しくて、その値がそのクラスだという
 camello の判断の方が間違っている可能性が常にあるからです。基底クラスが
@@ -529,9 +696,15 @@ sub g {
 lib = ["lib", "t"]           # パスを指定せずに実行したときの対象
 stubs = ["stubs"]            # スタブのディレクトリ
 disable = ["unused-variable"]
-error-on = "warning"
+error-on = "warning"         # これ以上の重大度があれば終了ステータスは 1
+min-severity = "warning"     # これ未満の重大度は印字しない
+guard-classes = ["My::Lock"] # デストラクタのために持たれる値を作るクラス
 strict-annotations = true
 ```
+
+`min-severity` が落としたものは**丸ごと**落ちます。集計にも数えられず、終了
+ステータスも決めません。誰にも見せていない診断で実行を失敗させることはないからです。
+`--min-severity error` はエラーだけを印字します。
 
 テーブルが `[check]` 一つなのは、ここに書けることが `lint` と `typecheck` の
 両方について真だからです。コマンドラインのフラグが設定ファイルより優先されます

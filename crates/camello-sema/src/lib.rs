@@ -44,6 +44,9 @@ pub struct Options {
     pub strict_annotations: bool,
     /// Codes this project has turned off (`camello.toml`).
     pub disabled: Vec<Code>,
+    /// Classes a value is held of for its destructor, beyond the ones
+    /// [`scope::GUARD_NAMES`] knows (`camello.toml`).
+    pub guard_classes: Vec<String>,
 }
 
 impl Options {
@@ -51,8 +54,7 @@ impl Options {
     pub fn lint() -> Self {
         Options {
             types: false,
-            strict_annotations: false,
-            disabled: Vec::new(),
+            ..Options::default()
         }
     }
 
@@ -60,8 +62,7 @@ impl Options {
     pub fn typecheck() -> Self {
         Options {
             types: true,
-            strict_annotations: false,
-            disabled: Vec::new(),
+            ..Options::default()
         }
     }
 
@@ -194,6 +195,16 @@ impl Analysis {
         &self.program
     }
 
+    /// Close the declaration phase: every file is in, so what one file's type
+    /// library declares can be substituted into what another file annotated.
+    ///
+    /// Called once, between the two phases. Calling it twice is harmless — the
+    /// substitution is idempotent, because a name that resolved is no longer a
+    /// name.
+    pub fn link(&mut self) {
+        self.program.link_named_types();
+    }
+
     /// Everything the checker has to say about one file.
     ///
     /// Parsing is the caller's, because a caller that formats and checks the
@@ -206,7 +217,7 @@ impl Analysis {
         source: &str,
         options: &Options,
     ) -> Vec<Diagnostic> {
-        let mut diagnostics = scope::analyse(root, source).diagnostics;
+        let mut diagnostics = scope::analyse(root, source, &options.guard_classes).diagnostics;
         if let Some(file) = self.program.index_of(path) {
             diagnostics.extend(arity::analyse(root, file, &self.program));
             if options.types {
@@ -286,6 +297,7 @@ pub fn check_file(path: &Path, source: &str, options: &Options) -> Vec<Diagnosti
     let parsed = camello_syntax::parse::parse(source);
     let mut analysis = Analysis::new();
     analysis.declare(path, &parsed.syntax(), true);
+    analysis.link();
     analysis.check(path, &parsed.syntax(), source, options)
 }
 

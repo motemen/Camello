@@ -658,7 +658,13 @@ impl Pass<'_> {
         };
         let params = symbol.params.clone();
         let returns = symbol.returns.clone();
-        self.check_arguments(&params, &call.pairs(), &arguments, &name);
+        self.check_arguments(
+            &params,
+            &call.pairs(),
+            &arguments,
+            &name,
+            call.callee_range(),
+        );
         returns.scalar
     }
 
@@ -716,7 +722,13 @@ impl Pass<'_> {
                         &mut self.diagnostics,
                     );
                 }
-                self.check_arguments(&params, &call.pairs(), &arguments, &method);
+                self.check_arguments(
+                    &params,
+                    &call.pairs(),
+                    &arguments,
+                    &method,
+                    call.method_range(),
+                );
                 // `Foo->new(...)` is an `InstanceOf['Foo']` (`docs/typecheck.md`,
                 // "Inference"). Only where the run actually read a `sub new`,
                 // so a class it never saw stays `Unknown`; a `Returns:` wins
@@ -733,7 +745,7 @@ impl Pass<'_> {
             }
             MethodLookup::Attribute(attribute) => attribute.ty.clone(),
             MethodLookup::Constructor => {
-                self.check_constructor(&class, &call.pairs());
+                self.check_constructor(&class, &call.pairs(), call.method_range());
                 Type::InstanceOf(class)
             }
             MethodLookup::Universal | MethodLookup::Unknown => Type::Unknown,
@@ -859,7 +871,7 @@ impl Pass<'_> {
     }
 
     /// A `Foo->new(key => value)` against the attributes `Foo` declares.
-    fn check_constructor(&mut self, class: &str, pairs: &[ast::Arg]) {
+    fn check_constructor(&mut self, class: &str, pairs: &[ast::Arg], range: TextRange) {
         if self
             .program
             .facts(class)
@@ -870,28 +882,90 @@ impl Pass<'_> {
             // `BUILDARGS` rewrites what it was given before anything sees it.
             return;
         }
+        // The `Class::Accessor::Lite` constructor blesses the hash it was
+        // handed rather than checking it, so a key with no accessor behind it
+        // is still readable as `$self->{key}` and the program may well be
+        // right. Worth saying, at one severity below the contradiction it
+        // would be against a constructor that rejects the key.
+        let open = self
+            .program
+            .facts(class)
+            .iter()
+            .any(|facts| facts.open_constructor);
         let attributes = self.program.attributes(class);
         if attributes.is_empty() {
             return;
         }
+        let mut given: Vec<&str> = Vec::new();
         for pair in pairs {
             let Some(key) = pair.key() else {
                 // Anything that is not a written-down key means the argument
                 // list is not one this can count.
                 return;
             };
+            given.push(key);
             match attributes.iter().find(|attribute| attribute.name == key) {
                 Some(attribute) => {
                     let value = self.type_of(pair.node());
                     self.check_value(&value, &attribute.ty, pair.node(), &format!("`{key}`"));
                 }
-                None => self.diagnostics.push(Diagnostic::new(
-                    Code::UnknownKey,
-                    pair.range(),
-                    format!("`{class}` declares no attribute `{key}`"),
-                )),
+                None => {
+                    let severity = if open {
+                        Severity::Warning
+                    } else {
+                        Code::UnknownKey.default_severity()
+                    };
+                    self.diagnostics.push(
+                        Diagnostic::new(
+                            Code::UnknownKey,
+                            pair.range(),
+                            format!("`{class}` declares no attribute `{key}`"),
+                        )
+                        .at(severity),
+                    );
+                }
             }
         }
+        // An open constructor requires nothing: it never looks at what it was
+        // given, so there is nothing it can find missing.
+        if open {
+            return;
+        }
+        // A name is required only when *every* declaration of it says so.
+        // `has '+name' => (default => 'x')` restates an inherited attribute to
+        // fill it in, so the parent's `required => 1` is no longer the last
+        // word on it — and the `+` is part of the spelling, not of the name.
+        let mut missing: Vec<&str> = Vec::new();
+        for attribute in &attributes {
+            let name = attribute.name.trim_start_matches('+');
+            if given.contains(&name) || missing.contains(&name) {
+                continue;
+            }
+            let filled = attributes.iter().any(|other| {
+                other.name.trim_start_matches('+') == name && (other.defaulted || !other.required)
+            });
+            if !filled {
+                missing.push(name);
+            }
+        }
+        self.report_missing(&missing, range, &format!("`{class}`"));
+    }
+
+    /// The names a call had to pass and did not (`docs/types.md`, DIAG-13).
+    ///
+    /// Reported once, against the call, rather than once per name: what the
+    /// reader has to fix is the argument list, and a constructor with four
+    /// required slots would otherwise be four diagnostics on one line.
+    fn report_missing(&mut self, missing: &[&str], range: TextRange, what: &str) {
+        if missing.is_empty() {
+            return;
+        }
+        let names: Vec<String> = missing.iter().map(|name| format!("`{name}`")).collect();
+        self.diagnostics.push(Diagnostic::new(
+            Code::MissingArgument,
+            range,
+            format!("{what} requires {}, not passed here", names.join(", ")),
+        ));
     }
 
     /// A call's arguments against the callee's declared parameter types.
@@ -901,13 +975,16 @@ impl Pass<'_> {
         pairs: &[ast::Arg],
         arguments: &[SyntaxNode],
         callee: &str,
+        range: TextRange,
     ) {
         match params {
             Params::Named { params, .. } => {
+                let mut given: Vec<&str> = Vec::new();
                 for pair in pairs {
                     let Some(key) = pair.key() else {
                         return;
                     };
+                    given.push(key);
                     match params.iter().find(|param| param.name == format!("${key}")) {
                         Some(param) => {
                             let value = self.type_of(pair.node());
@@ -925,6 +1002,15 @@ impl Pass<'_> {
                         )),
                     }
                 }
+                // `args` dies on a missing one, the same way it dies on a
+                // count a signature cannot take.
+                let missing: Vec<&str> = params
+                    .iter()
+                    .filter(|param| !param.optional && !param.ty.is_optional())
+                    .map(|param| param.name.trim_start_matches('$'))
+                    .filter(|name| !given.contains(name))
+                    .collect();
+                self.report_missing(&missing, range, &format!("`{callee}`"));
             }
             Params::Positional {
                 params, invocant, ..

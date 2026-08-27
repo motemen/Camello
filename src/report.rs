@@ -36,6 +36,10 @@ impl Format {
 pub struct Request {
     pub paths: Vec<PathBuf>,
     pub error_on: Severity,
+    /// The quietest severity worth printing. What it drops is dropped whole:
+    /// it is not counted in the summary and it does not decide the exit
+    /// status, because a diagnostic nobody was shown is not one to fail on.
+    pub min_severity: Severity,
     pub format: Format,
     pub extensions: String,
     pub jobs: Option<usize>,
@@ -137,6 +141,9 @@ pub fn run(request: &Request) -> Result<()> {
     if request.options.types {
         analysis.resolve_dependencies();
     }
+    // The declaration phase is closed: a type library read anywhere in the run
+    // now stands behind every annotation that named it.
+    analysis.link();
 
     let reports = crate::cli::in_parallel(&files, request.jobs, |(path, inline)| {
         check_one(
@@ -172,6 +179,9 @@ pub fn run(request: &Request) -> Result<()> {
         }
         let index = LineIndex::new(&report.source);
         for diagnostic in &report.diagnostics {
+            if diagnostic.severity < request.min_severity {
+                continue;
+            }
             counts[diagnostic.severity as usize] += 1;
             let position = index.position(&report.source, usize::from(diagnostic.range.start()));
             let end = index.position(&report.source, usize::from(diagnostic.range.end()));

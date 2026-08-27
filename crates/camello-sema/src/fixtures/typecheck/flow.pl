@@ -24,6 +24,52 @@ $widget->render;
 $widget->label;
 $widget->missing;               #~ warning unknown-method: declares no method `missing`
 
+# A slot the class requires and the call does not pass: `new` dies on it, so
+# both sides are written down and it is an error. Named once, against the call,
+# because what has to be fixed is the argument list.
+package Required;
+use Moose;
+has must  => (is => 'ro', isa => 'Str', required => 1);
+has spare => (is => 'ro', isa => 'Str', required => 1, default => 'x');
+has maybe => (is => 'ro', isa => 'Str');
+
+package Softer;
+use Moose;
+extends 'Required';
+# Restating an inherited attribute to fill it in: the parent's `required => 1`
+# is no longer the last word on it.
+has '+must' => (default => 'y');
+
+package main;
+
+Required->new(must => 'x');
+Required->new(maybe => 'x');    #~ error missing-argument: requires `must`
+Required->new;                  #~ error missing-argument: requires `must`
+Softer->new;
+
+# An argument list this cannot read is one it says nothing about.
+my %options = (must => 'x');
+Required->new(%options);
+Required->new({ must => 'x' });
+
+# `args` dies on a missing name too, and `default` / `optional` are what say
+# a name may be left out.
+package Named;
+use Smart::Args qw(args);
+sub greet {
+    args my $self,
+         my $who   => 'Str',
+         my $times => { isa => 'Int', default => 1 },
+         my $loud  => { isa => 'Bool', optional => 1 };
+    return "$who $times $loud";
+}
+
+package main;
+
+my $named = bless {}, 'Named';
+$named->greet(who => 'x');
+$named->greet(times => 2);      #~ error missing-argument: requires `who`
+
 # `Unknown` propagates: an operation on something nobody typed says nothing.
 my $opaque = get_it();
 $opaque->anything_at_all;

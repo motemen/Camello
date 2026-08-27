@@ -12,6 +12,8 @@
 //! stubs = ["stubs"]
 //! disable = ["unused-variable"]
 //! error-on = "warning"
+//! min-severity = "warning"
+//! guard-classes = ["My::Lock"]
 //! strict-annotations = true
 //! ```
 //!
@@ -47,6 +49,12 @@ pub struct Check {
     pub disable: Vec<String>,
     /// The severity that makes a run fail.
     pub error_on: Option<String>,
+    /// The quietest severity worth printing.
+    pub min_severity: Option<String>,
+    /// Classes this project holds a value of for its destructor, on top of the
+    /// ones the checker already knows.
+    #[serde(default)]
+    pub guard_classes: Vec<String>,
     /// Report a public sub with no annotation.
     #[serde(default)]
     pub strict_annotations: bool,
