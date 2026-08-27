@@ -102,8 +102,16 @@ pub enum Doc {
     /// Continuation lines begin this many columns after the statement's base
     /// indentation. Bareword calls use the width of `name ` so arguments hang
     /// from the first argument rather than from an unrelated fixed tab stop.
+    ///
+    /// `None` asks for wherever the scope around it hangs from rather than for
+    /// a column of its own: a call written along a list takes the lines it
+    /// swallowed back to the list's own column. `Some(0)` is the opposite
+    /// answer and not the same one — no hanging column at all, which is what a
+    /// bracket's contents ask for. They are placed from the bracket, and the
+    /// call the bracket was written in hangs its arguments somewhere they have
+    /// nothing to do with.
     Hanging {
-        columns: usize,
+        columns: Option<usize>,
         body: Box<Doc>,
     },
     /// A construct placed from the line it begins on rather than from the
@@ -228,7 +236,7 @@ impl Doc {
         Doc::Rooted(Box::new(body))
     }
 
-    pub fn hanging(columns: usize, body: Doc) -> Doc {
+    pub fn hanging(columns: Option<usize>, body: Doc) -> Doc {
         Doc::Hanging {
             columns,
             body: Box::new(body),
