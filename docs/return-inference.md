@@ -395,6 +395,15 @@ Fixed(Vec<Type>)   (Str, Int)       — a known length, a type per slot
 Of(Type)           (Row ...)        — any length, one element type   [new]
 ```
 
+*(Superseded: two shapes of the same length are kept apart as
+`Either`, not joined slot-wise — see ANNOT-7e in [types.md](types.md).
+The correlation between the slots of `(Value, Undef) | (Undef, Error)`
+is the whole content of the idiom, and the slot-wise answer says the two
+slots vary independently, which is what it promises they do not. Slot-wise
+is still what a *binding* gets, because nothing carries the correlation
+past the assignment, and it is what more than `ListShape::ALTERNATIVES`
+alternatives collapse to.)*
+
 The join of two shapes: both `Fixed` of the same length is slot-wise
 union; `Fixed` against `Fixed` of another length, or against `Of`, is
 `Of(union of every member)`; anything against `Unknown` is `Unknown`.
