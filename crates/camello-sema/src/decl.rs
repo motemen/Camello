@@ -981,6 +981,89 @@ fn imported_names(arguments: &SyntaxNode) -> Vec<String> {
 
 // ===== Parameter lists =====
 
+/// A sub's declaration as one line, the way [types.md](../../../docs/types.md)
+/// spells types.
+///
+/// One renderer rather than two, because hover and completion show the same
+/// thing in two places and a signature that reads differently in each is a
+/// signature the reader has to learn twice (`docs/lsp.md`, "Hover").
+///
+/// Silent where the checker is silent: a sub with no signature, no `args` and
+/// no `Returns:` renders as its name and nothing else, rather than as a lie
+/// about taking no arguments.
+#[must_use]
+pub fn signature_of(symbol: &SubDecl) -> String {
+    let mut out = String::new();
+    if !symbol.package.is_empty() && symbol.package != "main" {
+        out.push_str(&symbol.package);
+        out.push_str("::");
+    }
+    out.push_str(&symbol.name);
+    match &symbol.params {
+        Params::Unknown => {}
+        Params::Positional { params, slurpy, .. } => {
+            let mut parts: Vec<String> = params.iter().map(render_param).collect();
+            if *slurpy {
+                parts.push("...".to_string());
+            }
+            out.push('(');
+            out.push_str(&parts.join(", "));
+            out.push(')');
+        }
+        Params::Named {
+            params, invocant, ..
+        } => {
+            let mut parts: Vec<String> = Vec::new();
+            let mut rest = params.iter();
+            if *invocant {
+                if let Some(first) = rest.next() {
+                    parts.push(render_param(first));
+                }
+            }
+            let named: Vec<String> = rest
+                .map(|param| format!("{} => {}", param.name.trim_start_matches('$'), param.ty))
+                .collect();
+            out.push('(');
+            parts.push(format!("{{ {} }}", named.join(", ")));
+            out.push_str(&parts.join(", "));
+            out.push(')');
+        }
+    }
+    let returns = &symbol.returns;
+    let scalar = (!returns.scalar.is_unknown()).then(|| returns.scalar.to_string());
+    let list = match &returns.list {
+        annotate::ListShape::Unknown => None,
+        annotate::ListShape::Nothing => Some("()".to_string()),
+        annotate::ListShape::Fixed(types) => Some(format!(
+            "({})",
+            types
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
+    };
+    match (scalar, list) {
+        (Some(scalar), Some(list)) => out.push_str(&format!(" -> {scalar} | list: {list}")),
+        (Some(scalar), None) => out.push_str(&format!(" -> {scalar}")),
+        (None, Some(list)) => out.push_str(&format!(" -> list: {list}")),
+        (None, None) => {}
+    }
+    out
+}
+
+fn render_param(param: &Param) -> String {
+    let mut text = param.name.clone();
+    if param.optional {
+        text.push('?');
+    }
+    if !param.ty.is_unknown() {
+        text.push_str(" : ");
+        text.push_str(&param.ty.to_string());
+    }
+    text
+}
+
 /// What a sub's shape says about the arguments it takes.
 ///
 /// Four recognisers, in the order the design document lists them. The first

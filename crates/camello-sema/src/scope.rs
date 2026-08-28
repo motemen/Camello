@@ -206,9 +206,76 @@ struct Scope {
     names: HashMap<(Sigil, String), usize>,
 }
 
+/// One binding, as the walk resolved it (`docs/lsp.md`, "What sema must newly
+/// expose").
+///
+/// The pass's own [`Binding`] carries the bookkeeping — whether it was read,
+/// whether it is a guard — that only the pass has a use for. What leaves is
+/// where the name was written and what wrote it, which is what hover, go-to
+/// -definition and a later rename all ask for.
+#[derive(Debug, Clone)]
+pub struct BindingInfo {
+    pub sigil: Sigil,
+    pub name: String,
+    pub range: TextRange,
+    pub kind: BindingKind,
+}
+
+impl BindingInfo {
+    /// `$x`, `@list` — the name as it is written.
+    #[must_use]
+    pub fn display(&self) -> String {
+        format!("{}{}", self.sigil.as_str(), self.name)
+    }
+}
+
+/// One reference, and the binding it resolved to.
+#[derive(Debug, Clone, Copy)]
+pub struct Reference {
+    pub range: TextRange,
+    /// An index into [`ScopeReport::bindings`].
+    pub binding: usize,
+}
+
 /// The result of walking one file's scopes.
+///
+/// The diagnostics are what `camello check` reads. The resolution table
+/// beside them is what an editor reads: `scope.rs` resolved every reference
+/// already, and until `docs/lsp.md` asked for it the answer died in a local
+/// (`docs/lsp.md`, "The scope table").
 pub struct ScopeReport {
     pub diagnostics: Vec<Diagnostic>,
+    pub bindings: Vec<BindingInfo>,
+    pub references: Vec<Reference>,
+}
+
+impl ScopeReport {
+    /// The binding a reference at `offset` resolves to, and the reference's
+    /// own range.
+    ///
+    /// The innermost match wins, which for a lexical reference is the only
+    /// match: reference ranges do not nest.
+    #[must_use]
+    pub fn reference_at(&self, offset: TextSize) -> Option<(&Reference, &BindingInfo)> {
+        self.references
+            .iter()
+            .filter(|reference| reference.range.contains_inclusive(offset))
+            .min_by_key(|reference| reference.range.len())
+            .and_then(|reference| {
+                self.bindings
+                    .get(reference.binding)
+                    .map(|binding| (reference, binding))
+            })
+    }
+
+    /// The binding *declared* at `offset`, for a hover over the `my` itself.
+    #[must_use]
+    pub fn binding_at(&self, offset: TextSize) -> Option<&BindingInfo> {
+        self.bindings
+            .iter()
+            .filter(|binding| !binding.range.is_empty() && binding.range.contains_inclusive(offset))
+            .min_by_key(|binding| binding.range.len())
+    }
 }
 
 /// Walk a file and report what its scopes say.
@@ -219,8 +286,20 @@ pub struct ScopeReport {
 pub fn analyse(root: &SyntaxNode, source: &str, guards: &[String]) -> ScopeReport {
     let mut pass = Pass::new(source, guards, StrictRegions::of(root));
     pass.run(root);
+    let bindings = pass
+        .bindings
+        .iter()
+        .map(|binding| BindingInfo {
+            sigil: binding.sigil,
+            name: binding.name.clone(),
+            range: binding.range,
+            kind: binding.kind,
+        })
+        .collect();
     ScopeReport {
         diagnostics: pass.diagnostics,
+        bindings,
+        references: pass.references,
     }
 }
 
@@ -321,6 +400,10 @@ struct Pass<'a> {
     guards: &'a [String],
     bindings: Vec<Binding>,
     scopes: Vec<Scope>,
+    /// Every reference that resolved, and to which binding — the resolution
+    /// the pass performs anyway, kept instead of discarded
+    /// (`docs/lsp.md`, "The scope table").
+    references: Vec<Reference>,
     diagnostics: Vec<Diagnostic>,
     strict: StrictRegions,
     /// Whether the heredoc body starting here interpolates, keyed by the body
@@ -335,6 +418,7 @@ impl<'a> Pass<'a> {
             guards,
             bindings: Vec::new(),
             scopes: Vec::new(),
+            references: Vec::new(),
             diagnostics: Vec::new(),
             strict,
             heredocs: HashMap::new(),
@@ -445,15 +529,31 @@ impl<'a> Pass<'a> {
         None
     }
 
-    fn resolve(&mut self, sigil: Sigil, name: &str) -> bool {
+    /// The binding a name resolves to here, marked as read on the way past.
+    ///
+    /// It answers with *which* binding rather than with whether there was
+    /// one, because that is the answer an editor wants and the pass had it
+    /// already (`docs/lsp.md`, "The scope table").
+    fn resolve(&mut self, sigil: Sigil, name: &str) -> Option<usize> {
         let key = (sigil, name.to_string());
         for scope in self.scopes.iter().rev() {
             if let Some(index) = scope.names.get(&key) {
-                self.bindings[*index].used = true;
-                return true;
+                let index = *index;
+                self.bindings[index].used = true;
+                return Some(index);
             }
         }
-        false
+        None
+    }
+
+    /// Record where a reference was written and what it reached.
+    ///
+    /// A zero-width range is one of the implicit bindings perl makes, which
+    /// nothing in the file declared and nothing can be sent to.
+    fn record_reference(&mut self, binding: Option<usize>, range: TextRange) {
+        if let Some(binding) = binding {
+            self.references.push(Reference { binding, range });
+        }
     }
 
     fn line_of(&self, offset: TextSize) -> usize {
@@ -475,10 +575,13 @@ impl<'a> Pass<'a> {
             || name.starts_with('^')
             || ALWAYS_IN_SCOPE.contains(&name)
         {
-            let _ = self.resolve(sigil, name);
+            let found = self.resolve(sigil, name);
+            self.record_reference(found, range);
             return;
         }
-        if self.resolve(sigil, name) || !self.strict.at(range.start()) {
+        let found = self.resolve(sigil, name);
+        self.record_reference(found, range);
+        if found.is_some() || !self.strict.at(range.start()) {
             return;
         }
         let display = format!("{}{name}", sigil.as_str());

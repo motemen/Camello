@@ -117,6 +117,48 @@ which files a directory walk picks up, and `--encoding` for sources that are not
 UTF-8 (the file is written back in the encoding it was read in). `camello
 format --help` lists them all.
 
+## Edit
+
+```bash
+camello lsp        # speaks the Language Server Protocol over stdin/stdout
+```
+
+One binary, no separate executable to find or version-match. In an editor it
+publishes the same diagnostics `camello check` prints — as you type, 300 ms
+after the last keystroke and at once on save — and adds what only an editor can
+ask for: hover shows the inferred type of the expression under the cursor or
+the signature of the sub, `->` completes the methods the receiver's class
+actually declares, in the order perl would find them, and go-to-definition and
+an outline come off the same declarations. `textDocument/formatting` is
+`camello format` over the buffer.
+
+It keeps its silence discipline in the editor: where the checker knows nothing,
+hover shows nothing and completion offers nothing, because an empty list
+teaches you what camello can and cannot see, and a list of every sub name in
+the repository teaches you to ignore the feature.
+
+The one thing it does that `camello check` will not: it checks a file that does
+not parse. A buffer being edited is broken most of the time, and the answers
+about the parts you are not touching are still the answers you want — so a
+diagnostic near the damage is dropped and the rest of the file keeps its full
+signal.
+
+It reads the same `camello.toml` as `camello check`. A thin VS Code client is
+in [editors/vscode](editors/vscode); every other editor needs nothing but the
+command:
+
+```lua
+cmd = { "camello", "lsp" }, filetypes = { "perl" }   -- nvim-lspconfig
+```
+
+```elisp
+(add-to-list 'eglot-server-programs '(perl-mode . ("camello" "lsp")))
+```
+
+[docs/lsp.md](docs/lsp.md) is the design, and says what it deliberately does
+not do yet — range formatting, rename, find-references, completion beyond
+methods.
+
 ## What it does to your code
 
 The rules — indentation, line breaking, spacing, blank lines, comment handling,
@@ -141,10 +183,13 @@ crates, and the split is enforced by Cargo rather than by review:
 | `crates/camello-syntax` | vocabulary, scanner, event-recording parser, AST views |
 | `crates/camello-fmt` | the Doc IR and its renderer |
 | `crates/camello-sema` | symbols, types, flow — the checker |
+| `crates/camello-lsp` | documents, the workspace index, the LSP handlers |
 | `camello` (root) | the command line, and the invariants that compare the two |
 
 Nothing under `camello-sema` can reach `camello-fmt`: a checker has no use for
-the Doc IR, and a build of one should not carry it. The rules those layers hold
+the Doc IR, and a build of one should not carry it. `camello-lsp` is the one
+crate that sees both, because an editor asks both questions; it sits above
+them, the way the root crate does. The rules those layers hold
 to, which their comments refer to by name, are in
 [docs/contracts.md](docs/contracts.md).
 
@@ -163,9 +208,11 @@ Snapshot and fixture tests live beside the code they cover. Beyond them:
 | `scripts/diff` | the diff for one file or snippet, while iterating |
 | `scripts/perl-check` | `perl -c` and `B::Deparse` over the fixtures |
 | `scripts/corpus-check` | picks a corpus out of `@INC` and asks the two below about it; `--check` asks the checker instead |
+| `scripts/lsp-bar` | the language server's corpus bars: index all of `@INC`, and time an edit loop |
 | `scripts/generate-builtins` | regenerate the builtin table from perl's prototypes |
 | `camello dev check` | the invariants, asked of arbitrary source |
 | `camello dev perl-deparse` | perl's own reading of the input against the output |
+| `camello dev index` | build the language server's index over a tree, and say what it cost |
 
 `camello dev` is a hidden subcommand holding the tools used to work on camello
 itself. It is not an interface to depend on.

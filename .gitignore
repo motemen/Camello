@@ -2,3 +2,8 @@
 *.pending-snap
 test_*.pl
 .camello-cache/
+
+# The VS Code extension's build products (editors/vscode)
+node_modules/
+editors/vscode/out/
+editors/vscode/*.vsix
