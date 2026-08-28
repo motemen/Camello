@@ -279,3 +279,42 @@ fn the_harness_notices_a_missing_diagnostic() {
     assert_eq!(expectations[0].code, Code::UndeclaredVariable);
     assert_eq!(expectations[0].contains.as_deref(), Some("`$nope`"));
 }
+
+#[test]
+fn a_list_operator_chain_is_walked_once_per_argument() {
+    // `header nullable Str, 'k1' => header nullable Str, ...` is not a flat
+    // list of entries: a Perl list operator swallows everything to its right,
+    // so thirty entries are thirty nested calls. Typing each argument twice —
+    // once on the way in and once against the callee's parameters — therefore
+    // cost 2^30 walks, and a hundred-key `Dict` in a real `Type::Library` was
+    // not a slow file but a run that never ended.
+    let mut source = String::from(
+        "package Rows;\n\
+         use strict;\n\
+         use warnings;\n\
+         sub Str { return 'Str' }\n\
+         sub nullable { my ($ty) = @_; return $ty }\n\
+         sub header { my ($ty) = @_; return $ty }\n\
+         sub dict { my ($shape) = @_; return $shape }\n\
+         my $row = dict [\n",
+    );
+    for index in 0..30 {
+        source.push_str(&format!("    'k{index}' => header nullable Str,\n"));
+    }
+    source.push_str("];\n1;\n");
+
+    // Walked once this is milliseconds. The budget is not a performance bar —
+    // it is what makes the exponent coming back a failing test rather than a
+    // suite that hangs.
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::Builder::new()
+        .stack_size(8 * 1024 * 1024)
+        .spawn(move || {
+            let found = crate::check_source(&source, &crate::Options::typecheck());
+            let _ = sender.send(found);
+        })
+        .expect("the thread starts");
+    receiver
+        .recv_timeout(std::time::Duration::from_secs(30))
+        .expect("the walk finished inside the budget");
+}
