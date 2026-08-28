@@ -124,6 +124,22 @@ One line per change. The reasoning is in the commit it came from.
   `HashRef` and `ArrayRef` — rather than the empty structure. `args my $x =>
   'Dict'` accepts any hash in Type::Tiny, and reading it as a `Dict` with no
   slots made every key read off it an `unknown-key`.
+- A name a module exports is a method of every package that `use`s it.
+  `use Exporter 'import'; our @EXPORT = qw(render)` installs `render` in the
+  importer, and `$self->render` there was an `unknown-method`. An `@EXPORT`
+  whose value cannot be read — `our @EXPORT = get_public_functions;` — makes
+  the importer a package whose methods nobody can enumerate, and a package
+  that exports its own subs is a mixin, so `$self` inside one of them is
+  whichever class imported it rather than this one.
+- A package that calls a code generator at file scope is opaque. A file that
+  assigns to globs, or that calls an accessor maker whose list of names is a
+  variable, makes methods nobody here can name — and it makes them in the
+  package that *called* it, whose own file says nothing about them.
+  `__PACKAGE__->mk_field_accessors` and `Some::Util->ro_datetime([...])` are
+  the two spellings covered by the code-generation fixtures.
+- `maybe-deref` is `info` rather than `warning`. Every subscript is a `Maybe`
+  by construction, so this is about an idiom rather than about a program, and
+  the narrowing list it is checked against is a list rather than a theorem.
 - A hand-written `sub new` is read as a constructor only where its body says
   the value it hands back is one of its own class — a `bless`, or a `SUPER::`
   that borrows the parent's. `URI->new` returns a `URI::http`, and calling it

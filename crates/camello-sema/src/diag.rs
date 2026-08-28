@@ -89,6 +89,9 @@ pub enum Code {
     /// unknown ancestor.
     UnknownMethod,
     /// A `Maybe[...]` dereferenced or called on without a narrowing check.
+    /// `info`, because every subscript is a `Maybe` by construction: the code
+    /// this is about is idiomatic and mostly right, and it is asked for rather
+    /// than pressed on the reader.
     MaybeDeref,
     /// An annotation that does not parse. Reported because an annotation that
     /// is silently ignored is worse than none.
@@ -184,12 +187,15 @@ impl Code {
             Code::UnusedVariable
             | Code::ShadowedVariable
             | Code::UnknownMethod
-            | Code::MaybeDeref
             | Code::ReturnMismatch => Severity::Warning,
             Code::BadAnnotation
             | Code::UnknownType
             | Code::MissingAnnotation
-            | Code::UnusedParameter => Severity::Info,
+            | Code::UnusedParameter
+            // `$ary->[0]` and `$h->{k}` are `Maybe` by construction, so this
+            // is structural about a whole idiom rather than about a program
+            // (`docs/types.md`, DIAG-14a).
+            | Code::MaybeDeref => Severity::Info,
         }
     }
 }
