@@ -255,6 +255,22 @@ recording yet. On each (debounced) edit:
    `Program` (cheap relative to body passes), re-run the body pass for every
    *open* file, republish each.
 
+Step 3 cannot quite be taken literally, and the gap is worth writing down
+because it was a bug before it was a note. `link` resolves named types by
+rewriting the stored `FileDecls` **in place** — a name that resolved is no
+longer the name it was written as — so the graph cannot be asked what it was
+given, and diffing against what it holds would report a change on every
+keystroke. What the diff compares against is therefore a memo of what the
+graph was last *told*, and that memo lives inside the `Index`, beside the
+graph it describes. Held anywhere else it outlives its graph: the background
+walk swaps a whole new one in, and a memo that survived the swap says
+"unchanged" about a buffer the new graph has never seen — after which no
+later edit says otherwise, because every one of them declares the same
+things. The same reasoning makes the walk fold the open buffers into the
+graph it built before installing it, and makes `didClose` put the file back
+the way disk has it: a closed buffer's declarations are an edit the user may
+have just thrown away, and nothing else would ever take them out.
+
 Step 5 over-invalidates — an edited signature re-checks open files that
 never call it — and that is the accepted cost of coarse. The refinement
 `typecheck.md` promised (record, during the body pass, which symbols each
