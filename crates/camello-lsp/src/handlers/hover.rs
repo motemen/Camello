@@ -4,11 +4,13 @@
 //! `docs/types.md` spells types. On a sub name — a definition or a call: the
 //! signature the declaration pass read.
 //!
-//! Where the checker knows nothing, hover shows nothing. `Unknown` produces an
-//! empty response and not a shrug-string, because the checker's silence
-//! discipline is a feature to surface rather than a gap to paper over: a user
-//! who is shown `Unknown` learns that camello answered, and a user who is
-//! shown nothing learns that it did not.
+//! Where the cursor is on something nameable and the checker has no answer,
+//! hover says `Unknown` rather than nothing. Silence is the right answer to
+//! "there is nothing here" and the wrong one to "there is something here and I
+//! do not know what it is": the two are indistinguishable to a reader, and the
+//! second is the common case. So a lexical, a call, a sub name and a `->`
+//! method all answer — with `Unknown` where that is the answer — and only a
+//! position that names nothing at all stays silent.
 
 use camello_sema::program::MethodLookup;
 use camello_syntax::lang::SyntaxNode;
@@ -60,8 +62,13 @@ fn describe(
                 // `isa`, `can`, `DOES` — there is a signature, but it is
                 // perl's and not this program's, and saying so teaches
                 // nothing about the code under the cursor.
-                MethodLookup::Universal | MethodLookup::Unknown | MethodLookup::Missing => {
-                    return None
+                MethodLookup::Universal => return None,
+                // The cursor is on a method name and the checker cannot say
+                // what it is — because an ancestor was never read, or because
+                // nothing declares it. Named, so the reader knows which of
+                // the two questions went unanswered.
+                MethodLookup::Unknown | MethodLookup::Missing => {
+                    format!("{}::{} -> Unknown", site.class, site.method)
                 }
             };
             Some((text, site.method_range))
@@ -79,31 +86,43 @@ fn describe(
             let symbol = match program.index_of(path) {
                 Some(file) => program.sub_in(file, &package, &name),
                 None => program.sub(&package, &name),
-            }?;
-            Some((camello_sema::decl::signature_of(symbol), range))
+            };
+            let text = symbol.map_or_else(
+                || format!("{package}::{name} -> Unknown"),
+                camello_sema::decl::signature_of,
+            );
+            Some((text, range))
         }
         Some(Target::Call { name, range }) => {
             // `resolve_call` is answered against this file's own imports:
             // `use POSIX qw(floor)` makes `floor` a different sub here than
             // it is next door.
-            let file = program.index_of(path)?;
-            let symbol = program.resolve_call(file, u32::from(range.start()), &name)?;
-            Some((camello_sema::decl::signature_of(symbol), range))
+            let symbol = program
+                .index_of(path)
+                .and_then(|file| program.resolve_call(file, u32::from(range.start()), &name));
+            let text = symbol.map_or_else(
+                || format!("{name} -> Unknown"),
+                camello_sema::decl::signature_of,
+            );
+            Some((text, range))
+        }
+        Some(Target::UnresolvedMethod { name, range }) => {
+            Some((format!("{name} -> Unknown"), range))
         }
         Some(Target::Lexical { binding, range }) => {
             let found = tables.scope.bindings.get(binding)?;
             // The type is keyed by where the expression is, so a reference is
-            // looked up at itself and a declaration at itself.
-            //
-            // No type, no hover. Answering `$thing` to a hover over `$thing`
-            // is a shrug-string with extra steps: it tells the reader what
-            // they are already looking at, and it hides the one thing the
-            // silence would have told them, which is that the checker has
-            // nothing on this value.
+            // looked up at itself and a declaration at itself. A binding with
+            // none is `Unknown`, which is a real answer about a real name and
+            // the one the reader came for.
             let ty = tables
                 .types
                 .of(range)
-                .or_else(|| tables.types.at(range.start()).map(|(_, ty)| ty))?;
+                .or_else(|| tables.types.at(range.start()).map(|(_, ty)| ty));
+            let ty = ty.map_or_else(
+                || camello_sema::types::Type::Unknown.to_string(),
+                |ty| ty.to_string(),
+            );
             Some((format!("{} : {ty}", found.display()), range))
         }
         None => {

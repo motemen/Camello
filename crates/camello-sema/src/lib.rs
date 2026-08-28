@@ -337,12 +337,25 @@ impl Analysis {
         let mut diagnostics = std::mem::take(&mut scope.diagnostics);
         if let Some(file) = self.program.index_of(path) {
             diagnostics.extend(arity::analyse(root, file, &self.program));
-            if record {
-                let (found, table) = flow::analyse_recording(root, file, &self.program);
+            let guards = if record {
+                let (found, table, guards) = flow::analyse_recording(root, file, &self.program);
                 diagnostics.extend(found);
                 types = table;
+                guards
             } else {
-                diagnostics.extend(flow::analyse(root, file, &self.program));
+                let (found, guards) = flow::analyse(root, file, &self.program);
+                diagnostics.extend(found);
+                guards
+            };
+            // A value held for its destructor is bound so that the destructor
+            // runs, and never reading it is the point (`docs/types.md`,
+            // DIAG-12d). The scope pass names what is never read and has no
+            // types to decide this with, so the body pass decides and its
+            // answer is applied here.
+            if !guards.is_empty() {
+                diagnostics.retain(|diagnostic| {
+                    diagnostic.code != Code::UnusedVariable || !guards.contains(&diagnostic.range)
+                });
             }
             // What the declaration pass had to say about this file's
             // annotations. It ran once, over every file; a dependency's
