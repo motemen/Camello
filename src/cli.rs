@@ -588,7 +588,7 @@ fn run_index_bar(
     } else {
         paths
     };
-    let (index, bar) = camello_lsp::bar::index_bar(roots.clone(), cache);
+    let (mut index, bar) = camello_lsp::bar::index_bar(roots.clone(), cache);
     println!(
         "index: {} files, {} packages, {} subs in {:.2}s{}",
         bar.files,
@@ -614,7 +614,7 @@ fn run_index_bar(
     let Some(target) = target else {
         return Err(miette::miette!("nothing was indexed, so nothing to retype"));
     };
-    let Some(loop_bar) = camello_lsp::bar::edit_bar(&index, &target, edits) else {
+    let Some(loop_bar) = camello_lsp::bar::edit_bar(&mut index, &target, edits) else {
         return Err(miette::miette!("could not read {}", target.display()));
     };
     println!(
