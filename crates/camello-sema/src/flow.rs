@@ -96,19 +96,20 @@ pub fn infer_returns(
     let Some(entry) = program.file(file) else {
         return Vec::new();
     };
-    // By the range of the name, which is what the declaration pass recorded
-    // and is unique within a file — the walk order of the two passes is not
-    // something either of them promises the other.
-    let wanted: HashMap<TextRange, usize> = only
-        .iter()
-        .filter_map(|index| {
-            entry
-                .decls
-                .subs
-                .get(*index)
-                .map(|symbol| (symbol.range, *index))
-        })
-        .collect();
+    // By name rather than by position, for the reason the language server's
+    // decl fingerprint leaves position out: an edit that moves a sub down a
+    // line changes no declaration, so the graph is allowed to go on holding
+    // the range it had before that edit — and a walk keyed by that range
+    // would then match nothing. First wins, the way every other name lookup
+    // here reads a redefinition.
+    let mut wanted: HashMap<(String, String), usize> = HashMap::new();
+    for index in only {
+        if let Some(symbol) = entry.decls.subs.get(*index) {
+            wanted
+                .entry((symbol.package.clone(), symbol.name.clone()))
+                .or_insert(*index);
+        }
+    }
     if wanted.is_empty() {
         return Vec::new();
     }
@@ -277,8 +278,8 @@ struct Pass<'a> {
 /// The return walk's state (`docs/return-inference.md`, "Sites").
 #[derive(Debug, Default)]
 struct Inference {
-    /// The subs the walk was asked about, by the range of the name.
-    wanted: HashMap<TextRange, usize>,
+    /// The subs the walk was asked about, by package and name.
+    wanted: HashMap<(String, String), usize>,
     /// What each of them turned out to return.
     found: Vec<(usize, Returns)>,
     /// The sites of the sub being walked — reset on entry to a sub, so that a
@@ -482,10 +483,7 @@ impl Pass<'_> {
         }
         let sites = self.enter_sub(invocant);
         self.block(body.syntax());
-        let range = definition
-            .name()
-            .map_or_else(|| node.text_range(), |view| view.range());
-        self.leave_sub(Some(range), sites);
+        self.leave_sub(definition.name_text(), sites);
         self.env = saved;
         self.returns = saved_returns;
     }
@@ -503,13 +501,14 @@ impl Pass<'_> {
     /// Apply the site table to what the body left, and give the enclosing sub
     /// its sites back.
     ///
-    /// `range` is where the sub's name is, which is how the declaration pass
-    /// named it; `None` is an anonymous sub, which nothing asked about.
-    fn leave_sub(&mut self, range: Option<TextRange>, saved: Option<Box<(Sites, Tail, Invocant)>>) {
+    /// `name` is the sub's own, which is how the declaration pass named it;
+    /// `None` is an anonymous sub, which nothing asked about.
+    fn leave_sub(&mut self, name: Option<String>, saved: Option<Box<(Sites, Tail, Invocant)>>) {
         let Some(saved) = saved else { return };
         let package = self.package.clone();
+        let key = name.map(|name| (package.clone(), name));
         let inference = self.infer.as_mut().expect("saved implies collecting");
-        if let Some(index) = range.and_then(|range| inference.wanted.get(&range).copied()) {
+        if let Some(index) = key.and_then(|key| inference.wanted.get(&key).copied()) {
             let returns = inference.sites.joined(&inference.tail, &package);
             // Only what became known: an answer of `Unknown` is the round
             // saying it has nothing to install, and installing it would make
