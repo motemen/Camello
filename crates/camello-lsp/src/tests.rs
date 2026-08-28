@@ -13,7 +13,7 @@
 //! Two marker shapes:
 //!
 //! ```perl
-//! my $unused = 1;              #~ warning unused-variable: `$unused`
+//! my $unused = 1;              #~ info unused-variable: `$unused`
 //! my $dog = My::Dog->new;
 //! #   ^ hover $dog : InstanceOf['My::Dog']
 //! ```

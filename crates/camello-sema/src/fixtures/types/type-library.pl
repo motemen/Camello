@@ -35,7 +35,7 @@ sub counted {
 
 counted(n => 1, ns => [1], which => 'foo', both => 1);
 counted(n => 'x', ns => [1], which => 'foo', both => 1);
-#~ error type-mismatch: `Str` passed to `n`
+#~ error type-mismatch: (`Str`) passed to `n`
 counted(n => 1, ns => 'x', which => 'foo', both => 1);
 #~ error type-mismatch: `ns`
 

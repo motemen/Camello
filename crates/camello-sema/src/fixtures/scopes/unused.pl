@@ -4,7 +4,7 @@ use warnings;
 my $read = 1;
 print $read;
 
-my $ignored = 2;                #~ warning unused-variable: `$ignored`
+my $ignored = 2;                #~ info unused-variable: `$ignored`
 
 # A leading underscore says "bound on purpose, not read".
 my $_deliberate = 3;

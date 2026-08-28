@@ -508,6 +508,32 @@ same node kinds, and the consumers are edits to walks that exist. The
 inference and the tiers are unchanged by it. Nothing here needs a new
 pass, a new phase, or a change to the program graph beyond the variant.
 
+## Drift
+
+An annotation wins at every call site (ANNOT-7a), so the only thing that
+ever compares a `Returns:` against the code is `return-mismatch`, and that
+looks at one `return` at a time. What it cannot see is the drift a file
+collects: an annotation that was right when it was written and has since
+been widened by a new `return undef`, narrowed by a branch that went away,
+or simply contradicted.
+
+`camello check --returns-drift` asks the walk what each annotated sub's
+body says and puts the two side by side:
+
+```text
+lib/Store.pm:12:5: Store::find: `Returns:` says `InstanceOf['Row']`, the body says `InstanceOf['Row']|Undef`
+```
+
+Nothing is installed and the program is not changed, which is the point:
+the answer for one sub is computed against the annotations every *other*
+sub still carries, so what comes out is a report on that annotation rather
+than on the whole file at once. Only a half the annotation actually claims
+is compared — a scalar-only `Returns:` says nothing about list context, so
+a list the body inferred beside it is an addition and not a disagreement —
+and a half the walk could not read is never evidence against something
+written down. The exit status is 1 when anything was found, so a CI step
+can hold a codebase to its own annotations.
+
 ## Open questions, and what they turned out to be
 
 All four are settled; the numbers behind them are in `docs/typecheck.md`,

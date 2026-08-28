@@ -304,7 +304,7 @@ use Class::Accessor::Typed (
 - (ANNOT-4a) **必須かどうかの既定が Moose と逆です。** ここではスロットは
   `optional` と書くか、`default` を与えるか、lazy であるかしない限り**必須**です。
   生成される `new` が `missing mandatory parameter named '$x'` で死ぬからで、
-  これは推測ではなく規則です（[DIAG-13](#73-missing-argument-について)）。
+  これは推測ではなく規則です（[DIAG-13](#74-missing-argument-について)）。
 - (ANNOT-4b) `Frameworks` はファイル単位なので、同じファイルに `use Mouse` が
   あっても、`new => 0` と書いたパッケージのコンストラクタは消えたままです。
   自分で決めたパッケージには一括処理が触りません。
@@ -528,7 +528,7 @@ Class::Accessor::Lite->mk_new_and_accessors(qw(foo bar));
 - (ANNOT-10d) この `new` は**渡されたハッシュをそのまま bless します**
   ([INFER-2g](#42-コンストラクタ-infer-2))。アクセサのない鍵も通り、
   `$self->{key}` として読めるので、`unknown-key` は `error` ではなく `warning`
-  です（[DIAG-6a](#71-重大度が動くもの)）。必須の鍵もありません — 渡されたものを
+  です（[DIAG-6a](#72-重大度が動くもの)）。必須の鍵もありません — 渡されたものを
   見ないので、足りないと気づきようがないからです。
 - (ANNOT-10e) `use Class::Accessor 'antlers'`（または `'moose-like'`）は `has` を
   export する唯一の綴りなので、そのファイルは Moose 系として読まれます。そちらは
@@ -659,7 +659,7 @@ use constant { E => 2.71, PHI => 1.61 };
   正しく追えます。
 - (INFER-2f) 必須のスロットを渡していない呼び出しは `missing-argument` です。
   どの規則で「必須」かはフレームワークごとに違います
-  （[DIAG-13](#73-missing-argument-について)）。
+  （[DIAG-13](#74-missing-argument-について)）。
 - (INFER-2g) `Class::Accessor::Lite` 一族の `new` は**開いています**。渡された
   ハッシュをそのまま bless するだけなので、アクセサのない鍵も
   `$self->{key}` として読める正しいプログラムでありえます。インスタンスの型は
@@ -1027,22 +1027,43 @@ print $row->id;             # 診断なし
 | コード | 既定 | 意味 |
 | --- | --- | --- |
 | (DIAG-1) `undeclared-variable` | error | `strict` の下で、どの宣言も届かない名前 |
-| (DIAG-2) `unused-variable` | warning | 宣言されて一度も読まれないレキシカル |
-| (DIAG-3) `shadowed-variable` | warning | 外側のスコープが既に束縛している名前 |
+| (DIAG-2) `unused-variable` | info | 宣言されて一度も読まれないレキシカル |
+| (DIAG-3) `shadowed-variable` | info | 外側のスコープが既に束縛している名前 |
 | (DIAG-4) `arity` | error / warning | 引数の個数が引数リストを満たせない |
 | (DIAG-5) `type-mismatch` | error / warning | 値の形が、入る先の宣言された型と矛盾する |
 | (DIAG-6) `unknown-key` | error | 閉じた `Dict` に無い鍵、宣言のない属性 |
-| (DIAG-7) `unknown-method` | warning | そのクラスが宣言していないメソッド |
+| (DIAG-7) `unknown-method` | info / warning | そのクラスが宣言していないメソッド |
 | (DIAG-8) `bad-annotation` | info | 読めないアノテーション |
 | (DIAG-9) `return-mismatch` | error / warning | `Returns:` と食い違う `return` |
 | (DIAG-10) `missing-annotation` | info | 公開サブルーチンに何のアノテーションもない |
 | (DIAG-11) `unknown-type` | info | どこも宣言していない型名・クラス名 |
 | (DIAG-12) `unused-parameter` | info | 本体が一度も読まない引数 |
 | (DIAG-13) `missing-argument` | error | 必須の名前付き引数を渡していない呼び出し |
-| (DIAG-14) `maybe-deref` | info | 絞り込みを経ずに使われた `Maybe[...]` |
+| (DIAG-14) `maybe-deref` | warning | 絞り込みを経ずに使われた `Maybe[...]` |
 | (DIAG-15) `ignored-prototype` | info | `()` と宣言されたサブルーチンへのメソッド呼び出し |
 
-### 7.1 重大度が動くもの
+### 7.1 メッセージが名指すもの
+
+- (DIAG-0a) **診断は型だけでなく、それが**どのコードについてか**も名指します。**
+  `` `Str|Undef` may be undefined here `` は読み手が探せるものを何も言っていません。
+  `maybe-deref` / `type-mismatch` / `return-mismatch` は、対象の式を書かれたまま
+  （空白は一つに詰めます）先に置き、型を括弧に入れます。
+
+  ```text
+  `$row` may be undefined here (`InstanceOf['Row']|Undef`), and nothing has checked it
+  ```
+
+  対象は変数とは限りません。`$obj->rows` や `$self->{cfg}{db}` のような式が
+  そのまま入ります。`$h->{a}{b}` の二段目なら対象は `$h->{a}` です —— それが
+  `undef` かもしれない値であり、守るべきものだからです。長い式は 40 文字で
+  切ります。
+
+- (DIAG-0b) `camello check --group` は、**一つのファイルの中で同じコードについての
+  同じ診断を一度だけ**報告し、何箇所あったかを添えます。`$row` を二十回
+  デリファレンスしていても、直すべきものは一つだからです。対象を持たない診断
+  （宣言や呼び出しについてのもの）はまとめません。
+
+### 7.2 重大度が動くもの
 
 - (DIAG-4a) `arity` は、シグネチャと `args` に対しては `error` です。perl と
   Smart::Args が実行時に die するからで、静的に言っても誤検知になりません。
@@ -1063,6 +1084,13 @@ print $row->id;             # 診断なし
 - (DIAG-9a) `return-mismatch` も同じ規則に従います。無名 sub の中の `return` は
   その無名 sub のもので、無名 sub には注釈を書く手立てがないので、書かれている
   サブルーチンの `Returns:` は何も言いません。
+- (DIAG-2b) `unused-variable` は `info` です。読まれない名前が指すのはたいてい
+  意図されたもの（三つのうち一つだけが欲しかった分配束縛、後で使うつもりの `my`）で、
+  そうでない場合も実害はありません。止めるほどのものではないのに数が出るので、
+  求められたときに知らされるものにします。
+- (DIAG-3a) `shadowed-variable` は `info` です。シャドウイングは合法で、たいていは
+  意図的で、そうでない場合も好みの問題です。`unused-variable` と同じ理由で、
+  求められたときに知らされるものにします。
 - (DIAG-7a) **`unknown-method` は既定で `info` で、世界が閉じているときだけ
   `warning` です。** 「このクラスにそのメソッドは無い」は閉世界についての主張です。
   祖先が全部分かっているかは `Program::has_unknown_ancestor` が見ていて、分からなければ
@@ -1096,7 +1124,7 @@ print $row->id;             # 診断なし
 - (DIAG-x) パーサの推測（[architecture.md](architecture.md) の `GUESS:`）に
   依存する診断は一段下げて報告されます。
 
-### 7.2 `unused-variable` と `unused-parameter`
+### 7.3 `unused-variable` と `unused-parameter`
 
 読まれない名前が二つのコードに分かれているのは、止めたい理由が別だからです。
 
@@ -1134,7 +1162,7 @@ my $guard = Scope::Guard->new(sub { $lock->release });   # 読まれなくて当
   （`Guard::guard { ... }` のような修飾付きも含む）です。
   プロジェクト自身のガードクラスは `camello.toml` の `guard-classes` に書きます。
 
-### 7.3 `missing-argument` について
+### 7.4 `missing-argument` について
 
 呼び出しが必須の名前を渡していないというものです。名前付きの引数リストにだけ
 効きます（位置引数の個数は `arity` の仕事です）。
@@ -1159,7 +1187,7 @@ my $guard = Scope::Guard->new(sub { $lock->release });   # 読まれなくて当
 - (DIAG-13f) 開いたコンストラクタ（[ANNOT-10d](#310-classaccessorlite-一族-annot-10)）は
   何も必須にしません。渡されたものを見ないので、足りないと気づきようがないからです。
 
-### 7.4 `unknown-method` について
+### 7.5 `unknown-method` について
 
 これは `warning` です。クラスの側が正しくて、その値がそのクラスだという
 camello の判断の方が間違っている可能性が常にあるからです。基底クラスが
@@ -1268,3 +1296,85 @@ strict-annotations = true
 振る舞いを見つけた場合、あるいはここに書かれていることと実装が食い違う場合は、
 GitHub Issues で報告してください。設計上の判断とその根拠は
 [typecheck.md](typecheck.md) にあります。
+
+## 付録 A. 名前で認識しているもの
+
+camello が**モジュールを読まずに名前だけで知っている**ものの全部です。ここに
+無いモジュールは、検索パスで見つかれば宣言として読まれ、見つからなければ穴に
+なります（[DIAG-7a](#72-重大度が動くもの)）。プロジェクト固有のものを足したい
+ときは `camello.toml`（[OFF-2](#82-プロジェクトごと-off-2)）か、汎用イディオムなら
+この一覧そのものを増やしてください。
+
+各項目の括弧内は実装の在りかで、この表と食い違ったときはコードが正です。
+
+### A.1 オブジェクトフレームワーク (`annotate::Frameworks::note`)
+
+| 読み方 | モジュール |
+| --- | --- |
+| Moose 系（`has` / `extends` / `with`） | `Moose`, `Moo`, `Mouse`, `Moose::Role`, `Moo::Role`, `Mouse::Role`, `MooseX::Declare`, `Mojo::Base`, `Moose::Util::TypeConstraints`, `Mouse::Util::TypeConstraints` |
+| `Class::Accessor::Typed` | 同名 |
+| `mk_accessors` 一族 | `Class::Accessor::Lite`, 同 `::Lazy`, `Class::Accessor`, 同 `::Fast`, 同 `::Faster` |
+| `Smart::Args` | `Smart::Args`, `Smart::Args::TypeTiny` |
+
+引数まで見るものが二つあります。`use parent 'X'` / `use base 'X'` は **X** を
+この表に当てて判定し、`use Class::Accessor 'antlers'`（`'moose-like'` も）は
+Moose 系として読みます（[ANNOT-10e](#310-classaccessorlite-一族-annot-10)）。
+
+### A.2 `mk_*` の一族 (`annotate::AccessorMaker::of`)
+
+`mk_accessors` / `mk_ro_accessors` / `mk_wo_accessors` / `mk_lazy_accessors` /
+`mk_ro_lazy_accessors` / `mk_new` / `mk_new_and_accessors` /
+`follow_best_practice`。
+
+### A.3 型ライブラリの DSL (`annotate::supplies_the_type_dsl`)
+
+一覧ではなく**族**です（[ANNOT-8d](#38-型ライブラリ-annot-8)）。`Type::*`,
+`Types::*`, `MooseX::Types::*`, `MouseX::Types::*`, および
+`*::Util::TypeConstraints` で終わる名前。
+
+### A.4 宣言パスが自分で読む `use` (`decl::Pass::use_statement`)
+
+`parent` / `base`（`@ISA` を足す）、`constant`（名前を宣言する）、
+`Class::Accessor::Typed` と `Class::Accessor::Lite`(`::Lazy`)（引数リストが宣言）。
+
+### A.5 XS を読み込むもの (`decl::Pass::use_statement`)
+
+`XSLoader`, `DynaLoader`, `Inline`, `Alien::Base`。メソッドが C で書かれている
+ということなので、そのパッケージは**動的**になり、何も報告されなくなります
+（[METHOD-5](#61-不透明なクラス-method-5)）。
+
+### A.6 `strict` を入れる import (`scope::STRICT_BY_IMPORT`)
+
+`strict`, `strictures`, `Modern::Perl`, `common::sense`, `Moose`,
+`Moose::Role`, `Moose::Exporter`, `Moo`, `Moo::Role`, `Mouse`, `Mouse::Role`,
+`Mojo::Base`, `Mojolicious::Lite`, `Dancer2`, `Object::Pad`,
+`Test::Class::Moose`, `Class::Accessor::Typed`。
+
+網羅ではありえません — `import` の中で `strict` を入れるのは camello が実行しない
+コードだからです。漏らすと静かになる側に転ぶので、その向きに間違えます。
+
+### A.7 デストラクタのために持たれる値 (`scope::GUARD_NAMES`)
+
+`Scope::Guard`, `Guard`, `Scope::Container` のコンストラクタ、および
+`guard` / `scope_guard` / `SCOPE_GUARD` / `start_scope_container` という名前の
+呼び出し。
+
+これは**名前による半分**で、もう半分はクラスです — `DESTROY` を宣言している
+クラスのインスタンスは名前によらず対象外になります
+（[DIAG-12d](#73-unused-variable-と-unused-parameter)）。名前の一覧が要るのは、
+型が届かないところ（他ファイルから import された裸名の呼び出し）だけです。
+
+### A.8 どのクラスにもあるメソッド (`program::Program::UNIVERSAL`)
+
+`isa`, `can`, `DOES`, `VERSION`, `import`, `unimport`, `DESTROY`。
+
+### A.9 perl が束縛している名前 (`scope::ALWAYS_IN_SCOPE`)
+
+`$_` / `@_`、`sort` が渡す `$a` と `$b`、そして `ARGV`, `ARGVOUT`, `ENV`,
+`INC`, `SIG`, `STDIN`, `STDOUT`, `STDERR`, `DATA`, `AUTOLOAD`, `ISA`, `$0`。
+
+### A.10 変数を export するコアモジュール (`scope::exported_variables`)
+
+`English`（`$PROGRAM_NAME` などの一覧を持っています）と `Config`（`%Config`）。
+サブルーチンではなく変数を export するモジュールは、`@EXPORT` を読むだけでは
+足りないので表になっています。

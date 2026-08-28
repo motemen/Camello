@@ -169,9 +169,7 @@ impl Code {
             | Code::TypeMismatch
             | Code::UnknownKey
             | Code::MissingArgument => Severity::Error,
-            Code::UnusedVariable
-            | Code::ShadowedVariable
-            | Code::ReturnMismatch
+            Code::ReturnMismatch
             // `$obj->m` reaching nothing is a statement about a closed world,
             // and the world is closed only where every module the class and
             // its ancestors `use` was read. The call site raises it to a
@@ -182,7 +180,15 @@ impl Code {
             | Code::MissingAnnotation
             | Code::UnusedParameter
             | Code::IgnoredPrototype
-            | Code::UnknownMethod => Severity::Info,
+            | Code::UnknownMethod
+            // Shadowing is legal, deliberate more often than not, and a
+            // matter of taste where it is not (`docs/types.md`, DIAG-3a).
+            | Code::ShadowedVariable
+            // Noisy out of proportion to what it catches: a name bound and
+            // never read is usually deliberate — a destructuring that wanted
+            // one of three slots, a `my` kept for a later edit — and where it
+            // is not, it costs nothing (`docs/types.md`, DIAG-12).
+            | Code::UnusedVariable => Severity::Info,
         }
     }
 }
@@ -198,6 +204,15 @@ impl fmt::Display for Code {
 pub struct Diagnostic {
     pub code: Code,
     pub severity: Severity,
+    /// The code this is *about*, as it is written: `$rows`, `$self->{cfg}`.
+    ///
+    /// Some diagnostics name their subject in the message and always did — a
+    /// missing key, an unread variable. The ones about a *type* did not, and
+    /// `` `Str|Undef` may be undefined here `` names nothing a reader can
+    /// look for. It is also what `--group` groups by: twenty reports on one
+    /// variable are one thing to fix.
+    #[serde(default)]
+    pub subject: Option<String>,
     #[serde(with = "crate::serde_range")]
     pub range: TextRange,
     pub message: String,
@@ -209,9 +224,17 @@ impl Diagnostic {
         Diagnostic {
             code,
             severity: code.default_severity(),
+            subject: None,
             range,
             message: message.into(),
         }
+    }
+
+    /// Name the code this is about, for the message and for `--group`.
+    #[must_use]
+    pub fn about(mut self, subject: impl Into<String>) -> Self {
+        self.subject = Some(subject.into());
+        self
     }
 
     /// One step quieter, because the reading it rests on is a parser guess.
