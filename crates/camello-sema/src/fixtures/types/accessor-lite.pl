@@ -42,8 +42,14 @@ use Class::Accessor::Lite::Lazy;
 Class::Accessor::Lite::Lazy->mk_new;
 Class::Accessor::Lite::Lazy->mk_lazy_accessors('lazily');
 Class::Accessor::Lite::Lazy->mk_ro_lazy_accessors('once');
-sub _build_lazily { 1 }
-sub _build_once   { 2 }
+# The lazy makers flatten a hashref into name-and-builder pairs, the same as
+# the `use` statement's does, so its keys name accessors too.
+Class::Accessor::Lite::Lazy->mk_lazy_accessors('spelled', { built => 'make_built' });
+Class::Accessor::Lite::Lazy->mk_ro_lazy_accessors({ anon => sub { 4 } });
+sub _build_lazily  { 1 }
+sub _build_once    { 2 }
+sub _build_spelled { 3 }
+sub make_built     { 4 }
 
 package main;
 
@@ -83,5 +89,5 @@ print $lazy->fuga, $lazy->attr_without_builder, $lazy->baz;
 print $lazy->absent;            #~ warning unknown-method: `absent`
 
 my $mk = Mk->new;
-print $mk->lazily, $mk->once;
+print $mk->lazily, $mk->once, $mk->spelled, $mk->built, $mk->anon;
 print $mk->neither;             #~ warning unknown-method: `neither`

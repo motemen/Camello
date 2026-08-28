@@ -775,9 +775,18 @@ pub fn read_accessor_lite(arguments: &SyntaxNode) -> (Vec<AttributeDecl>, bool) 
 ///
 /// `qw(foo bar)`, `'foo'`, and a bareword all name accessors; anything
 /// computed names none this pass can read.
+///
+/// The lazy makers take one shape more: `mk_lazy_accessors('foo', { bar =>
+/// \&build })` flattens a hashref into name-and-builder pairs, so its keys
+/// are names too. The plain makers do not — a reference passed to those is
+/// stringified into an accessor nobody meant to ask for.
 #[must_use]
-pub fn listed_names(node: &SyntaxNode) -> Vec<String> {
-    attribute_names(node)
+pub fn listed_names(node: &SyntaxNode, lazy: bool) -> Vec<String> {
+    if lazy {
+        accessor_names(node)
+    } else {
+        attribute_names(node)
+    }
 }
 
 /// The property names in one `rw => [...]` value.
