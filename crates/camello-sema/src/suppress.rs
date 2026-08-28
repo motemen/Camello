@@ -127,7 +127,7 @@ mod tests {
     use crate::Options;
 
     fn diagnostics(source: &str) -> Vec<Code> {
-        crate::check_source(source, &Options::typecheck())
+        crate::check_source(source, &Options::default())
             .into_iter()
             .map(|diagnostic| diagnostic.code)
             .collect()

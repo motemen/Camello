@@ -6,8 +6,8 @@ legacy Perl grammar feature. The implementation is lossless: source text is
 first represented as tokens and a concrete syntax tree (CST), and formatting
 changes trivia and layout rather than program tokens.
 
-Camello is also a static checker. `camello lint` and `camello typecheck` run
-over the same CST and read the type annotations Perl code already carries —
+Camello is also a static checker. `camello check` runs over the same CST and
+reads the type annotations Perl code already carries —
 `has ... isa => 'Str'`, `args my $x => 'Int'`, `Class::Accessor::Typed`, the
 `mk_accessors` family, `use constant`, and a `Returns:` comment — as
 declarations rather than as strings. What it concludes
@@ -258,18 +258,18 @@ and atomically renamed over the target while preserving its permissions.
 
 ## The checker
 
-`camello lint lib t` reports what needs no type lattice: undeclared, unused and
+`camello check lib t` reports what the scopes say — undeclared, unused and
 shadowed lexicals, and arity against a signature, an `args` list or an `@_`
-unpacking. `camello typecheck lib t` reports everything `lint` does plus what
-the annotations add — a `Str` passed where an `ArrayRef[Int]` was declared, a
-method called on a class that declares none such, a key read off a `Dict` that
-has no such key, a `Maybe[...]` used with nothing having checked it.
+unpacking — and what the annotations add: a `Str` passed where an
+`ArrayRef[Int]` was declared, a method called on a class that declares none
+such, a key read off a `Dict` that has no such key, a `Maybe[...]` used with
+nothing having checked it. `--disable` leaves any of them unreported.
 
-Both print one diagnostic per line as `path:line:col: severity: message [code]`,
-take `--format json` for tooling, and exit 1 when anything at or above
-`--error-on` (default `error`) was reported. Both take `--stubs`, `--inc`,
-`--cache-dir` / `--no-cache`, and read `camello.toml` from the directory they
-are run in.
+It prints one diagnostic per line as `path:line:col: severity: message [code]`,
+takes `--format json` for tooling, and exits 1 when anything at or above
+`--error-on` (default `error`) was reported. It takes `--stubs`, `--inc`,
+`--cache-dir` / `--no-cache`, and reads `camello.toml` from the directory it is
+run in.
 
 The analysis is two passes, and the split is what makes it cheap. The
 **declaration pass** reads no sub body — a body can only *use* a declaration,
@@ -396,7 +396,7 @@ Tests and fixtures live beside their implementation:
   which only declare;
 - `scripts/corpus-check` for selecting a real corpus — the `.pm` files below
   `@INC` — and asking `dev check` and `dev perl-deparse` about it, or the
-  checker under `--lint` / `--typecheck`, whose bar is zero errors. The questions
+  checker under `--check`, whose bar is zero errors. The questions
   are the binary's; the script contributes the corpus. Installed code carries
   its own `use feature`, so the dialect search that the fixtures need is not
   wanted here.

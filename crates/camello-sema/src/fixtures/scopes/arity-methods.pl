@@ -31,7 +31,8 @@ Address->build;
 Address->build('x');
 Address->build('x', 'y');       #~ error arity: takes at most 2 arguments including its invocant; 3 passed
 
-# A method call on a value waits for the type lattice; nothing is known here.
+# A method reached through the *type* of its invocant is counted by the flow
+# pass rather than by this one, so that it is not said twice.
 my $counter = Counter->new;
 $counter->add(1);
-$counter->add(1, 2, 3);
+$counter->add(1, 2, 3);         #~ error arity: takes at most 2 arguments including its invocant; 4 passed

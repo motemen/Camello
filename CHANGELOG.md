@@ -4,6 +4,20 @@ One line per change. The reasoning is in the commit it came from.
 
 ## Unreleased
 
+### Changed
+
+- **`camello lint` and `camello typecheck` are one command, `camello check`.**
+  Breaking: neither old name is accepted. The split was justified by speed —
+  the type lattice needs the dependency resolver behind it, and `lint` was to
+  be what runs where `perlcritic` runs — and measurements showed that both commands were comfortably below the
+  threshold at which a user would choose between them.
+  The two took an identical argument set in which four flags did nothing under
+  `lint`, and `lint`'s output was a strict subset of `typecheck`'s. `--disable`
+  is how a code is turned off now. `scripts/corpus-check` takes `--check` in
+  place of `--lint` and `--typecheck`.
+
+### Added
+
 ### Added
 
 - `--min-severity`, and `min-severity` in `camello.toml`: print nothing below
