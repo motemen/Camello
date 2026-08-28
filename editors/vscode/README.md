@@ -1,10 +1,10 @@
-# camello for VS Code
+# Camello for VS Code
 
 A thin client for `camello lsp`. It finds the server, spawns `camello lsp`, and
 does nothing else: everything the server answers — diagnostics as you type, the
 inferred type and a sub's signature on hover, the methods a receiver's class
 actually has after `->`, an outline, go-to-definition, whole-file formatting —
-is the server's, and is described in [docs/lsp.md](../../docs/lsp.md).
+is the server's, and is described in [docs/lsp.md](https://github.com/motemen/Camello/blob/main/docs/lsp.md).
 
 ## Install
 
