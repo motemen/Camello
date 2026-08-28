@@ -164,6 +164,15 @@ impl Cache {
     ///
     /// `salt` is what the run reads it *under* — a declaration read under one
     /// dialect is not the one the same bytes give under another.
+    /// What the cached shape of `FileDecls` is called.
+    ///
+    /// Bumped whenever an entry written by an older camello would be read as
+    /// a *complete* answer by a newer one. Return inference is the case that
+    /// needed it: the serde defaults make an old entry parse, and what it
+    /// parses to is a file whose subs are all `Unknown` — which the tiers
+    /// would then never revisit, because a cached entry is not walked again.
+    const FORMAT: &'static str = "returns-1";
+
     #[must_use]
     pub fn key(path: &Path, source: &str, salt: &str) -> String {
         let metadata = std::fs::metadata(path).ok();
@@ -175,7 +184,10 @@ impl Cache {
             .map_or(0, |duration| duration.as_secs());
         format!(
             "{:016x}-{size}-{mtime}",
-            fnv(path.to_string_lossy().as_bytes()) ^ fnv(source.as_bytes()) ^ fnv(salt.as_bytes())
+            fnv(path.to_string_lossy().as_bytes())
+                ^ fnv(source.as_bytes())
+                ^ fnv(salt.as_bytes())
+                ^ fnv(Cache::FORMAT.as_bytes())
         )
     }
 
