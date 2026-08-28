@@ -508,23 +508,26 @@ same node kinds, and the consumers are edits to walks that exist. The
 inference and the tiers are unchanged by it. Nothing here needs a new
 pass, a new phase, or a change to the program graph beyond the variant.
 
-## Open questions
+## Open questions, and what they turned out to be
 
-- **Should tier 1 see `@INC` bodies at all?** Yes as designed, because a
-  dependency's leaf accessors are exactly what a project calls most. But
-  it means an inferred `Maybe` in a CPAN module's sub becomes a
-  `maybe-deref` in the project, with no `Returns:` the project can edit
-  to disagree — only a stub. If the corpus shows that to be the dominant
-  new warning, a `[check] infer-returns-in-dependencies = false` is the
-  knob, defaulting to on.
-- **Widening.** The join of `Int` and `Str` sites is `Int | Str`, which
-  `compatible` treats member-wise; a sub that returns a `Dict` from one
-  branch and a differently keyed `Dict` from another yields a union of
-  two open `Dict`s, and `$r->{k}` on it is whatever the union rule
-  already says. No new widening is proposed; the corpus may propose one.
-- **Hover wording.** `-> Str (inferred)` is proposed; `~> Str` is the
-  shorter alternative. Decided when it is on screen. The list form is
-  settled above.
-- **`Of` at a single target.** Whether `my ($first) = f()` off a
-  `(Row ...)` binds `Maybe[Row]` or `Row` is decided by the corpus count
-  (step 13).
+All four are settled; the numbers behind them are in `docs/typecheck.md`,
+"Where the corpus bars actually landed".
+
+- **Should tier 1 see `@INC` bodies at all?** Yes, as designed, and no knob
+  was needed. The worry was that an inferred `Maybe` in a CPAN module's sub
+  becomes a `maybe-deref` in the project with no `Returns:` the project can
+  edit to disagree. The corpus shows that family exists and is small, and
+  every instance of it is a sub that really does hand back `undef` on one
+  path; `[check] infer-returns-in-dependencies = false` stays unwritten
+  until somebody has a count that asks for it.
+- **Widening.** None was added. The join of `Int` and `Str` sites is `Int |
+  Str`, which `compatible` treats member-wise, and the corpus proposed
+  nothing further.
+- **Hover wording.** `-> Str (inferred)`. `~> Str` was the shorter
+  alternative and it reads as a *different relation* rather than as the same
+  one read differently, which is the opposite of what the note is for. A
+  list of one holding the scalar type is not shown at all: every `return $x`
+  is one, and it says nothing the scalar half did not.
+- **`Of` at a single target.** `Maybe[T]`. The count that was to decide it
+  is one `info` over `@INC`, and it is also the honest answer: `my ($first)
+  = grep {...}` really can find nothing.
