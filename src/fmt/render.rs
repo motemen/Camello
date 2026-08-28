@@ -33,6 +33,20 @@ pub struct Line {
     pub anchors: Vec<Anchor>,
     pub shape: Option<ShapeKey>,
     pub indent: usize,
+    /// The column this line starts from before its own indentation: the
+    /// hanging column it was placed at, plus whatever the construct around it
+    /// starts from. A bracket opened on such a line is placed from there
+    /// (docs/formatting.md INDENT-4), so its contents are one level in from it
+    /// rather than from the margin.
+    ///
+    /// `None` for a line the renderer did not place: verbatim content owns its
+    /// own lines and starts them in column 0 (`Doc::VerbatimLines`, and the
+    /// lines after the first of a `Doc::Raw`), so neither that column nor this
+    /// line's `indent` says anything about where a construct opened on it
+    /// belongs. `$obj->meth(q[\n    foo\n], {` is the case: the `{` is written
+    /// after a line the heredoc-like literal placed, and what it opens is still
+    /// the argument list's.
+    pub origin: Option<usize>,
     /// Part of a verbatim region. Its trailing whitespace is content, not
     /// formatting, so it is left alone.
     pub verbatim: bool,
@@ -63,6 +77,10 @@ pub struct Renderer<'a> {
     shape: Option<ShapeKey>,
     /// The next line is a continuation of the one before it.
     continuation: bool,
+    /// The column the lines being written start from, before their own
+    /// indentation: zero at the margin, and the column a bracket was opened at
+    /// for everything written inside it.
+    origin: usize,
     /// Exact continuation offset requested by a hanging-indent scope.
     hanging_continuation: Option<usize>,
     /// Hanging offset currently in scope, if any.
@@ -104,6 +122,7 @@ impl<'a> Renderer<'a> {
             continuation: false,
             hanging_continuation: None,
             hanging: None,
+            origin: 0,
             continued: None,
             line_closed: false,
         }
@@ -180,17 +199,25 @@ impl<'a> Renderer<'a> {
                 // nobody has written to, a pending continuation is taken here
                 // instead of one line later, so it holds for the whole
                 // construct rather than for its first line.
-                let outer = self.indent;
+                let outer_indent = self.indent;
+                let outer_origin = self.origin;
                 if self.current.text.is_empty() {
                     if self.continuation && self.hanging_continuation.is_none() {
                         self.indent += 1;
                         self.continuation = false;
                     }
-                } else {
+                } else if let Some(origin) = self.current.origin {
+                    // Where the line starts is where this construct starts, so
+                    // what it opens is measured from there. A bracket opened on
+                    // a line placed at a hanging column read its own level from
+                    // the margin instead, and put its contents to the left of
+                    // the bracket and its closer in column zero.
                     self.indent = self.current.indent;
+                    self.origin = origin;
                 }
                 self.walk(body);
-                self.indent = outer;
+                self.indent = outer_indent;
+                self.origin = outer_origin;
             }
             Doc::Statements(body) => {
                 // A wrap inside takes its level from the block, not from the
@@ -445,7 +472,9 @@ impl<'a> Renderer<'a> {
         let indent = self.indent + usize::from(self.continuation && hanging.is_none());
         self.continuation = false;
         self.current.indent = indent;
-        let columns = indent * self.options.indent_width + hanging.unwrap_or(0);
+        let origin = self.origin + hanging.unwrap_or(0);
+        self.current.origin = Some(origin);
+        let columns = origin + indent * self.options.indent_width;
         self.current.text.push_str(&" ".repeat(columns));
     }
 

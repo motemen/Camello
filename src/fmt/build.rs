@@ -1554,61 +1554,72 @@ impl<'a> Builder<'a> {
         }
 
         if broken {
-            // The contents are placed from the bracket. A broken group puts one
-            // element on each line, so each of them begins a continuation scope
-            // of its own the way a block's statements do — a wrap in one takes
-            // its level for that element and hands it back at the `,`, rather
-            // than carrying it to the closing bracket. And the column the call
-            // around the bracket hangs its arguments from is not one the
-            // contents know anything about: they hang from nowhere but here.
-            parts.push(Doc::indent(Doc::hanging(
-                Some(0),
-                Doc::statements(Doc::concat(vec![Doc::SoftLine, body, written_inside])),
-            )));
-            parts.push(Doc::SoftLine);
-        } else {
-            // docs/formatting.md SPACING-7: whether a flat literal pads its inside
-            // depends on the configured spacing and how many items it holds.
-            // An `a => 1` pair is two items, so `{ a => 1 }` keeps its spaces
-            // under Standard while `[$x]` stays tight. Parentheses are always
-            // tight, whatever the setting.
-            let spacious = open != T!["("]
-                && match self.options.delimiter_spacing {
-                    DelimiterSpacing::Tight => false,
-                    // A lone item closes the brackets up only where it is a
-                    // name: `[$x]` and `{ $single }` are what the arity rule was
-                    // for, and `[ map { $_->foo } @$list ]`, `{ $obj->qux }` and
-                    // `[ foo($body) ]` are what it caught by accident — a
-                    // literal with something inside it, squeezed against its own
-                    // brackets because it held one thing.
-                    DelimiterSpacing::Standard => {
-                        Self::item_count(node) >= 2
-                            || sole_item(node).is_some_and(|item| !is_simple_term(&item))
-                    }
-                    DelimiterSpacing::Loose => true,
-                };
-            if spacious {
-                parts.push(Doc::Space);
-            }
-            // The contents are the continuation scope, and the closing bracket
-            // is outside it: a bracket the user put on a line of its own belongs
-            // at the column the construct started from, not at the level of the
-            // arguments it closes. Without the break, `] ) )` collapsed onto one
-            // line and nothing in the output showed which closed what.
-            let own_line = closing
-                .as_ref()
-                .is_some_and(|token| self.closes_on_its_own_line(token, &body));
-            parts.push(Doc::continuation(body));
-            if own_line {
-                parts.push(Doc::HardLine);
-            } else if spacious {
-                parts.push(Doc::Space);
-            }
-        }
-        parts.extend(closing_doc);
-        if broken {
+            // The contents are placed from the bracket, and the bracket from
+            // the line it was opened on (INDENT-4): one level in from there,
+            // and the closing bracket back at it. Measured from the statement's
+            // own level instead, a bracket opened on a line that hangs put its
+            // contents to the left of itself and closed them in column zero.
+            //
+            // The column the call around it hangs its arguments from is not one
+            // the contents know anything about, either: they hang from nowhere
+            // but this bracket.
+            //
+            // And a broken group puts one element on each line, so each of them
+            // begins a continuation scope of its own the way a block's
+            // statements do — a wrap in one takes its level for that element
+            // and hands it back at the `,`, rather than carrying it to the
+            // closing bracket.
+            let mut inside = vec![
+                Doc::indent(Doc::statements(Doc::concat(vec![
+                    Doc::SoftLine,
+                    body,
+                    written_inside,
+                ]))),
+                Doc::SoftLine,
+            ];
+            inside.extend(closing_doc);
+            parts.push(Doc::rooted(Doc::hanging(Some(0), Doc::concat(inside))));
             return Doc::group(true, Doc::concat(parts));
         }
+
+        // docs/formatting.md SPACING-7: whether a flat literal pads its inside
+        // depends on the configured spacing and how many items it holds.
+        // An `a => 1` pair is two items, so `{ a => 1 }` keeps its spaces
+        // under Standard while `[$x]` stays tight. Parentheses are always
+        // tight, whatever the setting.
+        let spacious = open != T!["("]
+            && match self.options.delimiter_spacing {
+                DelimiterSpacing::Tight => false,
+                // A lone item closes the brackets up only where it is a
+                // name: `[$x]` and `{ $single }` are what the arity rule was
+                // for, and `[ map { $_->foo } @$list ]`, `{ $obj->qux }` and
+                // `[ foo($body) ]` are what it caught by accident — a
+                // literal with something inside it, squeezed against its own
+                // brackets because it held one thing.
+                DelimiterSpacing::Standard => {
+                    Self::item_count(node) >= 2
+                        || sole_item(node).is_some_and(|item| !is_simple_term(&item))
+                }
+                DelimiterSpacing::Loose => true,
+            };
+        if spacious {
+            parts.push(Doc::Space);
+        }
+        // The contents are the continuation scope, and the closing bracket
+        // is outside it: a bracket the user put on a line of its own belongs
+        // at the column the construct started from, not at the level of the
+        // arguments it closes. Without the break, `] ) )` collapsed onto one
+        // line and nothing in the output showed which closed what.
+        let own_line = closing
+            .as_ref()
+            .is_some_and(|token| self.closes_on_its_own_line(token, &body));
+        parts.push(Doc::continuation(body));
+        if own_line {
+            parts.push(Doc::HardLine);
+        } else if spacious {
+            parts.push(Doc::Space);
+        }
+        parts.extend(closing_doc);
         // Flat, because the writer put something after the opening bracket and
         // so seeded no break — but written across lines all the same, and its
         // anchors have the several lines that alignment is a relation between.
