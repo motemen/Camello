@@ -143,6 +143,22 @@ pub fn run(request: &Request) -> Result<()> {
     // The declaration phase is closed: a type library read anywhere in the run
     // now stands behind every annotation that named it.
     analysis.link();
+    // And the returns a single file could not see are filled in over the whole
+    // graph (`docs/return-inference.md`, "Tier 2"). Between `link` and the
+    // per-file pass, because what it installs is what that pass reads at every
+    // call site. Its rounds parse the bodies again — the honest cost of the
+    // feature, and the reason the roots are what it is given rather than
+    // everything the resolver dragged in.
+    {
+        let roots: Vec<PathBuf> = files.iter().map(|(path, _)| path.clone()).collect();
+        let inline: std::collections::HashMap<&Path, &str> = files
+            .iter()
+            .filter_map(|(path, inline)| inline.as_deref().map(|text| (path.as_path(), text)))
+            .collect();
+        analysis.infer_returns(&roots, request.jobs, |path| {
+            read_one(path, inline.get(path).copied(), &encodings).ok()
+        });
+    }
 
     let reports = crate::cli::in_parallel(&files, request.jobs, |(path, inline)| {
         check_one(

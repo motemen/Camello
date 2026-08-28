@@ -58,6 +58,15 @@ impl Options {
     }
 }
 
+/// How many rounds tier 2 gives a program (`docs/return-inference.md`,
+/// "Tier 2").
+///
+/// Termination is the number of subs, and the rounds a program needs are the
+/// depth of its longest cross-file chain of unannotated subs. The cap is what
+/// bounds the cost when that chain is deeper than anyone expected: what it
+/// cuts off stays `Unknown`, which is silent.
+const PROGRAM_ROUNDS: usize = 6;
+
 /// A run: the program graph, and the files it was built from.
 ///
 /// Two phases, and the split is the design's (`docs/typecheck.md`, "Data
@@ -192,6 +201,63 @@ impl Analysis {
     /// name.
     pub fn link(&mut self) {
         self.program.link_named_types();
+    }
+
+    /// Fill in the returns no single file could see
+    /// (`docs/return-inference.md`, "Tier 2").
+    ///
+    /// Tier 1 ran inside the declaration pass, where a call into another file
+    /// is `Unknown` because the other file is not in yet. This is the same
+    /// walk against the whole graph, in rounds over the files that still have
+    /// something unresolved, and it is monotone: a sub becomes known at most
+    /// once, and its type is final when it does, because it was computed from
+    /// callees that were themselves final.
+    ///
+    /// A recursive or mutually recursive sub whose every path goes through
+    /// the recursion stays `Unknown` in every round, which is the cut the
+    /// design asked for without a call graph having to be built to find it.
+    ///
+    /// `read` rather than the text itself: a round parses only the files with
+    /// something left to resolve, and holding a workspace's sources in memory
+    /// to save the re-reads would cost more than the re-reads do.
+    pub fn infer_returns(
+        &mut self,
+        sources: &[std::path::PathBuf],
+        jobs: Option<usize>,
+        read: impl Fn(&Path) -> Option<String> + Sync,
+    ) {
+        let files: Vec<usize> = sources
+            .iter()
+            .filter_map(|path| self.program.index_of(path))
+            .collect();
+        for _ in 0..PROGRAM_ROUNDS {
+            let pending: Vec<usize> = files
+                .iter()
+                .copied()
+                .filter(|file| !self.program.unresolved_returns(*file).is_empty())
+                .collect();
+            if pending.is_empty() {
+                return;
+            }
+            let program = &self.program;
+            let found = workspace::in_parallel(&pending, jobs, |file| {
+                let only = program.unresolved_returns(*file);
+                let path = program.file(*file).map(|entry| entry.path.clone())?;
+                let source = read(&path)?;
+                let parsed = camello_syntax::parse::parse(&source);
+                Some(flow::infer_returns(&parsed.syntax(), *file, program, &only))
+            });
+            let mut installed = false;
+            for (file, results) in pending.iter().zip(found) {
+                for (index, returns) in results.into_iter().flatten() {
+                    self.program.set_returns(*file, index, returns);
+                    installed = true;
+                }
+            }
+            if !installed {
+                return;
+            }
+        }
     }
 
     /// Everything the checker has to say about one file.

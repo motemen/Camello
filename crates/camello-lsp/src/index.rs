@@ -140,6 +140,10 @@ pub fn build(settings: &Settings) -> Index {
     // be said at all.
     analysis.resolve_dependencies();
     analysis.link();
+    // The returns a single file could not see (`docs/return-inference.md`,
+    // "Tier 2"). The roots are the workspace files: a dependency contributes
+    // whatever tier 1 read off it inside the declaration pass and no more.
+    analysis.infer_returns(&files, None, |path| std::fs::read_to_string(path).ok());
 
     Index {
         analysis,
