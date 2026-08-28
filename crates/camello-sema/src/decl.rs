@@ -1074,22 +1074,18 @@ pub fn signature_of(symbol: &SubDecl) -> String {
     }
     let returns = &symbol.returns;
     let scalar = (!returns.scalar.is_unknown()).then(|| returns.scalar.to_string());
-    let list = match &returns.list {
-        annotate::ListShape::Unknown => None,
-        annotate::ListShape::Nothing => Some("()".to_string()),
-        annotate::ListShape::Fixed(types) => Some(format!(
-            "({})",
-            types
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", ")
-        )),
-    };
+    let list = returns.list.written();
     match (scalar, list) {
-        (Some(scalar), Some(list)) => out.push_str(&format!(" -> {scalar} | list: {list}")),
+        // `Returns: ()` is one statement about both contexts, so it is shown
+        // as the one thing it is rather than as `Undef, ()`.
+        (_, Some(list)) if returns.list == annotate::ListShape::Nothing => {
+            out.push_str(&format!(" -> {list}"));
+        }
+        // The two halves as they are written: a scalar type, a list shape, or
+        // both — which is two `Returns:` lines and one signature.
+        (Some(scalar), Some(list)) => out.push_str(&format!(" -> {scalar}, {list}")),
         (Some(scalar), None) => out.push_str(&format!(" -> {scalar}")),
-        (None, Some(list)) => out.push_str(&format!(" -> list: {list}")),
+        (None, Some(list)) => out.push_str(&format!(" -> {list}")),
         (None, None) => {}
     }
     // Said once, after both halves: the reader is being told where the type
