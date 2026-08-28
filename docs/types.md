@@ -163,6 +163,49 @@ Dict[name => Str, slurpy HashRef[Str]]            # 他の鍵もあってよい
   ほかについては何も言いません。二つとも `Any` と同じ「頂」として扱っていたので、
   `undef` を `Defined` に、参照を `Value` に渡すのが通っていました。
 
+### 2.6 型の族 (TYPE-6)
+
+いくつかの型は、**値がどういう種類のものか**だけを言っていて、それ以上のことを
+言っていません。それぞれが族の頂で、族に属するものはその頂に入ります。
+
+| 頂 | 族 |
+| --- | --- |
+| `Ref` | すべての参照（`ArrayRef` `HashRef` `Dict` `Map` `Tuple` `CodeRef` `RegexpRef` `GlobRef` `ScalarRef` `Object` `InstanceOf` …） |
+| `Value` | defined な非参照（`Str` `Num` `Int` `Bool` `Enum` `ClassName` `RoleName`） |
+| `Defined` | `undef` 以外のすべて |
+| `Object` | `InstanceOf` / `ConsumerOf` / `HasMethods` |
+| `GlobRef` | `FileHandle` |
+| `Str` ⊇ `Num` ⊇ `Int` | 数と文字列の連鎖（TYPE-5a）。`Enum` `ClassName` `RoleName` も `Str` の族 |
+
+- (TYPE-6a) **種類の族**（`Ref` `Value` `Defined` `Object` `GlobRef`）は
+  **どちらの向きでも矛盾しません**。`ArrayRef` は `Ref` ですし、`Ref` としか
+  分かっていない値は `ArrayRef` でありえます。これを繋いでいなかったときは、
+  `[1]` も `{a=>1}` も `Ref` のスロットで `type-mismatch` になっていました。
+- (TYPE-6b) **数と文字列の連鎖は向きがあります**。`Int` は `Str` のスロットに
+  入りますが、`Str` の値は `Int` のスロットに入りません。数に見えるリテラルは
+  すでに `Int` なので（TYPE-5b）、残った `Str` は数ではない文字列だからです。
+
+### 2.7 二つの関係 (TYPE-7)
+
+型どうしの問いは二つあり、camello はその区別を持っています。
+
+- **`compatible(値, スロット)`** ——「この値がこのスロットに入りうるか」。
+  診断が出るのは**これが否と言ったときだけ**です（POLICY 1.1）。向きのある
+  関係で（TYPE-6b）、合併は**どれか一つの枝が入りうるなら**入りうると読みます。
+- **`is_assignable(値, スロット)`** —— 集合の包含、つまり値のとりうる値が
+  すべてスロットのものであるか。合併は**すべての枝**が入る必要があり、`Bool` は
+  `undef` を含むので `Value` でも `Defined` でもありません。
+
+- (TYPE-7a) 報告に使うのは `compatible` の方です。動的な Perl に対して包含を
+  包含を報告関係にすると、`Bool` と `Enum` のスロットなど、TYPE-5c で
+  「値は追わない」と決めた分まで鳴ります。
+- (TYPE-7b) 別のまとまった形は「`undef` を含みうる値を、`undef` を許さない
+  スロットへ渡している」もので、これは一つの診断として切り出す価値があります。
+  `maybe-deref` がデリファレンスについて言っていることの、引数版です。
+- (TYPE-7c) `is_assignable` は**まだどこからも報告されません**。厳格な読みを
+  入れるときの土台であり、二つの関係を互いに突き合わせるテスト
+  （`assignable ⇒ compatible`）の片方です。
+
 ## 3. アノテーションの読み取り (ANNOT)
 
 ### 3.1 どれもインポートで裏付けられている (ANNOT-1)
