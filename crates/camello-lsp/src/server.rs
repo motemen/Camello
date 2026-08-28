@@ -113,7 +113,6 @@ impl Backend {
         let Some(path) = snapshot.document.path.clone() else {
             return;
         };
-        let state = Arc::clone(&self.state);
         let outcome = tokio::task::spawn_blocking(move || {
             let cache = crate::settings::cache(snapshot.settings.cache_dir.as_deref());
             let decls = index::declarations(
@@ -122,44 +121,24 @@ impl Backend {
                 &snapshot.settings.dialect,
                 &cache,
             );
-            let fingerprint = index::fingerprint(&decls);
-            (path, decls, fingerprint)
+            (path, decls)
         })
         .await;
-        let Ok((path, decls, fingerprint)) = outcome else {
+        let Ok((path, decls)) = outcome else {
             return;
         };
 
-        // The first edit after a file is opened has no remembered
-        // fingerprint, and the graph's own declarations are what it should be
-        // compared against — otherwise every freshly opened file's first
-        // keystroke would sweep every other open file.
-        let held = {
-            let state = state.read().expect("no writer panics holding this");
-            let remembered = state.fingerprints.get(&path).cloned();
-            let index = Arc::clone(&state.index);
-            drop(state);
-            remembered.or_else(|| {
-                let index = index.read().expect("no writer panics holding this");
-                let program = index.analysis.program();
-                let file = program.index_of(&path)?;
-                Some(index::fingerprint(&program.file(file)?.decls))
-            })
-        };
-        let changed = held.as_deref() != Some(fingerprint.as_str());
-        state
-            .write()
-            .expect("no writer panics holding this")
-            .fingerprints
-            .insert(path.clone(), fingerprint);
-        if !changed {
-            return;
-        }
-        {
+        let changed = {
             let index = Arc::clone(&self.read().index);
             let mut index = index.write().expect("no reader panics holding this");
-            index.analysis.replace(&path, decls, true);
-            index.analysis.link();
+            let changed = index.install(&path, decls);
+            if changed {
+                index.analysis.link();
+            }
+            changed
+        };
+        if !changed {
+            return;
         }
         // Every *open* file, and no other: nobody is told about a broken
         // caller in a file nobody is looking at — that is `camello check`'s
@@ -170,6 +149,36 @@ impl Backend {
                 continue;
             }
             self.check_and_publish(other).await;
+        }
+    }
+
+    /// Put a file back the way disk has it, and re-check the open files if
+    /// that changed anything they can see.
+    ///
+    /// The mirror of [`Backend::reindex_if_declarations_changed`]: that one
+    /// installs a buffer over disk, this one installs disk over a buffer that
+    /// is gone.
+    async fn reinstall_from_disk(&self, path: PathBuf) {
+        let settings = Arc::clone(&self.read().settings);
+        let index = Arc::clone(&self.read().index);
+        let changed = tokio::task::spawn_blocking(move || {
+            let source = std::fs::read_to_string(&path).ok()?;
+            let cache = crate::settings::cache(settings.cache_dir.as_deref());
+            let decls = index::declarations(&path, &source, &settings.dialect, &cache);
+            let mut index = index.write().expect("no reader panics holding this");
+            let changed = index.install(&path, decls);
+            if changed {
+                index.analysis.link();
+            }
+            Some(changed)
+        })
+        .await;
+        if !matches!(changed, Ok(Some(true))) {
+            return;
+        }
+        let open = { self.read().open_uris() };
+        for uri in open {
+            self.check_and_publish(uri).await;
         }
     }
 
@@ -222,8 +231,41 @@ impl Backend {
         let index = Arc::clone(&self.read().index);
         tokio::spawn(async move {
             let built = tokio::task::spawn_blocking(move || index::build(&settings)).await;
-            let Ok(built) = built else { return };
+            let Ok(mut built) = built else { return };
             let files = built.files;
+            // The walk read disk, and disk is out of date for anything the
+            // user has been editing while it ran — which is every file they
+            // opened, since they did not sit still for the walk. Their
+            // buffers go in before the graph does, or the swap would drop
+            // declarations the editor is showing and nothing would put them
+            // back: the next edit to those buffers declares the same things,
+            // and a diff that says "unchanged" installs nothing.
+            let buffers: Vec<Arc<crate::document::Document>> = {
+                let held = state.read().expect("no writer panics holding this");
+                held.documents.values().map(Arc::clone).collect()
+            };
+            let settings = {
+                let held = state.read().expect("no writer panics holding this");
+                Arc::clone(&held.settings)
+            };
+            let relinked = tokio::task::spawn_blocking(move || {
+                let cache = crate::settings::cache(settings.cache_dir.as_deref());
+                let mut any = false;
+                for document in buffers {
+                    let Some(path) = document.path.as_ref() else {
+                        continue;
+                    };
+                    let decls =
+                        index::declarations(path, &document.text, &settings.dialect, &cache);
+                    any |= built.install(path, decls);
+                }
+                if any {
+                    built.analysis.link();
+                }
+                built
+            })
+            .await;
+            let Ok(built) = relinked else { return };
             {
                 let mut slot = index.write().expect("no reader panics holding this");
                 *slot = built;
@@ -419,9 +461,18 @@ impl LanguageServer for Backend {
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
         let uri = params.text_document.uri;
+        let path = uri.to_file_path().map(|path| path.into_owned());
         self.write().forget(&uri);
         // A file nobody is looking at has no diagnostics to look at.
         self.client.publish_diagnostics(uri, Vec::new(), None).await;
+        // While it was open the graph held the *buffer's* declarations, which
+        // may be an edit the user has just thrown away by closing without
+        // saving. Nothing else would ever put the file back — a closed file
+        // sends no more `didChange` — so the phantom would outlive the buffer
+        // it came from.
+        if let Some(path) = path {
+            self.reinstall_from_disk(path).await;
+        }
     }
 
     async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {
@@ -460,6 +511,12 @@ impl LanguageServer for Backend {
             return;
         }
 
+        // What is on disk is the truth for every file *except* the ones the
+        // user has open: there the buffer is, and a `didChange` for it may not
+        // even have been sent yet. Taking disk for an open file would install
+        // declarations the editor is not showing anybody.
+        let held = self.read().open_paths();
+        changed.retain(|path| !held.contains(path));
         if changed.is_empty() {
             return;
         }
@@ -482,15 +539,7 @@ impl LanguageServer for Backend {
             // nothing.
             let mut any = false;
             for (path, decls) in updated {
-                let before = index
-                    .analysis
-                    .program()
-                    .index_of(&path)
-                    .and_then(|file| index.analysis.program().file(file))
-                    .map(|entry| index::fingerprint(&entry.decls));
-                let after = index::fingerprint(&decls);
-                any |= before.as_deref() != Some(after.as_str());
-                index.analysis.replace(&path, decls, true);
+                any |= index.install(&path, decls);
             }
             if any {
                 index.analysis.link();

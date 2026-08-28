@@ -39,9 +39,6 @@ pub struct GlobalState {
     /// after it is a parse error, and the receiver's type is in the table the
     /// last complete parse produced (`docs/lsp.md`, "Completion").
     pub clean_tables: HashMap<Uri, Arc<Tables>>,
-    /// The declaration fingerprint each file was last analysed under, so an
-    /// edit can be asked whether it changed anything another file can see.
-    pub fingerprints: HashMap<PathBuf, String>,
     /// Bumped per document on every edit; a debounced job that finds the
     /// counter moved on knows a newer edit is already scheduled.
     pub edits: HashMap<Uri, u64>,
@@ -61,7 +58,6 @@ impl GlobalState {
             documents: HashMap::new(),
             tables: HashMap::new(),
             clean_tables: HashMap::new(),
-            fingerprints: HashMap::new(),
             edits: HashMap::new(),
             index,
         }
@@ -113,6 +109,16 @@ impl GlobalState {
     #[must_use]
     pub fn open_uris(&self) -> Vec<Uri> {
         self.documents.keys().cloned().collect()
+    }
+
+    /// The same, as paths: what the graph knows a file by, and what a
+    /// watched-file event has to be told not to overwrite.
+    #[must_use]
+    pub fn open_paths(&self) -> Vec<PathBuf> {
+        self.documents
+            .keys()
+            .filter_map(|uri| uri.to_file_path().map(|path| path.into_owned()))
+            .collect()
     }
 }
 

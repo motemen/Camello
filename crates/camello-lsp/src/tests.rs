@@ -481,3 +481,100 @@ fn fixtures_answer_what_their_markers_say() {
     }
     assert!(failures.is_empty(), "\n{}", failures.join("\n"));
 }
+
+/// The memo that decides whether an edit reaches the graph, and the two ways
+/// it used to come apart from the graph it describes.
+///
+/// This is below the fixture harness rather than in it: a fixture asks what a
+/// buffer answers, and what broke here was what the *graph* was told between
+/// two buffers. The symptom was an editor that went on reporting the type a
+/// file used to declare, through any number of further edits — the diff kept
+/// answering "unchanged" because it was comparing against a memo the graph no
+/// longer matched.
+mod declarations_reach_the_graph {
+    use std::fs;
+
+    use crate::index;
+    use crate::settings::Settings;
+
+    /// A workspace of one module, and the declarations of a buffer over it.
+    fn workspace(returns: &str) -> (tempfile::TempDir, Settings) {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        fs::write(
+            dir.path().join("Dog.pm"),
+            format!("package Dog;\n\n# Returns: {returns}\nsub speak {{ 'woof' }}\n\n1;\n"),
+        )
+        .expect("a writable fixture");
+        let (mut settings, problems) = Settings::load(dir.path(), &[dir.path().to_path_buf()]);
+        assert!(problems.is_empty(), "{problems:?}");
+        // As the fixture harness does: a test neither writes nor reads the
+        // on-disk declaration cache.
+        settings.cache_dir = None;
+        (dir, settings)
+    }
+
+    fn decls(
+        settings: &Settings,
+        source: &str,
+        path: &std::path::Path,
+    ) -> camello_sema::decl::FileDecls {
+        index::declarations(
+            path,
+            source,
+            &settings.dialect,
+            &camello_sema::resolve::Cache::disabled(),
+        )
+    }
+
+    #[test]
+    fn what_the_walk_read_is_not_news() {
+        let (dir, settings) = workspace("Str");
+        let path = dir.path().join("Dog.pm");
+        let mut built = index::build(&settings);
+        let same = decls(&settings, &fs::read_to_string(&path).unwrap(), &path);
+        assert!(
+            !built.install(&path, same),
+            "a file reinstalled unchanged is nobody's business, and a sweep for it is a sweep for nothing",
+        );
+    }
+
+    #[test]
+    fn a_buffer_over_the_walk_is_news() {
+        let (dir, settings) = workspace("Str");
+        let path = dir.path().join("Dog.pm");
+        let mut built = index::build(&settings);
+        let buffer = decls(
+            &settings,
+            "package Dog;\n\n# Returns: Int\nsub speak { 1 }\n\n1;\n",
+            &path,
+        );
+        assert!(built.install(&path, buffer));
+    }
+
+    /// The startup race and the `camello.toml` reload, in the one shape they
+    /// share: a graph is replaced wholesale while a buffer's declarations are
+    /// installed over it. A memo that outlived the graph would say the buffer
+    /// is unchanged and install nothing, and no later edit would ever say
+    /// otherwise, because every one of them declares the same things.
+    #[test]
+    fn a_rebuilt_graph_does_not_remember_the_buffer_it_never_saw() {
+        let (dir, settings) = workspace("Str");
+        let path = dir.path().join("Dog.pm");
+        let edited = "package Dog;\n\n# Returns: Int\nsub speak { 1 }\n\n1;\n";
+
+        let mut first = index::build(&settings);
+        assert!(first.install(&path, decls(&settings, edited, &path)));
+        assert!(
+            !first.install(&path, decls(&settings, edited, &path)),
+            "the same buffer twice is not two edits",
+        );
+
+        // The walk finishes, or the configuration changed: a new graph, read
+        // from disk, which says `Str`.
+        let mut rebuilt = index::build(&settings);
+        assert!(
+            rebuilt.install(&path, decls(&settings, edited, &path)),
+            "the buffer has to reach the new graph too — it is not what disk says",
+        );
+    }
+}
