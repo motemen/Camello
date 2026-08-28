@@ -817,6 +817,9 @@ reviewed as a decision rather than discovered as a difference.
   the one place inference crosses a boundary, and it is what would need a
   fixpoint over the program; without it every unannotated sub returns
   `Unknown`, which is silence. `Returns:` is how a sub says otherwise.
+  The design for lifting this — two tiers, the local one inside the
+  declaration pass and a program-wide fixpoint after `link` — is in
+  [return-inference.md](return-inference.md).
 - **A suppression comment reads two ways** (milestone 6). `##
   camello-disable: <code>` on a line of code is about that line, and on a line
   of its own is about the line below it. The second is what a long line needs,
