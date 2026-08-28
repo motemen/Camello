@@ -4,8 +4,47 @@ One line per change. The reasoning is in the commit it came from.
 
 ## Unreleased
 
+### Added
+
+- **`camello lsp`**, a language server over the machinery that was already
+  here (`docs/lsp.md`). One binary, no separate executable to version-match: a
+  client configures the command `camello lsp` and is done. It publishes the
+  checker's diagnostics as you type (300 ms after the last keystroke, at once
+  on save), answers hover with the inferred type or the sub's signature,
+  completes methods after `->` from what the receiver's class actually
+  declares, gives an outline and go-to-definition, and formats a whole file.
+  A thin VS Code client is in `editors/vscode/`; eglot and nvim-lspconfig want
+  nothing but the command, because everything configurable is the `[check]`
+  table of `camello.toml` that `camello check` already reads.
+- The checker runs on a **broken buffer**, which is the divergence from the
+  CLI that makes the whole thing useful. `camello check` discards every sema
+  diagnostic for a file that fails to parse — right for a batch tool, wrong
+  for an editor, where the buffer is broken most of the time and the user
+  still wants the real answers about the parts they are not touching. A
+  diagnostic whose range meets the enclosing *statement* of an `ERROR` node or
+  a parse error is dropped and everything else is published; statement
+  granularity is where the parser's own recovery synchronises.
+- Three additions to `camello-sema`, all on the output side — no analysis
+  logic changed, only results that used to die in a local getting a way out:
+  a **type side-table** (`flow::analyse_recording`) capturing `(range, type)`
+  for every expression the pass types and the resolved class at every `->`;
+  a **method surface** (`Program::methods_of`) answering "what is there" where
+  `resolve_method_from` answers "is this one there"; and a **scope table**
+  (`ScopeReport::bindings`, `::references`) exposing the resolution `scope.rs`
+  has always performed and never handed out.
+- `camello dev index` and `scripts/lsp-bar`: the corpus bars for the server.
+  Over the 2,681 `.pm` below `@INC` the walk takes 0.94s cold and the
+  `FileDecls`-only residency peaks at 217 MiB, and 200 decl-diff-clean edits
+  to one of the corpus's larger files cost 17 ms each — against a 300 ms
+  debounce.
+
 ### Changed
 
+- `camello.toml` is read by `camello_sema::config` rather than by the command
+  line, and the tree walk and worker pool by `camello_sema::workspace`. The
+  language server reads the same file under the same rules and walks a tree
+  the same way, and it cannot reach into the binary that depends on it — two
+  copies of either would have been two dialects of it.
 - **`camello lint` and `camello typecheck` are one command, `camello check`.**
   Breaking: neither old name is accepted. The split was justified by speed —
   the type lattice needs the dependency resolver behind it, and `lint` was to

@@ -26,6 +26,48 @@ pub struct FileEntry {
     pub in_roots: bool,
 }
 
+/// One method a class answers to, as [`Program::methods_of`] lists it.
+#[derive(Debug, Clone)]
+pub struct Method<'a> {
+    pub name: String,
+    /// The class that declares it, which is not the class it was asked of
+    /// when it was inherited.
+    pub class: String,
+    /// Where that class sits in the linearisation: `0` is the class itself,
+    /// so sorting by it puts a class's own methods before what it inherits.
+    pub depth: usize,
+    pub kind: MethodKind<'a>,
+}
+
+impl Method<'_> {
+    /// The signature to show beside the name, or `None` where there is
+    /// nothing to say.
+    #[must_use]
+    pub fn signature(&self) -> Option<String> {
+        match &self.kind {
+            MethodKind::Sub(symbol) => Some(crate::decl::signature_of(symbol)),
+            MethodKind::Attribute(attribute) => Some(format!(
+                "{} ({})",
+                attribute.returns(&self.name),
+                attribute.ty
+            )),
+            MethodKind::Constructor => Some("new(%args)".to_string()),
+            MethodKind::Universal => None,
+        }
+    }
+}
+
+/// Where a listed method came from.
+#[derive(Debug, Clone)]
+pub enum MethodKind<'a> {
+    Sub(&'a SubDecl),
+    Attribute(&'a crate::annotate::AttributeDecl),
+    /// The framework generates `new`.
+    Constructor,
+    /// `UNIVERSAL` gives it to every class.
+    Universal,
+}
+
 /// What a method name resolved to on a class.
 #[derive(Debug, Clone)]
 pub enum MethodLookup<'a> {
@@ -53,6 +95,11 @@ pub struct Program {
     /// last: a redefinition later in a file is usually a conditional
     /// alternative, and either answer is a guess.
     by_name: HashMap<(String, String), usize>,
+    /// Every sub a package declares, in declaration order. The closed set is
+    /// what completion needs and what asking `by_name` cannot give
+    /// (`docs/lsp.md`, "The method surface"); scanning `subs` for it would be
+    /// a walk of the whole workspace per keystroke.
+    by_package: HashMap<String, Vec<usize>>,
     /// Which files declare a package, for method resolution.
     packages: HashMap<String, Vec<usize>>,
     /// What this project's own modules stand in for (`camello.toml`,
@@ -99,6 +146,10 @@ impl Program {
             let key = (symbol.package.clone(), symbol.name.clone());
             if !self.by_name.contains_key(&key) {
                 self.by_name.insert(key, self.subs.len());
+                self.by_package
+                    .entry(symbol.package.clone())
+                    .or_default()
+                    .push(self.subs.len());
                 self.subs.push(symbol.clone());
             }
         }
@@ -109,6 +160,56 @@ impl Program {
             in_roots,
         });
         index
+    }
+
+    /// Install a file's declarations over the ones the graph already holds,
+    /// and rebuild what was indexed from them.
+    ///
+    /// An editor needs this and a batch run does not: `camello check` builds
+    /// the graph once and asks it once, while an edit that changes a
+    /// *declaration* changes what every other file can see
+    /// (`docs/lsp.md`, "Incremental reanalysis", step 5). The rebuild is over
+    /// the name indexes only — no file is reread and no body is walked —
+    /// which is what makes relinking cheap relative to the body passes it
+    /// invalidates.
+    ///
+    /// A path the graph does not hold is added instead, so the caller need
+    /// not ask first.
+    pub fn replace(&mut self, path: &Path, mut decls: FileDecls, in_roots: bool) -> usize {
+        let Some(index) = self.by_path.get(path).copied() else {
+            return self.add(path, decls, in_roots);
+        };
+        for symbol in &mut decls.subs {
+            symbol.file = index;
+        }
+        self.files[index].decls = decls;
+        self.files[index].in_roots = in_roots;
+        self.reindex();
+        index
+    }
+
+    /// Rebuild the name indexes from the files, which are the truth.
+    fn reindex(&mut self) {
+        self.subs.clear();
+        self.by_name.clear();
+        self.by_package.clear();
+        self.packages.clear();
+        for (index, entry) in self.files.iter().enumerate() {
+            for (_, name) in &entry.decls.packages {
+                self.packages.entry(name.clone()).or_default().push(index);
+            }
+            for symbol in &entry.decls.subs {
+                let key = (symbol.package.clone(), symbol.name.clone());
+                if !self.by_name.contains_key(&key) {
+                    self.by_name.insert(key, self.subs.len());
+                    self.by_package
+                        .entry(symbol.package.clone())
+                        .or_default()
+                        .push(self.subs.len());
+                    self.subs.push(symbol.clone());
+                }
+            }
+        }
     }
 
     #[must_use]
@@ -387,6 +488,80 @@ impl Program {
         } else {
             MethodLookup::Missing
         }
+    }
+
+    /// Everything callable on a class, in MRO order (`docs/lsp.md`, "The
+    /// method surface").
+    ///
+    /// [`Program::resolve_method_from`] answers "is this one there"; this
+    /// answers "what is there", which is a different question and the one
+    /// completion asks. Data, not diagnostics: nothing here decides whether a
+    /// name *should* have been found, so an unknown ancestor is not this
+    /// function's business — it means the list is a floor rather than the
+    /// whole set, and the caller who cares is told by
+    /// [`Program::has_unknown_ancestor`].
+    ///
+    /// A name is listed once, by the first class in the linearisation that
+    /// declares it, which is the one perl would reach.
+    #[must_use]
+    pub fn methods_of(&self, package: &str) -> Vec<Method<'_>> {
+        let mut methods: Vec<Method<'_>> = Vec::new();
+        let mut seen: HashSet<String> = HashSet::new();
+        let order = self.linearise(package);
+        for (depth, class) in order.iter().enumerate() {
+            for index in self.by_package.get(class).into_iter().flatten() {
+                let symbol = &self.subs[*index];
+                if seen.insert(symbol.name.clone()) {
+                    methods.push(Method {
+                        name: symbol.name.clone(),
+                        class: class.clone(),
+                        depth,
+                        kind: MethodKind::Sub(symbol),
+                    });
+                }
+            }
+            for facts in self.facts(class) {
+                for attribute in &facts.attributes {
+                    // The accessor answers to its own name, and to every name
+                    // the framework generated beside it — the same set
+                    // [`crate::annotate::AttributeDecl::answers_to`] tests one
+                    // name against.
+                    let names = std::iter::once(&attribute.name)
+                        .chain(attribute.methods.iter().map(|method| &method.name));
+                    for name in names {
+                        if seen.insert(name.clone()) {
+                            methods.push(Method {
+                                name: name.clone(),
+                                class: class.clone(),
+                                depth,
+                                kind: MethodKind::Attribute(attribute),
+                            });
+                        }
+                    }
+                }
+                if facts.constructor && seen.insert("new".to_string()) {
+                    methods.push(Method {
+                        name: "new".to_string(),
+                        class: class.clone(),
+                        depth,
+                        kind: MethodKind::Constructor,
+                    });
+                }
+            }
+        }
+        // Last, and at a depth past every real class: `UNIVERSAL` is there,
+        // and it is never what the user meant to be shown first.
+        for name in Self::UNIVERSAL {
+            if seen.insert((*name).to_string()) {
+                methods.push(Method {
+                    name: (*name).to_string(),
+                    class: "UNIVERSAL".to_string(),
+                    depth: order.len(),
+                    kind: MethodKind::Universal,
+                });
+            }
+        }
+        methods
     }
 
     /// A named type a project's own `Type::Library` declares.

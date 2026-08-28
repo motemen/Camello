@@ -1,0 +1,63 @@
+{
+  "name": "camello",
+  "displayName": "camello",
+  "description": "Perl diagnostics, hover, method completion and formatting, from the camello language server",
+  "version": "0.1.1",
+  "publisher": "camello",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters",
+    "Formatters"
+  ],
+  "activationEvents": [
+    "onLanguage:perl",
+    "workspaceContains:**/camello.toml"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "camello",
+      "properties": {
+        "camello.path": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to the `camello` binary. Empty means whatever is on `PATH`."
+        },
+        "camello.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Log the traffic between the editor and the server."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "camello.restartServer",
+        "title": "camello: Restart Language Server"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.3"
+  }
+}

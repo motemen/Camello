@@ -13,6 +13,7 @@
 
 pub mod annotate;
 pub mod arity;
+pub mod config;
 pub mod decl;
 pub mod diag;
 pub mod flow;
@@ -22,6 +23,7 @@ pub mod resolve;
 pub mod scope;
 pub mod suppress;
 pub mod types;
+pub mod workspace;
 
 use std::path::Path;
 
@@ -171,6 +173,12 @@ impl Analysis {
         self.program.add(path, decls, in_roots)
     }
 
+    /// Install a file's declarations over the ones already in the graph
+    /// (`docs/lsp.md`, "Incremental reanalysis").
+    pub fn replace(&mut self, path: &Path, decls: decl::FileDecls, in_roots: bool) -> usize {
+        self.program.replace(path, decls, in_roots)
+    }
+
     #[must_use]
     pub fn program(&self) -> &Program {
         &self.program
@@ -198,10 +206,41 @@ impl Analysis {
         source: &str,
         options: &Options,
     ) -> Vec<Diagnostic> {
-        let mut diagnostics = scope::analyse(root, source, &options.guard_classes).diagnostics;
+        self.analyse_file(path, root, source, options, false)
+            .diagnostics
+    }
+
+    /// The same, keeping the tables the passes built on the way
+    /// (`docs/lsp.md`, "What sema must newly expose").
+    ///
+    /// `record` is what an editor asks for and the CLI does not: the scope
+    /// resolution comes out either way — the pass computes it and the only
+    /// question was whether anything kept it — while the type side-table
+    /// costs a clone per typed expression and is built only when asked.
+    #[must_use]
+    pub fn analyse_file(
+        &self,
+        path: &Path,
+        root: &SyntaxNode,
+        source: &str,
+        options: &Options,
+        record: bool,
+    ) -> FileAnalysis {
+        let mut scope = scope::analyse(root, source, &options.guard_classes);
+        let mut types = flow::TypeTable::default();
+        // Moved rather than copied: what comes back is the merged, filtered
+        // list, and a second copy inside the scope report would be the same
+        // diagnostics under different rules.
+        let mut diagnostics = std::mem::take(&mut scope.diagnostics);
         if let Some(file) = self.program.index_of(path) {
             diagnostics.extend(arity::analyse(root, file, &self.program));
-            diagnostics.extend(flow::analyse(root, file, &self.program));
+            if record {
+                let (found, table) = flow::analyse_recording(root, file, &self.program);
+                diagnostics.extend(found);
+                types = table;
+            } else {
+                diagnostics.extend(flow::analyse(root, file, &self.program));
+            }
             // What the declaration pass had to say about this file's
             // annotations. It ran once, over every file; a dependency's
             // diagnostics are read and dropped, because no diagnostic is ever
@@ -226,8 +265,29 @@ impl Analysis {
             diagnostics.retain(|diagnostic| !suppressions.silences(diagnostic, source, &index));
         }
         diagnostics.sort_by_key(|diagnostic| (diagnostic.range.start(), diagnostic.code));
-        diagnostics
+        FileAnalysis {
+            diagnostics,
+            types,
+            scope,
+            file: self.program.index_of(path),
+        }
     }
+}
+
+/// One file's answers, and the tables behind them.
+///
+/// `camello check` reads the diagnostics and drops the rest; an editor reads
+/// all three, because hover and completion are questions about what the
+/// checker knew rather than about what it complained of.
+pub struct FileAnalysis {
+    pub diagnostics: Vec<Diagnostic>,
+    /// Empty unless the caller asked for the recording pass.
+    pub types: flow::TypeTable,
+    pub scope: scope::ScopeReport,
+    /// Where the file sits in the program graph, or `None` when the graph
+    /// does not hold it — which is what single-file mode looks like before
+    /// the workspace index has finished.
+    pub file: Option<usize>,
 }
 
 /// Every public sub in a file that says nothing about its own shape.

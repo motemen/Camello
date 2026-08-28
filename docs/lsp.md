@@ -1,9 +1,10 @@
 # Design: `camello lsp`
 
-Status: designed 2026-08-28, not implemented. The scope decisions here came
-out of an interview rather than out of the corpus, and are marked as such;
-once code exists it becomes the authority, the way `docs/typecheck.md`
-describes.
+Status: implemented 2026-08-28. The scope decisions here came out of an
+interview rather than out of the corpus; the code is now the authority, the
+way `docs/typecheck.md` describes, and where the two differ this document is
+what is wrong. Where a decision was provisional and a measurement has since
+been taken, the number is written in beside it.
 
 This is the design for a Language Server Protocol server over the machinery
 camello already has: the lossless CST from `camello-syntax`, the formatter
@@ -12,7 +13,7 @@ from `camello-fmt`, and — most of all — the two-phase checker from
 ([typecheck.md](typecheck.md)) left a door open for exactly this. This
 document walks through that door.
 
-## What is being built
+## What is built
 
 `camello lsp`: a subcommand that speaks LSP over stdio. One binary, no
 separate executable to find or version-match; a client configures the
@@ -67,12 +68,32 @@ nothing VS Code-specific in it.
 
 ## The crate and the runtime
 
-A new workspace member, `crates/camello-lsp`, holding everything but the
-`clap` wiring; the root crate's `cli.rs` gains the `lsp` subcommand and
-calls into it. The crate depends on `camello-syntax`, `camello-sema`, *and*
+A workspace member, `crates/camello-lsp`, holding everything but the `clap`
+wiring; the root crate's `cli.rs` has the `lsp` subcommand and calls
+`camello_lsp::run()`.
+
+```text
+stdin/stdout ── tower-lsp-server ─▶ server.rs      the protocol and the debounce
+                                    state.rs       what is open, and the graph
+                                    document.rs    green trees, per version
+                                    position.rs    byte offsets ⇄ line/character
+                                    index.rs       the background declaration walk
+                                    settings.rs    camello.toml, as the server reads it
+                                    analysis.rs    one file's diagnostics and tables
+                                    handlers/      hover, completion, symbols, …
+                                    bar.rs         the corpus bars
+```
+ The crate depends on `camello-syntax`, `camello-sema`, *and*
 `camello-fmt` — the first crate to see both sides. The rule that matters is
 unchanged and still Cargo-enforced: nothing under `sema` reaches `fmt`. An
 LSP sits above both, so it may see both, the same way the root crate does.
+
+Two things moved *down* into `camello-sema` to make that work, and both
+belong there on their own merits: `config` — the `[check]` table, whose codes
+and severities are that crate's vocabulary — and `workspace`, the tree walk
+and worker pool that `camello check` and the index both run the declaration
+pass through. The server cannot reach into the binary that depends on it, and
+a second copy of either would have been a second dialect of it.
 
 The server is built on **`tower-lsp-server`** (the maintained community fork
 of `tower-lsp`, which has been dormant since ~2023 — verified during the
@@ -207,9 +228,16 @@ answered from single-file analysis (the `check_source`-shaped path — lexical
 diagnostics are exact, cross-file answers are absent); after it, the full
 graph answers. Open files are never queued behind the walk. Files changed
 outside the editor arrive via `workspace/didChangeWatchedFiles`
-(`**/*.pl`, `**/*.pm`, `camello.toml` — the last reloads config and
-relinks); each event re-runs the declaration pass for that file and applies
-the same decl-diff as an edit.
+— the four extensions `camello check` walks, plus `camello.toml`, which
+reloads the configuration and rebuilds the graph, since the dialect and the
+stub roots are read *during* the declaration pass and neither can be patched
+into a graph already built. The registration is dynamic, asked for only where
+the client says it accepts one, and spawned rather than awaited: a request to
+the client inside a notification handler holds up every notification behind it
+— the `didOpen` that follows immediately included. Each file event re-runs the
+declaration pass for that file and applies the same decl-diff as an edit, so a
+file that was touched, or rewritten with the same declarations, sweeps
+nothing.
 
 ## Incremental reanalysis
 
@@ -252,8 +280,14 @@ way out.
    `resolve_method_from` and `linearise`; what completion needs is the
    closed set: *all* methods (and generated accessors, from `attributes`)
    visible on class `C`, in MRO order, each with its `SubDecl` so the
-   signature can be shown. A `Program::methods_of(&self, class) -> Vec<…>`
-   returning data, not diagnostics.
+   signature can be shown. `Program::methods_of(&self, class) ->
+   Vec<Method>` returns data, not diagnostics: nothing in it decides whether
+   a name *should* have been found, so an unknown ancestor is not its
+   business — it means the list is a floor rather than the whole set, and
+   the caller who cares asks `has_unknown_ancestor`. A name is listed once,
+   by the first class in the linearisation that declares it, and what
+   `UNIVERSAL` gives every class is listed last, at a depth past every real
+   one.
 3. **The scope table.** `scope.rs` resolves every lexical reference today
    and exports `ScopeReport { diagnostics }` — nothing else; `Binding` is
    private. Export the resolution: bindings (range, name, sigil, kind) and
@@ -273,9 +307,12 @@ a gap papered over.
 
 ## Completion
 
-Triggered on `>` (as part of `->`) and by explicit request. The receiver's
-type comes from the type side-table at the offset left of the arrow; if it
-names a known class, the items are `Program::methods_of` in MRO order —
+Triggered on `>` (as part of `->`) and by explicit request. A bareword
+invocant — `Foo::Bar->` — is a class outright and needs no inference at all,
+which is what makes it work in a buffer too broken to type; otherwise the
+receiver's type comes from the type side-table at the offset left of the
+arrow. If it names a known class, the items are `Program::methods_of` in MRO
+order —
 label the method name, detail the signature, sorted so the class's own
 methods precede inherited ones. If the receiver's type is `Unknown`:
 **no items** — an empty list, deliberately. The interview chose precision
@@ -297,8 +334,13 @@ completion handler.
 ## Formatting
 
 `textDocument/formatting` is `camello_fmt::format(root, trivia, options)`
-over the stored tree, options from `camello.toml`, returned as **one
-whole-document `TextEdit`**. Minimal-diff edit splitting is cosmetic — the
+over the stored tree, returned as **one whole-document `TextEdit`**. The
+options are the defaults, and deliberately: there is no `[format]` table in
+`camello.toml`, and the layout flags on `camello format` are hidden because
+their names and defaults may still move (`docs/architecture.md`), so the
+server formats the way `camello format` with no flags formats — which is the
+only answer that cannot drift from it. Minimal-diff edit splitting is
+cosmetic — the
 idempotency invariant means a second application changes nothing — and can
 come later if cursor-jumping annoys. A file whose parse has errors is not
 formatted (the request returns null), matching the CLI's refusal to format
@@ -324,67 +366,94 @@ The fixture habit continues (`docs/contracts.md`, "Tests and fixtures"), one
 level up:
 
 - **`PositionMap`** unit tests over the nasty cases: multi-byte UTF-8,
-  astral-plane characters (two UTF-16 units), `\r\n`, a final line without
-  newline. This is where LSP servers classically go wrong; it is also the
-  easiest layer to pin down exhaustively.
-- **Handler tests without a transport.** `tower-lsp-server`'s
-  `LanguageServer` is a trait on a plain struct; tests construct the server,
-  feed it `didOpen`/`didChange` with fixture text, and call handlers
-  directly. Fixtures are Perl files with cursor markers in comments
-  (`#^ hover`, `#^ complete` on the line below the position they point at),
-  harness-checked the way `#~` diagnostics are: the marker set must equal
-  the response set. insta snapshots for response shapes.
-- **The broken-buffer suite.** Fixtures that are *deliberately* mid-edit —
-  the unclosed brace, the dangling `->` — asserting both that sema
-  diagnostics survive outside the blast radius and that completion works on
-  the dangling arrow. No existing fixture class covers this; it is the
-  LSP's own corpus.
-- **Corpus bars**, in the `scripts/corpus-check` tradition: index all of
-  `@INC` — the walk completes, memory stays within a stated budget, and the
-  wall time is printed so regressions are visible. A scripted
-  edit-loop benchmark (N edits to one file of the corpus, decl-diff clean)
-  gives the debounce a number to be compared against.
+  astral-plane characters (two UTF-16 units), `\r\n`, a final line without a
+  newline, the empty document. This is where LSP servers classically go wrong;
+  it is also the easiest layer to pin down exhaustively.
+- **Handler tests without a transport**, in `crates/camello-lsp/src/tests.rs`.
+  `tower-lsp-server`'s `LanguageServer` is a trait on a plain struct, so what
+  the protocol adds above the handlers is JSON and a socket: the harness holds
+  the state, opens a document, edits it and calls the handlers. A fixture is a
+  *directory* under `src/fixtures/` — everything in it is the workspace,
+  indexed the way a real one is — and its expectations are comments inside its
+  Perl:
+
+  ```perl
+  my $dog = Dog->new(name => 'Rex');
+  #   ^ hover $dog : InstanceOf['Dog']
+  print $dog->speak;
+  #           ^ definition Dog.pm:7:5
+  #          ^ complete-own speak, legs, new, name
+  ```
+
+  `#<spaces>^ <feature> <expected>` asks at the caret's column in the nearest
+  line of Perl above; `-` is how "no answer" is written, which is the answer
+  the silence discipline produces most often and the one worth being able to
+  assert. Diagnostics use the `#~ <severity> <code>` grammar the checker's own
+  fixtures use, on purpose: what an editor shows and what `camello check`
+  prints are the same diagnostics. Both sets must be *equal*, so a fixture
+  with no markers is how "the server stays silent here" is written down.
+- **The broken-buffer suite**, `src/fixtures/broken-buffer/`. A file named
+  `X.pl.edit` beside `X.pl` is the buffer *after* an edit: the harness opens
+  the first, sends the second as version 2, and asks the second's markers of
+  it. That is the only way to write down a mid-edit state — a half-typed `->`
+  whose receiver is only in the previous version's table — and it asserts both
+  halves of the policy: the `unused-variable` two lines up survives, and
+  completion answers on the dangling arrow.
+- **Corpus bars**, in the `scripts/corpus-check` tradition: `camello dev
+  index` asks, `scripts/lsp-bar` supplies the corpus. It indexes all of
+  `@INC`, printing the files, the wall time and the peak resident size, and
+  `--edits N` adds the edit-loop number the debounce is compared against. The
+  measurements as of writing are in "Open questions" below.
 
 ## Milestones
 
-Each shippable, each proving the layer the next one stands on:
+All six are built. Each was shippable, and each proved the layer the next one
+stands on:
 
-1. **Skeleton.** `camello lsp` + `crates/camello-lsp`; initialize;
-   full-sync document store with green trees; parse-error diagnostics;
-   whole-file formatting; the VS Code extension. Proves the plumbing,
-   `PositionMap`, and the snapshot shape end to end with almost no new
-   analysis surface.
-2. **Single-file checking.** Debounced sema diagnostics on the open file
-   (single-file mode), the partial-tree policy and its blast-radius
-   suppression; `textDocument/documentSymbol` from `FileDecls` (subs and
-   packages — the ranges are already there).
+1. **Skeleton.** `camello lsp` + `crates/camello-lsp`; initialize; full-sync
+   document store with green trees; parse-error diagnostics; whole-file
+   formatting; the VS Code extension.
+2. **Single-file checking.** Debounced sema diagnostics on the open file, the
+   partial-tree policy and its blast-radius suppression;
+   `textDocument/documentSymbol`.
 3. **The index.** Background walk, `FileDecls` residency, `Program`
-   construction, decl-diff invalidation, watched files, cross-file
-   diagnostics for open files. Definition for bareword calls and method
-   calls rides along nearly free (`resolve_call` / `resolve_method_from`
-   exist; this milestone is when a `Program` exists to ask).
-4. **The type side-table** in sema; hover for types and signatures.
-5. **The method surface** in sema; method completion, including the
-   dangling-arrow token walk.
-6. **The scope table** in sema; hover and definition for lexicals;
-   references and rename become possible and are scheduled on demand.
+   construction, decl-diff invalidation, watched files, cross-file diagnostics
+   for open files. Definition for bareword calls and method calls rode along.
+4. **The type side-table** in sema (`flow::analyse_recording`); hover for
+   types and signatures.
+5. **The method surface** in sema (`Program::methods_of`); method completion,
+   including the dangling-arrow token walk.
+6. **The scope table** in sema (`ScopeReport::bindings` and `::references`);
+   hover and definition for lexicals. References and rename remain possible
+   and unscheduled, which is where the design left them.
 
 ## Open questions
 
-Decided provisionally; written down so the decision is visible.
+Decided provisionally; written down so the decision is visible, and updated
+where a measurement has since been taken.
 
-- **Full sync forever?** Full for now. If profiling shows reparse-per-
-  keystroke matters on the largest real files, incremental sync plus
-  rowan-level incremental reparsing is the escape hatch — in that order,
-  and neither before a measurement.
-- **Memory bar for the index.** `FileDecls`-only residency is *assumed* to
-  fit the work repository comfortably; the corpus bar makes it a number. If
-  the assumption fails, the decl cache already on disk makes drop-and-
-  recache the obvious spill strategy.
-- **Where does the blast radius stop?** "Enclosing statement" is the first
-  answer for diagnostic suppression near parse errors. If real editing
-  shows cascades leaking past it (a broken `sub` header poisoning the whole
-  body), widening to the enclosing block is the next answer. The
-  broken-buffer suite is where the evidence accumulates.
+- **Full sync forever?** Full, still. The edit-loop bar puts a
+  decl-diff-clean edit — reparse, declaration pass, fingerprint, body pass —
+  at 17 ms on one of the larger files below `@INC`, against a 300 ms debounce,
+  so the reparse is not what would be worth optimising first. If profiling
+  ever says otherwise, incremental sync plus rowan-level incremental
+  reparsing is the escape hatch, in that order, and neither before a
+  measurement.
+- **Memory bar for the index.** Measured: the 2,681 `.pm` below `@INC` index
+  in 0.94s cold and peak at 217 MiB resident, about 83 KiB of `FileDecls` per
+  file. That fits the work repository this was built for, and it is a number
+  rather than an assumption now. If a repository ever fails it, the decl cache
+  already on disk makes drop-and-recache the obvious spill strategy.
+  `scripts/lsp-bar` is how the number is taken again.
+- **Where does the blast radius stop?** "Enclosing statement" is still the
+  answer, and `src/fixtures/broken-buffer/` is where the evidence for or
+  against it accumulates. If real editing shows cascades leaking past it — a
+  broken `sub` header poisoning the whole body — widening to the enclosing
+  block is the next answer.
 - **`camello lsp` visibility.** Visible in `--help`, unlike `dev`: it is a
-  user-facing entry point, hidden discoverability helps nobody.
+  user-facing entry point, and hidden discoverability helps nobody.
+- **Hover on a lexical the checker knows nothing about.** Answered by
+  building it: nothing. Showing `$thing` to a hover over `$thing` is a
+  shrug-string with extra steps — it repeats what the reader is looking at and
+  hides the one thing the silence tells them, which is that the checker has no
+  type for this value.

@@ -24,7 +24,7 @@ use std::collections::HashMap;
 
 use camello_syntax::ast::{self, AstNode, DeclKeyword, Sigil, Variable};
 use camello_syntax::lang::{NodeExt, NodeKind, SyntaxNode, TokenExt, TokenKind};
-use rowan::TextRange;
+use rowan::{TextRange, TextSize};
 
 use crate::annotate::{ListShape, Returns};
 use crate::decl::{Param, ParamSource, Params};
@@ -35,6 +35,31 @@ use crate::types::Type;
 /// Check one file's bodies against everything the program declares.
 #[must_use]
 pub fn analyse(root: &SyntaxNode, file: usize, program: &Program) -> Vec<Diagnostic> {
+    run(root, file, program, false).0
+}
+
+/// The same walk, keeping the type it inferred for every expression it typed
+/// (`docs/lsp.md`, "The type side-table").
+///
+/// Off for the CLI and on for an editor's per-file pass: the pass computes
+/// these types either way, and the only question is whether they are written
+/// down or dropped. One table backs both hover and completion.
+#[must_use]
+pub fn analyse_recording(
+    root: &SyntaxNode,
+    file: usize,
+    program: &Program,
+) -> (Vec<Diagnostic>, TypeTable) {
+    let (diagnostics, table) = run(root, file, program, true);
+    (diagnostics, table.unwrap_or_default())
+}
+
+fn run(
+    root: &SyntaxNode,
+    file: usize,
+    program: &Program,
+    record: bool,
+) -> (Vec<Diagnostic>, Option<TypeTable>) {
     let mut pass = Pass {
         program,
         file,
@@ -42,10 +67,79 @@ pub fn analyse(root: &SyntaxNode, file: usize, program: &Program) -> Vec<Diagnos
         diagnostics: Vec::new(),
         package: "main".to_string(),
         returns: Returns::default(),
+        record: record.then(TypeTable::default),
     };
     pass.block(root);
     pass.check_annotations();
-    pass.diagnostics
+    (pass.diagnostics, pass.record)
+}
+
+/// What the walk inferred, kept by range.
+///
+/// Ranges nest, the way expressions do, and nothing here flattens them: the
+/// answer to "what is the type *here*" is the innermost range that has one,
+/// which is what [`TypeTable::at`] returns.
+#[derive(Debug, Default, Clone)]
+pub struct TypeTable {
+    /// Every expression the pass typed, in the order it typed them.
+    pub types: Vec<(TextRange, Type)>,
+    /// Every `->` whose receiver named a class the run knows.
+    pub methods: Vec<MethodSite>,
+}
+
+/// One resolved `->` call site.
+#[derive(Debug, Clone)]
+pub struct MethodSite {
+    /// The invocant expression: `$obj` in `$obj->name(...)`.
+    pub receiver: TextRange,
+    /// The method name alone.
+    pub method_range: TextRange,
+    /// The class the receiver was resolved to.
+    pub class: String,
+    pub method: String,
+    /// The package the call is *written* in, which is what `SUPER::` is
+    /// relative to — so a reader of this table resolves the method the same
+    /// way the pass did.
+    pub from: String,
+}
+
+impl TypeTable {
+    /// The innermost type known at an offset, or `None` where the checker
+    /// knows nothing.
+    ///
+    /// `Unknown` is not an answer — it is the checker saying it did not
+    /// analyse this — so it is skipped rather than returned, which is what
+    /// makes hover silent instead of shrugging (`docs/lsp.md`, "Hover").
+    #[must_use]
+    pub fn at(&self, offset: TextSize) -> Option<(TextRange, &Type)> {
+        self.types
+            .iter()
+            .filter(|(range, ty)| !ty.is_unknown() && range.contains_inclusive(offset))
+            .min_by_key(|(range, _)| range.len())
+            .map(|(range, ty)| (*range, ty))
+    }
+
+    /// The type recorded for exactly this range, latest first.
+    ///
+    /// Completion asks this way: it has found the receiver by walking tokens,
+    /// so it knows the range and wants that expression's own type rather than
+    /// whatever encloses it.
+    #[must_use]
+    pub fn of(&self, range: TextRange) -> Option<&Type> {
+        self.types
+            .iter()
+            .rev()
+            .find(|(recorded, ty)| *recorded == range && !ty.is_unknown())
+            .map(|(_, ty)| ty)
+    }
+
+    /// The `->` call site whose method name covers an offset.
+    #[must_use]
+    pub fn method_at(&self, offset: TextSize) -> Option<&MethodSite> {
+        self.methods
+            .iter()
+            .find(|site| site.method_range.contains_inclusive(offset))
+    }
 }
 
 /// What each lexical holds, as far as the walk has got.
@@ -117,6 +211,9 @@ struct Pass<'a> {
     package: String,
     /// What the sub being walked said it returns.
     returns: Returns,
+    /// Where the inferred types go when an editor asked for them, and `None`
+    /// when nobody did (`docs/lsp.md`, "The type side-table").
+    record: Option<TypeTable>,
 }
 
 impl Pass<'_> {
@@ -375,7 +472,19 @@ impl Pass<'_> {
 
     /// The type of an expression in scalar context, checking what it holds on
     /// the way down.
+    ///
+    /// The recording is here rather than at each arm because this is the one
+    /// door every expression goes through, so a table built here covers
+    /// exactly what the pass typed and cannot drift from it.
     fn type_of(&mut self, node: &SyntaxNode) -> Type {
+        let ty = self.infer(node);
+        if let Some(table) = &mut self.record {
+            table.types.push((node.text_range(), ty.clone()));
+        }
+        ty
+    }
+
+    fn infer(&mut self, node: &SyntaxNode) -> Type {
         match node.node_kind() {
             NodeKind::LITERAL => literal_type(node),
             NodeKind::Q_EXPR | NodeKind::QQ_EXPR | NodeKind::HEREDOC_EXPR | NodeKind::QX_EXPR => {
@@ -875,6 +984,15 @@ impl Pass<'_> {
         let Some(class) = class else {
             return Type::Unknown;
         };
+        if let Some(table) = &mut self.record {
+            table.methods.push(MethodSite {
+                receiver: invocant.text_range(),
+                method_range: call.method_range(),
+                class: class.clone(),
+                method: method.clone(),
+                from: self.package.clone(),
+            });
+        }
 
         match self
             .program
