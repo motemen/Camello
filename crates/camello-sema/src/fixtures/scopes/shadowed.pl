@@ -5,12 +5,12 @@ my $depth = 1;
 print $depth;
 
 if ($depth) {
-    my $depth = 2;              #~ warning shadowed-variable: `$depth`
+    my $depth = 2;              #~ info shadowed-variable: `$depth`
     print $depth;
 }
 
 sub inner {
-    my $depth = 3;              #~ warning shadowed-variable: `$depth`
+    my $depth = 3;              #~ info shadowed-variable: `$depth`
     return $depth;
 }
 

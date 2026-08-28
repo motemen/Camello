@@ -24,5 +24,5 @@ my $inherited = Nested->new;
 my $from_a_sub = make_lock();
 
 # No destructor, so never reading it is the mistake the diagnostic is about.
-my $plain = Plain->new;         #~ warning unused-variable: `$plain`
-my $number = 42;                #~ warning unused-variable: `$number`
+my $plain = Plain->new;         #~ info unused-variable: `$plain`
+my $number = 42;                #~ info unused-variable: `$number`

@@ -90,7 +90,7 @@ $named->shout(who => 'x');      #~ error missing-argument: requires `tag`
 # the constraint. So the call below is a program that runs, and the one under
 # it — the same `undef` against a name that has to be there — is not.
 $named->greet(who => 'x', loud => undef);
-$named->greet(who => undef);    #~ error type-mismatch: `Undef` passed to `who`
+$named->greet(who => undef);    #~ error type-mismatch: (`Undef`) passed to `who`
 
 # `Unknown` propagates: an operation on something nobody typed says nothing.
 my $opaque = get_it();
