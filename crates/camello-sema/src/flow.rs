@@ -69,6 +69,7 @@ fn run(
         returns: Returns::default(),
         record: record.then(TypeTable::default),
         infer: None,
+        call_shape: None,
     };
     pass.block(root);
     pass.check_annotations();
@@ -125,6 +126,7 @@ pub fn infer_returns(
             wanted,
             ..Inference::default()
         })),
+        call_shape: None,
     };
     pass.block(root);
     pass.infer.expect("set above").found
@@ -273,6 +275,16 @@ struct Pass<'a> {
     /// Where the return walk collects, and `None` when the pass is checking
     /// bodies rather than reading returns off them.
     infer: Option<Box<Inference>>,
+    /// The list shape of the last call this pass resolved, with the range of
+    /// the call it belongs to.
+    ///
+    /// `type_of` answers in scalar context by contract (INFER-6a), and this is
+    /// how [`Pass::shape_of`] gets the other half of the same lookup without
+    /// walking the call a second time — which over a nested list operator
+    /// would cost 2^depth. The range is what makes it safe to read: a call
+    /// that took one of the early paths out of [`Pass::call`] left somebody
+    /// else's shape here, and the answer is only this node's if it says so.
+    call_shape: Option<(TextRange, ListShape)>,
 }
 
 /// The return walk's state (`docs/return-inference.md`, "Sites").
@@ -665,11 +677,14 @@ impl Pass<'_> {
             match child.node_kind() {
                 NodeKind::BLOCK => self.block(&child),
                 NodeKind::FOREACH_HEADER => {
-                    // `foreach my $x (@list)` binds the element type.
+                    // `foreach my $x (@list)` binds the element type, and the
+                    // header is one of the places list context is written
+                    // down: `foreach my $row ($self->rows)` reads the shape
+                    // where reading the scalar type gave `Unknown`.
                     let element = child
                         .children()
                         .find(|inner| inner.node_kind() != NodeKind::VAR_DECL)
-                        .map(|inner| element_of(&self.type_of(&inner)))
+                        .map(|inner| Type::union(self.shape_of(&inner).members()))
                         .unwrap_or(Type::Unknown);
                     if let Some(declaration) = child.children().find_map(ast::VarDecl::cast) {
                         for target in declaration.targets() {
@@ -780,10 +795,13 @@ impl Pass<'_> {
             }
             NodeKind::ANON_ARRAY => {
                 let view = ast::AnonArray::cast(node.clone()).expect("kind checked");
+                // Every element read in list context and flattened, so that
+                // `[ $self->rows ]` is an `ArrayRef[Row]` rather than an
+                // `ArrayRef[Unknown]`.
                 let members: Vec<Type> = view
                     .elements()
                     .iter()
-                    .map(|element| self.list_element(element))
+                    .flat_map(|element| self.shape_of(element).members())
                     .collect();
                 if members.is_empty() {
                     Type::ArrayRef(Box::new(Type::Unknown))
@@ -883,6 +901,235 @@ impl Pass<'_> {
         }
     }
 
+    /// The list-context reading of an expression
+    /// (`docs/return-inference.md`, "The list-context reading").
+    ///
+    /// Beside [`Pass::type_of`] rather than inside it: INFER-6a says every
+    /// expression is typed in scalar context, and this is the second dispatch
+    /// for the four places where the context is *written* rather than guessed
+    /// — a list or array assignment, the elements of `[ ... ]`, a `foreach`
+    /// header, and a `return`.
+    ///
+    /// Every arm walks its operands exactly once, because this is the walk and
+    /// not a reading of one that already happened: a second pass over the same
+    /// nodes would report every diagnostic in them twice, and over a nested
+    /// list operator it would cost 2^depth.
+    fn shape_of(&mut self, node: &SyntaxNode) -> ListShape {
+        match node.node_kind() {
+            // A bare `A, B`, and what a `(...)` holds.
+            NodeKind::LIST_EXPR => {
+                let elements: Vec<SyntaxNode> = node.children().collect();
+                self.shape_of_elements(&elements)
+            }
+            NodeKind::PAREN_EXPR => {
+                match ast::ParenExpr::cast(node.clone()).and_then(|view| view.inner()) {
+                    Some(inner) => self.shape_of(&inner),
+                    // `()` is a list of none, which is what makes `(Str)` a
+                    // list of one.
+                    None => ListShape::Fixed(Vec::new()),
+                }
+            }
+            NodeKind::PREFIX_EXPR if ast::without_plus(node) != *node => {
+                self.shape_of(&ast::without_plus(node))
+            }
+            // `@a` — its elements, when the array's element type is known.
+            NodeKind::ARRAY_VAR => elements_of(element_of(&self.type_of(node))),
+            // `$ref->@*` reads down to the element already.
+            NodeKind::POSTFIX_DEREF_EXPR if is_plural(node) => {
+                let ty = self.type_of(node);
+                if has_hash_sigil(node) {
+                    ListShape::Unknown
+                } else {
+                    elements_of(ty)
+                }
+            }
+            // `@$ref` and `@{ ... }`, whose own scalar type nothing reads: it
+            // is the *referent* that says what the elements are.
+            NodeKind::DEREF_EXPR | NodeKind::BLOCK_DEREF_EXPR if is_plural(node) => {
+                let inner = node.children().next().map(|inner| self.type_of(&inner));
+                if has_hash_sigil(node) {
+                    ListShape::Unknown
+                } else {
+                    elements_of(inner.map_or(Type::Unknown, |ty| element_of(&ty)))
+                }
+            }
+            // A hash in list context is key/value pairs, and nothing
+            // downstream wants them as a list; a slice is a list whose
+            // element types this pass does not read.
+            NodeKind::HASH_VAR | NodeKind::SLICE_EXPR => {
+                let _ = self.type_of(node);
+                ListShape::Unknown
+            }
+            NodeKind::TERNARY_EXPR => {
+                if let Some(condition) = node.children().next() {
+                    // `wantarray ? LIST : SCALAR` is the list branch, by
+                    // definition of what it asked.
+                    let asked = ast::Call::cast(condition.clone())
+                        .and_then(|call| call.callee_name())
+                        .is_some_and(|name| name == "wantarray");
+                    self.expression(&condition);
+                    let branches: Vec<SyntaxNode> = node.children().skip(1).collect();
+                    let shapes: Vec<ListShape> = branches
+                        .iter()
+                        .map(|branch| self.shape_of(branch))
+                        .collect();
+                    if asked {
+                        return shapes.into_iter().next().unwrap_or(ListShape::Unknown);
+                    }
+                    return shapes
+                        .into_iter()
+                        .reduce(ListShape::join)
+                        .unwrap_or(ListShape::Unknown);
+                }
+                ListShape::Unknown
+            }
+            NodeKind::CALL_EXPR
+            | NodeKind::LIST_CALL_EXPR
+            | NodeKind::CODE_CALL_EXPR
+            | NodeKind::BLOCK_CALL_EXPR
+            | NodeKind::METHOD_CALL_EXPR => self.shape_of_call(node),
+            // A literal, a reference, a `bless`, a subscript — one value, and
+            // therefore a list of one.
+            _ => ListShape::Fixed(vec![self.type_of(node)]),
+        }
+    }
+
+    /// `(A, B, ...)` — a slot per element.
+    ///
+    /// An element that is itself plural — `@x`, a call, a `map` — makes the
+    /// whole thing an `Of`: nobody here counts how many there are, so nobody
+    /// here knows which slot is which.
+    fn shape_of_elements(&mut self, elements: &[SyntaxNode]) -> ListShape {
+        if let [only] = elements {
+            return self.shape_of(only);
+        }
+        let shapes: Vec<ListShape> = elements
+            .iter()
+            .map(|element| self.shape_of(element))
+            .collect();
+        let mut slots = Vec::new();
+        for shape in &shapes {
+            match shape {
+                ListShape::Fixed(types) => slots.extend(types.clone()),
+                ListShape::Nothing => {}
+                ListShape::Of(_) | ListShape::Unknown => {
+                    let members: Vec<Type> = shapes.iter().flat_map(ListShape::members).collect();
+                    return ListShape::Of(Type::union(members));
+                }
+            }
+        }
+        ListShape::Fixed(slots)
+    }
+
+    /// What a call gives back in list context.
+    fn shape_of_call(&mut self, node: &SyntaxNode) -> ListShape {
+        let name = ast::Call::cast(node.clone())
+            .and_then(|call| call.callee_name())
+            .or_else(|| {
+                // `map { ... } @x` is a shape of its own and not an
+                // `ast::Call`, so its callee is read off the node.
+                (node.node_kind() == NodeKind::BLOCK_CALL_EXPR)
+                    .then(|| {
+                        node.children()
+                            .find_map(ast::SubName::cast)
+                            .map(|name| name.text())
+                    })
+                    .flatten()
+            });
+        match name.as_deref() {
+            Some(operator @ ("map" | "grep" | "sort" | "reverse")) => {
+                let operator = operator.to_string();
+                return self.shape_of_operator(node, &operator);
+            }
+            // `keys` and `values` have a list-context answer the element
+            // reading already knows (INFER-4c).
+            Some("keys" | "values") => return elements_of(self.list_element(node)),
+            _ => {}
+        }
+        let _ = self.type_of(node);
+        match self.call_shape.take() {
+            // The callee's own `list:` half. A callee that says nothing about
+            // list context sinks this half and not the scalar one: a sub may
+            // hand back one value in scalar context and a list in list
+            // context, so its scalar type says nothing about its shape.
+            Some((range, shape)) if range == node.text_range() => shape,
+            _ => ListShape::Unknown,
+        }
+    }
+
+    /// `map`, `grep`, `sort`, `reverse` — the operators whose list-context
+    /// answer is their argument's rather than a callee's.
+    ///
+    /// `grep`, `sort` and `reverse` hand back some of what they were given, so
+    /// the answer is their list widened to `Of`: how many come back is not
+    /// something this pass counts. `map` hands back whatever its block said,
+    /// which is readable when the block is one expression — and there `$_` is
+    /// the element.
+    fn shape_of_operator(&mut self, node: &SyntaxNode, name: &str) -> ListShape {
+        let block = node
+            .children()
+            .find(|child| child.node_kind() == NodeKind::BLOCK);
+        let mut operands: Vec<SyntaxNode> = node
+            .children()
+            .filter(|child| child.node_kind() == NodeKind::LIST_EXPR)
+            .flat_map(|list| list.children().collect::<Vec<_>>())
+            .collect();
+        // `map EXPR, LIST` and `grep EXPR, LIST` put the expression at the
+        // head of the same list as what it is applied to.
+        let inline = (block.is_none() && matches!(name, "map" | "grep") && operands.len() > 1)
+            .then(|| operands.remove(0));
+        let source = self.shape_of_elements(&operands);
+        let element = Type::union(source.members());
+
+        let saved = self.env.clone();
+        // `$_` is the element, which is the whole of what makes `map {
+        // $_->name }` readable.
+        self.env.set(Sigil::Scalar, "_", element.clone());
+        let mapped = match (&block, &inline) {
+            (Some(block), _) => self.block_value(block),
+            (None, Some(expression)) => Some(self.type_of(expression)),
+            (None, None) => None,
+        };
+        self.env = saved;
+
+        if name == "map" {
+            return ListShape::Of(mapped.unwrap_or(Type::Unknown));
+        }
+        elements_of(element)
+    }
+
+    /// The type of a block that is one expression statement, walking it
+    /// either way.
+    fn block_value(&mut self, block: &SyntaxNode) -> Option<Type> {
+        let statements: Vec<SyntaxNode> = block.children().collect();
+        let [only] = statements.as_slice() else {
+            for statement in &statements {
+                self.statement(statement);
+            }
+            return None;
+        };
+        if !matches!(
+            only.node_kind(),
+            NodeKind::EXPR_STMT | NodeKind::VAR_DECL_STMT
+        ) {
+            self.statement(only);
+            return None;
+        }
+        let mut value = None;
+        let mut modified = false;
+        for child in only.children() {
+            let ty = self.type_of(&child);
+            if child.node_kind() == NodeKind::STMT_MODIFIER {
+                modified = true;
+            } else {
+                value = Some(ty);
+            }
+        }
+        // A modified statement falls through to its own condition, so what it
+        // leaves is not the value it looks like.
+        (!modified).then_some(value).flatten()
+    }
+
     fn anon_hash(&mut self, node: &SyntaxNode) -> Type {
         let view = ast::AnonHash::cast(node.clone()).expect("kind checked");
         let pairs = view.pairs();
@@ -979,11 +1226,12 @@ impl Pass<'_> {
 
     fn assignment(&mut self, node: &SyntaxNode) -> Type {
         let view = ast::Assign::cast(node.clone()).expect("kind checked");
-        let value = view.value().map(|value| self.type_of(&value));
         let Some(target) = view.target() else {
-            return value.unwrap_or(Type::Unknown);
+            return view
+                .value()
+                .map(|value| self.type_of(&value))
+                .unwrap_or(Type::Unknown);
         };
-        let ty = value.unwrap_or(Type::Unknown);
 
         // `my ($self, %args) = @_` and `my $x = ...` share one path.
         let declaration = ast::VarDecl::cast(target.clone());
@@ -999,6 +1247,31 @@ impl Pass<'_> {
                 .as_ref()
                 .is_some_and(|d| d.syntax().text().to_string().contains('('));
 
+        // A left side written as a list, or as an array or a hash, *imposes*
+        // list context: this is one of the places the context is written down
+        // rather than guessed at (INFER-6a), so the value is read as a shape.
+        let wants_list = plural || targets.iter().any(|one| one.sigil() != Sigil::Scalar);
+        let (ty, shape) = match (view.value(), wants_list) {
+            (Some(value), true) => {
+                let shape = self.shape_of(&value);
+                // In scalar context a list assignment is how many elements
+                // were on the right, and nothing here reads that.
+                (Type::Unknown, shape)
+            }
+            (Some(value), false) => {
+                let ty = self.type_of(&value);
+                // `my $count = @rows` is the count, which is what perl says
+                // and what `scalar @rows` already answers here.
+                let ty = if counts_elements(&value) {
+                    Type::Int
+                } else {
+                    ty
+                };
+                (ty, ListShape::Unknown)
+            }
+            (None, _) => (Type::Unknown, ListShape::Unknown),
+        };
+
         if declaration.as_ref().and_then(ast::VarDecl::keyword) == Some(DeclKeyword::Local) {
             return ty;
         }
@@ -1011,13 +1284,12 @@ impl Pass<'_> {
             return ty;
         }
 
-        for variable in &targets {
+        for (index, variable) in targets.iter().enumerate() {
             let Some(name) = variable.name() else {
                 continue;
             };
-            let assigned = if plural || variable.sigil() != Sigil::Scalar {
-                // A list assignment hands out elements nobody here counts.
-                Type::Unknown
+            let assigned = if wants_list {
+                bound_from(&shape, variable.sigil(), index)
             } else if view.is_plain() {
                 ty.clone()
             } else {
@@ -1234,6 +1506,7 @@ impl Pass<'_> {
         let params = symbol.params.clone();
         let returns = symbol.returns.clone();
         self.check_arguments(&params, &call.pairs(), &typed, &name, call.callee_range());
+        self.call_shape = Some((node.text_range(), returns.list));
         returns.scalar
     }
 
@@ -1305,6 +1578,7 @@ impl Pass<'_> {
                 // over it; a framework's generated constructor never reaches
                 // here; and the body has to say the value is one of the class
                 // (INFER-2g), because `URI->new` hands back a `URI::http`.
+                self.call_shape = Some((node.text_range(), returns.list.clone()));
                 if returns.scalar.is_unknown() && method == "new" && symbol.constructs_own_class {
                     Type::InstanceOf(class)
                 } else if returns.invocant {
@@ -2751,6 +3025,64 @@ fn sole_child(node: &SyntaxNode) -> Option<SyntaxNode> {
     let mut children = node.children();
     let only = children.next()?;
     children.next().is_none().then_some(only)
+}
+
+/// What one target of a list assignment is bound to
+/// (`docs/return-inference.md`, "Consumers").
+///
+/// `Fixed` hands slot `i` to target `i`, and a target past the end of a known
+/// length is `Undef` — which is what perl leaves there. `Of` does not know the
+/// length, so a scalar target may be the one that was not there and is
+/// `Maybe[T]`. An `@rest` or a `%opts` takes everything from its position on.
+fn bound_from(shape: &ListShape, sigil: Sigil, index: usize) -> Type {
+    match sigil {
+        Sigil::Array => {
+            let members = match shape {
+                ListShape::Fixed(types) => types.iter().skip(index).cloned().collect(),
+                other => other.members(),
+            };
+            let element = Type::union(members);
+            if element.is_unknown() {
+                // The array is bound to what its element type is read off
+                // (`element_of`), so an unknown element is an unknown array
+                // rather than an `ArrayRef[Unknown]` that would then be
+                // compared against slots as a reference.
+                Type::Unknown
+            } else {
+                Type::ArrayRef(Box::new(element))
+            }
+        }
+        // A hash built from a list is key/value pairs, and nothing here reads
+        // them.
+        Sigil::Hash => Type::Unknown,
+        _ => match shape {
+            ListShape::Fixed(types) => types.get(index).cloned().unwrap_or(Type::Undef),
+            ListShape::Nothing => Type::Undef,
+            ListShape::Of(ty) => Type::maybe(ty.clone()),
+            ListShape::Unknown => Type::Unknown,
+        },
+    }
+}
+
+/// `Of(ty)`, or `Unknown` where the element type is not known — which is what
+/// says "a list this pass can say nothing about" rather than "a list of
+/// nothing".
+fn elements_of(ty: Type) -> ListShape {
+    if ty.is_unknown() {
+        ListShape::Unknown
+    } else {
+        ListShape::Of(ty)
+    }
+}
+
+/// Whether a dereference is a hash's rather than an array's.
+fn has_hash_sigil(node: &SyntaxNode) -> bool {
+    ast::tokens(node).any(|token| {
+        matches!(
+            token.token_kind(),
+            TokenKind::HASH_SIGIL | TokenKind::POSTFIX_DEREF_HASH
+        )
+    })
 }
 
 /// Whether an expression is a list rather than one value.
