@@ -959,12 +959,20 @@ impl<'a> Pass<'a> {
 /// produced it rather than by what the name is, so a project that calls it
 /// `$_g` gets the same answer as one that calls it `$guard`; a project with a
 /// guard class of its own names it in `camello.toml`.
+/// This list is the *syntactic* half. The other half is the class: a value
+/// whose type is an instance of a class declaring `DESTROY` is held for that
+/// destructor whatever produced it, and the body pass decides that one
+/// (`Program::has_destructor`). A name is still needed where the type does not
+/// arrive — `start_scope_container` is exported from another file, and a
+/// bareword call to an imported sub is not typed yet.
 pub const GUARD_NAMES: &[&str] = &[
     "Scope::Guard",
     "Guard",
     "guard",
     "scope_guard",
     "SCOPE_GUARD",
+    "Scope::Container",
+    "start_scope_container",
 ];
 
 /// The value a `my` was given, or `None` when it was given none.

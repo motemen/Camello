@@ -316,10 +316,16 @@ way out.
 On a typed expression or binding: the inferred type from the side-table,
 spelled the way [types.md](types.md) spells types. On a sub name (definition
 or call): the signature from `SubDecl` — package, name, params, `Returns:`.
-Where the checker knows nothing, hover shows nothing: `Unknown` produces an
-empty response, not a shrug-string. The checker's silence discipline
-("silent when it does not know") is a *feature* surfaced in the editor, not
-a gap papered over.
+Where the cursor is on something nameable and the checker has no answer,
+hover says `Unknown`. The silence discipline is about *diagnostics* — not
+reporting what cannot be established — and hover is not a diagnostic: it is
+a question the reader asked. Silence answers "there is nothing here", which
+is the wrong answer to "there is something here and I do not know what it
+is", and the two are indistinguishable in an editor. So a lexical, a
+bareword call, a `sub` name and a `->` method all answer, with `Unknown`
+where that is the answer; a method whose receiver never resolved to a class
+is one of them. Only a position that names nothing at all — whitespace, a
+keyword, an operator — stays silent.
 
 ## Completion
 

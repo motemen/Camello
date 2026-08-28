@@ -98,6 +98,14 @@ One line per change. The reasoning is in the commit it came from.
 
 ### Changed
 
+- **Hover answers `Unknown` rather than nothing.** Silence is the right answer
+  to "there is nothing here" and the wrong one to "there is something here and
+  I do not know what it is" — the two look identical to a reader, and the
+  second is the common case. A lexical, a bareword call, a `sub` name and a
+  `->` method now all answer, with `Unknown` where that is the answer; only a
+  position that names nothing at all stays silent. A method whose receiver has
+  no class is one of the names that answers, so `$thing->whatever` on an
+  untyped `$thing` says `whatever -> Unknown` instead of nothing.
 - **`unknown-method` is an `info` unless the world is closed, and `maybe-deref`
   is a `warning`** (`docs/types.md`, DIAG-7a, DIAG-14a). "This class declares no
   such method" is a claim about a closed world, and the world is closed only
@@ -111,6 +119,26 @@ One line per change. The reasoning is in the commit it came from.
 
 ### Fixed
 
+- **A `Smart::Args` invocant is no longer mistaken for the first named key.**
+  `Params::Named` recorded only that there *was* an invocant, and both the
+  signature renderer and the body pass then went looking for it in the list of
+  keys — so `args my $class, my $foo => ..., my $bar => ...` rendered as
+  `foo($foo? : Str, { bar => Int })`, with two keys of the same list on
+  opposite sides of the hash. The variant carries the invocant's *name* now,
+  which also fixes the body: `bind` was binding `$self` unconditionally, so an
+  `args` sub whose invocant is `$class` had `$class` unbound and a phantom
+  `$self` in its place. Named parameters are shown with whether they have to be
+  passed, so the same sub reads `foo($class, { foo? => Str, bar? => Int })`.
+- **A value held for its destructor is not an unused variable** (DIAG-12d).
+  The rule was a list of names — `Scope::Guard`, `guard`, and whatever
+  `camello.toml` added. What actually says so is the *class*: an instance of
+  one declaring `DESTROY` anywhere in its linearisation is bound so that the
+  destructor runs, whatever produced it, so `my $lock = make_lock();` gets the
+  same answer as `my $lock = Lock->new;`. The name list stays for where the
+  type does not arrive and gains `Scope::Container` and
+  `start_scope_container`.
+- **`# returns:` is a `Returns:`.** The keyword is matched without regard to
+  case now.
 - **`@ISA` is read in all three of its spellings** (METHOD-1a). `our @ISA =
   ('Base')` worked; `@ISA = qw(Base Other)` was read as a value the pass could
   not understand, which made the whole class *dynamic* and silenced every

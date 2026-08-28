@@ -1292,7 +1292,8 @@ impl ListShape {
 ///
 /// Grammar: within the comment block immediately preceding a `sub` (blank
 /// lines allowed between the block and the `sub`, not within it), a line whose
-/// comment text after `#` and whitespace starts with `Returns:`. The rest is
+/// comment text after `#` and whitespace starts with `Returns:` — in any case,
+/// so `# returns: Str` is the same annotation. The rest is
 /// one of four things:
 ///
 /// ```text
@@ -1358,10 +1359,15 @@ pub fn read_returns(definition: &SubDef, into: &mut Sink) -> Option<Returns> {
 }
 
 /// The text after `# Returns:`, if this comment is one.
+///
+/// The keyword is matched without regard to case: `# returns: Str` is the same
+/// annotation, and a reader who wrote it meant it.
 fn annotation_body(token: &SyntaxToken) -> Option<String> {
+    const KEYWORD: &str = "Returns:";
     let text = token.text().trim_start_matches('#').trim_start();
-    text.strip_prefix("Returns:")
-        .map(|rest| rest.trim().to_string())
+    let (head, rest) = text.split_at_checked(KEYWORD.len())?;
+    head.eq_ignore_ascii_case(KEYWORD)
+        .then(|| rest.trim().to_string())
 }
 
 /// What one `Returns:` line says.

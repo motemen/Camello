@@ -657,6 +657,20 @@ impl Program {
         }
     }
 
+    /// Whether a class has a destructor, and so whether holding one of its
+    /// values is a thing done for its own sake (`docs/types.md`, DIAG-12d).
+    ///
+    /// `my $sc = start_scope_container();` binds a name it will never read:
+    /// the value's whole job is to go out of scope. What says so is the class,
+    /// not the name of whatever produced it — a `DESTROY` anywhere in the
+    /// linearisation is the class saying that its end of life is the point.
+    #[must_use]
+    pub fn has_destructor(&self, package: &str) -> bool {
+        self.linearise(package)
+            .iter()
+            .any(|class| self.sub(class, "DESTROY").is_some())
+    }
+
     /// Whether everything that could have put a method into a class was
     /// actually read (`docs/types.md`, DIAG-7a).
     ///
