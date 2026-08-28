@@ -524,6 +524,7 @@ impl CheckArgs {
                         .unwrap_or_else(|| PathBuf::from(".camello-cache")),
                 )
             },
+            dialect: camello_sema::annotate::Dialect::new(config.check.read_as.clone()),
             options,
         })
     }

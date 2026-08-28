@@ -50,6 +50,8 @@ pub struct Request {
     pub inc: Option<Vec<PathBuf>>,
     /// Where the declaration cache lives, or `None` for no cache.
     pub cache_dir: Option<PathBuf>,
+    /// What this project's own modules stand in for.
+    pub dialect: camello_sema::annotate::Dialect,
     pub options: Options,
 }
 
@@ -98,7 +100,10 @@ pub fn run(request: &Request) -> Result<()> {
     let declared = crate::cli::in_parallel(&files, request.jobs, |(path, inline)| {
         let source = read_one(path, inline.as_deref(), &encodings)?;
         let parsed = camello_syntax::parse::parse(&source);
-        Ok::<_, String>(camello_sema::decl::declare(&parsed.syntax()))
+        Ok::<_, String>(camello_sema::decl::declare_in(
+            &parsed.syntax(),
+            &request.dialect,
+        ))
     });
 
     // The roots are the directories the command was pointed at; a file named
@@ -126,10 +131,12 @@ pub fn run(request: &Request) -> Result<()> {
         Some(directory) => camello_sema::resolve::Cache::new(Some(directory.clone())),
         None => camello_sema::resolve::Cache::disabled(),
     };
-    let mut analysis = camello_sema::Analysis::new().with_resolver(
-        camello_sema::resolve::Resolver::new(roots, request.stubs.clone(), inc),
-        cache,
-    );
+    let mut analysis = camello_sema::Analysis::new()
+        .with_resolver(
+            camello_sema::resolve::Resolver::new(roots, request.stubs.clone(), inc),
+            cache,
+        )
+        .with_dialect(request.dialect.clone());
     for ((path, _), decls) in files.iter().zip(declared) {
         if let Ok(decls) = decls {
             analysis.add(path, decls, true);

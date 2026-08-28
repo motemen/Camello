@@ -21,6 +21,7 @@
 //! that does not parse — where a trailing marker would become part of the
 //! annotation it is about.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -41,15 +42,19 @@ fn fixtures_dir() -> PathBuf {
 /// One fixture: a file on its own, or a directory with a `roots` marker.
 ///
 /// A multi-file fixture is a directory holding a `roots` file, whose lines are
-/// `root: <dir>` and `stub: <dir>`. Everything under a root is checked;
-/// everything under a stub contributes declarations and is never reported on,
-/// which is what makes the stub mechanism something a fixture can ask about.
+/// `root: <dir>`, `stub: <dir>` and `read-as: <module> = <module>`. Everything
+/// under a root is checked; everything under a stub contributes declarations
+/// and is never reported on, which is what makes the stub mechanism something
+/// a fixture can ask about, and `read-as` is the project setting of the same
+/// name.
 #[derive(Debug)]
 struct Fixture {
     /// The files whose `#~` markers are the expectation.
     checked: Vec<PathBuf>,
     /// The files that contribute declarations only.
     stubs: Vec<PathBuf>,
+    /// What this fixture's own modules stand in for.
+    dialect: BTreeMap<String, String>,
     label: PathBuf,
 }
 
@@ -74,6 +79,7 @@ fn collect(dir: &Path, acc: &mut Vec<Fixture>) {
         let mut fixture = Fixture {
             checked: Vec::new(),
             stubs: Vec::new(),
+            dialect: BTreeMap::new(),
             label: dir.to_path_buf(),
         };
         for line in fs::read_to_string(&marker)
@@ -83,6 +89,15 @@ fn collect(dir: &Path, acc: &mut Vec<Fixture>) {
             let Some((kind, name)) = line.split_once(':') else {
                 continue;
             };
+            if kind.trim() == "read-as" {
+                let (from, to) = name
+                    .split_once('=')
+                    .unwrap_or_else(|| panic!("`read-as` wants `A = B` in {}", marker.display()));
+                fixture
+                    .dialect
+                    .insert(from.trim().to_string(), to.trim().to_string());
+                continue;
+            }
             let mut files = Vec::new();
             perl_files(&dir.join(name.trim()), &mut files);
             match kind.trim() {
@@ -105,6 +120,7 @@ fn collect(dir: &Path, acc: &mut Vec<Fixture>) {
             acc.push(Fixture {
                 checked: vec![path.clone()],
                 stubs: Vec::new(),
+                dialect: BTreeMap::new(),
                 label: path,
             });
         }
@@ -183,7 +199,8 @@ fn fixtures_report_exactly_what_they_say() {
     for fixture in &fixtures {
         // Every file's declarations first, the way a run does it, so that a
         // call in one file can see a sub declared in another.
-        let mut analysis = crate::Analysis::new();
+        let mut analysis = crate::Analysis::new()
+            .with_dialect(crate::annotate::Dialect::new(fixture.dialect.clone()));
         for path in fixture.checked.iter().chain(&fixture.stubs) {
             let source = read(path);
             let root = parse_one(path, &source);

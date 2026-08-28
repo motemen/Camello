@@ -27,7 +27,7 @@ use camello_syntax::lang::{NodeExt, NodeKind, SyntaxNode, TokenExt, TokenKind};
 use rowan::TextRange;
 
 use crate::annotate::{ListShape, Returns};
-use crate::decl::{Param, Params};
+use crate::decl::{Param, ParamSource, Params};
 use crate::diag::{Code, Diagnostic, Severity};
 use crate::program::{MethodLookup, Program};
 use crate::types::Type;
@@ -363,7 +363,7 @@ impl Pass<'_> {
                 let members: Vec<Type> = view
                     .elements()
                     .iter()
-                    .map(|element| self.type_of(element))
+                    .map(|element| self.list_element(element))
                     .collect();
                 if members.is_empty() {
                     Type::ArrayRef(Box::new(Type::Unknown))
@@ -668,6 +668,76 @@ impl Pass<'_> {
         }
     }
 
+    /// The type of one value an expression contributes to a list literal.
+    ///
+    /// Every other type in this pass is a scalar-context one
+    /// (`docs/types.md`, INFER-6a), and that is exactly what `keys` and
+    /// `values` have no single answer to: `scalar keys %h` is a count and
+    /// `[ keys %h ]` is the keys themselves. The elements of a `[ ... ]` are
+    /// the one place where the context is written down rather than guessed
+    /// at, so they are the one place that asks — this is not the list-context
+    /// matching that `Returns:` still leaves alone (LIMIT-7).
+    fn list_element(&mut self, node: &SyntaxNode) -> Type {
+        let Some(call) = ast::Call::cast(node.clone()) else {
+            return self.type_of(node);
+        };
+        let name = call.callee_name().unwrap_or_default();
+        if !matches!(name.as_str(), "keys" | "values") {
+            return self.type_of(node);
+        }
+        let arguments = operands(&call);
+        let Some((first, rest)) = arguments.split_first() else {
+            return Type::Unknown;
+        };
+        let hash = self.hash_argument(first);
+        for extra in rest {
+            self.expression(extra);
+        }
+        match (name.as_str(), hash) {
+            ("keys", Type::Map(key, _)) => *key,
+            ("keys", Type::HashRef(_) | Type::Dict { .. }) => Type::Str,
+            ("values", Type::HashRef(value) | Type::Map(_, value)) => *value,
+            ("values", Type::Dict { slots, slurpy }) => {
+                let mut members: Vec<Type> = slots.into_iter().map(|(_, ty)| ty).collect();
+                // A slurpy `Dict` says the other keys hold something too, and
+                // what that is joins what the named ones hold.
+                if let Some(rest) = slurpy {
+                    members.push(*rest);
+                }
+                Type::union(members)
+            }
+            _ => Type::Unknown,
+        }
+    }
+
+    /// The hash a `keys` or `values` was handed, as the type of a reference
+    /// to it.
+    ///
+    /// `%$h` and `%{ ... }` are the hash a reference points at, so what is
+    /// wanted is the referent's type. `$h->%*` is the same hash written the
+    /// other way, and the subscript pass already reads it — down to its
+    /// *element*, which is put back into a `HashRef` here so that one match
+    /// answers all three. A bare `%h` is a hash whose element type this pass
+    /// does not track (INFER-5a), and everything else is `Unknown`.
+    fn hash_argument(&mut self, node: &SyntaxNode) -> Type {
+        let hash_sigil = ast::tokens(node).any(|token| token.token_kind() == TokenKind::HASH_SIGIL);
+        match node.node_kind() {
+            NodeKind::DEREF_EXPR | NodeKind::BLOCK_DEREF_EXPR if hash_sigil => {
+                match node.children().next() {
+                    Some(inner) => self.type_of(&inner),
+                    None => Type::Unknown,
+                }
+            }
+            NodeKind::POSTFIX_DEREF_EXPR if hash_sigil => {
+                Type::HashRef(Box::new(self.type_of(node)))
+            }
+            _ => {
+                self.expression(node);
+                Type::Unknown
+            }
+        }
+    }
+
     fn call(&mut self, node: &SyntaxNode) -> Type {
         let call = ast::Call::cast(node.clone()).expect("kind checked");
         let arguments = call.args();
@@ -681,6 +751,22 @@ impl Pass<'_> {
         }
         if name == "bless" {
             return self.bless(&typed);
+        }
+        // `scalar @a` is a count and `scalar $obj->rows` is whatever `rows`
+        // gives back in scalar context — which is what every type in this
+        // pass already is. Saying `Int` for both was how `scalar $sth->bind`
+        // became an `Int` that then failed to be an `ArrayRef`.
+        if name == "scalar" {
+            let operands = operands(&call);
+            let Some(operand) = operands.first() else {
+                return Type::Unknown;
+            };
+            let ty = self.typed_or_walk(&typed, operand);
+            return if counts_elements(operand) {
+                Type::Int
+            } else {
+                ty
+            };
         }
         if let Some(builtin) = builtin_return(&name) {
             return builtin;
@@ -1021,6 +1107,12 @@ impl Pass<'_> {
         callee: &str,
         range: TextRange,
     ) {
+        // Smart::Args lets an optional parameter be *passed* `undef`: the
+        // rule is read before the type is, and a value that is not defined
+        // returns straight out of it. So `f(x => undef)` against `my $x =>
+        // { isa => 'Str', optional => 1 }` is a program that runs, and the
+        // declaration is what says so.
+        let undef_ok = matches!(params.source(), Some(ParamSource::Args));
         match params {
             Params::Named { params, .. } => {
                 let mut given: Vec<&str> = Vec::new();
@@ -1032,6 +1124,9 @@ impl Pass<'_> {
                     match params.iter().find(|param| param.name == format!("${key}")) {
                         Some(param) => {
                             let value = self.typed_or_walk(typed, pair.node());
+                            if undef_ok && is_optional(param) && value == Type::Undef {
+                                continue;
+                            }
                             self.check_value(
                                 &value,
                                 &param.ty,
@@ -1066,6 +1161,9 @@ impl Pass<'_> {
                 };
                 for ((index, argument), param) in typed.nodes.iter().enumerate().zip(declared) {
                     let value = typed.nth(index);
+                    if undef_ok && is_optional(param) && value == Type::Undef {
+                        continue;
+                    }
                     self.check_value(
                         &value,
                         &param.ty,
@@ -1297,6 +1395,14 @@ fn element_of(ty: &Type) -> Type {
 /// rule below is a *contradiction* — two shapes that cannot be the same value
 /// — and anything else is silence.
 #[must_use]
+/// Whether a parameter may be left out, however the declaration said so.
+///
+/// `optional => 1` and a `default` are the rule's own words; `Optional[T]` is
+/// the same thing said in the type.
+fn is_optional(param: &Param) -> bool {
+    param.optional || param.ty.is_optional()
+}
+
 pub fn compatible(value: &Type, slot: &Type, program: &Program) -> bool {
     let slot = slot.required();
     if value.is_unknown()
@@ -1315,8 +1421,10 @@ pub fn compatible(value: &Type, slot: &Type, program: &Program) -> bool {
             .iter()
             .any(|member| compatible(value, member, program)),
 
-        // `undef` fits an `Undef` slot and a `Maybe`, and nothing else.
-        (Type::Undef, Type::Undef) => true,
+        // `undef` fits an `Undef` slot and a `Maybe` — and a `Bool`, whose
+        // four values are `0`, `1`, `''` and `undef` in Moose and in
+        // Types::Standard alike (`docs/types.md`, TYPE-5). Nothing else.
+        (Type::Undef, Type::Undef | Type::Bool) => true,
         (Type::Undef, _) => false,
 
         // Stringification: `Int <: Num <: Str`, so a number fits a string slot
@@ -1473,6 +1581,42 @@ fn narrow_one(env: &mut Env, node: &SyntaxNode, program: &Program) {
 
 // ----- builtins -----
 
+/// What a call was handed, whether or not it has an argument list.
+///
+/// `f(1, 2)` and `f 1, 2` both hold a `LIST_EXPR`; perl's named unary
+/// operators do not. `scalar @a` and `values %$h` hang their one operand
+/// beside the name, so [`ast::Call::args`] finds nothing and the operand has
+/// to be read off the call's own children.
+fn operands(call: &ast::Call) -> Vec<SyntaxNode> {
+    let arguments = call.args();
+    if !arguments.is_empty() {
+        return arguments;
+    }
+    call.syntax()
+        .children()
+        .filter(|child| child.node_kind() != NodeKind::SUB_NAME)
+        .collect()
+}
+
+/// Whether `scalar` was handed a container, whose scalar value is its count.
+///
+/// An array, a hash, a slice, and the three spellings of a dereference to
+/// one. `scalar $$ref` is not one of them, and neither is a call.
+fn counts_elements(node: &SyntaxNode) -> bool {
+    match node.node_kind() {
+        NodeKind::ARRAY_VAR | NodeKind::HASH_VAR | NodeKind::SLICE_EXPR => true,
+        NodeKind::DEREF_EXPR | NodeKind::BLOCK_DEREF_EXPR | NodeKind::POSTFIX_DEREF_EXPR => {
+            ast::tokens(node).any(|token| {
+                matches!(
+                    token.token_kind(),
+                    TokenKind::ARRAY_SIGIL | TokenKind::HASH_SIGIL
+                )
+            })
+        }
+        _ => false,
+    }
+}
+
 /// What a builtin gives back in scalar context.
 ///
 /// Derived from the argument-shape table the parser already keeps
@@ -1482,13 +1626,15 @@ fn narrow_one(env: &mut Env, node: &SyntaxNode, program: &Program) {
 fn builtin_return(name: &str) -> Option<Type> {
     Some(match name {
         "length" | "index" | "rindex" | "ord" | "int" | "time" | "fileno" | "system" => Type::Int,
-        "scalar" => Type::Int,
         "abs" | "sqrt" | "atan2" | "sin" | "cos" | "exp" | "log" | "rand" => Type::Num,
         "lc" | "uc" | "lcfirst" | "ucfirst" | "chr" | "sprintf" | "join" | "substr"
         | "quotemeta" | "ref" => Type::Str,
         "defined" | "exists" | "wantarray" | "eof" => Type::Bool,
-        "keys" | "values" => Type::Int,
         "sort" | "reverse" | "map" | "grep" | "split" => Type::Unknown,
+        // `scalar`, `keys` and `values` are not here: their answer depends on
+        // what they were handed or on the context they sit in, so they are
+        // answered where those are known — `Pass::call` and
+        // `Pass::list_element`.
         _ => return None,
     })
 }

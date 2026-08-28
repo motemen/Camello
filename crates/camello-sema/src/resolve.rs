@@ -161,8 +161,11 @@ impl Cache {
     }
 
     /// The key for a file, from what a stat and a hash can say about it.
+    ///
+    /// `salt` is what the run reads it *under* — a declaration read under one
+    /// dialect is not the one the same bytes give under another.
     #[must_use]
-    pub fn key(path: &Path, source: &str) -> String {
+    pub fn key(path: &Path, source: &str, salt: &str) -> String {
         let metadata = std::fs::metadata(path).ok();
         let size = metadata.as_ref().map_or(0, std::fs::Metadata::len);
         let mtime = metadata
@@ -172,7 +175,7 @@ impl Cache {
             .map_or(0, |duration| duration.as_secs());
         format!(
             "{:016x}-{size}-{mtime}",
-            fnv(path.to_string_lossy().as_bytes()) ^ fnv(source.as_bytes())
+            fnv(path.to_string_lossy().as_bytes()) ^ fnv(source.as_bytes()) ^ fnv(salt.as_bytes())
         )
     }
 
@@ -225,7 +228,9 @@ mod tests {
     #[test]
     fn the_key_changes_with_the_contents() {
         let path = Path::new("nowhere.pm");
-        assert_ne!(Cache::key(path, "a"), Cache::key(path, "b"));
-        assert_eq!(Cache::key(path, "a"), Cache::key(path, "a"));
+        assert_ne!(Cache::key(path, "a", ""), Cache::key(path, "b", ""));
+        assert_eq!(Cache::key(path, "a", ""), Cache::key(path, "a", ""));
+        // And by what the file is read under, not only by the file.
+        assert_ne!(Cache::key(path, "a", ""), Cache::key(path, "a", "A=B"));
     }
 }

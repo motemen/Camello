@@ -10,6 +10,8 @@
 //! [`Frameworks`], which the declaration pass fills in from the file's `use`
 //! statements before it reads anything else.
 
+use std::collections::BTreeMap;
+
 use camello_syntax::ast::{self, AnonHash, Args, AstNode, Literal, SubDef};
 use camello_syntax::lang::{NodeExt, NodeKind, SyntaxNode, SyntaxToken};
 use rowan::TextRange;
@@ -35,6 +37,55 @@ pub enum Framework {
     Bless,
 }
 
+/// What a project's own modules re-export (`camello.toml`, `read-as`).
+///
+/// Recognition is by an import that could have provided the name, and a
+/// project that wraps `Class::Accessor::Typed` in a module of its own has
+/// taken that import away: every file says `use My::Accessors`, and nothing
+/// in it names the module whose declaration syntax it is writing. No
+/// recogniser can read that from the source, because the wrapper's own file
+/// is a `sub import` — so the project says it instead, once.
+///
+/// It renames a module only for the recognisers. What a file `use`s is still
+/// what it says: the resolver looks for the wrapper's own path, and an import
+/// list still comes from the module that was written.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Dialect {
+    modules: BTreeMap<String, String>,
+}
+
+impl Dialect {
+    #[must_use]
+    pub fn new(modules: BTreeMap<String, String>) -> Self {
+        Dialect { modules }
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.modules.is_empty()
+    }
+
+    /// The module a `use` is to be read as, which is itself unless the
+    /// project said otherwise.
+    #[must_use]
+    pub fn read_as<'a>(&'a self, module: &'a str) -> &'a str {
+        self.modules.get(module).map_or(module, String::as_str)
+    }
+
+    /// What the declaration cache has to be keyed by on top of the file.
+    ///
+    /// A cached declaration was read under one dialect, and the same bytes
+    /// read under another are different declarations.
+    #[must_use]
+    pub fn fingerprint(&self) -> String {
+        self.modules
+            .iter()
+            .map(|(from, to)| format!("{from}={to}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+}
+
 /// What the file's imports say a bareword could mean.
 ///
 /// The point of this is one line in the design: recognition is by callee name
@@ -47,11 +98,22 @@ pub struct Frameworks {
     pub accessor_typed: bool,
     pub accessor_lite: bool,
     pub type_library: bool,
+    dialect: Dialect,
 }
 
 impl Frameworks {
+    /// The same, for a project whose own modules stand in for these.
+    #[must_use]
+    pub fn with_dialect(dialect: Dialect) -> Self {
+        Frameworks {
+            dialect,
+            ..Frameworks::default()
+        }
+    }
+
     /// Fold one `use Foo` into what the file can be expected to mean.
     pub fn note(&mut self, module: &str) {
+        let module = self.dialect.read_as(module);
         match module {
             "Moose"
             | "Moo"
@@ -90,7 +152,8 @@ impl Frameworks {
     /// its module, and `use Class::Accessor 'antlers'` is the one spelling of
     /// `Class::Accessor` that exports `has`.
     pub fn note_arguments(&mut self, module: &str, names: &[String]) {
-        match module {
+        let module = self.dialect.read_as(module).to_string();
+        match module.as_str() {
             "parent" | "base" => {
                 for name in names {
                     if name != "-norequire" && name != "norequire" {

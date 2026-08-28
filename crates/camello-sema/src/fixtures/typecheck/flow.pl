@@ -85,6 +85,13 @@ $named->greet(times => 2);      #~ error missing-argument: requires `who`
 $named->shout(who => 'x', tag => 'y');
 $named->shout(who => 'x');      #~ error missing-argument: requires `tag`
 
+# Smart::Args reads the rule before the type: a parameter that may be left out
+# may also be *passed* `undef`, and the module returns it without ever asking
+# the constraint. So the call below is a program that runs, and the one under
+# it — the same `undef` against a name that has to be there — is not.
+$named->greet(who => 'x', loud => undef);
+$named->greet(who => undef);    #~ error type-mismatch: `Undef` passed to `who`
+
 # `Unknown` propagates: an operation on something nobody typed says nothing.
 my $opaque = get_it();
 $opaque->anything_at_all;

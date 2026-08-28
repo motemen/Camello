@@ -33,9 +33,43 @@ One line per change. The reasoning is in the commit it came from.
 - `guard-classes` in `camello.toml`, for a project's own guard classes. A
   value held for its destructor — `Scope::Guard->new(...)`, `guard { ... }` —
   is neither an unused variable nor an unused parameter.
+- `use constant`, in all three spellings, declares the subs it names. What a
+  constant gives back is an expression nobody here evaluates, so the type is
+  `Unknown` — but the name is there, and a package whose constants were
+  invisible answered `unknown-method` to every one of them.
+- `read-as` in `camello.toml`: a module of the project's own, and the module
+  whose interface it re-exports. Recognition is by an import that could have
+  provided the name, and a wrapper around `Class::Accessor::Typed` is exactly
+  what takes that import away — every file says `use My::Accessors`, and the
+  wrapper's own file is a run-time `sub import` that no recogniser can read.
+  It renames a module only for the recognisers: the resolver still looks for
+  the wrapper's own path. The declaration cache is keyed by it.
 
 ### Fixed
 
+- A bareword call to a builtin's name is the builtin. A `sub delete` in the
+  package no longer takes `delete $h->{k}` away from perl's own `delete`,
+  a shape covered by the builtin-call fixture. An import still answers, because importing the name is the one
+  mechanism perlsub gives for overriding a builtin.
+- `keys` and `values` are no longer `Int` everywhere. The answer depends on
+  the context, and the elements of a `[ ... ]` are the one place it is written
+  down rather than guessed at: `[ values %$h ]` is an `ArrayRef` of what the
+  hash holds, and `[ keys %$h ]` one of `Str`. In scalar context they are
+  `Unknown`.
+- `scalar` reads its argument. A container's is its count; anything else is
+  that expression in scalar context, which is what every type here already is.
+  `scalar $sth->bind` was an `Int` that then failed to be an `ArrayRef`.
+- A `method` has the invocant perl gives it and the declaration never names,
+  so `$obj->f` is no longer one argument too many for a `method f()`. An empty
+  `()` on a `method` is always a signature — prototypes do not exist under the
+  `class` feature — so the prototype guess does not apply to it.
+- An `optional` `Smart::Args` parameter may be passed `undef`. The module
+  reads the rule before the type and returns an undefined value without ever
+  asking the constraint, so `f(x => undef)` against `{ isa => 'Str', optional
+  => 1 }` is a program that runs.
+- `undef` fits a `Bool` slot. Moose and Types::Standard both give `Bool` the
+  four values `0`, `1`, `''` and `undef`, which is what the type here already
+  said it was.
 - `Class::Accessor::Typed` slots are **mandatory** unless they say `optional`,
   give a `default`, or are lazy — the reverse of Moose's rule, and what the
   generated `new` dies on. They were all being read as optional.

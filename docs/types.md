@@ -130,6 +130,10 @@ Dict[name => Str, slurpy HashRef[Str]]            # 他の鍵もあってよい
 - (TYPE-5c) `Bool` は名前的に別の型です。`Bool` のスロットに `Int` を渡すことも、
   その逆も適合します。camello は**値**を追いません（`2` を `Bool` に渡しても
   何も言いません）。形だけを見ます。
+- (TYPE-5d) `undef` は `Bool` です。Moose も Types::Standard も `Bool` の値を
+  `0` / `1` / `''` / `undef` の四つとしているので、`Bool` のスロットに `undef`
+  を渡すのは適合します。`Bool` 以外のスロットに渡せるのは `Undef` と
+  `Maybe[...]` だけです。
 
 ## 3. アノテーションの読み取り (ANNOT)
 
@@ -191,6 +195,11 @@ sub at { args_pos my $self, my $i => 'Int'; ... }
   `InstanceOf[そのパッケージ]` です。
 - 規則のない `my $x` は `Any` であって `Unknown` ではありません。Smart::Args は
   それを必須引数として扱い、camello も個数についてはそう扱います。
+- (ANNOT-3a) `optional`（および `default`）のある引数には、**明示的に `undef` を
+  渡せます**。Smart::Args は型より先に規則を読み、値が未定義ならそのまま返して
+  型検査に到達しないからです。`f(x => undef)` は
+  `my $x => { isa => 'Str', optional => 1 }` に対して通ります。
+  省略できない引数に `undef` を渡すのは `type-mismatch` のままです。
 - `args` は**レキシカルも宣言**します。これがなければ `args` を使うすべての
   サブルーチンで全パラメータが未宣言と報告されてしまいます。
 
@@ -229,6 +238,12 @@ sub greet ($self, $who, $times = 1, @rest) { ... }
 - (ANNOT-5a) 引数に名前のない `()` や `($)` や `($$;@)` は**プロトタイプ**であって
   シグネチャではありません。`sub f()` については、本体が `@_` を読んでいることを
   証拠にプロトタイプと判定します。
+- (ANNOT-5b) `method f { ... }`（`class` 機能）には、宣言のどこにも書かれていない
+  invocant が一つあります。perl がそれを渡し、`@_` からは外すからです。camello は
+  引数リストの先頭にそれを補います。`method f()` は「invocant を含めて 1 引数」で
+  あって 0 ではないので、`$obj->f` は個数違いになりません。`method` に `()` が
+  あればそれは常にシグネチャです —— プロトタイプは `class` 機能の下に存在しない
+  ので、(ANNOT-5a) の推測は `method` には効きません。
 
 ### 3.6 `@_` の展開 (ANNOT-6)
 
@@ -404,6 +419,48 @@ Class::Accessor::Lite->mk_new_and_accessors(qw(foo bar));
   export する唯一の綴りなので、そのファイルは Moose 系として読まれます。そちらは
   型を持つので、`unknown-key` も型検査も普通に効きます。
 
+### 3.11 `use constant` (ANNOT-11)
+
+```perl
+use constant PI       => 3.14159;
+use constant WEEKDAYS => qw(Mon Tue);
+use constant { E => 2.71, PHI => 1.61 };
+```
+
+- (ANNOT-11a) 宣言される名前を読みます。定数はサブルーチンなので、`Foo->NAME` は
+  ふつうのメソッド呼び出しであり、定数の見えないパッケージはそのすべてに
+  `unknown-method` を返していました。
+- (ANNOT-11b) **値は読みません。** 定数が返すのは後ろの式を評価した結果で、
+  camello は評価しません（POLICY-5）。型は `Unknown` です。
+- (ANNOT-11c) 引数の個数も見ません。定数は引数を取りませんが、`Foo->NAME` は
+  invocant を渡し、perl はそれを咎めません。数えるものがないので数えません。
+
+### 3.12 自作のラッパーモジュール (ANNOT-12)
+
+認識は「その名前を提供しうる `use` があること」で裏付けられます（ANNOT-1）。
+`Class::Accessor::Typed` を自作のモジュールで包んでいるプロジェクトは、その
+裏付けを失っています —— どのファイルも `use My::Accessors` としか書いておらず、
+ラッパー自身のファイルにあるのは実行時の `sub import` だけで、そこから読み取れる
+宣言はありません。
+
+そこで、プロジェクトが `camello.toml` でそれを一度だけ言います
+（[OFF-2](#82-プロジェクトごと-off-2)）。
+
+```toml
+[check.read-as]
+"My::Accessors" = "Class::Accessor::Typed"
+"My::Args"      = "Smart::Args::TypeTiny"
+```
+
+- (ANNOT-12a) 読み替えが効くのは**認識器に対してだけ**です。`use` が何を指すかは
+  書かれたとおりで、依存の解決はラッパー自身のパスを探しますし、インポートされる
+  名前もラッパーのものです。
+- (ANNOT-12b) 読み替えられる先は、camello がすでに知っているモジュール名です。
+  Moose 系・`Smart::Args`・`Class::Accessor::Typed`・`Class::Accessor::Lite` 一族・
+  型ライブラリ・XS ローダーのいずれも指せます。
+- (ANNOT-12c) 宣言のキャッシュ（DEPS-6）はこの設定込みで鍵付けされます。同じ
+  バイトでも、読み替えの下で読んだ宣言は別の宣言だからです。
+
 ## 4. 推論 (INFER)
 
 推論は、アノテーションのある部分に照合する相手を与えるために存在します。
@@ -475,10 +532,32 @@ Class::Accessor::Lite->mk_new_and_accessors(qw(foo bar));
 
   | 組み込み | 型 |
   | --- | --- |
-  | `length` `index` `rindex` `ord` `int` `time` `fileno` `system` `scalar` `keys` `values` | `Int` |
+  | `length` `index` `rindex` `ord` `int` `time` `fileno` `system` | `Int` |
   | `abs` `sqrt` `atan2` `sin` `cos` `exp` `log` `rand` | `Num` |
   | `lc` `uc` `lcfirst` `ucfirst` `chr` `sprintf` `join` `substr` `quotemeta` `ref` | `Str` |
   | `defined` `exists` `wantarray` `eof` | `Bool` |
+
+- (INFER-4b) `scalar` は**引数を見ます**。配列・ハッシュ・スライスとそれらへの
+  デリファレンス（`@$x` / `%$x` / `${...}` / `$x->@*`）に対しては個数、つまり
+  `Int` です。それ以外に対しては、その式をスカラーコンテキストで見た型
+  ——- ここにあるすべての型がすでにそれです —— をそのまま返します。
+  `scalar $sth->bind` は `Int` ではありません。
+- (INFER-4c) `keys` と `values` は**コンテキストで答えが変わる**ので、この表には
+  ありません。スカラーコンテキストでは `Unknown` です。リストリテラルの要素
+  としてだけは答えが決まっていて（[INFER-6c](#46-コンテキスト-infer-6)）、
+  `[ keys %$h ]` は `HashRef` なら `ArrayRef[Str]`、`Map[K, V]` なら
+  `ArrayRef[K]`、`[ values %$h ]` はそれぞれ `ArrayRef[V]` です。
+  素のハッシュ `%h` の要素型は追わないので（INFER-5a）`Unknown` になります。
+
+- (INFER-4d) **裸名の呼び出しが組み込みの名前なら、それは組み込みです。**
+  同じパッケージに `sub delete { ... }` があっても `delete $h->{k}` は perl の
+  `delete` であって、そのサブルーチンではありません。perl はパッケージより先に
+  組み込みに行き着き、パッケージが自分のために書いたものはそれを変えません。
+  組み込みを上書きする方法として perlsub が挙げているのは**インポート**だけなので、
+  インポートされた名前なら今までどおりそのサブルーチンに解決します
+  （それを許さない組み込みもありますが、それを決めるのは perl です）。
+  `Foo::delete(...)` のような修飾名と `$obj->delete(...)` は、どちらも
+  最初から組み込みではありません。
 
 ### 4.5 添字 (INFER-5)
 
@@ -497,6 +576,10 @@ Class::Accessor::Lite->mk_new_and_accessors(qw(foo bar));
 - (INFER-6b) `Returns:` の `list:` の部分は構文検査こそされますが、
   **まだ照合には使われていません**。使われるのは `Returns: ()`
   （何も返さない）だけです。
+- (INFER-6c) 例外は `[ ... ]` の要素です。ここだけはコンテキストが推測ではなく
+  書かれているので、`keys` と `values` はリストコンテキストの答えを返します
+  （INFER-4c）。これは (INFER-6b) の「リストコンテキストの照合」ではありません
+  —— 照合する相手ではなく、要素の型を一つ決めているだけです。
 
 ## 5. 絞り込み (NARROW)
 
@@ -700,6 +783,9 @@ error-on = "warning"         # これ以上の重大度があれば終了ステ�
 min-severity = "warning"     # これ未満の重大度は印字しない
 guard-classes = ["My::Lock"] # デストラクタのために持たれる値を作るクラス
 strict-annotations = true
+
+[check.read-as]                          # 自作ラッパーが何の代わりか (ANNOT-12)
+"My::Accessors" = "Class::Accessor::Typed"
 ```
 
 `min-severity` が落としたものは**丸ごと**落ちます。集計にも数えられず、終了
