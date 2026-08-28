@@ -656,10 +656,11 @@ impl Pass {
             if maker == AccessorMaker::BestPractice {
                 continue;
             }
+            let lazy = matches!(maker, AccessorMaker::Accessors { lazy: true, .. });
             let readable = call
                 .args()
                 .iter()
-                .all(|argument| !annotate::listed_names(argument).is_empty());
+                .all(|argument| !annotate::listed_names(argument, lazy).is_empty());
             if !readable {
                 self.dynamic = true;
             }
@@ -787,16 +788,16 @@ impl Pass {
             facts.constructor = true;
             facts.open_constructor = true;
         }
-        let access = match maker {
-            AccessorMaker::Accessors { access, .. } => access,
-            AccessorMaker::NewAndAccessors => Access::Rw,
+        let (access, lazy) = match maker {
+            AccessorMaker::Accessors { access, lazy } => (access, lazy),
+            AccessorMaker::NewAndAccessors => (Access::Rw, false),
             // `mk_new` takes no names.
             AccessorMaker::New | AccessorMaker::BestPractice => return,
         };
         let names: Vec<String> = call
             .args()
             .iter()
-            .flat_map(annotate::listed_names)
+            .flat_map(|argument| annotate::listed_names(argument, lazy))
             .collect();
         let mut attributes = annotate::accessor_attributes(&names, access, range);
         if self.best_practice.contains(&target) {
