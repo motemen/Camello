@@ -23,7 +23,7 @@ use std::sync::Arc;
 pub use ast::AstNode;
 pub use diagnostic::ParseError;
 pub use lang::{NodeKind, SyntaxKind, SyntaxNode, SyntaxToken, TokenKind};
-pub use parse::TriviaMap;
+pub use parse::{is_builtin, TriviaMap};
 
 /// The root of a parsed file.
 pub type PerlNode = SyntaxNode;

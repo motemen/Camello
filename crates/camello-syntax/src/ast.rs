@@ -195,6 +195,17 @@ impl SubDef {
         self.body().is_none()
     }
 
+    /// Whether this was written `method f { ... }` rather than `sub f { ... }`.
+    ///
+    /// The two differ in what the parameter list means: perl gives a `method`
+    /// its invocant without the signature naming one, and keeps it out of
+    /// `@_`. So `method f()` takes an invocant and no arguments, while `sub
+    /// f()` takes nothing at all.
+    #[must_use]
+    pub fn is_method(&self) -> bool {
+        tokens(&self.0).any(|token| token.token_kind() == TokenKind::METHOD_KW)
+    }
+
     /// The comment block immediately above the `sub`, in source order.
     ///
     /// The one accessor the formatter would not have wanted and the checker

@@ -1,0 +1,2 @@
+root: lib
+read-as: My::Accessors = Class::Accessor::Typed
