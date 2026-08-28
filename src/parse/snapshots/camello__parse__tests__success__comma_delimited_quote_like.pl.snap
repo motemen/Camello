@@ -129,37 +129,32 @@ ROOT
         PAREN_EXPR
           `(` "("
           LIST_EXPR
-            LIST_CALL_EXPR
-              SUB_NAME
-                identifier "s"
+            SUB_NAME
+              identifier "s"
             `=>` "=>"
             LITERAL
               number "1"
             `,` ","
-            LIST_CALL_EXPR
-              SUB_NAME
-                identifier "q"
+            SUB_NAME
+              identifier "q"
             `=>` "=>"
             LITERAL
               number "2"
             `,` ","
-            LIST_CALL_EXPR
-              SUB_NAME
-                identifier "y"
+            SUB_NAME
+              identifier "y"
             `=>` "=>"
             LITERAL
               number "3"
             `,` ","
-            LIST_CALL_EXPR
-              SUB_NAME
-                identifier "tr"
+            SUB_NAME
+              identifier "tr"
             `=>` "=>"
             LITERAL
               number "4"
             `,` ","
-            LIST_CALL_EXPR
-              SUB_NAME
-                identifier "m"
+            SUB_NAME
+              identifier "m"
             `=>` "=>"
             LITERAL
               number "5"
@@ -354,9 +349,8 @@ ROOT
             ANON_HASH
               `{` "{"
               LIST_EXPR
-                LIST_CALL_EXPR
-                  SUB_NAME
-                    identifier "verbose"
+                SUB_NAME
+                  identifier "verbose"
                 `=>` "=>"
                 LITERAL
                   number "1"

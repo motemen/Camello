@@ -44,16 +44,14 @@ ROOT
         PAREN_EXPR
           `(` "("
           LIST_EXPR
-            LIST_CALL_EXPR
-              SUB_NAME
-                identifier "wait"
+            SUB_NAME
+              identifier "wait"
             `=>` "=>"
             LITERAL
               number ".1"
             `,` ","
-            LIST_CALL_EXPR
-              SUB_NAME
-                identifier "retries"
+            SUB_NAME
+              identifier "retries"
             `=>` "=>"
             LITERAL
               number "1"

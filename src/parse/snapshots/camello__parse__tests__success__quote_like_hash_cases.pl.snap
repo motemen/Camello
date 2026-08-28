@@ -77,9 +77,8 @@ ROOT
       ANON_HASH
         `{` "{"
         LIST_EXPR
-          LIST_CALL_EXPR
-            SUB_NAME
-              identifier "qr"
+          SUB_NAME
+            identifier "qr"
           `=>` "=>"
           LITERAL
             number "1"
@@ -90,9 +89,8 @@ ROOT
       ANON_HASH
         `{` "{"
         LIST_EXPR
-          LIST_CALL_EXPR
-            SUB_NAME
-              identifier "s"
+          SUB_NAME
+            identifier "s"
           `=>` "=>"
           LITERAL
             number "2"

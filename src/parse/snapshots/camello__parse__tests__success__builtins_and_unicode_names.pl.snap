@@ -229,9 +229,8 @@ ROOT
         PAREN_EXPR
           `(` "("
           LIST_EXPR
-            LIST_CALL_EXPR
-              SUB_NAME
-                identifier "コーヒー"
+            SUB_NAME
+              identifier "コーヒー"
             `=>` "=>"
             SCALAR_VAR
               `$` "$"

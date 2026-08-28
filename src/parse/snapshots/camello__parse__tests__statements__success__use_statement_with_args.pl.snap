@@ -8,9 +8,8 @@ ROOT
     SUB_NAME
       identifier "Some::Module"
     LIST_EXPR
-      LIST_CALL_EXPR
-        SUB_NAME
-          identifier "option"
+      SUB_NAME
+        identifier "option"
       `=>` "=>"
       LITERAL
         number "1"
