@@ -332,13 +332,16 @@ impl Attr {
 
 // ===== Declarations =====
 
-/// `my` / `our` / `state` / `local`.
+/// `my` / `our` / `state` / `local` / `field`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeclKeyword {
     My,
     Our,
     State,
     Local,
+    /// The `class` feature's per-instance slot. It declares a name the way
+    /// `my` does, and every `method` of the class sees it.
+    Field,
 }
 
 impl VarDecl {
@@ -349,6 +352,7 @@ impl VarDecl {
             T!["our"] => Some(DeclKeyword::Our),
             T!["state"] => Some(DeclKeyword::State),
             T!["local"] => Some(DeclKeyword::Local),
+            T!["field"] => Some(DeclKeyword::Field),
             _ => None,
         })
     }

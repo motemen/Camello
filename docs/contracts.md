@@ -126,7 +126,11 @@ tree as it goes.
   argument. Reading it either way is reading a prototype nobody can see — `($)`
   against none at all — so neither is the faithful answer and the label says
   which was chosen. `getopt \@args, 'a|all' => \$all` is not the value of a
-  pair and keeps its whole list.
+  pair and keeps its whole list. The key of the next pair may be a `my $name`,
+  because that is how every `Smart::Args` list writes one: without it
+  `args my $a => ArrayRef[Str], my $b => 'Int'` hands the whole rest of the
+  list to `ArrayRef` and every rule after the first parameterised type is
+  lost.
 - **`=>` quotes the bareword to its left** (perlop, "Comma Operator"), so
   `key => 1`, `sort => $by` and `package => 'x'` hold strings whatever those
   names mean elsewhere. One predicate says so — `quoted_bareword` — and every

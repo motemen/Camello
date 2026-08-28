@@ -115,6 +115,30 @@ Counter->new(0)->add(1);
 my $foreign = Somewhere::Else->new;
 $foreign->anything_at_all;
 
+# A `new` that borrows its parent's and blesses the result is still a
+# constructor; a `new` that hands back whatever another class built is a
+# factory, and calling its answer one of this class would make every method
+# after it missing (INFER-2g).
+package Sub2;
+our @ISA = ('Counter');
+sub new {
+    my ($class, @rest) = @_;
+    my $self = $class->SUPER::new(@rest);
+    return $self;
+}
+
+package Factory;
+sub new {
+    my ($class, $start) = @_;
+    return Counter->new($start);
+}
+
+package main;
+
+Sub2->new(0)->add(1);
+Sub2->new(0)->reset;            #~ warning unknown-method: declares no method `reset`
+Factory->new(0)->anything_at_all;
+
 # `SUPER::` is relative to the package the *line* is in, not to whatever the
 # invocant turned out to be.
 package Base;

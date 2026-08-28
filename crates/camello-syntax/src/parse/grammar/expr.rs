@@ -45,6 +45,12 @@ pub(crate) fn list_contents(parser: &mut Parser<'_>, terminators: &[TokenKind]) 
 /// more than one token, `$name => 1`, is not seen, and the list operator keeps
 /// everything as it always did.
 ///
+/// `my $name =>` is the one longer spelling that is read, because it is how
+/// every `Smart::Args` list writes its keys: `args my $a => ArrayRef[Str], my
+/// $b => 'Int'` is a table of pairs like any other, and reading it as one
+/// argument list handed to `ArrayRef` loses every rule written after the first
+/// parameterised type.
+///
 /// The peek happens under whichever expectation the last element left, which
 /// settles nothing on its own: the answer is used to decide and never consumed,
 /// and `set_expect` rescans from the cursor before anything is (the lexer
@@ -54,7 +60,13 @@ fn pair_follows_separator(parser: &mut Parser<'_>) -> bool {
         || kind == TokenKind::STRING
         || kind == TokenKind::NUMBER
         || kind.is_keyword());
-    key && parser.nth(2) == Some(T!["=>"])
+    if key && parser.nth(2) == Some(T!["=>"]) {
+        return true;
+    }
+    parser.nth(1) == Some(TokenKind::MY_KW)
+        && parser.nth(2).is_some_and(TokenKind::is_sigil)
+        && parser.nth(3) == Some(TokenKind::IDENT)
+        && parser.nth(4) == Some(T!["=>"])
 }
 
 fn list_elements(parser: &mut Parser<'_>, terminators: &[TokenKind], cut_at_pair: bool) {
