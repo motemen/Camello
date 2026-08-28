@@ -283,6 +283,15 @@ pub struct AttributeDecl {
     /// `handles` naming a regexp or a role: the delegated set is unknowable,
     /// so the class may have any method and "no such method" is off.
     pub opaque_delegation: bool,
+    /// The sub that fills a lazy slot, where the declaration named one that
+    /// can be looked up (`docs/types.md`, ANNOT-10f).
+    ///
+    /// `Class::Accessor::Lite::Lazy` carries no types, so what the builder
+    /// returns is the only thing that says what the slot holds — the accessor
+    /// is `$self->{name} //= $self->$builder`, and every other member of the
+    /// family leaves this `None`.
+    #[serde(default)]
+    pub builder: Option<String>,
     #[serde(with = "crate::serde_range")]
     pub range: TextRange,
 }
@@ -352,6 +361,18 @@ impl AttributeDecl {
                 Access::Rw => positional(vec![invocant, value(true)]),
             },
         }
+    }
+
+    /// Whether calling `name` gives back what the slot holds, rather than
+    /// something *about* it: the accessor itself, a `reader` and a `writer`
+    /// do; a `predicate` says whether the slot is filled and a `clearer` and
+    /// a delegate say nothing about it at all.
+    #[must_use]
+    pub fn yields_the_slot(&self, name: &str) -> bool {
+        self.methods
+            .iter()
+            .find(|method| method.name == name)
+            .is_none_or(|method| matches!(method.role, AccessorRole::Reader | AccessorRole::Writer))
     }
 
     /// What calling `name` on it gives back (`docs/types.md`, METHOD-4a).
@@ -549,6 +570,7 @@ pub fn read_has(call: &ast::Call, into: &mut Sink) -> Vec<AttributeDecl> {
                 coerce,
                 methods: methods.clone(),
                 opaque_delegation,
+                builder: None,
                 range: first.text_range(),
             }
         })
@@ -651,6 +673,9 @@ pub fn read_accessor_typed(arguments: &SyntaxNode, into: &mut Sink) -> (Vec<Attr
                 coerce: false,
                 methods: Vec::new(),
                 opaque_delegation: false,
+                // This family writes the type down; the builder adds nothing
+                // the `isa` did not already say.
+                builder: None,
                 range: slot.range(),
             });
         }
@@ -755,10 +780,12 @@ pub fn read_accessor_lite(arguments: &SyntaxNode) -> (Vec<AttributeDecl>, bool) 
     let mut attributes = Vec::new();
     let mut constructor = false;
     for pair in Args::pairs(arguments) {
-        let access = match pair.key() {
-            Some("rw" | "rw_lazy") => Access::Rw,
-            Some("ro" | "ro_lazy") => Access::Ro,
-            Some("wo") => Access::Wo,
+        let (access, lazy) = match pair.key() {
+            Some("rw") => (Access::Rw, false),
+            Some("rw_lazy") => (Access::Rw, true),
+            Some("ro") => (Access::Ro, false),
+            Some("ro_lazy") => (Access::Ro, true),
+            Some("wo") => (Access::Wo, false),
             Some("new") => {
                 constructor = is_true(pair.node());
                 continue;
@@ -766,7 +793,7 @@ pub fn read_accessor_lite(arguments: &SyntaxNode) -> (Vec<AttributeDecl>, bool) 
             _ => continue,
         };
         let names = accessor_names(pair.node());
-        attributes.extend(accessor_attributes(&names, access, pair.range()));
+        attributes.extend(accessor_attributes(&names, access, lazy, pair.range()));
     }
     (attributes, constructor)
 }
@@ -781,26 +808,63 @@ pub fn read_accessor_lite(arguments: &SyntaxNode) -> (Vec<AttributeDecl>, bool) 
 /// are names too. The plain makers do not — a reference passed to those is
 /// stringified into an accessor nobody meant to ask for.
 #[must_use]
-pub fn listed_names(node: &SyntaxNode, lazy: bool) -> Vec<String> {
+pub fn listed_names(node: &SyntaxNode, lazy: bool) -> Vec<AccessorName> {
     if lazy {
         accessor_names(node)
     } else {
         attribute_names(node)
+            .into_iter()
+            .map(AccessorName::implicit)
+            .collect()
     }
+}
+
+/// One accessor a declaration spells out, and the builder written beside it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccessorName {
+    pub name: String,
+    pub builder: Builder,
+}
+
+impl AccessorName {
+    fn implicit(name: String) -> Self {
+        AccessorName {
+            name,
+            builder: Builder::Implicit,
+        }
+    }
+}
+
+/// Where a lazy slot's builder is, as the declaration wrote it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Builder {
+    /// Nothing written beside the name, which is the common shape:
+    /// `Class::Accessor::Lite::Lazy` builds `foo` with `_build_foo`.
+    Implicit,
+    /// `{ poyo => \&make_poyo }` or `{ poe => 'make_poe' }` — either way a
+    /// name, because the coderef form still resolves to a sub of this file.
+    Named(String),
+    /// `{ yyy => sub { ... } }` — a builder with no name to ask about.
+    Anonymous,
 }
 
 /// The property names in one `rw => [...]` value.
 ///
 /// An arrayref of names, a hashref of `name => builder`, or — the shape
 /// `Class::Accessor::Lite::Lazy` documents — an arrayref holding both.
-fn accessor_names(node: &SyntaxNode) -> Vec<String> {
+fn accessor_names(node: &SyntaxNode) -> Vec<AccessorName> {
     let node = ast::without_plus(node);
     match node.node_kind() {
         NodeKind::ANON_HASH => AnonHash::cast(node.clone())
             .expect("kind checked")
             .pairs()
             .iter()
-            .filter_map(|slot| slot.key().map(str::to_string))
+            .filter_map(|slot| {
+                Some(AccessorName {
+                    name: slot.key()?.to_string(),
+                    builder: builder_of(slot.node()),
+                })
+            })
             .collect(),
         NodeKind::ANON_ARRAY => ast::AnonArray::cast(node.clone())
             .expect("kind checked")
@@ -808,8 +872,32 @@ fn accessor_names(node: &SyntaxNode) -> Vec<String> {
             .iter()
             .flat_map(accessor_names)
             .collect(),
-        _ => attribute_names(&node),
+        _ => attribute_names(&node)
+            .into_iter()
+            .map(AccessorName::implicit)
+            .collect(),
     }
+}
+
+/// The builder a hashref slot names: `'make_poe'`, a bareword, or `\&make_poyo`.
+///
+/// An inline `sub { ... }` names nothing, and neither does anything computed.
+fn builder_of(value: &SyntaxNode) -> Builder {
+    if let Some(name) = ast::key_text(value) {
+        return Builder::Named(name);
+    }
+    if value.node_kind() == NodeKind::REFERENCE_EXPR {
+        let named = value
+            .children()
+            .next()
+            .filter(|inner| inner.node_kind() == NodeKind::CODE_VAR)
+            .and_then(ast::Variable::cast)
+            .and_then(|code| code.name());
+        if let Some(name) = named {
+            return Builder::Named(name);
+        }
+    }
+    Builder::Anonymous
 }
 
 /// One `mk_accessors` list, as attributes.
@@ -818,14 +906,15 @@ fn accessor_names(node: &SyntaxNode) -> Vec<String> {
 /// a lazy slot is filled by its builder, so either may be absent from a call.
 #[must_use]
 pub fn accessor_attributes(
-    names: &[String],
+    names: &[AccessorName],
     access: Access,
+    lazy: bool,
     range: TextRange,
 ) -> Vec<AttributeDecl> {
     names
         .iter()
-        .map(|name| AttributeDecl {
-            name: name.clone(),
+        .map(|listed| AttributeDecl {
+            name: listed.name.clone(),
             ty: Type::Unknown,
             access,
             required: false,
@@ -835,6 +924,13 @@ pub fn accessor_attributes(
             coerce: false,
             methods: Vec::new(),
             opaque_delegation: false,
+            builder: lazy
+                .then(|| match &listed.builder {
+                    Builder::Implicit => Some(format!("_build_{}", listed.name)),
+                    Builder::Named(builder) => Some(builder.clone()),
+                    Builder::Anonymous => None,
+                })
+                .flatten(),
             range,
         })
         .collect()

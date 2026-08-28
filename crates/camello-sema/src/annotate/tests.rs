@@ -193,6 +193,58 @@ fn a_lazy_accessor_is_named_however_its_builder_is_given() {
 }
 
 #[test]
+fn a_lazy_slot_records_the_builder_that_fills_it() {
+    // The builder is the one thing this family says about a slot's type
+    // (`docs/types.md`, ANNOT-10f), so the declaration has to keep its name:
+    // `_build_$name` where none is written, the string or the `\&sub` where
+    // one is, and nothing at all for an inline `sub { ... }`.
+    let root = parse(concat!(
+        "package L;\n",
+        "use Class::Accessor::Lite::Lazy (\n",
+        "  ro => ['plain'],\n",
+        "  ro_lazy => ['hoge', { poyo => \\&make_poyo, poe => 'make_poe' }],\n",
+        "  rw_lazy => { baz => 'make_baz', anon => sub { 1 } },\n",
+        ");\n",
+        "package M;\n",
+        "use Class::Accessor::Lite::Lazy;\n",
+        "Class::Accessor::Lite::Lazy->mk_lazy_accessors('mk', { spelled => 'build_it' });\n",
+        "Class::Accessor::Lite::Lazy->mk_accessors('flat');\n",
+    ));
+    let decls = decl::declare(&root);
+    let builders = |package: &str| {
+        let mut found: Vec<(String, Option<String>)> = decls
+            .facts_for(package)
+            .expect("the package")
+            .attributes
+            .iter()
+            .map(|attribute| (attribute.name.clone(), attribute.builder.clone()))
+            .collect();
+        found.sort();
+        found
+    };
+    let named = |name: &str, builder: &str| (name.to_string(), Some(builder.to_string()));
+    assert_eq!(
+        builders("L"),
+        vec![
+            ("anon".to_string(), None),
+            named("baz", "make_baz"),
+            named("hoge", "_build_hoge"),
+            ("plain".to_string(), None),
+            named("poe", "make_poe"),
+            named("poyo", "make_poyo"),
+        ]
+    );
+    assert_eq!(
+        builders("M"),
+        vec![
+            ("flat".to_string(), None),
+            named("mk", "_build_mk"),
+            named("spelled", "build_it"),
+        ]
+    );
+}
+
+#[test]
 fn mk_accessors_installs_into_the_package_it_is_written_in() {
     // `Class::Accessor::Lite->mk_accessors` installs into `caller`, and a
     // `Class::Accessor` subclass calls the inherited method on itself. Both

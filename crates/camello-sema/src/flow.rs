@@ -1641,7 +1641,7 @@ impl Pass<'_> {
             // else, none of that was ever compared.
             MethodLookup::Attribute(attribute) => {
                 let params = attribute.params(&method);
-                let returns = attribute.returns(&method);
+                let returns = self.program.slot_type(&class, attribute, &method);
                 if through_a_value {
                     let shape = crate::arity::CallShape::of(&arguments, &call.pairs());
                     crate::arity::check_shape(
