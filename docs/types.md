@@ -633,6 +633,8 @@ use constant { E => 2.71, PHI => 1.61 };
   `Unknown` を返します。
 - (INFER-4a) 戻り値の推論は**サブルーチンの境界を越えません**。`Returns:` のない
   サブルーチンの戻り値は `Unknown` です。
+  これを解除する設計は [return-inference.md](return-inference.md) にあります
+  （未実装）。
 - 組み込み関数はスカラーコンテキストで次を返します。ここにないものは `Unknown` です。
 
   | 組み込み | 型 |
