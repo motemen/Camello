@@ -494,14 +494,16 @@ impl Pass<'_> {
         let left = view.left().map(|left| self.type_of(&left));
         let right = view.right().map(|right| self.type_of(&right));
         match view.operator() {
-            Some(
-                TokenKind::PLUS
-                | TokenKind::MINUS
-                | TokenKind::STAR
-                | TokenKind::SLASH
-                | TokenKind::MODULO
-                | TokenKind::EXPONENT,
-            ) => Type::Num,
+            Some(TokenKind::PLUS | TokenKind::MINUS | TokenKind::STAR) => {
+                arithmetic(left.as_ref(), right.as_ref(), Arith::Widening)
+            }
+            // `%` truncates both sides before it divides, so it is an integer
+            // whatever it was handed; `2 / 4` and `2 ** -1` are fractions, so
+            // those two are `Num` however integral their operands are.
+            Some(TokenKind::MODULO) => arithmetic(left.as_ref(), right.as_ref(), Arith::Integer),
+            Some(TokenKind::SLASH | TokenKind::EXPONENT) => {
+                arithmetic(left.as_ref(), right.as_ref(), Arith::Fractional)
+            }
             Some(TokenKind::DOT | TokenKind::X_OP) => Type::Str,
             Some(
                 TokenKind::EQ_EQ
@@ -837,12 +839,10 @@ impl Pass<'_> {
                 // `Foo->new(...)` is an `InstanceOf['Foo']` (`docs/typecheck.md`,
                 // "Inference"). Only where the run actually read a `sub new`,
                 // so a class it never saw stays `Unknown`; a `Returns:` wins
-                // over it; and a framework's generated constructor never
-                // reaches here. The classes this is wrong about are the ones
-                // whose `new` hands back something else — `URI->new` returns a
-                // `URI::http` — and what they need is to be marked opaque,
-                // which is a fact about them and not about every `new`.
-                if returns.scalar.is_unknown() && method == "new" {
+                // over it; a framework's generated constructor never reaches
+                // here; and the body has to say the value is one of the class
+                // (INFER-2g), because `URI->new` hands back a `URI::http`.
+                if returns.scalar.is_unknown() && method == "new" && symbol.constructs_own_class {
                     Type::InstanceOf(class)
                 } else {
                     returns.scalar
@@ -1377,6 +1377,47 @@ fn bareword_class(node: &SyntaxNode) -> Option<String> {
         .then_some(name)
 }
 
+/// What an arithmetic operator does to whole numbers.
+#[derive(Clone, Copy)]
+enum Arith {
+    /// An integer whatever it was handed: `%`.
+    Integer,
+    /// An integer when both sides are: `+`, `-`, `*`.
+    Widening,
+    /// Never an integer on that ground alone: `/`, `**`.
+    Fractional,
+}
+
+/// The type of an arithmetic expression (`docs/types.md`, INFER-1a).
+///
+/// An operand nobody typed makes the answer one nobody typed either — `Num`
+/// would be a claim, and `Int` slots are what it would be reported against.
+fn arithmetic(left: Option<&Type>, right: Option<&Type>, operator: Arith) -> Type {
+    let (Some(left), Some(right)) = (left, right) else {
+        return Type::Unknown;
+    };
+    if left.is_unknown() || right.is_unknown() {
+        return Type::Unknown;
+    }
+    match operator {
+        Arith::Integer => Type::Int,
+        Arith::Widening if is_integral(left) && is_integral(right) => Type::Int,
+        Arith::Widening | Arith::Fractional => Type::Num,
+    }
+}
+
+/// Whether every value this type has numifies to a whole number.
+///
+/// `Bool` is `0`, `1`, `''` and `undef`, all of which do; `undef` inside a
+/// `Maybe` is the same `0`.
+fn is_integral(ty: &Type) -> bool {
+    match ty {
+        Type::Int | Type::Bool | Type::Undef => true,
+        Type::Union(members) => members.iter().all(is_integral),
+        _ => false,
+    }
+}
+
 /// What one element of a container holds.
 fn element_of(ty: &Type) -> Type {
     match ty {
@@ -1389,12 +1430,6 @@ fn element_of(ty: &Type) -> Type {
     }
 }
 
-/// Whether a value of `value` could be in a slot declared `slot`.
-///
-/// "Could be", not "is": the checker reports only what it can rule out. Every
-/// rule below is a *contradiction* — two shapes that cannot be the same value
-/// — and anything else is silence.
-#[must_use]
 /// Whether a parameter may be left out, however the declaration said so.
 ///
 /// `optional => 1` and a `default` are the rule's own words; `Optional[T]` is
@@ -1403,6 +1438,12 @@ fn is_optional(param: &Param) -> bool {
     param.optional || param.ty.is_optional()
 }
 
+/// Whether a value of `value` could be in a slot declared `slot`.
+///
+/// "Could be", not "is": the checker reports only what it can rule out. Every
+/// rule below is a *contradiction* — two shapes that cannot be the same value
+/// — and anything else is silence.
+#[must_use]
 pub fn compatible(value: &Type, slot: &Type, program: &Program) -> bool {
     let slot = slot.required();
     if value.is_unknown()
@@ -1434,6 +1475,12 @@ pub fn compatible(value: &Type, slot: &Type, program: &Program) -> bool {
         (Type::Num, Type::Str | Type::Value) => true,
         (Type::Str, Type::Value) => true,
         (Type::Int | Type::Num | Type::Str | Type::Bool, Type::Enum(_)) => true,
+        // An `Enum`'s values *are* strings, so it fits wherever a string does
+        // (`docs/types.md`, TYPE-5e).
+        (Type::Enum(_), Type::Str | Type::Value) => true,
+        // One enum fits another when every value it may hold is a value the
+        // other accepts.
+        (Type::Enum(value), Type::Enum(slot)) => value.iter().all(|one| slot.contains(one)),
         (Type::Str, Type::ClassName | Type::RoleName) => true,
         (Type::ClassName | Type::RoleName, Type::Str) => true,
 
@@ -1455,12 +1502,62 @@ pub fn compatible(value: &Type, slot: &Type, program: &Program) -> bool {
         (Type::Dict { .. }, Type::HashRef(_)) | (Type::HashRef(_), Type::Dict { .. }) => true,
         (Type::Tuple(_), Type::ArrayRef(_)) | (Type::ArrayRef(_), Type::Tuple(_)) => true,
 
+        // `Map[K, V]` is a hash whose keys are also constrained. Against a
+        // `HashRef` only the value side is comparable, and a `Dict` names its
+        // keys one at a time, so it is compared the way a `Dict` and a
+        // `HashRef` are — not at all (`docs/types.md`, TYPE-4c).
+        (Type::Map(value_key, value_item), Type::Map(slot_key, slot_item)) => {
+            compatible(value_key, slot_key, program) && compatible(value_item, slot_item, program)
+        }
+        (Type::Map(_, left), Type::HashRef(right)) | (Type::HashRef(left), Type::Map(_, right)) => {
+            compatible(left, right, program)
+        }
+        (Type::Dict { .. }, Type::Map(_, _)) | (Type::Map(_, _), Type::Dict { .. }) => true,
+
+        // Two `Dict`s: every slot the declaration names has to be there and to
+        // fit (`docs/types.md`, TYPE-4d). Keys the declaration does not name
+        // are not a contradiction — the value's are open unless it says
+        // otherwise, and an inferred hash always says otherwise (TYPE-4).
+        (
+            Type::Dict {
+                slots: value_slots,
+                slurpy: value_slurpy,
+            },
+            Type::Dict {
+                slots: slot_slots,
+                slurpy: _,
+            },
+        ) => slot_slots.iter().all(|(key, declared)| {
+            match value_slots.iter().find(|(name, _)| name == key) {
+                Some((_, held)) => compatible(held, declared.required(), program),
+                // Absent: fine if the slot may be left out, and fine if the
+                // value is open, since an open hash may hold the key after all.
+                None => declared.is_optional() || value_slurpy.is_some(),
+            }
+        }),
+
+        // Type::Tiny has one regexp type under two names.
+        (Type::RegexpRef, Type::InstanceOf(class)) | (Type::InstanceOf(class), Type::RegexpRef)
+            if class == "Regexp" =>
+        {
+            true
+        }
+
         (Type::InstanceOf(left), Type::InstanceOf(right)) => {
             // Both classes have to be known before a "no" means anything.
             if !program.knows_package(left) || !program.knows_package(right) {
                 return true;
             }
             program.isa(left, right)
+        }
+        // A bareword nothing declares reads as a class name (TYPE-3), which is
+        // also how an unread type library's structured type arrives here. Any
+        // reference could be an object of a class the program never saw, so
+        // there is nothing to rule out.
+        (value, Type::InstanceOf(class)) | (Type::InstanceOf(class), value)
+            if is_reference(value) && !program.knows_package(class) =>
+        {
+            true
         }
         (Type::InstanceOf(_), Type::Object) => true,
         (Type::Object, Type::InstanceOf(_)) => true,
@@ -1492,13 +1589,19 @@ fn is_reference(ty: &Type) -> bool {
 fn is_value(ty: &Type) -> bool {
     matches!(
         ty,
-        Type::Str | Type::Num | Type::Int | Type::Bool | Type::ClassName | Type::RoleName
+        Type::Str
+            | Type::Num
+            | Type::Int
+            | Type::Bool
+            | Type::ClassName
+            | Type::RoleName
+            | Type::Enum(_)
     )
 }
 
 /// Whether a type says enough for a "no" to mean anything.
 fn is_settled(ty: &Type) -> bool {
-    is_value(ty) || is_reference(ty) || matches!(ty, Type::Undef | Type::Enum(_))
+    is_value(ty) || is_reference(ty) || matches!(ty, Type::Undef)
 }
 
 // ----- narrowing -----

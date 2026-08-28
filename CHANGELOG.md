@@ -108,6 +108,41 @@ One line per change. The reasoning is in the commit it came from.
 - `optional => 0` in an `args` rule means the parameter is required, the way it
   already did for a `Class::Accessor::Typed` slot. Anything the rule cannot
   read as a number is still taken as optional.
+- The compatibility rules cover the structured types they were missing. Two
+  `Dict`s are compared slot by slot, `Map` and `HashRef` are the same reference
+  with the key side said or unsaid, an `Enum` goes where a `Str` goes and fits
+  another `Enum` whose values include its own, and `RegexpRef` and
+  `InstanceOf['Regexp']` are one type. Every one of them used to fall through
+  to "not the same type": a hash written out was a `type-mismatch` against the
+  `Dict` it was written for, because an inferred hash always carries a slurpy
+  and the declared one does not.
+- A reference passed to an `InstanceOf` of a class the run never read says
+  nothing, the way two unknown classes already did. A structured type out of a
+  type library that could not be read arrives as exactly that (TYPE-3), and
+  "not that shape" is not something a declaration nobody read can support.
+- Parameterless `Dict`, `Map` and `Tuple` are the unparameterised reference —
+  `HashRef` and `ArrayRef` — rather than the empty structure. `args my $x =>
+  'Dict'` accepts any hash in Type::Tiny, and reading it as a `Dict` with no
+  slots made every key read off it an `unknown-key`.
+- A hand-written `sub new` is read as a constructor only where its body says
+  the value it hands back is one of its own class — a `bless`, or a `SUPER::`
+  that borrows the parent's. `URI->new` returns a `URI::http`, and calling it
+  a `URI` made methods after it appear missing; the constructor fixture records the
+  distinction.
+- The `class` feature's `field` declares its name. The parser was already
+  building the declaration; the scope pass did not read the keyword, so every
+  field reference in a class under `strict` was an `undeclared-variable`. A
+  `field` with an attribute is left out of `unused-variable`, because `:param`
+  and `:reader` hand the name to something outside the body.
+- Arithmetic on two integers is an integer. `+`, `-` and `*` were all `Num`,
+  so `$limit + 1` for an `Int` slot was a `type-mismatch`; `%` truncates both
+  sides and is an `Int` whatever it was handed, and `/` and `**` stay `Num`.
+  An operand nobody typed now leaves the answer untyped rather than claiming
+  `Num` — `Int` slots are what that claim would be reported against.
+- A `my $name =>` is a key the paren-less call's pair lookahead can see. `args
+  my $a => ArrayRef[Str], my $b => 'Int'` handed the whole rest of the list to
+  `ArrayRef`, so every rule written after the first parameterised type was
+  lost — types, `optional`, `default` and the arity with them.
 
 ## 0.1.1 — 2026-08-27
 

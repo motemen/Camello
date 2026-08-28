@@ -291,8 +291,20 @@ fn constructor(name: &str, arguments: Vec<Arg>) -> Result<Type, ParseError> {
 
     // `Dict` is the one constructor whose arguments are named, so it is built
     // before the arm that refuses a named argument to everything else.
-    if name == "Dict" {
+    if name == "Dict" && arity > 0 {
         return Ok(dict(arguments));
+    }
+
+    // A structured constructor written without parameters constrains nothing
+    // beyond the kind of reference it is: bare `Dict` accepts any hash, bare
+    // `Tuple` any array (`docs/types.md`, TYPE-4b). Reading bare `Dict` as the
+    // *empty* structure instead would make every key an `unknown-key`.
+    if arity == 0 {
+        match name {
+            "Dict" | "Map" => return Ok(Type::HashRef(Box::new(Type::Unknown))),
+            "Tuple" => return Ok(Type::ArrayRef(Box::new(Type::Unknown))),
+            _ => {}
+        }
     }
 
     let ty = match name {
