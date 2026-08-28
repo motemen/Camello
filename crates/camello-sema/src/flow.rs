@@ -1939,6 +1939,14 @@ impl Pass<'_> {
     /// (`docs/typecheck.md`, "`Returns:`"): a `return "x"` in a sub declared
     /// `Returns: Int` is a diagnostic at the `return`.
     fn check_return(&mut self, typed: &Typed, at: TextRange) {
+        // Only ever against a written annotation (`docs/types.md`, ANNOT-7a).
+        // A type read off this very body has nothing to contradict: it is the
+        // join of these sites, so every one of them agrees with it by
+        // construction, and asking would be the walk checking its own
+        // arithmetic.
+        if self.returns.inferred {
+            return;
+        }
         if self.returns.list == ListShape::Nothing {
             if let Some(first) = typed.nodes.first() {
                 self.diagnostics.push(Diagnostic::new(
