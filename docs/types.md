@@ -378,6 +378,9 @@ sub notify { ... }
   勝ち**、推論された形の方が `return` の位置で報告されます（DIAG-9）。
 - (ANNOT-7b) 読めない `Returns:` は診断になります（DIAG-8）。黙って無視される
   アノテーションは、無いより悪いからです。
+- （計画）`| list: (...)` の形は廃止し、`Returns: (Str, Int)` / `Returns: (Row ...)` の
+  括弧記法に置き換えます。両方を書くときは `Returns:` 行を二つ書きます。
+  [return-inference.md](return-inference.md) の「The notation」を参照（未実装）。
 - (ANNOT-7c) ただし、型の**形をしていない**ものは散文として扱われ、何も言いません。
   `# Returns:    modified template` のような行はアノテーションではありません。
   「括弧の外に裸の名前が二つ並んでいる」ものは散文です。

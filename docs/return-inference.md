@@ -346,6 +346,44 @@ never consulted (INFER-6b). Building the reading is what makes both the
 annotation and the inference mean something, and it is the same work
 either way.
 
+### The notation
+
+The `list:` form goes. `Returns:` reads one of four things, and a
+parenthesised body is a list:
+
+```perl
+# Returns: Str               scalar context: Str
+# Returns: (Str, Int)        list context: exactly two, Str then Int
+# Returns: (Row ...)         list context: any number of Row
+# Returns: ()                nothing — as today
+```
+
+- A body that is parenthesised from its first character to its last is
+  a list shape. Inside, a top-level comma separates slots, and a single
+  type followed by `...` is the repeated form. `(Str)` is a list of one,
+  because `()` is a list of none and the two have to agree; a grouping
+  parenthesis around a whole scalar type has no use that `Str | Undef`
+  does not serve, so nothing is lost. Parentheses *inside* a slot or a
+  scalar type keep grouping (`(Str | Undef, Int)` is two slots).
+- A sub that has both halves writes **two `Returns:` lines** in its
+  leading comment block, one scalar and one list, in either order. The
+  reader today stops at the first `Returns:` line it finds; it reads
+  every one instead, and a second line of the same kind is a
+  `bad-annotation` ("`Returns:` names a scalar type twice").
+- A list-only annotation says nothing about scalar context, and a
+  scalar-only one nothing about list context: the other half is
+  `Unknown`, and silent. The comma operator would make `Returns: (A, B)`
+  a `B` in scalar context and `(Row ...)` a count; the two rules
+  disagree, and a sub that wants a scalar type writes it.
+- `| list: (...)` is a `bad-annotation` whose message shows the new form.
+  Two fixtures and one unit test carry the old one; they are rewritten.
+- `signature_of` renders `-> Str`, `-> (Str, Int)`, `-> (Row ...)`, and
+  `-> Str, (Str, Int)` for both; the fingerprint follows it.
+
+This is a change to a recogniser that exists, so it is the first step of
+the list phase and can ship on its own — before any inference — as the
+annotation half of the same feature.
+
 ### The shape
 
 `ListShape` grows one variant:
@@ -354,7 +392,7 @@ either way.
 Unknown
 Nothing            Returns: ()
 Fixed(Vec<Type>)   (Str, Int)       — a known length, a type per slot
-Of(Type)           list of T        — any length, one element type   [new]
+Of(Type)           (Row ...)        — any length, one element type   [new]
 ```
 
 The join of two shapes: both `Fixed` of the same length is slot-wise
@@ -434,10 +472,10 @@ Where the shape is read. Each is a small change to `assignment()` or
 Nothing new is reported by this phase except through the types it
 binds: a `$row` bound to `Row` off `my ($row) = $self->rows` gets
 `unknown-method` where an `Unknown` did not. The one addition is that
-`Returns: ... | list: (...)` starts being *used*: a call in list context
-yields the annotated shape, and — the other half of ANNOT-7a — a `return
-(A, B)` in a sub declared `list: (Str)` is a `return-mismatch`, length
-included. `Returns: ()` keeps its existing meaning and is still never
+`Returns: (A, B)` starts being *used*: a call in list context yields the
+annotated shape, and — the other half of ANNOT-7a — a `return (A, B)` in
+a sub declared `Returns: (Str)` is a `return-mismatch`, length included,
+and `return @rows` against `(Row ...)` is checked by element. `Returns: ()` keeps its existing meaning and is still never
 inferred. LIMIT-7 is rewritten to say what is now matched and what is
 not (hashes, arity).
 
@@ -446,13 +484,13 @@ not (hashes, arity).
 The scalar phase ships first (steps 1–7). The list phase is its own
 sequence after it:
 
-9. `ListShape::Of`, the join, `signature_of` rendering (`-> Str | list: Row...`
-   for `Of`, keeping the `(Str, Int)` form for `Fixed`).
+9. The notation: `read_returns` reads every `Returns:` line, the
+   parenthesised body, `...`, and rejects `list:`; `ListShape::Of`, the
+   join, `signature_of`. Shippable alone.
 10. `shape_of` over the table above; `map`/`grep` with `$_` bound.
 11. The consumers, one fixture each under `fixtures/types/returns/list/`:
     `assign.pl`, `array.pl`, `anon-array.pl`, `foreach.pl`, and
-    `annotation.pl` for the `list:` half of `Returns:` finally being
-    matched.
+    `annotation.pl` for `Returns: (A, B)` finally being matched.
 12. Sites: the list column, through both tiers unchanged — a shape is a
     value in `Returns` like the scalar half, and everything that carries
     `returns.scalar` across the graph (cache, fingerprint, `set_returns`,
@@ -485,4 +523,8 @@ pass, a new phase, or a change to the program graph beyond the variant.
   two open `Dict`s, and `$r->{k}` on it is whatever the union rule
   already says. No new widening is proposed; the corpus may propose one.
 - **Hover wording.** `-> Str (inferred)` is proposed; `~> Str` is the
-  shorter alternative. Decided when it is on screen.
+  shorter alternative. Decided when it is on screen. The list form is
+  settled above.
+- **`Of` at a single target.** Whether `my ($first) = f()` off a
+  `(Row ...)` binds `Maybe[Row]` or `Row` is decided by the corpus count
+  (step 13).
