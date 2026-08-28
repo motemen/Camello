@@ -57,6 +57,30 @@ One line per change. The reasoning is in the commit it came from.
 
 ### Added
 
+- **A class method's `$class` is `ClassName['__PACKAGE__']`** (`docs/types.md`,
+  INFER-9). `$self` has always been bound to an `InstanceOf` of the package it
+  is written in; `$class` was bound to a bare `ClassName`, which names no class
+  at all — so `$class->` resolved to nothing, `my $self = $class->new` was
+  `Unknown`, and the body of every hand-written constructor and class method
+  was invisible. It now resolves against the package's own MRO, on the
+  assumption the calling convention makes: `$class` is this package or a
+  subclass. **A method the package does not declare is `unknown-method`** —
+  the same call pyright and mypy make for a classmethod's `cls`, and the same
+  cost: a base class calling a method only its subclasses define is a false
+  positive. Over the 2564 `.pm` files below `@INC` that cost was one call
+  (`TheSchwartz::Worker`'s `$class->work`). `ClassName['Foo']` is writable as
+  an annotation too; bare `ClassName` still means "some class's name", and the
+  parameterised one is a subtype of it.
+- **A value built from `$class` is a `Self`** (INFER-9b). The invocant rule
+  (INFER-4f) said a sub returning `$self` returns the class it was *called* on;
+  this extends it to a value built from the invocant's class. `$class->new` and
+  `$self->clone` carry the marker, so `sub build { my $class = shift; return
+  $class->new }` makes `Child->build` a `Child`. The marker crosses one
+  lexical, because `my $self = $class->new; ...; return $self` is the shape
+  every hand-written constructor has and an expression-only marker is lost at
+  the assignment; another assignment to the same lexical takes it away again.
+  A value that is not of the receiver's class — `$class->config` handing back
+  a `Config` — is not one of these.
 - **A lazy slot is typed by its builder** (`docs/types.md`, ANNOT-10f). The
   `Class::Accessor::Lite` family carries no types, and that was the whole
   answer for `Class::Accessor::Lite::Lazy` too — but a lazy accessor is
