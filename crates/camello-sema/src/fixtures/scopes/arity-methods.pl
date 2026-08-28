@@ -36,3 +36,34 @@ Address->build('x', 'y');       #~ error arity: takes at most 2 arguments includ
 my $counter = Counter->new;
 $counter->add(1);
 $counter->add(1, 2, 3);         #~ error arity: takes at most 2 arguments including its invocant; 4 passed
+
+# perlsub, "Prototypes": "Method calls are not influenced by prototypes
+# either". A bare `()` is a prototype where the signatures feature is off and a
+# signature where it is on, and nothing here can tell which — so the invocant
+# the call passes is either harmless or fatal, and neither is worth an `arity`
+# error. It is said once, at `info`.
+package Legacy;
+sub PI() { return 3.14 }
+sub new { my ($class) = @_; return bless {}, $class }
+
+package main;
+
+Legacy->PI;
+#~ info ignored-prototype: `PI` is declared `()`, which a method call ignores
+Legacy->PI();
+#~ info ignored-prototype: `PI` is declared `()`, which a method call ignores
+
+# Reached through the type of its invocant rather than through a bareword: the
+# same call, and the same answer.
+my $legacy = Legacy->new;
+$legacy->PI;
+#~ info ignored-prototype: `PI` is declared `()`, which a method call ignores
+
+# A bareword call *is* influenced by the prototype, and perl checks it.
+Legacy::PI();
+Legacy::PI(1);                  #~ error arity: takes at most 0 arguments; 1 passed
+
+# The other half of the guess: an empty `()` on a sub whose body reads `@_`
+# cannot have been a signature — perl would have made the body unreachable —
+# so it is a prototype for certain and nothing is said at all. That one is in
+# `types/flow.pl`, where the method resolution it belongs to is.

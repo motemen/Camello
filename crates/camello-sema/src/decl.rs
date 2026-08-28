@@ -125,6 +125,25 @@ impl Params {
         }
     }
 
+    /// Whether the declaration was a bare `()` that might have been a
+    /// prototype rather than a signature (`docs/types.md`, DIAG-15).
+    ///
+    /// A `method ()` is not one: the keyword exists only where the `class`
+    /// feature is on, and there `()` is a signature and never a prototype —
+    /// which is also why its invocant is already in the list.
+    #[must_use]
+    pub fn is_empty_parens(&self) -> bool {
+        matches!(
+            self,
+            Params::Positional {
+                params,
+                slurpy: false,
+                invocant: false,
+                source: ParamSource::Signature,
+            } if params.is_empty()
+        )
+    }
+
     #[must_use]
     pub fn source(&self) -> Option<ParamSource> {
         match self {
