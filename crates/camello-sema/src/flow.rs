@@ -308,6 +308,11 @@ struct Inference {
 struct Sites {
     /// The scalar type of each.
     scalar: Vec<Type>,
+    /// The list shape of each. The two halves are independent: `return @x`
+    /// sinks the scalar one and not the list one, and `return $obj->maybe` —
+    /// a method with a scalar type and no shape — sinks the list one and not
+    /// the scalar one.
+    list: Vec<ListShape>,
     /// Whether one of them was the invocant.
     invocant: bool,
     /// A `goto` hands the call over to another sub, and what comes back is
@@ -328,10 +333,16 @@ impl Sites {
             return Returns::default();
         }
         let mut members = self.scalar.clone();
+        let mut shapes = self.list.clone();
         let mut invocant = self.invocant;
         match tail {
-            Tail::Value { ty, invocant: tail } => {
+            Tail::Value {
+                ty,
+                shape,
+                invocant: tail,
+            } => {
                 members.push(ty.clone());
+                shapes.push(shape.clone());
                 invocant |= tail;
             }
             // A `return` or a `die`: counted already, or never read.
@@ -339,11 +350,19 @@ impl Sites {
             // A loop, a bare block, a `package`, a nested `sub`, an empty
             // body — and an `if` chain with no `else`, whose false value is
             // its condition's.
-            Tail::Opaque => members.push(Type::Unknown),
+            Tail::Opaque => {
+                members.push(Type::Unknown);
+                shapes.push(ListShape::Unknown);
+            }
         }
         let scalar = Type::union(members);
+        let list = shapes
+            .into_iter()
+            .reduce(ListShape::join)
+            .unwrap_or(ListShape::Unknown);
         Returns::inferred(
             scalar.clone(),
+            list,
             invocant && holds_own_class(&scalar, package),
         )
     }
@@ -361,7 +380,11 @@ enum Tail {
     /// site, so the invocant marker is the tail's too: `sub build { my $self
     /// = shift; ...; $self }` is the same builder as the one that writes the
     /// `return` out.
-    Value { ty: Type, invocant: bool },
+    Value {
+        ty: Type,
+        shape: ListShape,
+        invocant: bool,
+    },
     /// A `return` or a `die`, whose site the walk has counted already.
     Left,
     /// Anything else, including a body with no statements in it.
@@ -569,7 +592,12 @@ impl Pass<'_> {
                 match value {
                     Some((expression, ty)) => {
                         let (ty, invocant) = self.read_site(&expression, ty);
-                        Tail::Value { ty, invocant }
+                        let shape = self.shape_site(&expression, ty.clone());
+                        Tail::Value {
+                            ty,
+                            shape,
+                            invocant,
+                        }
                     }
                     None => Tail::Opaque,
                 }
@@ -933,14 +961,14 @@ impl Pass<'_> {
                 self.shape_of(&ast::without_plus(node))
             }
             // `@a` — its elements, when the array's element type is known.
-            NodeKind::ARRAY_VAR => elements_of(element_of(&self.type_of(node))),
+            NodeKind::ARRAY_VAR => ListShape::of(element_of(&self.type_of(node))),
             // `$ref->@*` reads down to the element already.
             NodeKind::POSTFIX_DEREF_EXPR if is_plural(node) => {
                 let ty = self.type_of(node);
                 if has_hash_sigil(node) {
                     ListShape::Unknown
                 } else {
-                    elements_of(ty)
+                    ListShape::of(ty)
                 }
             }
             // `@$ref` and `@{ ... }`, whose own scalar type nothing reads: it
@@ -950,7 +978,7 @@ impl Pass<'_> {
                 if has_hash_sigil(node) {
                     ListShape::Unknown
                 } else {
-                    elements_of(inner.map_or(Type::Unknown, |ty| element_of(&ty)))
+                    ListShape::of(inner.map_or(Type::Unknown, |ty| element_of(&ty)))
                 }
             }
             // A hash in list context is key/value pairs, and nothing
@@ -990,7 +1018,7 @@ impl Pass<'_> {
             | NodeKind::METHOD_CALL_EXPR => self.shape_of_call(node),
             // A literal, a reference, a `bless`, a subscript — one value, and
             // therefore a list of one.
-            _ => ListShape::Fixed(vec![self.type_of(node)]),
+            _ => ListShape::fixed(vec![self.type_of(node)]),
         }
     }
 
@@ -1007,18 +1035,7 @@ impl Pass<'_> {
             .iter()
             .map(|element| self.shape_of(element))
             .collect();
-        let mut slots = Vec::new();
-        for shape in &shapes {
-            match shape {
-                ListShape::Fixed(types) => slots.extend(types.clone()),
-                ListShape::Nothing => {}
-                ListShape::Of(_) | ListShape::Unknown => {
-                    let members: Vec<Type> = shapes.iter().flat_map(ListShape::members).collect();
-                    return ListShape::Of(Type::union(members));
-                }
-            }
-        }
-        ListShape::Fixed(slots)
+        concatenated(&shapes)
     }
 
     /// What a call gives back in list context.
@@ -1043,7 +1060,7 @@ impl Pass<'_> {
             }
             // `keys` and `values` have a list-context answer the element
             // reading already knows (INFER-4c).
-            Some("keys" | "values") => return elements_of(self.list_element(node)),
+            Some("keys" | "values") => return ListShape::of(self.list_element(node)),
             _ => {}
         }
         let _ = self.type_of(node);
@@ -1093,9 +1110,9 @@ impl Pass<'_> {
         self.env = saved;
 
         if name == "map" {
-            return ListShape::Of(mapped.unwrap_or(Type::Unknown));
+            return ListShape::of(mapped.unwrap_or(Type::Unknown));
         }
-        elements_of(element)
+        ListShape::of(element)
     }
 
     /// The type of a block that is one expression statement, walking it
@@ -1457,13 +1474,17 @@ impl Pass<'_> {
 
     fn call(&mut self, node: &SyntaxNode) -> Type {
         let call = ast::Call::cast(node.clone()).expect("kind checked");
-        let arguments = call.args();
+        let name = call.callee_name();
+        let arguments = match name.as_deref() {
+            Some("return") => returned_values(&call),
+            _ => call.args(),
+        };
         let typed = self.type_all(&arguments);
-        let Some(name) = call.callee_name() else {
+        let Some(name) = name else {
             return Type::Unknown;
         };
         if name == "return" {
-            self.check_return(&typed);
+            self.check_return(&typed, call.callee_range());
             if self.infer.is_some() {
                 self.return_site(&typed);
             }
@@ -1478,7 +1499,10 @@ impl Pass<'_> {
             }
         }
         if name == "bless" {
-            return self.bless(&typed);
+            let ty = self.bless(&typed);
+            // One object, in either context.
+            self.one_value(node, &ty);
+            return ty;
         }
         // `scalar @a` is a count and `scalar $obj->rows` is whatever `rows`
         // gives back in scalar context — which is what every type in this
@@ -1490,13 +1514,22 @@ impl Pass<'_> {
                 return Type::Unknown;
             };
             let ty = self.typed_or_walk(&typed, operand);
-            return if counts_elements(operand) {
+            let ty = if counts_elements(operand) {
                 Type::Int
             } else {
                 ty
             };
+            // `scalar` is the operator that says "one value" out loud.
+            self.one_value(node, &ty);
+            return ty;
         }
         if let Some(builtin) = builtin_return(&name) {
+            // The ones with a type hand back one value; the ones this answers
+            // `Unknown` for are the list operators, whose shape is read off
+            // their arguments instead (`Pass::shape_of_operator`).
+            if !builtin.is_unknown() {
+                self.one_value(node, &builtin);
+            }
             return builtin;
         }
         let offset = u32::from(node.text_range().start());
@@ -1578,17 +1611,26 @@ impl Pass<'_> {
                 // over it; a framework's generated constructor never reaches
                 // here; and the body has to say the value is one of the class
                 // (INFER-2g), because `URI->new` hands back a `URI::http`.
-                self.call_shape = Some((node.text_range(), returns.list.clone()));
                 if returns.scalar.is_unknown() && method == "new" && symbol.constructs_own_class {
-                    Type::InstanceOf(class)
+                    // Answered by the constructor rule rather than by the
+                    // body, which makes it one object in either context.
+                    let ty = Type::InstanceOf(class);
+                    self.one_value(node, &ty);
+                    ty
                 } else if returns.invocant {
                     // A sub that returns its invocant returns the class it
                     // was *called* on: `Child->new->set_x(1)->extra` is a
                     // `Child` walking through `Base::set_x`
                     // (`docs/return-inference.md`, "`$self` comes back as the
-                    // caller's class").
-                    with_invocant(&returns.scalar, &symbol.package, &class)
+                    // caller's class"). The marker is in both halves.
+                    let package = symbol.package.clone();
+                    self.call_shape = Some((
+                        node.text_range(),
+                        shape_with_invocant(&returns.list, &package, &class),
+                    ));
+                    with_invocant(&returns.scalar, &package, &class)
                 } else {
+                    self.call_shape = Some((node.text_range(), returns.list));
                     returns.scalar
                 }
             }
@@ -1612,11 +1654,15 @@ impl Pass<'_> {
                     );
                 }
                 self.check_arguments(&params, &call.pairs(), &typed, &method, call.method_range());
+                // An accessor hands back one value, whatever the context.
+                self.one_value(node, &returns);
                 returns
             }
             MethodLookup::Constructor => {
                 self.check_constructor(&class, &call.pairs(), &typed, call.method_range());
-                Type::InstanceOf(class)
+                let ty = Type::InstanceOf(class);
+                self.one_value(node, &ty);
+                ty
             }
             MethodLookup::Universal | MethodLookup::Unknown => Type::Unknown,
             MethodLookup::Missing => {
@@ -1705,9 +1751,102 @@ impl Pass<'_> {
             // `return $a, $b` is a list, whose scalar reading nobody wants.
             _ => (Type::Unknown, false),
         };
+        // The scalar reading first, so that a site the invocant marker
+        // answered is one value of *that* type in list context too.
+        let shape = self.return_shape(typed, &ty);
         if let Some(inference) = &mut self.infer {
             inference.sites.scalar.push(ty);
+            inference.sites.list.push(shape);
             inference.sites.invocant |= invocant;
+        }
+    }
+
+    /// The list half of one `return`.
+    fn return_shape(&mut self, typed: &Typed, scalar: &Type) -> ListShape {
+        match typed.nodes {
+            // `return;` hands back an empty list, which is a length rather
+            // than an absence: `my ($x) = f()` off it binds `undef`.
+            [] => ListShape::Fixed(Vec::new()),
+            [only] => {
+                // `wantarray ? LIST : SCALAR` is the *list* branch here, the
+                // mirror of what the scalar half took.
+                match wantarray_branches(only) {
+                    Some((list, _)) => self.shape_of(&list),
+                    None => self.shape_site(only, scalar.clone()),
+                }
+            }
+            nodes => {
+                let shapes: Vec<ListShape> = nodes
+                    .iter()
+                    .enumerate()
+                    .map(|(index, node)| self.shape_site(node, typed.nth(index)))
+                    .collect();
+                concatenated(&shapes)
+            }
+        }
+    }
+
+    /// Note that the call just typed hands back exactly one value, so its
+    /// list-context answer is a list of one.
+    ///
+    /// Said where the *rule* decided the answer rather than where a callee's
+    /// `Returns:` did: a sub with a scalar type and no written shape says
+    /// nothing about list context (INFER-6b), but a generated constructor, an
+    /// accessor and `bless` are each one value by construction.
+    fn one_value(&mut self, node: &SyntaxNode, ty: &Type) {
+        self.call_shape = Some((node.text_range(), ListShape::fixed(vec![ty.clone()])));
+    }
+
+    /// The list shape of a value the walk has already been over, without
+    /// walking it a second time where the first walk answered.
+    ///
+    /// `type_all` has been over this node. A node that is one value is a list
+    /// of one and needs nothing more; a call left its list half in the side
+    /// channel; and only the rest — a literal list, an array, a `map` — is
+    /// read again, which is one walk of that expression rather than of
+    /// everything under it.
+    fn shape_site(&mut self, node: &SyntaxNode, ty: Type) -> ListShape {
+        if let Some((range, shape)) = self.call_shape.clone() {
+            if range == node.text_range() {
+                return shape;
+            }
+        }
+        match node.node_kind() {
+            // One child, and the same type: `return $self->{name}` arrives
+            // wrapped in a `LIST_EXPR` and is not a list.
+            NodeKind::LIST_EXPR => match sole_child(node) {
+                Some(only) => self.shape_site(&only, ty),
+                None => ListShape::Fixed(Vec::new()),
+            },
+            NodeKind::PAREN_EXPR => {
+                match ast::ParenExpr::cast(node.clone()).and_then(|view| view.inner()) {
+                    Some(inner) => self.shape_site(&inner, ty),
+                    None => ListShape::Fixed(Vec::new()),
+                }
+            }
+            // A call the side channel did not answer: either the run could
+            // not resolve it, or it is one of the operators whose answer is
+            // its argument's.
+            NodeKind::CALL_EXPR
+            | NodeKind::LIST_CALL_EXPR
+            | NodeKind::CODE_CALL_EXPR
+            | NodeKind::BLOCK_CALL_EXPR
+            | NodeKind::METHOD_CALL_EXPR => {
+                if reads_its_list(node) {
+                    self.shape_of(node)
+                } else {
+                    ListShape::Unknown
+                }
+            }
+            NodeKind::TERNARY_EXPR
+            | NodeKind::ARRAY_VAR
+            | NodeKind::HASH_VAR
+            | NodeKind::SLICE_EXPR
+            | NodeKind::DEREF_EXPR
+            | NodeKind::BLOCK_DEREF_EXPR
+            | NodeKind::POSTFIX_DEREF_EXPR => self.shape_of(node),
+            // Anything else is one value, and therefore a list of one.
+            _ => ListShape::fixed(vec![ty]),
         }
     }
 
@@ -1717,7 +1856,7 @@ impl Pass<'_> {
         // `wantarray ? LIST : SCALAR` hands back the scalar branch, by
         // definition of what it asked — whatever the list branch holds, which
         // is the half a list-context reading takes.
-        if let Some(branch) = wantarray_branch(node) {
+        if let Some((_, branch)) = wantarray_branches(node) {
             if is_plural(&branch) {
                 return (Type::Unknown, false);
             }
@@ -1799,7 +1938,7 @@ impl Pass<'_> {
     /// The annotation wins and the inferred shape is checked against it
     /// (`docs/typecheck.md`, "`Returns:`"): a `return "x"` in a sub declared
     /// `Returns: Int` is a diagnostic at the `return`.
-    fn check_return(&mut self, typed: &Typed) {
+    fn check_return(&mut self, typed: &Typed, at: TextRange) {
         if self.returns.list == ListShape::Nothing {
             if let Some(first) = typed.nodes.first() {
                 self.diagnostics.push(Diagnostic::new(
@@ -1810,6 +1949,7 @@ impl Pass<'_> {
             }
             return;
         }
+        self.check_returned_shape(typed, at);
         let declared = self.returns.scalar.clone();
         if declared.is_unknown() || matches!(declared, Type::Any) {
             return;
@@ -1836,6 +1976,111 @@ impl Pass<'_> {
             )
             .at(severity),
         );
+    }
+
+    /// The list half of a `return` against the list half of the annotation
+    /// (`docs/return-inference.md`, "What it checks").
+    ///
+    /// The other half of ANNOT-7a, and the reason `Returns: (A, B)` was worth
+    /// a notation: a length that does not agree is an `error`, because both
+    /// sides are written down — the annotation says two and the `return` has
+    /// three of them — while a slot whose type does not agree follows the same
+    /// rule the scalar half does.
+    fn check_returned_shape(&mut self, typed: &Typed, at: TextRange) {
+        let declared = self.returns.list.clone();
+        let found = self.returned_shape(typed);
+        let (ListShape::Fixed(_) | ListShape::Of(_)) = declared else {
+            return;
+        };
+        match (&declared, &found) {
+            (ListShape::Fixed(want), ListShape::Fixed(have)) if want.len() != have.len() => {
+                let range = typed.nodes.first().map_or(at, |node| node.text_range());
+                self.diagnostics.push(
+                    Diagnostic::new(
+                        Code::ReturnMismatch,
+                        range,
+                        format!(
+                            "this `return` hands back {} value{} where `Returns: {}` names {}",
+                            have.len(),
+                            if have.len() == 1 { "" } else { "s" },
+                            declared.written().unwrap_or_default(),
+                            want.len(),
+                        ),
+                    )
+                    // Both sides are written down: the annotation says how
+                    // many, and so does the `return`.
+                    .at(Severity::Error),
+                );
+            }
+            (ListShape::Fixed(want), ListShape::Fixed(have)) => {
+                for (index, (slot, value)) in want.iter().zip(have).enumerate() {
+                    let Some(node) = typed.nodes.get(index) else {
+                        continue;
+                    };
+                    self.check_returned_slot(value, slot, node);
+                }
+            }
+            // A length nobody counted, so only the elements are left to
+            // compare — which is what `return @rows` against `(Row ...)` is.
+            (ListShape::Of(slot), have) => {
+                let slot = slot.clone();
+                for (index, value) in have.members().iter().enumerate() {
+                    let node = typed.nodes.get(index).or_else(|| typed.nodes.first());
+                    let Some(node) = node else { continue };
+                    self.check_returned_slot(value, &slot, node);
+                }
+            }
+            (ListShape::Fixed(_), _) => {}
+            _ => {}
+        }
+    }
+
+    /// One slot of a returned list against the slot the annotation named.
+    fn check_returned_slot(&mut self, value: &Type, slot: &Type, node: &SyntaxNode) {
+        if value.is_unknown() || slot.is_unknown() || compatible(value, slot, self.program) {
+            return;
+        }
+        let severity = if is_literal(node) {
+            Severity::Error
+        } else {
+            Severity::Warning
+        };
+        self.diagnostics.push(
+            Diagnostic::new(
+                Code::ReturnMismatch,
+                node.text_range(),
+                format!(
+                    "`{value}` returned where `Returns: {}` names `{slot}`",
+                    self.returns.list.written().unwrap_or_default()
+                ),
+            )
+            .at(severity),
+        );
+    }
+
+    /// The shape of a `return`, as far as its arguments alone say.
+    ///
+    /// It walks nothing. The checking pass *is* the walk, so reading the
+    /// return a second time would report everything inside it twice — and
+    /// over a nested list operator it would cost 2^depth. So this reads the
+    /// types the walk already produced, and where they do not say — a call, a
+    /// nested list — the answer is `Unknown`, which is silent.
+    fn returned_shape(&self, typed: &Typed) -> ListShape {
+        // `return @rows` against `(Row ...)`: checked by element, which the
+        // array's own type already says.
+        if let [only] = typed.nodes {
+            if only.node_kind() == NodeKind::ARRAY_VAR {
+                return ListShape::of(element_of(&typed.nth(0)));
+            }
+        }
+        let mut slots = Vec::new();
+        for (index, node) in typed.nodes.iter().enumerate() {
+            if is_plural(node) || is_a_call(node) {
+                return ListShape::Unknown;
+            }
+            slots.push(typed.nth(index));
+        }
+        ListShape::fixed(slots)
     }
 
     /// A `Foo->new(key => value)` against the attributes `Foo` declares.
@@ -2970,11 +3215,17 @@ fn join_tails(tails: &[Tail], has_else: bool) -> Tail {
         return Tail::Opaque;
     }
     let mut members = Vec::new();
+    let mut shapes = Vec::new();
     let mut invocant = false;
     for tail in tails {
         match tail {
-            Tail::Value { ty, invocant: one } => {
+            Tail::Value {
+                ty,
+                shape,
+                invocant: one,
+            } => {
                 members.push(ty.clone());
+                shapes.push(shape.clone());
                 invocant |= one;
             }
             Tail::Left => {}
@@ -2987,6 +3238,10 @@ fn join_tails(tails: &[Tail], has_else: bool) -> Tail {
     }
     Tail::Value {
         ty: Type::union(members),
+        shape: shapes
+            .into_iter()
+            .reduce(ListShape::join)
+            .unwrap_or(ListShape::Unknown),
         invocant,
     }
 }
@@ -3064,17 +3319,6 @@ fn bound_from(shape: &ListShape, sigil: Sigil, index: usize) -> Type {
     }
 }
 
-/// `Of(ty)`, or `Unknown` where the element type is not known — which is what
-/// says "a list this pass can say nothing about" rather than "a list of
-/// nothing".
-fn elements_of(ty: Type) -> ListShape {
-    if ty.is_unknown() {
-        ListShape::Unknown
-    } else {
-        ListShape::Of(ty)
-    }
-}
-
 /// Whether a dereference is a hash's rather than an array's.
 fn has_hash_sigil(node: &SyntaxNode) -> bool {
     ast::tokens(node).any(|token| {
@@ -3117,8 +3361,8 @@ fn is_plural(node: &SyntaxNode) -> bool {
     }
 }
 
-/// The scalar branch of `wantarray ? LIST : SCALAR`.
-fn wantarray_branch(node: &SyntaxNode) -> Option<SyntaxNode> {
+/// The two branches of `wantarray ? LIST : SCALAR`, in that order.
+fn wantarray_branches(node: &SyntaxNode) -> Option<(SyntaxNode, SyntaxNode)> {
     if node.node_kind() != NodeKind::TERNARY_EXPR {
         return None;
     }
@@ -3128,7 +3372,82 @@ fn wantarray_branch(node: &SyntaxNode) -> Option<SyntaxNode> {
     if asked.as_deref() != Some("wantarray") {
         return None;
     }
-    children.nth(1)
+    Some((children.next()?, children.next()?))
+}
+
+/// The shape of several things in a row.
+///
+/// One element whose length is not known makes the whole thing an `Of`,
+/// because from there on nobody knows which slot is which.
+fn concatenated(shapes: &[ListShape]) -> ListShape {
+    let mut slots = Vec::new();
+    for shape in shapes {
+        match shape {
+            ListShape::Fixed(types) => slots.extend(types.clone()),
+            ListShape::Nothing => {}
+            ListShape::Of(_) | ListShape::Unknown => {
+                let members: Vec<Type> = shapes.iter().flat_map(ListShape::members).collect();
+                return ListShape::of(Type::union(members));
+            }
+        }
+    }
+    ListShape::fixed(slots)
+}
+
+/// What a `return` hands back, with a single wrapping parenthesis taken off.
+///
+/// `return (A, B)` is a list of two rather than one parenthesised value, and
+/// reading it flat is what lets both halves of the site come out of one walk
+/// of it: a second walk of the parenthesis would report every diagnostic
+/// inside it twice.
+fn returned_values(call: &ast::Call) -> Vec<SyntaxNode> {
+    let arguments = call.args();
+    let [only] = arguments.as_slice() else {
+        return arguments;
+    };
+    if only.node_kind() != NodeKind::PAREN_EXPR {
+        return arguments;
+    }
+    match ast::ParenExpr::cast(only.clone()).and_then(|view| view.inner()) {
+        // `return ()` hands back an empty list, and no value at all.
+        None => Vec::new(),
+        Some(inner) if inner.node_kind() == NodeKind::LIST_EXPR => {
+            let elements: Vec<SyntaxNode> = inner.children().collect();
+            if elements.len() > 1 {
+                elements
+            } else {
+                arguments
+            }
+        }
+        Some(_) => arguments,
+    }
+}
+
+/// Whether an expression is a call, whose list shape is the callee's business.
+fn is_a_call(node: &SyntaxNode) -> bool {
+    matches!(
+        node.node_kind(),
+        NodeKind::CALL_EXPR
+            | NodeKind::LIST_CALL_EXPR
+            | NodeKind::CODE_CALL_EXPR
+            | NodeKind::BLOCK_CALL_EXPR
+            | NodeKind::METHOD_CALL_EXPR
+    )
+}
+
+/// Whether a call's list shape is its argument's rather than a callee's.
+fn reads_its_list(node: &SyntaxNode) -> bool {
+    let name = ast::Call::cast(node.clone())
+        .and_then(|call| call.callee_name())
+        .or_else(|| {
+            node.children()
+                .find_map(ast::SubName::cast)
+                .map(|name| name.text())
+        });
+    matches!(
+        name.as_deref(),
+        Some("map" | "grep" | "sort" | "reverse" | "keys" | "values")
+    )
 }
 
 /// `$_[0]` — the first argument, which is the invocant of a sub that unpacks
@@ -3154,6 +3473,20 @@ fn holds_own_class(ty: &Type, package: &str) -> bool {
             .any(|member| holds_own_class(member, package)),
         Type::Optional(inner) => holds_own_class(inner, package),
         _ => false,
+    }
+}
+
+/// The same shape with the invocant marker replaced in each of its slots.
+fn shape_with_invocant(shape: &ListShape, own: &str, class: &str) -> ListShape {
+    match shape {
+        ListShape::Fixed(types) => ListShape::Fixed(
+            types
+                .iter()
+                .map(|ty| with_invocant(ty, own, class))
+                .collect(),
+        ),
+        ListShape::Of(ty) => ListShape::Of(with_invocant(ty, own, class)),
+        other => other.clone(),
     }
 }
 
