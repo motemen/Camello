@@ -943,3 +943,22 @@ reviewed as a decision rather than discovered as a difference.
   are identical before and after and have nothing to do with returns: they
   are `use Config;`-style imported package variables, which the scope pass
   does not read.)
+- **Return inference, the list half, over @INC.** One new diagnostic:
+  `CPAN::Meta::Merge` writes `my ($left, $right) = map { ... } @_[0,1]`, and
+  a `map` is a list whose length nobody here counts, so a single scalar
+  target off it is a `Maybe`. That is the open question the design left to
+  this count — whether `(T ...)` binds `Maybe[T]` or `T` to one target — and
+  one `info` over 1755 files answers it: `Maybe[T]` stays. It is also the
+  honest answer, since `my ($first) = grep {...}` really can find nothing.
+
+  No length is read off a slice, which is why this one is a `Maybe` where a
+  reader can see two: `@_[0,1]` is two elements and the shape says `Unknown`.
+  Reading a literal slice's length is the refinement if the count grows.
+
+  The cost is not measurable: `camello check` is the same 1.7 s it was with
+  the scalar half alone. `shape_of` is a second dispatch over the same nodes
+  and the consumers are edits to walks that already ran, so there is no new
+  pass and no new phase to pay for — which is what the design predicted.
+
+  The annotation fixtures use the parenthesised notation a reader naturally
+  reaches for, and retain the legacy `| list: (...)` form as a migration error.
