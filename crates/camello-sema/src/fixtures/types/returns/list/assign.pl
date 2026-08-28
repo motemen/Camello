@@ -33,7 +33,7 @@ $third->id;
 # `(Row ...)` does not say how many, so a single target may be the one that
 # was not there.
 my ($maybe) = Store->rows;
-$maybe->id;                     #~ info maybe-deref: may be undefined here
+$maybe->id;                     #~ warning maybe-deref: may be undefined here
 
 # A `@rest` takes everything from its position on.
 my ($head, @tail) = Store->pair;

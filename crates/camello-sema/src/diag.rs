@@ -171,17 +171,18 @@ impl Code {
             | Code::MissingArgument => Severity::Error,
             Code::UnusedVariable
             | Code::ShadowedVariable
-            | Code::UnknownMethod
-            | Code::ReturnMismatch => Severity::Warning,
+            | Code::ReturnMismatch
+            // `$obj->m` reaching nothing is a statement about a closed world,
+            // and the world is closed only where every module the class and
+            // its ancestors `use` was read. The call site raises it to a
+            // `warning` where it was (`docs/types.md`, DIAG-7a).
+            | Code::MaybeDeref => Severity::Warning,
             Code::BadAnnotation
             | Code::UnknownType
             | Code::MissingAnnotation
             | Code::UnusedParameter
             | Code::IgnoredPrototype
-            // `$ary->[0]` and `$h->{k}` are `Maybe` by construction, so this
-            // is structural about a whole idiom rather than about a program
-            // (`docs/types.md`, DIAG-14a).
-            | Code::MaybeDeref => Severity::Info,
+            | Code::UnknownMethod => Severity::Info,
         }
     }
 }

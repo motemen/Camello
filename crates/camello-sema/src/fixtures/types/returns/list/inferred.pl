@@ -51,9 +51,9 @@ for my $kept (Store::kept()) {
 }
 
 my ($maybe) = Store->perhaps(1);
-$maybe->id;                     #~ info maybe-deref: may be undefined here
+$maybe->id;                     #~ warning maybe-deref: may be undefined here
 
 # And the scalar half of the same sub is not a `Maybe` of a list but the join
 # of its scalar sites.
 my $scalar = Store->perhaps(1);
-$scalar->id;                    #~ info maybe-deref: may be undefined here
+$scalar->id;                    #~ warning maybe-deref: may be undefined here

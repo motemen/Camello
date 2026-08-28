@@ -96,8 +96,41 @@ One line per change. The reasoning is in the commit it came from.
   an `isa` is — this family's `new` is open (INFER-2g) — but the same
   pragmatism that reads `Foo->new` as an `InstanceOf['Foo']`.
 
+### Changed
+
+- **`unknown-method` is an `info` unless the world is closed, and `maybe-deref`
+  is a `warning`** (`docs/types.md`, DIAG-7a, DIAG-14a). "This class declares no
+  such method" is a claim about a closed world, and the world is closed only
+  where every module the class and its ancestors `use` was actually read — a
+  module installs subs into its importer and may assign to its globs, so an
+  unresolved `use` is a hole in the method surface even when every ancestor is
+  known. A framework recognised by name is not a hole: the checker knows what
+  `use Moose` installs better than reading `Moose.pm` would tell it. Going the
+  other way, `maybe-deref` says something specific about a specific program and
+  does not rest on what the run failed to read, so it is now a `warning`.
+
 ### Fixed
 
+- **`@ISA` is read in all three of its spellings** (METHOD-1a). `our @ISA =
+  ('Base')` worked; `@ISA = qw(Base Other)` was read as a value the pass could
+  not understand, which made the whole class *dynamic* and silenced every
+  diagnostic about it; and the fully qualified `@Foo::ISA = qw(Base)` was not
+  recognised as an `@ISA` at all. `CPAN::FTP` writes `@CPAN::FTP::ISA =
+  qw(CPAN::Debug)` and lost its parent to both bugs at once. The qualified form
+  names its own package, which need not be the one the statement sits in, and
+  `@EXPORT` follows the same rule. Over the 2564 `.pm` files below `@INC` this
+  removes 130 `unknown-method` reports.
+- **A discarded slot is still a parameter** (INFER-3b). `my (undef, $name) =
+  @_` takes the invocant and throws it away, and reading only the names moved
+  `$name` into the invocant's place and lost an argument —
+  `File::DesktopEntry::lookup` is written this way. The slot is recorded under
+  a name with no sigil, which is what keeps it out of the body's environment.
+- **`@_` read from inside a string is `@_`** (INFER-3c). `sub HeaderError { my
+  ($self) = shift; ... "Header Error: $_[0]" }` takes an argument its names
+  never mention, but the lexer hands the string over as one token so the
+  subscript was invisible and the sub was read as taking none. The
+  interpolation scanner is asked now. `IO::Uncompress::Base` is where this came
+  from and it cost 23 false `arity` reports.
 - `Class::Accessor::Lite::Lazy->mk_lazy_accessors` and `mk_ro_lazy_accessors`
   read the hashref form. The two lazy makers flatten a hashref into
   name-and-builder pairs exactly as the `use` statement's `rw_lazy`/`ro_lazy`

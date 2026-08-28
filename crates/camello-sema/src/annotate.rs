@@ -188,6 +188,55 @@ impl Frameworks {
     }
 }
 
+/// Whether a `use` of this module is one the checker understands without
+/// reading it (`docs/types.md`, DIAG-7a).
+///
+/// A framework is recognised by *name*: the checker knows what `use Moose`
+/// installs better than reading `Moose.pm` would tell it, so the file not
+/// being on the search path is not a hole in the method surface. Everything
+/// else that is `use`d and was never found is one, because a module installs
+/// subs into its importer and may assign to its globs.
+///
+/// This is the list [`Frameworks::note`] and the declaration pass's `use`
+/// recogniser branch on, kept beside them so the three stay in step.
+#[must_use]
+pub fn is_recognised(module: &str) -> bool {
+    matches!(
+        module,
+        // Moose and the dialects that read as it.
+        "Moose"
+            | "Moo"
+            | "Mouse"
+            | "Moose::Role"
+            | "Moo::Role"
+            | "Mouse::Role"
+            | "MooseX::Declare"
+            | "Mojo::Base"
+            | "Moose::Util::TypeConstraints"
+            | "Mouse::Util::TypeConstraints"
+            // Parameter lists, and the accessor families.
+            | "Smart::Args"
+            | "Smart::Args::TypeTiny"
+            | "Class::Accessor::Typed"
+            | "Class::Accessor::Lite"
+            | "Class::Accessor::Lite::Lazy"
+            | "Class::Accessor"
+            | "Class::Accessor::Fast"
+            | "Class::Accessor::Faster"
+            // Statements the declaration pass reads for itself.
+            | "parent"
+            | "base"
+            | "constant"
+            | "Exporter"
+            // XS, whose meaning is that the package is dynamic — which
+            // `Program::has_unknown_ancestor` answers, not this.
+            | "XSLoader"
+            | "DynaLoader"
+            | "Inline"
+            | "Alien::Base"
+    ) || supplies_the_type_dsl(module)
+}
+
 /// Whether a module could have supplied the type-library DSL (`docs/types.md`,
 /// ANNOT-8d).
 ///

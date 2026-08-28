@@ -18,10 +18,10 @@ package main;
 # nothing says the array is that long.
 my $held = [ Store->rows ];
 $held->[0]->nope;
-#~ info maybe-deref: may be undefined here #~ warning unknown-method: `Row` declares no method `nope`
+#~ warning maybe-deref: may be undefined here #~ warning unknown-method: `Row` declares no method `nope`
 
 # Flattened: a plural element contributes its members and not a reference,
 # and a union of two classes resolves to neither.
 my $mixed = [ 1, Store->rows ];
 $mixed->[0]->nope;
-#~ info maybe-deref: may be undefined here
+#~ warning maybe-deref: may be undefined here
