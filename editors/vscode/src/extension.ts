@@ -12,7 +12,6 @@ import {
   LanguageClient,
   LanguageClientOptions,
   ServerOptions,
-  TransportKind,
 } from "vscode-languageclient/node";
 
 let client: LanguageClient | undefined;
@@ -33,9 +32,13 @@ export async function deactivate(): Promise<void> {
 
 async function start(context: vscode.ExtensionContext): Promise<void> {
   const command = serverPath();
+  // No `transport`: for an Executable that is not a default but a flag —
+  // vscode-languageclient appends `--stdio` to the arguments, and `camello
+  // lsp` has no such flag. Left out, the client spawns the same process and
+  // talks over the same pipes, which is what `camello lsp` already speaks.
   const server: ServerOptions = {
-    run: { command, args: ["lsp"], transport: TransportKind.stdio },
-    debug: { command, args: ["lsp"], transport: TransportKind.stdio },
+    run: { command, args: ["lsp"] },
+    debug: { command, args: ["lsp"] },
   };
 
   const options: LanguageClientOptions = {
