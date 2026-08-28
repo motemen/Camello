@@ -125,6 +125,15 @@ state, and the grammar owns it.
   against none at all — so neither is the faithful answer and the label says
   which was chosen. `getopt \@args, 'a|all' => \$all` is not the value of a
   pair and keeps its whole list.
+- **`=>` quotes the bareword to its left** (perlop, "Comma Operator"), so
+  `key => 1`, `sort => $by` and `package => 'x'` hold strings whatever those
+  names mean elsewhere. One predicate says so — `quoted_bareword` — and every
+  rule that would otherwise claim the word asks it first: the statement
+  dispatch, the declaration and anonymous-subroutine terms, the postfix
+  modifiers, and term position, where the word completes as a `SUB_NAME` rather
+  than as a `LIST_CALL_EXPR`. A hash subscript's key is read the same way, and
+  for the same reason: a name recorded as a call is one that every later pass
+  has to know not to believe.
 - A heredoc body is a token that lands where the line its marker is on ends,
   which is between two statements. Anything walking only child *nodes* drops it.
 

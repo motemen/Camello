@@ -192,9 +192,8 @@ ROOT
           ANON_HASH
             `{` "{"
             LIST_EXPR
-              LIST_CALL_EXPR
-                SUB_NAME
-                  identifier "a"
+              SUB_NAME
+                identifier "a"
               `=>` "=>"
               LITERAL
                 number "1"
@@ -231,16 +230,14 @@ ROOT
           ANON_HASH
             `{` "{"
             LIST_EXPR
-              LIST_CALL_EXPR
-                SUB_NAME
-                  identifier "package"
+              SUB_NAME
+                identifier "package"
               `=>` "=>"
               LITERAL
                 number "1"
               `,` ","
-              LIST_CALL_EXPR
-                SUB_NAME
-                  identifier "and"
+              SUB_NAME
+                identifier "and"
               `=>` "=>"
               LITERAL
                 number "2"
@@ -251,9 +248,8 @@ ROOT
       PAREN_EXPR
         `(` "("
         LIST_EXPR
-          LIST_CALL_EXPR
-            SUB_NAME
-              identifier "a"
+          SUB_NAME
+            identifier "a"
           `=>` "=>"
           ANON_ARRAY
             `[` "["
@@ -266,9 +262,8 @@ ROOT
       PAREN_EXPR
         `(` "("
         LIST_EXPR
-          LIST_CALL_EXPR
-            SUB_NAME
-              identifier "a"
+          SUB_NAME
+            identifier "a"
           `=>` "=>"
           ANON_ARRAY
             `[` "["

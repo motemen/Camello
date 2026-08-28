@@ -445,6 +445,22 @@ pub(crate) fn arg_list(parser: &mut Parser<'_>) {
 
 /// A call written as a bareword: `foo(...)`, `print $fh @xs`, `map { ... } @xs`.
 pub(crate) fn bareword_call(parser: &mut Parser<'_>) -> CompletedMarker {
+    // `key => 1` is a string, not a call: `=>` quotes the bareword to its left
+    // whatever the name means elsewhere (`quoted_bareword`). The statement
+    // rules already ask that before claiming a keyword, and `$h{key}` above is
+    // already read as a name rather than a call; term position is where the
+    // rule was missing, and a name read as a call is a name every later pass
+    // has to know not to believe.
+    if super::quoted_bareword(parser) {
+        let marker = parser.start();
+        if !parser.bump_name() {
+            parser.bump_any();
+        }
+        let completed = parser.complete(marker, NodeKind::SUB_NAME);
+        parser.expect_operator();
+        return completed;
+    }
+
     let text = parser.current_text().unwrap_or_default();
     let builtin = builtins::lookup(text);
     let sigil_argument_follows = sigil_argument_follows(parser.source_after_current());

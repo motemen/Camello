@@ -8,9 +8,8 @@ ROOT
     SUB_NAME
       identifier "constant"
     LIST_EXPR
-      LIST_CALL_EXPR
-        SUB_NAME
-          identifier "HAVE_BOOLEANS"
+      SUB_NAME
+        identifier "HAVE_BOOLEANS"
       `=>` "=>"
       PAREN_EXPR
         `(` "("

@@ -87,6 +87,25 @@ fn calls_are_split_by_shape() {
 }
 
 #[test]
+fn a_bareword_before_a_fat_comma_is_a_name() {
+    // `=>` quotes the bareword to its left, so the key is a string and not a
+    // call — including where the word is a keyword, and including where the
+    // same word is a call on the other side of the arrow.
+    let source = "my %h = (key => 1, sort => 2, ref => ref($x));\n";
+    assert!(errors(source).is_empty(), "{:#?}", errors(source));
+    let rendered = tree(source);
+    for name in ["key", "sort", "ref"] {
+        assert!(
+            rendered.contains(&format!("SUB_NAME\n              identifier \"{name}\"")),
+            "{name} is not a bare name:\n{rendered}"
+        );
+    }
+    // The `ref($x)` on the value side is still a call.
+    assert!(rendered.contains("CALL_EXPR"), "{rendered}");
+    assert_lossless(source);
+}
+
+#[test]
 fn print_accepts_a_braced_scalar_filehandle() {
     let source = "print ${fh} \"foo\";\n";
     assert!(errors(source).is_empty(), "{:#?}", errors(source));

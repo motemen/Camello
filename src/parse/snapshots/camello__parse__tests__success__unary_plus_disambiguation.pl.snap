@@ -36,9 +36,8 @@ ROOT
             ANON_HASH
               `{` "{"
               LIST_EXPR
-                LIST_CALL_EXPR
-                  SUB_NAME
-                    identifier "a"
+                SUB_NAME
+                  identifier "a"
                 `=>` "=>"
                 LITERAL
                   number "1"
