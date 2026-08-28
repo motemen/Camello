@@ -42,8 +42,12 @@ sub listed { return [] }
 #~ info unknown-type: `IO::Handle` is not known
 sub handle { return undef }
 
-# Returns: Str | list: (Str, Int)
+# Returns: (Str, Int)
+# Returns: Str
 sub both { return ('a', 1) }
+
+# Returns: (Str ...)
+sub rows { return () }
 
 # Returns: ()
 sub nothing { return }
