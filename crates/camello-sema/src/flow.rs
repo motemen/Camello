@@ -292,10 +292,12 @@ impl Pass<'_> {
         let saved_returns = std::mem::take(&mut self.returns);
 
         // The sub's own parameters are the one place a body starts with types
-        // rather than earning them.
+        // rather than earning them. Asked of this file first: the body being
+        // walked is this file's, and so are the annotations that type it
+        // (`Program::sub_in`).
         if let Some(symbol) = definition
             .name_text()
-            .and_then(|name| self.program.sub(&self.package, &name))
+            .and_then(|name| self.program.sub_in(self.file, &self.package, &name))
         {
             self.returns = symbol.returns.clone();
             bind_params(&mut self.env, &symbol.params, &self.package);

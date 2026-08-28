@@ -71,7 +71,15 @@ fn describe(
             name,
             range,
         }) => {
-            let symbol = program.sub(&package, &name)?;
+            // The cursor is on the `sub` keyword's own name, so the
+            // declaration wanted is this file's and not a namesake another
+            // file in the workspace declares (`Program::sub_in`). A buffer the
+            // graph does not hold has only the global answer, which in
+            // single-file mode is this file's anyway.
+            let symbol = match program.index_of(path) {
+                Some(file) => program.sub_in(file, &package, &name),
+                None => program.sub(&package, &name),
+            }?;
             Some((camello_sema::decl::signature_of(symbol), range))
         }
         Some(Target::Call { name, range }) => {

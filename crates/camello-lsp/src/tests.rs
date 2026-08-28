@@ -359,11 +359,16 @@ fn line_of(source: &str, offset: TextSize) -> usize {
 }
 
 /// Every Perl file in a fixture directory, and the edited buffer beside it.
+///
+/// Below the directory as well as in it: the index walks the whole tree, so a
+/// fixture that says something about *where* a file sits — a stale checkout
+/// under one directory and the file being edited under another — needs its
+/// buffers opened from there too. Sorted by full path, which is the order the
+/// index walk sees them in and therefore the order a first-wins lookup
+/// resolves.
 fn fixture_files(dir: &Path) -> Vec<(PathBuf, Option<PathBuf>)> {
-    let mut files: Vec<PathBuf> = fs::read_dir(dir)
-        .expect("the fixture directory exists")
-        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
-        .collect();
+    let mut files = Vec::new();
+    collect_files(dir, &mut files);
     files.sort();
     files
         .iter()
@@ -381,6 +386,18 @@ fn fixture_files(dir: &Path) -> Vec<(PathBuf, Option<PathBuf>)> {
             (path.clone(), edited.is_file().then_some(edited))
         })
         .collect()
+}
+
+/// Every file below a directory, at any depth.
+fn collect_files(dir: &Path, into: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(dir).expect("the fixture directory exists") {
+        let path = entry.expect("a directory entry").path();
+        if path.is_dir() {
+            collect_files(&path, into);
+        } else {
+            into.push(path);
+        }
+    }
 }
 
 fn fixture_dirs() -> Vec<PathBuf> {

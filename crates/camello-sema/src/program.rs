@@ -233,6 +233,40 @@ impl Program {
             .map(|index| &self.subs[*index])
     }
 
+    /// The sub `package::name` as *this file* declares it, or as the run does.
+    ///
+    /// [`Program::sub`] answers from one global name index, and its first-wins
+    /// rule picks whichever file the walk reached first. That is the only
+    /// answer available about a name a file merely *calls*, and it is the
+    /// wrong one about a name the file in hand declares itself: a checkout
+    /// left inside the tree — a vendored copy, an old release directory —
+    /// holds the same `package Foo` with the same subs, sorts before `lib/`,
+    /// and so wins the index. The declarations being read then belong to a
+    /// file nobody is looking at, and the annotations in front of the reader
+    /// count for nothing.
+    ///
+    /// So a question asked *from* a file is answered by that file first. Where
+    /// it declares nothing of the name this falls back to the global index, so
+    /// it differs from [`Program::sub`] only where a duplicate exists — which
+    /// is where the global answer was a guess between two files, and this one
+    /// is not a guess.
+    #[must_use]
+    pub fn sub_in(&self, file: usize, package: &str, name: &str) -> Option<&SubDecl> {
+        self.files
+            .get(file)
+            .and_then(|entry| {
+                entry
+                    .decls
+                    .subs
+                    .iter()
+                    // First within the file too, the way `by_name` reads a
+                    // redefinition: either answer is a guess, and the two
+                    // lookups agreeing is worth more than the choice.
+                    .find(|symbol| symbol.package == package && symbol.name == name)
+            })
+            .or_else(|| self.sub(package, name))
+    }
+
     /// Whether anything in the run declares this package.
     #[must_use]
     pub fn knows_package(&self, name: &str) -> bool {
@@ -643,14 +677,16 @@ impl Program {
     pub fn resolve_call(&self, file: usize, offset: u32, name: &str) -> Option<&SubDecl> {
         // A qualified name says where to look — and is never the builtin.
         if let Some((package, bare)) = name.rsplit_once("::") {
-            return self.sub(package, bare);
+            return self.sub_in(file, package, bare);
         }
         let entry = self.files.get(file)?;
         if !camello_syntax::is_builtin(name) {
-            if let Some(symbol) = self.sub(entry.decls.package_at(offset), name) {
+            if let Some(symbol) = self.sub_in(file, entry.decls.package_at(offset), name) {
                 return Some(symbol);
             }
         }
+        // An import names another package, and this file declares nothing of
+        // it: the global index is the whole of the answer.
         let from = entry.decls.imports.get(name)?;
         self.sub(from, name)
     }
