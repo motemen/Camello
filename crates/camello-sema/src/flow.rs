@@ -68,10 +68,65 @@ fn run(
         package: "main".to_string(),
         returns: Returns::default(),
         record: record.then(TypeTable::default),
+        infer: None,
     };
     pass.block(root);
     pass.check_annotations();
     (pass.diagnostics, pass.record)
+}
+
+/// What the subs named by `only` return, read off their bodies
+/// (`docs/return-inference.md`).
+///
+/// `only` indexes `program.file(file).decls.subs`, and what comes back names
+/// the same indexes — the subs that *became known*, so an empty answer is
+/// what says a round of the fixpoint changed nothing.
+///
+/// The same walk as [`analyse`], because the types have to be the ones the
+/// checker will read at the call site; the diagnostics it produces on the way
+/// are dropped, because the checking pass reports them and an inferred return
+/// is never a check on the body it came from (`docs/types.md`, ANNOT-7a).
+#[must_use]
+pub fn infer_returns(
+    root: &SyntaxNode,
+    file: usize,
+    program: &Program,
+    only: &[usize],
+) -> Vec<(usize, Returns)> {
+    let Some(entry) = program.file(file) else {
+        return Vec::new();
+    };
+    // By the range of the name, which is what the declaration pass recorded
+    // and is unique within a file — the walk order of the two passes is not
+    // something either of them promises the other.
+    let wanted: HashMap<TextRange, usize> = only
+        .iter()
+        .filter_map(|index| {
+            entry
+                .decls
+                .subs
+                .get(*index)
+                .map(|symbol| (symbol.range, *index))
+        })
+        .collect();
+    if wanted.is_empty() {
+        return Vec::new();
+    }
+    let mut pass = Pass {
+        program,
+        file,
+        env: Env::default(),
+        diagnostics: Vec::new(),
+        package: "main".to_string(),
+        returns: Returns::default(),
+        record: None,
+        infer: Some(Box::new(Inference {
+            wanted,
+            ..Inference::default()
+        })),
+    };
+    pass.block(root);
+    pass.infer.expect("set above").found
 }
 
 /// What the walk inferred, kept by range.
@@ -214,6 +269,117 @@ struct Pass<'a> {
     /// Where the inferred types go when an editor asked for them, and `None`
     /// when nobody did (`docs/lsp.md`, "The type side-table").
     record: Option<TypeTable>,
+    /// Where the return walk collects, and `None` when the pass is checking
+    /// bodies rather than reading returns off them.
+    infer: Option<Box<Inference>>,
+}
+
+/// The return walk's state (`docs/return-inference.md`, "Sites").
+#[derive(Debug, Default)]
+struct Inference {
+    /// The subs the walk was asked about, by the range of the name.
+    wanted: HashMap<TextRange, usize>,
+    /// What each of them turned out to return.
+    found: Vec<(usize, Returns)>,
+    /// The sites of the sub being walked — reset on entry to a sub, so that a
+    /// `return` inside a callback is the callback's.
+    sites: Sites,
+    /// What the statement just walked leaves as the sub's value.
+    tail: Tail,
+    /// How the sub being walked names the value it was called on.
+    invocant: Invocant,
+}
+
+/// Every place a value leaves one sub, as the walk collected them.
+#[derive(Debug, Default)]
+struct Sites {
+    /// The scalar type of each.
+    scalar: Vec<Type>,
+    /// Whether one of them was the invocant.
+    invocant: bool,
+    /// A `goto` hands the call over to another sub, and what comes back is
+    /// that sub's answer to a question this walk never asked.
+    opaque: bool,
+}
+
+impl Sites {
+    /// The join of every site, and `Unknown` if any site is
+    /// (`docs/return-inference.md`, "What is being built").
+    ///
+    /// Not a precision choice but the reason the feature can be shipped at
+    /// all: a partial join — `Str` from the two sites that were typed,
+    /// ignoring the third — is a type the program does not have, and it would
+    /// be reported at every call site.
+    fn joined(&self, tail: &Tail, package: &str) -> Returns {
+        if self.opaque {
+            return Returns::default();
+        }
+        let mut members = self.scalar.clone();
+        match tail {
+            Tail::Value(ty) => members.push(ty.clone()),
+            // A `return` or a `die`: counted already, or never read.
+            Tail::Left => {}
+            // A loop, a bare block, a `package`, a nested `sub`, an empty
+            // body — and an `if` chain with no `else`, whose false value is
+            // its condition's.
+            Tail::Opaque => members.push(Type::Unknown),
+        }
+        let scalar = Type::union(members);
+        Returns::inferred(
+            scalar.clone(),
+            self.invocant && holds_own_class(&scalar, package),
+        )
+    }
+}
+
+/// What the statement just walked leaves as the value of the sub it is in.
+///
+/// The tail is a site because `sub name { $_[0]->{name} }` is how half the
+/// accessors in a corpus are written, and it is what makes a tail-only setter
+/// — `sub set_x { $_[0]->{x} = $_[1] }` — return what it was assigned, which
+/// is what perl does.
+#[derive(Debug, Clone, Default)]
+enum Tail {
+    /// An expression statement, and this is what it evaluated to.
+    Value(Type),
+    /// A `return` or a `die`, whose site the walk has counted already.
+    Left,
+    /// Anything else, including a body with no statements in it.
+    #[default]
+    Opaque,
+}
+
+/// How the sub being walked names the value it was called on.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+enum Invocant {
+    /// Its parameter list does not say it is a method.
+    #[default]
+    None,
+    /// `$self`, or whatever the first parameter is called, without the sigil.
+    Named(String),
+    /// The sub unpacks nothing, so `$_[0]` is the invocant. This is the half
+    /// of the rule the corpus is expected to argue with: a sub that hands
+    /// back `$_[0]` and is *not* a method is told it returns an instance of
+    /// the package it was written in.
+    Implicit,
+}
+
+impl Invocant {
+    fn of(params: &Params) -> Self {
+        match params {
+            Params::Positional {
+                params,
+                invocant: true,
+                ..
+            } => params.first().map_or(Invocant::None, |param| {
+                Invocant::Named(param.name.trim_start_matches('$').to_string())
+            }),
+            // `args` binds the invocant under that name and no other.
+            Params::Named { invocant: true, .. } => Invocant::Named("self".to_string()),
+            Params::Unknown => Invocant::Implicit,
+            _ => Invocant::None,
+        }
+    }
 }
 
 impl Pass<'_> {
@@ -253,6 +419,9 @@ impl Pass<'_> {
     }
 
     fn statement(&mut self, node: &SyntaxNode) {
+        // Every statement says what it leaves behind; the ones that leave a
+        // value say so below, and everything else is opaque by not saying.
+        self.set_tail(Tail::Opaque);
         match node.node_kind() {
             NodeKind::PACKAGE_STMT => {
                 if let Some(name) =
@@ -295,25 +464,94 @@ impl Pass<'_> {
         // rather than earning them. Asked of this file first: the body being
         // walked is this file's, and so are the annotations that type it
         // (`Program::sub_in`).
+        let mut invocant = Invocant::None;
         if let Some(symbol) = definition
             .name_text()
             .and_then(|name| self.program.sub_in(self.file, &self.package, &name))
         {
             self.returns = symbol.returns.clone();
+            invocant = Invocant::of(&symbol.params);
             bind_params(&mut self.env, &symbol.params, &self.package);
         }
+        let sites = self.enter_sub(invocant);
         self.block(body.syntax());
+        let range = definition
+            .name()
+            .map_or_else(|| node.text_range(), |view| view.range());
+        self.leave_sub(Some(range), sites);
         self.env = saved;
         self.returns = saved_returns;
     }
 
+    /// Put the enclosing sub's sites aside: a `return` in here is this sub's.
+    fn enter_sub(&mut self, invocant: Invocant) -> Option<Box<(Sites, Tail, Invocant)>> {
+        let inference = self.infer.as_mut()?;
+        Some(Box::new((
+            std::mem::take(&mut inference.sites),
+            std::mem::take(&mut inference.tail),
+            std::mem::replace(&mut inference.invocant, invocant),
+        )))
+    }
+
+    /// Apply the site table to what the body left, and give the enclosing sub
+    /// its sites back.
+    ///
+    /// `range` is where the sub's name is, which is how the declaration pass
+    /// named it; `None` is an anonymous sub, which nothing asked about.
+    fn leave_sub(&mut self, range: Option<TextRange>, saved: Option<Box<(Sites, Tail, Invocant)>>) {
+        let Some(saved) = saved else { return };
+        let package = self.package.clone();
+        let inference = self.infer.as_mut().expect("saved implies collecting");
+        if let Some(index) = range.and_then(|range| inference.wanted.get(&range).copied()) {
+            let returns = inference.sites.joined(&inference.tail, &package);
+            // Only what became known: an answer of `Unknown` is the round
+            // saying it has nothing to install, and installing it would make
+            // every round look like progress.
+            if !returns.is_unresolved() {
+                inference.found.push((index, returns));
+            }
+        }
+        let (sites, tail, invocant) = *saved;
+        inference.sites = sites;
+        inference.tail = tail;
+        inference.invocant = invocant;
+    }
+
+    /// Note what the statement just walked leaves as the sub's value.
+    fn set_tail(&mut self, tail: Tail) {
+        if let Some(inference) = &mut self.infer {
+            inference.tail = tail;
+        }
+    }
+
     fn expression_statement(&mut self, node: &SyntaxNode) {
+        let mut value = None;
         for child in node.children() {
-            self.expression(&child);
+            let ty = self.type_of(&child);
+            if child.node_kind() != NodeKind::STMT_MODIFIER {
+                value = Some(ty);
+            }
         }
         // A guard narrows what follows it: `return unless defined $x;` is how
         // half the corpus turns a `Maybe` into a value.
         self.apply_guard(node);
+        if self.infer.is_some() {
+            // A modified statement falls through to the value of its own
+            // condition when the condition does not hold, so `$h{k} = 1 if
+            // $ok` is not a tail this walk can read — and neither is `return
+            // 1 if $ok`, whose `return` is a site of its own regardless.
+            let tail = if node
+                .children()
+                .any(|child| child.node_kind() == NodeKind::STMT_MODIFIER)
+            {
+                Tail::Opaque
+            } else if leaves_the_sub(node) {
+                Tail::Left
+            } else {
+                value.map_or(Tail::Opaque, Tail::Value)
+            };
+            self.set_tail(tail);
+        }
     }
 
     fn if_statement(&mut self, node: &SyntaxNode) {
@@ -326,11 +564,17 @@ impl Pass<'_> {
         // `unless (defined $x) { ... } else { ... }` narrow the `else`.
         let mut otherwise = before.clone();
         let negated = ast::tokens(node).any(|token| token.token_kind() == TokenKind::UNLESS_KW);
+        // What each branch leaves as the sub's value, for the tail of a chain
+        // that is the last statement of a body.
+        let mut tails: Vec<Tail> = Vec::new();
+        let mut has_else = false;
 
         for child in node.children() {
             match child.node_kind() {
                 NodeKind::BLOCK => {
+                    self.set_tail(Tail::Opaque);
                     self.block(&child);
+                    tails.extend(self.tail());
                     let ended = std::mem::replace(&mut self.env, otherwise.clone());
                     match &mut after {
                         Some(env) => env.join(&ended),
@@ -338,11 +582,14 @@ impl Pass<'_> {
                     }
                 }
                 NodeKind::ELSIF_CLAUSE | NodeKind::ELSE_CLAUSE => {
+                    has_else |= child.node_kind() == NodeKind::ELSE_CLAUSE;
                     self.env = otherwise.clone();
                     let mut clause_seen = false;
                     for inner in child.children() {
                         if inner.node_kind() == NodeKind::BLOCK {
+                            self.set_tail(Tail::Opaque);
                             self.block(&inner);
+                            tails.extend(self.tail());
                             let ended = std::mem::replace(&mut self.env, otherwise.clone());
                             match &mut after {
                                 Some(env) => env.join(&ended),
@@ -390,6 +637,14 @@ impl Pass<'_> {
         } else {
             self.env = before;
         }
+        if self.infer.is_some() {
+            self.set_tail(join_tails(&tails, has_else));
+        }
+    }
+
+    /// What the statement just walked left, for a caller collecting branches.
+    fn tail(&self) -> Option<Tail> {
+        self.infer.as_ref().map(|inference| inference.tail.clone())
     }
 
     fn loop_statement(&mut self, node: &SyntaxNode) {
@@ -503,7 +758,9 @@ impl Pass<'_> {
                     // my $cb = sub { return [1] }; ... }` reported the
                     // callback's `return` against `f`'s declared type.
                     let saved_returns = std::mem::take(&mut self.returns);
+                    let sites = self.enter_sub(Invocant::None);
                     self.block(body.syntax());
+                    self.leave_sub(None, sites);
                     self.returns = saved_returns;
                     self.env = saved;
                 }
@@ -923,7 +1180,18 @@ impl Pass<'_> {
         };
         if name == "return" {
             self.check_return(&typed);
+            if self.infer.is_some() {
+                self.return_site(&typed);
+            }
             return Type::Unknown;
+        }
+        // `goto &other` hands the whole call over, arguments included; a
+        // `goto LABEL` moves the body's end somewhere this walk did not look.
+        // Either way the sub's answer is not one the site table can read.
+        if name == "goto" {
+            if let Some(inference) = &mut self.infer {
+                inference.sites.opaque = true;
+            }
         }
         if name == "bless" {
             return self.bless(&typed);
@@ -1027,6 +1295,13 @@ impl Pass<'_> {
                 // (INFER-2g), because `URI->new` hands back a `URI::http`.
                 if returns.scalar.is_unknown() && method == "new" && symbol.constructs_own_class {
                     Type::InstanceOf(class)
+                } else if returns.invocant {
+                    // A sub that returns its invocant returns the class it
+                    // was *called* on: `Child->new->set_x(1)->extra` is a
+                    // `Child` walking through `Base::set_x`
+                    // (`docs/return-inference.md`, "`$self` comes back as the
+                    // caller's class").
+                    with_invocant(&returns.scalar, &symbol.package, &class)
                 } else {
                     returns.scalar
                 }
@@ -1129,6 +1404,89 @@ impl Pass<'_> {
             Type::InstanceOf(self.package.clone())
         } else {
             Type::Unknown
+        }
+    }
+
+    /// One `return`, as the site table reads it
+    /// (`docs/return-inference.md`, "Sites").
+    fn return_site(&mut self, typed: &Typed) {
+        let ty = match typed.nodes {
+            // `return;` is `undef` in scalar context, and never `Returns: ()`
+            // — "returns nothing, do not use the value" is a statement about
+            // intent that only an annotation can make.
+            [] => Type::Undef,
+            [only] => self.value_site(only, typed.nth(0)),
+            // `return $a, $b` is a list, whose scalar reading nobody wants.
+            _ => Type::Unknown,
+        };
+        if let Some(inference) = &mut self.infer {
+            inference.sites.scalar.push(ty);
+        }
+    }
+
+    /// The scalar type of one value handed back, marking the invocant on the
+    /// way past.
+    fn value_site(&mut self, node: &SyntaxNode, ty: Type) -> Type {
+        // A list's scalar reading is a count, and only because it is: saying
+        // `Int` would invite `my $rows = $self->rows` off a `return @rows` to
+        // be typed as one — a bug the checker should stay quiet about rather
+        // than certify.
+        if is_plural(node) {
+            return Type::Unknown;
+        }
+        if self.is_invocant(node) {
+            if let Some(inference) = &mut self.infer {
+                inference.sites.invocant = true;
+            }
+            // `$_[0]` is bound to nothing, so the marker is also what says
+            // what the value is.
+            if ty.is_unknown() {
+                return Type::InstanceOf(self.package.clone());
+            }
+        }
+        // `wantarray ? LIST : SCALAR` hands back the scalar branch, by
+        // definition of what it asked.
+        if let Some(branch) = wantarray_branch(node) {
+            return self.type_of(&branch);
+        }
+        ty
+    }
+
+    /// Whether an expression hands back the invocant itself.
+    ///
+    /// The invocant, or a choice between it and something else: `return $ok ?
+    /// $self : undef` is a `Maybe` whose `InstanceOf` is still the caller's
+    /// class. Nothing deeper than that — `$self->{parent}` mentions `$self`
+    /// and is not it.
+    fn is_invocant(&self, node: &SyntaxNode) -> bool {
+        let Some(inference) = &self.infer else {
+            return false;
+        };
+        if inference.invocant == Invocant::None {
+            return false;
+        }
+        match node.node_kind() {
+            NodeKind::SCALAR_VAR => match &inference.invocant {
+                Invocant::Named(name) => {
+                    Variable::cast(node.clone())
+                        .and_then(|view| view.name())
+                        .as_deref()
+                        == Some(name.as_str())
+                }
+                _ => false,
+            },
+            NodeKind::ARRAY_SUBSCRIPT_EXPR => {
+                inference.invocant == Invocant::Implicit && is_first_argument(node)
+            }
+            NodeKind::PAREN_EXPR | NodeKind::LIST_EXPR => match sole_child(node) {
+                Some(only) => self.is_invocant(&only),
+                None => false,
+            },
+            NodeKind::TERNARY_EXPR => node
+                .children()
+                .skip(1)
+                .any(|branch| self.is_invocant(&branch)),
+            _ => false,
         }
     }
 
@@ -2297,6 +2655,156 @@ fn builtin_return(name: &str) -> Option<Type> {
         // `Pass::list_element`.
         _ => return None,
     })
+}
+
+/// The join of an `if` chain's branches, as the chain's own tail.
+///
+/// A chain with no `else` is opaque whatever its branches said, because the
+/// value of a false `if` is its condition's.
+fn join_tails(tails: &[Tail], has_else: bool) -> Tail {
+    if !has_else {
+        return Tail::Opaque;
+    }
+    let mut members = Vec::new();
+    for tail in tails {
+        match tail {
+            Tail::Value(ty) => members.push(ty.clone()),
+            Tail::Left => {}
+            Tail::Opaque => return Tail::Opaque,
+        }
+    }
+    if members.is_empty() {
+        // Every branch returned or died, so nothing falls out of the chain.
+        return Tail::Left;
+    }
+    Tail::Value(Type::union(members))
+}
+
+/// Whether a statement hands control back rather than leaving a value.
+///
+/// `throw` is here as a method as well as a bareword: `My::Error->throw(...)`
+/// is how a class-based exception is raised, and it is the same bottom.
+fn leaves_the_sub(statement: &SyntaxNode) -> bool {
+    let Some(expression) = sole_expression(statement) else {
+        return false;
+    };
+    if let Some(call) = ast::Call::cast(expression.clone()) {
+        return matches!(
+            call.callee_name().as_deref(),
+            Some("return" | "die" | "croak" | "confess" | "throw" | "exit" | "goto")
+        );
+    }
+    ast::MethodCall::cast(expression)
+        .and_then(|call| call.method_name())
+        .as_deref()
+        == Some("throw")
+}
+
+/// The one expression a statement is, past the `LIST_EXPR` that wraps it.
+fn sole_expression(statement: &SyntaxNode) -> Option<SyntaxNode> {
+    let only = sole_child(statement)?;
+    if only.node_kind() == NodeKind::LIST_EXPR {
+        return sole_child(&only);
+    }
+    Some(only)
+}
+
+/// The node's only child, or `None` when it has none or several.
+fn sole_child(node: &SyntaxNode) -> Option<SyntaxNode> {
+    let mut children = node.children();
+    let only = children.next()?;
+    children.next().is_none().then_some(only)
+}
+
+/// Whether an expression is a list rather than one value.
+fn is_plural(node: &SyntaxNode) -> bool {
+    match node.node_kind() {
+        NodeKind::ARRAY_VAR | NodeKind::HASH_VAR | NodeKind::SLICE_EXPR => true,
+        NodeKind::DEREF_EXPR | NodeKind::BLOCK_DEREF_EXPR => ast::tokens(node).any(|token| {
+            matches!(
+                token.token_kind(),
+                TokenKind::ARRAY_SIGIL | TokenKind::HASH_SIGIL
+            )
+        }),
+        NodeKind::POSTFIX_DEREF_EXPR => ast::tokens(node).any(|token| {
+            matches!(
+                token.token_kind(),
+                TokenKind::POSTFIX_DEREF_ARRAY | TokenKind::POSTFIX_DEREF_HASH
+            )
+        }),
+        NodeKind::PAREN_EXPR => ast::ParenExpr::cast(node.clone())
+            .and_then(|view| view.inner())
+            .is_some_and(|inner| is_plural(&inner)),
+        NodeKind::LIST_EXPR => match sole_child(node) {
+            Some(only) => is_plural(&only),
+            // `(A, B)`, and also `()`, whose scalar value is `undef` but
+            // whose *list* half is what an author writing it meant.
+            None => true,
+        },
+        // Either branch being a list makes the whole thing one, whichever way
+        // the condition goes — `wantarray` included.
+        NodeKind::TERNARY_EXPR => node.children().skip(1).any(|branch| is_plural(&branch)),
+        _ => false,
+    }
+}
+
+/// The scalar branch of `wantarray ? LIST : SCALAR`.
+fn wantarray_branch(node: &SyntaxNode) -> Option<SyntaxNode> {
+    if node.node_kind() != NodeKind::TERNARY_EXPR {
+        return None;
+    }
+    let mut children = node.children();
+    let condition = children.next()?;
+    let asked = ast::Call::cast(condition).and_then(|call| call.callee_name());
+    if asked.as_deref() != Some("wantarray") {
+        return None;
+    }
+    children.nth(1)
+}
+
+/// `$_[0]` — the first argument, which is the invocant of a sub that unpacks
+/// nothing.
+fn is_first_argument(node: &SyntaxNode) -> bool {
+    let Some(chain) = ast::SubscriptChain::cast(node.clone()) else {
+        return false;
+    };
+    let is_arguments = Variable::cast(chain.base().clone())
+        .is_some_and(|view| view.sigil() == Sigil::Scalar && view.name().as_deref() == Some("_"));
+    let steps = chain.steps();
+    is_arguments
+        && !arrowed(steps.first())
+        && matches!(steps, [ast::Step::Array { index: Some(0), .. }])
+}
+
+/// Whether `InstanceOf[package]` is one of the things a type may be.
+fn holds_own_class(ty: &Type, package: &str) -> bool {
+    match ty {
+        Type::InstanceOf(name) => name == package,
+        Type::Union(members) => members
+            .iter()
+            .any(|member| holds_own_class(member, package)),
+        Type::Optional(inner) => holds_own_class(inner, package),
+        _ => false,
+    }
+}
+
+/// The same type with the invocant marker replaced by the receiver's class.
+///
+/// The substitution `constructs_own_class` performs for `new`, for the same
+/// reason: `Child->new->set_x(1)` is a `Child`, and telling the caller `Base`
+/// is an `unknown-method` on the next link of the chain.
+fn with_invocant(ty: &Type, own: &str, class: &str) -> Type {
+    match ty {
+        Type::InstanceOf(name) if name == own => Type::InstanceOf(class.to_string()),
+        Type::Union(members) => Type::union(
+            members
+                .iter()
+                .map(|member| with_invocant(member, own, class))
+                .collect(),
+        ),
+        Type::Optional(inner) => Type::Optional(Box::new(with_invocant(inner, own, class))),
+        other => other.clone(),
+    }
 }
 
 /// What the design calls the sub's `Returns:` — kept here so that the flow
