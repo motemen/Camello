@@ -98,6 +98,20 @@ One line per change. The reasoning is in the commit it came from.
 
 ### Changed
 
+- **A list shape may be an alternation** (`docs/types.md`, ANNOT-7e).
+  `(Value, Undef) | (Undef, Error)` is the ok-or-error idiom, and its two slots
+  are correlated — one is filled exactly when the other is `undef`. Joining the
+  two `return`s slot-wise into `(Value | Undef, Error | Undef)` threw away the
+  only thing the shape says, so they are kept apart instead, in the inference
+  and in the notation. A `return` passes when it matches any one alternative; a
+  length that disagrees is still an `error`, because every alternative has the
+  same width and so the count is written on both sides. Only where *every*
+  part is parenthesised end to end — `Str | Undef` is a scalar union and its
+  `|` belongs to the type language. A one-slot alternation has nothing to be
+  correlated with and collapses to the union; so does anything past three
+  alternatives, where the sub has stopped describing a choice. A *binding*
+  still reads slot-wise: `my ($value, $error) = f()` binds `Value | Undef` and
+  `Undef | Error`, because nothing carries the correlation past the assignment.
 - **Hover answers `Unknown` rather than nothing.** Silence is the right answer
   to "there is nothing here" and the wrong one to "there is something here and
   I do not know what it is" — the two look identical to a reader, and the

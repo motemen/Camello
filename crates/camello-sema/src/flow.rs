@@ -2109,6 +2109,13 @@ impl Pass<'_> {
     fn check_returned_shape(&mut self, typed: &Typed, at: TextRange) {
         let declared = self.returns.list.clone();
         let found = self.returned_shape(typed);
+        // An alternation is satisfied by *any* of its alternatives, which is
+        // the whole reason they are kept apart: `return (undef, $err)` is not
+        // a `(Value, Undef)` and does not have to be.
+        if let ListShape::Either(shapes) = &declared {
+            self.check_returned_alternation(shapes, &declared, &found, typed, at);
+            return;
+        }
         let (ListShape::Fixed(_) | ListShape::Of(_)) = declared else {
             return;
         };
@@ -2153,6 +2160,61 @@ impl Pass<'_> {
             (ListShape::Fixed(_), _) => {}
             _ => {}
         }
+    }
+
+    /// A `return` against an alternation: it fits when it fits any one
+    /// alternative.
+    ///
+    /// The length is still written down on both sides, so a `return` of the
+    /// wrong width is the same `error` a single shape gives. What is *not* an
+    /// error is a slot that disagrees with one alternative, because the other
+    /// one is what it was written for.
+    fn check_returned_alternation(
+        &mut self,
+        shapes: &[Vec<Type>],
+        declared: &ListShape,
+        found: &ListShape,
+        typed: &Typed,
+        at: TextRange,
+    ) {
+        let ListShape::Fixed(have) = found else {
+            return;
+        };
+        let want = declared.slots().map_or(0, |slots| slots.len());
+        let range = typed.nodes.first().map_or(at, |node| node.text_range());
+        if want != have.len() {
+            self.diagnostics.push(
+                Diagnostic::new(
+                    Code::ReturnMismatch,
+                    range,
+                    format!(
+                        "this `return` hands back {} value{} where `Returns: {}` names {want}",
+                        have.len(),
+                        if have.len() == 1 { "" } else { "s" },
+                        declared.written().unwrap_or_default(),
+                    ),
+                )
+                .at(Severity::Error),
+            );
+            return;
+        }
+        let fits = shapes.iter().any(|want| {
+            want.iter().zip(have).all(|(slot, value)| {
+                value.is_unknown() || slot.is_unknown() || compatible(value, slot, self.program)
+            })
+        });
+        if fits {
+            return;
+        }
+        let written = ListShape::Fixed(have.clone()).written().unwrap_or_default();
+        self.diagnostics.push(Diagnostic::new(
+            Code::ReturnMismatch,
+            range,
+            format!(
+                "`{written}` returned, which is none of the shapes `Returns: {}` names",
+                declared.written().unwrap_or_default()
+            ),
+        ));
     }
 
     /// One slot of a returned list against the slot the annotation named.
@@ -3510,11 +3572,15 @@ fn bound_from(shape: &ListShape, sigil: Sigil, index: usize) -> Type {
         // A hash built from a list is key/value pairs, and nothing here reads
         // them.
         Sigil::Hash => Type::Unknown,
-        _ => match shape {
-            ListShape::Fixed(types) => types.get(index).cloned().unwrap_or(Type::Undef),
-            ListShape::Nothing => Type::Undef,
-            ListShape::Of(ty) => Type::maybe(ty.clone()),
-            ListShape::Unknown => Type::Unknown,
+        // An alternation answers slot-wise: a binding takes one position and
+        // nothing here carries the correlation past the assignment
+        // (`ListShape::slots`).
+        _ => match shape.slots() {
+            Some(slots) => slots.get(index).cloned().unwrap_or(Type::Undef),
+            None => match shape {
+                ListShape::Of(ty) => Type::maybe(ty.clone()),
+                _ => Type::Unknown,
+            },
         },
     }
 }
@@ -3582,10 +3648,12 @@ fn wantarray_branches(node: &SyntaxNode) -> Option<(SyntaxNode, SyntaxNode)> {
 fn concatenated(shapes: &[ListShape]) -> ListShape {
     let mut slots = Vec::new();
     for shape in shapes {
-        match shape {
-            ListShape::Fixed(types) => slots.extend(types.clone()),
-            ListShape::Nothing => {}
-            ListShape::Of(_) | ListShape::Unknown => {
+        // An alternation concatenates slot-wise: `(f(), g())` puts the two
+        // side by side, and which alternative `f` took says nothing about
+        // which slot of the result is which.
+        match shape.slots() {
+            Some(types) => slots.extend(types),
+            None => {
                 let members: Vec<Type> = shapes.iter().flat_map(ListShape::members).collect();
                 return ListShape::of(Type::union(members));
             }
