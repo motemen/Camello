@@ -21,7 +21,8 @@ returns *not* to infer.
 A sub with no `Returns:` gets a `returns.scalar` read off its body, so
 that a call to it — bareword, imported, or as a method — yields that type
 where it yields `Unknown` today. Hover shows it, marked as inferred. The
-list half stays `Unknown` (LIMIT-7 is untouched).
+list half follows in a second phase, once the checker can read an
+expression in list context at all.
 
 The rule that keeps the checker quiet is kept whole: the inferred type is
 the **join of every site, and `Unknown` if any site is `Unknown`**. One
@@ -33,10 +34,12 @@ have, reported at every call site.
 
 ### Non-goals
 
-- **List context.** `return (a, b)` and `return @list` are sites whose
-  scalar type is `Unknown` under this design, which makes the sub
-  `Unknown`. Inferring a `ListShape` would need the context tracking that
-  INFER-6 says is not built.
+- **List context, in the first phase.** `return (a, b)` and `return
+  @list` are sites whose scalar type is `Unknown`, which makes the scalar
+  half of the sub `Unknown`. The list half is a phase of its own — "List
+  returns" below — because it needs the list-context reading of
+  expressions that INFER-6a says does not exist yet, and that reading is
+  worth building for its own sake.
 - **`Returns: ()`.** Never inferred. A sub whose every site is `return;`
   is, in scalar context, one that returns `Undef`, and that is what it
   gets; "returns nothing, do not use the value" is a statement about
@@ -326,6 +329,146 @@ Each step leaves the tree green and shippable.
    numbers written into `docs/typecheck.md` beside milestone 5's.
 8. **The spec.** INFER-4a and LIMIT-6 rewritten in `docs/types.md`;
    the site table and the invocant rule become numbered rules there.
+
+## List returns
+
+Half the subs in a Perl codebase hand back a list — `return @rows`,
+`return map { ... } @x`, `return ($ok, $err)`, `return %h` — and a
+design that types only the scalar half leaves every `my @rows =
+$self->rows` and `my ($ok, $err) = validate()` where it is today. So the
+list half is in scope. It is not hard to *collect*; what makes it a phase
+of its own is that the checker has no notion of list context to hand the
+result to. INFER-6a says every expression is typed in scalar context, and
+the assignment walk says so in code: a list assignment "hands out elements
+nobody here counts", and every target of `my ($a, $b) = ...` or `my @a =
+...` is bound to `Unknown`. The `list:` half of `Returns:` is parsed and
+never consulted (INFER-6b). Building the reading is what makes both the
+annotation and the inference mean something, and it is the same work
+either way.
+
+### The shape
+
+`ListShape` grows one variant:
+
+```text
+Unknown
+Nothing            Returns: ()
+Fixed(Vec<Type>)   (Str, Int)       — a known length, a type per slot
+Of(Type)           list of T        — any length, one element type   [new]
+```
+
+The join of two shapes: both `Fixed` of the same length is slot-wise
+union; `Fixed` against `Fixed` of another length, or against `Of`, is
+`Of(union of every member)`; anything against `Unknown` is `Unknown`.
+`return $x` beside `return;` is therefore `Of(T)`, and a `my ($x) = f()`
+off it binds `Maybe[T]` — the length was not known, so the slot may be
+empty.
+
+### The list-context reading
+
+`Pass::shape_of(node) -> ListShape`, beside `type_of`, for the node kinds
+that have a list-context answer. Everything else is `Unknown`, and the
+list stays as short as the scalar table did when it started:
+
+| expression | shape |
+| --- | --- |
+| `(A, B, ...)` and a bare `A, B` list | `Fixed([type_of(A), type_of(B), ...])`; an element that is itself plural (`@x`, a call, a `map`) makes the whole thing `Of(join)` |
+| `()` | `Fixed([])` |
+| a single scalar expression | `Fixed([type_of])` |
+| `@a`, `@$ref`, `$ref->@*` | `Of(element type)` when the array's element type is known, else `Unknown` — the same `element_of` the `foreach` header uses |
+| `%h`, `%$ref` | `Unknown` (a hash in list context is key/value pairs, and nothing downstream wants them as a list) |
+| `map { ... } LIST`, `grep { ... } LIST`, `sort LIST`, `reverse LIST` | `grep`, `sort`, `reverse`: the shape of `LIST` widened to `Of`; `map`: `Of(Unknown)` unless the block is a single expression, in which case `Of(type_of(block))` with `$_` bound to the element |
+| `keys`, `values` | `Of(...)` by the rule `list_element` already applies to them |
+| `f(...)`, `$obj->m(...)` | the callee's `returns.list` |
+| `wantarray ? A : B` | `shape_of(A)` |
+| `A ? B : C` otherwise | the join |
+| `@{[ ... ]}`, `[...]`, `{...}`, a literal, a `bless` | `Fixed([type_of])` — one reference |
+
+### Sites, in list context
+
+The site table gains a column. Each site contributes both halves:
+
+| site | scalar | list |
+| --- | --- | --- |
+| `return EXPR` | `type_of(EXPR)` | `shape_of(EXPR)` |
+| `return;` | `Undef` | `Fixed([])` |
+| `return (A, B)` | `Unknown` | `Fixed([A, B])` |
+| `return @x` | `Unknown` (a count, but only because it is; saying `Int` invites `my $rows = $self->rows` to be typed as an `Int` when the author meant the list and got the count — a bug the checker should stay quiet about rather than certify) | `Of(T)` |
+| `return wantarray ? A : B` | `type_of(B)` | `shape_of(A)` |
+| tail | as before | `shape_of` of the same expression |
+
+A sub's `returns` is then `(join of scalar sites, join of list sites)`,
+each half independently `Unknown` if any of its sites is. The two halves
+are independent: `return @x` sinks the scalar half and not the list half,
+and `return $obj->maybe` — a method with a scalar type and no list
+shape — sinks the list half and not the scalar one.
+
+### Consumers
+
+Where the shape is read. Each is a small change to `assignment()` or
+`list_element()`, and together they are what the phase delivers:
+
+- `my ($a, $b) = EXPR` — `Fixed`: slot `i` to target `i`, a missing slot
+  is `Undef`, `%h` or `@a` as the last target takes the rest; `Of(T)`:
+  every scalar target is `Maybe[T]`. `Unknown` binds `Unknown`, as
+  today. The `unpacks_arguments` guard stays: `@_` is typed by the
+  parameter list, not by this.
+- `my @a = EXPR` — the array's element type is the join of the shape's
+  members, which is what `foreach my $x (@a)` and `\@a` already read.
+  Today `@a` is never bound at all.
+- `my %h = EXPR` — `Unknown`, until something wants the pairs.
+- `[ EXPR ]` — `list_element` becomes `shape_of` over each element,
+  flattened, so `[ $self->rows ]` is `ArrayRef[Row]` rather than
+  `ArrayRef[Unknown]`.
+- `foreach my $x (EXPR)` — `Of(T)`/`Fixed` give `$x` the element type
+  where `element_of(type_of(EXPR))` gives `Unknown` today.
+- `return EXPR` — the shape becomes a site, above, which is what makes
+  `sub rows { return $self->_load_rows }` transitive.
+- **Arity is not a consumer.** `g(f())` where `f` returns `Fixed` of two
+  is an arity of two in perl; the arity pass counts arguments
+  syntactically and keeps doing so. Flattening a call into a parameter
+  list is where the false positives would live, and it is not built.
+
+### What it checks
+
+Nothing new is reported by this phase except through the types it
+binds: a `$row` bound to `Row` off `my ($row) = $self->rows` gets
+`unknown-method` where an `Unknown` did not. The one addition is that
+`Returns: ... | list: (...)` starts being *used*: a call in list context
+yields the annotated shape, and — the other half of ANNOT-7a — a `return
+(A, B)` in a sub declared `list: (Str)` is a `return-mismatch`, length
+included. `Returns: ()` keeps its existing meaning and is still never
+inferred. LIMIT-7 is rewritten to say what is now matched and what is
+not (hashes, arity).
+
+### Ordering and cost
+
+The scalar phase ships first (steps 1–7). The list phase is its own
+sequence after it:
+
+9. `ListShape::Of`, the join, `signature_of` rendering (`-> Str | list: Row...`
+   for `Of`, keeping the `(Str, Int)` form for `Fixed`).
+10. `shape_of` over the table above; `map`/`grep` with `$_` bound.
+11. The consumers, one fixture each under `fixtures/types/returns/list/`:
+    `assign.pl`, `array.pl`, `anon-array.pl`, `foreach.pl`, and
+    `annotation.pl` for the `list:` half of `Returns:` finally being
+    matched.
+12. Sites: the list column, through both tiers unchanged — a shape is a
+    value in `Returns` like the scalar half, and everything that carries
+    `returns.scalar` across the graph (cache, fingerprint, `set_returns`,
+    step 4′) carries the pair.
+13. The corpus, again, with the same bar. The families to expect:
+    `unknown-method` on an element type that was joined too wide
+    (`return @objects` where the array held two classes — a union, and
+    the union rule already handles it) and `maybe-deref` on `my ($x) =
+    f()` off an `Of` — a true positive, and an idiom (`my ($first) =
+    grep {...}`) common enough that its count decides whether `Of` binds
+    `Maybe[T]` or `T` to a single target.
+
+The cost is the reading itself: `shape_of` is a second dispatch over the
+same node kinds, and the consumers are edits to walks that exist. The
+inference and the tiers are unchanged by it. Nothing here needs a new
+pass, a new phase, or a change to the program graph beyond the variant.
 
 ## Open questions
 
