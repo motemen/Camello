@@ -890,6 +890,7 @@ fn declared_variable(node: &SyntaxNode) -> Option<String> {
 /// The rule after `=>`: a type string, a type expression, or a hashref with
 /// `isa` / `optional` / `default`.
 fn read_rule(node: &SyntaxNode) -> (bool, Option<Annotation>) {
+    let node = ast::without_plus(node);
     if node.node_kind() == NodeKind::ANON_HASH {
         let hash = AnonHash::cast(node.clone()).expect("kind checked");
         let mut optional = false;
@@ -897,13 +898,16 @@ fn read_rule(node: &SyntaxNode) -> (bool, Option<Annotation>) {
         for pair in hash.pairs() {
             match pair.key() {
                 Some("isa") => annotation = Some(annotation_of(pair.node())),
-                Some("optional") | Some("default") | Some("builder") => optional = true,
+                // `optional => 0` is the one spelling that says the opposite;
+                // anything this cannot read as a number is taken at its word.
+                Some("optional") => optional = crate::annotate::is_true(pair.node()),
+                Some("default") | Some("builder") => optional = true,
                 _ => {}
             }
         }
         return (optional, annotation.flatten());
     }
-    (false, annotation_of(node))
+    (false, annotation_of(&node))
 }
 
 /// A type annotation, read as whichever of the two syntaxes it is written in.
