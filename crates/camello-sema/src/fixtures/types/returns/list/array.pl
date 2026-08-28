@@ -26,7 +26,7 @@ for my $row (@rows) {
 my @both = Store->two;
 my $held = \@both;
 $held->[0]->nope;
-#~ info maybe-deref: may be undefined here #~ warning unknown-method: `Row` declares no method `nope`
+#~ warning maybe-deref: may be undefined here #~ warning unknown-method: `Row` declares no method `nope`
 
 # `map` hands back whatever its block said, with `$_` bound to the element.
 my @ids = map { $_->id } Store->rows;

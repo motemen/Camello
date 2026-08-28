@@ -12,7 +12,7 @@ sub find { return undef }
 
 # A `Maybe` used with nothing having checked it.
 my $bare = find();
-print $bare->id;                #~ info maybe-deref: may be undefined here
+print $bare->id;                #~ warning maybe-deref: may be undefined here
 
 # Every one of these is a narrowing, and each is a fixture rather than a
 # theorem (`docs/typecheck.md`, "Narrowing").
@@ -42,18 +42,18 @@ print $defaulted->id;
 
 my $a = find();
 if (!$a) {
-    print $a->id;               #~ info maybe-deref: may be undefined here
+    print $a->id;               #~ warning maybe-deref: may be undefined here
 }
 
 my $b = find();
 my $other = find();
 if ($b || $other) {
-    print $b->id;               #~ info maybe-deref: may be undefined here
+    print $b->id;               #~ warning maybe-deref: may be undefined here
 }
 
 my $c = find();
 if (looks_ok($c)) {
-    print $c->id;               #~ info maybe-deref: may be undefined here
+    print $c->id;               #~ warning maybe-deref: may be undefined here
 }
 sub looks_ok { return 1 }
 
@@ -73,7 +73,7 @@ if (ref $f eq 'Row') {
 # The call in the condition is itself a `maybe-deref` — but it happened, so
 # below it the invocant was there to be called.
 my $g = find();
-if ($g->id) {                   #~ info maybe-deref: may be undefined here
+if ($g->id) {                   #~ warning maybe-deref: may be undefined here
     print $g->id;
 }
 
@@ -125,7 +125,7 @@ print $m->id;
 my $n = find();
 my $o = find();
 return $n // Row->new(id => 1) unless $o;
-print $n->id;                   #~ info maybe-deref: may be undefined here
+print $n->id;                   #~ warning maybe-deref: may be undefined here
 
 # An `elsif` carries a condition of its own, and it narrows its own block.
 my $p = find();
@@ -138,6 +138,6 @@ if (0) {
 # The call in `!$x->name` ran before the `!` had anything to negate, so the
 # invocant was there whichever way the condition then went.
 my $q = find();
-if (!$q->id) {                  #~ info maybe-deref: may be undefined here
+if (!$q->id) {                  #~ warning maybe-deref: may be undefined here
     print $q->id;
 }

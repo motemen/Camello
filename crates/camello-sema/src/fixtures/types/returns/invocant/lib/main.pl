@@ -16,4 +16,4 @@ Child->new->set_x(1)->nope;     #~ warning unknown-method: `Child` declares no m
 Base->new->set_x(1)->extra;     #~ warning unknown-method: `Base` declares no method `extra`
 
 # The `Maybe` survives the substitution, and it is about the receiver's class.
-Child->new->if_ready->extra;    #~ info maybe-deref: may be undefined here
+Child->new->if_ready->extra;    #~ warning maybe-deref: may be undefined here
