@@ -951,7 +951,7 @@ fn hash_value(node: &SyntaxNode, key: &str) -> Option<String> {
 // ===== `Returns:` =====
 
 /// What a sub gives back, in each of the two contexts Perl has.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Returns {
     pub scalar: Type,
     pub list: ListShape,
@@ -1007,6 +1007,17 @@ impl Returns {
     #[must_use]
     pub fn is_unresolved(&self) -> bool {
         self.scalar.is_unknown() && self.list == ListShape::Unknown
+    }
+
+    /// Whether the walk may read this sub's return off its body at all.
+    ///
+    /// Not a written `Returns:`, which wins over anything a body says. What is
+    /// left is a sub nothing is known about yet and one the walk has already
+    /// answered — and the second is a candidate because an *edit* can change
+    /// what the answer is (`docs/return-inference.md`, step 4′).
+    #[must_use]
+    pub fn is_inferable(&self) -> bool {
+        self.inferred || self.is_unresolved()
     }
 }
 

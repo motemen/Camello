@@ -121,20 +121,26 @@ impl Backend {
                 &snapshot.settings.dialect,
                 &cache,
             );
-            (path, decls)
+            (path, decls, Arc::clone(&snapshot.document))
         })
         .await;
-        let Ok((path, decls)) = outcome else {
+        let Ok((path, decls, document)) = outcome else {
             return;
         };
 
         let changed = {
             let index = Arc::clone(&self.read().index);
             let mut index = index.write().expect("no reader panics holding this");
-            let changed = index.install(&path, decls);
+            let mut changed = index.install(&path, decls);
             if changed {
                 index.analysis.link();
             }
+            // Step 4′ (`docs/return-inference.md`): what tier 2 says about
+            // this file may have changed without anything tier 1 saw changing
+            // — `return $self->load` edited to `return $self->parse`, both
+            // cross-file — and the callers in other open files would go on
+            // seeing the old type.
+            changed |= index.analysis.reinfer_returns(&path, &document.text);
             changed
         };
         if !changed {
@@ -148,8 +154,31 @@ impl Backend {
             if &other == uri {
                 continue;
             }
+            // And 4′ for each of them in turn: what this edit changed may be
+            // what *their* returns were read from. Bounded by the open set,
+            // which is the same coarseness the sweep itself accepts.
+            self.reinfer(&other).await;
             self.check_and_publish(other).await;
         }
+    }
+
+    /// Step 4′ for one open file, whose returns may have been read off a file
+    /// that just changed (`docs/return-inference.md`).
+    async fn reinfer(&self, uri: &Uri) {
+        let Some(snapshot) = self.read().snapshot(uri) else {
+            return;
+        };
+        let Some(path) = snapshot.document.path.clone() else {
+            return;
+        };
+        let index = Arc::clone(&self.read().index);
+        let _ = tokio::task::spawn_blocking(move || {
+            let mut index = index.write().expect("no reader panics holding this");
+            index
+                .analysis
+                .reinfer_returns(&path, &snapshot.document.text)
+        })
+        .await;
     }
 
     /// Put a file back the way disk has it, and re-check the open files if
@@ -166,10 +195,11 @@ impl Backend {
             let cache = crate::settings::cache(settings.cache_dir.as_deref());
             let decls = index::declarations(&path, &source, &settings.dialect, &cache);
             let mut index = index.write().expect("no reader panics holding this");
-            let changed = index.install(&path, decls);
+            let mut changed = index.install(&path, decls);
             if changed {
                 index.analysis.link();
             }
+            changed |= index.analysis.reinfer_returns(&path, &source);
             Some(changed)
         })
         .await;
@@ -530,7 +560,7 @@ impl LanguageServer for Backend {
                     continue;
                 };
                 let decls = index::declarations(&path, &source, &settings.dialect, &cache);
-                updated.push((path, decls));
+                updated.push((path, decls, source));
             }
             let mut index = index.write().expect("no reader panics holding this");
             // The same decl-diff an edit applies: a file that was touched, or
@@ -538,11 +568,18 @@ impl LanguageServer for Backend {
             // and a sweep of the open files for it would be a sweep for
             // nothing.
             let mut any = false;
-            for (path, decls) in updated {
+            let mut sources = Vec::new();
+            for (path, decls, source) in updated {
                 any |= index.install(&path, decls);
+                sources.push((path, source));
             }
             if any {
                 index.analysis.link();
+            }
+            // Step 4′, after the batch is in and linked: a file rewritten on
+            // disk is one whose returns another file's may have been read off.
+            for (path, source) in &sources {
+                any |= index.analysis.reinfer_returns(path, source);
             }
             any
         })
