@@ -7,8 +7,8 @@
 //!
 //! Recognition is by callee name **and** by an import that could have provided
 //! it, so a project's own `sub has` is not mistaken for Moose's. That test is
-//! [`Frameworks`], which the declaration pass fills in from the file's `use`
-//! statements before it reads anything else.
+//! [`Frameworks`], which the declaration pass fills in per package from the
+//! `use` statements written in it, before it reads anything else.
 
 use std::collections::BTreeMap;
 
@@ -86,11 +86,13 @@ impl Dialect {
     }
 }
 
-/// What the file's imports say a bareword could mean.
+/// What a package's imports say a bareword in it could mean.
 ///
 /// The point of this is one line in the design: recognition is by callee name
-/// *and* by an import that could have provided it. A file that never says
-/// `use Moose` has no `has` to recognise, whatever it calls its own subs.
+/// *and* by an import that could have provided it. A package that never says
+/// `use Moose` has no `has` to recognise, whatever it calls its own subs — and
+/// the unit is the package rather than the file, because that is the unit
+/// perl imports into (`docs/types.md`, ANNOT-1a).
 #[derive(Debug, Clone, Default)]
 pub struct Frameworks {
     pub moose: bool,
@@ -217,6 +219,46 @@ pub enum Access {
     Wo,
 }
 
+/// One method an attribute declaration generates, and what calling it says.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GeneratedMethod {
+    pub name: String,
+    pub role: AccessorRole,
+}
+
+/// What a generated method does, which is what decides its result type.
+///
+/// Reading these apart is what keeps a `predicate` from claiming to give back
+/// the attribute's own type — `$obj->has_items` against an `ArrayRef[Int]`
+/// slot was a `type-mismatch` on correct code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum AccessorRole {
+    /// Gives the attribute's value back: the accessor itself, and `reader`.
+    Reader,
+    /// Sets the slot and gives back what it set, which Moose's writers do.
+    Writer,
+    /// `predicate`: whether the slot is filled.
+    Predicate,
+    /// `clearer`: empties the slot. What it gives back is the deletion's
+    /// answer, which no caller uses and which is not worth claiming.
+    Clearer,
+    /// `handles`: another object's method, which nothing here read.
+    Delegated,
+}
+
+impl AccessorRole {
+    /// What calling a method in this role gives back, for an attribute
+    /// declared `ty`.
+    #[must_use]
+    pub fn returns(self, ty: &Type) -> Type {
+        match self {
+            AccessorRole::Reader | AccessorRole::Writer => ty.clone(),
+            AccessorRole::Predicate => Type::Bool,
+            AccessorRole::Clearer | AccessorRole::Delegated => Type::Unknown,
+        }
+    }
+}
+
 /// An attribute, from `has`, `Class::Accessor::Typed`, or the `mk_accessors`
 /// family.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -230,13 +272,37 @@ pub struct AttributeDecl {
     pub defaulted: bool,
     /// The methods this attribute generates besides the accessor itself:
     /// `reader`, `writer`, `predicate`, `clearer`, and whatever `handles`
-    /// delegates.
-    pub methods: Vec<String>,
+    /// delegates. Each with what it gives back, which is not the attribute's
+    /// type for all of them (`docs/types.md`, METHOD-4).
+    pub methods: Vec<GeneratedMethod>,
     /// `handles` naming a regexp or a role: the delegated set is unknowable,
     /// so the class may have any method and "no such method" is off.
     pub opaque_delegation: bool,
     #[serde(with = "crate::serde_range")]
     pub range: TextRange,
+}
+
+impl AttributeDecl {
+    /// Whether this attribute answers to `name`, as its accessor or as one of
+    /// the methods it generates.
+    #[must_use]
+    pub fn answers_to(&self, name: &str) -> bool {
+        self.name == name || self.methods.iter().any(|method| method.name == name)
+    }
+
+    /// What calling `name` on it gives back (`docs/types.md`, METHOD-4a).
+    ///
+    /// Not the attribute's type for all of them: a `predicate` says whether
+    /// the slot is filled, and a `clearer` and a delegated method say nothing
+    /// this pass can read.
+    #[must_use]
+    pub fn returns(&self, name: &str) -> Type {
+        match self.methods.iter().find(|method| method.name == name) {
+            Some(method) => method.role.returns(&self.ty),
+            // The accessor itself, which is the attribute's own name.
+            None => self.ty.clone(),
+        }
+    }
 }
 
 /// What reading a file's annotations produced.
@@ -377,13 +443,23 @@ pub fn read_has(call: &ast::Call, into: &mut Sink) -> Vec<AttributeDecl> {
                 }
             }
             Some(key @ ("reader" | "writer" | "accessor" | "predicate" | "clearer")) => {
-                let _ = key;
+                let role = match key {
+                    "predicate" => AccessorRole::Predicate,
+                    "clearer" => AccessorRole::Clearer,
+                    "writer" => AccessorRole::Writer,
+                    _ => AccessorRole::Reader,
+                };
                 if let Some(name) = literal_name(value) {
-                    methods.push(name);
+                    methods.push(GeneratedMethod { name, role });
                 }
             }
             Some("handles") => match delegated(value) {
-                Some(delegated) => methods.extend(delegated),
+                Some(delegated) => {
+                    methods.extend(delegated.into_iter().map(|name| GeneratedMethod {
+                        name,
+                        role: AccessorRole::Delegated,
+                    }))
+                }
                 None => opaque_delegation = true,
             },
             _ => {}
@@ -690,13 +766,19 @@ pub fn accessor_attributes(
 
 /// The `get_x` / `set_x` names `follow_best_practice` puts an accessor under.
 #[must_use]
-pub fn best_practice_methods(name: &str, access: Access) -> Vec<String> {
+pub fn best_practice_methods(name: &str, access: Access) -> Vec<GeneratedMethod> {
     let mut methods = Vec::new();
     if access != Access::Wo {
-        methods.push(format!("get_{name}"));
+        methods.push(GeneratedMethod {
+            name: format!("get_{name}"),
+            role: AccessorRole::Reader,
+        });
     }
     if access != Access::Ro {
-        methods.push(format!("set_{name}"));
+        methods.push(GeneratedMethod {
+            name: format!("set_{name}"),
+            role: AccessorRole::Writer,
+        });
     }
     methods
 }

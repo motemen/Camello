@@ -352,7 +352,7 @@ impl Program {
             }
             for facts in self.facts(&class) {
                 for attribute in &facts.attributes {
-                    if attribute.name == name || attribute.methods.iter().any(|one| one == name) {
+                    if attribute.answers_to(name) {
                         return MethodLookup::Attribute(attribute);
                     }
                 }
