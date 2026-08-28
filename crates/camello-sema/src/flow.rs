@@ -221,45 +221,63 @@ impl Pass<'_> {
         let before = self.env.clone();
         let mut after: Option<Env> = None;
         let mut condition_seen = false;
+        // What a branch below this condition starts from. The block that
+        // follows a condition runs where it held; everything after runs where
+        // it did not, and reading both sides off one condition is what makes
+        // `unless (defined $x) { ... } else { ... }` narrow the `else`.
+        let mut otherwise = before.clone();
+        let negated = ast::tokens(node).any(|token| token.token_kind() == TokenKind::UNLESS_KW);
 
         for child in node.children() {
             match child.node_kind() {
                 NodeKind::BLOCK => {
-                    let branch = self.env.clone();
                     self.block(&child);
-                    let ended = std::mem::replace(&mut self.env, before.clone());
+                    let ended = std::mem::replace(&mut self.env, otherwise.clone());
                     match &mut after {
                         Some(env) => env.join(&ended),
                         None => after = Some(ended),
                     }
-                    let _ = branch;
                 }
                 NodeKind::ELSIF_CLAUSE | NodeKind::ELSE_CLAUSE => {
-                    self.env = before.clone();
+                    self.env = otherwise.clone();
+                    let mut clause_seen = false;
                     for inner in child.children() {
                         if inner.node_kind() == NodeKind::BLOCK {
-                            let ended_env = self.env.clone();
                             self.block(&inner);
-                            let ended = std::mem::replace(&mut self.env, before.clone());
+                            let ended = std::mem::replace(&mut self.env, otherwise.clone());
                             match &mut after {
                                 Some(env) => env.join(&ended),
                                 None => after = Some(ended),
                             }
-                            let _ = ended_env;
                         } else {
                             self.expression(&inner);
+                            // An `elsif` carries a condition of its own, and
+                            // it narrows the block it belongs to.
+                            if !clause_seen && child.node_kind() == NodeKind::ELSIF_CLAUSE {
+                                clause_seen = true;
+                                let facts = narrowing(&self.env, &inner);
+                                let mut yes = self.env.clone();
+                                facts.apply_true(&mut yes);
+                                facts.apply_false(&mut otherwise);
+                                self.env = yes;
+                            }
                         }
                     }
                 }
                 _ if !condition_seen => {
                     condition_seen = true;
                     self.expression(&child);
-                    // The narrowing applies inside the block that follows.
-                    let negated =
-                        ast::tokens(node).any(|token| token.token_kind() == TokenKind::UNLESS_KW);
-                    if !negated {
-                        narrow(&mut self.env, &child, self.program);
+                    let facts = narrowing(&self.env, &child);
+                    let (mut yes, mut no) = (before.clone(), before.clone());
+                    facts.apply_true(&mut yes);
+                    facts.apply_false(&mut no);
+                    // `unless` runs its block where the condition did *not*
+                    // hold, which is the other side of the same read.
+                    if negated {
+                        std::mem::swap(&mut yes, &mut no);
                     }
+                    self.env = yes;
+                    otherwise = no;
                 }
                 _ => self.expression(&child),
             }
@@ -324,13 +342,27 @@ impl Pass<'_> {
         if !leaves {
             return;
         }
-        // `unless COND` and `COND or LEAVE` both mean "below here, COND held".
-        if text_has(TokenKind::UNLESS_KW)
-            || text_has(TokenKind::OR_KW)
-            || text_has(TokenKind::LOGICAL_OR)
-        {
-            for node in statement.descendants() {
-                narrow_one(&mut self.env, &node, self.program);
+        // `return unless COND` and `COND or return` both mean "below here,
+        // COND held"; `return if COND` means the opposite of it did. Which
+        // part of the statement is the condition depends on which of the
+        // three it is, and reading the whole statement instead — as a flat
+        // scan of every variable in it did — narrows on the strength of names
+        // the guard never tested.
+        let (condition, held) = if text_has(TokenKind::UNLESS_KW) {
+            (modifier_condition(statement, TokenKind::UNLESS_KW), true)
+        } else if text_has(TokenKind::IF_KW) {
+            (modifier_condition(statement, TokenKind::IF_KW), false)
+        } else if text_has(TokenKind::OR_KW) || text_has(TokenKind::LOGICAL_OR) {
+            (leaving_alternative(statement), true)
+        } else {
+            (None, true)
+        };
+        if let Some(condition) = condition {
+            let facts = narrowing(&self.env, &condition);
+            if held {
+                facts.apply_true(&mut self.env);
+            } else {
+                facts.apply_false(&mut self.env);
             }
         }
     }
@@ -499,9 +531,32 @@ impl Pass<'_> {
 
     fn binary(&mut self, node: &SyntaxNode) -> Type {
         let view = ast::BinaryExpr::cast(node.clone()).expect("kind checked");
-        let left = view.left().map(|left| self.type_of(&left));
+        let operator = view.operator();
+        let left_node = view.left();
+        let left = left_node.as_ref().map(|left| self.type_of(left));
+        // perl short-circuits, so the right side is read under what the left
+        // said: `$x && $x->foo` runs the call only where `$x` held, and `!$x
+        // || $x->foo` only where it did not (`docs/types.md`, NARROW-6).
+        let saved = left_node.as_ref().and_then(|left_node| {
+            let facts = narrowing(&self.env, left_node);
+            let saved = self.env.clone();
+            match operator {
+                Some(TokenKind::LOGICAL_AND | TokenKind::AND_KW) => {
+                    facts.apply_true(&mut self.env);
+                    Some(saved)
+                }
+                Some(TokenKind::LOGICAL_OR | TokenKind::OR_KW | TokenKind::DEFINED_OR) => {
+                    facts.apply_false(&mut self.env);
+                    Some(saved)
+                }
+                _ => None,
+            }
+        });
         let right = view.right().map(|right| self.type_of(&right));
-        match view.operator() {
+        if let Some(saved) = saved {
+            self.env = saved;
+        }
+        match operator {
             Some(TokenKind::PLUS | TokenKind::MINUS | TokenKind::STAR) => {
                 arithmetic(left.as_ref(), right.as_ref(), Arith::Widening)
             }
@@ -1624,80 +1679,246 @@ fn is_settled(ty: &Type) -> bool {
 
 // ----- narrowing -----
 
-/// Narrow every variable a condition tests (`docs/typecheck.md`,
-/// "Narrowing").
+/// What a condition says about the variables in it, on each side of it
+/// (`docs/typecheck.md`, "Narrowing").
 ///
-/// A fixture-tested list rather than a general theorem, because the diagnostic
-/// it feeds — `maybe-deref` — is the checker's most useful and its most likely
-/// false positive.
-fn narrow(env: &mut Env, condition: &SyntaxNode, program: &Program) {
-    for node in condition.descendants() {
-        narrow_one(env, &node, program);
+/// A **fixed list of shapes** rather than a general theorem, because the
+/// diagnostic it feeds — `maybe-deref` — is the checker's most useful and its
+/// most likely false positive. What is new against the flat scan this
+/// replaced is that the list is read *structurally*: a condition is a tree,
+/// and `!`, `||` and a call nobody read all change what its parts say.
+#[derive(Debug, Default)]
+struct Narrowing {
+    /// What holds however the condition went, because the part of it that
+    /// says so was evaluated either way: `!$x->name` ran the call before it
+    /// negated the answer.
+    certain: Vec<Fact>,
+    /// What holds only where the condition was true.
+    when_true: Vec<Fact>,
+    /// What holds only where it was false. Most shapes here have none — `ref
+    /// $x` failing leaves `$x` a perfectly good non-reference — and the side
+    /// exists because `!` swaps the two, which is how a negation stops
+    /// claiming anything.
+    when_false: Vec<Fact>,
+}
+
+type Fact = (Sigil, String, Type);
+
+impl Narrowing {
+    /// One fact, learned where the condition held.
+    fn when_true(fact: Fact) -> Self {
+        Narrowing {
+            when_true: vec![fact],
+            ..Narrowing::default()
+        }
+    }
+
+    /// One fact that holds whichever way the condition went.
+    fn certain(fact: Fact) -> Self {
+        Narrowing {
+            certain: vec![fact],
+            ..Narrowing::default()
+        }
+    }
+
+    fn swapped(self) -> Self {
+        Narrowing {
+            certain: self.certain,
+            when_true: self.when_false,
+            when_false: self.when_true,
+        }
+    }
+
+    /// Two parts that are *both* evaluated — a comparison, a parenthesised
+    /// list. What either says where it held holds where the whole did.
+    fn both(mut self, other: Self) -> Self {
+        self.certain.extend(other.certain);
+        self.when_true.extend(other.when_true);
+        // Which of the two made the whole false is not known.
+        self.when_false = Vec::new();
+        self
+    }
+
+    /// `A && B`. B runs only where A held, so what B says — including what it
+    /// says merely by running — belongs to the true side and nowhere else.
+    fn and(mut self, other: Self) -> Self {
+        self.when_true.extend(other.certain);
+        self.when_true.extend(other.when_true);
+        self.when_false = Vec::new();
+        self
+    }
+
+    /// `A || B`. The whole may hold because A did, so neither part's fact is
+    /// one the true side can claim; B runs only where A failed.
+    fn or(mut self, other: Self) -> Self {
+        self.when_true = Vec::new();
+        self.when_false.extend(other.certain);
+        self.when_false.extend(other.when_false);
+        self
+    }
+
+    fn apply_true(&self, env: &mut Env) {
+        for (sigil, name, ty) in self.certain.iter().chain(&self.when_true) {
+            env.set(*sigil, name, ty.clone());
+        }
+    }
+
+    fn apply_false(&self, env: &mut Env) {
+        for (sigil, name, ty) in self.certain.iter().chain(&self.when_false) {
+            env.set(*sigil, name, ty.clone());
+        }
     }
 }
 
-fn narrow_one(env: &mut Env, node: &SyntaxNode, program: &Program) {
-    let _ = program;
+/// Read a condition for what it says (`docs/types.md`, NARROW).
+fn narrowing(env: &Env, node: &SyntaxNode) -> Narrowing {
     match node.node_kind() {
-        // `defined $x`, `blessed $x`, `ref $x`, `exists $h{k}`
+        NodeKind::PREFIX_EXPR => {
+            let negated = ast::tokens(node).any(|token| {
+                matches!(
+                    token.token_kind(),
+                    TokenKind::LOGICAL_NOT | TokenKind::NOT_KW
+                )
+            });
+            let inner = node
+                .children()
+                .next()
+                .map_or_else(Narrowing::default, |child| narrowing(env, &child));
+            if negated {
+                inner.swapped()
+            } else {
+                inner
+            }
+        }
+        NodeKind::BINARY_EXPR => {
+            let view = ast::BinaryExpr::cast(node.clone()).expect("kind checked");
+            let left = view
+                .left()
+                .map_or_else(Narrowing::default, |left| narrowing(env, &left));
+            let right = view
+                .right()
+                .map_or_else(Narrowing::default, |right| narrowing(env, &right));
+            match view.operator() {
+                Some(
+                    TokenKind::LOGICAL_OR
+                    | TokenKind::OR_KW
+                    | TokenKind::DEFINED_OR
+                    | TokenKind::XOR_KW,
+                ) => left.or(right),
+                _ => left.and(right),
+            }
+        }
+        // `defined $x`, `blessed $x`, `ref $x`, `exists $h{k}`. Any other call
+        // is one nobody here read: `validate($x)` may well be a defined-ness
+        // check and may well be the opposite, and a guess either way is a
+        // guess about a body this pass never opened.
         NodeKind::CALL_EXPR | NodeKind::LIST_CALL_EXPR => {
             let Some(call) = ast::Call::cast(node.clone()) else {
-                return;
+                return Narrowing::default();
             };
             let name = call.callee_name().unwrap_or_default();
             if !matches!(name.as_str(), "defined" | "blessed" | "ref" | "exists") {
-                return;
+                return Narrowing::default();
             }
-            for argument in call.args() {
-                if let Some(variable) = Variable::cast(argument.clone()) {
-                    if let Some(name) = variable.name() {
-                        let narrowed = env.get(variable.sigil(), &name).without_undef();
-                        env.set(variable.sigil(), &name, narrowed);
-                    }
-                }
+            let mut found = Narrowing::default();
+            for argument in operands(&call) {
                 // `defined $x->{k}` narrows `$x` too.
-                if let Some(chain) = ast::SubscriptChain::cast(argument.clone()) {
-                    if let Some(variable) = Variable::cast(chain.base().clone()) {
-                        if let Some(name) = variable.name() {
-                            let narrowed = env.get(variable.sigil(), &name).without_undef();
-                            env.set(variable.sigil(), &name, narrowed);
-                        }
-                    }
+                let base = ast::SubscriptChain::cast(argument.clone())
+                    .map_or_else(|| argument.clone(), |chain| chain.base().clone());
+                if let Some(fact) = defined_fact(env, &base) {
+                    found = found.both(Narrowing::when_true(fact));
                 }
+                // And `defined $x->name` narrows `$x`, because the call had
+                // to happen for there to be anything to ask about.
+                found = found.both(narrowing(env, &argument));
             }
+            found
         }
-        // `if ($x)`, `$x or return`
-        NodeKind::SCALAR_VAR => {
-            let Some(variable) = Variable::cast(node.clone()) else {
-                return;
-            };
-            let Some(name) = variable.name() else {
-                return;
-            };
-            let narrowed = env.get(variable.sigil(), &name).without_undef();
-            env.set(variable.sigil(), &name, narrowed);
-        }
-        // `$x->isa('Foo')`
+        // `$x->isa('Foo')` says what `$x` is; any other method call says only
+        // that its invocant was there to be called.
         NodeKind::METHOD_CALL_EXPR => {
             let Some(call) = ast::MethodCall::cast(node.clone()) else {
-                return;
+                return Narrowing::default();
             };
-            if call.method_name().as_deref() != Some("isa") {
-                return;
-            }
-            let (Some(invocant), Some(class)) =
-                (call.invocant(), call.args().first().and_then(ast::key_text))
-            else {
-                return;
+            let Some(invocant) = call.invocant() else {
+                return Narrowing::default();
             };
-            if let Some(variable) = Variable::cast(invocant) {
-                if let Some(name) = variable.name() {
-                    env.set(variable.sigil(), &name, Type::InstanceOf(class));
+            if call.method_name().as_deref() == Some("isa") {
+                if let (Some(variable), Some(class)) = (
+                    Variable::cast(invocant.clone()),
+                    call.args().first().and_then(ast::key_text),
+                ) {
+                    if let Some(name) = variable.name() {
+                        return Narrowing::when_true((
+                            variable.sigil(),
+                            name,
+                            Type::InstanceOf(class),
+                        ));
+                    }
                 }
             }
+            // The call happened, so its invocant was not `undef` — whichever
+            // way the condition then went.
+            defined_fact(env, &invocant).map_or_else(Narrowing::default, Narrowing::certain)
         }
-        _ => {}
+        // `if ($x)` — the truth test itself, which says something only where
+        // it passed.
+        NodeKind::SCALAR_VAR => {
+            defined_fact(env, node).map_or_else(Narrowing::default, Narrowing::when_true)
+        }
+        // Everything else is walked through: a parenthesised condition, a
+        // comparison whose operands are both evaluated, a subscript chain.
+        // Stopping here instead would lose `ref $x eq 'HASH'`, which is the
+        // shape half of this list exists for.
+        _ => {
+            let mut parts = node.children().map(|child| narrowing(env, &child));
+            let Some(first) = parts.next() else {
+                return Narrowing::default();
+            };
+            match parts.next() {
+                // A wrapper around one expression *is* that expression, both
+                // sides of it included: a `!` inside a parenthesised condition
+                // still has a failure that says something.
+                None => first,
+                Some(second) => parts.fold(first.both(second), Narrowing::both),
+            }
+        }
     }
+}
+
+/// The condition of a statement modifier: what follows `unless` or `if`.
+fn modifier_condition(statement: &SyntaxNode, keyword: TokenKind) -> Option<SyntaxNode> {
+    let mut seen = false;
+    for element in statement.descendants_with_tokens() {
+        match element {
+            rowan::NodeOrToken::Token(token) if token.token_kind() == keyword => seen = true,
+            rowan::NodeOrToken::Node(node) if seen => return Some(node),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// The left side of `COND or die`, which is the part that has to have held
+/// for the statement below it to be reached.
+fn leaving_alternative(statement: &SyntaxNode) -> Option<SyntaxNode> {
+    statement.descendants().find_map(|node| {
+        let view = ast::BinaryExpr::cast(node)?;
+        matches!(
+            view.operator(),
+            Some(TokenKind::OR_KW | TokenKind::LOGICAL_OR)
+        )
+        .then(|| view.left())
+        .flatten()
+    })
+}
+
+/// `$x` without its `undef`, if `$x` is a variable at all.
+fn defined_fact(env: &Env, node: &SyntaxNode) -> Option<Fact> {
+    let variable = Variable::cast(node.clone())?;
+    let name = variable.name()?;
+    let narrowed = env.get(variable.sigil(), &name).without_undef();
+    Some((variable.sigil(), name, narrowed))
 }
 
 // ----- builtins -----
