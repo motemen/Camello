@@ -104,6 +104,9 @@ pub enum Code {
     MissingAnnotation,
     /// A required named argument the call does not pass.
     MissingArgument,
+    /// A method call to a sub declared `()`, whose prototype — if that is what
+    /// the `()` was — perl does not apply here.
+    IgnoredPrototype,
     /// A parameter the body never reads. Its own code rather than
     /// [`Code::UnusedVariable`]'s, because a parameter list is a signature:
     /// the name goes on saying what the sub takes whether or not the body
@@ -128,6 +131,7 @@ impl Code {
         Code::MissingAnnotation,
         Code::MissingArgument,
         Code::UnusedParameter,
+        Code::IgnoredPrototype,
     ];
 
     #[must_use]
@@ -147,6 +151,7 @@ impl Code {
             Code::MissingAnnotation => "missing-annotation",
             Code::MissingArgument => "missing-argument",
             Code::UnusedParameter => "unused-parameter",
+            Code::IgnoredPrototype => "ignored-prototype",
         }
     }
 
@@ -172,6 +177,7 @@ impl Code {
             | Code::UnknownType
             | Code::MissingAnnotation
             | Code::UnusedParameter
+            | Code::IgnoredPrototype
             // `$ary->[0]` and `$h->{k}` are `Maybe` by construction, so this
             // is structural about a whole idiom rather than about a program
             // (`docs/types.md`, DIAG-14a).
