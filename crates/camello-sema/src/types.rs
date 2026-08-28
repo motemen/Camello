@@ -29,8 +29,11 @@ pub enum Type {
     /// `0`, `1`, `''`, `undef`. Kept nominal: `Bool` is not `Int`, so an
     /// `isa => 'Bool'` slot rejects `2` — which is what Moose does.
     Bool,
-    /// A `Str` naming a package known to the program.
-    ClassName,
+    /// A `Str` naming a package known to the program, and — where the name is
+    /// known — which one: `ClassName['Foo']` is a `Str` holding `'Foo'` or the
+    /// name of one of its subclasses, which is what a class method's `$class`
+    /// invocant is (`docs/types.md`, INFER-9a).
+    ClassName(Option<String>),
     /// A `Str` naming a role.
     RoleName,
     Enum(Vec<String>),
@@ -212,7 +215,8 @@ impl fmt::Display for Type {
             Type::Num => f.write_str("Num"),
             Type::Int => f.write_str("Int"),
             Type::Bool => f.write_str("Bool"),
-            Type::ClassName => f.write_str("ClassName"),
+            Type::ClassName(None) => f.write_str("ClassName"),
+            Type::ClassName(Some(class)) => write!(f, "ClassName['{class}']"),
             Type::RoleName => f.write_str("RoleName"),
             Type::Enum(values) => write!(f, "Enum[{}]", values.join(", ")),
             Type::Ref => f.write_str("Ref"),
@@ -313,7 +317,6 @@ fn constructor(name: &str, arguments: Vec<Arg>) -> Result<Type, ParseError> {
         "Defined" => Type::Defined,
         "Value" => Type::Value,
         "Bool" => Type::Bool,
-        "ClassName" => Type::ClassName,
         "RoleName" => Type::RoleName,
         "Undef" => Type::Undef,
         "CodeRef" | "CodeLike" => Type::CodeRef,
@@ -352,6 +355,9 @@ fn constructor(name: &str, arguments: Vec<Arg>) -> Result<Type, ParseError> {
         "Maybe" => Type::maybe(one(plain()?)),
         "Optional" => Type::Optional(Box::new(one(plain()?))),
         "Enum" => Type::Enum(names(&arguments)),
+        // Bare, it is any class's name; parameterised, that class or one
+        // below it — the `type[Foo]` of a language that has one.
+        "ClassName" => Type::ClassName(names(&arguments).into_iter().next()),
         "InstanceOf" => match names(&arguments).into_iter().next() {
             Some(class) => Type::InstanceOf(class),
             None => Type::Object,
