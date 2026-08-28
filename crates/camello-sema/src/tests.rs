@@ -207,6 +207,10 @@ fn fixtures_report_exactly_what_they_say() {
             analysis.declare(path, &root, fixture.checked.contains(path));
         }
         analysis.link();
+        // Tier 2 of return inference, over the fixture's roots — which is
+        // where a multi-file fixture's cross-file chain gets resolved
+        // (`docs/return-inference.md`, "Tier 2").
+        analysis.infer_returns(&fixture.checked, Some(1), |path| Some(read(path)));
 
         for path in &fixture.checked {
             let source = read(path);
