@@ -20,7 +20,7 @@ use camello_syntax::lang::{NodeExt, NodeKind, SyntaxNode, TokenExt, TokenKind};
 use rowan::TextRange;
 
 use crate::annotate::{
-    self, Access, AccessorMaker, AttributeDecl, Framework, Frameworks, NamedType, Returns,
+    self, Access, AccessorMaker, AttributeDecl, Dialect, Framework, Frameworks, NamedType, Returns,
 };
 use crate::diag::Diagnostic;
 use crate::types::Type;
@@ -244,11 +244,18 @@ impl FileDecls {
 /// Read what a file declares.
 #[must_use]
 pub fn declare(root: &SyntaxNode) -> FileDecls {
+    declare_in(root, &Dialect::default())
+}
+
+/// The same, for a project whose own modules stand in for the ones the
+/// recognisers know (`camello.toml`, `read-as`).
+#[must_use]
+pub fn declare_in(root: &SyntaxNode, dialect: &Dialect) -> FileDecls {
     // The imports first, and all of them: recognition is by callee name *and*
     // by an import that could have provided it, and `use Moose` may sit below
     // the `has` it explains (a `package Foo { use Moose; ... }` block, or a
     // second package in the same file).
-    let mut frameworks = Frameworks::default();
+    let mut frameworks = Frameworks::with_dialect(dialect.clone());
     for node in root.descendants() {
         if node.node_kind() != NodeKind::USE_STMT {
             continue;
@@ -271,6 +278,7 @@ pub fn declare(root: &SyntaxNode) -> FileDecls {
         decls: FileDecls::default(),
         sink: annotate::Sink::default(),
         frameworks,
+        dialect: dialect.clone(),
         dynamic: false,
         best_practice: HashSet::new(),
         decided_constructor: HashSet::new(),
@@ -305,6 +313,8 @@ struct Pass {
     decls: FileDecls,
     sink: annotate::Sink,
     frameworks: Frameworks,
+    /// What this project's own modules stand in for.
+    dialect: Dialect,
     /// The file loads XS or assigns a glob.
     dynamic: bool,
     /// Packages that have called `follow_best_practice`. Positional, because
@@ -434,16 +444,21 @@ impl Pass {
             self.decls.uses.push(module.clone());
         }
 
+        // What the recognisers below are asked about. The resolver and the
+        // import list keep the name that was written: a wrapper is still a
+        // module of its own, at a path of its own.
+        let read_as = self.dialect.read_as(&module).to_string();
+
         // A module that loads XS has its methods written in C, where no
         // recogniser can reach them.
         if matches!(
-            module.as_str(),
+            read_as.as_str(),
             "XSLoader" | "DynaLoader" | "Inline" | "Alien::Base"
         ) {
             self.dynamic = true;
         }
 
-        match module.as_str() {
+        match read_as.as_str() {
             "parent" | "base" => {
                 if let Some(arguments) = &arguments {
                     let parents: Vec<String> = imported_names(arguments)
@@ -462,6 +477,26 @@ impl Pass {
                     let facts = self.facts(package);
                     facts.attributes.extend(attributes);
                     facts.constructor = constructor;
+                }
+                return;
+            }
+            "constant" => {
+                if let Some(arguments) = &arguments {
+                    for (name, range) in constant_names(arguments) {
+                        self.decls.subs.push(SubDecl {
+                            package: package.to_string(),
+                            name,
+                            // A constant takes no arguments — and a call may
+                            // still pass one, because `Foo->NAME` is how a
+                            // class constant is commonly read and perl does
+                            // not mind. Nothing to count, so nothing counted.
+                            params: Params::Unknown,
+                            returns: Returns::default(),
+                            source: SymbolSource::Unknown,
+                            range,
+                            file: 0,
+                        });
+                    }
                 }
                 return;
             }
@@ -680,6 +715,49 @@ impl Pass {
     }
 }
 
+/// The names `use constant` declares, and where each is written.
+///
+/// ```perl
+/// use constant PI       => 3.14159;
+/// use constant WEEKDAYS => qw(Mon Tue);
+/// use constant { E => 2.71, PHI => 1.61 };
+/// ```
+///
+/// One name and a value, or a hash of them. The value is not read: what a
+/// constant gives back is what the expression after it evaluates to, and this
+/// pass evaluates nothing (`docs/types.md`, POLICY-5). Declaring the name is
+/// the point — a constant is a sub, so `Foo->NAME` is a method call like any
+/// other, and a package whose constants were invisible answered
+/// `unknown-method` to every one of them.
+fn constant_names(arguments: &SyntaxNode) -> Vec<(String, TextRange)> {
+    let elements = Args::elements(arguments);
+    let first = elements.first();
+    // `use constant { ... }` — every key is a name.
+    if let Some(hash) = first
+        .map(ast::without_plus)
+        .filter(|node| node.node_kind() == NodeKind::ANON_HASH)
+        .and_then(AnonHash::cast)
+    {
+        return hash
+            .pairs()
+            .iter()
+            .filter_map(|pair| match pair {
+                ast::Arg::Pair {
+                    key,
+                    key_text: Some(name),
+                    ..
+                } => Some((name.clone(), key.text_range())),
+                _ => None,
+            })
+            .collect();
+    }
+    // `use constant NAME => ...` — one name, and the rest is its value.
+    first
+        .and_then(|node| Some((ast::key_text(node)?, node.text_range())))
+        .into_iter()
+        .collect()
+}
+
 /// The sub names an import list asks for.
 ///
 /// A name with a sigil is a variable and the scope pass reads it; a bareword
@@ -723,6 +801,22 @@ fn imported_names(arguments: &SyntaxNode) -> Vec<String> {
 /// against.
 #[must_use]
 pub fn parameters(definition: &SubDef, smart_args: bool, into: &mut annotate::Sink) -> Params {
+    let is_method = definition.is_method();
+    let params = written_parameters(definition, smart_args, is_method, into);
+    if is_method {
+        with_implicit_invocant(params)
+    } else {
+        params
+    }
+}
+
+/// The parameter list as the declaration writes it, invocant aside.
+fn written_parameters(
+    definition: &SubDef,
+    smart_args: bool,
+    is_method: bool,
+    into: &mut annotate::Sink,
+) -> Params {
     if let Some(signature) = definition.signature() {
         // GUESS: `sub f()` with a body that reads `@_` was a prototype.
         // Evidence: the body. An empty `()` is a signature only where the
@@ -731,11 +825,15 @@ pub fn parameters(definition: &SubDef, smart_args: bool, into: &mut annotate::Si
         // `Mail::Internet::cleaned_header_dup()` shifts its invocant out of
         // one. Wrong: a real empty signature whose body reads `@_` anyway,
         // which perl would have made unreachable.
+        //
+        // A `method` is not a guess: the keyword exists only where the
+        // `class` feature is on, and there `()` is a signature and never a
+        // prototype.
         let empty = signature.params().next().is_none();
         let reads_arguments = definition
             .body()
             .is_some_and(|body| touches_arguments_elsewhere(&body, &[]));
-        if !(empty && reads_arguments) {
+        if is_method || !(empty && reads_arguments) {
             return from_signature(&signature);
         }
         return Params::Unknown;
@@ -751,6 +849,47 @@ pub fn parameters(definition: &SubDef, smart_args: bool, into: &mut annotate::Si
         }
     }
     from_unpacking(&body)
+}
+
+/// The invocant a `method` has and never names.
+///
+/// perl hands a `method` its invocant and keeps it out of `@_`, so nothing in
+/// the declaration mentions it — while a call still passes it. A positional
+/// list counts the invocant (see [`Params::Positional`]), so leaving it out
+/// would have the two sides counting different things: `$obj->f` is one
+/// argument against a `method f()` that declares none.
+fn with_implicit_invocant(params: Params) -> Params {
+    match params {
+        Params::Unknown => Params::Unknown,
+        Params::Positional {
+            mut params,
+            slurpy,
+            source,
+            ..
+        } => {
+            params.insert(
+                0,
+                Param {
+                    name: "$self".to_string(),
+                    optional: false,
+                    // A signature says nothing about types, and this one is
+                    // not even written down.
+                    ty: Type::Any,
+                },
+            );
+            Params::Positional {
+                params,
+                slurpy,
+                invocant: true,
+                source,
+            }
+        }
+        Params::Named { params, source, .. } => Params::Named {
+            params,
+            invocant: true,
+            source,
+        },
+    }
 }
 
 fn from_signature(signature: &ast::SubSignature) -> Params {

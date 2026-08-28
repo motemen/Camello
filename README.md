@@ -10,7 +10,7 @@ legacy corner of the grammar.
 Over the same tree it also checks: `camello lint` for what needs no types, and
 `camello typecheck` for what the annotations Perl code already carries — `has
 ... isa => 'Str'`, `args my $x => 'Int'`, `Class::Accessor::Typed`, the
-`mk_accessors` family — can be made to say.
+`mk_accessors` family, `use constant` — can be made to say.
 
 > **Status: early.** The output is not yet stable across versions, and the
 > layout options below are hidden from `--help` because their names and

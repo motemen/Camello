@@ -15,12 +15,16 @@
 //! min-severity = "warning"
 //! guard-classes = ["My::Lock"]
 //! strict-annotations = true
+//!
+//! [check.read-as]
+//! "My::Accessors" = "Class::Accessor::Typed"
 //! ```
 //!
 //! Not `.perlcriticrc`: the codes are camello's and the file is camello's.
 //! Every field is optional, and a flag on the command line wins over it —
 //! the file says what the project is, and the flag says what this run is.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use miette::{IntoDiagnostic, Result};
@@ -58,6 +62,12 @@ pub struct Check {
     /// Report a public sub with no annotation.
     #[serde(default)]
     pub strict_annotations: bool,
+    /// A module of this project's own, and the module whose interface it
+    /// re-exports. `use My::Accessors` is then read the way `use
+    /// Class::Accessor::Typed` is: recognition is by an import that could
+    /// have provided the name, and a wrapper is what took that import away.
+    #[serde(default)]
+    pub read_as: BTreeMap<String, String>,
 }
 
 impl Config {

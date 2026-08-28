@@ -9,8 +9,8 @@ changes trivia and layout rather than program tokens.
 Camello is also a static checker. `camello lint` and `camello typecheck` run
 over the same CST and read the type annotations Perl code already carries —
 `has ... isa => 'Str'`, `args my $x => 'Int'`, `Class::Accessor::Typed`, the
-`mk_accessors` family, and a `Returns:` comment — as declarations rather than
-as strings. What it concludes
+`mk_accessors` family, `use constant`, and a `Returns:` comment — as
+declarations rather than as strings. What it concludes
 from them is specified in [types.md](types.md); the design behind it, and the
 decisions the corpus forced on it, are in [typecheck.md](typecheck.md).
 

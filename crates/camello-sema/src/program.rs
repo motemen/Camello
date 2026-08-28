@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 
 use camello_syntax::lang::SyntaxNode;
 
-use crate::annotate::ListShape;
+use crate::annotate::{Dialect, ListShape};
 use crate::decl::{self, FileDecls, Params, SubDecl};
 use crate::types::Type;
 
@@ -55,6 +55,9 @@ pub struct Program {
     by_name: HashMap<(String, String), usize>,
     /// Which files declare a package, for method resolution.
     packages: HashMap<String, Vec<usize>>,
+    /// What this project's own modules stand in for (`camello.toml`,
+    /// `read-as`).
+    dialect: Dialect,
 }
 
 impl Program {
@@ -63,9 +66,20 @@ impl Program {
         Program::default()
     }
 
+    /// Read the graph under a project's own dialect.
+    pub fn set_dialect(&mut self, dialect: Dialect) {
+        self.dialect = dialect;
+    }
+
+    #[must_use]
+    pub fn dialect(&self) -> &Dialect {
+        &self.dialect
+    }
+
     /// Run the declaration pass over a file and fold it into the graph.
     pub fn add_file(&mut self, path: &Path, root: &SyntaxNode, in_roots: bool) -> usize {
-        self.add(path, decl::declare(root), in_roots)
+        let decls = decl::declare_in(root, &self.dialect);
+        self.add(path, decls, in_roots)
     }
 
     /// Fold declarations already read — by another thread, or off the cache —
@@ -380,15 +394,25 @@ impl Program {
     ///
     /// perl looks in the current package and then at what was imported, and so
     /// does this. A name neither answers is `Unknown` — never a diagnostic.
+    ///
+    /// A builtin's name is looked up in the imports and nowhere else. `sub
+    /// delete { ... }` beside `delete $h->{k}` does not make the second call
+    /// the first: perl reaches `delete` before it reaches the package, and
+    /// nothing a package writes for itself changes that. Importing the name is
+    /// the one mechanism perlsub gives for overriding a builtin, so an import
+    /// still answers — for the builtins that allow it, which perl decides and
+    /// this does not.
     #[must_use]
     pub fn resolve_call(&self, file: usize, offset: u32, name: &str) -> Option<&SubDecl> {
-        // A qualified name says where to look.
+        // A qualified name says where to look — and is never the builtin.
         if let Some((package, bare)) = name.rsplit_once("::") {
             return self.sub(package, bare);
         }
         let entry = self.files.get(file)?;
-        if let Some(symbol) = self.sub(entry.decls.package_at(offset), name) {
-            return Some(symbol);
+        if !camello_syntax::is_builtin(name) {
+            if let Some(symbol) = self.sub(entry.decls.package_at(offset), name) {
+                return Some(symbol);
+            }
         }
         let from = entry.decls.imports.get(name)?;
         self.sub(from, name)

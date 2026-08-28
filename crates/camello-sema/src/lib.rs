@@ -111,6 +111,15 @@ impl Analysis {
         self
     }
 
+    /// What this project's own modules stand in for (`camello.toml`,
+    /// `read-as`). Every file the run reads, its dependencies included, is
+    /// read under it.
+    #[must_use]
+    pub fn with_dialect(mut self, dialect: annotate::Dialect) -> Self {
+        self.program.set_dialect(dialect);
+        self
+    }
+
     /// Follow every `use` out of the files already added, and fold what it
     /// finds into the graph as declarations.
     ///
@@ -159,7 +168,7 @@ impl Analysis {
             .cache
             .as_ref()
             .filter(|cache| cache.is_enabled())
-            .map(|_| resolve::Cache::key(path, source));
+            .map(|_| resolve::Cache::key(path, source, &self.program.dialect().fingerprint()));
         if let (Some(cache), Some(key)) = (&self.cache, &key) {
             if let Some(text) = cache.read(key) {
                 if let Ok(decls) = serde_json::from_str(&text) {
@@ -168,7 +177,7 @@ impl Analysis {
             }
         }
         let parsed = camello_syntax::parse::parse(source);
-        let decls = decl::declare(&parsed.syntax());
+        let decls = decl::declare_in(&parsed.syntax(), self.program.dialect());
         if let (Some(cache), Some(key)) = (&self.cache, &key) {
             if let Ok(text) = serde_json::to_string(&decls) {
                 cache.write(key, &text);
