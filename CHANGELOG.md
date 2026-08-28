@@ -57,6 +57,12 @@ One line per change. The reasoning is in the commit it came from.
   vocabulary and a file commonly names only the `Types::` module its constants
   came from; being wrong about which one exported `type` cost a whole library's
   worth of annotations.
+- A call's arguments are typed once instead of twice. A Perl list operator
+  swallows everything to its right, so the hundred entries of a `Dict [ 'k' =>
+  header nullable Str, ... ]` are a hundred *nested* calls, and a second walk
+  per level cost 2^depth: `camello typecheck` on a real `Type::Library` file
+  did not finish. It also said whatever an argument had to say twice, which is
+  where a run's duplicate `unknown-method` and `maybe-deref` lines came from.
 
 ## 0.1.1 — 2026-08-27
 

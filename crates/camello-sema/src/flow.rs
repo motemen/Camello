@@ -78,6 +78,37 @@ impl Env {
     }
 }
 
+/// A call's arguments, each typed exactly once.
+///
+/// [`Pass::type_of`] walks the whole subtree under the node it is handed, so
+/// asking it a second time for the same argument is not a lookup — it is the
+/// walk again. A Perl list operator swallows everything to its right, so
+/// `type Row => as Dict ['a' => header Str, 'b' => header Str, ...]` is not a
+/// flat list of a hundred entries but a hundred nested calls, and a second
+/// walk per level costs 2^depth. That is what turned a 100-key `Dict` from a
+/// file that takes a moment into a run that does not end.
+struct Typed<'a> {
+    nodes: &'a [SyntaxNode],
+    types: Vec<Type>,
+}
+
+impl<'a> Typed<'a> {
+    /// The type of the argument in position `index`.
+    fn nth(&self, index: usize) -> Type {
+        self.types.get(index).cloned().unwrap_or(Type::Unknown)
+    }
+
+    /// The type of one of the argument nodes, found by identity: the value of
+    /// a `key => value` pair is one of the elements, so a caller holding
+    /// [`ast::Arg`]s reaches its type through here rather than typing it again.
+    fn of(&self, node: &SyntaxNode) -> Option<Type> {
+        self.nodes
+            .iter()
+            .position(|argument| argument == node)
+            .map(|index| self.nth(index))
+    }
+}
+
 struct Pass<'a> {
     program: &'a Program,
     file: usize,
@@ -636,18 +667,16 @@ impl Pass<'_> {
     fn call(&mut self, node: &SyntaxNode) -> Type {
         let call = ast::Call::cast(node.clone()).expect("kind checked");
         let arguments = call.args();
-        for argument in &arguments {
-            self.expression(argument);
-        }
+        let typed = self.type_all(&arguments);
         let Some(name) = call.callee_name() else {
             return Type::Unknown;
         };
         if name == "return" {
-            self.check_return(&arguments);
+            self.check_return(&typed);
             return Type::Unknown;
         }
         if name == "bless" {
-            return self.bless(&arguments);
+            return self.bless(&typed);
         }
         if let Some(builtin) = builtin_return(&name) {
             return builtin;
@@ -658,22 +687,14 @@ impl Pass<'_> {
         };
         let params = symbol.params.clone();
         let returns = symbol.returns.clone();
-        self.check_arguments(
-            &params,
-            &call.pairs(),
-            &arguments,
-            &name,
-            call.callee_range(),
-        );
+        self.check_arguments(&params, &call.pairs(), &typed, &name, call.callee_range());
         returns.scalar
     }
 
     fn method_call(&mut self, node: &SyntaxNode) -> Type {
         let call = ast::MethodCall::cast(node.clone()).expect("kind checked");
         let arguments = call.args();
-        for argument in &arguments {
-            self.expression(argument);
-        }
+        let typed = self.type_all(&arguments);
         let Some(invocant) = call.invocant() else {
             return Type::Unknown;
         };
@@ -722,13 +743,7 @@ impl Pass<'_> {
                         &mut self.diagnostics,
                     );
                 }
-                self.check_arguments(
-                    &params,
-                    &call.pairs(),
-                    &arguments,
-                    &method,
-                    call.method_range(),
-                );
+                self.check_arguments(&params, &call.pairs(), &typed, &method, call.method_range());
                 // `Foo->new(...)` is an `InstanceOf['Foo']` (`docs/typecheck.md`,
                 // "Inference"). Only where the run actually read a `sub new`,
                 // so a class it never saw stays `Unknown`; a `Returns:` wins
@@ -745,7 +760,7 @@ impl Pass<'_> {
             }
             MethodLookup::Attribute(attribute) => attribute.ty.clone(),
             MethodLookup::Constructor => {
-                self.check_constructor(&class, &call.pairs(), call.method_range());
+                self.check_constructor(&class, &call.pairs(), &typed, call.method_range());
                 Type::InstanceOf(class)
             }
             MethodLookup::Universal | MethodLookup::Unknown => Type::Unknown,
@@ -778,20 +793,18 @@ impl Pass<'_> {
     /// then blesses `$self` into its own class four lines later, and without
     /// the re-bless every method called on it afterwards is looked up on
     /// `XML::Parser`.
-    fn bless(&mut self, arguments: &[SyntaxNode]) -> Type {
-        let class = arguments
+    fn bless(&mut self, typed: &Typed) -> Type {
+        let class = typed
+            .nodes
             .get(1)
-            .map_or(Type::Unknown, |node| self.class_named(node));
+            .map_or(Type::Unknown, |node| self.class_named(node, &typed.nth(1)));
         // A `bless` always changes what its first argument is. Where the
         // class cannot be read, the honest answer is that nobody knows what
         // the value is now — not that it is still whatever it was before.
-        if let Some(variable) = arguments.first().cloned().and_then(Variable::cast) {
+        if let Some(variable) = typed.nodes.first().cloned().and_then(Variable::cast) {
             if let Some(name) = variable.name() {
                 self.env.set(variable.sigil(), &name, class.clone());
             }
-        }
-        for argument in arguments {
-            self.expression(argument);
         }
         class
     }
@@ -804,7 +817,7 @@ impl Pass<'_> {
     /// $proto` reaches here as a union holding a `ClassName` and is read the
     /// same way; a subclass calling it inherits the answer, which is the
     /// assumption every `$self` in the file is already bound under.
-    fn class_named(&mut self, node: &SyntaxNode) -> Type {
+    fn class_named(&mut self, node: &SyntaxNode, ty: &Type) -> Type {
         if let Some(text) = ast::key_text(node) {
             if text == "__PACKAGE__" {
                 return Type::InstanceOf(self.package.clone());
@@ -818,8 +831,7 @@ impl Pass<'_> {
             }
             return Type::Unknown;
         }
-        let ty = self.type_of(node);
-        if names_a_class(&ty) {
+        if names_a_class(ty) {
             Type::InstanceOf(self.package.clone())
         } else {
             Type::Unknown
@@ -831,9 +843,9 @@ impl Pass<'_> {
     /// The annotation wins and the inferred shape is checked against it
     /// (`docs/typecheck.md`, "`Returns:`"): a `return "x"` in a sub declared
     /// `Returns: Int` is a diagnostic at the `return`.
-    fn check_return(&mut self, arguments: &[SyntaxNode]) {
+    fn check_return(&mut self, typed: &Typed) {
         if self.returns.list == ListShape::Nothing {
-            if let Some(first) = arguments.first() {
+            if let Some(first) = typed.nodes.first() {
                 self.diagnostics.push(Diagnostic::new(
                     Code::ReturnMismatch,
                     first.text_range(),
@@ -848,10 +860,10 @@ impl Pass<'_> {
         }
         // Only a single value has a shape to compare: `return ($a, $b)` is a
         // list, and the list half of `Returns:` is what would speak to it.
-        let [only] = arguments else {
+        let [only] = typed.nodes else {
             return;
         };
-        let value = self.type_of(only);
+        let value = typed.nth(0);
         if value.is_unknown() || compatible(&value, &declared, self.program) {
             return;
         }
@@ -871,7 +883,13 @@ impl Pass<'_> {
     }
 
     /// A `Foo->new(key => value)` against the attributes `Foo` declares.
-    fn check_constructor(&mut self, class: &str, pairs: &[ast::Arg], range: TextRange) {
+    fn check_constructor(
+        &mut self,
+        class: &str,
+        pairs: &[ast::Arg],
+        typed: &Typed,
+        range: TextRange,
+    ) {
         if self
             .program
             .facts(class)
@@ -906,7 +924,7 @@ impl Pass<'_> {
             given.push(key);
             match attributes.iter().find(|attribute| attribute.name == key) {
                 Some(attribute) => {
-                    let value = self.type_of(pair.node());
+                    let value = self.typed_or_walk(typed, pair.node());
                     self.check_value(&value, &attribute.ty, pair.node(), &format!("`{key}`"));
                 }
                 None => {
@@ -968,12 +986,34 @@ impl Pass<'_> {
         ));
     }
 
+    /// Every argument of a call, typed once, for everything the call then
+    /// asks about them.
+    fn type_all<'nodes>(&mut self, arguments: &'nodes [SyntaxNode]) -> Typed<'nodes> {
+        let types = arguments
+            .iter()
+            .map(|argument| self.type_of(argument))
+            .collect();
+        Typed {
+            nodes: arguments,
+            types,
+        }
+    }
+
+    /// The type already computed for a node, or the walk if it was not one of
+    /// the arguments after all.
+    fn typed_or_walk(&mut self, typed: &Typed, node: &SyntaxNode) -> Type {
+        match typed.of(node) {
+            Some(ty) => ty,
+            None => self.type_of(node),
+        }
+    }
+
     /// A call's arguments against the callee's declared parameter types.
     fn check_arguments(
         &mut self,
         params: &Params,
         pairs: &[ast::Arg],
-        arguments: &[SyntaxNode],
+        typed: &Typed,
         callee: &str,
         range: TextRange,
     ) {
@@ -987,7 +1027,7 @@ impl Pass<'_> {
                     given.push(key);
                     match params.iter().find(|param| param.name == format!("${key}")) {
                         Some(param) => {
-                            let value = self.type_of(pair.node());
+                            let value = self.typed_or_walk(typed, pair.node());
                             self.check_value(
                                 &value,
                                 &param.ty,
@@ -1020,8 +1060,8 @@ impl Pass<'_> {
                 } else {
                     params
                 };
-                for (argument, param) in arguments.iter().zip(declared) {
-                    let value = self.type_of(argument);
+                for ((index, argument), param) in typed.nodes.iter().enumerate().zip(declared) {
+                    let value = typed.nth(index);
                     self.check_value(
                         &value,
                         &param.ty,
