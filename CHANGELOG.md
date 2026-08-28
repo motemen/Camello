@@ -18,6 +18,15 @@ One line per change. The reasoning is in the commit it came from.
 
 ### Added
 
+- `ignored-prototype`, at `info`: a method call to a sub declared `()`.
+  perlsub says a method call is not influenced by a prototype, and a bare `()`
+  is a prototype where the signatures feature is off and a signature where it
+  is on — so `$self->duration_class` against `sub duration_class ()` was an
+  `arity` error and should not have been. Which of the two it was decides
+  whether the call is harmless or fatal, and saying which would be a guess, so
+  it is reported once per call and left at that. A bareword call still gets
+  `arity`: perl really does apply the prototype there.
+
 ### Added
 
 - `--min-severity`, and `min-severity` in `camello.toml`: print nothing below

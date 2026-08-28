@@ -148,6 +148,28 @@ fn compare(
         return;
     }
 
+    // perlsub, "Prototypes": "Method calls are not influenced by prototypes
+    // either, because the function to be called is indeterminate at compile
+    // time". A bare `()` is a prototype where the signatures feature is off
+    // and a signature where it is on, and this pass cannot tell which — so
+    // the invocant it passes is either harmless or fatal, and saying which
+    // would be a guess. It is said once, at `info` (DIAG-15).
+    if through_arrow && params.is_empty_parens() {
+        into.push(
+            Diagnostic::new(
+                Code::IgnoredPrototype,
+                range,
+                format!(
+                    "`{}` is declared `()`, which a method call ignores: perl passes the \
+                     invocant regardless",
+                    symbol.name
+                ),
+            )
+            .at(Code::IgnoredPrototype.default_severity()),
+        );
+        return;
+    }
+
     let Some(mut count) = call.count else {
         return;
     };
