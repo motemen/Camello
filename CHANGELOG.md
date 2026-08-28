@@ -57,6 +57,14 @@ One line per change. The reasoning is in the commit it came from.
 
 ### Fixed
 
+- `Class::Accessor::Lite::Lazy->mk_lazy_accessors` and `mk_ro_lazy_accessors`
+  read the hashref form. The two lazy makers flatten a hashref into
+  name-and-builder pairs exactly as the `use` statement's `rw_lazy`/`ro_lazy`
+  do, so `mk_lazy_accessors('foo', { bar => \&build })` declares `bar` too —
+  and it was being read as a list of plain names, which named none, so every
+  call to such an accessor was an `unknown-method`. Only the lazy makers read
+  it: a reference handed to plain `mk_accessors` is stringified into an
+  accessor nobody asked for.
 - A file's own declarations answer about its own body. The parameter list a
   body starts from was fetched from one global `(package, sub)` index whose
   rule is first-wins, so a second copy of a package anywhere in the workspace
