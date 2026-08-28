@@ -990,10 +990,10 @@ impl Default for Returns {
 impl Returns {
     /// What a sub returns, as the return walk read it off the body.
     #[must_use]
-    pub fn inferred(scalar: Type, invocant: bool) -> Self {
+    pub fn inferred(scalar: Type, list: ListShape, invocant: bool) -> Self {
         Returns {
             scalar,
-            list: ListShape::Unknown,
+            list,
             inferred: true,
             invocant,
         }
@@ -1036,6 +1036,35 @@ pub enum ListShape {
 }
 
 impl ListShape {
+    /// A list of a known length, or `Unknown` when nothing is known about any
+    /// of its slots.
+    ///
+    /// A `(Unknown)` is a shape that says only "one value", and it would cost
+    /// more than it says: the tiers take a shape that is not `Unknown` as
+    /// final, so a sub whose slots were all `Unknown` in the first round would
+    /// never be looked at again — and the whole point of the second tier is
+    /// that a later round knows more. An empty list is not this case: a
+    /// length of zero is something.
+    #[must_use]
+    pub fn fixed(types: Vec<Type>) -> ListShape {
+        if !types.is_empty() && types.iter().all(Type::is_unknown) {
+            return ListShape::Unknown;
+        }
+        ListShape::Fixed(types)
+    }
+
+    /// Any number of one type, or `Unknown` when the type is not known — which
+    /// is "a list this pass can say nothing about" rather than "a list of
+    /// nothing".
+    #[must_use]
+    pub fn of(ty: Type) -> ListShape {
+        if ty.is_unknown() {
+            ListShape::Unknown
+        } else {
+            ListShape::Of(ty)
+        }
+    }
+
     /// The join of two shapes (`docs/return-inference.md`, "The shape").
     ///
     /// Both `Fixed` of the same length is slot-wise union; a length that does
@@ -1049,7 +1078,7 @@ impl ListShape {
             return ListShape::Unknown;
         }
         match (self.slots(), other.slots()) {
-            (Some(left), Some(right)) if left.len() == right.len() => ListShape::Fixed(
+            (Some(left), Some(right)) if left.len() == right.len() => ListShape::fixed(
                 left.into_iter()
                     .zip(right)
                     .map(|(left, right)| Type::union(vec![left, right]))
@@ -1058,7 +1087,7 @@ impl ListShape {
             _ => {
                 let mut members = self.members();
                 members.extend(other.members());
-                ListShape::Of(Type::union(members))
+                ListShape::of(Type::union(members))
             }
         }
     }

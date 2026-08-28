@@ -11,7 +11,7 @@ package Store;
 sub pair { return (Row->new(id => 1), 'x') }
 
 # Returns: (InstanceOf['Row'] ...)
-sub rows { return () }
+sub rows { return (Row->new(id => 1)) }
 
 # Returns: InstanceOf['Row']
 sub one { return Row->new(id => 1) }

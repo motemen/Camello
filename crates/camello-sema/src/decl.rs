@@ -1074,23 +1074,39 @@ pub fn signature_of(symbol: &SubDecl) -> String {
     }
     let returns = &symbol.returns;
     let scalar = (!returns.scalar.is_unknown()).then(|| returns.scalar.to_string());
-    let list = returns.list.written();
-    match (scalar, list) {
+    // A list of one holding the scalar half says nothing the scalar half did
+    // not, and every `return $x` is one: shown, it would be noise on most of a
+    // codebase.
+    let list = match &returns.list {
+        annotate::ListShape::Fixed(types) if types.as_slice() == [returns.scalar.clone()] => None,
+        shape => shape.written(),
+    };
+    let said = match (scalar, list) {
         // `Returns: ()` is one statement about both contexts, so it is shown
         // as the one thing it is rather than as `Undef, ()`.
         (_, Some(list)) if returns.list == annotate::ListShape::Nothing => {
             out.push_str(&format!(" -> {list}"));
+            true
         }
         // The two halves as they are written: a scalar type, a list shape, or
         // both — which is two `Returns:` lines and one signature.
-        (Some(scalar), Some(list)) => out.push_str(&format!(" -> {scalar}, {list}")),
-        (Some(scalar), None) => out.push_str(&format!(" -> {scalar}")),
-        (None, Some(list)) => out.push_str(&format!(" -> {list}")),
-        (None, None) => {}
-    }
+        (Some(scalar), Some(list)) => {
+            out.push_str(&format!(" -> {scalar}, {list}"));
+            true
+        }
+        (Some(scalar), None) => {
+            out.push_str(&format!(" -> {scalar}"));
+            true
+        }
+        (None, Some(list)) => {
+            out.push_str(&format!(" -> {list}"));
+            true
+        }
+        (None, None) => false,
+    };
     // Said once, after both halves: the reader is being told where the type
     // came from, and a sub with two inferred halves has one answer to that.
-    if returns.inferred && !returns.is_unresolved() {
+    if returns.inferred && said {
         out.push_str(" (inferred)");
     }
     out
