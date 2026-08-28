@@ -20,8 +20,21 @@ has late => (is => 'ro', isa => $computed);
 # Returns: ArrayRef[Str]
 sub items { return [] }
 
-# Returns: Maybe[Str] | list: (Str, Int)
+# Two `Returns:` lines, one per context, in either order.
+# Returns: (Str, Int)
+# Returns: Maybe[Str]
 sub pair { return ('a', 1) }
+
+# The form the parenthesised one replaced, whose message shows the new one.
+# Returns: Maybe[Str] | list: (Str, Int)
+#~ info bad-annotation: a list shape is written
+sub old_form { return ('a', 1) }
+
+# Two answers to one question is a question nobody answered.
+# Returns: Str
+# Returns: Int
+#~ info bad-annotation: names a scalar type twice
+sub twice { return 'a' }
 
 # Returns: ()
 sub notify { return }
@@ -31,8 +44,13 @@ sub notify { return }
 sub broken_returns { return [] }
 
 # Returns: list: Str
-#~ info bad-annotation: a `list:` shape is written
+#~ info bad-annotation: a list shape is written
 sub broken_list { return 'a' }
+
+# `...` repeats one type, so there is one to repeat.
+# Returns: (Str, Int ...)
+#~ info bad-annotation: `...` repeats one type
+sub repeated_pair { return ('a', 1) }
 
 # A comment that is not an annotation is a comment.
 # Returns nothing in particular.

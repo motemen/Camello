@@ -307,10 +307,61 @@ fn returns_annotates_scalar_context() {
 }
 
 #[test]
-fn returns_annotates_both_contexts() {
-    let returns = returns_of("# Returns: Maybe[Str] | list: (Str, Int)\nsub pair { }\n");
+fn returns_annotates_both_contexts_in_two_lines() {
+    // One line per context, in either order, because the comma operator would
+    // make `(A, B)` a `B` in scalar context and `(Row ...)` a count — two
+    // rules that disagree, so a sub that wants a scalar type writes one.
+    let returns = returns_of("# Returns: Maybe[Str]\n# Returns: (Str, Int)\nsub pair { }\n");
     assert!(returns.scalar.is_maybe());
     assert_eq!(returns.list, ListShape::Fixed(vec![Type::Str, Type::Int]));
+
+    let swapped = returns_of("# Returns: (Str, Int)\n# Returns: Maybe[Str]\nsub pair { }\n");
+    assert!(swapped.scalar.is_maybe());
+    assert_eq!(swapped.list, ListShape::Fixed(vec![Type::Str, Type::Int]));
+}
+
+#[test]
+fn a_repeated_slot_is_a_list_of_any_length() {
+    let returns = returns_of("# Returns: (Str ...)\nsub rows { }\n");
+    assert_eq!(returns.list, ListShape::Of(Type::Str));
+    assert!(returns.scalar.is_unknown(), "and says nothing about scalar");
+}
+
+#[test]
+fn one_slot_is_a_list_of_one_and_not_a_grouping() {
+    // `()` is a list of none, so `(Str)` has to be a list of one; a grouping
+    // parenthesis around a whole scalar type has no use that `Str | Undef`
+    // does not serve.
+    let returns = returns_of("# Returns: (Str)\nsub one { }\n");
+    assert_eq!(returns.list, ListShape::Fixed(vec![Type::Str]));
+    assert!(returns.scalar.is_unknown());
+}
+
+#[test]
+fn a_parenthesis_inside_a_slot_still_groups() {
+    let returns = returns_of("# Returns: (Str | Undef, Int)\nsub two { }\n");
+    let ListShape::Fixed(slots) = returns.list else {
+        panic!("two slots wanted");
+    };
+    assert_eq!(slots.len(), 2, "{slots:?}");
+    assert!(slots[0].is_maybe());
+}
+
+#[test]
+fn shapes_join_slot_wise_and_widen_when_the_length_does_not_agree() {
+    let pair = || ListShape::Fixed(vec![Type::Str, Type::Int]);
+    assert_eq!(pair().join(pair()), pair());
+    assert_eq!(
+        pair().join(ListShape::Fixed(vec![Type::Str])),
+        ListShape::Of(Type::union(vec![Type::Str, Type::Int])),
+    );
+    // `return $x` beside `return;` is a list whose length is not known, so a
+    // single target off it may be empty.
+    assert_eq!(
+        ListShape::Fixed(vec![Type::Str]).join(ListShape::Fixed(Vec::new())),
+        ListShape::Of(Type::Str),
+    );
+    assert_eq!(pair().join(ListShape::Unknown), ListShape::Unknown);
 }
 
 #[test]

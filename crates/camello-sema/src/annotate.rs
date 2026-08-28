@@ -1029,25 +1029,149 @@ pub enum ListShape {
     /// `Returns: ()` — nothing. Calling it where the value is used is a
     /// diagnostic.
     Nothing,
-    /// `Returns: ... | list: (Str, Int)`.
+    /// `Returns: (Str, Int)` — a known length, and a type per slot.
     Fixed(Vec<Type>),
+    /// `Returns: (Row ...)` — any length, one element type.
+    Of(Type),
 }
 
-/// Read the `Returns:` line out of a sub's leading comment block.
+impl ListShape {
+    /// The join of two shapes (`docs/return-inference.md`, "The shape").
+    ///
+    /// Both `Fixed` of the same length is slot-wise union; a length that does
+    /// not agree, or an `Of` on either side, is `Of` of every member joined —
+    /// because once the length is not known, neither is which slot is which.
+    /// Anything against `Unknown` is `Unknown`, which is the same rule the
+    /// scalar half's join has and for the same reason.
+    #[must_use]
+    pub fn join(self, other: ListShape) -> ListShape {
+        if self == ListShape::Unknown || other == ListShape::Unknown {
+            return ListShape::Unknown;
+        }
+        match (self.slots(), other.slots()) {
+            (Some(left), Some(right)) if left.len() == right.len() => ListShape::Fixed(
+                left.into_iter()
+                    .zip(right)
+                    .map(|(left, right)| Type::union(vec![left, right]))
+                    .collect(),
+            ),
+            _ => {
+                let mut members = self.members();
+                members.extend(other.members());
+                ListShape::Of(Type::union(members))
+            }
+        }
+    }
+
+    /// The slots, when the length is known. `Returns: ()` is a list of none,
+    /// which is what makes it agree with `(Str)` being a list of one.
+    #[must_use]
+    fn slots(&self) -> Option<Vec<Type>> {
+        match self {
+            ListShape::Nothing => Some(Vec::new()),
+            ListShape::Fixed(types) => Some(types.clone()),
+            ListShape::Unknown | ListShape::Of(_) => None,
+        }
+    }
+
+    /// Every type an element of this list may have.
+    #[must_use]
+    pub fn members(&self) -> Vec<Type> {
+        match self {
+            ListShape::Unknown => vec![Type::Unknown],
+            ListShape::Nothing => Vec::new(),
+            ListShape::Fixed(types) => types.clone(),
+            ListShape::Of(ty) => vec![ty.clone()],
+        }
+    }
+
+    /// How the annotation for this shape is written, which is how hover shows
+    /// it too.
+    #[must_use]
+    pub fn written(&self) -> Option<String> {
+        match self {
+            ListShape::Unknown => None,
+            ListShape::Nothing => Some("()".to_string()),
+            ListShape::Fixed(types) => Some(format!(
+                "({})",
+                types
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+            ListShape::Of(ty) => Some(format!("({ty} ...)")),
+        }
+    }
+}
+
+/// Read the `Returns:` lines out of a sub's leading comment block.
 ///
 /// Grammar: within the comment block immediately preceding a `sub` (blank
 /// lines allowed between the block and the `sub`, not within it), a line whose
 /// comment text after `#` and whitespace starts with `Returns:`. The rest is
-/// `<type>` for scalar context, `list: (<type>, ...)` for list context, both
-/// joined by `|`, or `()` for "returns nothing".
+/// one of four things:
+///
+/// ```text
+/// # Returns: Str               scalar context: Str
+/// # Returns: (Str, Int)        list context: exactly two, Str then Int
+/// # Returns: (Row ...)         list context: any number of Row
+/// # Returns: ()                nothing
+/// ```
+///
+/// A sub with both halves writes **two lines**, one of each kind, in either
+/// order — so every line in the block is read rather than the first. A second
+/// line of the same kind is a `bad-annotation`: two answers to one question
+/// is a question nobody answered.
+///
+/// A list-only annotation says nothing about scalar context and a scalar-only
+/// one nothing about list context. The comma operator would make `Returns: (A,
+/// B)` a `B` in scalar context and `(Row ...)` a count; the two rules
+/// disagree, and a sub that wants a scalar type writes one.
 #[must_use]
 pub fn read_returns(definition: &SubDef, into: &mut Sink) -> Option<Returns> {
-    let comment = definition
-        .leading_comments()
-        .into_iter()
-        .find(|token| annotation_body(token).is_some())?;
-    let (range, body) = (comment.text_range(), annotation_body(&comment)?);
-    Some(parse_returns(&body, range, into))
+    let mut returns = Returns::default();
+    let mut found = false;
+    let (mut scalar_seen, mut list_seen) = (false, false);
+    for comment in definition.leading_comments() {
+        let Some(body) = annotation_body(&comment) else {
+            continue;
+        };
+        found = true;
+        let range = comment.text_range();
+        match parse_returns(&body, range, into) {
+            Written::Scalar(ty) => {
+                if scalar_seen {
+                    bad_returns(&body, range, "`Returns:` names a scalar type twice", into);
+                } else {
+                    scalar_seen = true;
+                    returns.scalar = ty;
+                }
+            }
+            Written::List(shape) => {
+                if list_seen {
+                    bad_returns(&body, range, "`Returns:` names a list shape twice", into);
+                } else {
+                    list_seen = true;
+                    returns.list = shape;
+                }
+            }
+            // `Returns: ()` is one statement about both contexts: nothing
+            // comes back, and in scalar context nothing is `undef`.
+            Written::Empty => {
+                if scalar_seen || list_seen {
+                    bad_returns(&body, range, "`Returns: ()` is the whole answer", into);
+                } else {
+                    scalar_seen = true;
+                    list_seen = true;
+                    returns.scalar = Type::Undef;
+                    returns.list = ListShape::Nothing;
+                }
+            }
+            Written::Silent => {}
+        }
+    }
+    found.then_some(returns)
 }
 
 /// The text after `# Returns:`, if this comment is one.
@@ -1057,74 +1181,129 @@ fn annotation_body(token: &SyntaxToken) -> Option<String> {
         .map(|rest| rest.trim().to_string())
 }
 
-fn parse_returns(body: &str, range: TextRange, into: &mut Sink) -> Returns {
-    let mut returns = Returns::default();
-    let bad = |message: String, into: &mut Sink| {
-        into.diagnostics.push(Diagnostic::new(
-            Code::BadAnnotation,
+/// What one `Returns:` line says.
+enum Written {
+    Scalar(Type),
+    List(ListShape),
+    /// `Returns: ()`.
+    Empty,
+    /// Prose, or something already reported.
+    Silent,
+}
+
+fn bad_returns(body: &str, range: TextRange, message: &str, into: &mut Sink) {
+    into.diagnostics.push(Diagnostic::new(
+        Code::BadAnnotation,
+        range,
+        format!("`Returns: {body}` does not parse: {message}"),
+    ));
+}
+
+fn parse_returns(body: &str, range: TextRange, into: &mut Sink) -> Written {
+    let body = body.trim();
+    if body.is_empty() {
+        return Written::Silent;
+    }
+    // The form this replaced, named so that the message can show the new one.
+    if body.contains("list:") {
+        bad_returns(
+            body,
             range,
-            format!("`Returns: {body}` does not parse: {message}"),
-        ));
-    };
-
-    // `... | list: (...)` splits into the two contexts.
-    let (scalar_part, list_part) = match body.find("list:") {
-        Some(position) => {
-            let scalar = body[..position].trim().trim_end_matches('|').trim();
-            (scalar, Some(body[position + "list:".len()..].trim()))
-        }
-        None => (body.trim(), None),
-    };
-
-    // A `Returns:` that is prose rather than an annotation is not a broken
-    // annotation; see `types::is_type_shaped`.
-    if !scalar_part.is_empty() && scalar_part != "()" && !types::is_type_shaped(scalar_part) {
-        return Returns::default();
+            "a list shape is written `(T, U)` or `(T ...)`, on a `Returns:` line of its own",
+            into,
+        );
+        return Written::Silent;
     }
 
-    if scalar_part == "()" {
-        returns.list = ListShape::Nothing;
-        returns.scalar = Type::Undef;
-    } else if !scalar_part.is_empty() {
-        match types::parse(scalar_part) {
+    let Some(inner) = list_body(body) else {
+        // A `Returns:` that is prose rather than an annotation is not a broken
+        // annotation; see `types::is_type_shaped`.
+        if !types::is_type_shaped(body) {
+            return Written::Silent;
+        }
+        return match types::parse(body) {
             Ok(ty) => {
                 into.note(&ty, range);
-                returns.scalar = ty;
+                Written::Scalar(ty)
             }
-            Err(error) => bad(error.message, into),
+            Err(error) => {
+                bad_returns(body, range, &error.message, into);
+                Written::Silent
+            }
+        };
+    };
+
+    let inner = inner.trim();
+    if inner.is_empty() {
+        return Written::Empty;
+    }
+    // `(Row ...)` — any number of one type. Only where there is one slot to
+    // repeat: `(Str, Int ...)` names no shape this has.
+    if let Some(repeated) = inner.strip_suffix("...") {
+        let repeated = repeated.trim().trim_end_matches(',').trim();
+        if repeated.is_empty() || split_top_level(repeated).len() != 1 {
+            bad_returns(body, range, "`...` repeats one type, so there is one", into);
+            return Written::Silent;
         }
+        if !types::is_type_shaped(repeated) {
+            return Written::Silent;
+        }
+        return match types::parse(repeated) {
+            Ok(ty) => {
+                into.note(&ty, range);
+                Written::List(ListShape::Of(ty))
+            }
+            Err(error) => {
+                bad_returns(body, range, &error.message, into);
+                Written::Silent
+            }
+        };
     }
 
-    if let Some(list) = list_part {
-        let inner = list
-            .strip_prefix('(')
-            .and_then(|rest| rest.strip_suffix(')'));
-        match inner {
-            Some(inner) if inner.trim().is_empty() => returns.list = ListShape::Fixed(Vec::new()),
-            Some(inner) => {
-                let mut members = Vec::new();
-                let mut ok = true;
-                for part in split_top_level(inner) {
-                    match types::parse(part.trim()) {
-                        Ok(ty) => {
-                            into.note(&ty, range);
-                            members.push(ty);
-                        }
-                        Err(error) => {
-                            bad(error.message, into);
-                            ok = false;
-                            break;
-                        }
-                    }
-                }
-                if ok {
-                    returns.list = ListShape::Fixed(members);
-                }
+    let parts = split_top_level(inner);
+    // Prose in parentheses is still prose: `# Returns: (see below)`.
+    if parts.iter().any(|part| !types::is_type_shaped(part.trim())) {
+        return Written::Silent;
+    }
+    let mut members = Vec::new();
+    for part in parts {
+        match types::parse(part.trim()) {
+            Ok(ty) => {
+                into.note(&ty, range);
+                members.push(ty);
             }
-            None => bad("a `list:` shape is written `(T, U)`".to_string(), into),
+            Err(error) => {
+                bad_returns(body, range, &error.message, into);
+                return Written::Silent;
+            }
         }
     }
-    returns
+    Written::List(ListShape::Fixed(members))
+}
+
+/// The inside of a body that is parenthesised from its first character to its
+/// last, which is what makes it a list shape.
+///
+/// A grouping parenthesis around a whole scalar type has no use that `Str |
+/// Undef` does not serve, so nothing is lost by spending the notation here.
+/// Parentheses *inside* a slot keep grouping, which is why `(Str | Undef,
+/// Int)` is two slots and `(Str) | (Int)` is not a list at all.
+fn list_body(body: &str) -> Option<&str> {
+    let inner = body.strip_prefix('(')?.strip_suffix(')')?;
+    let mut depth = 0usize;
+    for ch in inner.chars() {
+        match ch {
+            '(' | '[' => depth += 1,
+            ')' | ']' => {
+                if depth == 0 {
+                    return None;
+                }
+                depth -= 1;
+            }
+            _ => {}
+        }
+    }
+    Some(inner)
 }
 
 /// Split on commas that are not inside brackets.

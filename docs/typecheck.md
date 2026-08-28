@@ -431,8 +431,12 @@ slurpy makes the maximum unbounded; a sub that touches `@_` in any other way
 # Returns: ArrayRef[Item]
 sub items { ... }
 
-# Returns: Maybe[Str] | list: (Str, Int)
+# Returns: Maybe[Str]
+# Returns: (Str, Int)
 sub pair { ... }
+
+# Returns: (Item ...)
+sub every_item { ... }
 
 # Returns: ()
 sub notify { ... }
@@ -441,11 +445,28 @@ sub notify { ... }
 Grammar: within the comment block immediately preceding a `sub` (blank
 lines allowed between the block and the `sub`, not within it), a line whose
 comment text after `#` and whitespace starts with `Returns:`. The rest of the
-line is `<type>` for scalar context, `list: (<type>, <type>, ...)` for list
-context, both joined by `|`, or `()` meaning "returns nothing; calling in a
+line is one of four things — a `<type>` for scalar context; a body
+parenthesised from its first character to its last for list context, whose
+top-level commas separate slots and whose single type followed by `...` is
+any number of that type; or `()`, meaning "returns nothing; calling in a
 context that uses the value is a diagnostic". The `<type>` is the string
-grammar. A `Returns:` that fails to parse is a diagnostic on the comment,
-because an annotation that is silently ignored is worse than none.
+grammar.
+
+A parenthesis is spent on the list shape rather than on grouping because a
+grouping parenthesis around a whole scalar type has no use that `Str | Undef`
+does not serve, and because `()` being a list of none forces `(Str)` to be a
+list of one. Parentheses *inside* a slot still group, so `(Str | Undef, Int)`
+is two slots.
+
+A sub with both halves writes **two `Returns:` lines**, one of each kind, in
+either order: every line in the block is read, and a second line of the same
+kind is a diagnostic. The halves are independent, and a sub that says only
+one of them says nothing about the other — the comma operator would make
+`Returns: (A, B)` a `B` in scalar context and `(Row ...)` a count, the two
+rules disagree, and a sub that wants a scalar type writes one.
+
+A `Returns:` that fails to parse is a diagnostic on the comment, because an
+annotation that is silently ignored is worse than none.
 
 `Returns:` is placed in a comment rather than an attribute (`sub f :Returns(Str)`)
 because it has to be addable to code that runs on any perl and under any
