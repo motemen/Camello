@@ -51,6 +51,25 @@ sub _build_once    { 2 }
 sub _build_spelled { 3 }
 sub make_built     { 4 }
 
+# The family carries no types — except a lazy slot, which carries its builder,
+# and what the builder returns is what the accessor hands back (ANNOT-10d).
+package Built;
+use Class::Accessor::Lite::Lazy (
+    new     => 1,
+    ro      => ['plain'],
+    ro_lazy => [ 'implicit', { named => 'make_named', reffed => \&make_reffed } ],
+    rw_lazy => { viahash => '_build_viahash', anon => sub { L->new } },
+);
+sub _build_implicit { L->new }
+sub make_named      { L->new }
+sub make_reffed     { L->new }
+sub _build_viahash  { L->new }
+
+package Inherited;
+our @ISA = ('Built');
+# The builder is reached as a method, so the subclass's own answers.
+sub _build_implicit { N->new }
+
 package main;
 
 my $l = L->new(bar => 1, tokuhirom => 2);
@@ -91,3 +110,21 @@ print $lazy->absent;            #~ warning unknown-method: `absent`
 my $mk = Mk->new;
 print $mk->lazily, $mk->once, $mk->spelled, $mk->built, $mk->anon;
 print $mk->neither;             #~ warning unknown-method: `neither`
+
+# A lazy slot is typed by its builder, however the builder was named.
+my $built = Built->new;
+$built->implicit->tokuhirom;
+$built->named->tokuhirom;
+$built->reffed->tokuhirom;
+$built->viahash->tokuhirom;
+$built->implicit->absent;       #~ warning unknown-method: `absent`
+$built->named->absent;          #~ warning unknown-method: `absent`
+$built->reffed->absent;         #~ warning unknown-method: `absent`
+$built->viahash->absent;        #~ warning unknown-method: `absent`
+# An anonymous builder names no sub to ask, and a slot that is not lazy has no
+# builder at all: both stay `Unknown`, and nothing is reported against one.
+$built->anon->absent;
+$built->plain->absent;
+# The subclass's `_build_implicit` is the one the accessor reaches.
+Inherited->new->implicit->alpha;
+Inherited->new->implicit->absent;   #~ warning unknown-method: `absent`

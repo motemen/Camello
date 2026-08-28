@@ -55,6 +55,23 @@ One line per change. The reasoning is in the commit it came from.
   is how a code is turned off now. `scripts/corpus-check` takes `--check` in
   place of `--lint` and `--typecheck`.
 
+### Added
+
+- **A lazy slot is typed by its builder** (`docs/types.md`, ANNOT-10f). The
+  `Class::Accessor::Lite` family carries no types, and that was the whole
+  answer for `Class::Accessor::Lite::Lazy` too — but a lazy accessor is
+  `$self->{name} //= $self->$builder`, so what the builder returns *is* what
+  the accessor hands back, and it is the one type source this family has.
+  `ro_lazy`, `rw_lazy`, `mk_lazy_accessors` and `mk_ro_lazy_accessors` all get
+  it, under whichever name the builder was given: the default `_build_$name`,
+  or the `'make_it'` or `\&make_it` written beside the slot. An inline `sub {
+  ... }` names nothing to look up and stays `Unknown`. The builder is reached
+  as a method, so a subclass that overrides it builds the slot; and it is
+  asked at the call, not at the declaration, because the builder's own return
+  is inferred and the incremental loop re-derives it. Not a guarantee the way
+  an `isa` is — this family's `new` is open (INFER-2g) — but the same
+  pragmatism that reads `Foo->new` as an `InstanceOf['Foo']`.
+
 ### Fixed
 
 - `Class::Accessor::Lite::Lazy->mk_lazy_accessors` and `mk_ro_lazy_accessors`

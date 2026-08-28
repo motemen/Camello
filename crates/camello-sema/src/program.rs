@@ -37,6 +37,11 @@ pub struct Method<'a> {
     /// so sorting by it puts a class's own methods before what it inherits.
     pub depth: usize,
     pub kind: MethodKind<'a>,
+    /// What the slot holds, as [`Program::slot_type`] answered it: the
+    /// attribute's own type, except where a lazy builder is what named one
+    /// (`docs/types.md`, ANNOT-10f). `Unknown` for everything that is not an
+    /// attribute, which is where nothing reads it.
+    pub slot: Type,
 }
 
 impl Method<'_> {
@@ -46,11 +51,17 @@ impl Method<'_> {
     pub fn signature(&self) -> Option<String> {
         match &self.kind {
             MethodKind::Sub(symbol) => Some(crate::decl::signature_of(symbol)),
-            MethodKind::Attribute(attribute) => Some(format!(
-                "{} ({})",
-                attribute.returns(&self.name),
-                attribute.ty
-            )),
+            MethodKind::Attribute(attribute) => {
+                // The slot's own name gives back the slot; a `predicate` and
+                // a `clearer` say something else, and the attribute answers
+                // for those.
+                let returns = if attribute.yields_the_slot(&self.name) {
+                    self.slot.clone()
+                } else {
+                    attribute.returns(&self.name)
+                };
+                Some(format!("{returns} ({})", self.slot))
+            }
             MethodKind::Constructor => Some("new(%args)".to_string()),
             MethodKind::Universal => None,
         }
@@ -612,6 +623,40 @@ impl Program {
         }
     }
 
+    /// What an accessor hands back, asking the builder where the framework
+    /// itself said nothing (`docs/types.md`, ANNOT-10f).
+    ///
+    /// The `Class::Accessor::Lite::Lazy` half of the family carries no types,
+    /// but it does carry a builder: an empty slot is filled by
+    /// `$self->$builder`, so what that sub returns is what the accessor gives
+    /// back. Asked here rather than written into the attribute where it was
+    /// declared, because the builder's own return may be *inferred* and the
+    /// answer has to be the current one — the incremental loop re-derives
+    /// returns and never revisits a declaration.
+    ///
+    /// Resolved from the invocant's class rather than the declaring one: the
+    /// builder is reached as a method, so a subclass that overrides it builds
+    /// the slot.
+    #[must_use]
+    pub fn slot_type(
+        &self,
+        class: &str,
+        attribute: &crate::annotate::AttributeDecl,
+        method: &str,
+    ) -> Type {
+        let declared = attribute.returns(method);
+        if !declared.is_unknown() || !attribute.yields_the_slot(method) {
+            return declared;
+        }
+        let Some(builder) = &attribute.builder else {
+            return declared;
+        };
+        match self.resolve_method(class, builder) {
+            MethodLookup::Sub(symbol) => symbol.returns.scalar.clone(),
+            _ => declared,
+        }
+    }
+
     /// Everything callable on a class, in MRO order (`docs/lsp.md`, "The
     /// method surface").
     ///
@@ -639,6 +684,7 @@ impl Program {
                         class: class.clone(),
                         depth,
                         kind: MethodKind::Sub(symbol),
+                        slot: Type::Unknown,
                     });
                 }
             }
@@ -650,6 +696,11 @@ impl Program {
                     // name against.
                     let names = std::iter::once(&attribute.name)
                         .chain(attribute.methods.iter().map(|method| &method.name));
+                    // Asked once, under the attribute's own name, because
+                    // that is the one that always yields the slot — and
+                    // asked of `package`, since a subclass may be where the
+                    // builder is.
+                    let slot = self.slot_type(package, attribute, &attribute.name);
                     for name in names {
                         if seen.insert(name.clone()) {
                             methods.push(Method {
@@ -657,6 +708,7 @@ impl Program {
                                 class: class.clone(),
                                 depth,
                                 kind: MethodKind::Attribute(attribute),
+                                slot: slot.clone(),
                             });
                         }
                     }
@@ -667,6 +719,7 @@ impl Program {
                         class: class.clone(),
                         depth,
                         kind: MethodKind::Constructor,
+                        slot: Type::Unknown,
                     });
                 }
             }
@@ -680,6 +733,7 @@ impl Program {
                     class: "UNIVERSAL".to_string(),
                     depth: order.len(),
                     kind: MethodKind::Universal,
+                    slot: Type::Unknown,
                 });
             }
         }
