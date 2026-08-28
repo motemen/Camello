@@ -1,10 +1,15 @@
 {
   "name": "camello",
-  "displayName": "camello",
+  "displayName": "Camello",
   "description": "Perl diagnostics, hover, method completion and formatting, from the camello language server",
   "version": "0.1.1",
   "publisher": "camello",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/motemen/Camello.git",
+    "directory": "editors/vscode"
+  },
   "private": true,
   "engines": {
     "vscode": "^1.85.0"
@@ -21,7 +26,7 @@
   "main": "./out/extension.js",
   "contributes": {
     "configuration": {
-      "title": "camello",
+      "title": "Camello",
       "properties": {
         "camello.path": {
           "type": "string",
@@ -43,7 +48,7 @@
     "commands": [
       {
         "command": "camello.restartServer",
-        "title": "camello: Restart Language Server"
+        "title": "Camello: Restart Language Server"
       }
     ]
   },
