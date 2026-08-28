@@ -257,6 +257,20 @@ impl Program {
         self.returns_to_walk(file, Returns::is_inferable)
     }
 
+    /// Every sub in a file whose `Returns:` was *written down*.
+    ///
+    /// What `--returns-drift` walks: an annotation is what wins at every call
+    /// site, so nothing ever compares it against the body as a whole — only
+    /// one `return` at a time, as `return-mismatch` (ANNOT-7a). Asking the
+    /// body for its own answer and putting the two side by side is a separate
+    /// question, and this is where its subjects come from.
+    #[must_use]
+    pub fn written_returns(&self, file: usize) -> Vec<usize> {
+        self.returns_to_walk(file, |returns| {
+            !returns.inferred && !returns.is_unresolved()
+        })
+    }
+
     fn returns_to_walk(&self, file: usize, wanted: impl Fn(&Returns) -> bool) -> Vec<usize> {
         self.files
             .get(file)

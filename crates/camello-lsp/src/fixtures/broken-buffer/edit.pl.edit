@@ -3,6 +3,6 @@ use warnings;
 use Widget;
 
 my $w = Widget->new;
-my $unused = 1;    #~ warning unused-variable: `$unused`
+my $unused = 1;    #~ info unused-variable: `$unused`
 print $w->
 #         ^ complete-own new, name, size

@@ -51,9 +51,9 @@ sub read_map {
     Store->want_strings(list => [ keys %$map ]);
     Store->want_rows(list => [ values %$map ]);
     Store->want_rows(list => [ keys %$map ]);
-    #~ error type-mismatch: `ArrayRef[Str]` passed to `list`
+    #~ error type-mismatch: (`ArrayRef[Str]`) passed to `list`
     Store->want_strings(list => [ values %$map ]);
-    #~ error type-mismatch: `ArrayRef[ArrayRef[Int]]` passed to `list`
+    #~ error type-mismatch: (`ArrayRef[ArrayRef[Int]]`) passed to `list`
 
     # `scalar` of a container is its count; of anything else it is whatever
     # that was in scalar context, which is what every type here already is.

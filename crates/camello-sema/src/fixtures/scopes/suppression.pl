@@ -12,8 +12,8 @@ my $also_unread = 2;
 
 # A marker naming a different code leaves this one alone.
 my $still_reported = 3;         ## camello-disable: arity
-#~ warning unused-variable: `$still_reported`
+#~ info unused-variable: `$still_reported`
 
 # `## no critic` is somebody else's comment.
 my $reported_too = 4;           ## no critic (ProhibitUnusedVariables)
-#~ warning unused-variable: `$reported_too`
+#~ info unused-variable: `$reported_too`

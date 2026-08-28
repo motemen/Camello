@@ -1414,16 +1414,20 @@ impl Pass<'_> {
             if direct && index == 0 {
                 continue;
             }
-            current = self.step(&current, step, step.node().text_range());
+            // What is being dereferenced is everything written before this
+            // step: for `$h->{a}{b}` the second step's subject is `$h->{a}`,
+            // which is the value that may be `undef` and the thing to guard.
+            let subject = text_before(node, step.node().text_range().start());
+            current = self.step(&current, step, step.node().text_range(), &subject);
         }
         current
     }
 
-    fn step(&mut self, base: &Type, step: &ast::Step, range: TextRange) -> Type {
+    fn step(&mut self, base: &Type, step: &ast::Step, range: TextRange, subject: &str) -> Type {
         if base.is_unknown() {
             return Type::Unknown;
         }
-        self.warn_maybe(base, range);
+        self.warn_maybe(base, range, subject);
         let base = base.without_undef();
         match step {
             ast::Step::Hash { key, .. } => match (&base, key) {
@@ -1625,7 +1629,7 @@ impl Pass<'_> {
             Some(class) => Some(class),
             None => {
                 let ty = self.type_of(&invocant);
-                self.warn_maybe(&ty, call.method_range());
+                self.warn_maybe(&ty, call.method_range(), &source_of(&invocant));
                 match ty.without_undef() {
                     Type::InstanceOf(class) => Some(class),
                     // `$class->m` in a class method: `$class` is this package
@@ -2084,8 +2088,12 @@ impl Pass<'_> {
             Diagnostic::new(
                 Code::ReturnMismatch,
                 only.text_range(),
-                format!("`{value}` returned from a sub declared `Returns: {declared}`"),
+                format!(
+                    "`{}` (`{value}`) returned from a sub declared `Returns: {declared}`",
+                    source_of(only)
+                ),
             )
+            .about(source_of(only))
             .at(severity),
         );
     }
@@ -2419,22 +2427,32 @@ impl Pass<'_> {
             Diagnostic::new(
                 Code::TypeMismatch,
                 node.text_range(),
-                format!("`{value}` passed to {what}, which is declared `{slot}`"),
+                format!(
+                    "`{}` (`{value}`) passed to {what}, which is declared `{slot}`",
+                    source_of(node)
+                ),
             )
+            .about(source_of(node))
             .at(severity),
         );
     }
 
     /// A `Maybe[...]` used where a value is wanted.
-    fn warn_maybe(&mut self, ty: &Type, range: TextRange) {
+    fn warn_maybe(&mut self, ty: &Type, range: TextRange, subject: &str) {
         if !ty.is_maybe() || ty.without_undef().is_unknown() {
             return;
         }
-        self.diagnostics.push(Diagnostic::new(
-            Code::MaybeDeref,
-            range,
-            format!("`{ty}` may be undefined here, and nothing has checked it"),
-        ));
+        // The code first and the type after it: a reader scanning a list of
+        // these is looking for which value to guard, and `Str|Undef` is the
+        // same eight characters in every one of them.
+        self.diagnostics.push(
+            Diagnostic::new(
+                Code::MaybeDeref,
+                range,
+                format!("`{subject}` may be undefined here (`{ty}`), and nothing has checked it"),
+            )
+            .about(subject),
+        );
     }
 }
 
@@ -2587,6 +2605,50 @@ fn class_of(ty: &Type) -> Option<String> {
         Type::Union(members) => members.iter().find_map(class_of),
         _ => None,
     }
+}
+
+/// A node's source text as one line, shortened where it is long.
+///
+/// What goes in a message has to fit on the line the message is on, and an
+/// expression written across three lines is one a reader identifies by its
+/// first few tokens anyway.
+fn source_of(node: &SyntaxNode) -> String {
+    shortened(&squeezed(&node.text().to_string()))
+}
+
+/// Runs of whitespace as one space, and none at either end.
+///
+/// The text as it was *written*, not as its tokens spell it: `[keys %$map]`
+/// read back without the space is `[keys%$map]`, which is a different program
+/// and not something a reader can search their file for.
+fn squeezed(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// The text of a subscript chain up to an offset: the part that is being
+/// dereferenced, rather than the whole chain.
+fn text_before(chain: &SyntaxNode, end: TextSize) -> String {
+    let mut out = String::new();
+    for token in chain
+        .descendants_with_tokens()
+        .filter_map(rowan::NodeOrToken::into_token)
+    {
+        if token.text_range().end() > end {
+            break;
+        }
+        out.push_str(token.text());
+    }
+    shortened(&squeezed(&out))
+}
+
+/// At most `LIMIT` characters, with an ellipsis where the rest was.
+fn shortened(text: &str) -> String {
+    const LIMIT: usize = 40;
+    if text.chars().count() <= LIMIT {
+        return text.to_string();
+    }
+    let head: String = text.chars().take(LIMIT - 1).collect();
+    format!("{head}…")
 }
 
 /// Whether a type is, or may be, the name of a class.

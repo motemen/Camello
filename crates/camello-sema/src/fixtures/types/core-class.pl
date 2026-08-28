@@ -14,7 +14,7 @@ class Counter;
 # (`docs/types.md`, DIAG-2a).
 field $count :param;
 field $unused;
-#~ warning unused-variable: `$unused` is declared and never read
+#~ info unused-variable: `$unused` is declared and never read
 
 method value() {
     return $count;

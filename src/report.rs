@@ -53,6 +53,107 @@ pub struct Request {
     /// What this project's own modules stand in for.
     pub dialect: camello_sema::annotate::Dialect,
     pub options: Options,
+    /// List the subs whose written `Returns:` and body disagree, and check
+    /// nothing else (`docs/return-inference.md`, "Drift").
+    pub returns_drift: bool,
+    /// Report a diagnostic about one name once per file, with a count.
+    pub group: bool,
+}
+
+/// `--returns-drift`: every sub whose written `Returns:` and whose body say
+/// different things, one per line.
+///
+/// The same `path:line:col:` shape the diagnostics use, because the consumer
+/// is the same — an editor's error parser, or a person with `grep`. Exit 1
+/// when anything was found, so a CI step can hold a codebase to its own
+/// annotations.
+fn report_drift(
+    analysis: &camello_sema::Analysis,
+    roots: &[PathBuf],
+    request: &Request,
+    read: impl Fn(&Path) -> Option<String> + Sync,
+) -> Result<()> {
+    let mut drifted = analysis.returns_drift(roots, request.jobs, &read);
+    drifted.sort_by(|left, right| {
+        (left.file, left.range.start()).cmp(&(right.file, right.range.start()))
+    });
+    for drift in &drifted {
+        let Some(entry) = analysis.program().file(drift.file) else {
+            continue;
+        };
+        let path = entry.path.display().to_string();
+        let (line, column) = match read(&entry.path) {
+            Some(source) => {
+                let index = LineIndex::new(&source);
+                let position = index.position(&source, usize::from(drift.range.start()));
+                (position.line, position.column)
+            }
+            None => (1, 1),
+        };
+        println!(
+            "{path}:{line}:{column}: {}::{}: `Returns:` says {}, the body says {}",
+            drift.package,
+            drift.name,
+            written_halves(&drift.written),
+            written_halves(&drift.body),
+        );
+    }
+    let count = drifted.len();
+    let files = plural(roots.len(), "file");
+    if count == 0 {
+        println!("no drift in {files}");
+        return Ok(());
+    }
+    println!(
+        "{} whose `Returns:` and body disagree, in {files}",
+        plural(count, "sub")
+    );
+    std::process::exit(1);
+}
+
+/// `--group`: one report per `(code, subject)`, the first one, with how many
+/// places it stood for.
+///
+/// The subject is the code the diagnostic is about — a variable, but as often
+/// `$obj->rows` or `$self->{cfg}{db}`, which is why it is the *written
+/// expression* and not a name. It arrives with its whitespace already
+/// squeezed out, so `f( $x )` and `f($x)` are one subject.
+///
+/// A diagnostic with no subject is never grouped: it is about a declaration
+/// or a call site rather than about a value, and there is only one of it.
+fn grouped(diagnostics: &[Diagnostic]) -> Vec<(&Diagnostic, usize)> {
+    let mut seen: std::collections::HashMap<(Code, &str), usize> = std::collections::HashMap::new();
+    let mut shown: Vec<(&Diagnostic, usize)> = Vec::new();
+    for diagnostic in diagnostics {
+        let Some(subject) = diagnostic.subject.as_deref() else {
+            shown.push((diagnostic, 1));
+            continue;
+        };
+        match seen.entry((diagnostic.code, subject)) {
+            std::collections::hash_map::Entry::Occupied(at) => shown[*at.get()].1 += 1,
+            std::collections::hash_map::Entry::Vacant(slot) => {
+                slot.insert(shown.len());
+                shown.push((diagnostic, 1));
+            }
+        }
+    }
+    shown
+}
+
+fn plural(count: usize, noun: &str) -> String {
+    format!("{count} {noun}{}", if count == 1 { "" } else { "s" })
+}
+
+/// The two halves of a `Returns:`, as `Returns:` writes them.
+fn written_halves(returns: &camello_sema::annotate::Returns) -> String {
+    let scalar = (!returns.scalar.is_unknown()).then(|| returns.scalar.to_string());
+    let list = returns.list.written();
+    match (scalar, list) {
+        (Some(scalar), Some(list)) => format!("`{scalar}`, `{list}`"),
+        (Some(scalar), None) => format!("`{scalar}`"),
+        (None, Some(list)) => format!("`{list}`"),
+        (None, None) => "nothing".to_string(),
+    }
 }
 
 /// What one file answered.
@@ -160,6 +261,17 @@ pub fn run(request: &Request) -> Result<()> {
         });
     }
 
+    if request.returns_drift {
+        let roots: Vec<PathBuf> = files.iter().map(|(path, _)| path.clone()).collect();
+        let inline: std::collections::HashMap<&Path, &str> = files
+            .iter()
+            .filter_map(|(path, inline)| inline.as_deref().map(|text| (path.as_path(), text)))
+            .collect();
+        return report_drift(&analysis, &roots, request, |path| {
+            read_one(path, inline.get(path).copied(), &encodings).ok()
+        });
+    }
+
     let reports = crate::cli::in_parallel(&files, request.jobs, |(path, inline)| {
         check_one(
             path,
@@ -193,16 +305,26 @@ pub fn run(request: &Request) -> Result<()> {
             continue;
         }
         let index = LineIndex::new(&report.source);
-        for diagnostic in &report.diagnostics {
+        let shown = if request.group {
+            grouped(&report.diagnostics)
+        } else {
+            report.diagnostics.iter().map(|one| (one, 1)).collect()
+        };
+        for (diagnostic, count) in shown {
             if diagnostic.severity < request.min_severity {
                 continue;
             }
-            counts[diagnostic.severity as usize] += 1;
+            counts[diagnostic.severity as usize] += count;
             let position = index.position(&report.source, usize::from(diagnostic.range.start()));
             let end = index.position(&report.source, usize::from(diagnostic.range.end()));
+            let more = if count > 1 {
+                format!(" (and {} more like it)", count - 1)
+            } else {
+                String::new()
+            };
             match request.format {
                 Format::Text => println!(
-                    "{}:{}:{}: {}: {} [{}]",
+                    "{}:{}:{}: {}: {}{more} [{}]",
                     report.path,
                     position.line,
                     position.column,
@@ -219,6 +341,7 @@ pub fn run(request: &Request) -> Result<()> {
                     severity: diagnostic.severity.to_string(),
                     code: diagnostic.code.to_string(),
                     message: diagnostic.message.clone(),
+                    count: (count > 1).then_some(count),
                 }),
             }
         }
@@ -301,6 +424,9 @@ struct Entry {
     severity: String,
     code: String,
     message: String,
+    /// How many places this stood for under `--group`; absent when it is one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    count: Option<usize>,
 }
 
 impl Entry {
@@ -316,6 +442,7 @@ impl Entry {
             severity: "error".to_string(),
             code: "parse-error".to_string(),
             message: message.to_string(),
+            count: None,
         }
     }
 }

@@ -486,6 +486,22 @@ pub struct CheckArgs {
     /// Ignore camello.toml
     #[arg(long, help = "Do not read camello.toml")]
     pub no_config: bool,
+
+    /// Report a repeated diagnostic about one name once
+    #[arg(
+        long,
+        help = "Report each diagnostic about one name once per file, with how many places it was \
+                found"
+    )]
+    pub group: bool,
+
+    /// List the subs whose `Returns:` and body disagree, instead of checking
+    #[arg(
+        long = "returns-drift",
+        help = "List subs whose written `Returns:` disagrees with what their body returns, \
+                and check nothing else"
+    )]
+    pub returns_drift: bool,
 }
 
 impl CheckArgs {
@@ -568,6 +584,8 @@ impl CheckArgs {
             },
             dialect: camello_sema::annotate::Dialect::new(config.check.read_as.clone()),
             options,
+            returns_drift: self.returns_drift,
+            group: self.group,
         })
     }
 }

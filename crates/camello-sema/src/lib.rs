@@ -33,6 +33,35 @@ pub use program::Program;
 
 pub use diag::{Code, Diagnostic, LineIndex, Position, Severity};
 
+/// A sub whose written `Returns:` and whose body do not say the same thing.
+#[derive(Debug, Clone)]
+pub struct Drift {
+    pub file: usize,
+    pub package: String,
+    pub name: String,
+    pub range: rowan::TextRange,
+    /// What the comment says.
+    pub written: annotate::Returns,
+    /// What the return walk read off the body.
+    pub body: annotate::Returns,
+}
+
+/// Whether a written `Returns:` and a body's own answer disagree.
+///
+/// Only a half the annotation actually claims is compared: a scalar-only
+/// `Returns:` says nothing about list context, and a list the body inferred
+/// beside it is an addition rather than a disagreement. A half the *body*
+/// could not read is not a disagreement either — `Unknown` is the walk saying
+/// it has nothing, which is never evidence against something written down.
+fn drifts(written: &annotate::Returns, body: &annotate::Returns) -> bool {
+    let scalar =
+        !written.scalar.is_unknown() && !body.scalar.is_unknown() && written.scalar != body.scalar;
+    let list = written.list != annotate::ListShape::Unknown
+        && body.list != annotate::ListShape::Unknown
+        && written.list != body.list;
+    scalar || list
+}
+
 /// What a run asks for.
 #[derive(Debug, Clone, Default)]
 pub struct Options {
@@ -258,6 +287,70 @@ impl Analysis {
                 return;
             }
         }
+    }
+
+    /// Where a written `Returns:` and the body it sits on do not agree
+    /// (`docs/return-inference.md`, "Drift").
+    ///
+    /// An annotation wins at every call site (ANNOT-7a), so the only thing
+    /// that ever compares it against the code is `return-mismatch`, which
+    /// looks at one `return` at a time. That misses the drift a file collects:
+    /// an annotation that was right when it was written and has been widened,
+    /// narrowed or contradicted by the body since. This asks the walk what the
+    /// body says and puts the two side by side.
+    ///
+    /// Nothing is installed and the program is not changed, so the answer for
+    /// one sub is computed against the annotations every *other* sub still
+    /// carries — which is what makes it a report on the annotation rather
+    /// than on the whole file at once.
+    #[must_use]
+    pub fn returns_drift(
+        &self,
+        sources: &[std::path::PathBuf],
+        jobs: Option<usize>,
+        read: impl Fn(&Path) -> Option<String> + Sync,
+    ) -> Vec<Drift> {
+        let files: Vec<usize> = sources
+            .iter()
+            .filter_map(|path| self.program.index_of(path))
+            .collect();
+        let wanted: Vec<usize> = files
+            .iter()
+            .copied()
+            .filter(|file| !self.program.written_returns(*file).is_empty())
+            .collect();
+        let program = &self.program;
+        let found = workspace::in_parallel(&wanted, jobs, |file| {
+            let only = program.written_returns(*file);
+            let path = program.file(*file).map(|entry| entry.path.clone())?;
+            let source = read(&path)?;
+            let parsed = camello_syntax::parse::parse(&source);
+            Some(flow::infer_returns(&parsed.syntax(), *file, program, &only))
+        });
+        let mut drifted = Vec::new();
+        for (file, results) in wanted.iter().zip(found) {
+            for (index, body) in results.into_iter().flatten() {
+                let Some(symbol) = self
+                    .program
+                    .file(*file)
+                    .and_then(|entry| entry.decls.subs.get(index))
+                else {
+                    continue;
+                };
+                if !drifts(&symbol.returns, &body) {
+                    continue;
+                }
+                drifted.push(Drift {
+                    file: *file,
+                    package: symbol.package.clone(),
+                    name: symbol.name.clone(),
+                    range: symbol.range,
+                    written: symbol.returns.clone(),
+                    body,
+                });
+            }
+        }
+        drifted
     }
 
     /// Step 4′ (`docs/return-inference.md`, "What changes for the incremental
