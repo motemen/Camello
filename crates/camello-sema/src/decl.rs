@@ -6,12 +6,15 @@
 //! program graph is complete after this pass and editing a body invalidates
 //! one sub and nothing else.
 //!
-//! Two things are read out of a body, and both are declarations about the sub
-//! rather than about the program. The parameter list is written *inside* it
-//! when the sub uses `args` or unpacks `@_`, and is read from the body's
-//! leading statements. And a `sub new` is asked whether it says the value it
-//! hands back is one of its own class (`docs/types.md`, INFER-2g), because a
-//! `new` that is a factory makes every method called on its answer missing.
+//! Three things are read out of a body, and each is a fact about the sub or
+//! its file rather than about the program. The parameter list is written
+//! *inside* it when the sub uses `args` or unpacks `@_`, and is read from the
+//! body's leading statements. A `sub new` is asked whether it says the value
+//! it hands back is one of its own class (`docs/types.md`, INFER-2g), because
+//! a `new` that is a factory makes every method called on its answer missing.
+//! And every body is asked whether it *makes* methods — a glob assignment, or
+//! an accessor maker whose list of names cannot be read — because that is
+//! where a code generator keeps its (METHOD-5d, METHOD-5g).
 
 use std::collections::{HashMap, HashSet};
 
@@ -206,6 +209,22 @@ pub struct PackageFacts {
     /// `bootstrap`, an `@ISA` computed at run time, a glob assignment. Such a
     /// class might have any method, so "no such method" is never said of it.
     pub dynamic: bool,
+    /// What `our @EXPORT` puts into the namespace of every package that `use`s
+    /// this one (`docs/types.md`, METHOD-6).
+    #[serde(default)]
+    pub exports: Vec<String>,
+    /// An `@EXPORT` whose value this pass could not read — `our @EXPORT =
+    /// get_public_functions;`. What it names cannot be enumerated, so neither
+    /// can the method set of a package that imports it.
+    #[serde(default)]
+    pub exports_unknown: bool,
+    /// The modules this package `use`s, for the two questions above.
+    #[serde(default)]
+    pub uses: Vec<String>,
+    /// `(class, method)` for every method call this package makes at file
+    /// scope, which is where a code generator is invoked (METHOD-5g).
+    #[serde(default)]
+    pub file_scope_calls: Vec<(String, String)>,
 }
 
 /// What one file declares.
@@ -374,15 +393,18 @@ impl Pass {
                 NodeKind::USE_STMT | NodeKind::NO_STMT => self.use_statement(&child, &package),
                 NodeKind::EXPR_STMT => {
                     self.glob_assignment(&child);
+                    self.export_assignment(&child, &package);
                     self.require_statement(&child);
                     self.expression_statement(&child, &package);
                     self.accessor_statement(&child, &package);
+                    self.file_scope_call(&child, &package);
                     self.walk(&child, &package);
                 }
                 // `our @ISA = ('Base');` is a declaration statement, not an
                 // expression one.
                 NodeKind::VAR_DECL_STMT => {
                     self.isa_assignment(&child, &package);
+                    self.export_assignment(&child, &package);
                     self.glob_assignment(&child);
                 }
                 // A block, an `if`, a `BEGIN` — a sub inside one is still a sub
@@ -414,6 +436,13 @@ impl Pass {
         } else {
             SymbolSource::Unknown
         };
+        // A body that makes methods makes them just as one at file scope does
+        // (METHOD-5d), and a body is where every accessor generator keeps its:
+        // `sub mk_fields { ... *{"${class}::$name"} = sub {...} }`, or the
+        // same thing delegated to a maker whose list is a variable.
+        if let Some(body) = definition.body() {
+            self.makes_methods_within(body.syntax());
+        }
         let constructs_own_class = name == "new" && constructs_its_class(&definition);
         self.decls.subs.push(SubDecl {
             package: package.to_string(),
@@ -450,6 +479,7 @@ impl Pass {
 
         if node.node_kind() == NodeKind::USE_STMT {
             self.decls.uses.push(module.clone());
+            self.facts(package).uses.push(module.clone());
         }
 
         // What the recognisers below are asked about. The resolver and the
@@ -536,6 +566,38 @@ impl Pass {
     /// `*Foo::bar = sub {...};` and `*{"${class}::$name"} = ...` make a method
     /// out of nothing this pass can name (`docs/typecheck.md`, non-goals), so
     /// the package they are in might have any method.
+    /// Whether a sub body makes methods: a glob assignment, or a call to an
+    /// accessor maker whose list of names this pass cannot read.
+    ///
+    /// `Class::Accessor::Lite->mk_ro_accessors($field)` in a loop is the same
+    /// generator a glob assignment is, one layer of politeness up, and the
+    /// names it makes are no more enumerable.
+    fn makes_methods_within(&mut self, node: &SyntaxNode) {
+        for statement in node.descendants() {
+            if matches!(
+                statement.node_kind(),
+                NodeKind::EXPR_STMT | NodeKind::VAR_DECL_STMT
+            ) {
+                self.glob_assignment(&statement);
+            }
+        }
+        for call in node.descendants().filter_map(ast::MethodCallExpr::cast) {
+            let Some(maker) = call.method_name().as_deref().and_then(AccessorMaker::of) else {
+                continue;
+            };
+            if maker == AccessorMaker::BestPractice {
+                continue;
+            }
+            let readable = call
+                .args()
+                .iter()
+                .all(|argument| !annotate::listed_names(argument).is_empty());
+            if !readable {
+                self.dynamic = true;
+            }
+        }
+    }
+
     fn glob_assignment(&mut self, node: &SyntaxNode) {
         let Some(assign) = node.descendants().find_map(ast::Assign::cast) else {
             return;
@@ -694,6 +756,67 @@ impl Pass {
     }
 
     /// `our @ISA = ('Base');` and `push @ISA, 'Base';`.
+    /// `our @EXPORT = qw(a b);` — the names this package puts into every
+    /// importer's namespace (`docs/types.md`, METHOD-6).
+    ///
+    /// A value this cannot read is the interesting half: `our @EXPORT =
+    /// get_public_functions;` is a whole mixin's worth of methods appearing in
+    /// a package whose own file never names one of them.
+    fn export_assignment(&mut self, node: &SyntaxNode, package: &str) {
+        let Some(assign) = node.descendants().find_map(ast::Assign::cast) else {
+            return;
+        };
+        let Some(target) = assign.target() else {
+            return;
+        };
+        let is_export = target
+            .descendants()
+            .filter_map(Variable::cast)
+            .any(|variable| {
+                variable.sigil() == Sigil::Array && variable.name().as_deref() == Some("EXPORT")
+            });
+        if !is_export {
+            return;
+        }
+        let Some(value) = assign.value() else {
+            return;
+        };
+        match exported_names(&value) {
+            Some(names) => self.facts(package).exports.extend(names),
+            None => self.facts(package).exports_unknown = true,
+        }
+    }
+
+    /// `Some::Generator->make_accessors([...])` written at file scope.
+    ///
+    /// A generator that assigns to globs puts its methods into the *caller's*
+    /// package, and the caller's own file says nothing about them
+    /// (`docs/types.md`, METHOD-5g). Only file scope, because that is when a
+    /// generator has to run.
+    fn file_scope_call(&mut self, node: &SyntaxNode, package: &str) {
+        let Some(call) = node
+            .descendants()
+            .find_map(ast::MethodCallExpr::cast)
+            .filter(|call| call.syntax().text_range().start() == node.text_range().start())
+        else {
+            return;
+        };
+        let Some(method) = call.method_name() else {
+            return;
+        };
+        let Some(target) = call.invocant().as_ref().and_then(ast::key_text) else {
+            return;
+        };
+        // `__PACKAGE__->mk_methods(...)` is how a class asks the generator it
+        // inherited to write into it.
+        let target = if target == "__PACKAGE__" {
+            package.to_string()
+        } else {
+            target
+        };
+        self.facts(package).file_scope_calls.push((target, method));
+    }
+
     fn isa_assignment(&mut self, node: &SyntaxNode, package: &str) {
         let Some(assign) = node.descendants().find_map(ast::Assign::cast) else {
             return;
@@ -772,6 +895,35 @@ fn constant_names(arguments: &SyntaxNode) -> Vec<(String, TextRange)> {
 /// A name with a sigil is a variable and the scope pass reads it; a bareword
 /// or a plain string is a sub. `:tags` and `-flags` name a set this pass
 /// cannot expand, so they contribute nothing.
+/// The sub names an `@EXPORT` list holds, or `None` when it is not a list of
+/// names at all (`docs/types.md`, METHOD-6).
+///
+/// `&name` is a sub written the long way; `$name`, `@name` and `%name` are
+/// variables, which are exported too and are never methods, so they are
+/// passed over rather than making the whole list unreadable.
+fn exported_names(value: &SyntaxNode) -> Option<Vec<String>> {
+    let mut names = Vec::new();
+    let elements = Args::elements(value);
+    if elements.is_empty() {
+        return None;
+    }
+    for element in elements {
+        let words = match element.node_kind() {
+            NodeKind::QW_EXPR => ast::QwExpr::cast(element).expect("kind checked").words(),
+            NodeKind::LITERAL => vec![Literal::cast(element).and_then(|view| view.as_string())?],
+            _ => return None,
+        };
+        for word in words {
+            let name = word.strip_prefix('&').unwrap_or(&word);
+            if name.starts_with(['$', '@', '%', '*']) {
+                continue;
+            }
+            names.push(name.to_string());
+        }
+    }
+    Some(names)
+}
+
 fn imported_names(arguments: &SyntaxNode) -> Vec<String> {
     let mut acc = Vec::new();
     let mut push = |text: String| {
