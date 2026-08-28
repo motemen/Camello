@@ -18,6 +18,22 @@ One line per change. The reasoning is in the commit it came from.
 
 ### Fixed
 
+- The methods an attribute generates are **callables**, not a type. A `has`
+  slot answered every name it owns with the attribute's type and nothing else,
+  so `$obj->set_count([1, 2])` against an `isa => 'Int'` had nothing to be
+  compared with — while the same sub written by hand was checked. Each
+  generated method now carries a parameter list: an accessor, a `reader`, a
+  `predicate` and a `clearer` take the invocant, a `writer` and a `wo`
+  accessor take the value, and an `rw` accessor may be read. So the value's
+  type is checked, the count is checked, writing to a `ro` slot and reading a
+  `wo` one are visible, and `Access` reaches the checker for the first time.
+  At `warning`: the shape is the framework's rather than the author's, and
+  Moose's reader ignores an argument it did not want where
+  `Class::Accessor::Lite`'s croaks.
+- `coerce => 1` widens what goes *in* and not what comes out. The declared
+  type is the ceiling on the coerced value and the coercion is a function
+  nobody here read — but the whole slot was being blanked to `Unknown`, so the
+  reader's type went with it.
 - A condition is read as a **tree** rather than as a flat scan of the names in
   it. `if (!$x) { $x->foo }` — a program that dies every time it takes the
   branch — was silent, because the old reading narrowed any variable that

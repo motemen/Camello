@@ -43,6 +43,12 @@ pub enum ParamSource {
     /// die: a missing argument is `undef` and an extra one is ignored. So a
     /// mismatch here is a warning about a shape, not an error about a rule.
     Unpacking,
+    /// What an attribute declaration generates: an accessor, a `writer`, a
+    /// `predicate`. The shape is the framework's rather than the author's,
+    /// and what each of them does with an argument it did not want is the
+    /// framework's business — Moose's reader ignores one and
+    /// `Class::Accessor::Lite`'s croaks — so a mismatch here is a warning.
+    Generated,
 }
 
 /// One parameter of a sub.

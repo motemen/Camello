@@ -82,11 +82,19 @@ fn does_gives_a_role() {
 }
 
 #[test]
-fn coerce_widens_the_slot() {
-    // A coerced slot accepts `Any`, because the coercion is a function the
-    // checker cannot see (`docs/typecheck.md`, non-goals).
+fn coerce_widens_what_goes_in_and_not_what_comes_out() {
+    // The coercion is a function the checker cannot see, so a coerced slot
+    // accepts anything — while the reader still gives back what the slot was
+    // declared (`docs/types.md`, ANNOT-2a).
     let found = attributes("use Moose;\nhas at => (is => 'ro', isa => 'Int', coerce => 1);\n");
-    assert_eq!(found[0].ty, Type::Unknown);
+    assert_eq!(found[0].ty, Type::Int);
+    assert!(found[0].coerce);
+    assert_eq!(found[0].returns("at"), Type::Int);
+    assert_eq!(found[0].accepts(), Type::Any);
+
+    let plain = attributes("use Moose;\nhas at => (is => 'ro', isa => 'Int');\n");
+    assert!(!plain[0].coerce);
+    assert_eq!(plain[0].accepts(), Type::Int);
 }
 
 #[test]

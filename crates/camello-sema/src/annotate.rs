@@ -270,6 +270,11 @@ pub struct AttributeDecl {
     /// A `default`, a `builder` or a `lazy` — anything that means `new` may
     /// leave the slot out.
     pub defaulted: bool,
+    /// `coerce => 1`: what goes in may be anything, and the coercion that
+    /// turns it into the declared type is a function nobody here read. What
+    /// comes back out is still the declared type.
+    #[serde(default)]
+    pub coerce: bool,
     /// The methods this attribute generates besides the accessor itself:
     /// `reader`, `writer`, `predicate`, `clearer`, and whatever `handles`
     /// delegates. Each with what it gives back, which is not the attribute's
@@ -288,6 +293,65 @@ impl AttributeDecl {
     #[must_use]
     pub fn answers_to(&self, name: &str) -> bool {
         self.name == name || self.methods.iter().any(|method| method.name == name)
+    }
+
+    /// What may be put *into* the slot: anything, where a coercion stands
+    /// between the caller and the declared type (`docs/types.md`, ANNOT-2a).
+    #[must_use]
+    pub fn accepts(&self) -> Type {
+        if self.coerce {
+            Type::Any
+        } else {
+            self.ty.clone()
+        }
+    }
+
+    /// The parameter list of the method `name` generates
+    /// (`docs/types.md`, METHOD-4c).
+    ///
+    /// This is what makes an attribute's methods checkable at all: they used
+    /// to be a *type* and nothing else, so `$obj->set_count([1, 2])` against
+    /// an `Int` slot had nothing to be compared with, while the same sub
+    /// written by hand was checked.
+    #[must_use]
+    pub fn params(&self, name: &str) -> crate::decl::Params {
+        use crate::decl::{Param, ParamSource, Params};
+        let invocant = Param {
+            name: "$self".to_string(),
+            optional: false,
+            ty: Type::Any,
+        };
+        let value = |optional: bool| Param {
+            name: format!("${}", self.name),
+            optional,
+            ty: self.accepts(),
+        };
+        let positional = |params: Vec<Param>| Params::Positional {
+            params,
+            slurpy: false,
+            invocant: true,
+            source: ParamSource::Generated,
+        };
+        let role = self
+            .methods
+            .iter()
+            .find(|method| method.name == name)
+            .map(|method| method.role);
+        match role {
+            Some(AccessorRole::Reader | AccessorRole::Predicate | AccessorRole::Clearer) => {
+                positional(vec![invocant])
+            }
+            Some(AccessorRole::Writer) => positional(vec![invocant, value(false)]),
+            // Another class's method, and nothing here read it.
+            Some(AccessorRole::Delegated) => Params::Unknown,
+            // The accessor itself, whose name is the attribute's. A `ro` one
+            // takes nothing; the others take the value, and may be read.
+            None => match self.access {
+                Access::Ro => positional(vec![invocant]),
+                Access::Wo => positional(vec![invocant, value(false)]),
+                Access::Rw => positional(vec![invocant, value(true)]),
+            },
+        }
     }
 
     /// What calling `name` on it gives back (`docs/types.md`, METHOD-4a).
@@ -404,6 +468,7 @@ pub fn read_has(call: &ast::Call, into: &mut Sink) -> Vec<AttributeDecl> {
     let options = arguments.get(1).map(Args::pairs).unwrap_or_default();
 
     let mut ty = Type::Unknown;
+    let mut coerce = false;
     let mut access = Access::Rw;
     let mut required = false;
     let mut defaulted = false;
@@ -436,11 +501,10 @@ pub fn read_has(call: &ast::Call, into: &mut Sink) -> Vec<AttributeDecl> {
             }
             Some("coerce") => {
                 // A coerced slot accepts `Any` and yields the declared type
-                // (`docs/typecheck.md`, non-goals): the coercion is a function
-                // the checker cannot see.
-                if is_true(value) {
-                    ty = Type::Unknown;
-                }
+                // (`docs/types.md`, ANNOT-2a): the coercion is a function the
+                // checker cannot see, so what may go *in* is anything — and
+                // what comes back out is still what the slot was declared.
+                coerce |= is_true(value);
             }
             Some(key @ ("reader" | "writer" | "accessor" | "predicate" | "clearer")) => {
                 let role = match key {
@@ -482,6 +546,7 @@ pub fn read_has(call: &ast::Call, into: &mut Sink) -> Vec<AttributeDecl> {
                 access,
                 required,
                 defaulted,
+                coerce,
                 methods: methods.clone(),
                 opaque_delegation,
                 range: first.text_range(),
@@ -583,6 +648,7 @@ pub fn read_accessor_typed(arguments: &SyntaxNode, into: &mut Sink) -> (Vec<Attr
                 // rather than finding it missing.
                 required: required && !lazy,
                 defaulted: defaulted || lazy,
+                coerce: false,
                 methods: Vec::new(),
                 opaque_delegation: false,
                 range: slot.range(),
@@ -757,6 +823,7 @@ pub fn accessor_attributes(
             // Nothing here is required by the constructor, and a lazy slot is
             // filled by its builder, so `new` may leave either out.
             defaulted: true,
+            coerce: false,
             methods: Vec::new(),
             opaque_delegation: false,
             range,

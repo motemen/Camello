@@ -23,7 +23,7 @@
 use camello_syntax::ast::{self, AstNode, Call, MethodCall, Sigil, Variable};
 use camello_syntax::lang::{NodeExt, NodeKind, SyntaxNode, TokenExt, TokenKind};
 
-use crate::decl::{ParamSource, Params, SubDecl};
+use crate::decl::{ParamSource, Params};
 use crate::diag::{Code, Diagnostic, Severity};
 use crate::program::Program;
 
@@ -60,7 +60,7 @@ fn check_call(call: &Call, file: usize, program: &Program, into: &mut Vec<Diagno
         &symbol.params,
         &shape,
         false,
-        symbol,
+        &symbol.name,
         call.callee_range(),
         into,
     );
@@ -83,7 +83,7 @@ fn check_method_call(call: &MethodCall, program: &Program, into: &mut Vec<Diagno
         &symbol.params,
         &shape,
         true,
-        symbol,
+        &symbol.name,
         call.method_range(),
         into,
     );
@@ -104,18 +104,18 @@ pub fn check_shape(
     params: &Params,
     call: &CallShape,
     through_arrow: bool,
-    symbol: &SubDecl,
+    name: &str,
     range: rowan::TextRange,
     into: &mut Vec<Diagnostic>,
 ) {
-    compare(params, call, through_arrow, symbol, range, into);
+    compare(params, call, through_arrow, name, range, into);
 }
 
 fn compare(
     params: &Params,
     call: &CallShape,
     through_arrow: bool,
-    symbol: &SubDecl,
+    name: &str,
     range: rowan::TextRange,
     into: &mut Vec<Diagnostic>,
 ) {
@@ -139,7 +139,7 @@ fn compare(
                     format!(
                         "`{}` takes named arguments; this one is neither a `key => value` pair \
                          nor a hash reference",
-                        symbol.name
+                        name
                     ),
                 )
                 .at(severity(source)),
@@ -162,7 +162,7 @@ fn compare(
                 format!(
                     "`{}` is declared `()`, which a method call ignores: perl passes the \
                      invocant regardless",
-                    symbol.name
+                    name
                 ),
             )
             .at(Code::IgnoredPrototype.default_severity()),
@@ -203,7 +203,7 @@ fn compare(
                 range,
                 format!(
                     "`{}` takes {direction} {bound} argument{}{}; {count} passed",
-                    symbol.name,
+                    name,
                     if bound == 1 { "" } else { "s" },
                     if through_arrow {
                         " including its invocant"
@@ -223,7 +223,7 @@ fn compare(
 fn severity(source: ParamSource) -> Severity {
     match source {
         ParamSource::Signature | ParamSource::Args => Severity::Error,
-        ParamSource::Unpacking => Severity::Warning,
+        ParamSource::Unpacking | ParamSource::Generated => Severity::Warning,
     }
 }
 

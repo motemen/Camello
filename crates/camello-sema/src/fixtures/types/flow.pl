@@ -205,5 +205,15 @@ Wants->a_string(x => $held->items);
 #~ warning type-mismatch: declared `Str`
 Wants->a_string(x => $held->has_items);
 Wants->a_string(x => $held->clear_items);
-Wants->a_string(x => $held->set_items);
+Wants->a_string(x => $held->set_items([2]));
 #~ warning type-mismatch: declared `Str`
+
+# And the methods an attribute generates are callables: what may be passed to
+# them is what the slot was declared, and how many arguments they take is the
+# framework's shape (METHOD-4c).
+$held->set_items('not an arrayref');
+#~ error type-mismatch: declared `ArrayRef[Int]`
+$held->set_items;
+#~ warning arity: takes at least 2 arguments including its invocant; 1 passed
+$held->items([2]);
+#~ warning arity: takes at most 1 argument including its invocant; 2 passed
