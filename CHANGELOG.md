@@ -18,6 +18,15 @@ One line per change. The reasoning is in the commit it came from.
 
 ### Fixed
 
+- A family's head takes everything in its family. `Ref` was equal to itself
+  and to nothing else, so `[1]`, `{ a => 1 }`, `sub {}` and `qr//` all failed
+  to be one — every reference in the language was a `type-mismatch` against a
+  `Ref` slot. `Object`, `Defined`, `Value` and `GlobRef` head families too,
+  and reading them in reverse is sound for the ones that say what *kind* of
+  thing a value is: a value known only as a `Ref` could be an `ArrayRef`, so
+  nothing is ruled out either way. The stringification chain is left directed,
+  because a literal that looked like a number is already an `Int` and what is
+  left in `Str` is a string that is not one.
 - The methods an attribute generates are **callables**, not a type. A `has`
   slot answered every name it owns with the attribute's type and nothing else,
   so `$obj->set_count([1, 2])` against an `isa => 'Int'` had nothing to be
@@ -72,6 +81,12 @@ One line per change. The reasoning is in the commit it came from.
 
 ### Added
 
+- `is_assignable`, the set-inclusion relation, beside the `compatible` the
+  checker reports against. Nothing reports through it yet: using assignability as the reporting relation would report values such as
+  `Bool` and `Enum` slots that TYPE-5c deliberately does not follow. It exists to be the foundation of a
+  stricter reading, and to hold `compatible` to account: `assignable ⇒
+  compatible` is a test, and it is what found two asymmetries in `compatible`
+  (`Defined` against `Undef`, and `Bool` against `Str`).
 - `ignored-prototype`, at `info`: a method call to a sub declared `()`.
   perlsub says a method call is not influenced by a prototype, and a bare `()`
   is a prototype where the signatures feature is off and a signature where it

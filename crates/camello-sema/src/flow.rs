@@ -1522,11 +1522,65 @@ fn is_optional(param: &Param) -> bool {
     param.optional || param.ty.is_optional()
 }
 
+/// Whether `broad` heads a family that `narrow` belongs to (`docs/types.md`,
+/// TYPE-6).
+///
+/// These are the types that say what *kind* of thing a value is and nothing
+/// more: `Ref` is every reference, `Value` every defined non-reference,
+/// `Object` every blessed one, and `Str`, `Num` and `GlobRef` each head a
+/// family too. Reading them as ordinary names — equal to themselves and to
+/// nothing else — is what made `[1]` fail to be a `Ref`, and a `Dict` fail to
+/// be one along with it.
+///
+/// Set-wise this is `narrow ⊆ broad` for the non-structural types, with
+/// `Bool`'s `undef` the one thing it is inexact about: `Bool` is counted into
+/// `Value` and `Defined` because three of its four values are, which is the
+/// overlap reading. [`is_assignable`] is the one that says otherwise.
+fn heads_family_of(broad: &Type, narrow: &Type) -> bool {
+    heads_kind_family_of(broad, narrow)
+        || match broad {
+            Type::Str => matches!(
+                narrow,
+                Type::Str
+                    | Type::Num
+                    | Type::Int
+                    | Type::Enum(_)
+                    | Type::ClassName
+                    | Type::RoleName
+            ),
+            Type::Num => matches!(narrow, Type::Num | Type::Int),
+            _ => false,
+        }
+}
+
+/// The half of [`heads_family_of`] that says what *kind* of thing a value is.
+///
+/// Read in reverse it is still true: a value known only as a `Ref` could be
+/// any reference, so nothing is ruled out either way. The stringification
+/// chain is not like that — `Int` fits a `Str` slot and a `Str` value is not
+/// shown to be an `Int`, because a numeric-looking literal is already an
+/// `Int` by TYPE-5b — so it is left out of this one.
+fn heads_kind_family_of(broad: &Type, narrow: &Type) -> bool {
+    match broad {
+        Type::Defined => !matches!(narrow, Type::Undef),
+        Type::Value => is_value(narrow),
+        Type::Ref => is_reference(narrow),
+        Type::Object => matches!(
+            narrow,
+            Type::Object | Type::InstanceOf(_) | Type::ConsumerOf(_) | Type::HasMethods(_)
+        ),
+        Type::GlobRef => matches!(narrow, Type::GlobRef | Type::FileHandle),
+        _ => false,
+    }
+}
+
 /// Whether a value of `value` could be in a slot declared `slot`.
 ///
 /// "Could be", not "is": the checker reports only what it can rule out. Every
 /// rule below is a *contradiction* — two shapes that cannot be the same value
-/// — and anything else is silence.
+/// — and anything else is silence. [`is_assignable`] is the stricter relation
+/// beside it, and `docs/types.md` TYPE-7 is why the checker reports against
+/// this one.
 #[must_use]
 pub fn compatible(value: &Type, slot: &Type, program: &Program) -> bool {
     let slot = slot.required();
@@ -1549,8 +1603,13 @@ pub fn compatible(value: &Type, slot: &Type, program: &Program) -> bool {
         // `undef` fits an `Undef` slot and a `Maybe` — and a `Bool`, whose
         // four values are `0`, `1`, `''` and `undef` in Moose and in
         // Types::Standard alike (`docs/types.md`, TYPE-5). Nothing else.
-        (Type::Undef, Type::Undef | Type::Bool) => true,
-        (Type::Undef, _) => false,
+        (Type::Undef, Type::Undef | Type::Bool) | (Type::Bool, Type::Undef) => true,
+        (Type::Undef, _) | (_, Type::Undef) => false,
+
+        // A family's head accepts everything in it, and — for the families
+        // that say what *kind* of thing a value is — a value known only as
+        // the head could be any of them, so nothing is ruled out either way.
+        (value, slot) if heads_family_of(slot, value) || heads_kind_family_of(value, slot) => true,
 
         // Stringification: `Int <: Num <: Str`, so a number fits a string slot
         // and never the other way round unless the string is numeric — which
@@ -1558,19 +1617,23 @@ pub fn compatible(value: &Type, slot: &Type, program: &Program) -> bool {
         (Type::Int, Type::Num | Type::Str | Type::Value) => true,
         (Type::Num, Type::Str | Type::Value) => true,
         (Type::Str, Type::Value) => true,
-        (Type::Int | Type::Num | Type::Str | Type::Bool, Type::Enum(_)) => true,
-        // An `Enum`'s values *are* strings, so it fits wherever a string does
-        // (`docs/types.md`, TYPE-5e).
-        (Type::Enum(_), Type::Str | Type::Value) => true,
+        // An `Enum`'s values *are* strings, so it meets every kind of scalar
+        // whichever side each is on (`docs/types.md`, TYPE-5e). Which of them
+        // it actually holds is a question about values, and this checker
+        // follows shapes.
+        (Type::Int | Type::Num | Type::Str | Type::Bool, Type::Enum(_))
+        | (Type::Enum(_), Type::Int | Type::Num | Type::Str | Type::Bool) => true,
         // One enum fits another when every value it may hold is a value the
         // other accepts.
         (Type::Enum(value), Type::Enum(slot)) => value.iter().all(|one| slot.contains(one)),
         (Type::Str, Type::ClassName | Type::RoleName) => true,
         (Type::ClassName | Type::RoleName, Type::Str) => true,
 
-        // Bool is nominal: `0`, `1`, `''` and `undef` are the values it has.
-        (Type::Bool, Type::Int | Type::Num | Type::Str) => true,
-        (Type::Int, Type::Bool) => true,
+        // Bool is nominal: `0`, `1`, `''` and `undef` are the values it has,
+        // and three of those four are numbers or strings — so it meets both,
+        // whichever side each is on (`docs/types.md`, TYPE-5c).
+        (Type::Bool, Type::Int | Type::Num | Type::Str)
+        | (Type::Int | Type::Num | Type::Str, Type::Bool) => true,
 
         // A reference and a value are never the same thing.
         (value, slot) if is_reference(value) && is_value(slot) => false,
@@ -1657,6 +1720,119 @@ pub fn compatible(value: &Type, slot: &Type, program: &Program) -> bool {
     }
 }
 
+/// Whether every value of `value` is a value of `slot` — set inclusion, which
+/// is what an assignment would have to satisfy (`docs/types.md`, TYPE-7).
+///
+/// The strict relation beside [`compatible`], and **not** the one the checker
+/// reports against. The two differ wherever a type holds more than the slot
+/// does without contradicting it: a `Str|ArrayRef[Str]` may be the `Str` the
+/// slot wanted and may not, and `Bool` holds an `undef` that a `Value` does
+/// not. Silence there is the checker's stance (`docs/types.md`, POLICY-1), so
+/// this exists to be asked rather than to be enforced — by a stricter reading
+/// later, and by the tests that hold the two relations against each other.
+#[must_use]
+pub fn is_assignable(value: &Type, slot: &Type, program: &Program) -> bool {
+    let slot = slot.required();
+    let value = value.required();
+    // Neither side is a claim, so there is nothing to fail. `Any` on the
+    // value side is one of these: a signature's parameters are all `Any`
+    // because a signature says nothing about types (`docs/types.md`,
+    // ANNOT-5), so it reaches here meaning "unannotated" rather than "every
+    // value there is".
+    if value.is_unknown()
+        || slot.is_unknown()
+        || matches!(slot, Type::Any)
+        || matches!(value, Type::Any)
+    {
+        return true;
+    }
+    if value == slot {
+        return true;
+    }
+    match (value, slot) {
+        // The whole of the difference: *every* value the union may hold has
+        // to be one the slot takes.
+        (Type::Union(members), _) => members
+            .iter()
+            .all(|member| is_assignable(member, slot, program)),
+        (_, Type::Union(members)) => members
+            .iter()
+            .any(|member| is_assignable(value, member, program)),
+
+        (Type::Undef, Type::Bool) => true,
+        (Type::Undef, _) => false,
+        // `Bool` is `0`, `1`, `''` and `undef`. The `undef` is why it is not a
+        // `Value`, not a `Defined` and not a `Str`, however much the other
+        // three are.
+        (Type::Bool, _) => false,
+
+        (value, slot) if heads_family_of(slot, value) => true,
+
+        (Type::ScalarRef(value), Type::ScalarRef(slot)) => is_assignable(value, slot, program),
+        (Type::ArrayRef(value), Type::ArrayRef(slot)) => is_assignable(value, slot, program),
+        (Type::Tuple(members), Type::ArrayRef(slot)) => members
+            .iter()
+            .all(|member| is_assignable(member, slot, program)),
+        (Type::Tuple(value), Type::Tuple(slot)) => {
+            value.len() == slot.len()
+                && value
+                    .iter()
+                    .zip(slot)
+                    .all(|(value, slot)| is_assignable(value, slot, program))
+        }
+        (Type::HashRef(value), Type::HashRef(slot) | Type::Map(_, slot)) => {
+            is_assignable(value, slot, program)
+        }
+        (Type::Map(_, value), Type::HashRef(slot)) => is_assignable(value, slot, program),
+        (Type::Map(value_key, value_item), Type::Map(slot_key, slot_item)) => {
+            is_assignable(value_key, slot_key, program)
+                && is_assignable(value_item, slot_item, program)
+        }
+        (Type::Dict { slots, slurpy }, Type::HashRef(slot) | Type::Map(_, slot)) => {
+            slots.iter().all(|(_, ty)| is_assignable(ty, slot, program))
+                && slurpy
+                    .as_ref()
+                    .is_none_or(|rest| is_assignable(rest, slot, program))
+        }
+        // Every key the slot names has to be there and to fit, and a key it
+        // does not name has to be one it allows.
+        (
+            Type::Dict {
+                slots: held,
+                slurpy: extra,
+            },
+            Type::Dict {
+                slots: declared,
+                slurpy: allowed,
+            },
+        ) => {
+            let names_it = |key: &str| declared.iter().any(|(name, _)| name == key);
+            declared.iter().all(
+                |(key, want)| match held.iter().find(|(name, _)| name == key) {
+                    Some((_, have)) => is_assignable(have, want.required(), program),
+                    None => want.is_optional(),
+                },
+            ) && (allowed.is_some()
+                || (extra.is_none() && held.iter().all(|(key, _)| names_it(key))))
+        }
+
+        // Type::Tiny has one regexp type under two names.
+        (Type::RegexpRef, Type::InstanceOf(class)) | (Type::InstanceOf(class), Type::RegexpRef) => {
+            class == "Regexp"
+        }
+        (Type::InstanceOf(value), Type::InstanceOf(slot)) => {
+            // A class the run never read is one nothing can be shown about.
+            if !program.knows_package(value) || !program.knows_package(slot) {
+                return true;
+            }
+            program.isa(value, slot)
+        }
+        (Type::Enum(value), Type::Enum(slot)) => value.iter().all(|one| slot.contains(one)),
+
+        _ => false,
+    }
+}
+
 fn is_reference(ty: &Type) -> bool {
     matches!(
         ty,
@@ -1691,8 +1867,12 @@ fn is_value(ty: &Type) -> bool {
 }
 
 /// Whether a type says enough for a "no" to mean anything.
+///
+/// A family's head says as much as its members do — `Defined` and `Value` each
+/// rule something out — so they are settled too, and the arm above them is
+/// what compares them.
 fn is_settled(ty: &Type) -> bool {
-    is_value(ty) || is_reference(ty) || matches!(ty, Type::Undef)
+    is_value(ty) || is_reference(ty) || matches!(ty, Type::Undef | Type::Defined | Type::Value)
 }
 
 // ----- narrowing -----
@@ -2005,3 +2185,6 @@ fn builtin_return(name: &str) -> Option<Type> {
 pub fn returns_nothing(returns: &Returns) -> bool {
     returns.list == ListShape::Nothing
 }
+
+#[cfg(test)]
+mod tests;

@@ -124,3 +124,28 @@ Kinds->value_slot(x => 'a string');
 Kinds->value_slot(x => 1);
 Kinds->value_slot(x => [1]);
 #~ error type-mismatch: declared `Value`
+
+# A family's head takes everything in its family (TYPE-6). `Ref` was equal to
+# itself and to nothing else, so every reference there is failed to be one.
+package Kinds2;
+use Smart::Args qw(args);
+sub any_ref    { args my $class, my $x => 'Ref';    return $x }
+sub any_object { args my $class, my $x => 'Object'; return $x }
+
+package main;
+
+Kinds2->any_ref(x => { a => 'x' });
+Kinds2->any_ref(x => [1]);
+Kinds2->any_ref(x => sub { 1 });
+Kinds2->any_ref(x => qr/x/);
+Kinds2->any_ref(x => \'a scalar');
+Kinds2->any_ref(x => 'a string');
+#~ error type-mismatch: declared `Ref`
+
+# And a value known only as the head could be any of the family, so nothing is
+# ruled out the other way round either.
+sub opaque {
+    args my $ref => 'Ref';
+    Kinds2->any_object(x => $ref);
+    return;
+}
