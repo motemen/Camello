@@ -189,9 +189,10 @@ method" there would be the worst kind of false positive.
 ### Scopes
 
 Lexical scopes are built per file from `my` / `our` / `state` / `local`,
-signature parameters, `foreach my $x`, `catch ($e)`, and the implicit `$_`
-/ `@_` / `%ENV` / `$0` set. `our $x` binds a lexical alias to a package
-variable; `local` does not declare. String interpolation is the notable
+the `class` feature's `field`, signature parameters, `foreach my $x`,
+`catch ($e)`, and the implicit `$_` / `@_` / `%ENV` / `$0` set. `our $x`
+binds a lexical alias to a package variable; `local` does not declare; a
+`field` declares its name for every `method` of the class. String interpolation is the notable
 extra: `"hi $who"` and `"$h->{k}[0]"` contain variable uses, so the
 `INTERPOLATED_STRING` token (one token today,
 `crates/camello-syntax/src/lex/atomic.rs`) is re-scanned by a small

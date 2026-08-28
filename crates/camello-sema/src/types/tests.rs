@@ -54,6 +54,16 @@ fn a_slurpy_dict_accepts_any_key() {
 }
 
 #[test]
+fn a_structured_constructor_without_parameters_constrains_only_the_kind() {
+    // Bare `Dict` in Type::Tiny accepts any hash; reading it as the *empty*
+    // `Dict` would make every key an `unknown-key` (`docs/types.md`, TYPE-4b).
+    assert_eq!(read("Dict"), Type::HashRef(Box::new(Type::Unknown)));
+    assert_eq!(read("Map"), Type::HashRef(Box::new(Type::Unknown)));
+    assert_eq!(read("Tuple"), Type::ArrayRef(Box::new(Type::Unknown)));
+    assert_eq!(read("Dict[a => Int]").to_string(), "Dict[a => Int]");
+}
+
+#[test]
 fn a_quoted_argument_is_a_name() {
     assert_eq!(
         read("InstanceOf['Foo::Bar']"),

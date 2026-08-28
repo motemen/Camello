@@ -6,10 +6,12 @@
 //! program graph is complete after this pass and editing a body invalidates
 //! one sub and nothing else.
 //!
-//! The one thing a body is read for is the sub's own parameter list, which is
-//! written *inside* it when the sub uses `args` or unpacks `@_`. That is still
-//! a declaration about the sub, not about the program, and it is read from the
-//! body's leading statements rather than from the body.
+//! Two things are read out of a body, and both are declarations about the sub
+//! rather than about the program. The parameter list is written *inside* it
+//! when the sub uses `args` or unpacks `@_`, and is read from the body's
+//! leading statements. And a `sub new` is asked whether it says the value it
+//! hands back is one of its own class (`docs/types.md`, INFER-2g), because a
+//! `new` that is a factory makes every method called on its answer missing.
 
 use std::collections::{HashMap, HashSet};
 
@@ -164,6 +166,10 @@ pub struct SubDecl {
     pub params: Params,
     pub returns: Returns,
     pub source: SymbolSource,
+    /// For a `new`: whether the body says the thing it hands back is one of
+    /// this class (`docs/types.md`, INFER-2g).
+    #[serde(default)]
+    pub constructs_own_class: bool,
     /// Where the name is, for "declared at".
     #[serde(with = "crate::serde_range")]
     pub range: TextRange,
@@ -408,12 +414,14 @@ impl Pass {
         } else {
             SymbolSource::Unknown
         };
+        let constructs_own_class = name == "new" && constructs_its_class(&definition);
         self.decls.subs.push(SubDecl {
             package: package.to_string(),
             name,
             params,
             returns: annotated.unwrap_or_default(),
             source,
+            constructs_own_class,
             range: definition
                 .name()
                 .map_or_else(|| node.text_range(), |view| view.range()),
@@ -493,6 +501,7 @@ impl Pass {
                             params: Params::Unknown,
                             returns: Returns::default(),
                             source: SymbolSource::Unknown,
+                            constructs_own_class: false,
                             range,
                             file: 0,
                         });
@@ -1009,6 +1018,41 @@ fn from_args(body: &ast::Block, into: &mut annotate::Sink) -> Option<Params> {
             source: ParamSource::Args,
         }
     })
+}
+
+/// Whether a hand-written `new` says the value it hands back is one of its
+/// own class (`docs/types.md`, INFER-2g).
+///
+/// The declaration pass reads a body for one thing only, the sub's own
+/// parameter list, and this is the second: still a fact about the sub rather
+/// than about the program, and asked of `new` alone.
+///
+/// The evidence is a `bless` — into whatever class, since `bless $self,
+/// $class` is how every constructor written for subclassing spells its own —
+/// or a `SUPER::`, which is a constructor borrowing its parent's and getting
+/// back what the parent blessed. A `new` with neither is a factory as easily
+/// as a constructor: `URI::new` ends `return $impclass->_init(...)` and hands
+/// back a `URI::http`, and calling it a `URI` made every method after it
+/// missing.
+fn constructs_its_class(definition: &SubDef) -> bool {
+    let Some(body) = definition.body() else {
+        // A forward declaration says nothing either way, and saying nothing is
+        // what the old reading did.
+        return true;
+    };
+    body.syntax().descendants_with_tokens().any(|element| {
+        element
+            .as_token()
+            .is_some_and(|token| token.token_kind() == TokenKind::IDENT && token.text() == "bless")
+            || element
+                .as_node()
+                .is_some_and(|node| node.node_kind() == NodeKind::SUB_NAME && is_super(node))
+    })
+}
+
+/// `SUPER::new` and the rest — a call into the parent's method of that name.
+fn is_super(node: &SyntaxNode) -> bool {
+    node.text().to_string().starts_with("SUPER::")
 }
 
 /// Where a statement's code begins, trivia excluded.

@@ -156,6 +156,9 @@ pub enum BindingKind {
     Param,
     /// `catch ($e)` — bound by the construct whether the body wants it or not.
     Caught,
+    /// The `class` feature's `field`: a per-instance slot every `method` of
+    /// the class sees.
+    Field,
     /// `$_`, `@_`, `%ENV` — bound by perl, not by the file.
     Implicit,
 }
@@ -172,7 +175,7 @@ impl BindingKind {
     /// (`docs/types.md`, DIAG-12).
     const fn unused_code(self) -> Option<Code> {
         match self {
-            BindingKind::My | BindingKind::State => Some(Code::UnusedVariable),
+            BindingKind::My | BindingKind::State | BindingKind::Field => Some(Code::UnusedVariable),
             BindingKind::Param => Some(Code::UnusedParameter),
             _ => None,
         }
@@ -645,6 +648,7 @@ impl<'a> Pass<'a> {
             Some(DeclKeyword::My) => BindingKind::My,
             Some(DeclKeyword::State) => BindingKind::State,
             Some(DeclKeyword::Our) => BindingKind::Our,
+            Some(DeclKeyword::Field) => BindingKind::Field,
             // `local` does not declare (`docs/typecheck.md`, "Scopes"). It
             // does not use, either: `local $x` names a package variable, and
             // whether that variable is one `strict` would have complained
@@ -674,10 +678,15 @@ impl<'a> Pass<'a> {
         } else {
             kind
         };
-        let guard = kind != BindingKind::Param && holds_a_guard(node, self.guards);
+        // An attribute on a `field` hands the name to something outside the
+        // class body — `:param` to the constructor, `:reader` to a generated
+        // accessor — so a body that never reads it is not the mistake
+        // `unused-variable` is about (`docs/types.md`, DIAG-2a).
+        let unread_by_design = (kind == BindingKind::Field && has_attribute(node))
+            || (kind != BindingKind::Param && holds_a_guard(node, self.guards));
         for variable in declaration.targets() {
             if let Some(index) = self.declare(&variable, kind) {
-                self.bindings[index].guard = guard;
+                self.bindings[index].guard = unread_by_design;
             }
         }
     }
@@ -926,6 +935,12 @@ fn names_the_argument_array(node: &SyntaxNode) -> bool {
 }
 
 /// Whether this `my` holds a value for its destructor ([`GUARD_NAMES`]).
+/// Whether a declaration carries an attribute — `field $x :param`.
+fn has_attribute(node: &SyntaxNode) -> bool {
+    node.children()
+        .any(|child| child.node_kind() == NodeKind::ATTR)
+}
+
 fn holds_a_guard(node: &SyntaxNode, extra: &[String]) -> bool {
     let Some(value) = initialiser(node) else {
         return false;
