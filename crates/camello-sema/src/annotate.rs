@@ -1187,6 +1187,15 @@ pub enum ListShape {
     Fixed(Vec<Type>),
     /// `Returns: (Row ...)` — any length, one element type.
     Of(Type),
+    /// `Returns: (Value, Undef) | (Undef, Error)` — several fixed shapes of
+    /// one length, one of which a call hands back.
+    ///
+    /// The ok-or-error idiom is written this way in half a corpus, and joining
+    /// its two `return`s slot-wise into `(Value|Undef, Error|Undef)` throws
+    /// away the only thing they say: *which* slot is filled when. Every
+    /// alternative has the same number of slots, there are at least two of
+    /// them, and no two are the same.
+    Either(Vec<Vec<Type>>),
 }
 
 impl ListShape {
@@ -1219,25 +1228,61 @@ impl ListShape {
         }
     }
 
+    /// Several fixed shapes of one length, or the one they collapse to.
+    ///
+    /// Deduplicated, because two `return`s of the same shape are one shape;
+    /// collapsed to a single `Fixed` when that is all that is left; and
+    /// collapsed slot-wise past [`ListShape::ALTERNATIVES`], where the
+    /// alternation has stopped being the thing the sub is about and the
+    /// slot-wise union is the honest summary.
+    #[must_use]
+    pub fn either(shapes: Vec<Vec<Type>>) -> ListShape {
+        let mut kept: Vec<Vec<Type>> = Vec::new();
+        for shape in shapes {
+            if !kept.contains(&shape) {
+                kept.push(shape);
+            }
+        }
+        match kept.len() {
+            0 => ListShape::Unknown,
+            1 => ListShape::fixed(kept.remove(0)),
+            // One slot has nothing to be correlated *with*, so an alternation
+            // of them says exactly what the union of them says.
+            _ if width(&kept) <= 1 => ListShape::fixed(slotwise(&kept)),
+            _ if kept.len() > Self::ALTERNATIVES => ListShape::fixed(slotwise(&kept)),
+            _ => ListShape::Either(kept),
+        }
+    }
+
+    /// How many alternatives are worth keeping apart.
+    ///
+    /// Two is the idiom this exists for. A sub with five differently-shaped
+    /// `return`s is not describing a choice a caller makes decisions from, and
+    /// a five-way alternation in a signature reads worse than the union does.
+    pub const ALTERNATIVES: usize = 3;
+
     /// The join of two shapes (`docs/return-inference.md`, "The shape").
     ///
-    /// Both `Fixed` of the same length is slot-wise union; a length that does
-    /// not agree, or an `Of` on either side, is `Of` of every member joined —
-    /// because once the length is not known, neither is which slot is which.
-    /// Anything against `Unknown` is `Unknown`, which is the same rule the
-    /// scalar half's join has and for the same reason.
+    /// Two shapes of the same length are kept *apart*, as alternatives, rather
+    /// than joined slot-wise: `return (undef, $err)` beside `return ($value,
+    /// undef)` is `(Undef, Error) | (Value, Undef)`, and the slot-wise answer
+    /// would say the two slots vary independently, which is exactly what the
+    /// idiom promises they do not. A length that does not agree, or an `Of` on
+    /// either side, is `Of` of every member joined — because once the length
+    /// is not known, neither is which slot is which. Anything against
+    /// `Unknown` is `Unknown`, which is the same rule the scalar half's join
+    /// has and for the same reason.
     #[must_use]
     pub fn join(self, other: ListShape) -> ListShape {
         if self == ListShape::Unknown || other == ListShape::Unknown {
             return ListShape::Unknown;
         }
-        match (self.slots(), other.slots()) {
-            (Some(left), Some(right)) if left.len() == right.len() => ListShape::fixed(
-                left.into_iter()
-                    .zip(right)
-                    .map(|(left, right)| Type::union(vec![left, right]))
-                    .collect(),
-            ),
+        match (self.alternatives(), other.alternatives()) {
+            (Some(left), Some(right)) if width(&left) == width(&right) => {
+                let mut shapes = left;
+                shapes.extend(right);
+                ListShape::either(shapes)
+            }
             _ => {
                 let mut members = self.members();
                 members.extend(other.members());
@@ -1246,13 +1291,33 @@ impl ListShape {
         }
     }
 
-    /// The slots, when the length is known. `Returns: ()` is a list of none,
-    /// which is what makes it agree with `(Str)` being a list of one.
+    /// The shapes this may be, when the length is known. `Returns: ()` is a
+    /// list of none, which is what makes it agree with `(Str)` being a list of
+    /// one.
     #[must_use]
-    fn slots(&self) -> Option<Vec<Type>> {
+    fn alternatives(&self) -> Option<Vec<Vec<Type>>> {
+        match self {
+            ListShape::Nothing => Some(vec![Vec::new()]),
+            ListShape::Fixed(types) => Some(vec![types.clone()]),
+            ListShape::Either(shapes) => Some(shapes.clone()),
+            ListShape::Unknown | ListShape::Of(_) => None,
+        }
+    }
+
+    /// The slots, when the length is known — one type per position.
+    ///
+    /// An alternation answers slot-wise here, which is what keeps every reader
+    /// of a *position* working unchanged: `my ($value, $error) = f()` binds
+    /// `Value|Undef` and `Undef|Error` whether or not the two are correlated,
+    /// because nothing here can carry the correlation past the assignment.
+    /// What the alternation is for is what gets *shown* and what gets written
+    /// down.
+    #[must_use]
+    pub fn slots(&self) -> Option<Vec<Type>> {
         match self {
             ListShape::Nothing => Some(Vec::new()),
             ListShape::Fixed(types) => Some(types.clone()),
+            ListShape::Either(shapes) => Some(slotwise(shapes)),
             ListShape::Unknown | ListShape::Of(_) => None,
         }
     }
@@ -1265,6 +1330,7 @@ impl ListShape {
             ListShape::Nothing => Vec::new(),
             ListShape::Fixed(types) => types.clone(),
             ListShape::Of(ty) => vec![ty.clone()],
+            ListShape::Either(shapes) => shapes.concat(),
         }
     }
 
@@ -1284,8 +1350,45 @@ impl ListShape {
                     .join(", ")
             )),
             ListShape::Of(ty) => Some(format!("({ty} ...)")),
+            ListShape::Either(shapes) => Some(
+                shapes
+                    .iter()
+                    .map(|slots| {
+                        format!(
+                            "({})",
+                            slots
+                                .iter()
+                                .map(ToString::to_string)
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" | "),
+            ),
         }
     }
+}
+
+/// How many slots the alternatives have, which is one number because they all
+/// have it.
+fn width(shapes: &[Vec<Type>]) -> usize {
+    shapes.first().map_or(0, Vec::len)
+}
+
+/// The union at each position, which is what an alternation collapses to when
+/// nothing can carry the correlation any further.
+fn slotwise(shapes: &[Vec<Type>]) -> Vec<Type> {
+    (0..width(shapes))
+        .map(|slot| {
+            Type::union(
+                shapes
+                    .iter()
+                    .filter_map(|one| one.get(slot).cloned())
+                    .collect(),
+            )
+        })
+        .collect()
 }
 
 /// Read the `Returns:` lines out of a sub's leading comment block.
@@ -1404,6 +1507,10 @@ fn parse_returns(body: &str, range: TextRange, into: &mut Sink) -> Written {
         return Written::Silent;
     }
 
+    if let Some(written) = alternation(body, range, into) {
+        return written;
+    }
+
     let Some(inner) = list_body(body) else {
         // A `Returns:` that is prose rather than an annotation is not a broken
         // annotation; see `types::is_type_shaped`.
@@ -1449,10 +1556,19 @@ fn parse_returns(body: &str, range: TextRange, into: &mut Sink) -> Written {
         };
     }
 
+    match fixed_slots(inner, body, range, into) {
+        Some(members) => Written::List(ListShape::Fixed(members)),
+        None => Written::Silent,
+    }
+}
+
+/// The slots of one parenthesised list body, or `None` where it is prose or
+/// does not parse.
+fn fixed_slots(inner: &str, body: &str, range: TextRange, into: &mut Sink) -> Option<Vec<Type>> {
     let parts = split_top_level(inner);
     // Prose in parentheses is still prose: `# Returns: (see below)`.
     if parts.iter().any(|part| !types::is_type_shaped(part.trim())) {
-        return Written::Silent;
+        return None;
     }
     let mut members = Vec::new();
     for part in parts {
@@ -1463,11 +1579,41 @@ fn parse_returns(body: &str, range: TextRange, into: &mut Sink) -> Written {
             }
             Err(error) => {
                 bad_returns(body, range, &error.message, into);
-                return Written::Silent;
+                return None;
             }
         }
     }
-    Written::List(ListShape::Fixed(members))
+    Some(members)
+}
+
+/// `(Value, Undef) | (Undef, Error)` — the alternatives of a list shape.
+///
+/// Only where *every* part is parenthesised from its first character to its
+/// last: `Str | Undef` is a scalar union and the `|` in it belongs to the type
+/// language, not to this.
+fn alternation(body: &str, range: TextRange, into: &mut Sink) -> Option<Written> {
+    let parts = split_top_level_on(body, '|');
+    if parts.len() < 2 {
+        return None;
+    }
+    let bodies: Vec<&str> = parts
+        .iter()
+        .map(|part| list_body(part.trim()))
+        .collect::<Option<Vec<_>>>()?;
+    let mut shapes = Vec::new();
+    for inner in bodies {
+        shapes.push(fixed_slots(inner.trim(), body, range, into)?);
+    }
+    if shapes.iter().any(|one| one.len() != shapes[0].len()) {
+        bad_returns(
+            body,
+            range,
+            "the alternatives of a list shape all have the same number of slots",
+            into,
+        );
+        return Some(Written::Silent);
+    }
+    Some(Written::List(ListShape::either(shapes)))
 }
 
 /// The inside of a body that is parenthesised from its first character to its
@@ -1497,6 +1643,12 @@ fn list_body(body: &str) -> Option<&str> {
 
 /// Split on commas that are not inside brackets.
 fn split_top_level(text: &str) -> Vec<String> {
+    split_top_level_on(text, ',')
+}
+
+/// The same, on any separator: `|` is what separates the alternatives of a
+/// list shape, and it is inside a slot as often as it separates one.
+fn split_top_level_on(text: &str, separator: char) -> Vec<String> {
     let mut parts = Vec::new();
     let mut depth = 0usize;
     let mut current = String::new();
@@ -1510,7 +1662,7 @@ fn split_top_level(text: &str) -> Vec<String> {
                 depth = depth.saturating_sub(1);
                 current.push(ch);
             }
-            ',' if depth == 0 => {
+            _ if ch == separator && depth == 0 => {
                 parts.push(std::mem::take(&mut current));
             }
             _ => current.push(ch),
