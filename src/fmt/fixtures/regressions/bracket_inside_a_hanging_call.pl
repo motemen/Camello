@@ -45,3 +45,31 @@ unless (
 ) {
     warn "no";
 }
+
+# A bracket opened on a line the call hung is placed from there too (INDENT-4):
+# one level in from the bracket, and the closing bracket back at it. Measured
+# from the statement's level instead, the contents came back to the left of the
+# `[` holding them and the `]` landed in column zero.
+foo "bar",
+    [
+        1,
+    ],
+    "baz";
+
+foo "bar",
+    {
+        k => 1,
+    },
+    "baz";
+
+# A line the renderer did not place says nothing about where what opens on it
+# belongs: verbatim content owns its own lines and starts them in column 0, so
+# the bracket written after one is still placed from the argument list it is in.
+sub verbatim_before_a_bracket {
+    $obj->meth(q[
+        foo
+    ], {
+        k => 1,
+    },
+    );
+}

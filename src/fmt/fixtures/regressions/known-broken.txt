@@ -19,4 +19,3 @@
 #
 # One path per line, relative to the repository root.
 
-src/fmt/fixtures/regressions/bracket_opened_on_a_wrapped_line.pl

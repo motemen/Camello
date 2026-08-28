@@ -1,5 +1,6 @@
 ---
 source: src/fmt/tests.rs
+assertion_line: 831
 expression: format(&source)
 ---
 # Subroutine signatures formatting samples
@@ -13,9 +14,9 @@ sub flexible ($first, $, $third //= 3, @rest) {
 
 sub configure
     (
-    $debug ||= 0,
-    %opts
-) {
+        $debug ||= 0,
+        %opts
+    ) {
     return $opts{level} // $debug;
 }
 
