@@ -372,6 +372,10 @@ impl Pass<'_> {
                 }
             }
             NodeKind::ANON_HASH => self.anon_hash(node),
+            // `+{ ... }` is the hashref it wraps, and `+(...)` the list.
+            NodeKind::PREFIX_EXPR if ast::without_plus(node) != *node => {
+                self.type_of(&ast::without_plus(node))
+            }
             NodeKind::REFERENCE_EXPR => {
                 let inner = node.children().next();
                 match inner

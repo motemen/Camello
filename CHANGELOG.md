@@ -63,6 +63,17 @@ One line per change. The reasoning is in the commit it came from.
   per level cost 2^depth: `camello typecheck` on a real `Type::Library` file
   did not finish. It also said whatever an argument had to say twice, which is
   where a run's duplicate `unknown-method` and `maybe-deref` lines came from.
+- A `+` disambiguator is looked through. `+{ ... }` is how a writer keeps perl
+  from reading the brace as a block and says nothing about the value, but every
+  reader that matched on the shape of a hashref missed it: `args my $x => +{
+  isa => 'Int', default => 10 }` was read as a rule with no `default`, so the
+  parameter came out mandatory and `missing-argument` fired at every call that
+  left it out. The same value written `{ ... }` was read correctly. It also
+  covers a `Class::Accessor::Typed` slot, the accessor and attribute name
+  lists, and the type a `+{ ... }` expression has.
+- `optional => 0` in an `args` rule means the parameter is required, the way it
+  already did for a `Class::Accessor::Typed` slot. Anything the rule cannot
+  read as a number is still taken as optional.
 
 ## 0.1.1 — 2026-08-27
 
