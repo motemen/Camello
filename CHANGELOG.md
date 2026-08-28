@@ -57,6 +57,18 @@ One line per change. The reasoning is in the commit it came from.
 
 ### Fixed
 
+- A file's own declarations answer about its own body. The parameter list a
+  body starts from was fetched from one global `(package, sub)` index whose
+  rule is first-wins, so a second copy of a package anywhere in the workspace
+  — a vendored dependency, an old checkout left in the tree — decided what the
+  file being read was typed from, and it sorts before `lib/` often enough to
+  win. In the editor the symptom was a type that arrived and then left: hover
+  read the annotation off the buffer while single-file analysis answered, and
+  said `Any` from the moment the index finished. `Program::sub_in` asks the
+  file in hand first and falls back to the global index, so it differs only
+  where a duplicate exists — which is where the global answer was a guess
+  between two files. The body pass, a bareword call's resolution (and so
+  go-to-definition on one) and hover over a `sub` name all ask that way now.
 - A family's head takes everything in its family. `Ref` was equal to itself
   and to nothing else, so `[1]`, `{ a => 1 }`, `sub {}` and `qr//` all failed
   to be one — every reference in the language was a `type-mismatch` against a
