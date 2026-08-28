@@ -211,6 +211,30 @@ impl Program {
                 if facts.roles.iter().any(|role| !self.knows_package(role)) {
                     return true;
                 }
+                // A package that exports its own subs is a mixin: what its
+                // methods are called on is whichever package imported them,
+                // not this one (METHOD-6b).
+                if facts.exports_unknown || !facts.exports.is_empty() {
+                    return true;
+                }
+                // A module whose `@EXPORT` this could not read puts names
+                // here that nothing can enumerate (METHOD-6a), and a code
+                // generator that assigns to globs writes its methods into the
+                // package that *called* it (METHOD-5g).
+                if facts.uses.iter().any(|module| {
+                    self.facts(module)
+                        .iter()
+                        .any(|exporter| exporter.exports_unknown)
+                }) {
+                    return true;
+                }
+                if facts
+                    .file_scope_calls
+                    .iter()
+                    .any(|(target, method)| self.is_generator(target, method))
+                {
+                    return true;
+                }
                 declares_anything |= !facts.attributes.is_empty() || facts.constructor;
             }
             // A package the run has seen the *name* of and nothing else — an
@@ -219,6 +243,23 @@ impl Program {
             declares_anything |= self.subs.iter().any(|symbol| symbol.package == class);
             if !declares_anything {
                 return true;
+            }
+        }
+        false
+    }
+
+    /// Whether a method call is a call to a code generator: a sub declared in
+    /// a file that assigns to globs (`docs/types.md`, METHOD-5g).
+    ///
+    /// `TAP::Object::mk_methods` and `Class::Accessor`'s family all write
+    /// `*{"${class}::$name"} = sub {...}`, so the methods land in whichever
+    /// package made the call and that package's own file never names one.
+    /// Resolved through `linearise` rather than `resolve_method`, which would
+    /// ask this question back.
+    fn is_generator(&self, target: &str, method: &str) -> bool {
+        for class in self.linearise(target) {
+            if self.sub(&class, method).is_some() {
+                return self.facts(&class).iter().any(|facts| facts.dynamic);
             }
         }
         false
@@ -317,6 +358,27 @@ impl Program {
                 }
                 if name == "new" && facts.constructor {
                     return MethodLookup::Constructor;
+                }
+            }
+        }
+        // A name a module exports is a sub of this package: `use Exporter
+        // 'import'` installs it here, so `$self->name` finds it
+        // (`docs/types.md`, METHOD-6). Asked after the class's own
+        // declarations, because that is the order perl would find them in and
+        // it keeps the common lookup as short as it was.
+        for class in self.linearise(package) {
+            for facts in self.facts(&class) {
+                for module in &facts.uses {
+                    if !self
+                        .facts(module)
+                        .iter()
+                        .any(|exporter| exporter.exports.iter().any(|export| export == name))
+                    {
+                        continue;
+                    }
+                    if let Some(symbol) = self.sub(module, name) {
+                        return MethodLookup::Sub(symbol);
+                    }
                 }
             }
         }
