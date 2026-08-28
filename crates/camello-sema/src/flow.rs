@@ -893,7 +893,7 @@ impl Pass<'_> {
                         &params,
                         &shape,
                         true,
-                        symbol,
+                        &symbol.name,
                         call.method_range(),
                         &mut self.diagnostics,
                     );
@@ -911,10 +911,28 @@ impl Pass<'_> {
                     returns.scalar
                 }
             }
-            // Not the attribute's type for every name it answers to: a
-            // `predicate` says whether the slot is filled, not what is in it
-            // (`docs/types.md`, METHOD-4a).
-            MethodLookup::Attribute(attribute) => attribute.returns(&method),
+            // An attribute's methods are callables like any other: what
+            // `$obj->set_count(...)` may be passed is what the slot was
+            // declared, and how many arguments it takes is the framework's
+            // shape (`docs/types.md`, METHOD-4c). Read as a type and nothing
+            // else, none of that was ever compared.
+            MethodLookup::Attribute(attribute) => {
+                let params = attribute.params(&method);
+                let returns = attribute.returns(&method);
+                if through_a_value {
+                    let shape = crate::arity::CallShape::of(&arguments, &call.pairs());
+                    crate::arity::check_shape(
+                        &params,
+                        &shape,
+                        true,
+                        &method,
+                        call.method_range(),
+                        &mut self.diagnostics,
+                    );
+                }
+                self.check_arguments(&params, &call.pairs(), &typed, &method, call.method_range());
+                returns
+            }
             MethodLookup::Constructor => {
                 self.check_constructor(&class, &call.pairs(), &typed, call.method_range());
                 Type::InstanceOf(class)
