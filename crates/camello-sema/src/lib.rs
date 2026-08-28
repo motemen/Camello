@@ -260,6 +260,43 @@ impl Analysis {
         }
     }
 
+    /// Step 4′ (`docs/return-inference.md`, "What changes for the incremental
+    /// loop"): re-derive one file's inferred returns, and say whether the
+    /// graph now holds anything different.
+    ///
+    /// A body edit that keeps tier 1's answer but changes what tier 2 would
+    /// say — `return $self->load` edited to `return $self->parse`, both
+    /// cross-file — is invisible to the declaration fingerprint, and the
+    /// callers in other open files would go on seeing the old type.
+    ///
+    /// Every inferable sub is put back to `Unknown` first, because a monotone
+    /// round only ever looks at what is still unresolved and the stale answer
+    /// is not. Nothing is lost by that: what tier 1 could see inside the file,
+    /// the whole program can see too.
+    pub fn reinfer_returns(&mut self, path: &Path, source: &str) -> bool {
+        let Some(file) = self.program.index_of(path) else {
+            return false;
+        };
+        let candidates = self.program.inferable_returns(file);
+        if candidates.is_empty() {
+            return false;
+        }
+        let before: Vec<annotate::Returns> = candidates
+            .iter()
+            .map(|index| self.program.returns_at(file, *index))
+            .collect();
+        for index in &candidates {
+            self.program
+                .set_returns(file, *index, annotate::Returns::default());
+        }
+        self.infer_returns(&[path.to_path_buf()], Some(1), |_| Some(source.to_string()));
+        let after: Vec<annotate::Returns> = candidates
+            .iter()
+            .map(|index| self.program.returns_at(file, *index))
+            .collect();
+        before != after
+    }
+
     /// Everything the checker has to say about one file.
     ///
     /// Parsing is the caller's, because a caller that formats and checks the

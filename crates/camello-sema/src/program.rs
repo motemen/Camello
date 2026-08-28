@@ -233,6 +233,20 @@ impl Program {
     /// left over is exactly this.
     #[must_use]
     pub fn unresolved_returns(&self, file: usize) -> Vec<usize> {
+        self.returns_to_walk(file, Returns::is_unresolved)
+    }
+
+    /// Every sub in a file whose return the walk may read at all, answered or
+    /// not.
+    ///
+    /// What step 4′ starts from: the graph may hold a tier-2 answer this edit
+    /// changed, and a monotone round would never look at it again.
+    #[must_use]
+    pub fn inferable_returns(&self, file: usize) -> Vec<usize> {
+        self.returns_to_walk(file, Returns::is_inferable)
+    }
+
+    fn returns_to_walk(&self, file: usize, wanted: impl Fn(&Returns) -> bool) -> Vec<usize> {
         self.files
             .get(file)
             .map(|entry| {
@@ -246,13 +260,20 @@ impl Program {
                     // is known (INFER-2g): reading `InstanceOf[the package it
                     // was written in]` off the `bless` instead would tell
                     // every subclass it was the parent.
-                    .filter(|(_, symbol)| {
-                        symbol.returns.is_unresolved() && !symbol.constructs_own_class
-                    })
+                    .filter(|(_, symbol)| wanted(&symbol.returns) && !symbol.constructs_own_class)
                     .map(|(index, _)| index)
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    /// What the graph holds for one sub's return.
+    #[must_use]
+    pub fn returns_at(&self, file: usize, index: usize) -> Returns {
+        self.files
+            .get(file)
+            .and_then(|entry| entry.decls.subs.get(index))
+            .map_or_else(Returns::default, |symbol| symbol.returns.clone())
     }
 
     /// Rebuild the name indexes from the files, which are the truth.

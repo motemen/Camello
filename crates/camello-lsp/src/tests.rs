@@ -595,3 +595,104 @@ mod declarations_reach_the_graph {
         );
     }
 }
+
+/// Step 4′ (`docs/return-inference.md`, "What changes for the incremental
+/// loop"): the edit tier 1 cannot see.
+///
+/// A body edit that changes which class a sub hands back, where both classes
+/// are reached through another file. Tier 1 runs inside the declaration pass,
+/// where a call into another file is `Unknown`, so it says the same thing
+/// before and after — the fingerprint does not move, and without 4′ the
+/// callers in other open files would go on being checked against the old
+/// class through any number of further edits.
+mod an_edit_only_the_program_can_see {
+    use std::fs;
+    use std::path::Path;
+
+    use crate::index;
+    use crate::settings::Settings;
+
+    fn mid(callee: &str) -> String {
+        format!("package Mid;\nsub get {{ return Leaf->{callee} }}\n\n1;\n")
+    }
+
+    fn workspace() -> (tempfile::TempDir, Settings) {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let write = |name: &str, text: &str| {
+            fs::write(dir.path().join(name), text).expect("a writable fixture");
+        };
+        write(
+            "Row.pm",
+            "package Row;\nsub new { my $class = shift; return bless {}, $class }\nsub row_only { 1 }\n\n1;\n",
+        );
+        write(
+            "Sheet.pm",
+            "package Sheet;\nsub new { my $class = shift; return bless {}, $class }\nsub sheet_only { 1 }\n\n1;\n",
+        );
+        write(
+            "Leaf.pm",
+            "package Leaf;\nsub load { return Row->new }\nsub parse { return Sheet->new }\n\n1;\n",
+        );
+        write("Mid.pm", &mid("load"));
+        write(
+            "main.pl",
+            "use strict;\nuse warnings;\n\nMid->get->row_only;\n",
+        );
+        let (mut settings, problems) = Settings::load(dir.path(), &[dir.path().to_path_buf()]);
+        assert!(problems.is_empty(), "{problems:?}");
+        settings.cache_dir = None;
+        (dir, settings)
+    }
+
+    fn messages(index: &index::Index, path: &Path) -> Vec<String> {
+        let source = fs::read_to_string(path).expect("a readable file");
+        let parsed = camello_syntax::parse::parse(&source);
+        index
+            .analysis
+            .check(
+                path,
+                &parsed.syntax(),
+                &source,
+                &camello_sema::Options::default(),
+            )
+            .iter()
+            .map(|diagnostic| diagnostic.message.clone())
+            .collect()
+    }
+
+    #[test]
+    fn the_other_open_files_diagnostics_move() {
+        let (dir, settings) = workspace();
+        let main = dir.path().join("main.pl");
+        let mut index = index::build(&settings);
+        assert_eq!(
+            messages(&index, &main),
+            Vec::<String>::new(),
+            "`Mid->get` is a `Row`, and a `Row` has a `row_only`",
+        );
+
+        let path = dir.path().join("Mid.pm");
+        let edited = mid("parse");
+        let decls = index::declarations(
+            &path,
+            &edited,
+            &settings.dialect,
+            &camello_sema::resolve::Cache::disabled(),
+        );
+        assert!(
+            !index.install(&path, decls),
+            "nothing tier 1 can see moved: both callees are another file's",
+        );
+        assert!(
+            index.analysis.reinfer_returns(&path, &edited),
+            "and this is what notices that something did",
+        );
+        let found = messages(&index, &main);
+        assert!(
+            found
+                .iter()
+                .any(|message| message.contains("`Sheet` declares no method `row_only`")),
+            "{found:?}",
+        );
+    }
+}
