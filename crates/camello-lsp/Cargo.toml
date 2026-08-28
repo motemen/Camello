@@ -1,17 +1,17 @@
 [package]
-name = "camello-sema"
+name = "camello-lsp"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
 camello-syntax = { path = "../camello-syntax" }
+camello-sema = { path = "../camello-sema" }
+camello-fmt = { path = "../camello-fmt" }
 
-# CST操作のコアライブラリ
 rowan = { workspace = true }
-
-# 宣言キャッシュの直列化（docs/typecheck.md「Dependencies」）
 serde = { workspace = true }
 serde_json = { workspace = true }
-
-# camello.toml、CLI と `camello lsp` が同じ [check] を読むため
 toml = { workspace = true }
+
+tower-lsp-server = "0.23"
+tokio = { version = "1", features = ["rt-multi-thread", "io-std", "macros", "sync", "time"] }

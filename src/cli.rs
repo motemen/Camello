@@ -128,6 +128,18 @@ pub enum Commands {
         #[command(flatten)]
         args: CheckArgs,
     },
+    /// Speak the Language Server Protocol over standard input and output
+    ///
+    /// One binary, no separate executable to find or version-match: a client
+    /// configures the command `camello lsp` and is done. What it answers is
+    /// the checker's diagnostics as you type, the inferred type and a sub's
+    /// signature on hover, the methods a receiver's class actually has on
+    /// `->`, an outline, go-to-definition, and whole-file formatting
+    /// (`docs/lsp.md`).
+    ///
+    /// Visible in `--help`, unlike `dev`: it is a user-facing entry point,
+    /// and hidden discoverability helps nobody.
+    Lsp,
     /// Developer tools (hidden): not an interface to depend on
     ///
     /// Everything here exists to work on camello itself — asking the invariants
@@ -318,6 +330,46 @@ pub enum DevCommands {
         )]
         encoding: Option<String>,
     },
+
+    /// Build the language server's workspace index over a corpus, and say what
+    /// it cost
+    ///
+    /// The corpus bar of `docs/lsp.md`: how many files the walk read, how long
+    /// it took, and how much memory the `FileDecls`-only residency actually
+    /// costs — the design assumes that fits a large repository comfortably, and
+    /// this is what turns the assumption into a number. `--edits` adds the
+    /// other bar: N decl-diff-clean edits to one file, which is what the
+    /// 300 ms debounce is to be compared against.
+    Index {
+        /// Directories to index
+        #[arg(help = "Directories to index (recursive)")]
+        paths: Vec<PathBuf>,
+
+        /// Time an edit loop over this file after indexing
+        #[arg(
+            long,
+            value_name = "N",
+            help = "After indexing, retype one file N times and time the loop"
+        )]
+        edits: Option<usize>,
+
+        /// The file the edit loop retypes (default: the first indexed file)
+        #[arg(
+            long,
+            value_name = "PATH",
+            requires = "edits",
+            help = "Which file the edit loop retypes"
+        )]
+        edit_file: Option<PathBuf>,
+
+        /// Read and write the declaration cache
+        #[arg(
+            long,
+            help = "Use the declaration cache; the default is a cold start, which is \
+                    what measures the pass rather than the disk"
+        )]
+        cache: bool,
+    },
 }
 
 /// What `check` takes.
@@ -443,9 +495,7 @@ impl CheckArgs {
         let config = if self.no_config {
             crate::config::Config::default()
         } else {
-            crate::config::Config::read(
-                self.config_dir.as_deref().unwrap_or_else(|| Path::new(".")),
-            )?
+            crate::config::read(self.config_dir.as_deref().unwrap_or_else(|| Path::new(".")))?
         };
 
         let severity = match &self.error_on[..] {
@@ -520,6 +570,67 @@ impl CheckArgs {
             options,
         })
     }
+}
+
+/// `camello dev index`: the language server's corpus bars, printed.
+///
+/// The measurement is `camello-lsp`'s — it is that crate's index and that
+/// crate's edit loop — and what is here is the printing, the way the corpus
+/// script contributes a corpus and the binary contributes the questions.
+fn run_index_bar(
+    paths: Vec<PathBuf>,
+    edits: Option<usize>,
+    edit_file: Option<PathBuf>,
+    cache: bool,
+) -> Result<()> {
+    let roots = if paths.is_empty() {
+        vec![PathBuf::from(".")]
+    } else {
+        paths
+    };
+    let (index, bar) = camello_lsp::bar::index_bar(roots.clone(), cache);
+    println!(
+        "index: {} files, {} packages, {} subs in {:.2}s{}",
+        bar.files,
+        bar.packages,
+        bar.subs,
+        bar.elapsed.as_secs_f64(),
+        match bar.peak_rss_kb {
+            Some(kb) => format!(", peak rss {:.1} MiB", kb as f64 / 1024.0),
+            None => String::new(),
+        }
+    );
+
+    let Some(edits) = edits else { return Ok(()) };
+    let target = match edit_file {
+        Some(path) => Some(path),
+        None => index
+            .analysis
+            .program()
+            .files()
+            .next()
+            .map(|entry| entry.path.clone()),
+    };
+    let Some(target) = target else {
+        return Err(miette::miette!("nothing was indexed, so nothing to retype"));
+    };
+    let Some(loop_bar) = camello_lsp::bar::edit_bar(&index, &target, edits) else {
+        return Err(miette::miette!("could not read {}", target.display()));
+    };
+    println!(
+        "edit loop: {} edits to {} in {:.2}s ({:.1} ms each), {} declaration change{}",
+        loop_bar.edits,
+        target.display(),
+        loop_bar.elapsed.as_secs_f64(),
+        loop_bar.elapsed.as_secs_f64() * 1000.0 / loop_bar.edits.max(1) as f64,
+        loop_bar.declaration_changes,
+        if loop_bar.declaration_changes == 1 {
+            ""
+        } else {
+            "s"
+        },
+    );
+    Ok(())
 }
 
 /// A comma-separated list of directories.
@@ -740,6 +851,12 @@ pub fn run() -> Result<()> {
         Commands::Check { args } => {
             return crate::report::run(&args.into_request(camello_sema::Options::default())?);
         }
+        Commands::Lsp => {
+            // Everything about the protocol — the runtime included — is
+            // `camello-lsp`'s. What the command line owns is the name of the
+            // subcommand (`docs/lsp.md`, "The crate and the runtime").
+            camello_lsp::run().into_diagnostic()?;
+        }
         Commands::Dev { command } => match command {
             DevCommands::Dump {
                 path,
@@ -775,6 +892,14 @@ pub fn run() -> Result<()> {
                 }
                 let wanted = wanted_invariants(only.as_deref())?;
                 return check_paths(paths, jobs, &wanted, quiet, verbose, &extensions, encoding);
+            }
+            DevCommands::Index {
+                paths,
+                edits,
+                edit_file,
+                cache,
+            } => {
+                return run_index_bar(paths, edits, edit_file, cache);
             }
             DevCommands::PerlDeparse {
                 paths,
@@ -812,70 +937,20 @@ fn is_a_tree(paths: &[PathBuf]) -> bool {
 }
 
 /// Apply `job` to every item, on as many threads as asked for, and give the
-/// results back in the order the items were in.
+/// results back in the order the items were in — and how many threads that
+/// will be.
 ///
 /// Formatting one file has nothing to do with formatting the next — no shared
 /// state, no ordering — so the only thing this has to preserve is the order of
 /// the *output*, which it does by writing each result into its own slot. The
 /// alternative is printing from the workers, which makes a run's output depend
 /// on how the scheduler felt.
-/// How many threads [`in_parallel`] will put on this many items.
-fn worker_count(jobs: Option<usize>, items: usize) -> usize {
-    jobs.filter(|&jobs| jobs > 0)
-        .unwrap_or_else(|| {
-            std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get)
-        })
-        .min(items)
-        .max(1)
-}
-
-pub(crate) fn in_parallel<T, R>(
-    items: &[T],
-    jobs: Option<usize>,
-    job: impl Fn(&T) -> R + Sync,
-) -> Vec<R>
-where
-    T: Sync,
-    R: Send,
-{
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Mutex;
-
-    let workers = worker_count(jobs, items.len());
-
-    if workers == 1 {
-        return items.iter().map(job).collect();
-    }
-
-    let next = AtomicUsize::new(0);
-    let slots: Vec<Mutex<Option<R>>> = items.iter().map(|_| Mutex::new(None)).collect();
-    let job = &job;
-    let slots = &slots;
-    let next = &next;
-
-    std::thread::scope(|scope| {
-        for _ in 0..workers {
-            scope.spawn(move || loop {
-                let index = next.fetch_add(1, Ordering::Relaxed);
-                let Some(item) = items.get(index) else { return };
-                let result = job(item);
-                *slots[index]
-                    .lock()
-                    .expect("no worker panics while holding this") = Some(result);
-            });
-        }
-    });
-
-    slots
-        .iter()
-        .map(|slot| {
-            slot.lock()
-                .expect("the workers are finished")
-                .take()
-                .expect("every slot was filled")
-        })
-        .collect()
-}
+///
+/// Both live in [`camello_sema::workspace`] now: `camello lsp` walks a tree
+/// and runs the declaration pass over it exactly as `check` does, and it
+/// cannot reach into the binary that depends on it (`docs/lsp.md`, "The
+/// index"). The names stay because they are what the rest of this file says.
+pub(crate) use camello_sema::workspace::{in_parallel, worker_count};
 
 /// What formatting one file came to.
 struct Formatted {
@@ -1909,41 +1984,7 @@ pub(crate) fn collect_perl_files(
     extensions: &[&str],
     into: &mut Vec<PathBuf>,
 ) -> Result<()> {
-    if path.is_file() {
-        into.push(path.to_path_buf());
-        return Ok(());
-    }
-    if !path.is_dir() {
-        return Err(miette::miette!(
-            "no such file or directory: {}",
-            path.display()
-        ));
-    }
-    let mut entries: Vec<PathBuf> = fs::read_dir(path)
-        .into_diagnostic()?
-        .map(|entry| entry.map(|entry| entry.path()))
-        .collect::<std::io::Result<_>>()
-        .into_diagnostic()?;
-    entries.sort();
-    for entry in entries {
-        let metadata = fs::symlink_metadata(&entry).into_diagnostic()?;
-        // Do not follow links found while walking a tree. Besides escaping the
-        // requested root, a link to an ancestor would recurse forever. A link
-        // explicitly named by the user is still handled by the checks above.
-        if metadata.file_type().is_symlink() {
-            continue;
-        }
-        if metadata.is_dir() {
-            collect_perl_files(&entry, extensions, into)?;
-        } else if entry
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .is_some_and(|ext| extensions.contains(&ext))
-        {
-            into.push(entry);
-        }
-    }
-    Ok(())
+    camello_sema::workspace::collect_files(path, extensions, into).into_diagnostic()
 }
 
 /// The encodings a source may be in, in the order they are tried.

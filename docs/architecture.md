@@ -24,6 +24,7 @@ name, and the invariants numbered in them — are in [contracts.md](contracts.md
 crates/camello-syntax   lang, lex, parse, ast   the front end
 crates/camello-fmt      the Doc IR              the formatter
 crates/camello-sema     symbols, types, flow    the checker
+crates/camello-lsp      documents, index, …     the language server
 camello (root)          cli, check              the binary and the invariants
 ```
 
@@ -32,13 +33,21 @@ enforces is the one that matters: **nothing under `sema` can reach `fmt`**. The
 lossless-CST and trivia machinery the formatter is built around is irrelevant
 to a checker, and a build of the checker should not carry the Doc IR.
 
-`camello-syntax` is what both sit on. `camello_syntax::lang` defines the shared
+`camello-lsp` is the one crate that sees both, which is what an editor front
+end is: diagnostics come from the checker and `textDocument/formatting` from
+the formatter. It sits above both, the same way the root crate does, and the
+rule above is untouched by it.
+
+`camello-syntax` is what they all sit on. `camello_syntax::lang` defines the shared
 vocabulary, `lex` scans source, `parse` records and replays syntax events, and
 `ast` offers typed views over the result. `camello-fmt` builds and renders the
-output. `camello-sema` reads declarations and checks bodies. The root crate is
-the command line, plus `src/check`, which holds the invariants — it is the one
-place that compares a formatter against a parser and so the one place that
-depends on both.
+output. `camello-sema` reads declarations and checks bodies, and holds two
+things both of its readers need: `config`, the `camello.toml` `[check]` table,
+and `workspace`, the tree walk and worker pool a declaration pass runs
+through. `camello-lsp` is the language server, described in
+[lsp.md](lsp.md). The root crate is the command line, plus `src/check`, which
+holds the invariants — it is the one place that compares a formatter against a
+parser and so the one place that depends on both.
 
 ## Data flow
 
@@ -49,7 +58,12 @@ Perl source
   -> rowan CST + TriviaMap
   -> formatter Doc IR          -> rendered lines -> alignment -> format skipping -> formatted source
   -> ast views -> declarations -> program graph  -> body pass  -> diagnostics
+                                                              -> type side-table -> hover, completion
 ```
+
+The last line is the language server's, and it is the same body pass: the
+checker infers a type for every expression it visits, and `camello lsp` is a
+caller that asks it to keep them rather than drop them.
 
 ## Guesses
 
@@ -213,6 +227,15 @@ The library exports:
 - `format_perl` and `format_perl_with_options` for formatting;
 - syntax kinds, syntax nodes and tokens, parse diagnostics, trivia, and
   formatter option types.
+
+`camello lsp` speaks the Language Server Protocol over standard input and
+output, so an editor gets the checker's diagnostics as it types, the inferred
+type or a sub's signature on hover, the methods a receiver's class declares
+after `->`, an outline, go-to-definition, and whole-file formatting. It reads
+the same `camello.toml` `[check]` table `camello check` reads. A thin VS Code
+client is in `editors/vscode/`; every other editor wants nothing but the
+command. The design, and what it deliberately does not do, is in
+[lsp.md](lsp.md).
 
 The stable command-line surface is `camello format`. It reads its sources from
 paths, `-e`/`-E`, or standard input, and writes each one back over the file it
@@ -394,6 +417,18 @@ Tests and fixtures live beside their implementation:
   checker stays silent here" is written down. A multi-file fixture is a
   directory with a `roots` marker naming which directories are checked and
   which only declare;
+- language-server fixtures under `crates/camello-lsp/src/fixtures`, where a
+  fixture is a directory that is the whole workspace, its expected hovers,
+  completions and definitions are `#^` markers pointing at the line above, and
+  its diagnostics are `#~` markers in the checker's own grammar. An `X.pl.edit`
+  beside an `X.pl` is the buffer after an edit, which is how a mid-edit state —
+  the dangling `->`, the diagnostic that has to survive beside it — is written
+  down;
+- `scripts/lsp-bar` for the language server's corpus bars: indexing all of
+  `@INC` prints the files, the wall time and the peak resident size, and
+  `--edits N` times the edit loop the debounce is compared against. `camello
+  dev index` is the question and the script is the corpus, the same split as
+  below;
 - `scripts/corpus-check` for selecting a real corpus — the `.pm` files below
   `@INC` — and asking `dev check` and `dev perl-deparse` about it, or the
   checker under `--check`, whose bar is zero errors. The questions
