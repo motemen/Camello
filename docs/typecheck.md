@@ -516,8 +516,11 @@ local, forward, and gives up early.
   narrow within the guarded branch. `Maybe[T]` is what most of this is for:
   a method call on a `Maybe[InstanceOf[...]]` with no narrowing is the
   checker's most useful diagnostic and its most likely false positive, so it
-  is reported at `warning`, and the narrowing set is a fixture-tested list
-  rather than a general theorem.
+  is reported at `info`, and the narrowing set is a fixture-tested list
+  rather than a general theorem. The list is applied to the *structure* of
+  the condition (`docs/types.md`, NARROW-6): a condition is read as a tree
+  and yields what holds on each side of it, because `!` swaps those two, `||`
+  empties the true one, and a call nobody read fills neither.
 - **Calls.** A call to a symbol with `returns` yields it; a call to an
   `Unknown` symbol, an unresolved bareword, a `&$code`, or a dynamic method
   name yields `Unknown`. Builtins get a table (`length` → `Int`, `keys` →

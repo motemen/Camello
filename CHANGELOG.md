@@ -18,6 +18,19 @@ One line per change. The reasoning is in the commit it came from.
 
 ### Fixed
 
+- A condition is read as a **tree** rather than as a flat scan of the names in
+  it. `if (!$x) { $x->foo }` — a program that dies every time it takes the
+  branch — was silent, because the old reading narrowed any variable that
+  appeared anywhere in the condition. So were `if ($x || $y)`, where only `$y`
+  may have held, and `if (validate($x))`, whose body this pass never opened.
+  Falling out of the same change: `$x && $x->foo` and `!$x || $x->foo` are no
+  longer `maybe-deref` on themselves, because perl short-circuits and the
+  right side is now read under what the left said; an `elsif` narrows its own
+  block; `unless (COND) {...} else {...}` narrows the `else`; `return ... if
+  !$x` narrows what follows it; and a guard no longer narrows names it never
+  tested — `return $a // $default unless $b` said nothing about `$a` and was
+  taken to. The fixtures cover both the removed false positives and the
+  `validate($x)` shape that remains deliberately unknown.
 - A package's framework is read from *its own* imports, not from the file's.
   `use Moose` imports `has` into the package it is written in, so a second
   package in the same file was being handed Moose's `has`, its attributes and
