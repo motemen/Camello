@@ -155,26 +155,6 @@ impl Code {
         Code::ALL.iter().copied().find(|code| code.as_str() == text)
     }
 
-    /// Whether `typecheck` asks this and `lint` does not.
-    ///
-    /// The split is what makes `lint` fast: everything below needs the type
-    /// lattice, and the lattice needs the dependency resolver behind it.
-    #[must_use]
-    pub const fn needs_types(self) -> bool {
-        matches!(
-            self,
-            Code::TypeMismatch
-                | Code::UnknownKey
-                | Code::UnknownMethod
-                | Code::MaybeDeref
-                | Code::BadAnnotation
-                | Code::ReturnMismatch
-                | Code::UnknownType
-                | Code::MissingAnnotation
-                | Code::MissingArgument
-        )
-    }
-
     /// The severity this code is reported at when nothing downgrades it.
     #[must_use]
     pub const fn default_severity(self) -> Severity {

@@ -1,4 +1,4 @@
-# Design: `camello typecheck` and `camello lint`
+# Design: `camello check`
 
 Status: implemented, 2026-08-26. This document decided the shape; the code is
 now the authority, in the same way `docs/contracts.md` treats its ADRs. Where
@@ -24,7 +24,9 @@ compiler's type checker, and weaker still: where pyright has a nominal type
 system underneath, this has a lattice of *shapes* and a set of annotations
 that a real program may or may not honour at run time.
 
-Two subcommands, one analysis:
+Two subcommands, one analysis — since merged into one `camello check`, for the
+reasons under "Decisions made during implementation"; what each half of the
+pair reported is still what the halves of the analysis report:
 
 - `camello lint lib t` — diagnostics that need no type lattice: undeclared or
   unused lexicals, shadowing, arity against a signature or an `args` list,
@@ -36,9 +38,9 @@ Two subcommands, one analysis:
   that has no such key, an `InstanceOf['Foo']` where a `Maybe[...]` was
   returned and never checked.
 
-Both exit `1` if anything at or above `--error-on` (default: `error`) was
-reported, print one diagnostic per line in `path:line:col: severity: message`
-form, and take `--format json` for tooling. CI is the first consumer; an
+It exits `1` if anything at or above `--error-on` (default: `error`) was
+reported, prints one diagnostic per line in `path:line:col: severity: message`
+form, and takes `--format json` for tooling. CI is the first consumer; an
 editor is the second and the design keeps it possible (the "Incremental
 reanalysis" section) without building it.
 
@@ -46,10 +48,10 @@ reanalysis" section) without building it.
 
 - Soundness. The checker is silent when it does not know. A program with no
   annotations and no recognisable constructors gets no type diagnostics at
-  all, and that is correct behaviour, not a gap. `lint` diagnostics about
-  scope are the exception: `my` is a declaration and `use strict` makes an
-  undeclared name an error, so those are sound within a file.
-- Running Perl. Neither subcommand executes the program, loads a module, or
+  all, and that is correct behaviour, not a gap. The scope diagnostics are the
+  exception: `my` is a declaration and `use strict` makes an undeclared name an
+  error, so those are sound within a file.
+- Running Perl. The checker never executes the program, loads a module, or
   asks `perl -c`. `dev perl-deparse` is the only place camello runs perl, and
   it stays that way. Consequences: `BEGIN` blocks, `eval "..."`, `AUTOLOAD`,
   `local *glob = ...`, string-named method calls `$obj->$name`, and `no
@@ -71,7 +73,7 @@ src/lang, src/lex, src/parse    (unchanged)  ->  crate camello-syntax
 src/fmt                         (unchanged)  ->  crate camello-fmt
 src/ast        typed views over the CST      ->  crate camello-syntax
 src/sema       symbols, scopes, types, flow  ->  crate camello-sema
-src/cli        format | lint | typecheck     ->  crate camello
+src/cli        format | check                ->  crate camello
 ```
 
 `sema` depends on `syntax` and on nothing in `fmt`; the lossless-CST and
@@ -199,7 +201,7 @@ extra: `"hi $who"` and `"$h->{k}[0]"` contain variable uses, so the
 interpolation scanner in `sema` that finds `$name`, `@name`, `${...}`,
 `@{[ ... ]}` and subscripts. It produces uses, not a CST; the CST is not
 changed. Getting this wrong means either a phantom "unused variable" or a
-missed "undeclared variable", both of which are `lint` bread and butter, so
+missed "undeclared variable", both of which are this pass's bread and butter, so
 the scanner is tested against perl's own interpolation rules (`perldoc
 perlop`, "Gory details of parsing quoted constructs") as a fixture set.
 
@@ -822,6 +824,18 @@ reviewed as a decision rather than discovered as a difference.
   and `Args::pairs` descend into a `PAREN_EXPR` that is a list's only element,
   so `use Foo (a => 1)` and `use Foo a => 1` reach a recogniser as the same
   import. perl flattens `f((1, 2))` to two arguments for the same reason.
+- **The two subcommands are one, `check`** (after milestone 6). The split above
+  was justified by speed — the lattice needs the dependency resolver behind it,
+  and `lint` was to be what runs where `perlcritic` runs. Measurements showed that both commands were comfortably below the threshold
+  at which a user would choose between them. Two other things said the same: the subcommands took an *identical*
+  argument set, in which `--stubs`, `--inc`, `--cache-dir` and `--no-cache` did
+  nothing under `lint`; and `lint`'s output was a strict subset of
+  `typecheck`'s, so the pair offered no answer the other could not give. The
+  only thing `lint` could do that `typecheck` could not was decline to read
+  @INC, and a missing dependency already reads as silence rather than as noise
+  (METHOD-5a), so nothing is lost by always reading it. `Options.types`,
+  `Code::needs_types` and the `lint` column of the diagnostics table went with
+  the split; `--disable` is how a project turns a code off now.
 
 ### Where the corpus bars actually landed
 
