@@ -176,6 +176,15 @@ A **symbol** belongs to a package and is one of:
 - `Import { name, from: package }` from `use Foo qw(bar)` when `Foo` is
   analysable and exports `bar`
 
+A `(package, sub)` pair may be declared by more than one file — legally, where
+a package spans files, and by accident, where a copy of the tree sits inside
+it. The global name index keeps the first and calls the rest redefinitions,
+because either answer is a guess. A question asked *from* a file is not a
+guess, though: the body being walked, the bareword call being resolved and the
+`sub` name under a cursor all belong to one file, and that file's own
+declaration is the answer for them (`Program::sub_in`). The global index is
+what is left when the file declares nothing of the name.
+
 Package-level facts that are not symbols: `isa: Vec<Package>` (from
 `use parent`, `use base`, `extends`, `our @ISA = (...)`), `roles` (`with`,
 `does`), and the object framework in use (Moose, Moo, Mouse,
