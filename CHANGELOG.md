@@ -16,6 +16,31 @@ One line per change. The reasoning is in the commit it came from.
   is how a code is turned off now. `scripts/corpus-check` takes `--check` in
   place of `--lint` and `--typecheck`.
 
+### Fixed
+
+- A package's framework is read from *its own* imports, not from the file's.
+  `use Moose` imports `has` into the package it is written in, so a second
+  package in the same file was being handed Moose's `has`, its attributes and
+  its `new` — and `Plain->new(...)` against a package that never said `use
+  Moose` was an `unknown-key` **error**. The unit is now the package, scoped
+  the way perl scopes the import.
+- A `predicate` gives back `Bool` and a `clearer` gives back nothing worth
+  claiming. Every name an attribute answered to used to give back the
+  attribute's own type, so `$obj->has_items` against an `ArrayRef[Int]` slot
+  was an `ArrayRef[Int]` and a `type-mismatch` in every string slot it went
+  into. A `handles` delegation is another class's method and is `Unknown`.
+- A `return` inside an anonymous sub is that sub's. The `Returns:` of the sub
+  it is *written in* stayed in scope while the body was walked, so `sub f { my
+  $cb = sub { return [1] }; ... }` reported the callback's `return` against
+  `f`'s declared type.
+- `Defined` and `Value` rule something out. Both were read as tops beside
+  `Any`, so `undef` fitted a `Defined` slot and an `ArrayRef` fitted a `Value`
+  one — the one thing each of them says went unsaid.
+- A `sub new` with an *empty* body says nothing about what it constructs,
+  the way a forward declaration does. A stub writes `sub new ($class, $fields
+  = undef) {}`, and reading that as "no evidence" took the type off every
+  class that inherits its `new`.
+
 ### Added
 
 - `ignored-prototype`, at `info`: a method call to a sub declared `()`.

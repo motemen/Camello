@@ -295,28 +295,11 @@ pub fn declare(root: &SyntaxNode) -> FileDecls {
 /// recognisers know (`camello.toml`, `read-as`).
 #[must_use]
 pub fn declare_in(root: &SyntaxNode, dialect: &Dialect) -> FileDecls {
-    // The imports first, and all of them: recognition is by callee name *and*
-    // by an import that could have provided it, and `use Moose` may sit below
-    // the `has` it explains (a `package Foo { use Moose; ... }` block, or a
-    // second package in the same file).
-    let mut frameworks = Frameworks::with_dialect(dialect.clone());
-    for node in root.descendants() {
-        if node.node_kind() != NodeKind::USE_STMT {
-            continue;
-        }
-        let Some(statement) = ast::UseStmt::cast(node) else {
-            continue;
-        };
-        let Some(module) = statement.module() else {
-            continue;
-        };
-        frameworks.note(&module);
-        // `use base 'Class::Accessor'` names the framework in its arguments,
-        // and `use Class::Accessor 'antlers'` is the spelling that has `has`.
-        if let Some(arguments) = statement.arguments() {
-            frameworks.note_arguments(&module, &imported_names(&arguments));
-        }
-    }
+    // The imports first, and all of a package's: recognition is by callee name
+    // *and* by an import that could have provided it, and `use Moose` may sit
+    // below the `has` it explains.
+    let mut frameworks = HashMap::new();
+    collect_frameworks(root, "main", dialect, &mut frameworks);
 
     let mut pass = Pass {
         decls: FileDecls::default(),
@@ -336,13 +319,10 @@ pub fn declare_in(root: &SyntaxNode, dialect: &Dialect) -> FileDecls {
             facts.dynamic = true;
         }
     }
-    // A package with a framework generates a constructor unless it said not to.
-    //
-    // Not one that decided for itself: `Frameworks` is read per *file*, so a
-    // file holding both a Mouse role and a `use Class::Accessor::Typed (new
-    // => 0)` — which is how `Class-Accessor-Typed-0.03/t/02_does.t` is written
-    // — would otherwise hand the second package back the constructor it just
-    // turned down.
+    // A package with a framework generates a constructor unless it said not to
+    // — a package that decided for itself is left alone, which is how
+    // `Class-Accessor-Typed-0.03/t/02_does.t` gets to hold both a Mouse role
+    // and a `use Class::Accessor::Typed (new => 0)`.
     for facts in &mut pass.decls.facts {
         if facts.framework == Framework::Moose && !pass.decided_constructor.contains(&facts.name) {
             facts.constructor = true;
@@ -356,7 +336,7 @@ pub fn declare_in(root: &SyntaxNode, dialect: &Dialect) -> FileDecls {
 struct Pass {
     decls: FileDecls,
     sink: annotate::Sink,
-    frameworks: Frameworks,
+    frameworks: HashMap<String, Frameworks>,
     /// What this project's own modules stand in for.
     dialect: Dialect,
     /// The file loads XS or assigns a glob.
@@ -370,6 +350,21 @@ struct Pass {
 
 impl Pass {
     /// The facts for `package`, created on first mention.
+    /// What a package's own imports say a bareword in it could mean.
+    ///
+    /// Per package rather than per file: `use Moose` imports `has` into the
+    /// package it is written in, so a second package in the same file that
+    /// declares a `sub has` of its own is not writing Moose's
+    /// (`docs/types.md`, ANNOT-1a). Read as a file's, `Mine->new(...)` in a
+    /// package that never said `use Moose` was an `unknown-key` error against
+    /// a constructor it does not have.
+    fn frameworks(&self, package: &str) -> Frameworks {
+        self.frameworks
+            .get(package)
+            .cloned()
+            .unwrap_or_else(|| Frameworks::with_dialect(self.dialect.clone()))
+    }
+
     fn facts(&mut self, package: &str) -> &mut PackageFacts {
         if let Some(index) = self
             .decls
@@ -379,10 +374,11 @@ impl Pass {
         {
             return &mut self.decls.facts[index];
         }
+        let framework = self.frameworks(package).framework();
         self.decls.facts.push(PackageFacts {
             name: package.to_string(),
-            framework: self.frameworks.framework(),
-            constructor: self.frameworks.framework() == Framework::AccessorTyped,
+            framework,
+            constructor: framework == Framework::AccessorTyped,
             ..PackageFacts::default()
         });
         self.decls.facts.last_mut().expect("just pushed")
@@ -442,7 +438,11 @@ impl Pass {
         if name == "BUILDARGS" {
             self.facts(package).buildargs = true;
         }
-        let params = parameters(&definition, self.frameworks.smart_args, &mut self.sink);
+        let params = parameters(
+            &definition,
+            self.frameworks(package).smart_args,
+            &mut self.sink,
+        );
         let annotated = annotate::read_returns(&definition, &mut self.sink);
         let source = if annotated.is_some()
             || matches!(
@@ -664,22 +664,23 @@ impl Pass {
         let Some(callee) = call.callee_name() else {
             return;
         };
+        let frameworks = self.frameworks(package);
         match callee.as_str() {
-            "has" if self.frameworks.moose => {
+            "has" if frameworks.moose => {
                 let attributes = annotate::read_has(&call, &mut self.sink);
                 self.facts(package).attributes.extend(attributes);
             }
-            "extends" if self.frameworks.moose => {
+            "extends" if frameworks.moose => {
                 let parents: Vec<String> = call.args().iter().filter_map(ast::key_text).collect();
                 self.facts(package).isa.extend(parents);
             }
-            "with" if self.frameworks.moose => {
+            "with" if frameworks.moose => {
                 let roles: Vec<String> = call.args().iter().filter_map(ast::key_text).collect();
                 self.facts(package).roles.extend(roles);
             }
             "declare" | "subtype" | "type" | "class_type" | "role_type" | "duck_type" | "enum"
             | "union" | "intersection"
-                if self.frameworks.type_library =>
+                if frameworks.type_library =>
             {
                 if let Some(named) = annotate::read_type_library(&call, &mut self.sink) {
                     self.facts(package).types.push(named);
@@ -711,7 +712,7 @@ impl Pass {
     /// accessors belong to the package the statement is in — unless it names
     /// another class outright, which is the one case worth following.
     fn accessor_statement(&mut self, node: &SyntaxNode, package: &str) {
-        if !self.frameworks.accessor_lite {
+        if !self.frameworks(package).accessor_lite {
             return;
         }
         let Some(call) = node
@@ -1211,6 +1212,13 @@ fn constructs_its_class(definition: &SubDef) -> bool {
         // what the old reading did.
         return true;
     };
+    // Neither does an empty one. A stub writes `sub new ($class, $fields =
+    // undef) {}` because a stub declares an interface and not a body
+    // (`docs/types.md`, ANNOT-9); reading that as "no evidence, so not a
+    // constructor" took the type off every class that inherits its `new`.
+    if body.statements().next().is_none() {
+        return true;
+    }
     body.syntax().descendants_with_tokens().any(|element| {
         element
             .as_token()
@@ -1224,6 +1232,57 @@ fn constructs_its_class(definition: &SubDef) -> bool {
 /// `SUPER::new` and the rest — a call into the parent's method of that name.
 fn is_super(node: &SyntaxNode) -> bool {
     node.text().to_string().starts_with("SUPER::")
+}
+
+/// What each package in a file imports, by the package it is written in.
+///
+/// The package tracking is the declaration walk's, so that `package Foo {
+/// ... }` scopes to its block and `package Foo;` runs to the next one — which
+/// is what perl does with the import itself.
+fn collect_frameworks(
+    node: &SyntaxNode,
+    outer: &str,
+    dialect: &Dialect,
+    into: &mut HashMap<String, Frameworks>,
+) {
+    let mut package = outer.to_string();
+    for child in node.children() {
+        match child.node_kind() {
+            NodeKind::PACKAGE_STMT => {
+                let Some(statement) = ast::PackageStmt::cast(child.clone()) else {
+                    continue;
+                };
+                let Some(name) = statement.name() else {
+                    continue;
+                };
+                into.entry(name.clone())
+                    .or_insert_with(|| Frameworks::with_dialect(dialect.clone()));
+                match statement.block() {
+                    Some(block) => collect_frameworks(block.syntax(), &name, dialect, into),
+                    None => package = name,
+                }
+            }
+            NodeKind::USE_STMT => {
+                let Some(statement) = ast::UseStmt::cast(child.clone()) else {
+                    continue;
+                };
+                let Some(module) = statement.module() else {
+                    continue;
+                };
+                let frameworks = into
+                    .entry(package.clone())
+                    .or_insert_with(|| Frameworks::with_dialect(dialect.clone()));
+                frameworks.note(&module);
+                // `use base 'Class::Accessor'` names the framework in its
+                // arguments, and `use Class::Accessor 'antlers'` is the
+                // spelling that has `has`.
+                if let Some(arguments) = statement.arguments() {
+                    frameworks.note_arguments(&module, &imported_names(&arguments));
+                }
+            }
+            _ => collect_frameworks(&child, &package, dialect, into),
+        }
+    }
 }
 
 /// Where a statement's code begins, trivia excluded.

@@ -353,7 +353,15 @@ impl Pass<'_> {
             NodeKind::ANON_SUB_EXPR => {
                 if let Some(body) = ast::AnonSubExpr::cast(node.clone()).and_then(|v| v.body()) {
                     let saved = self.env.clone();
+                    // A `return` in here is this sub's, not the enclosing
+                    // one's, and nothing annotates an anonymous sub — so the
+                    // `Returns:` above the sub it is written in has to be put
+                    // down before the body is walked. Left standing, `sub f {
+                    // my $cb = sub { return [1] }; ... }` reported the
+                    // callback's `return` against `f`'s declared type.
+                    let saved_returns = std::mem::take(&mut self.returns);
                     self.block(body.syntax());
+                    self.returns = saved_returns;
                     self.env = saved;
                 }
                 Type::CodeRef
@@ -848,7 +856,10 @@ impl Pass<'_> {
                     returns.scalar
                 }
             }
-            MethodLookup::Attribute(attribute) => attribute.ty.clone(),
+            // Not the attribute's type for every name it answers to: a
+            // `predicate` says whether the slot is filled, not what is in it
+            // (`docs/types.md`, METHOD-4a).
+            MethodLookup::Attribute(attribute) => attribute.returns(&method),
             MethodLookup::Constructor => {
                 self.check_constructor(&class, &call.pairs(), &typed, call.method_range());
                 Type::InstanceOf(class)
@@ -1448,7 +1459,7 @@ pub fn compatible(value: &Type, slot: &Type, program: &Program) -> bool {
     let slot = slot.required();
     if value.is_unknown()
         || slot.is_unknown()
-        || matches!(slot, Type::Any | Type::Defined)
+        || matches!(slot, Type::Any)
         || matches!(value, Type::Any)
     {
         return true;
@@ -1491,6 +1502,13 @@ pub fn compatible(value: &Type, slot: &Type, program: &Program) -> bool {
         // A reference and a value are never the same thing.
         (value, slot) if is_reference(value) && is_value(slot) => false,
         (value, slot) if is_value(value) && is_reference(slot) => false,
+
+        // `Value` is a defined non-reference (Types::Standard), so a reference
+        // is never one. That is the whole of what `Value` rules out; anything
+        // else it is asked about it accepts, which is what the last arm does
+        // for it. `Defined` rules out exactly `undef`, which the `Undef` arm
+        // above has already said.
+        (value, Type::Value) | (Type::Value, value) if is_reference(value) => false,
 
         (Type::ArrayRef(_) | Type::Tuple(_), Type::HashRef(_) | Type::Dict { .. }) => false,
         (Type::HashRef(_) | Type::Dict { .. }, Type::ArrayRef(_) | Type::Tuple(_)) => false,

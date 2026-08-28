@@ -105,3 +105,22 @@ sub counted {
 }
 
 sub whatever { return }
+
+# `Defined` is everything but `undef`, and `Value` is a defined *non-reference*
+# (Types::Standard). Both were being read as tops, so the one thing each of
+# them rules out went unsaid.
+package Kinds;
+use Smart::Args qw(args);
+sub defined_slot { args my $class, my $x => 'Defined'; return $x }
+sub value_slot   { args my $class, my $x => 'Value';   return $x }
+
+package main;
+
+Kinds->defined_slot(x => 'anything');
+Kinds->defined_slot(x => [1]);
+Kinds->defined_slot(x => undef);
+#~ error type-mismatch: declared `Defined`
+Kinds->value_slot(x => 'a string');
+Kinds->value_slot(x => 1);
+Kinds->value_slot(x => [1]);
+#~ error type-mismatch: declared `Value`
