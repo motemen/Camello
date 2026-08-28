@@ -1,4 +1,4 @@
-//! `camello lint` and `camello typecheck`: running the checker over paths and
+//! `camello check`: running the checker over paths and
 //! saying what it found (`docs/typecheck.md`).
 //!
 //! One diagnostic per line, in `path:line:col: severity: message` form, sorted
@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use camello_sema::{Code, Diagnostic, LineIndex, Options, Severity};
 use miette::Result;
 
-/// What one run of `lint` or `typecheck` was asked for.
+/// What one run of `check` was asked for.
 /// How the diagnostics are printed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
@@ -108,7 +108,7 @@ pub fn run(request: &Request) -> Result<()> {
 
     // The roots are the directories the command was pointed at; a file named
     // on its own contributes the directory it is in, which is what makes
-    // `camello typecheck lib/Foo.pm` resolve `use Foo::Bar` next door.
+    // `camello check lib/Foo.pm` resolve `use Foo::Bar` next door.
     let roots: Vec<PathBuf> = request
         .paths
         .iter()
@@ -122,10 +122,7 @@ pub fn run(request: &Request) -> Result<()> {
         .collect();
     let inc = match &request.inc {
         Some(inc) => inc.clone(),
-        // Only `typecheck` needs what a dependency declares, and asking perl
-        // for its `@INC` is a process to spawn.
-        None if request.options.types => camello_sema::resolve::perl_inc(),
-        None => Vec::new(),
+        None => camello_sema::resolve::perl_inc(),
     };
     let cache = match &request.cache_dir {
         Some(directory) => camello_sema::resolve::Cache::new(Some(directory.clone())),
@@ -142,12 +139,7 @@ pub fn run(request: &Request) -> Result<()> {
             analysis.add(path, decls, true);
         }
     }
-    // Only `typecheck` follows a `use` out of the roots: `lint`'s questions
-    // are about the roots' own calls, and reading @INC to answer them would
-    // buy nothing.
-    if request.options.types {
-        analysis.resolve_dependencies();
-    }
+    analysis.resolve_dependencies();
     // The declaration phase is closed: a type library read anywhere in the run
     // now stands behind every annotation that named it.
     analysis.link();

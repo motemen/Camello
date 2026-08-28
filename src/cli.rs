@@ -117,22 +117,14 @@ pub enum Commands {
         #[command(flatten)]
         layout: LayoutArgs,
     },
-    /// Report what the scopes say: undeclared, unused and shadowed lexicals,
-    /// and arity against a signature or an `args` list
-    ///
-    /// Everything here needs no type lattice, which is what makes it fast
-    /// enough to run where `perlcritic` runs. `typecheck` is this plus what
-    /// the lattice adds.
-    Lint {
-        #[command(flatten)]
-        args: CheckArgs,
-    },
-    /// Everything `lint` reports, plus what the type annotations add
+    /// Report what the code says about itself: undeclared, unused and shadowed
+    /// lexicals, arity, and what the type annotations add
     ///
     /// The annotations Perl code already carries — `has ... isa => 'Str'`,
     /// `args my $x => 'Int'`, `Class::Accessor::Typed` — are read as
-    /// declarations, and a `Returns:` comment annotates a sub's result.
-    Typecheck {
+    /// declarations, and a `Returns:` comment annotates a sub's result. Any
+    /// code can be turned off with `--disable`.
+    Check {
         #[command(flatten)]
         args: CheckArgs,
     },
@@ -328,7 +320,7 @@ pub enum DevCommands {
     },
 }
 
-/// What `lint` and `typecheck` share, which is everything but the lattice.
+/// What `check` takes.
 #[derive(clap::Args, Debug, Clone)]
 pub struct CheckArgs {
     /// Files or directories to check (reads from stdin if not provided)
@@ -745,11 +737,8 @@ pub fn run() -> Result<()> {
                 &layout.to_options(),
             )?;
         }
-        Commands::Lint { args } => {
-            return crate::report::run(&args.into_request(camello_sema::Options::lint())?);
-        }
-        Commands::Typecheck { args } => {
-            return crate::report::run(&args.into_request(camello_sema::Options::typecheck())?);
+        Commands::Check { args } => {
+            return crate::report::run(&args.into_request(camello_sema::Options::default())?);
         }
         Commands::Dev { command } => match command {
             DevCommands::Dump {

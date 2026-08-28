@@ -7,10 +7,10 @@ whitespace: every token of the input survives into the output, in the same
 order. It aims at real-world code rather than at complete coverage of every
 legacy corner of the grammar.
 
-Over the same tree it also checks: `camello lint` for what needs no types, and
-`camello typecheck` for what the annotations Perl code already carries — `has
-... isa => 'Str'`, `args my $x => 'Int'`, `Class::Accessor::Typed`, the
-`mk_accessors` family, `use constant` — can be made to say.
+Over the same tree it also checks: `camello check` reports what the scopes say
+and what the annotations Perl code already carries — `has ... isa => 'Str'`,
+`args my $x => 'Int'`, `Class::Accessor::Typed`, the `mk_accessors` family,
+`use constant` — can be made to say.
 
 > **Status: early.** The output is not yet stable across versions, and the
 > layout options below are hidden from `--help` because their names and
@@ -50,27 +50,27 @@ save hook is safe to wire up without a wrapper around it.
 ## Check
 
 ```bash
-camello lint lib t                      # scopes and arity; no type lattice
-camello typecheck lib t                 # everything lint says, plus the types
-camello typecheck --error-on warning    # exit 1 on a warning too, for CI
-camello typecheck --min-severity error  # print the errors and nothing else
-camello typecheck --format json lib     # one JSON array, for tooling
+camello check lib t                          # everything, over the tree
+camello check --error-on warning             # exit 1 on a warning too, for CI
+camello check --min-severity error           # print the errors and nothing else
+camello check --format json lib              # one JSON array, for tooling
+camello check --disable unknown-method lib   # leave one code unreported
 ```
 
-Both print one diagnostic per line as `path:line:col: severity: message [code]`
-and exit 1 when anything at or above `--error-on` (default `error`) was
+It prints one diagnostic per line as `path:line:col: severity: message [code]`
+and exits 1 when anything at or above `--error-on` (default `error`) was
 reported.
 
 `--error-on` decides the exit status; `--min-severity` decides what is printed,
 and what it drops is dropped whole — not counted, and not a reason to fail.
 
-`lint` reports undeclared, unused and shadowed lexicals, and arity against a
+It reports undeclared, unused and shadowed lexicals, and arity against a
 signature, a Smart::Args list or an `@_` unpacking. An unread *parameter* is
 its own code, `unused-parameter`, reported at `info`: a parameter goes on
 saying what the sub takes whether or not the body wants the value. A value held
 for its destructor — `my $guard = Scope::Guard->new(...)` — is neither.
 
-`typecheck` adds what the annotations say: a value that contradicts a declared
+What the annotations say adds to that: a value that contradicts a declared
 type, a key a class does not declare, a name a call had to pass and did not, a
 method a class does not have, a `Maybe[...]` used with nothing having checked
 it. `Class::Accessor::Lite` and
@@ -162,7 +162,7 @@ Snapshot and fixture tests live beside the code they cover. Beyond them:
 | --- | --- |
 | `scripts/diff` | the diff for one file or snippet, while iterating |
 | `scripts/perl-check` | `perl -c` and `B::Deparse` over the fixtures |
-| `scripts/corpus-check` | picks a corpus out of `@INC` and asks the two below about it; `--lint` and `--typecheck` ask the checker instead |
+| `scripts/corpus-check` | picks a corpus out of `@INC` and asks the two below about it; `--check` asks the checker instead |
 | `scripts/generate-builtins` | regenerate the builtin table from perl's prototypes |
 | `camello dev check` | the invariants, asked of arbitrary source |
 | `camello dev perl-deparse` | perl's own reading of the input against the output |

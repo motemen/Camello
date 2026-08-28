@@ -1,6 +1,6 @@
 # Perl Type Checking Specification
 
-このドキュメントは、`camello lint` と `camello typecheck` が Perl のコードについて
+このドキュメントは、`camello check` が Perl のコードについて
 何を知り、何を知らないままにするかを定義します。フォーマッタの仕様は
 [formatting.md](formatting.md) に、実装の設計は [typecheck.md](typecheck.md) にあります。
 
@@ -28,7 +28,7 @@ Perl に静的な型はありません。ここに書かれている「型」は
 
 - (POLICY-4) `my` は宣言であり、`use strict` は未宣言の名前をエラーにします。
   したがって未宣言変数・未使用変数・シャドーイングの診断は、型と違って
-  **ファイル内で健全**です。これらは `camello lint` が型を一切使わずに報告します。
+  **ファイル内で健全**です。これらは型を一切使わずに報告されます。
 
 ### 1.3 実行しない
 
@@ -714,22 +714,22 @@ print $row->id;             # 診断なし
 **推論**であるか絞り込みに依存しているもの、`info` がユーザーが求めたときに
 知らされるものです。`--error-on` に達したものがあれば終了ステータスは 1 です。
 
-| コード | 既定 | `lint` | 意味 |
-| --- | --- | --- | --- |
-| (DIAG-1) `undeclared-variable` | error | ○ | `strict` の下で、どの宣言も届かない名前 |
-| (DIAG-2) `unused-variable` | warning | ○ | 宣言されて一度も読まれないレキシカル |
-| (DIAG-3) `shadowed-variable` | warning | ○ | 外側のスコープが既に束縛している名前 |
-| (DIAG-4) `arity` | error / warning | ○ | 引数の個数が引数リストを満たせない |
-| (DIAG-5) `type-mismatch` | error / warning | | 値の形が、入る先の宣言された型と矛盾する |
-| (DIAG-6) `unknown-key` | error | | 閉じた `Dict` に無い鍵、宣言のない属性 |
-| (DIAG-7) `unknown-method` | warning | | そのクラスが宣言していないメソッド |
-| (DIAG-8) `bad-annotation` | info | | 読めないアノテーション |
-| (DIAG-9) `return-mismatch` | error / warning | | `Returns:` と食い違う `return` |
-| (DIAG-10) `missing-annotation` | info | | 公開サブルーチンに何のアノテーションもない |
-| (DIAG-11) `unknown-type` | info | | どこも宣言していない型名・クラス名 |
-| (DIAG-12) `unused-parameter` | info | ○ | 本体が一度も読まない引数 |
-| (DIAG-13) `missing-argument` | error | | 必須の名前付き引数を渡していない呼び出し |
-| (DIAG-14) `maybe-deref` | info | | 絞り込みを経ずに使われた `Maybe[...]` |
+| コード | 既定 | 意味 |
+| --- | --- | --- |
+| (DIAG-1) `undeclared-variable` | error | `strict` の下で、どの宣言も届かない名前 |
+| (DIAG-2) `unused-variable` | warning | 宣言されて一度も読まれないレキシカル |
+| (DIAG-3) `shadowed-variable` | warning | 外側のスコープが既に束縛している名前 |
+| (DIAG-4) `arity` | error / warning | 引数の個数が引数リストを満たせない |
+| (DIAG-5) `type-mismatch` | error / warning | 値の形が、入る先の宣言された型と矛盾する |
+| (DIAG-6) `unknown-key` | error | 閉じた `Dict` に無い鍵、宣言のない属性 |
+| (DIAG-7) `unknown-method` | warning | そのクラスが宣言していないメソッド |
+| (DIAG-8) `bad-annotation` | info | 読めないアノテーション |
+| (DIAG-9) `return-mismatch` | error / warning | `Returns:` と食い違う `return` |
+| (DIAG-10) `missing-annotation` | info | 公開サブルーチンに何のアノテーションもない |
+| (DIAG-11) `unknown-type` | info | どこも宣言していない型名・クラス名 |
+| (DIAG-12) `unused-parameter` | info | 本体が一度も読まない引数 |
+| (DIAG-13) `missing-argument` | error | 必須の名前付き引数を渡していない呼び出し |
+| (DIAG-14) `maybe-deref` | info | 絞り込みを経ずに使われた `Maybe[...]` |
 
 ### 7.1 重大度が動くもの
 
@@ -873,8 +873,7 @@ strict-annotations = true
 ステータスも決めません。誰にも見せていない診断で実行を失敗させることはないからです。
 `--min-severity error` はエラーだけを印字します。
 
-テーブルが `[check]` 一つなのは、ここに書けることが `lint` と `typecheck` の
-両方について真だからです。コマンドラインのフラグが設定ファイルより優先されます
+コマンドラインのフラグが設定ファイルより優先されます
 （ファイルはプロジェクトが何であるかを、フラグはこの実行が何であるかを言います）。
 読めない設定ファイルはエラーです。黙って無視される設定は、誰も頼んでいない
 規則でプロジェクトを検査することになるからです。
@@ -898,8 +897,6 @@ strict-annotations = true
   内容のハッシュで鍵付けされます。
 - (DEPS-7) 小文字で始まるモジュール名（perl のプラグマの慣習）は解決されません。
 - (DEPS-8) `require Foo::Bar` も `use` と同じように追跡されます。
-- (DEPS-9) 依存を追うのは `typecheck` だけです。`lint` の問うことはルート自身の
-  呼び出しについてなので、`@INC` を読んでも得るものがありません。
 
 ## 10. 意図的にやらないこと (LIMIT)
 

@@ -1,5 +1,5 @@
-//! The checker: `camello lint` and `camello typecheck` over the CST that
-//! `camello-syntax` produces (`docs/typecheck.md`).
+//! The checker: `camello check` over the CST that `camello-syntax` produces
+//! (`docs/typecheck.md`).
 //!
 //! Perl has no static types, so almost every answer here is a derivation from
 //! evidence — a sigil, a literal, a constructor call, an annotation on the
@@ -10,10 +10,6 @@
 //!
 //! The scope diagnostics are the exception and are sound within a file: `my`
 //! is a declaration and `use strict` makes an undeclared name an error.
-//!
-//! Two subcommands, one analysis: `lint` is what needs no type lattice, and
-//! `typecheck` is everything `lint` reports plus what the lattice adds.
-//! [`Code::needs_types`] is the line between them.
 
 pub mod annotate;
 pub mod arity;
@@ -38,8 +34,6 @@ pub use diag::{Code, Diagnostic, LineIndex, Position, Severity};
 /// What a run asks for.
 #[derive(Debug, Clone, Default)]
 pub struct Options {
-    /// Whether the type lattice runs. `lint` says no, `typecheck` says yes.
-    pub types: bool,
     /// Report a public sub with no annotation.
     pub strict_annotations: bool,
     /// Codes this project has turned off (`camello.toml`).
@@ -50,37 +44,15 @@ pub struct Options {
 }
 
 impl Options {
-    #[must_use]
-    pub fn lint() -> Self {
-        Options {
-            types: false,
-            ..Options::default()
-        }
-    }
-
-    #[must_use]
-    pub fn typecheck() -> Self {
-        Options {
-            types: true,
-            ..Options::default()
-        }
-    }
-
-    /// What a fixture asks for, read from where it lives: a fixture under
-    /// `fixtures/typecheck/` is a `typecheck` fixture and one under
-    /// `fixtures/lint/` is a `lint` fixture, so the two commands are covered
-    /// without a marker inside the file that the formatter would have to
-    /// preserve.
+    /// What a fixture asks for, read from where it lives, so that the one
+    /// setting a fixture can ask for needs no marker inside the file that the
+    /// formatter would have to preserve.
     #[must_use]
     pub fn for_fixture(path: &Path) -> Self {
-        let text = path.to_string_lossy();
-        let mut options = if text.contains("typecheck") {
-            Options::typecheck()
-        } else {
-            Options::lint()
-        };
-        options.strict_annotations = text.contains("strict-annotations");
-        options
+        Options {
+            strict_annotations: path.to_string_lossy().contains("strict-annotations"),
+            ..Options::default()
+        }
     }
 }
 
@@ -229,9 +201,7 @@ impl Analysis {
         let mut diagnostics = scope::analyse(root, source, &options.guard_classes).diagnostics;
         if let Some(file) = self.program.index_of(path) {
             diagnostics.extend(arity::analyse(root, file, &self.program));
-            if options.types {
-                diagnostics.extend(flow::analyse(root, file, &self.program));
-            }
+            diagnostics.extend(flow::analyse(root, file, &self.program));
             // What the declaration pass had to say about this file's
             // annotations. It ran once, over every file; a dependency's
             // diagnostics are read and dropped, because no diagnostic is ever
@@ -244,9 +214,6 @@ impl Analysis {
                     }
                 }
             }
-        }
-        if !options.types {
-            diagnostics.retain(|diagnostic| !diagnostic.code.needs_types());
         }
         if !options.disabled.is_empty() {
             diagnostics.retain(|diagnostic| !options.disabled.contains(&diagnostic.code));

@@ -2,9 +2,7 @@
 //!
 //! At the root the command is run from, and shared with the formatter's
 //! options when those become configurable — which is why the table is
-//! `[check]` rather than `[lint]` or `[typecheck]`: what it holds is true of
-//! both subcommands, and a project that wanted them to differ would be asking
-//! the same question two ways.
+//! `[check]`, after the subcommand it configures.
 //!
 //! ```toml
 //! [check]
@@ -41,7 +39,7 @@ pub struct Config {
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Check {
-    /// Directories to add to the roots, so that `camello typecheck` with no
+    /// Directories to add to the roots, so that `camello check` with no
     /// paths knows what the project is.
     #[serde(default)]
     pub lib: Vec<PathBuf>,

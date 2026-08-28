@@ -285,7 +285,7 @@ fn every_code_has_a_fixture() {
 fn the_harness_notices_a_missing_diagnostic() {
     // The fixtures above pass; this is what says that passing means something.
     let source = "use strict;\nprint $nope;\n";
-    let found = crate::check_source(source, &crate::Options::lint());
+    let found = crate::check_source(source, &crate::Options::default());
     assert_eq!(found.len(), 1, "{found:?}");
     assert_eq!(found[0].code, Code::UndeclaredVariable);
     assert_eq!(found[0].severity, Severity::Error);
@@ -327,7 +327,7 @@ fn a_list_operator_chain_is_walked_once_per_argument() {
     std::thread::Builder::new()
         .stack_size(8 * 1024 * 1024)
         .spawn(move || {
-            let found = crate::check_source(&source, &crate::Options::typecheck());
+            let found = crate::check_source(&source, &crate::Options::default());
             let _ = sender.send(found);
         })
         .expect("the thread starts");

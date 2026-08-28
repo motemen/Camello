@@ -8,8 +8,7 @@
 #   scripts/corpus-check --jobs 8         worker count (default: the binary's)
 #   scripts/corpus-check --list           print the corpus and exit
 #   scripts/corpus-check --no-perl        the invariants only, without the oracle
-#   scripts/corpus-check --lint           `camello lint` over the corpus instead
-#   scripts/corpus-check --typecheck      `camello typecheck` over it instead
+#   scripts/corpus-check --check          `camello check` over the corpus instead
 #
 # ── What is here, and what is not ─────────────────────────────────────────────
 #
@@ -20,7 +19,7 @@
 # per core, and both separate a check they could not answer from one that
 # failed, with the reasons counted and the messages grouped.
 #
-# `--lint` and `--typecheck` ask the checker (docs/typecheck.md) instead. The
+# `--check` asks the checker (docs/typecheck.md) instead. The
 # bar there is *zero errors*, not because CPAN is well-typed but because a
 # checker that cannot stay silent on code it was told nothing about is broken.
 # Warnings are counted and reported, and the count going up is a regression to
@@ -62,8 +61,7 @@ while [ $# -gt 0 ]; do
     --limit)   limit=$2; shift 2 ;;
     --list)    list_only=1; shift ;;
     --no-perl) run_perl=0; shift ;;
-    --lint)      mode=lint; shift ;;
-    --typecheck) mode=typecheck; shift ;;
+    --check)     mode=check; shift ;;
     --help|-h)
       sed -n '2,48p' "$0" | sed 's/^#\{0,1\} \{0,1\}//'
       exit 0 ;;
