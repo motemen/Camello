@@ -476,9 +476,11 @@ sub selectrow_hashref ($self, $sql, $attr = undef, @bind) {}
 
 ### 3.10 `Class::Accessor::Lite` 一族 (ANNOT-10)
 
-同じ「アクセサを生やす」でも、こちらは**型を一切持ちません**。読めるのは
+同じ「アクセサを生やす」でも、こちらは**型をほとんど持ちません**。読めるのは
 名前とアクセスの向き、そして `new` があるかどうかです。属性の型は `Any` ではなく
 `Unknown` です — モジュールが何も言っていないので、こちらも何も言いません。
+例外は lazy なスロットで、そこには builder という書かれた出どころがあります
+（ANNOT-10f）。
 
 書き方は二つあります。`use` の引数リストが宣言であるもの、
 
@@ -531,6 +533,25 @@ Class::Accessor::Lite->mk_new_and_accessors(qw(foo bar));
 - (ANNOT-10e) `use Class::Accessor 'antlers'`（または `'moose-like'`）は `has` を
   export する唯一の綴りなので、そのファイルは Moose 系として読まれます。そちらは
   型を持つので、`unknown-key` も型検査も普通に効きます。
+- (ANNOT-10f) **lazy なスロットだけは型を持ちます。builder が言っているからです。**
+  `Class::Accessor::Lite::Lazy` の `ro_lazy` / `rw_lazy` / `mk_lazy_accessors` /
+  `mk_ro_lazy_accessors` が生やすアクセサは `$self->{name} //= $self->$builder`
+  なので、builder の戻り値がそのままアクセサの戻り値です。この一族で唯一、型の
+  出どころがあります。builder の名前は、書いてなければ `_build_$name`、
+  `{ poyo => 'make_poyo' }` や `{ poyo => \&make_poyo }` と書いてあればそれです。
+  `{ yyy => sub {...} }` は名前がないので `Unknown` のままです。
+
+  builder は**メソッドとして**呼ばれるので、解決は invocant のクラスの MRO を
+  辿ります — サブクラスが builder を上書きしていれば、そちらの戻り値です。
+  そして解決は**呼ばれた時点で**行います。builder の戻り値は
+  [推論されるもの](return-inference.md)であり、宣言を読んだ時点では
+  まだ決まっていないからです。
+
+  これは `isa` のような**保証ではありません**。ANNOT-10d の通り `new` は開いて
+  いるので `Foo->new(lazy_slot => $anything)` は通りますし、`rw_lazy` には setter
+  もあります。それでも builder は「このスロットには何が入るか」について作者が
+  書いた唯一の記述なので、INFER-2g が `Foo->new` を `InstanceOf['Foo']` と読むのと
+  同じ実際主義で受け取ります。
 
 ### 3.11 `use constant` (ANNOT-11)
 

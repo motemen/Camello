@@ -794,12 +794,12 @@ impl Pass {
             // `mk_new` takes no names.
             AccessorMaker::New | AccessorMaker::BestPractice => return,
         };
-        let names: Vec<String> = call
+        let names: Vec<annotate::AccessorName> = call
             .args()
             .iter()
             .flat_map(|argument| annotate::listed_names(argument, lazy))
             .collect();
-        let mut attributes = annotate::accessor_attributes(&names, access, range);
+        let mut attributes = annotate::accessor_attributes(&names, access, lazy, range);
         if self.best_practice.contains(&target) {
             for attribute in &mut attributes {
                 attribute.methods = annotate::best_practice_methods(&attribute.name, access);
