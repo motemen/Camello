@@ -78,9 +78,15 @@ pub struct EditBar {
 /// but it is the one that is *definitionally* decl-diff clean on any file in
 /// any corpus, which is what makes the number comparable across runs — and the
 /// work it measures is the whole of the loop either way: reparse, declaration
-/// pass, fingerprint, body pass.
+/// pass, fingerprint, install, step 4′, body pass.
+///
+/// The graph is written to, because the loop writes to it: an edit that
+/// changes a declaration is installed and relinked, and step 4′ re-derives
+/// the file's inferred returns whether it did or not
+/// (`docs/return-inference.md`, "What changes for the incremental loop").
+/// Leaving those out measured a loop nobody runs.
 #[must_use]
-pub fn edit_bar(index: &Index, path: &Path, edits: usize) -> Option<EditBar> {
+pub fn edit_bar(index: &mut Index, path: &Path, edits: usize) -> Option<EditBar> {
     let source = std::fs::read_to_string(path).ok()?;
     let settings = {
         let root = path.parent().unwrap_or(Path::new(".")).to_path_buf();
@@ -103,10 +109,19 @@ pub fn edit_bar(index: &Index, path: &Path, edits: usize) -> Option<EditBar> {
         );
         let decls = index::declarations(path, &text, &settings.dialect, &cache);
         let fingerprint = index::fingerprint(&decls);
-        if previous.as_deref().is_some_and(|held| held != fingerprint) {
+        let mut changed = previous.as_deref().is_some_and(|held| held != fingerprint);
+        previous = Some(fingerprint);
+        if index.install(path, decls) {
+            index.analysis.link();
+        }
+        // Step 4′: what tier 2 says about this file, against what the graph
+        // holds. A trailing comment changes neither, so this has to answer
+        // `false` — an edit loop that reported a change here would sweep every
+        // open file on every keystroke.
+        changed |= index.analysis.reinfer_returns(path, &text);
+        if changed {
             declaration_changes += 1;
         }
-        previous = Some(fingerprint);
         let context = crate::analysis::context(&document, index, &settings);
         let _ = crate::analysis::analyse(&document, &context, &settings, true);
     }
