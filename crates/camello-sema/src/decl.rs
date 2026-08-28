@@ -1049,6 +1049,11 @@ pub fn signature_of(symbol: &SubDecl) -> String {
         (None, Some(list)) => out.push_str(&format!(" -> list: {list}")),
         (None, None) => {}
     }
+    // Said once, after both halves: the reader is being told where the type
+    // came from, and a sub with two inferred halves has one answer to that.
+    if returns.inferred && !returns.is_unresolved() {
+        out.push_str(" (inferred)");
+    }
     out
 }
 
