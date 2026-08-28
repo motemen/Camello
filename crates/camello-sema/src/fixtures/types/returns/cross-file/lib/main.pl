@@ -10,7 +10,7 @@ Top->get->id;
 Top->get->nope;                 #~ warning unknown-method: `Row` declares no method `nope`
 
 # The annotation in the middle is what the top of that chain carries.
-Outer->via_guard->id;           #~ info maybe-deref: may be undefined here
+Outer->via_guard->id;           #~ warning maybe-deref: may be undefined here
 
 # And what the recursion left alone says nothing.
 Ping->ping->nope;

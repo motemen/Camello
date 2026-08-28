@@ -1727,11 +1727,15 @@ impl Pass<'_> {
                     }
                     None => format!("`{class}` declares no method `{method}`"),
                 };
-                self.diagnostics.push(Diagnostic::new(
-                    Code::UnknownMethod,
-                    call.method_range(),
-                    message,
-                ));
+                // Louder where nothing could have been missed: every module
+                // the class and its ancestors `use` was read, so "declares no
+                // method" is about a closed world (`docs/types.md`, DIAG-7a).
+                let diagnostic = Diagnostic::new(Code::UnknownMethod, call.method_range(), message);
+                self.diagnostics.push(if self.program.closed_world(&class) {
+                    diagnostic.at(Severity::Warning)
+                } else {
+                    diagnostic
+                });
                 Type::Unknown
             }
         };

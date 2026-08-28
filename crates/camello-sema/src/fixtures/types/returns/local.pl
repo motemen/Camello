@@ -102,7 +102,7 @@ Store->both->nope;              #~ warning unknown-method: `Row` declares no met
 Store->demand(1)->nope;         #~ warning unknown-method: `Row` declares no method `nope`
 
 # The `Maybe` the `return;` put there.
-Store->find(1)->id;             #~ info maybe-deref: may be undefined here
+Store->find(1)->id;             #~ warning maybe-deref: may be undefined here
 
 # What the inferred value is, against a slot that was declared.
 Row->new(id => Store->count);

@@ -657,6 +657,33 @@ impl Program {
         }
     }
 
+    /// Whether everything that could have put a method into a class was
+    /// actually read (`docs/types.md`, DIAG-7a).
+    ///
+    /// [`Program::has_unknown_ancestor`] asks whether the *class graph* is
+    /// complete, and that is what decides whether a missing method is reported
+    /// at all. This asks the weaker question that decides how loudly: a module
+    /// installs subs into its importer (METHOD-6) and may assign to its globs,
+    /// so a `use` the run never resolved is a hole in the method surface even
+    /// when every ancestor is known. Where there is no hole, "this class
+    /// declares no such method" is a statement about a closed world and is a
+    /// `warning`; where there is one, it is a guess and is an `info`.
+    ///
+    /// A pragma is not a hole: `use strict` declares nothing, and the resolver
+    /// does not read one either ([`crate::resolve::Resolver::worth_resolving`]).
+    #[must_use]
+    pub fn closed_world(&self, package: &str) -> bool {
+        self.linearise(package).iter().all(|class| {
+            self.facts(class).iter().all(|facts| {
+                facts.uses.iter().all(|module| {
+                    !crate::resolve::Resolver::worth_resolving(module)
+                        || crate::annotate::is_recognised(module)
+                        || self.knows_package(module)
+                })
+            })
+        })
+    }
+
     /// Everything callable on a class, in MRO order (`docs/lsp.md`, "The
     /// method surface").
     ///

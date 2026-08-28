@@ -21,7 +21,7 @@ use std::collections::{HashMap, HashSet};
 use camello_syntax::ast::{
     self, AnonHash, Args, AstNode, DeclKeyword, Literal, Sigil, SubDef, VarDecl, Variable,
 };
-use camello_syntax::lang::{NodeExt, NodeKind, SyntaxNode, TokenExt, TokenKind};
+use camello_syntax::lang::{NodeExt, NodeKind, SyntaxNode, SyntaxToken, TokenExt, TokenKind};
 use rowan::TextRange;
 
 use crate::annotate::{
@@ -839,21 +839,15 @@ impl Pass {
         let Some(target) = assign.target() else {
             return;
         };
-        let is_export = target
-            .descendants()
-            .filter_map(Variable::cast)
-            .any(|variable| {
-                variable.sigil() == Sigil::Array && variable.name().as_deref() == Some("EXPORT")
-            });
-        if !is_export {
+        let Some(owner) = assigned_package(&target, "EXPORT", package) else {
             return;
-        }
+        };
         let Some(value) = assign.value() else {
             return;
         };
         match exported_names(&value) {
-            Some(names) => self.facts(package).exports.extend(names),
-            None => self.facts(package).exports_unknown = true,
+            Some(names) => self.facts(&owner).exports.extend(names),
+            None => self.facts(&owner).exports_unknown = true,
         }
     }
 
@@ -894,27 +888,57 @@ impl Pass {
         let Some(target) = assign.target() else {
             return;
         };
-        let is_isa = target
-            .descendants()
-            .filter_map(Variable::cast)
-            .any(|variable| {
-                variable.sigil() == Sigil::Array && variable.name().as_deref() == Some("ISA")
-            });
-        if !is_isa {
+        let Some(owner) = assigned_package(&target, "ISA", package) else {
             return;
-        }
+        };
         let Some(value) = assign.value() else {
             return;
         };
-        let elements = Args::elements(&value);
-        let parents: Vec<String> = elements.iter().filter_map(ast::key_text).collect();
-        // `@ISA = ($module)` — `File::Spec` picks its parent at run time, and
-        // a class whose ancestry is computed might have any method.
-        if parents.len() != elements.len() {
-            self.facts(package).dynamic = true;
+        let mut parents = Vec::new();
+        let mut opaque = false;
+        for element in Args::elements(&value) {
+            // `qw(A B)` is one element holding two names, which is how most
+            // of a corpus spells its `@ISA`.
+            if element.node_kind() == NodeKind::QW_EXPR {
+                parents.extend(ast::QwExpr::cast(element).expect("kind checked").words());
+                continue;
+            }
+            // `@ISA = ($module)` — `File::Spec` picks its parent at run time,
+            // and a class whose ancestry is computed might have any method.
+            match ast::key_text(&element) {
+                Some(name) => parents.push(name),
+                None => opaque = true,
+            }
         }
-        self.facts(package).isa.extend(parents);
+        if opaque {
+            self.facts(&owner).dynamic = true;
+        }
+        self.facts(&owner).isa.extend(parents);
     }
+}
+
+/// Which package an assignment to `@ISA` or `@EXPORT` is about, or `None` when
+/// the left side is neither.
+///
+/// `our @ISA = (...)` is the package the statement sits in. `@CPAN::FTP::ISA =
+/// qw(CPAN::Debug)` names its own, which is how a file written before `our`
+/// existed says it — and how a file holding several packages says which one it
+/// means. The qualified name wins over the enclosing package, because it is
+/// the one perl would write to.
+fn assigned_package(target: &SyntaxNode, array: &str, package: &str) -> Option<String> {
+    let suffix = format!("::{array}");
+    target
+        .descendants()
+        .filter_map(Variable::cast)
+        .filter(|variable| variable.sigil() == Sigil::Array)
+        .find_map(|variable| {
+            let name = variable.name()?;
+            if name == array {
+                return Some(package.to_string());
+            }
+            let owner = name.strip_suffix(&suffix)?;
+            (!owner.is_empty()).then(|| owner.to_string())
+        })
 }
 
 /// The names `use constant` declares, and where each is written.
@@ -1275,8 +1299,15 @@ fn from_signature(signature: &ast::SubSignature) -> Params {
 /// `$self` and `$class` are the two names the modules themselves treat as the
 /// invocant, so they are the two this reads that way.
 fn is_invocant_name(display: &str) -> bool {
-    display == "$self" || display == "$class"
+    display == "$self" || display == "$class" || display == PLACEHOLDER
 }
+
+/// The name a discarded slot is given: `my (undef, $name) = @_` takes the
+/// invocant and throws it away, and the slot is still a parameter.
+///
+/// It carries no sigil, which is what keeps it out of the body's environment —
+/// [`crate::flow`]'s `bind` binds nothing under a name that has none.
+pub const PLACEHOLDER: &str = "undef";
 
 /// `args my $self, my $who => 'Str', my $times => { isa => 'Int', default => 1 };`
 ///
@@ -1571,14 +1602,41 @@ fn list_unpacking(statement: &SyntaxNode) -> Option<(Vec<String>, bool)> {
     }
     let mut names = Vec::new();
     let mut slurpy = false;
-    for target in declaration.targets() {
-        if target.sigil() == Sigil::Scalar {
-            names.push(target.display());
-        } else {
-            slurpy = true;
+    for slot in unpacked_slots(&declaration) {
+        match slot {
+            Some(target) if target.sigil() == Sigil::Scalar => names.push(target.display()),
+            Some(_) => slurpy = true,
+            None => names.push(PLACEHOLDER.to_string()),
         }
     }
     Some((names, slurpy))
+}
+
+/// The slots of `my (...) = @_`, in order and including the discarded ones.
+///
+/// [`VarDecl::targets`] answers "which variables", which is the wrong question
+/// here: `my (undef, $name) = @_` binds one name and takes two arguments, and
+/// dropping the `undef` moves `$name` into the invocant's place and loses a
+/// parameter — `File::DesktopEntry::lookup` is written this way and its arity
+/// was off by one.
+fn unpacked_slots(declaration: &VarDecl) -> Vec<Option<ast::Variable>> {
+    fn walk(node: &SyntaxNode, acc: &mut Vec<Option<ast::Variable>>) {
+        for child in node.children() {
+            if let Some(variable) = ast::Variable::cast(child.clone()) {
+                acc.push(Some(variable));
+            } else if child.node_kind() == NodeKind::UNDEF_EXPR {
+                acc.push(None);
+            } else {
+                walk(&child, acc);
+            }
+        }
+    }
+    let Some(target) = ast::child::<ast::DeclTarget>(declaration.syntax()) else {
+        return Vec::new();
+    };
+    let mut acc = Vec::new();
+    walk(target.syntax(), &mut acc);
+    acc
 }
 
 /// `my $x = shift;`, `my $x = shift @_;`, `my $x = shift || 'default';`.
@@ -1643,6 +1701,14 @@ fn touches_arguments_elsewhere(body: &ast::Block, consumed: &[TextRange]) -> boo
         {
             return false;
         }
+        // `"Header Error: $_[0]"` reads `@_` as surely as the bare form does,
+        // and the lexer hands the whole string over as one token — so the
+        // interpolation scanner is what sees it (`docs/typecheck.md`,
+        // "Scopes"). `IO::Uncompress::Base::HeaderError` is written this way,
+        // and its whole family was reported as taking no arguments.
+        if ast::tokens(&node).any(|token| interpolates_arguments(&token)) {
+            return true;
+        }
         if let Some(call) = ast::Call::cast(node.clone()) {
             if matches!(call.callee_name().as_deref(), Some("shift" | "pop"))
                 && call.args().is_empty()
@@ -1669,4 +1735,28 @@ fn touches_arguments_elsewhere(body: &ast::Block, consumed: &[TextRange]) -> boo
             _ => false,
         }
     })
+}
+
+/// Whether a quoted construct interpolates `@_`.
+///
+/// Over-eager on purpose: a construct this misreads makes the parameter list
+/// `Unknown`, which is the quiet answer.
+fn interpolates_arguments(token: &SyntaxToken) -> bool {
+    let text = match token.token_kind() {
+        // A single-quoted string is the same token kind and interpolates
+        // nothing.
+        TokenKind::STRING => {
+            if token.text().starts_with('\'') {
+                return false;
+            }
+            token.text()
+        }
+        TokenKind::INTERPOLATED_STRING | TokenKind::REGEX_PATTERN | TokenKind::HEREDOC_CONTENT => {
+            token.text()
+        }
+        _ => return false,
+    };
+    crate::interp::scan(text)
+        .iter()
+        .any(|found| found.sigil == Sigil::Array && found.name == "_")
 }

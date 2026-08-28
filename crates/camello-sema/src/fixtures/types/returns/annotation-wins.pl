@@ -23,4 +23,4 @@ package main;
 
 # The annotation is what the caller gets, `Maybe` and all — the body's plain
 # `Row` does not narrow it.
-Store->find->id;                #~ info maybe-deref: may be undefined here
+Store->find->id;                #~ warning maybe-deref: may be undefined here
