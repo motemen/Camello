@@ -955,6 +955,25 @@ fn hash_value(node: &SyntaxNode, key: &str) -> Option<String> {
 pub struct Returns {
     pub scalar: Type,
     pub list: ListShape,
+    /// Read off the body rather than written down (`docs/return-inference.md`).
+    ///
+    /// It changes nothing about how the type is used — an inferred return
+    /// yields the same value at a call site as a written one — and two things
+    /// about how it is talked about: hover says so, and
+    /// `--strict-annotations` still asks for the annotation.
+    #[serde(default)]
+    pub inferred: bool,
+    /// The `InstanceOf[own package]` member of `scalar` stands for *the class
+    /// the sub was called on* rather than the one it was written in.
+    ///
+    /// A sub that returns its invocant — every builder in a corpus — is a
+    /// `Child` when a `Child` called it, and saying `Base` instead is an
+    /// `unknown-method` on the next link of the chain
+    /// (`docs/return-inference.md`, "`$self` comes back as the caller's
+    /// class"). The substitution is the call site's:
+    /// [`crate::flow`] does it where it resolved the receiver.
+    #[serde(default)]
+    pub invocant: bool,
 }
 
 impl Default for Returns {
@@ -962,7 +981,32 @@ impl Default for Returns {
         Returns {
             scalar: Type::Unknown,
             list: ListShape::Unknown,
+            inferred: false,
+            invocant: false,
         }
+    }
+}
+
+impl Returns {
+    /// What a sub returns, as the return walk read it off the body.
+    #[must_use]
+    pub fn inferred(scalar: Type, invocant: bool) -> Self {
+        Returns {
+            scalar,
+            list: ListShape::Unknown,
+            inferred: true,
+            invocant,
+        }
+    }
+
+    /// Whether the walk has anything left to say about this sub.
+    ///
+    /// The tiers iterate over the subs that are still `Unknown`, and this is
+    /// the test: an annotated sub is never inferred, and an inferred type is
+    /// final once it is known (`docs/return-inference.md`, "Two tiers").
+    #[must_use]
+    pub fn is_unresolved(&self) -> bool {
+        self.scalar.is_unknown() && self.list == ListShape::Unknown
     }
 }
 
