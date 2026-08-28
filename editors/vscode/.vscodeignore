@@ -2,5 +2,3 @@
 src/**
 out/**/*.map
 tsconfig.json
-node_modules/**
-!node_modules/vscode-languageclient/**

@@ -47,10 +47,10 @@ async function start(context: vscode.ExtensionContext): Promise<void> {
         "**/{*.pl,*.pm,*.t,*.psgi,camello.toml}",
       ),
     },
-    outputChannel: vscode.window.createOutputChannel("camello"),
+    outputChannel: vscode.window.createOutputChannel("Camello"),
   };
 
-  client = new LanguageClient("camello", "camello", server, options);
+  client = new LanguageClient("camello", "Camello", server, options);
   try {
     await client.start();
   } catch (error) {
