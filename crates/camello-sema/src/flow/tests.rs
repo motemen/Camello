@@ -230,3 +230,145 @@ fn what_neither_relation_allows() {
         );
     }
 }
+
+// ===== the site table (`docs/return-inference.md`, "Sites") =====
+
+/// What the return walk read off each sub's body, as `signature_of` renders
+/// it.
+///
+/// The fixtures say what a *program* gets told, which is one step further on:
+/// a type only shows up there when something reports against it, and half the
+/// rows of the site table are about a type nothing reports against. This is
+/// the table itself.
+fn inferred(source: &str) -> Vec<String> {
+    let parsed = camello_syntax::parse::parse(source);
+    assert!(
+        parsed.diagnostics.is_empty(),
+        "the source does not parse: {:?}",
+        parsed.diagnostics
+    );
+    let decls = crate::decl::declare(&parsed.syntax());
+    decls.subs.iter().map(crate::decl::signature_of).collect()
+}
+
+#[test]
+fn a_site_is_read_the_way_the_table_says() {
+    let found = inferred(
+        "package P;\n\
+         sub literal { return 42 }\n\
+         sub tail { 'text' }\n\
+         sub nothing { return }\n\
+         sub explicit_undef { return undef }\n\
+         sub a_list { return (1, 2) }\n\
+         sub an_array { my @rows = (1); return @rows }\n\
+         sub a_hash { my %h; return %h }\n\
+         sub wants { return wantarray ? (1, 2) : 'one' }\n\
+         sub only_dies { die 'no' }\n\
+         sub joined { my $ok = 1; if ($ok) { return 1 } else { return 'x' } }\n\
+         sub no_else { my $ok = 1; if ($ok) { 1 } }\n\
+         sub empty { }\n\
+         sub gone { goto &literal }\n",
+    );
+    assert_eq!(
+        found,
+        vec![
+            "P::literal -> Int (inferred)",
+            "P::tail -> Str (inferred)",
+            "P::nothing -> Undef (inferred)",
+            "P::explicit_undef -> Undef (inferred)",
+            // A list, whose scalar reading is not a type the program has.
+            "P::a_list",
+            "P::an_array",
+            "P::a_hash",
+            // The scalar branch, whatever the list branch holds.
+            "P::wants -> Str (inferred)",
+            // `die` is bottom: it contributes nothing, and nothing joined is
+            // nothing known.
+            "P::only_dies",
+            "P::joined -> Int|Str (inferred)",
+            // The value of a false `if` is its condition's.
+            "P::no_else",
+            "P::empty",
+            "P::gone",
+        ]
+    );
+}
+
+#[test]
+fn a_sub_that_hands_back_its_invocant_is_left_to_the_call_site() {
+    let found = inferred(
+        "package P;\n\
+         sub chained { my $self = shift; $self->{x} = 1; return $self }\n\
+         sub tail_chained { my $self = shift; $self }\n\
+         sub implicit { $_[0] }\n\
+         sub perhaps { my ($self, $ok) = @_; return $ok ? $self : undef }\n\
+         sub classy { my $class = shift; return bless {}, $class }\n\
+         sub named { my $self = shift; return $self->{name} }\n",
+    );
+    assert_eq!(
+        found,
+        vec![
+            "P::chained($self : Any) -> InstanceOf['P'] (inferred)",
+            "P::tail_chained($self : Any) -> InstanceOf['P'] (inferred)",
+            "P::implicit -> InstanceOf['P'] (inferred)",
+            "P::perhaps($self : Any, $ok : Any) -> InstanceOf['P']|Undef (inferred)",
+            "P::classy($class : Any) -> InstanceOf['P'] (inferred)",
+            // An object's own hash slots are not typed, so this is the
+            // accessor the walk cannot read.
+            "P::named($self : Any)",
+        ]
+    );
+}
+
+#[test]
+fn one_untyped_site_makes_the_whole_sub_unknown() {
+    // The rule that keeps the checker quiet, and the reason the feature can
+    // ship: a partial join — `Int` from the site that was typed, ignoring the
+    // one that was not — is a type the program does not have, and it would be
+    // reported at every call site.
+    let found = inferred(
+        "package P;\n\
+         sub partial { my ($self, $ok) = @_; return 1 if $ok; return $self->outside }\n\
+         sub whole { my ($self, $ok) = @_; return 1 if $ok; return 2 }\n",
+    );
+    assert_eq!(
+        found,
+        vec![
+            "P::partial($self : Any, $ok : Any)",
+            "P::whole($self : Any, $ok : Any) -> Int (inferred)",
+        ]
+    );
+}
+
+#[test]
+fn a_sub_resolves_through_another_in_the_same_file() {
+    // Tier 1's fixpoint: `outer` cannot be read until `inner` has been, and
+    // the rounds are the depth of the file's own call chains.
+    let found = inferred(
+        "package P;\n\
+         sub outer { return inner() }\n\
+         sub inner { return deepest() }\n\
+         sub deepest { return 'text' }\n",
+    );
+    assert_eq!(
+        found,
+        vec![
+            "P::outer -> Str (inferred)",
+            "P::inner -> Str (inferred)",
+            "P::deepest -> Str (inferred)",
+        ]
+    );
+}
+
+#[test]
+fn a_recursive_sub_is_cut_to_unknown() {
+    // Without a call graph having to be built to find it: every round asks
+    // the same question and gets the same `Unknown` back.
+    let found = inferred(
+        "package P;\n\
+         sub loops { my ($n) = @_; return $n ? loops($n - 1) : 0 }\n\
+         sub ping { return pong() }\n\
+         sub pong { return ping() }\n",
+    );
+    assert_eq!(found, vec!["P::loops($n : Any)", "P::ping", "P::pong"]);
+}

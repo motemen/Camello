@@ -336,7 +336,50 @@ pub fn declare_in(root: &SyntaxNode, dialect: &Dialect) -> FileDecls {
     }
     pass.decls.diagnostics.append(&mut pass.sink.diagnostics);
     pass.decls.annotations = std::mem::take(&mut pass.sink.annotations);
-    pass.decls
+    infer_returns_locally(pass.decls, root, dialect)
+}
+
+/// How many rounds tier 1 gives one file (`docs/return-inference.md`,
+/// "Tier 1").
+///
+/// A sub goes from `Unknown` to known once and never changes after, so the
+/// rounds a file needs are the depth of its own chains of unannotated calls —
+/// two or three in practice. The cap is what keeps the declaration pass's
+/// cost a small multiple of one body walk rather than a multiple of the
+/// file's longest chain: what it cuts off stays `Unknown`, which is silent,
+/// and tier 2 gets another go at it.
+const LOCAL_ROUNDS: usize = 4;
+
+/// Everything a single file can say about its own subs' returns.
+///
+/// Inside the declaration pass, not beside it, because the answer is part of
+/// `signature_of` — hence of the language server's decl fingerprint, hence of
+/// "this edit changed what other files can see" — and because it is what
+/// makes a cached dependency's leaf accessors typed at no cost beyond the
+/// first run.
+///
+/// What a single file can see is literals, constructors, `bless`, its own
+/// packages' attributes and its own subs. A call into another file is
+/// `Unknown`, and the sub stays `Unknown` *for now*: tier 2 runs over the
+/// whole program once every file is in.
+fn infer_returns_locally(decls: FileDecls, root: &SyntaxNode, dialect: &Dialect) -> FileDecls {
+    let mut program = crate::program::Program::new();
+    program.set_dialect(dialect.clone());
+    let file = program.add(std::path::Path::new(""), decls, false);
+    for _ in 0..LOCAL_ROUNDS {
+        let only = program.unresolved_returns(file);
+        if only.is_empty() {
+            break;
+        }
+        let found = crate::flow::infer_returns(root, file, &program, &only);
+        if found.is_empty() {
+            break;
+        }
+        for (index, returns) in found {
+            program.set_returns(file, index, returns);
+        }
+    }
+    program.take_decls(file)
 }
 
 struct Pass {
