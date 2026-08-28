@@ -315,8 +315,12 @@ impl Sites {
             return Returns::default();
         }
         let mut members = self.scalar.clone();
+        let mut invocant = self.invocant;
         match tail {
-            Tail::Value(ty) => members.push(ty.clone()),
+            Tail::Value { ty, invocant: tail } => {
+                members.push(ty.clone());
+                invocant |= tail;
+            }
             // A `return` or a `die`: counted already, or never read.
             Tail::Left => {}
             // A loop, a bare block, a `package`, a nested `sub`, an empty
@@ -327,7 +331,7 @@ impl Sites {
         let scalar = Type::union(members);
         Returns::inferred(
             scalar.clone(),
-            self.invocant && holds_own_class(&scalar, package),
+            invocant && holds_own_class(&scalar, package),
         )
     }
 }
@@ -340,8 +344,11 @@ impl Sites {
 /// is what perl does.
 #[derive(Debug, Clone, Default)]
 enum Tail {
-    /// An expression statement, and this is what it evaluated to.
-    Value(Type),
+    /// An expression statement, and this is what it evaluated to — read as a
+    /// site, so the invocant marker is the tail's too: `sub build { my $self
+    /// = shift; ...; $self }` is the same builder as the one that writes the
+    /// `return` out.
+    Value { ty: Type, invocant: bool },
     /// A `return` or a `die`, whose site the walk has counted already.
     Left,
     /// Anything else, including a body with no statements in it.
@@ -529,7 +536,7 @@ impl Pass<'_> {
         for child in node.children() {
             let ty = self.type_of(&child);
             if child.node_kind() != NodeKind::STMT_MODIFIER {
-                value = Some(ty);
+                value = Some((child, ty));
             }
         }
         // A guard narrows what follows it: `return unless defined $x;` is how
@@ -548,7 +555,13 @@ impl Pass<'_> {
             } else if leaves_the_sub(node) {
                 Tail::Left
             } else {
-                value.map_or(Tail::Opaque, Tail::Value)
+                match value {
+                    Some((expression, ty)) => {
+                        let (ty, invocant) = self.read_site(&expression, ty);
+                        Tail::Value { ty, invocant }
+                    }
+                    None => Tail::Opaque,
+                }
             };
             self.set_tail(tail);
         }
@@ -1410,46 +1423,50 @@ impl Pass<'_> {
     /// One `return`, as the site table reads it
     /// (`docs/return-inference.md`, "Sites").
     fn return_site(&mut self, typed: &Typed) {
-        let ty = match typed.nodes {
+        let (ty, invocant) = match typed.nodes {
             // `return;` is `undef` in scalar context, and never `Returns: ()`
             // — "returns nothing, do not use the value" is a statement about
             // intent that only an annotation can make.
-            [] => Type::Undef,
-            [only] => self.value_site(only, typed.nth(0)),
+            [] => (Type::Undef, false),
+            [only] => self.read_site(only, typed.nth(0)),
             // `return $a, $b` is a list, whose scalar reading nobody wants.
-            _ => Type::Unknown,
+            _ => (Type::Unknown, false),
         };
         if let Some(inference) = &mut self.infer {
             inference.sites.scalar.push(ty);
+            inference.sites.invocant |= invocant;
         }
     }
 
-    /// The scalar type of one value handed back, marking the invocant on the
-    /// way past.
-    fn value_site(&mut self, node: &SyntaxNode, ty: Type) -> Type {
+    /// The scalar type of one value handed back, and whether it is the
+    /// invocant.
+    fn read_site(&mut self, node: &SyntaxNode, ty: Type) -> (Type, bool) {
+        // `wantarray ? LIST : SCALAR` hands back the scalar branch, by
+        // definition of what it asked — whatever the list branch holds, which
+        // is the half a list-context reading takes.
+        if let Some(branch) = wantarray_branch(node) {
+            if is_plural(&branch) {
+                return (Type::Unknown, false);
+            }
+            let ty = self.type_of(&branch);
+            return (ty, false);
+        }
         // A list's scalar reading is a count, and only because it is: saying
         // `Int` would invite `my $rows = $self->rows` off a `return @rows` to
         // be typed as one — a bug the checker should stay quiet about rather
         // than certify.
         if is_plural(node) {
-            return Type::Unknown;
+            return (Type::Unknown, false);
         }
         if self.is_invocant(node) {
-            if let Some(inference) = &mut self.infer {
-                inference.sites.invocant = true;
-            }
             // `$_[0]` is bound to nothing, so the marker is also what says
             // what the value is.
             if ty.is_unknown() {
-                return Type::InstanceOf(self.package.clone());
+                return (Type::InstanceOf(self.package.clone()), true);
             }
+            return (ty, true);
         }
-        // `wantarray ? LIST : SCALAR` hands back the scalar branch, by
-        // definition of what it asked.
-        if let Some(branch) = wantarray_branch(node) {
-            return self.type_of(&branch);
-        }
-        ty
+        (ty, false)
     }
 
     /// Whether an expression hands back the invocant itself.
@@ -1486,6 +1503,20 @@ impl Pass<'_> {
                 .children()
                 .skip(1)
                 .any(|branch| self.is_invocant(&branch)),
+            // `bless {...}, $class` is the invocant written the other way
+            // round: a class method blesses into the class it was called on,
+            // so what comes back is one of *that* class and not one of the
+            // package the `bless` is written in.
+            NodeKind::CALL_EXPR | NodeKind::LIST_CALL_EXPR => {
+                let Some(call) = ast::Call::cast(node.clone()) else {
+                    return false;
+                };
+                call.callee_name().as_deref() == Some("bless")
+                    && call
+                        .args()
+                        .get(1)
+                        .is_some_and(|class| self.is_invocant(class))
+            }
             _ => false,
         }
     }
@@ -2666,9 +2697,13 @@ fn join_tails(tails: &[Tail], has_else: bool) -> Tail {
         return Tail::Opaque;
     }
     let mut members = Vec::new();
+    let mut invocant = false;
     for tail in tails {
         match tail {
-            Tail::Value(ty) => members.push(ty.clone()),
+            Tail::Value { ty, invocant: one } => {
+                members.push(ty.clone());
+                invocant |= one;
+            }
             Tail::Left => {}
             Tail::Opaque => return Tail::Opaque,
         }
@@ -2677,7 +2712,10 @@ fn join_tails(tails: &[Tail], has_else: bool) -> Tail {
         // Every branch returned or died, so nothing falls out of the chain.
         return Tail::Left;
     }
-    Tail::Value(Type::union(members))
+    Tail::Value {
+        ty: Type::union(members),
+        invocant,
+    }
 }
 
 /// Whether a statement hands control back rather than leaving a value.

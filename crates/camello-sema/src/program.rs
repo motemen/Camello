@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 
 use camello_syntax::lang::SyntaxNode;
 
-use crate::annotate::{Dialect, ListShape};
+use crate::annotate::{Dialect, ListShape, Returns};
 use crate::decl::{self, FileDecls, Params, SubDecl};
 use crate::types::Type;
 
@@ -186,6 +186,73 @@ impl Program {
         self.files[index].in_roots = in_roots;
         self.reindex();
         index
+    }
+
+    /// Install a return the inference read off a body
+    /// (`docs/return-inference.md`, "Tier 2").
+    ///
+    /// `index` is into the file's own `decls.subs`. Both copies are written:
+    /// the file's declarations, which are the truth a [`Program::replace`]
+    /// rebuilds from, and the flattened list the name indexes answer from.
+    pub fn set_returns(&mut self, file: usize, index: usize, returns: Returns) {
+        let Some(entry) = self.files.get_mut(file) else {
+            return;
+        };
+        let Some(symbol) = entry.decls.subs.get_mut(index) else {
+            return;
+        };
+        symbol.returns = returns.clone();
+        let key = (symbol.package.clone(), symbol.name.clone());
+        // The flattened copy is only this sub's where the first-wins rule
+        // picked this file; where it picked another, the name means the other
+        // file's sub and this is not it.
+        if let Some(flat) = self.by_name.get(&key).copied() {
+            if self.subs[flat].file == file {
+                self.subs[flat].returns = returns;
+            }
+        }
+    }
+
+    /// Take one file's declarations back out of the graph.
+    ///
+    /// For the throwaway single-file graph tier 1 of return inference builds:
+    /// the declarations go in so that the walk can resolve the file's own
+    /// calls against them, and the same declarations come back out with the
+    /// returns filled in.
+    pub fn take_decls(&mut self, file: usize) -> FileDecls {
+        self.files
+            .get_mut(file)
+            .map(|entry| std::mem::take(&mut entry.decls))
+            .unwrap_or_default()
+    }
+
+    /// Every sub in a file that nothing is yet known about the return of.
+    ///
+    /// The subs a round of the fixpoint walks: an annotated sub is never
+    /// inferred, and an inferred type is final once it is known, so what is
+    /// left over is exactly this.
+    #[must_use]
+    pub fn unresolved_returns(&self, file: usize) -> Vec<usize> {
+        self.files
+            .get(file)
+            .map(|entry| {
+                entry
+                    .decls
+                    .subs
+                    .iter()
+                    .enumerate()
+                    // A `new` whose body says the value is one of its own
+                    // class is answered at the call site, where the receiver
+                    // is known (INFER-2g): reading `InstanceOf[the package it
+                    // was written in]` off the `bless` instead would tell
+                    // every subclass it was the parent.
+                    .filter(|(_, symbol)| {
+                        symbol.returns.is_unresolved() && !symbol.constructs_own_class
+                    })
+                    .map(|(index, _)| index)
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// Rebuild the name indexes from the files, which are the truth.
