@@ -274,14 +274,18 @@ fn a_site_is_read_the_way_the_table_says() {
         vec![
             "P::literal -> Int (inferred)",
             "P::tail -> Str (inferred)",
-            "P::nothing -> Undef (inferred)",
+            // `return;` is `undef` in scalar context and an empty list in
+            // list context, which is a length rather than an absence.
+            "P::nothing -> Undef, () (inferred)",
             "P::explicit_undef -> Undef (inferred)",
-            // A list, whose scalar reading is not a type the program has.
-            "P::a_list",
-            "P::an_array",
+            // A list: no scalar type the program has, and a shape.
+            "P::a_list -> (Int, Int) (inferred)",
+            "P::an_array -> (Int ...) (inferred)",
+            // A hash in list context is key/value pairs, and nothing
+            // downstream wants them as a list.
             "P::a_hash",
-            // The scalar branch, whatever the list branch holds.
-            "P::wants -> Str (inferred)",
+            // The scalar branch and the list branch, each in its place.
+            "P::wants -> Str, (Int, Int) (inferred)",
             // `die` is bottom: it contributes nothing, and nothing joined is
             // nothing known.
             "P::only_dies",
@@ -290,6 +294,35 @@ fn a_site_is_read_the_way_the_table_says() {
             "P::no_else",
             "P::empty",
             "P::gone",
+        ]
+    );
+}
+
+#[test]
+fn the_two_halves_of_a_site_are_independent() {
+    // `return @x` sinks the scalar half and not the list one, and a callee
+    // with a scalar type and no shape sinks the list half and not the scalar
+    // one. A signature shows only what the half adds: a list of one holding
+    // the scalar type says nothing the scalar type did not.
+    let found = inferred(
+        "package P;\n\
+         # Returns: Str\n\
+         sub named { return 'x' }\n\
+         sub through { return named() }\n\
+         sub rows { my @rows = (1); return @rows }\n\
+         sub counted { my @rows = (1); return scalar @rows }\n\
+         sub both { my @rows = (1); return wantarray ? @rows : scalar @rows }\n",
+    );
+    assert_eq!(
+        found,
+        vec![
+            "P::named -> Str",
+            // The callee said nothing about list context, so neither does
+            // this — one value in scalar context is not a shape.
+            "P::through -> Str (inferred)",
+            "P::rows -> (Int ...) (inferred)",
+            "P::counted -> Int (inferred)",
+            "P::both -> Int, (Int ...) (inferred)",
         ]
     );
 }

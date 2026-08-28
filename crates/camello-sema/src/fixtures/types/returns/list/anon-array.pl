@@ -8,7 +8,7 @@ has id => (is => 'ro', isa => 'Int');
 package Store;
 
 # Returns: (InstanceOf['Row'] ...)
-sub rows { return () }
+sub rows { return (Row->new(id => 1)) }
 
 package main;
 
