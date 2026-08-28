@@ -64,11 +64,26 @@ sub greet {
     return "$who $times $loud";
 }
 
+# The same rule written `+{ ... }`, which is how a writer keeps perl from
+# reading the brace as a block. The `+` says nothing about the value, so it is
+# still a `default` and an `optional`. `optional => 0` is the one spelling
+# that says the opposite.
+sub shout {
+    args my $self,
+         my $who   => 'Str',
+         my $times => +{ isa => 'Int', default => 1 },
+         my $loud  => +{ isa => 'Bool', optional => 1 },
+         my $tag   => +{ isa => 'Str', optional => 0 };
+    return "$who $times $loud $tag";
+}
+
 package main;
 
 my $named = bless {}, 'Named';
 $named->greet(who => 'x');
 $named->greet(times => 2);      #~ error missing-argument: requires `who`
+$named->shout(who => 'x', tag => 'y');
+$named->shout(who => 'x');      #~ error missing-argument: requires `tag`
 
 # `Unknown` propagates: an operation on something nobody typed says nothing.
 my $opaque = get_it();

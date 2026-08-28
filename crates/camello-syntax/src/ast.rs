@@ -758,6 +758,24 @@ impl Args {
     }
 }
 
+/// What a `+` disambiguator wraps, and the node itself where there is none.
+///
+/// `+{ ... }` is how a writer tells perl that the brace opens a hashref and
+/// not a block, and `+(...)` that the parentheses are not a call's argument
+/// list. The `+` says nothing about the value, so everything that reads a
+/// value by its shape has to look through it — `args my $x => +{ isa => 'Int',
+/// optional => 1 }` declares the same rule as the one written without it.
+#[must_use]
+pub fn without_plus(node: &SyntaxNode) -> SyntaxNode {
+    if node.node_kind() != NodeKind::PREFIX_EXPR {
+        return node.clone();
+    }
+    if tokens(node).next().map(|token| token.token_kind()) != Some(TokenKind::PLUS) {
+        return node.clone();
+    }
+    node.children().next().unwrap_or_else(|| node.clone())
+}
+
 /// A node read as a hash key: a bareword, or a string with nothing in it that
 /// would have to be interpolated.
 #[must_use]

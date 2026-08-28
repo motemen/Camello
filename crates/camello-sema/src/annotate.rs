@@ -395,7 +395,7 @@ fn literal_name(node: &SyntaxNode) -> Option<String> {
     ast::key_text(node)
 }
 
-fn is_true(node: &SyntaxNode) -> bool {
+pub(crate) fn is_true(node: &SyntaxNode) -> bool {
     Literal::cast(node.clone())
         .and_then(|literal| literal.as_number())
         .is_none_or(|text| text != "0")
@@ -428,10 +428,11 @@ pub fn read_accessor_typed(arguments: &SyntaxNode, into: &mut Sink) -> (Vec<Attr
             _ => continue,
         };
         let lazy = matches!(pair.key(), Some("rw_lazy" | "ro_lazy" | "wo_lazy"));
-        if pair.node().node_kind() != NodeKind::ANON_HASH {
+        let value = ast::without_plus(pair.node());
+        if value.node_kind() != NodeKind::ANON_HASH {
             continue;
         }
-        let hash = AnonHash::cast(pair.node().clone()).expect("kind checked");
+        let hash = AnonHash::cast(value).expect("kind checked");
         for slot in hash.pairs() {
             let Some(name) = slot.key() else { continue };
             let (ty, required, defaulted) = read_slot(slot.node(), into);
@@ -459,6 +460,7 @@ pub fn read_accessor_typed(arguments: &SyntaxNode, into: &mut Sink) -> (Vec<Attr
 /// `default`, or is lazy. The generated `new` dies with "missing mandatory
 /// parameter named '$x'" otherwise, so this is a rule and not a guess.
 fn read_slot(node: &SyntaxNode, into: &mut Sink) -> (Type, bool, bool) {
+    let node = ast::without_plus(node);
     if node.node_kind() == NodeKind::ANON_HASH {
         let hash = AnonHash::cast(node.clone()).expect("kind checked");
         let mut ty = Type::Unknown;
@@ -479,7 +481,7 @@ fn read_slot(node: &SyntaxNode, into: &mut Sink) -> (Type, bool, bool) {
         }
         return (ty, required, defaulted);
     }
-    let ty = crate::decl::annotation_of(node).map_or(Type::Unknown, |annotation| {
+    let ty = crate::decl::annotation_of(&node).map_or(Type::Unknown, |annotation| {
         read_annotation(&annotation, into)
     });
     (ty, true, false)
@@ -578,6 +580,7 @@ pub fn listed_names(node: &SyntaxNode) -> Vec<String> {
 /// An arrayref of names, a hashref of `name => builder`, or — the shape
 /// `Class::Accessor::Lite::Lazy` documents — an arrayref holding both.
 fn accessor_names(node: &SyntaxNode) -> Vec<String> {
+    let node = ast::without_plus(node);
     match node.node_kind() {
         NodeKind::ANON_HASH => AnonHash::cast(node.clone())
             .expect("kind checked")
@@ -591,7 +594,7 @@ fn accessor_names(node: &SyntaxNode) -> Vec<String> {
             .iter()
             .flat_map(accessor_names)
             .collect(),
-        _ => attribute_names(node),
+        _ => attribute_names(&node),
     }
 }
 
@@ -726,7 +729,7 @@ fn member_type(node: &SyntaxNode, into: &mut Sink) -> Type {
 
 /// The value of one key of a hashref argument.
 fn hash_value(node: &SyntaxNode, key: &str) -> Option<String> {
-    let hash = AnonHash::cast(node.clone())?;
+    let hash = AnonHash::cast(ast::without_plus(node))?;
     hash.pairs()
         .iter()
         .find(|pair| pair.key() == Some(key))
