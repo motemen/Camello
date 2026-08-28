@@ -543,10 +543,12 @@ local, forward, and gives up early.
   `Maybe[T]`. Autovivification means a subscript on the *left* of an
   assignment is never a diagnostic.
 - **Returns.** A sub with no `Returns:` gets `returns` from the join of its
-  `return` sites and its final statement, under both contexts, but only when
-  every site is known; one `Unknown` site makes the whole `Unknown`. This
-  is the one place inference crosses a sub boundary, and it is done in
-  dependency order with recursion cut to `Unknown`.
+  `return` sites and its final statement, but only when every site is known;
+  one `Unknown` site makes the whole `Unknown`. This is the one place
+  inference crosses a sub boundary, and it is done in dependency order with
+  recursion cut to `Unknown`. Built in two tiers — one inside the declaration
+  pass, one over the program after `link` — and specified as INFER-4a and
+  INFER-4e..h; the design is [return-inference.md](return-inference.md).
 
 Nothing is inferred across files except through symbols, and nothing is
 inferred *for* a dependency: its subs are `Unknown` unless declared or
@@ -811,15 +813,15 @@ reviewed as a decision rather than discovered as a difference.
   every such subscript the scalar's type — which was where all eleven
   `maybe-deref` warnings over @INC came from. The scope pass had this rule
   from the start; the flow pass needed it too.
-- **Return inference does not cross a sub boundary** (milestone 5). The
-  design has a sub with no `Returns:` take its type from the join of its
-  return sites, in dependency order with recursion cut to `Unknown`. That is
-  the one place inference crosses a boundary, and it is what would need a
-  fixpoint over the program; without it every unannotated sub returns
-  `Unknown`, which is silence. `Returns:` is how a sub says otherwise.
-  The design for lifting this — two tiers, the local one inside the
-  declaration pass and a program-wide fixpoint after `link` — is in
-  [return-inference.md](return-inference.md).
+- **Return inference did not cross a sub boundary** (milestone 5, lifted
+  since). A sub with no `Returns:` returned `Unknown`, which is silence, and
+  the design's alternative — the join of its return sites, in dependency
+  order with recursion cut to `Unknown` — was the one place inference needed
+  a fixpoint over the program. It is built: two tiers, the local one inside
+  the declaration pass and a program-wide one after `link`, designed in
+  [return-inference.md](return-inference.md) and specified as INFER-4a and
+  INFER-4e..h in [types.md](types.md). What the corpus said about it is
+  below.
 - **A suppression comment reads two ways** (milestone 6). `##
   camello-disable: <code>` on a line of code is about that line, and on a line
   of its own is about the line below it. The second is what a long line needs,
@@ -887,3 +889,36 @@ reviewed as a decision rather than discovered as a difference.
   `Dpkg::Interface::Storable` does after asking `$self->can('parse')`. `$self`
   is really "this class or any subclass" and a subclass may define anything;
   reading it that way is the honest fix and is not built.
+- **Return inference, the scalar half, over @INC.** The bar
+  (`docs/return-inference.md`, "Cost and the corpus bar") is that no
+  diagnostic the run did not already report becomes an error, and that every
+  new warning is either a true positive or a shape of return the site table
+  should have made `Unknown`. Both are met: over 1755 files the diagnostics
+  before and after are the same set plus **twelve** `maybe-deref` at `info`,
+  with nothing lost and no new error, warning or `unknown-method` at all.
+
+  All twelve are the family the feature exists for: a sub with a `return;`
+  or a `return undef` among object returns, so its type is a `Maybe` and
+  something dereferences it without checking. `CPAN::Tarzip::gzip_read`
+  hands back `undef` on one path and the handle on another, eight times over;
+  `File::pushd::_pop_dir` the same. None of them is a shape the table got
+  wrong, and none of the families the design warned about showed up: no
+  `unknown-method` from a `$self` returned through a helper the invocant rule
+  cannot see, no `type-mismatch` from an incidental tail.
+
+  All twelve are also tier 1's: tier 2 installed types over this corpus and
+  changed no diagnostic by doing it. That is a fact about @INC rather than
+  about the tier — core modules annotate little and chain across files
+  through classes the run cannot type — and it is the reason tier 2's own
+  bar is the `cross-file/` fixture rather than this count.
+
+  The cost, over the same corpus: `camello check` goes from 0.82 s to 1.03 s
+  with tier 1 and to 1.72 s with both, and the declaration walk alone
+  (`camello dev index`) from 0.28 s to 0.52 s and then 1.19 s. Tier 1 is one
+  extra body walk per file and it roughly doubles that walk, which is what
+  the design predicted and accepted; tier 2's rounds are the rest, and the
+  reparse per round is the simple choice the corpus says holds. (The 248
+  `undeclared-variable` errors this perl's `ExtUtils::*` and `Encode::*` draw
+  are identical before and after and have nothing to do with returns: they
+  are `use Config;`-style imported package variables, which the scope pass
+  does not read.)
