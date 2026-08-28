@@ -826,6 +826,51 @@ use constant { E => 2.71, PHI => 1.61 };
   二つ返すなら perl では引数二つですが、アリティのパスは引数を構文的に数え続けます。
   呼び出しを引数リストに平坦化するところに偽陽性が住むので、それは作りません。
 
+### 4.7 クラスメソッドの `$class` (INFER-9)
+
+```perl
+package Base;
+sub build {
+    my $class = shift;          # ClassName['Base']
+    my $self  = $class->new;    # InstanceOf['Base'] ——「Self」
+    return $self;
+}
+package Child;
+our @ISA = ('Base');
+Child->build->extra;            # extra は Child のもの。通る。
+```
+
+`$self` は `InstanceOf[自分のパッケージ]` に束縛される（INFER-3a）のに、`$class`
+は長らく「どこかのクラスの名前」でしかありませんでした。`$class->` が何も解決
+できないので、`my $self = $class->new` の右辺も `Unknown` になり、手書きの
+コンストラクタとクラスメソッドの本体が丸ごと見えていませんでした。
+
+- (INFER-9a) **`$class` は `ClassName['自分のパッケージ']` です。** これは仮定
+  です —— `$class` が実際に何であるかは呼び出し側が決めます。置いている前提は
+  「`$class` は `__PACKAGE__` かそのサブクラスである」で、クラスメソッドの呼び
+  出し規約がそうなっている以上、破れているならそれはコードの側の間違いです。
+  `$class->m` は自分のパッケージの MRO で解決し、見つかった型を使います。
+
+  **見つからなければ `unknown-method` です。** サブクラスが足したメソッドを基底
+  から呼ぶ形（テンプレートメソッド）はこの前提の外にあり、誤検知になります。
+  それを承知で報告する側を選んでいます。pyright / mypy が classmethod の `cls` を
+  `type[Self]` として同じ扱いをするのと同じ判断で、@INC のコーパス 2564 ファイル
+  で実際に誤検知になったのは 1 件でした（`TheSchwartz::Worker` の `$class->work`）。
+
+  `ClassName['Foo']` はアノテーションにも書けます。パラメータのない `ClassName`
+  は従来どおり「どこかのクラスの名前」で、`ClassName['Child']` はその部分型です。
+
+- (INFER-9b) **`$class` から作った値は Self です。** INFER-4f が invocant その
+  ものについて言っていることを、invocant の *クラス* から作られた値まで広げます。
+  `$class->new`、`$self->clone` のように、レシーバが invocant で、返る値が
+  レシーバのクラスのインスタンスであるとき、その値には invocant の目印が付き、
+  呼び出し位置でレシーバのクラスに置き換わります。`Child->build` は `Child` です。
+
+  目印は**一度だけレキシカルを渡ります**。`my $self = $class->new; ...; return
+  $self` は手書きのコンストラクタの標準形で、目印が式にしか付かないなら代入で
+  失われるからです。同じレキシカルへの別の代入は目印を外します。値の型が
+  レシーバのクラスでないもの（`$class->config` が `Config` を返す）は対象外です。
+
 ## 5. 絞り込み (NARROW)
 
 `Maybe[T]` を値として使うと `maybe-deref`（DIAG-14）になります。それを消すのが

@@ -20,7 +20,7 @@
 //!   useful diagnostic and the most likely false positive, so it is a
 //!   `warning` and the narrowing set below is a list rather than a theorem.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use camello_syntax::ast::{self, AstNode, DeclKeyword, Sigil, Variable};
 use camello_syntax::lang::{NodeExt, NodeKind, SyntaxNode, TokenExt, TokenKind};
@@ -70,6 +70,7 @@ fn run(
         record: record.then(TypeTable::default),
         infer: None,
         call_shape: None,
+        self_call: None,
     };
     pass.block(root);
     pass.check_annotations();
@@ -127,6 +128,7 @@ pub fn infer_returns(
             ..Inference::default()
         })),
         call_shape: None,
+        self_call: None,
     };
     pass.block(root);
     pass.infer.expect("set above").found
@@ -285,7 +287,16 @@ struct Pass<'a> {
     /// that took one of the early paths out of [`Pass::call`] left somebody
     /// else's shape here, and the answer is only this node's if it says so.
     call_shape: Option<(TextRange, ListShape)>,
+    /// The call whose value is an instance of the *invocant's* class rather
+    /// than of a class named outright: `$class->new`, `$self->clone`
+    /// (`docs/types.md`, INFER-9b). Read by [`Pass::read_site`], and read by
+    /// range for the same reason [`Pass::call_shape`] is — the marker is one
+    /// node's and the next call overwrites it.
+    self_call: Option<TextRange>,
 }
+
+/// What an enclosing sub's walk had going when a nested one interrupted it.
+type Saved = (Sites, Tail, Invocant, HashSet<String>);
 
 /// The return walk's state (`docs/return-inference.md`, "Sites").
 #[derive(Debug, Default)]
@@ -301,6 +312,11 @@ struct Inference {
     tail: Tail,
     /// How the sub being walked names the value it was called on.
     invocant: Invocant,
+    /// The lexicals holding a value built from the invocant, by name without
+    /// the sigil. `my $self = $class->new; ...; return $self` is the shape
+    /// every hand-written constructor has, and the marker on the *call* is
+    /// gone by the time the `return` is read (`docs/types.md`, INFER-9b).
+    self_vars: HashSet<String>,
 }
 
 /// Every place a value leaves one sub, as the walk collected them.
@@ -524,12 +540,13 @@ impl Pass<'_> {
     }
 
     /// Put the enclosing sub's sites aside: a `return` in here is this sub's.
-    fn enter_sub(&mut self, invocant: Invocant) -> Option<Box<(Sites, Tail, Invocant)>> {
+    fn enter_sub(&mut self, invocant: Invocant) -> Option<Box<Saved>> {
         let inference = self.infer.as_mut()?;
         Some(Box::new((
             std::mem::take(&mut inference.sites),
             std::mem::take(&mut inference.tail),
             std::mem::replace(&mut inference.invocant, invocant),
+            std::mem::take(&mut inference.self_vars),
         )))
     }
 
@@ -538,7 +555,7 @@ impl Pass<'_> {
     ///
     /// `name` is the sub's own, which is how the declaration pass named it;
     /// `None` is an anonymous sub, which nothing asked about.
-    fn leave_sub(&mut self, name: Option<String>, saved: Option<Box<(Sites, Tail, Invocant)>>) {
+    fn leave_sub(&mut self, name: Option<String>, saved: Option<Box<Saved>>) {
         let Some(saved) = saved else { return };
         let package = self.package.clone();
         let key = name.map(|name| (package.clone(), name));
@@ -552,10 +569,24 @@ impl Pass<'_> {
                 inference.found.push((index, returns));
             }
         }
-        let (sites, tail, invocant) = *saved;
+        let (sites, tail, invocant, self_vars) = *saved;
         inference.sites = sites;
         inference.tail = tail;
         inference.invocant = invocant;
+        inference.self_vars = self_vars;
+    }
+
+    /// Remember, or forget, that a lexical holds a value built from the
+    /// invocant (`docs/types.md`, INFER-9b).
+    fn note_self_var(&mut self, name: &str, carries: bool) {
+        let Some(inference) = &mut self.infer else {
+            return;
+        };
+        if carries {
+            inference.self_vars.insert(name.to_string());
+        } else {
+            inference.self_vars.remove(name);
+        }
     }
 
     /// Note what the statement just walked leaves as the sub's value.
@@ -1289,6 +1320,16 @@ impl Pass<'_> {
             (None, _) => (Type::Unknown, ListShape::Unknown),
         };
 
+        // `my $self = $class->new` carries the invocant marker into the
+        // lexical, so that a `return $self` four lines later is still a
+        // `Self` (`docs/types.md`, INFER-9b). Any other assignment takes it
+        // away again, which is what makes a reassigned variable honest.
+        let from_self = !wants_list
+            && view.is_plain()
+            && view.value().is_some_and(|value| {
+                self.self_call == Some(value.text_range()) || self.is_invocant(&value)
+            });
+
         if declaration.as_ref().and_then(ast::VarDecl::keyword) == Some(DeclKeyword::Local) {
             return ty;
         }
@@ -1314,6 +1355,7 @@ impl Pass<'_> {
                 Type::union(vec![self.env.get(variable.sigil(), &name), ty.clone()])
             };
             self.env.set(variable.sigil(), &name, assigned);
+            self.note_self_var(&name, from_self);
         }
         if targets.is_empty() {
             // A subscript on the left is never a diagnostic
@@ -1565,6 +1607,10 @@ impl Pass<'_> {
                 self.warn_maybe(&ty, call.method_range());
                 match ty.without_undef() {
                     Type::InstanceOf(class) => Some(class),
+                    // `$class->m` in a class method: `$class` is this package
+                    // or a subclass, and a method the package declares is one
+                    // every subclass has too (`docs/types.md`, INFER-9a).
+                    Type::ClassName(Some(class)) => Some(class),
                     _ => None,
                 }
             }
@@ -1572,6 +1618,10 @@ impl Pass<'_> {
         let Some(class) = class else {
             return Type::Unknown;
         };
+        // Whether this call is `$class->...` / `$self->...` on the sub's own
+        // invocant, which is what makes its value a `Self` below.
+        let on_invocant = self.is_invocant(&invocant);
+        let receiver = class.clone();
         if let Some(table) = &mut self.record {
             table.methods.push(MethodSite {
                 receiver: invocant.text_range(),
@@ -1582,7 +1632,7 @@ impl Pass<'_> {
             });
         }
 
-        match self
+        let result = match self
             .program
             .resolve_method_from(&class, &method, &self.package)
         {
@@ -1684,7 +1734,16 @@ impl Pass<'_> {
                 ));
                 Type::Unknown
             }
+        };
+        // `Self`, the constructor half of the invocant rule: a value built
+        // *from* the invocant — `$class->new`, `$self->clone` — is of the
+        // class the caller named, not of the package the code was written in
+        // (`docs/types.md`, INFER-9b). The value's own class is the test, so
+        // `$class->config` handing back a `Config` is not one of these.
+        if on_invocant && holds_own_class(&result, &receiver) {
+            self.self_call = Some(node.text_range());
         }
+        result
     }
 
     /// `bless $self, $class` — the value's class, and the variable's from here on.
@@ -1732,10 +1791,10 @@ impl Pass<'_> {
             }
             return Type::Unknown;
         }
-        if names_a_class(ty) {
-            Type::InstanceOf(self.package.clone())
-        } else {
-            Type::Unknown
+        match class_of(ty) {
+            Some(class) => Type::InstanceOf(class),
+            None if names_a_class(ty) => Type::InstanceOf(self.package.clone()),
+            None => Type::Unknown,
         }
     }
 
@@ -1878,7 +1937,27 @@ impl Pass<'_> {
             }
             return (ty, true);
         }
+        // Not the invocant itself but a value built from it: `sub build { my
+        // $class = shift; return $class->new }` hands a `Child` back to
+        // `Child->build`, which is the whole point of writing `$class->new`
+        // rather than `Base->new`.
+        if self.self_call == Some(node.text_range()) || self.holds_self(node) {
+            return (ty, true);
+        }
         (ty, false)
+    }
+
+    /// Whether an expression is a lexical [`Pass::note_self_var`] marked.
+    fn holds_self(&self, node: &SyntaxNode) -> bool {
+        let Some(inference) = &self.infer else {
+            return false;
+        };
+        if node.node_kind() != NodeKind::SCALAR_VAR {
+            return false;
+        }
+        Variable::cast(node.clone())
+            .and_then(|variable| variable.name())
+            .is_some_and(|name| inference.self_vars.contains(&name))
     }
 
     /// Whether an expression hands back the invocant itself.
@@ -2343,7 +2422,10 @@ fn bind_params(env: &mut Env, params: &Params, package: &str) {
             for (index, param) in params.iter().enumerate() {
                 let ty = if index == 0 && *invocant {
                     if param.name == "$class" {
-                        Type::ClassName
+                        // Not `InstanceOf`: `$class` holds a *name*, and what
+                        // it names is this package or something below it
+                        // (`docs/types.md`, INFER-9a).
+                        Type::ClassName(Some(package.to_string()))
                     } else {
                         Type::InstanceOf(package.to_string())
                     }
@@ -2466,10 +2548,19 @@ fn unpacks_arguments(node: &SyntaxNode) -> bool {
     })
 }
 
+/// Which class a type names, where it says which.
+fn class_of(ty: &Type) -> Option<String> {
+    match ty {
+        Type::ClassName(Some(class)) => Some(class.clone()),
+        Type::Union(members) => members.iter().find_map(class_of),
+        _ => None,
+    }
+}
+
 /// Whether a type is, or may be, the name of a class.
 fn names_a_class(ty: &Type) -> bool {
     match ty {
-        Type::ClassName => true,
+        Type::ClassName(_) => true,
         Type::Union(members) => members.iter().any(names_a_class),
         _ => false,
     }
@@ -2580,7 +2671,7 @@ fn heads_family_of(broad: &Type, narrow: &Type) -> bool {
                     | Type::Num
                     | Type::Int
                     | Type::Enum(_)
-                    | Type::ClassName
+                    | Type::ClassName(_)
                     | Type::RoleName
             ),
             Type::Num => matches!(narrow, Type::Num | Type::Int),
@@ -2661,8 +2752,15 @@ pub fn compatible(value: &Type, slot: &Type, program: &Program) -> bool {
         // One enum fits another when every value it may hold is a value the
         // other accepts.
         (Type::Enum(value), Type::Enum(slot)) => value.iter().all(|one| slot.contains(one)),
-        (Type::Str, Type::ClassName | Type::RoleName) => true,
-        (Type::ClassName | Type::RoleName, Type::Str) => true,
+        (Type::Str, Type::ClassName(_) | Type::RoleName) => true,
+        (Type::ClassName(_) | Type::RoleName, Type::Str) => true,
+        // `ClassName['Child']` is a `ClassName`, and it is a `ClassName['Base']`
+        // when `Child` inherits from `Base` — the same nominal test an
+        // `InstanceOf` gets, one level up.
+        (Type::ClassName(_), Type::ClassName(None)) => true,
+        (Type::ClassName(Some(value)), Type::ClassName(Some(slot))) => {
+            value == slot || program.linearise(value).iter().any(|class| class == slot)
+        }
 
         // Bool is nominal: `0`, `1`, `''` and `undef` are the values it has,
         // and three of those four are numbers or strings — so it meets both,
@@ -2895,7 +2993,7 @@ fn is_value(ty: &Type) -> bool {
             | Type::Num
             | Type::Int
             | Type::Bool
-            | Type::ClassName
+            | Type::ClassName(_)
             | Type::RoleName
             | Type::Enum(_)
     )
