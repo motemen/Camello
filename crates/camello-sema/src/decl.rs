@@ -99,8 +99,16 @@ pub enum Params {
     },
     /// `args` — a `Dict` of named parameters.
     Named {
+        /// The keys, and only the keys.
         params: Vec<Param>,
-        invocant: bool,
+        /// The invocant's name (`$self`, `$class`), where the list has one.
+        ///
+        /// Not in `params`, which is the difference from `Positional`: `args`
+        /// takes the invocant by position and everything after it by name, so
+        /// putting it in the list would make it look like a key nobody passes.
+        /// The *name* rather than a flag, because the body binds it under
+        /// whichever of the two it was written as.
+        invocant: Option<String>,
         source: ParamSource,
     },
 }
@@ -162,7 +170,8 @@ impl Params {
     pub fn is_method(&self) -> bool {
         match self {
             Params::Unknown => false,
-            Params::Positional { invocant, .. } | Params::Named { invocant, .. } => *invocant,
+            Params::Positional { invocant, .. } => *invocant,
+            Params::Named { invocant, .. } => invocant.is_some(),
         }
     }
 
@@ -1081,15 +1090,21 @@ pub fn signature_of(symbol: &SubDecl) -> String {
         Params::Named {
             params, invocant, ..
         } => {
-            let mut parts: Vec<String> = Vec::new();
-            let mut rest = params.iter();
-            if *invocant {
-                if let Some(first) = rest.next() {
-                    parts.push(render_param(first));
-                }
-            }
-            let named: Vec<String> = rest
-                .map(|param| format!("{} => {}", param.name.trim_start_matches('$'), param.ty))
+            // The invocant is not one of the keys, so it is shown beside the
+            // hash rather than taken out of it — and every key is shown with
+            // whether it has to be passed, which is the whole shape of an
+            // `args` list.
+            let mut parts: Vec<String> = invocant.iter().cloned().collect();
+            let named: Vec<String> = params
+                .iter()
+                .map(|param| {
+                    let optional = if param.optional { "?" } else { "" };
+                    format!(
+                        "{}{optional} => {}",
+                        param.name.trim_start_matches('$'),
+                        param.ty
+                    )
+                })
                 .collect();
             out.push('(');
             parts.push(format!("{{ {} }}", named.join(", ")));
@@ -1241,7 +1256,7 @@ fn with_implicit_invocant(params: Params) -> Params {
         }
         Params::Named { params, source, .. } => Params::Named {
             params,
-            invocant: true,
+            invocant: Some("$self".to_string()),
             source,
         },
     }
@@ -1328,7 +1343,7 @@ fn from_args(body: &ast::Block, into: &mut annotate::Sink) -> Option<Params> {
     };
 
     let mut params = Vec::new();
-    let mut invocant = false;
+    let mut invocant = None;
     for (index, item) in call.pairs().iter().enumerate() {
         let (declaration, rule) = match item {
             ast::Arg::Pair { key, value, .. } => (key.clone(), Some(value.clone())),
@@ -1340,11 +1355,13 @@ fn from_args(body: &ast::Block, into: &mut annotate::Sink) -> Option<Params> {
             return Some(Params::Unknown);
         };
         let is_invocant = index == 0 && is_invocant_name(&variable);
-        invocant |= is_invocant;
-        // A named list is keys, and the invocant is not one of them; a
-        // positional list counts it, because a method call passes it.
-        if is_invocant && !positional {
-            continue;
+        if is_invocant {
+            invocant = Some(variable.clone());
+            // A named list is keys, and the invocant is not one of them; a
+            // positional list counts it, because a method call passes it.
+            if !positional {
+                continue;
+            }
         }
         let (optional, annotation) = rule.map_or((false, None), |node| read_rule(&node));
         let ty = annotation.map_or(Type::Unknown, |annotation| {
@@ -1361,7 +1378,7 @@ fn from_args(body: &ast::Block, into: &mut annotate::Sink) -> Option<Params> {
         Params::Positional {
             params,
             slurpy: false,
-            invocant,
+            invocant: invocant.is_some(),
             source: ParamSource::Args,
         }
     } else {

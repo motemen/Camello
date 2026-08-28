@@ -45,7 +45,8 @@ pub fn definition(
         }
         // A sub's name *is* its definition; jumping to it from itself is what
         // an editor does when it has nowhere better, so answer with nothing.
-        Target::Definition { .. } => None,
+        // Nothing resolved the receiver, so there is no class to look in.
+        Target::Definition { .. } | Target::UnresolvedMethod { .. } => None,
         Target::Lexical { binding, .. } => {
             let found = tables.scope.bindings.get(binding)?;
             if found.range.is_empty() {

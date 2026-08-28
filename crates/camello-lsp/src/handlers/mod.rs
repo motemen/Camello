@@ -77,6 +77,13 @@ pub enum Target {
         name: String,
         range: rowan::TextRange,
     },
+    /// A `->` whose receiver did *not* resolve to a class, so nothing knows
+    /// which method this is. Still a name the cursor is on, and still a
+    /// question worth answering with "I do not know".
+    UnresolvedMethod {
+        name: String,
+        range: rowan::TextRange,
+    },
 }
 
 /// Read the cursor.
@@ -121,6 +128,21 @@ pub fn target_at(
                             return Some(Target::Call {
                                 name,
                                 range: view.callee_range(),
+                            });
+                        }
+                    }
+                }
+            }
+            // The receiver's class is unknown — otherwise `method_at` would
+            // have answered above — but the cursor is on a method name all
+            // the same.
+            NodeKind::METHOD_CALL_EXPR => {
+                if let Some(view) = camello_syntax::ast::MethodCall::cast(node.clone()) {
+                    if view.method_range().contains_inclusive(offset) {
+                        if let Some(name) = view.method_name() {
+                            return Some(Target::UnresolvedMethod {
+                                name,
+                                range: view.method_range(),
                             });
                         }
                     }

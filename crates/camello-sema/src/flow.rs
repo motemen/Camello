@@ -34,8 +34,13 @@ use crate::types::Type;
 
 /// Check one file's bodies against everything the program declares.
 #[must_use]
-pub fn analyse(root: &SyntaxNode, file: usize, program: &Program) -> Vec<Diagnostic> {
-    run(root, file, program, false).0
+pub fn analyse(
+    root: &SyntaxNode,
+    file: usize,
+    program: &Program,
+) -> (Vec<Diagnostic>, Vec<TextRange>) {
+    let (diagnostics, _, guards) = run(root, file, program, false);
+    (diagnostics, guards)
 }
 
 /// The same walk, keeping the type it inferred for every expression it typed
@@ -49,9 +54,9 @@ pub fn analyse_recording(
     root: &SyntaxNode,
     file: usize,
     program: &Program,
-) -> (Vec<Diagnostic>, TypeTable) {
-    let (diagnostics, table) = run(root, file, program, true);
-    (diagnostics, table.unwrap_or_default())
+) -> (Vec<Diagnostic>, TypeTable, Vec<TextRange>) {
+    let (diagnostics, table, guards) = run(root, file, program, true);
+    (diagnostics, table.unwrap_or_default(), guards)
 }
 
 fn run(
@@ -59,7 +64,7 @@ fn run(
     file: usize,
     program: &Program,
     record: bool,
-) -> (Vec<Diagnostic>, Option<TypeTable>) {
+) -> (Vec<Diagnostic>, Option<TypeTable>, Vec<TextRange>) {
     let mut pass = Pass {
         program,
         file,
@@ -71,10 +76,11 @@ fn run(
         infer: None,
         call_shape: None,
         self_call: None,
+        guards: Vec::new(),
     };
     pass.block(root);
     pass.check_annotations();
-    (pass.diagnostics, pass.record)
+    (pass.diagnostics, pass.record, pass.guards)
 }
 
 /// What the subs named by `only` return, read off their bodies
@@ -129,6 +135,7 @@ pub fn infer_returns(
         })),
         call_shape: None,
         self_call: None,
+        guards: Vec::new(),
     };
     pass.block(root);
     pass.infer.expect("set above").found
@@ -293,6 +300,11 @@ struct Pass<'a> {
     /// range for the same reason [`Pass::call_shape`] is — the marker is one
     /// node's and the next call overwrites it.
     self_call: Option<TextRange>,
+    /// Declarations of a value held for its destructor (`docs/types.md`,
+    /// DIAG-12d), by the range of the name. The scope pass reports what is
+    /// never read and has no types to decide this with, so the answer is
+    /// carried out of here and applied to its diagnostics.
+    guards: Vec<TextRange>,
 }
 
 /// What an enclosing sub's walk had going when a nested one interrupted it.
@@ -433,8 +445,12 @@ impl Invocant {
             } => params.first().map_or(Invocant::None, |param| {
                 Invocant::Named(param.name.trim_start_matches('$').to_string())
             }),
-            // `args` binds the invocant under that name and no other.
-            Params::Named { invocant: true, .. } => Invocant::Named("self".to_string()),
+            // `args` binds the invocant under the name it was written as,
+            // which is `$class` as often as it is `$self`.
+            Params::Named {
+                invocant: Some(name),
+                ..
+            } => Invocant::Named(name.trim_start_matches('$').to_string()),
             Params::Unknown => Invocant::Implicit,
             _ => Invocant::None,
         }
@@ -1354,6 +1370,11 @@ impl Pass<'_> {
                 // `$x //= ...` and friends combine rather than replace.
                 Type::union(vec![self.env.get(variable.sigil(), &name), ty.clone()])
             };
+            if let Type::InstanceOf(class) = &assigned {
+                if self.program.has_destructor(class) {
+                    self.guards.push(variable.syntax().text_range());
+                }
+            }
             self.env.set(variable.sigil(), &name, assigned);
             self.note_self_var(&name, from_self);
         }
@@ -2442,8 +2463,15 @@ fn bind_params(env: &mut Env, params: &Params, package: &str) {
         Params::Named {
             params, invocant, ..
         } => {
-            if *invocant {
-                bind(env, "$self", Type::InstanceOf(package.to_string()));
+            if let Some(name) = invocant {
+                // The same reading a positional invocant gets: `$class` holds
+                // a class name, `$self` an instance (`docs/types.md`, INFER-9a).
+                let ty = if name == "$class" {
+                    Type::ClassName(Some(package.to_string()))
+                } else {
+                    Type::InstanceOf(package.to_string())
+                };
+                bind(env, name, ty);
             }
             for param in params {
                 bind(env, &param.name, param.ty.clone());

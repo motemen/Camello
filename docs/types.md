@@ -1121,9 +1121,17 @@ print $row->id;             # 診断なし
 my $guard = Scope::Guard->new(sub { $lock->release });   # 読まれなくて当然
 ```
 
-  判断の根拠は名前ではなく**何が作ったか**です。`Scope::Guard` と `Guard` の
-  コンストラクタ、および `guard` / `scope_guard` / `SCOPE_GUARD` という名前の
-  呼び出し（`Guard::guard { ... }` のような修飾付きも含む）がそれにあたります。
+  判断の根拠は名前ではなく**何が作ったか**です。決め手は二つあります。
+
+  一つは**クラスです**。値の型が `DESTROY` を宣言しているクラス（またはその
+  祖先）のインスタンスなら、それが何から出てきたかによらずデストラクタのために
+  持たれています。`my $lock = Lock->new;` も `my $lock = make_lock();` も同じです。
+  クラスがそう言っているので、名前の一覧は要りません。
+
+  もう一つは**名前**で、型が届かないところを埋めます。`Scope::Guard`・`Guard`・
+  `Scope::Container` のコンストラクタ、および `guard` / `scope_guard` /
+  `SCOPE_GUARD` / `start_scope_container` という名前の呼び出し
+  （`Guard::guard { ... }` のような修飾付きも含む）です。
   プロジェクト自身のガードクラスは `camello.toml` の `guard-classes` に書きます。
 
 ### 7.3 `missing-argument` について
