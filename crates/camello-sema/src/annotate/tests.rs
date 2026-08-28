@@ -24,6 +24,11 @@ fn attributes(source: &str) -> Vec<AttributeDecl> {
         .collect()
 }
 
+/// The names of a set of generated methods, for the assertions below.
+fn names(methods: &[crate::annotate::GeneratedMethod]) -> Vec<String> {
+    methods.iter().map(|method| method.name.clone()).collect()
+}
+
 #[test]
 fn has_yields_an_attribute() {
     let found = attributes("use Moose;\nhas name => (is => 'ro', isa => 'Str', required => 1);\n");
@@ -89,8 +94,12 @@ fn named_accessors_are_methods_of_their_own() {
     let found = attributes(
         "use Moose;\nhas name => (is => 'ro', writer => 'set_name', predicate => 'has_name');\n",
     );
-    assert!(found[0].methods.contains(&"set_name".to_string()));
-    assert!(found[0].methods.contains(&"has_name".to_string()));
+    assert!(found[0].answers_to("set_name"));
+    assert!(found[0].answers_to("has_name"));
+    // A `predicate` says whether the slot is filled, not what is in it.
+    assert_eq!(found[0].returns("has_name"), Type::Bool);
+    assert_eq!(found[0].returns("set_name"), found[0].ty);
+    assert_eq!(found[0].returns("name"), found[0].ty);
 }
 
 #[test]
@@ -99,7 +108,9 @@ fn a_regexp_in_handles_makes_the_delegation_opaque() {
     assert!(found[0].opaque_delegation);
     let listed = attributes("use Moose;\nhas c => (is => 'ro', handles => [qw(a b)]);\n");
     assert!(!listed[0].opaque_delegation);
-    assert_eq!(listed[0].methods, vec!["a", "b"]);
+    assert_eq!(names(&listed[0].methods), vec!["a", "b"]);
+    // A delegated method is another class's, and nothing here read it.
+    assert_eq!(listed[0].returns("a"), Type::Unknown);
 }
 
 #[test]
@@ -208,6 +219,7 @@ fn follow_best_practice_renames_what_comes_after_it() {
             .methods
             .clone()
     };
+    let methods = |name: &str| names(&methods(name));
     assert!(methods("before").is_empty(), "declared above the call");
     assert_eq!(methods("after"), ["get_after", "set_after"]);
     assert_eq!(methods("readable"), ["get_readable"]);

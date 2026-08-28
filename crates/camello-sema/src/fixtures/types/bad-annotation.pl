@@ -46,3 +46,13 @@ sub counted { return 'not a number'; }
 # Returns: ()
 sub silent_sub { return 1; }
 #~ warning return-mismatch: declared `Returns: ()`
+
+# A `return` inside an anonymous sub is that sub's, and nothing annotates an
+# anonymous sub — so the `Returns:` above the sub it is written in has nothing
+# to say about it. Left standing it reported the callback against `wrapping`.
+# Returns: Int
+sub wrapping {
+    my $callback = sub { return 'a string' };
+    $callback->();
+    return 1;
+}

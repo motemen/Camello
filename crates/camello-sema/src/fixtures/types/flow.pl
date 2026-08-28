@@ -178,3 +178,32 @@ sub build {
     $self->anything_at_all;
     return $self;
 }
+
+# An attribute answers to more than one name, and not all of them give back
+# what it holds (`docs/types.md`, METHOD-4a). A `predicate` says whether the
+# slot is filled; a `clearer` and a delegated method say nothing this pass can
+# read. Reading them all as the attribute's type made `$w->has_items` an
+# `ArrayRef[Int]` and a `type-mismatch` against every string slot it went into.
+package Held;
+use Moose;
+has items => (
+    is        => 'ro',
+    isa       => 'ArrayRef[Int]',
+    predicate => 'has_items',
+    clearer   => 'clear_items',
+    writer    => 'set_items',
+);
+
+package Wants;
+use Smart::Args qw(args);
+sub a_string { args my $class, my $x => 'Str'; return $x }
+
+package main;
+
+my $held = Held->new(items => [1]);
+Wants->a_string(x => $held->items);
+#~ warning type-mismatch: declared `Str`
+Wants->a_string(x => $held->has_items);
+Wants->a_string(x => $held->clear_items);
+Wants->a_string(x => $held->set_items);
+#~ warning type-mismatch: declared `Str`
