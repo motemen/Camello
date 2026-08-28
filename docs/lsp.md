@@ -449,15 +449,24 @@ Decided provisionally; written down so the decision is visible, and updated
 where a measurement has since been taken.
 
 - **Full sync forever?** Full, still. The edit-loop bar puts a
-  decl-diff-clean edit — reparse, declaration pass, fingerprint, body pass —
-  at 17 ms on one of the larger files below `@INC`, against a 300 ms debounce,
-  so the reparse is not what would be worth optimising first. If profiling
-  ever says otherwise, incremental sync plus rowan-level incremental
-  reparsing is the escape hatch, in that order, and neither before a
-  measurement.
+  decl-diff-clean edit — reparse, declaration pass, fingerprint, install,
+  step 4′ of `docs/return-inference.md`, body pass — at 13 ms on one of the
+  larger files below `@INC`, against a 300 ms debounce, so the reparse is not
+  what would be worth optimising first. If profiling ever says otherwise,
+  incremental sync plus rowan-level incremental reparsing is the escape
+  hatch, in that order, and neither before a measurement.
+
+  Return inference added two things to that loop and neither shows up in the
+  number: the declaration pass now reads the file's own returns, and step 4′
+  re-derives what only the program can say about them. The bar's other half
+  is what matters more — a trailing comment still reports **zero**
+  declaration changes, so a keystroke that changes nothing still sweeps
+  nothing.
 - **Memory bar for the index.** Measured: the 2,681 `.pm` below `@INC` index
   in 0.94s cold and peak at 217 MiB resident, about 83 KiB of `FileDecls` per
-  file. That fits the work repository this was built for, and it is a number
+  file. (The declaration pass has since grown the local tier of return
+  inference, which reads every body: it roughly doubles that time and adds
+  nothing to what is retained, since a return is a type and not a tree.) That fits the work repository this was built for, and it is a number
   rather than an assumption now. If a repository ever fails it, the decl cache
   already on disk makes drop-and-recache the obvious spill strategy.
   `scripts/lsp-bar` is how the number is taken again.
