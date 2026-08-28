@@ -17,6 +17,7 @@
 //! cross-file answers are absent — and when it finishes the graph answers
 //! instead. The flag that says which is [`Index::ready`].
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use camello_sema::decl::FileDecls;
@@ -27,6 +28,21 @@ use crate::settings::{Settings, EXTENSIONS};
 /// The program graph, and whether it is the whole of one yet.
 pub struct Index {
     pub analysis: Analysis,
+    /// The declaration fingerprint each file was last *installed* under.
+    ///
+    /// A memo of what the graph was told, and it has to be a memo: [`link`]
+    /// rewrites the stored declarations in place — a named type that resolved
+    /// is no longer the name it was written as — so the graph cannot be asked
+    /// afterwards what it was given, and the answer it would give differs from
+    /// what the next edit computes.
+    ///
+    /// It lives here, beside the graph it describes, rather than beside the
+    /// documents: a memo that outlives its graph is one that says "unchanged"
+    /// about a file that changed under it, and the background walk swaps a
+    /// whole new graph in. Held together, they cannot come apart.
+    ///
+    /// [`link`]: camello_sema::Analysis::link
+    fingerprints: HashMap<PathBuf, String>,
     /// Whether the background walk has finished. Before it has, the graph
     /// holds whatever single files have been opened and nothing else, and a
     /// cross-file question has no answer rather than a wrong one.
@@ -40,6 +56,7 @@ impl Index {
     pub fn empty(settings: &Settings) -> Self {
         Index {
             analysis: settings.empty_analysis(),
+            fingerprints: HashMap::new(),
             ready: false,
             files: 0,
         }
@@ -49,6 +66,37 @@ impl Index {
     #[must_use]
     pub fn holds(&self, path: &Path) -> bool {
         self.analysis.program().index_of(path).is_some()
+    }
+
+    /// Install one file's declarations, and say whether they were news.
+    ///
+    /// The only way declarations enter the graph after the walk, so that the
+    /// memo cannot be updated by some paths and not others — which is the
+    /// whole of the bug this replaced (`docs/lsp.md`, "Incremental
+    /// reanalysis", step 3).
+    ///
+    /// Unchanged declarations are not installed at all, and that is not only
+    /// an economy: [`Program::replace`] rebuilds the name indexes over every
+    /// file, and it would put back the *unlinked* declarations that
+    /// [`Analysis::link`] had already resolved.
+    ///
+    /// A caller that gets `true` owes the graph a `link` — batched, because
+    /// linking walks every file and a watched-file event may carry many.
+    ///
+    /// [`Program::replace`]: camello_sema::program::Program::replace
+    /// [`Analysis::link`]: camello_sema::Analysis::link
+    pub fn install(&mut self, path: &Path, decls: FileDecls) -> bool {
+        let fingerprint = fingerprint(&decls);
+        if self
+            .fingerprints
+            .get(path)
+            .is_some_and(|held| held == &fingerprint)
+        {
+            return false;
+        }
+        self.analysis.replace(path, decls, true);
+        self.fingerprints.insert(path.to_path_buf(), fingerprint);
+        true
     }
 }
 
@@ -79,8 +127,10 @@ pub fn build(settings: &Settings) -> Index {
         )
         .with_dialect(settings.dialect.clone());
     let mut read = 0usize;
+    let mut fingerprints = HashMap::new();
     for (path, decls) in files.iter().zip(declared) {
         if let Some(decls) = decls {
+            fingerprints.insert(path.clone(), fingerprint(&decls));
             analysis.add(path, decls, true);
             read += 1;
         }
@@ -93,6 +143,7 @@ pub fn build(settings: &Settings) -> Index {
 
     Index {
         analysis,
+        fingerprints,
         ready: true,
         files: read,
     }

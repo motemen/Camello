@@ -160,6 +160,7 @@ dependencies = [
  "rowan",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "toml",
  "tower-lsp-server",
