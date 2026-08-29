@@ -1154,16 +1154,35 @@ impl Pass<'_> {
             (None, Some(expression)) => Some(self.type_of(expression)),
             (None, None) => None,
         };
+        // `grep` hands back the elements whose condition held, so the
+        // condition is read as a narrowing of `$_` and what survives it is the
+        // element type (`docs/types.md`, NARROW-7). `grep { $_ }` over an
+        // `A | Undef` is an `A`, and so is `grep { defined $_ }`.
+        let kept = (name == "grep").then(|| {
+            let condition = match (&block, &inline) {
+                (Some(block), _) => block_condition(block),
+                (None, expression) => expression.clone(),
+            };
+            let Some(condition) = condition else {
+                return element.clone();
+            };
+            let mut env = self.env.clone();
+            narrowing(&env, &condition).apply_true(&mut env);
+            env.get(Sigil::Scalar, "_")
+        });
         self.env = saved;
 
-        if name == "map" {
-            return ListShape::of(mapped.unwrap_or(Type::Unknown));
+        match name {
+            "map" => ListShape::of(mapped.unwrap_or(Type::Unknown)),
+            _ => ListShape::of(kept.unwrap_or(element)),
         }
-        ListShape::of(element)
     }
 
     /// The type of a block that is one expression statement, walking it
     /// either way.
+    ///
+    /// See [`block_condition`] for the same block read as a *condition*, which
+    /// is what `grep` does with it.
     fn block_value(&mut self, block: &SyntaxNode) -> Option<Type> {
         let statements: Vec<SyntaxNode> = block.children().collect();
         let [only] = statements.as_slice() else {
@@ -1417,7 +1436,13 @@ impl Pass<'_> {
             // What is being dereferenced is everything written before this
             // step: for `$h->{a}{b}` the second step's subject is `$h->{a}`,
             // which is the value that may be `undef` and the thing to guard.
-            let subject = text_before(node, step.node().text_range().start());
+            // A step's node spans the base and every step up to itself, so
+            // the part before it is that node's first child.
+            let subject = step
+                .node()
+                .children()
+                .next()
+                .map_or_else(|| source_of(node), |inner| source_of(&inner));
             current = self.step(&current, step, step.node().text_range(), &subject);
         }
         current
@@ -2687,22 +2712,6 @@ fn squeezed(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// The text of a subscript chain up to an offset: the part that is being
-/// dereferenced, rather than the whole chain.
-fn text_before(chain: &SyntaxNode, end: TextSize) -> String {
-    let mut out = String::new();
-    for token in chain
-        .descendants_with_tokens()
-        .filter_map(rowan::NodeOrToken::into_token)
-    {
-        if token.text_range().end() > end {
-            break;
-        }
-        out.push_str(token.text());
-    }
-    shortened(&squeezed(&out))
-}
-
 /// At most `LIMIT` characters, with an ellipsis where the rest was.
 fn shortened(text: &str) -> String {
     const LIMIT: usize = 40;
@@ -3307,8 +3316,15 @@ fn narrowing(env: &Env, node: &SyntaxNode) -> Narrowing {
             if !matches!(name.as_str(), "defined" | "blessed" | "ref" | "exists") {
                 return Narrowing::default();
             }
+            let arguments = operands(&call);
+            // `defined` with nothing after it is `defined $_`, which is what
+            // `grep { defined }` means and how half a corpus writes it.
+            if arguments.is_empty() && name == "defined" {
+                let narrowed = env.get(Sigil::Scalar, "_").without_undef();
+                return Narrowing::when_true((Sigil::Scalar, "_".to_string(), narrowed));
+            }
             let mut found = Narrowing::default();
-            for argument in operands(&call) {
+            for argument in arguments {
                 // `defined $x->{k}` narrows `$x` too.
                 let base = ast::SubscriptChain::cast(argument.clone())
                     .map_or_else(|| argument.clone(), |chain| chain.base().clone());
@@ -3371,6 +3387,18 @@ fn narrowing(env: &Env, node: &SyntaxNode) -> Narrowing {
             }
         }
     }
+}
+
+/// The one expression a block holds, or `None` where it holds anything else.
+///
+/// What `grep { ... }` tests. A block of several statements has a value — its
+/// last — but reading only that as a narrowing would claim the earlier ones
+/// said nothing, and one of them may well be what decides the answer.
+fn block_condition(block: &SyntaxNode) -> Option<SyntaxNode> {
+    let only = sole_child(block)?;
+    (only.node_kind() == NodeKind::EXPR_STMT)
+        .then(|| sole_expression(&only))
+        .flatten()
 }
 
 /// The condition of a statement modifier: what follows `unless` or `if`.

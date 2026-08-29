@@ -98,6 +98,35 @@ One line per change. The reasoning is in the commit it came from.
 
 ### Changed
 
+- **`unused-variable` and `shadowed-variable` are `info`** (DIAG-2b, DIAG-3a).
+  Both are noisy out of proportion to what they catch. A name bound and never
+  read is usually deliberate — a destructuring that wanted one of three slots,
+  a `my` kept for a later edit — and where it is not, it costs nothing;
+  shadowing is legal and a matter of taste. Over the `.pm` files below `@INC`
+  they are 1261 and 340 reports.
+- **A diagnostic names the code it is about, not only the type** (DIAG-0a).
+  `` `Str|Undef` may be undefined here `` tells a reader nothing they can look
+  for. `maybe-deref`, `type-mismatch` and `return-mismatch` put the subject
+  first and the type in parentheses:
+
+  ```text
+  `$row` may be undefined here (`InstanceOf['Row']|Undef`), and nothing has checked it
+  ```
+
+  The subject is not always a variable: `$obj->rows` and `$self->{cfg}{db}` are
+  subjects too, and for the second step of `$h->{a}{b}` it is `$h->{a}`, which
+  is the value that may be `undef` and the thing to guard. It is the text as
+  *written* with its whitespace squeezed to single spaces, not the tokens
+  concatenated — `[keys %$map]` read back without the space is a different
+  program.
+- **`grep` narrows the list it filters** (NARROW-7). It hands back the elements
+  whose condition held, so the block — or the expression of `grep EXPR, LIST` —
+  is read as a narrowing of `$_`, and what survives it is the element type.
+  `grep { $_ }` over an `InstanceOf['Row'] | Undef` is an `InstanceOf['Row']`,
+  and so are `grep { defined $_ }`, `grep { defined }` and `grep $_, LIST`. The
+  existing narrowing list is what applies, so a condition that says nothing
+  about `$_` narrows nothing, and a block of several statements is not read at
+  all — taking only its last would claim the earlier ones said nothing.
 - **A list shape may be an alternation** (`docs/types.md`, ANNOT-7e).
   `(Value, Undef) | (Undef, Error)` is the ok-or-error idiom, and its two slots
   are correlated — one is filled exactly when the other is `undef`. Joining the
@@ -133,6 +162,12 @@ One line per change. The reasoning is in the commit it came from.
 
 ### Fixed
 
+- **A dereference names what it dereferences.** A subscript step's own node
+  spans the base *and every step up to itself*, so reading "the text before
+  this step" off its range gave the empty string: every `maybe-deref` that was
+  not a method call reported `` `` `` for its subject. The part before a step
+  is that step node's first child, so `$c->{a}{b}` reports `$c` and then
+  `$c->{a}`. Thirty-seven messages over `@INC` were affected.
 - **A `Smart::Args` invocant is no longer mistaken for the first named key.**
   `Params::Named` recorded only that there *was* an invocant, and both the
   signature renderer and the body pass then went looking for it in the list of
@@ -153,6 +188,23 @@ One line per change. The reasoning is in the commit it came from.
   `start_scope_container`.
 - **`# returns:` is a `Returns:`.** The keyword is matched without regard to
   case now.
+
+### Added (tools)
+
+- **`camello check --group`** reports one diagnostic per subject per file with
+  a count. Twenty dereferences of one `$row` are one thing to fix.
+- **`camello check --returns-drift`** lists the subs whose written `Returns:`
+  and whose body disagree (`docs/return-inference.md`, "Drift"). An annotation
+  wins at every call site, so the only thing that ever compares it against the
+  code is `return-mismatch`, one `return` at a time — which cannot see the
+  drift a file collects. Nothing is installed and the program is not changed:
+  each sub's body is read against the annotations every *other* sub still
+  carries. Exit 1 when anything was found.
+- **Appendix A of `docs/types.md`** is the list of everything camello knows by
+  name without reading it: the object frameworks, the `mk_*` family, the type
+  DSL, the `use` statements the declaration pass reads itself, XS loaders, the
+  modules that turn `strict` on, the guard names, `UNIVERSAL`, perl's own
+  variables, and the core modules that export a variable.
 - **`@ISA` is read in all three of its spellings** (METHOD-1a). `our @ISA =
   ('Base')` worked; `@ISA = qw(Base Other)` was read as a value the pass could
   not understand, which made the whole class *dynamic* and silenced every
