@@ -931,6 +931,29 @@ return unless defined $row; # NARROW-5
 print $row->id;             # 診断なし
 ```
 
+- (NARROW-7) **`grep` は一覧全体をこの規則で絞ります。** `grep` が返すのは条件が
+  成り立った要素だけなので、そのブロック（または `grep EXPR, LIST` の EXPR）を
+  `$_` についての絞り込みとして読み、生き残った型が結果の要素型です。
+
+  ```perl
+  # Returns: (InstanceOf['Row'] | Undef ...)
+  sub rows { ... }
+
+  for my $row (grep { $_ } rows()) {
+      print $row->id;         # 診断なし。要素は InstanceOf['Row']
+  }
+  ```
+
+  上の一覧がそのまま効くので、`grep { $_ }`・`grep { defined $_ }`・
+  `grep { defined }`（引数のない `defined` は `defined $_` です）・
+  `grep $_, LIST` はどれも同じ答えになります。`$_` について何も言わない条件
+  （`grep { 1 }`）は何も絞りません。`grep { !defined $_ }` は undef だけを
+  残しますが、それを言う規則は一覧に無いので何も絞りません —— 一覧に無いものは
+  黙る、という NARROW の約束のとおりです。
+
+  文が複数あるブロックは読みません。最後の文だけを条件として読むと、その前の文が
+  何も言っていないことにしてしまうからです。
+
 ### 5.1 条件は木として読む (NARROW-6)
 
 上の一覧は条件式の**構造に沿って**適用されます。条件は木であり、`!` も `||` も
