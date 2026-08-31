@@ -264,6 +264,65 @@ fn mk_accessors_installs_into_the_package_it_is_written_in() {
 }
 
 #[test]
+fn class_tiny_reads_a_flat_list_and_the_defaults_beside_it() {
+    let root = parse(concat!(
+        "package F;\n",
+        "use Class::Tiny qw( name email ), {\n",
+        "  created => sub { time },\n",
+        "  size    => 0,\n",
+        "};\n",
+    ));
+    let decls = decl::declare(&root);
+    let facts = decls.facts_for("F").expect("the package");
+    let found: Vec<(&str, Access)> = facts
+        .attributes
+        .iter()
+        .map(|attribute| (attribute.name.as_str(), attribute.access))
+        .collect();
+    assert_eq!(
+        found,
+        [
+            ("name", Access::Rw),
+            ("email", Access::Rw),
+            ("created", Access::Rw),
+            ("size", Access::Rw),
+        ]
+    );
+    assert!(
+        facts
+            .attributes
+            .iter()
+            .all(|one| one.ty == Type::Unknown && !one.required && one.defaulted),
+        "no types, nothing required (`docs/types.md`, ANNOT-13a)"
+    );
+    assert!(facts.constructor && facts.open_constructor);
+}
+
+#[test]
+fn class_tiny_has_a_constructor_without_being_asked() {
+    // `use Class::Tiny` is itself what puts `Class::Tiny::Object` in `@ISA`,
+    // so an empty argument list still leaves a `new` — and so does naming the
+    // base class instead (ANNOT-13b).
+    for source in [
+        "package F;\nuse Class::Tiny;\n",
+        "package F;\nuse parent -norequire, 'Class::Tiny::Object';\n",
+    ] {
+        let root = parse(source);
+        let decls = decl::declare(&root);
+        let facts = decls.facts_for("F").expect("the package");
+        assert!(facts.constructor && facts.open_constructor, "{source}");
+    }
+}
+
+#[test]
+fn class_tiny_antlers_is_read_as_moose() {
+    let found = attributes("use Class::Tiny::Antlers;\nhas size => (is => 'ro', isa => 'Int');\n");
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].ty, Type::Int);
+    assert_eq!(found[0].access, Access::Ro);
+}
+
+#[test]
 fn follow_best_practice_renames_what_comes_after_it() {
     let root = parse(
         "package S;\nuse base 'Class::Accessor';\n__PACKAGE__->mk_accessors(qw(before));\n__PACKAGE__->follow_best_practice;\n__PACKAGE__->mk_accessors(qw(after));\n__PACKAGE__->mk_ro_accessors(qw(readable));\n",

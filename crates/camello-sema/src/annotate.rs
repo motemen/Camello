@@ -33,6 +33,10 @@ pub enum Framework {
     /// `Class::Accessor::Lite` and the `mk_accessors` family it belongs to:
     /// accessors and, when asked for, a `new`, and no types anywhere.
     AccessorLite,
+    /// `use Class::Tiny qw(name), { size => sub { 0 } }` — read-write
+    /// accessors, no types, and a `new` that is always there and takes
+    /// anything.
+    ClassTiny,
     /// A `bless` with no framework behind it.
     Bless,
 }
@@ -99,6 +103,7 @@ pub struct Frameworks {
     pub smart_args: bool,
     pub accessor_typed: bool,
     pub accessor_lite: bool,
+    pub class_tiny: bool,
     pub type_library: bool,
     dialect: Dialect,
 }
@@ -140,6 +145,12 @@ impl Frameworks {
             | "Class::Accessor"
             | "Class::Accessor::Fast"
             | "Class::Accessor::Faster" => self.accessor_lite = true,
+            // `Class::Tiny::Antlers` is the one spelling of this distribution
+            // that exports `has`, `extends` and `with`, so it reads as Moose;
+            // `Class::Tiny::Object` is the base class the other spelling puts
+            // in `@ISA`, and inheriting from it is what carries the `new`.
+            "Class::Tiny" | "Class::Tiny::Object" => self.class_tiny = true,
+            "Class::Tiny::Antlers" => self.moose = true,
             _ => {}
         }
         if supplies_the_type_dsl(module) {
@@ -182,6 +193,8 @@ impl Frameworks {
             Framework::AccessorTyped
         } else if self.accessor_lite {
             Framework::AccessorLite
+        } else if self.class_tiny {
+            Framework::ClassTiny
         } else {
             Framework::None
         }
@@ -223,6 +236,9 @@ pub fn is_recognised(module: &str) -> bool {
             | "Class::Accessor"
             | "Class::Accessor::Fast"
             | "Class::Accessor::Faster"
+            | "Class::Tiny"
+            | "Class::Tiny::Object"
+            | "Class::Tiny::Antlers"
             // Statements the declaration pass reads for itself.
             | "parent"
             | "base"
@@ -1002,6 +1018,67 @@ pub fn best_practice_methods(name: &str, access: Access) -> Vec<GeneratedMethod>
         });
     }
     methods
+}
+
+// ===== `Class::Tiny` =====
+
+/// ```perl
+/// use Class::Tiny qw( name email ), {
+///     created => sub { time },
+///     size    => 0,
+/// };
+/// ```
+///
+/// A flat list of attribute names, and a hashref whose keys are names too and
+/// whose values are their defaults. Everything here is read-write and
+/// [`Type::Unknown`]: the module has no `isa`, and a default is a value
+/// rather than a claim about the slot — the same reading `has x => (default
+/// => ...)` gets.
+///
+/// The constructor is not opt-in the way [`read_accessor_lite`]'s is.
+/// `Class::Tiny` puts `Class::Tiny::Object` in `@ISA`, so a package that says
+/// `use Class::Tiny` at all has a `new`, even with nothing after it.
+#[must_use]
+pub fn read_class_tiny(arguments: &SyntaxNode) -> Vec<AttributeDecl> {
+    let mut attributes = Vec::new();
+    for element in Args::elements(arguments) {
+        let element = ast::without_plus(&element);
+        if element.node_kind() == NodeKind::ANON_HASH {
+            let hash = AnonHash::cast(element).expect("kind checked");
+            for slot in hash.pairs() {
+                let Some(name) = slot.key() else { continue };
+                attributes.push(class_tiny_attribute(name, slot.range()));
+            }
+            continue;
+        }
+        let range = element.text_range();
+        for name in attribute_names(&element) {
+            attributes.push(class_tiny_attribute(&name, range));
+        }
+    }
+    attributes
+}
+
+/// One `Class::Tiny` slot: read-write, untyped, and never missing.
+///
+/// Nothing is required — the generated `new` blesses what it was handed
+/// without looking for a key — and every slot is `defaulted`, whether or not
+/// a default was written, because that is what says `new` may leave it out.
+fn class_tiny_attribute(name: &str, range: TextRange) -> AttributeDecl {
+    AttributeDecl {
+        name: name.to_string(),
+        ty: Type::Unknown,
+        access: Access::Rw,
+        required: false,
+        defaulted: true,
+        coerce: false,
+        methods: Vec::new(),
+        opaque_delegation: false,
+        // The default is written inline, as a value or an anonymous sub, so
+        // there is no name to ask what the slot holds.
+        builder: None,
+        range,
+    }
 }
 
 // ===== `Type::Library` =====

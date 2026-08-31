@@ -170,8 +170,8 @@ A **symbol** belongs to a package and is one of:
   Unknown }`
 - `Attribute { name, type: Type, access: Ro | Rw | Wo, required, default,
   source }` — produced by `has`, `Class::Accessor::Typed`, and the
-  `Class::Accessor::Lite` / `__PACKAGE__->mk_accessors` family, whose
-  attributes have no type at all
+  `Class::Accessor::Lite` / `__PACKAGE__->mk_accessors` family and by
+  `Class::Tiny`, whose attributes have no type at all
 - `Constant { name, type }` from `use constant`
 - `Import { name, from: package }` from `use Foo qw(bar)` when `Foo` is
   analysable and exports `bar`
@@ -188,7 +188,8 @@ what is left when the file declares nothing of the name.
 Package-level facts that are not symbols: `isa: Vec<Package>` (from
 `use parent`, `use base`, `extends`, `our @ISA = (...)`), `roles` (`with`,
 `does`), and the object framework in use (Moose, Moo, Mouse,
-Class::Accessor::Typed, Class::Accessor::Lite, plain `bless`, or none),
+Class::Accessor::Typed, Class::Accessor::Lite, Class::Tiny, plain `bless`, or
+none),
 because the framework decides whether `new` exists and what it accepts — and
 whether it *checks* what it accepts, which the `mk_new` family's does not.
 
@@ -407,6 +408,21 @@ hash it was handed without looking at it, so the constructor is *open*: a key
 with no accessor behind it contradicts nothing, and `unknown-key` stays quiet.
 `follow_best_practice` renames the accessors below it to `get_x`/`set_x`; the
 attribute keeps its own name, because that is still the hash key.
+
+**Class::Tiny.**
+
+```perl
+use Class::Tiny qw( name email ), { created => sub { time } };
+```
+
+A `use` whose arguments are a flat list of names rather than a list of pairs,
+plus an optional hashref whose keys are names too and whose values are their
+defaults. Untyped and read-write, like the family above, and open the same
+way — its `new` blesses the hash it was handed. What it does not share is the
+opt-in: `use Class::Tiny` is itself what puts `Class::Tiny::Object` into
+`@ISA`, so the constructor is there even with an empty argument list, and so
+is it for a package that names that base class in a `use parent` instead. The
+`Class::Tiny::Antlers` spelling exports `has` and reads as Moose.
 
 **Signatures.**
 

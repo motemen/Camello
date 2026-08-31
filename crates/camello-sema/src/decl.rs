@@ -436,7 +436,11 @@ impl Pass {
         self.decls.facts.push(PackageFacts {
             name: package.to_string(),
             framework,
-            constructor: framework == Framework::AccessorTyped,
+            constructor: matches!(framework, Framework::AccessorTyped | Framework::ClassTiny),
+            // `Class::Tiny`'s constructor blesses the hash it was handed, and
+            // a package reaches it by `use Class::Tiny` or by inheriting
+            // `Class::Tiny::Object` — either way with no argument list to read.
+            open_constructor: framework == Framework::ClassTiny,
             ..PackageFacts::default()
         });
         self.decls.facts.last_mut().expect("just pushed")
@@ -614,6 +618,22 @@ impl Pass {
                         });
                     }
                 }
+                return;
+            }
+            "Class::Tiny" => {
+                let attributes = arguments
+                    .as_ref()
+                    .map(annotate::read_class_tiny)
+                    .unwrap_or_default();
+                let facts = self.facts(package);
+                facts.attributes.extend(attributes);
+                // Not opt-in: `use Class::Tiny` is what puts
+                // `Class::Tiny::Object` in `@ISA`, and its `new` blesses the
+                // hash it was handed (`docs/types.md`, ANNOT-13).
+                facts.constructor = true;
+                facts.open_constructor = true;
+                // The names in the list are attributes of this package, not
+                // subs it imported.
                 return;
             }
             "Class::Accessor::Lite" | "Class::Accessor::Lite::Lazy" => {
