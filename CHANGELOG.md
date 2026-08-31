@@ -59,7 +59,10 @@ One line per change. The reasoning is in the commit it came from.
   rather than a guarantee, the same pragmatism INFER-2g takes with `Foo->new`.
   Three spellings say nothing: `s/…/…/r` hands back a copy, a bare match only
   reads its target, and `chomp` is intent rather than evidence — a reference
-  survives one unchanged. Not one diagnostic over @INC moved either way.
+  survives one unchanged. A known `undef` survives a substitution too, because
+  one that matches nothing assigns nothing: `Str|Undef` stays `Str|Undef`,
+  where `.=` would have made it `Str`. Not one diagnostic over @INC moved
+  either way.
 
 - **A `goto &NAME` is followed** instead of making the whole sub `Unknown`
   (`docs/return-inference.md`, "A `goto` is a tail call"). perl replaces the
