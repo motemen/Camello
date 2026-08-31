@@ -249,6 +249,7 @@ Dict[name => Str, slurpy HashRef[Str]]            # 他の鍵もあってよい
 | `args` / `args_pos` | `Smart::Args`, `Smart::Args::TypeTiny` |
 | `rw`/`ro`/... の宣言 | `Class::Accessor::Typed` |
 | `mk_accessors` 一族 | `Class::Accessor::Lite`, 同 `::Lazy`, `Class::Accessor`, 同 `::Fast`, 同 `::Faster` |
+| `Class::Tiny` の属性リスト | `Class::Tiny`, `Class::Tiny::Object` |
 | 型 DSL (`type` / `declare` / ...) | `Type::` / `Types::` / `MooseX::Types` の各一族、`*::Util::TypeConstraints` |
 
 型 DSL だけは、一覧ではなく**一族**で裏付けます（ANNOT-8d）。理由はそこに書きます。
@@ -642,9 +643,41 @@ use constant { E => 2.71, PHI => 1.61 };
   名前もラッパーのものです。
 - (ANNOT-12b) 読み替えられる先は、camello がすでに知っているモジュール名です。
   Moose 系・`Smart::Args`・`Class::Accessor::Typed`・`Class::Accessor::Lite` 一族・
-  型ライブラリ・XS ローダーのいずれも指せます。
+  `Class::Tiny`・型ライブラリ・XS ローダーのいずれも指せます。
 - (ANNOT-12c) 宣言のキャッシュ（DEPS-6）はこの設定込みで鍵付けされます。同じ
   バイトでも、読み替えの下で読んだ宣言は別の宣言だからです。
+
+### 3.13 `Class::Tiny` (ANNOT-13)
+
+```perl
+package Foo;
+use Class::Tiny qw( name email ), {
+    created => sub { time },
+    size    => 0,
+};
+```
+
+`use` の引数リストが宣言であるところは `Class::Accessor::Lite` 一族と同じですが、
+こちらは対のリストではなく**名前の平たい並び**です。ハッシュリファレンスが
+混ざっていれば、その鍵も名前で、値はその既定値です。
+
+- (ANNOT-13a) 属性はすべて **read-write** で、型は `Unknown` です。`isa` に
+  あたるものがモジュールに無く、既定値はスロットについての主張ではなく値だから
+  です（`has x => (default => ...)` を読むときと同じ扱いです）。
+- (ANNOT-13b) **`new` は名乗り出なくてもあります。** `use Class::Tiny` が
+  `@ISA` に `Class::Tiny::Object` を入れるので、引数を一つも書かない
+  `use Class::Tiny;` でもコンストラクタは生えます。`use parent
+  'Class::Tiny::Object'` と書いてあるときも同じです。ここが ANNOT-10c と
+  違うところです。
+- (ANNOT-13c) この `new` は**渡されたハッシュをそのまま bless します**。
+  ANNOT-10d と同じく、アクセサのない鍵も通るので `unknown-key` は `warning`
+  であり、必須の鍵はありません。
+- (ANNOT-13d) `Class::Tiny::Antlers` は `has` / `extends` / `with` を export する
+  綴りなので、そのパッケージは Moose 系として読まれます。そちらは型を持つので、
+  型検査も普通に効きます（ANNOT-10e と同じ関係です）。
+- (ANNOT-13e) 既定値からは型を取りません。`sub { ... }` は名前のない builder で、
+  ANNOT-10f が builder に型を求められるのは、それが**名前で呼ばれるメソッド**で
+  あって解決先が MRO で決まるからです。ここにはその名前がありません。
 
 ## 4. 推論 (INFER)
 
@@ -711,11 +744,13 @@ use constant { E => 2.71, PHI => 1.61 };
 - (INFER-2f) 必須のスロットを渡していない呼び出しは `missing-argument` です。
   どの規則で「必須」かはフレームワークごとに違います
   （[DIAG-13](#74-missing-argument-について)）。
-- (INFER-2g) `Class::Accessor::Lite` 一族の `new` は**開いています**。渡された
+- (INFER-2g) `Class::Accessor::Lite` 一族と `Class::Tiny` の `new` は
+  **開いています**。渡された
   ハッシュをそのまま bless するだけなので、アクセサのない鍵も
   `$self->{key}` として読める正しいプログラムでありえます。インスタンスの型は
   分かり、知らない鍵は `warning` として言いますが、足りない鍵は言いません
-  （[ANNOT-10d](#310-classaccessorlite-一族-annot-10)）。
+  （[ANNOT-10d](#310-classaccessorlite-一族-annot-10)、
+  [ANNOT-13c](#313-classtiny-annot-13)）。
 
 ### 4.3 変数 (INFER-3)
 
@@ -1151,9 +1186,11 @@ print $row->id;             # 診断なし
 - (DIAG-5a) `type-mismatch` は、値がリテラルのとき `error` です（両側が
   書かれているからです）。推論された値のときは `warning` です。
 - (DIAG-6a) `unknown-key` は、コンストラクタが**開いている**とき `warning` です。
-  `Class::Accessor::Lite` の `new` は渡されたハッシュをそのまま bless するので、
+  `Class::Accessor::Lite` と `Class::Tiny` の `new` は渡されたハッシュをそのまま
+  bless するので、
   アクセサの無い鍵も `$self->{key}` として読める正しいプログラムでありえます
-  ([ANNOT-10d](#310-classaccessorlite-一族-annot-10))。鍵を拒否するコンストラクタに
+  ([ANNOT-10d](#310-classaccessorlite-一族-annot-10)、
+  [ANNOT-13c](#313-classtiny-annot-13))。鍵を拒否するコンストラクタに
   対しては、これは宣言された二つのものの矛盾なので `error` のままです。
 - (DIAG-9a) `return-mismatch` はこの規則には従わず、リテラルに対しても
   `warning` のままです（ANNOT-7e）。相手がコメントだからです。無名 sub の中の
@@ -1389,6 +1426,7 @@ camello が**モジュールを読まずに名前だけで知っている**も�
 | Moose 系（`has` / `extends` / `with`） | `Moose`, `Moo`, `Mouse`, `Moose::Role`, `Moo::Role`, `Mouse::Role`, `MooseX::Declare`, `Mojo::Base`, `Moose::Util::TypeConstraints`, `Mouse::Util::TypeConstraints` |
 | `Class::Accessor::Typed` | 同名 |
 | `mk_accessors` 一族 | `Class::Accessor::Lite`, 同 `::Lazy`, `Class::Accessor`, 同 `::Fast`, 同 `::Faster` |
+| `Class::Tiny` | `Class::Tiny`, `Class::Tiny::Object`（`Class::Tiny::Antlers` は Moose 系） |
 | `Smart::Args` | `Smart::Args`, `Smart::Args::TypeTiny` |
 
 引数まで見るものが二つあります。`use parent 'X'` / `use base 'X'` は **X** を
@@ -1410,7 +1448,8 @@ Moose 系として読みます（[ANNOT-10e](#310-classaccessorlite-一族-annot
 ### A.4 宣言パスが自分で読む `use` (`decl::Pass::use_statement`)
 
 `parent` / `base`（`@ISA` を足す）、`constant`（名前を宣言する）、
-`Class::Accessor::Typed` と `Class::Accessor::Lite`(`::Lazy`)（引数リストが宣言）。
+`Class::Accessor::Typed` と `Class::Accessor::Lite`(`::Lazy`) と `Class::Tiny`
+（引数リストが宣言）。
 
 ### A.5 XS を読み込むもの (`decl::Pass::use_statement`)
 

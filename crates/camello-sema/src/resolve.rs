@@ -171,7 +171,14 @@ impl Cache {
     /// needed it: the serde defaults make an old entry parse, and what it
     /// parses to is a file whose subs are all `Unknown` — which the tiers
     /// would then never revisit, because a cached entry is not walked again.
-    const FORMAT: &'static str = "returns-1";
+    ///
+    /// **A new recogniser is the same case.** The bytes of a dependency do
+    /// not change when camello learns to read them, so the key over them does
+    /// not either, and the cached "this package has no framework, no
+    /// attributes and no `new`" would outlive the release that fixed it —
+    /// `Carton::Dist`, a `Class::Tiny` class, kept reporting `unknown-method`
+    /// on its own constructor. Bump this with the recogniser.
+    const FORMAT: &'static str = "class-tiny-1";
 
     #[must_use]
     pub fn key(path: &Path, source: &str, salt: &str) -> String {
