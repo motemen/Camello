@@ -77,7 +77,9 @@ is reset today — a `return` inside a callback is the callback's.
 The tail is a site because `sub name { $_[0]->{name} }` is how half the
 accessors in the corpus are written, and it is the site that makes a
 tail-only setter — `sub set_x { $_[0]->{x} = $_[1] }` — return what it
-was assigned, which is what perl does.
+was assigned, which is what perl does. What the tail *is* comes from the
+env, so a body that shapes a string in place — `$v =~ s/^ *//` — hands
+one back (`docs/types.md`, INFER-3d).
 
 Two consequences worth naming. A sub that ends `return 1;` after doing its
 work returns `Int`, and a caller that does `$obj->save->name` will be told
