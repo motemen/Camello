@@ -864,8 +864,10 @@ reviewed as a decision rather than discovered as a difference.
   import. perl flattens `f((1, 2))` to two arguments for the same reason.
 - **The two subcommands are one, `check`** (after milestone 6). The split above
   was justified by speed — the lattice needs the dependency resolver behind it,
-  and `lint` was to be what runs where `perlcritic` runs. Measurements showed that both commands were comfortably below the threshold
-  at which a user would choose between them. Two other things said the same: the subcommands took an *identical*
+  and `lint` was to be what runs where `perlcritic` runs. Measurements showed
+  that both commands were comfortably below the threshold at which a user would
+  choose between them. Two other things said the same: the subcommands took an
+  *identical*
   argument set, in which `--stubs`, `--inc`, `--cache-dir` and `--no-cache` did
   nothing under `lint`; and `lint`'s output was a strict subset of
   `typecheck`'s, so the pair offered no answer the other could not give. The

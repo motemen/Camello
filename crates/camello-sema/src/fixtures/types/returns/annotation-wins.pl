@@ -17,7 +17,7 @@ sub find { return Row->new(id => 1) }
 
 # Returns: Int
 sub counted { return 'not a number' }
-#~ error return-mismatch: (`Str`) returned from a sub declared `Returns: Int`
+#~ warning return-mismatch: (`Str`) returned from a sub declared `Returns: Int`
 
 package main;
 

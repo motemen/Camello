@@ -19,11 +19,11 @@ sub right { return (undef, 1) }
 sub neither { return (1, 'a') }
 #~ warning return-mismatch: which is none of the shapes
 
-# The length is written down on both sides, so it is an error however many
+# The length is written down on both sides, so it is reported however many
 # alternatives there are.
 # Returns: (Str, Undef) | (Undef, Int)
 sub too_many { return ('a', undef, 1) }
-#~ error return-mismatch: hands back 3 values
+#~ warning return-mismatch: hands back 3 values
 
 # One slot has nothing to be correlated with, so an alternation of them is the
 # union of them and is shown that way.

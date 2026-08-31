@@ -29,6 +29,8 @@ use std::path::Path;
 
 use camello_syntax::lang::SyntaxNode;
 
+use crate::types::Type;
+
 pub use program::Program;
 
 pub use diag::{Code, Diagnostic, LineIndex, Position, Severity};
@@ -54,12 +56,80 @@ pub struct Drift {
 /// could not read is not a disagreement either — `Unknown` is the walk saying
 /// it has nothing, which is never evidence against something written down.
 fn drifts(written: &annotate::Returns, body: &annotate::Returns) -> bool {
-    let scalar =
-        !written.scalar.is_unknown() && !body.scalar.is_unknown() && written.scalar != body.scalar;
+    let scalar = !written.scalar.is_unknown()
+        && !body.scalar.is_unknown()
+        && !same_claim(&written.scalar, &body.scalar);
     let list = written.list != annotate::ListShape::Unknown
         && body.list != annotate::ListShape::Unknown
-        && written.list != body.list;
+        && !same_shape(&written.list, &body.list);
     scalar || list
+}
+
+/// Whether the annotation and the body say the same thing about one value.
+///
+/// Equality, except where the annotation names a set of ordinary scalars that
+/// no walk will ever read off a body. There is no boolean literal and no enum
+/// literal: `return 0`, `return ''` and `return 'draft'` are how a `Bool` and
+/// an `Enum` are handed back, and the walk reads them as `Int` and `Str` — so
+/// `Returns: Bool` and `Returns: 'draft' | 'live'` would be drift every single
+/// time they were written down. They are also the one case where the
+/// annotation is the only thing that can say what was meant, which is the
+/// reason to write one (`docs/types.md`, TYPE-5c, TYPE-5d and TYPE-5e).
+fn same_claim(written: &Type, body: &Type) -> bool {
+    written == body || nominally_same(written, body) || nominally_same(body, written)
+}
+
+/// One side names `Bool` or `Enum`; whether everything the other side holds is
+/// a scalar those could have been written as.
+fn nominally_same(nominal: &Type, plain: &Type) -> bool {
+    let boolean = mentions(nominal, |ty| matches!(ty, Type::Bool));
+    if !boolean && !mentions(nominal, |ty| matches!(ty, Type::Enum(_))) {
+        return false;
+    }
+    // `undef` is one of `Bool`'s four values (TYPE-5d). Beside an `Enum` it is
+    // one only where the annotation itself says `Maybe`: a body that can hand
+    // back nothing, under an annotation that does not say so, is drift.
+    let undef_ok = boolean || nominal.is_maybe();
+    members(plain).iter().all(|member| match member {
+        Type::Bool | Type::Enum(_) | Type::Int | Type::Num | Type::Str => true,
+        Type::Undef => undef_ok,
+        _ => false,
+    })
+}
+
+fn mentions(ty: &Type, wanted: fn(&Type) -> bool) -> bool {
+    members(ty).iter().any(|member| wanted(member))
+}
+
+/// A union's members, or the type itself.
+fn members(ty: &Type) -> Vec<&Type> {
+    match ty {
+        Type::Union(members) => members.iter().collect(),
+        one => vec![one],
+    }
+}
+
+/// The same question of the list half, slot by slot.
+fn same_shape(written: &annotate::ListShape, body: &annotate::ListShape) -> bool {
+    use annotate::ListShape;
+    match (written, body) {
+        (ListShape::Fixed(written), ListShape::Fixed(body)) => {
+            written.len() == body.len()
+                && written
+                    .iter()
+                    .zip(body)
+                    .all(|(one, two)| same_claim(one, two))
+        }
+        (ListShape::Of(written), ListShape::Of(body)) => same_claim(written, body),
+        (ListShape::Either(written), ListShape::Either(body)) => {
+            written.len() == body.len()
+                && written.iter().zip(body).all(|(one, two)| {
+                    one.len() == two.len()
+                        && one.iter().zip(two).all(|(one, two)| same_claim(one, two))
+                })
+        }
+        (written, body) => written == body,
+    }
 }
 
 /// What a run asks for.
