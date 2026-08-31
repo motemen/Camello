@@ -267,7 +267,9 @@ fn a_site_is_read_the_way_the_table_says() {
          sub joined { my $ok = 1; if ($ok) { return 1 } else { return 'x' } }\n\
          sub no_else { my $ok = 1; if ($ok) { 1 } }\n\
          sub empty { }\n\
-         sub gone { goto &literal }\n",
+         sub gone { goto &literal }\n\
+         sub reffed { my $c = \\&literal; goto &$c }\n\
+         sub labelled { goto SOMEWHERE }\n",
     );
     assert_eq!(
         found,
@@ -293,7 +295,11 @@ fn a_site_is_read_the_way_the_table_says() {
             // The value of a false `if` is its condition's.
             "P::no_else",
             "P::empty",
-            "P::gone",
+            // A `goto &NAME` is a tail call: the answer is the target's.
+            "P::gone -> Int (inferred)",
+            // Every other spelling names a sub nobody read, or no sub at all.
+            "P::reffed",
+            "P::labelled",
         ]
     );
 }
