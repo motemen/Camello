@@ -6,6 +6,26 @@ One line per change. The reasoning is in the commit it came from.
 
 ### Added
 
+- **`Class::Tiny`** is recognised (`docs/types.md`, ANNOT-13). `use
+  Class::Tiny qw(name email), { size => sub { 0 } }` declares those four as
+  read-write attributes — the names in the flat list and the keys of the
+  hashref beside it — and the accessors they generate are methods of the
+  package. Untyped, like the `Class::Accessor::Lite` family, and open the same
+  way: the generated `new` blesses the hash it was handed, so an unknown key
+  is a `warning` and nothing is required. Unlike that family the constructor
+  is not opt-in — `use Class::Tiny` is itself what puts `Class::Tiny::Object`
+  in `@ISA` — so a bare `use Class::Tiny;`, and a `use parent
+  'Class::Tiny::Object'`, both leave a `new` behind. `Class::Tiny::Antlers`
+  exports `has` and reads as Moose, types and all.
+
+### Fixed
+
+- The declaration cache's `FORMAT` is bumped with the recogniser above. A
+  dependency's bytes do not change when camello learns to read them, so
+  neither does the key over them, and a cached "no framework, no attributes,
+  no `new`" would have outlived the release that fixed it: `Carton::Dist` is
+  a `Class::Tiny` class, and a `.camello-cache/` written by the previous build
+  went on reporting `unknown-method` on its own constructor.
 - **`camello lsp`**, a language server over the machinery that was already
   here (`docs/lsp.md`). One binary, no separate executable to version-match: a
   client configures the command `camello lsp` and is done. It publishes the
