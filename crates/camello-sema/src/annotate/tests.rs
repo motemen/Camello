@@ -471,4 +471,3 @@ fn args_reads_its_annotations() {
     assert_eq!(params[1].ty, Type::Int);
     assert!(params[1].optional);
 }
-

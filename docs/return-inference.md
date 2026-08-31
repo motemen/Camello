@@ -533,6 +533,15 @@ body says and puts the two side by side:
 lib/Store.pm:12:5: Store::find: `Returns:` says `InstanceOf['Row']`, the body says `InstanceOf['Row']|Undef`
 ```
 
+A `Bool` and an `Enum` are read loosely, and only there. There is no boolean
+literal and no enum literal in perl: `return 0` and `return 'draft'` are how
+they are handed back, and the walk reads an `Int` and a `Str` — so comparing
+by equality made `Returns: Bool` and `Returns: 'draft' | 'live'` drift every
+time they were written down, which is also the one case where the annotation
+is the only thing that can say what was meant (`docs/types.md`, TYPE-5c and
+TYPE-5e). What is still drift there is a reference under a `Bool`, and a body
+that hands back `undef` under an `Enum` that did not say `Maybe`.
+
 Nothing is installed and the program is not changed, which is the point:
 the answer for one sub is computed against the annotations every *other*
 sub still carries, so what comes out is a report on that annotation rather

@@ -339,3 +339,48 @@ fn a_list_operator_chain_is_walked_once_per_argument() {
         .recv_timeout(std::time::Duration::from_secs(30))
         .expect("the walk finished inside the budget");
 }
+
+/// `--returns-drift` and the two types no walk can read off a body.
+///
+/// There is no boolean literal and no enum literal, so `return 0` is an `Int`
+/// and `return 'draft'` a `Str`. Comparing those against the annotation by
+/// equality made `Returns: Bool` and `Returns: 'draft' | 'live'` drift every
+/// time they were written — the one case where the annotation is the only
+/// thing that can say what was meant (`docs/types.md`, TYPE-5c and TYPE-5e).
+#[test]
+fn a_bool_or_an_enum_is_not_drift() {
+    use crate::annotate::{ListShape, Returns};
+    use crate::types::{parse, Type};
+
+    let written = |text: &str| Returns {
+        scalar: parse(text).expect("a type"),
+        list: ListShape::Unknown,
+        inferred: false,
+        ..Returns::default()
+    };
+    let body = |ty: Type| Returns {
+        scalar: ty,
+        list: ListShape::Unknown,
+        inferred: true,
+        ..Returns::default()
+    };
+
+    assert!(!crate::drifts(&written("Bool"), &body(Type::Int)));
+    assert!(!crate::drifts(&written("Bool"), &body(Type::Undef)));
+    assert!(!crate::drifts(&written("Maybe[Bool]"), &body(Type::Int)));
+    assert!(!crate::drifts(
+        &written("'draft' | 'live'"),
+        &body(Type::Str)
+    ));
+    // What the two are still not: a reference is no `Bool` however loosely it
+    // is read, and an `Enum` that says nothing about `undef` beside a body
+    // that hands one back is the drift the report is for.
+    assert!(crate::drifts(
+        &written("Bool"),
+        &body(Type::ArrayRef(Box::new(Type::Unknown)))
+    ));
+    assert!(crate::drifts(
+        &written("'draft' | 'live'"),
+        &body(Type::maybe(Type::Str))
+    ));
+}

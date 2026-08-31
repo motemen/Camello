@@ -2071,6 +2071,12 @@ impl Pass<'_> {
     /// The annotation wins and the inferred shape is checked against it
     /// (`docs/typecheck.md`, "`Returns:`"): a `return "x"` in a sub declared
     /// `Returns: Int` is a diagnostic at the `return`.
+    ///
+    /// Always a `warning`, however plainly both sides are written down
+    /// (`docs/types.md`, ANNOT-7a). The other side here is a *comment*, which
+    /// perl does not enforce and which the body may simply have outgrown; the
+    /// code is what runs, so this says the two disagree without deciding
+    /// which of them is wrong.
     fn check_return(&mut self, typed: &Typed, at: TextRange) {
         // Only ever against a written annotation (`docs/types.md`, ANNOT-7a).
         // A type read off this very body has nothing to contradict: it is the
@@ -2104,11 +2110,6 @@ impl Pass<'_> {
         if value.is_unknown() || compatible(&value, &declared, self.program) {
             return;
         }
-        let severity = if is_literal(only) {
-            Severity::Error
-        } else {
-            Severity::Warning
-        };
         self.diagnostics.push(
             Diagnostic::new(
                 Code::ReturnMismatch,
@@ -2118,8 +2119,7 @@ impl Pass<'_> {
                     source_of(only)
                 ),
             )
-            .about(source_of(only))
-            .at(severity),
+            .about(source_of(only)),
         );
     }
 
@@ -2127,10 +2127,9 @@ impl Pass<'_> {
     /// (`docs/return-inference.md`, "What it checks").
     ///
     /// The other half of ANNOT-7a, and the reason `Returns: (A, B)` was worth
-    /// a notation: a length that does not agree is an `error`, because both
-    /// sides are written down — the annotation says two and the `return` has
-    /// three of them — while a slot whose type does not agree follows the same
-    /// rule the scalar half does.
+    /// a notation: a length that does not agree — the annotation says two and
+    /// the `return` has three of them — is reported beside a slot whose type
+    /// does not agree, both at the severity the scalar half uses.
     fn check_returned_shape(&mut self, typed: &Typed, at: TextRange) {
         let declared = self.returns.list.clone();
         let found = self.returned_shape(typed);
@@ -2147,22 +2146,17 @@ impl Pass<'_> {
         match (&declared, &found) {
             (ListShape::Fixed(want), ListShape::Fixed(have)) if want.len() != have.len() => {
                 let range = typed.nodes.first().map_or(at, |node| node.text_range());
-                self.diagnostics.push(
-                    Diagnostic::new(
-                        Code::ReturnMismatch,
-                        range,
-                        format!(
-                            "this `return` hands back {} value{} where `Returns: {}` names {}",
-                            have.len(),
-                            if have.len() == 1 { "" } else { "s" },
-                            declared.written().unwrap_or_default(),
-                            want.len(),
-                        ),
-                    )
-                    // Both sides are written down: the annotation says how
-                    // many, and so does the `return`.
-                    .at(Severity::Error),
-                );
+                self.diagnostics.push(Diagnostic::new(
+                    Code::ReturnMismatch,
+                    range,
+                    format!(
+                        "this `return` hands back {} value{} where `Returns: {}` names {}",
+                        have.len(),
+                        if have.len() == 1 { "" } else { "s" },
+                        declared.written().unwrap_or_default(),
+                        want.len(),
+                    ),
+                ));
             }
             (ListShape::Fixed(want), ListShape::Fixed(have)) => {
                 for (index, (slot, value)) in want.iter().zip(have).enumerate() {
@@ -2191,9 +2185,9 @@ impl Pass<'_> {
     /// alternative.
     ///
     /// The length is still written down on both sides, so a `return` of the
-    /// wrong width is the same `error` a single shape gives. What is *not* an
-    /// error is a slot that disagrees with one alternative, because the other
-    /// one is what it was written for.
+    /// wrong width is reported the way a single shape reports it. What is
+    /// *not* reported is a slot that disagrees with one alternative, because
+    /// the other one is what it was written for.
     fn check_returned_alternation(
         &mut self,
         shapes: &[Vec<Type>],
@@ -2208,19 +2202,16 @@ impl Pass<'_> {
         let want = declared.slots().map_or(0, |slots| slots.len());
         let range = typed.nodes.first().map_or(at, |node| node.text_range());
         if want != have.len() {
-            self.diagnostics.push(
-                Diagnostic::new(
-                    Code::ReturnMismatch,
-                    range,
-                    format!(
-                        "this `return` hands back {} value{} where `Returns: {}` names {want}",
-                        have.len(),
-                        if have.len() == 1 { "" } else { "s" },
-                        declared.written().unwrap_or_default(),
-                    ),
-                )
-                .at(Severity::Error),
-            );
+            self.diagnostics.push(Diagnostic::new(
+                Code::ReturnMismatch,
+                range,
+                format!(
+                    "this `return` hands back {} value{} where `Returns: {}` names {want}",
+                    have.len(),
+                    if have.len() == 1 { "" } else { "s" },
+                    declared.written().unwrap_or_default(),
+                ),
+            ));
             return;
         }
         let fits = shapes.iter().any(|want| {
@@ -2247,22 +2238,14 @@ impl Pass<'_> {
         if value.is_unknown() || slot.is_unknown() || compatible(value, slot, self.program) {
             return;
         }
-        let severity = if is_literal(node) {
-            Severity::Error
-        } else {
-            Severity::Warning
-        };
-        self.diagnostics.push(
-            Diagnostic::new(
-                Code::ReturnMismatch,
-                node.text_range(),
-                format!(
-                    "`{value}` returned where `Returns: {}` names `{slot}`",
-                    self.returns.list.written().unwrap_or_default()
-                ),
-            )
-            .at(severity),
-        );
+        self.diagnostics.push(Diagnostic::new(
+            Code::ReturnMismatch,
+            node.text_range(),
+            format!(
+                "`{value}` returned where `Returns: {}` names `{slot}`",
+                self.returns.list.written().unwrap_or_default()
+            ),
+        ));
     }
 
     /// The shape of a `return`, as far as its arguments alone say.
