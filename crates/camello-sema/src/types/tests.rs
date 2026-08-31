@@ -73,6 +73,22 @@ fn a_quoted_argument_is_a_name() {
 }
 
 #[test]
+fn a_quoted_string_is_the_string_it_holds() {
+    // The other half of the reading above: a bareword names a type, so quotes
+    // are free to name a value (`docs/types.md`, TYPE-3a). `'draft' | 'live'`
+    // is one `Enum` of two values and not two classes nothing declares.
+    assert_eq!(read("'draft'"), Type::Enum(vec!["draft".into()]));
+    assert_eq!(
+        read("'draft' | 'live'"),
+        Type::Enum(vec!["draft".into(), "live".into()])
+    );
+    assert_eq!(read("'draft' | 'live'").to_string(), "Enum[draft, live]");
+    // An `isa => 'Foo'` reaches the parser with its quotes already off, which
+    // is why this does not take the class reading away from it.
+    assert_eq!(read("Foo::Bar"), Type::InstanceOf("Foo::Bar".into()));
+}
+
+#[test]
 fn an_unrecognised_bareword_is_a_class_name() {
     // The Moose reading (`docs/typecheck.md`, "Open questions"): a typo in a
     // type name becomes an `InstanceOf` of a class nothing declares, which is

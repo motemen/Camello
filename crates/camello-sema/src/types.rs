@@ -90,6 +90,23 @@ impl Type {
                         }
                     }
                 }
+                // Two enums are one enum: `'foo' | 'bar'` names two values
+                // a single `Str` may hold, and keeping them apart would show
+                // it as `Enum[foo]|Enum[bar]` and compare it a member at a
+                // time for no gain.
+                Type::Enum(values) => match flat.iter_mut().find_map(|member| match member {
+                    Type::Enum(into) => Some(into),
+                    _ => None,
+                }) {
+                    Some(into) => {
+                        for value in values {
+                            if !into.contains(&value) {
+                                into.push(value);
+                            }
+                        }
+                    }
+                    None => flat.push(Type::Enum(values)),
+                },
                 one => {
                     if !flat.contains(&one) {
                         flat.push(one);
@@ -271,11 +288,12 @@ pub struct ParseError {
 
 /// What a name that is not a known constructor should be read as.
 ///
-/// The Moose reading: an unrecognised bareword or string in a type position is
-/// a class name (`docs/typecheck.md`, "Open questions"). It makes a typo in a
-/// type name into an `InstanceOf` of a class nothing declares — resolvable to
+/// The Moose reading: an unrecognised *bareword* in a type position is a class
+/// name (`docs/typecheck.md`, "Open questions"). It makes a typo in a type
+/// name into an `InstanceOf` of a class nothing declares — resolvable to
 /// nothing, hence `Unknown`, hence silent — which is the price of not
-/// reporting every class from an unresolved dependency.
+/// reporting every class from an unresolved dependency. A quoted string is the
+/// other reading, and [`Parser::primary`] has it.
 fn constructor(name: &str, arguments: Vec<Arg>) -> Result<Type, ParseError> {
     let arity = arguments.len();
     let plain = || -> Result<Vec<Type>, ParseError> {
@@ -390,13 +408,18 @@ fn one(mut types: Vec<Type>) -> Type {
 }
 
 /// The names an `Enum` / `InstanceOf` / `HasMethods` was given.
+///
+/// A name is a name whichever way it was written: `InstanceOf['Foo']` quotes
+/// it the way Type::Tiny does and `InstanceOf[Foo]` does not, so the quoted
+/// string that arrives here as the value it holds is read back as the name.
 fn names(arguments: &[Arg]) -> Vec<String> {
     arguments
         .iter()
-        .filter_map(|argument| match argument {
-            Arg::Plain(Type::InstanceOf(name)) => Some(name.clone()),
-            Arg::Plain(other) => Some(other.to_string()),
-            _ => None,
+        .flat_map(|argument| match argument {
+            Arg::Plain(Type::InstanceOf(name)) => vec![name.clone()],
+            Arg::Plain(Type::Enum(values)) => values.clone(),
+            Arg::Plain(other) => vec![other.to_string()],
+            _ => Vec::new(),
         })
         .collect()
 }
@@ -653,9 +676,15 @@ impl Parser {
                 }
                 Ok(inner)
             }
-            // A quoted name is a class name, which is what Moose does with an
-            // unrecognised string constraint.
-            Some(Token::Text(text)) => Ok(Type::InstanceOf(text)),
+            // Quotes are a *value*: `Returns: 'foo' | 'bar'` is the two
+            // strings and not two classes (`docs/types.md`, TYPE-3a). A
+            // bareword is what names a type here — `Returns: DateTime` is
+            // still an instance of one — so the two readings have a spelling
+            // each, and the quoted one is the one Moose has no use for: an
+            // `isa => 'Foo'` reaches this parser with its quotes already off.
+            // Inside `InstanceOf[...]` and its neighbours the quotes are how
+            // Type::Tiny writes a name, which is what `names` reads back.
+            Some(Token::Text(text)) => Ok(Type::Enum(vec![text])),
             Some(Token::Name(name)) => {
                 let arguments = if self.eat(&Token::Open) {
                     let arguments = self.arguments()?;

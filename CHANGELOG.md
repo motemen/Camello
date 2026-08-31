@@ -40,6 +40,28 @@ One line per change. The reasoning is in the commit it came from.
 
 ### Changed
 
+- **A quoted string in a type position is that string**, not a class name
+  (`docs/types.md`, TYPE-3a). `# Returns: 'draft' | 'live'` is the `Enum` it
+  reads as, and used to be two classes nothing declares — two `unknown-type`
+  reports and a `return-mismatch` on the very `return 'draft'` the annotation
+  was written for. A bareword still names a type, which is what leaves the
+  quoted form free to name a value, and the quotes Type::Tiny puts around a
+  name — `InstanceOf['Foo']`, `Dict['key' => Str]` — are still read as one.
+  An `isa => 'Foo'` is untouched: a string constraint reaches the type parser
+  with its quotes already off.
+- **`return-mismatch` is always a `warning`** (ANNOT-7e). It was an `error`
+  where both sides were written down — a literal against the annotation, a
+  `return` of three values against a `Returns:` naming two. But the other side
+  is a *comment*, which perl does not enforce and which the body may simply
+  have outgrown; saying the two disagree is the job, deciding which of them is
+  wrong is not, and neither should fail a build on its own.
+- **`--returns-drift` reads a `Bool` and an `Enum` loosely.** There is no
+  boolean literal and no enum literal in perl: `return 0` and `return 'draft'`
+  are how they are handed back, and the walk reads an `Int` and a `Str` — so
+  every `Returns: Bool` that was written down drifted, in the one case where
+  the annotation is the only thing that can say what was meant (TYPE-5c,
+  TYPE-5e). A reference under a `Bool`, and a body that hands back `undef`
+  under an `Enum` that did not say `Maybe`, are drift as before.
 - `camello.toml` is read by `camello_sema::config` rather than by the command
   line, and the tree walk and worker pool by `camello_sema::workspace`. The
   language server reads the same file under the same rules and walks a tree
@@ -48,8 +70,9 @@ One line per change. The reasoning is in the commit it came from.
 - **`camello lint` and `camello typecheck` are one command, `camello check`.**
   Breaking: neither old name is accepted. The split was justified by speed —
   the type lattice needs the dependency resolver behind it, and `lint` was to
-  be what runs where `perlcritic` runs — and measurements showed that both commands were comfortably below the
-  threshold at which a user would choose between them.
+  be what runs where `perlcritic` runs — and measurements showed that both
+  commands were comfortably below the threshold at which a user would choose
+  between them.
   The two took an identical argument set in which four flags did nothing under
   `lint`, and `lint`'s output was a strict subset of `typecheck`'s. `--disable`
   is how a code is turned off now. `scripts/corpus-check` takes `--check` in
@@ -309,8 +332,9 @@ One line per change. The reasoning is in the commit it came from.
 ### Added
 
 - `is_assignable`, the set-inclusion relation, beside the `compatible` the
-  checker reports against. Nothing reports through it yet: using assignability as the reporting relation would report values such as
-  `Bool` and `Enum` slots that TYPE-5c deliberately does not follow. It exists to be the foundation of a
+  checker reports against. Nothing reports through it yet: using assignability
+  as the reporting relation would report values such as `Bool` and `Enum` slots
+  that TYPE-5c deliberately does not follow. It exists to be the foundation of a
   stricter reading, and to hold `compatible` to account: `assignable ⇒
   compatible` is a test, and it is what found two asymmetries in `compatible`
   (`Defined` against `Undef`, and `Bool` against `Str`).
@@ -367,9 +391,10 @@ One line per change. The reasoning is in the commit it came from.
 ### Fixed
 
 - A bareword call to a builtin's name is the builtin. A `sub delete` in the
-  package no longer takes `delete $h->{k}` away from perl's own `delete`,
-  a shape covered by the builtin-call fixture. An import still answers, because importing the name is the one
-  mechanism perlsub gives for overriding a builtin.
+  package no longer takes `delete $h->{k}` away from perl's own `delete`. The
+  builtin-call fixture covers this shape. An import still answers, because
+  importing the name is the one mechanism perlsub gives for overriding a
+  builtin.
 - `keys` and `values` are no longer `Int` everywhere. The answer depends on
   the context, and the elements of a `[ ... ]` are the one place it is written
   down rather than guessed at: `[ values %$h ]` is an `ArrayRef` of what the
@@ -462,8 +487,8 @@ One line per change. The reasoning is in the commit it came from.
 - A hand-written `sub new` is read as a constructor only where its body says
   the value it hands back is one of its own class — a `bless`, or a `SUPER::`
   that borrows the parent's. `URI->new` returns a `URI::http`, and calling it
-  a `URI` made methods after it appear missing; the constructor fixture records the
-  distinction.
+  a `URI` made methods after it appear missing; the constructor fixture records
+  the distinction.
 - The `class` feature's `field` declares its name. The parser was already
   building the declaration; the scope pass did not read the keyword, so every
   field reference in a class under `strict` was an `undeclared-variable`. A
