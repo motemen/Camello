@@ -3635,9 +3635,8 @@ fn substituted_target(node: &SyntaxNode) -> Option<Variable> {
     if !matches!(operator.node_kind(), NodeKind::S_EXPR | NodeKind::TR_EXPR) {
         return None;
     }
-    let returns_a_copy = ast::tokens(&operator).any(|token| {
-        token.token_kind() == TokenKind::REGEX_FLAGS && token.text().contains('r')
-    });
+    let returns_a_copy = ast::tokens(&operator)
+        .any(|token| token.token_kind() == TokenKind::REGEX_FLAGS && token.text().contains('r'));
     if returns_a_copy {
         return None;
     }
