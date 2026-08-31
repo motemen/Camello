@@ -71,12 +71,13 @@ is reset today — a `return` inside a callback is the callback's.
 | the tail is a loop, a bare block, a `package`, a nested `sub`, or anything else | `Unknown` |
 | the tail is a `return` or a `die` | already counted; nothing extra |
 | an empty body | `Unknown` |
+| `goto &NAME` anywhere in a body | `NAME`'s own return — see below |
+| `goto` in any other spelling | `Unknown` for the whole sub |
 
 The tail is a site because `sub name { $_[0]->{name} }` is how half the
 accessors in the corpus are written, and it is the site that makes a
 tail-only setter — `sub set_x { $_[0]->{x} = $_[1] }` — return what it
-was assigned, which is what perl does. `goto &other` anywhere in a body
-makes the sub `Unknown`.
+was assigned, which is what perl does.
 
 Two consequences worth naming. A sub that ends `return 1;` after doing its
 work returns `Int`, and a caller that does `$obj->save->name` will be told
@@ -85,6 +86,29 @@ among object returns is `Maybe[InstanceOf[...]]`, which is the checker's
 most useful diagnostic (`maybe-deref`) and its most likely false positive
 (NARROW); it is reported at the severity the design already gives it, and
 the corpus bar below is where the count is watched.
+
+### A `goto` is a tail call
+
+`goto &NAME` is not a jump out of the answer. perl replaces this sub's
+frame with the target's, `@_` and all, and what the caller receives is
+what the target returns — so it is a site, of exactly the type a `return
+NAME(@_)` in its place would have had.
+
+Only the `&BAREWORD` spelling names a sub the resolver can be asked
+about, qualified (`goto &Other::thing`) or not. `goto &$code`, `goto
+&{$x}` and `goto $code` name a sub nobody here read, and `goto LABEL` is
+not a call at all; those make the whole sub `Unknown`, which is what
+every `goto` used to do.
+
+The invocant marker (below) is not carried across. `@_` reaches the
+target as it stands at the `goto`, and a `shift` above may already have
+taken the invocant off it — `sub new { shift; path(@_) }` is the shape
+that does exactly that.
+
+Worth the rule because the idiom hides a constructor. `Path::Tiny::path`
+ends `goto &_pathify`, and `_pathify` is where the `bless` is, so with
+`goto` opaque every `Path::Tiny->new` in a corpus was `Unknown` — and so
+was everything a program built out of one.
 
 ## `$self` comes back as the caller's class
 

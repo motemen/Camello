@@ -1582,13 +1582,10 @@ impl Pass<'_> {
             }
             return Type::Unknown;
         }
-        // `goto &other` hands the whole call over, arguments included; a
-        // `goto LABEL` moves the body's end somewhere this walk did not look.
-        // Either way the sub's answer is not one the site table can read.
+        // `goto &other` hands the whole call over, arguments included, so
+        // what the caller receives is what `other` returns.
         if name == "goto" {
-            if let Some(inference) = &mut self.infer {
-                inference.sites.opaque = true;
-            }
+            self.goto_site(&arguments, node);
         }
         if name == "bless" {
             let ty = self.bless(&typed);
@@ -1871,6 +1868,43 @@ impl Pass<'_> {
             inference.sites.scalar.push(ty);
             inference.sites.list.push(shape);
             inference.sites.invocant |= invocant;
+        }
+    }
+
+    /// `goto &NAME`, whose answer is `NAME`'s
+    /// (`docs/return-inference.md`, "A `goto` is a tail call").
+    ///
+    /// A tail call in the strict sense: perl replaces this sub's frame with
+    /// the target's, `@_` and all, and the value the caller receives is the
+    /// target's. So it is a site, of exactly the type a `return NAME(@_)`
+    /// in its place would have been.
+    ///
+    /// Only the `&BAREWORD` spelling names a sub. `goto &$code`, `goto
+    /// &{$x}` and `goto $code` name one nobody here read, and `goto LABEL`
+    /// is not a call at all — those stay opaque, which is what every `goto`
+    /// used to be. The invocant marker is not carried across: `@_` reaches
+    /// the target as it stands *now*, which a `shift` above may already have
+    /// taken the invocant off.
+    fn goto_site(&mut self, arguments: &[SyntaxNode], node: &SyntaxNode) {
+        if self.infer.is_none() {
+            return;
+        }
+        let offset = u32::from(node.text_range().start());
+        let target = match arguments {
+            [only] => goto_target(only),
+            _ => None,
+        }
+        .and_then(|name| self.program.resolve_call(self.file, offset, &name))
+        .map(|symbol| symbol.returns.clone());
+        let Some(inference) = &mut self.infer else {
+            return;
+        };
+        match target {
+            Some(returns) => {
+                inference.sites.scalar.push(returns.scalar);
+                inference.sites.list.push(returns.list);
+            }
+            None => inference.sites.opaque = true,
         }
     }
 
@@ -3537,6 +3571,18 @@ fn leaves_the_sub(statement: &SyntaxNode) -> bool {
         .and_then(|call| call.method_name())
         .as_deref()
         == Some("throw")
+}
+
+/// The sub a `goto` names, where it names one at all.
+///
+/// `goto &bar` and `goto &Other::bar` put a `CODE_VAR` here, which is the
+/// whole of the resolvable set: a dereference (`&$code`, `&{$x}`), a plain
+/// scalar (`goto $code`) and a label all arrive as something else.
+fn goto_target(node: &SyntaxNode) -> Option<String> {
+    if node.node_kind() != NodeKind::CODE_VAR {
+        return None;
+    }
+    ast::Variable::cast(node.clone())?.name()
 }
 
 /// The one expression a statement is, past the `LIST_EXPR` that wraps it.

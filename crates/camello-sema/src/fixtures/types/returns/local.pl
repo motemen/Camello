@@ -89,7 +89,8 @@ sub perhaps {
     }
 }
 
-# A `goto` hands the call over to a sub this walk never looked at.
+# A `goto &NAME` is a tail call, so this hands back what `row` does
+# (`returns/goto.pl`).
 sub delegated { goto &row }
 
 package main;
@@ -97,6 +98,7 @@ package main;
 Store->row->id;
 Store->row->nope;               #~ warning unknown-method: `Row` declares no method `nope`
 Store->blessed->nope;           #~ warning unknown-method: `Row` declares no method `nope`
+Store->delegated->nope;         #~ warning unknown-method: `Row` declares no method `nope`
 Store->either->nope;            #~ warning unknown-method: `Row` declares no method `nope`
 Store->both->nope;              #~ warning unknown-method: `Row` declares no method `nope`
 Store->demand(1)->nope;         #~ warning unknown-method: `Row` declares no method `nope`
@@ -119,4 +121,3 @@ Store->pair->nope;
 Store->todo->nope;
 Store->looping->nope;
 Store->perhaps->nope;
-Store->delegated->nope;

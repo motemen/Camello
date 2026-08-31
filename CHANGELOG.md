@@ -60,6 +60,15 @@ One line per change. The reasoning is in the commit it came from.
 
 ### Changed
 
+- **A `goto &NAME` is followed** instead of making the whole sub `Unknown`
+  (`docs/return-inference.md`, "A `goto` is a tail call"). perl replaces the
+  frame with the target's, `@_` and all, so the value the caller receives is
+  the target's — a site of exactly the type a `return NAME(@_)` would have
+  been. Only the `&BAREWORD` spelling resolves, qualified or not; `goto
+  &$code`, `goto &{$x}`, `goto $code` and `goto LABEL` stay opaque. The idiom
+  hides constructors: `Path::Tiny::path` ends `goto &_pathify` and `_pathify`
+  is where the `bless` is. 178 `goto &NAME` sites across 104 modules below
+  `@INC`, and not one diagnostic over that corpus moved either way.
 - **A quoted string in a type position is that string**, not a class name
   (`docs/types.md`, TYPE-3a). `# Returns: 'draft' | 'live'` is the `Enum` it
   reads as, and used to be two classes nothing declares — two `unknown-type`
