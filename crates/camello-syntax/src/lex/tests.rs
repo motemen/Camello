@@ -105,6 +105,20 @@ fn compound_assignment_is_one_token() {
     );
     assert_eq!(kinds("$x **= 2;")[2], T!["**="]);
     assert_eq!(kinds("$x .= 2;")[2], T![".="]);
+    // `x=` is the one compound assignment spelled with a letter, so it is the
+    // word scanner that has to take both characters. Split, it lexed as the
+    // repetition operator and a bare `=`, and `$x x` is nothing to assign to.
+    assert_eq!(kinds("$x x= 2;")[2], T!["x="]);
+    assert_eq!(kinds("$x x=2;")[2], T!["x="]);
+    // And what only starts the same way: `x` binds the repetition operator
+    // and the rest is its own operator.
+    assert_eq!(kinds("$x x== 2;")[2], T!["x"]);
+    assert_eq!(kinds("$x x=~ 2;")[2], T!["x"]);
+    assert_eq!(kinds("$x x=> 2;")[2], T!["x"]);
+    // In term position `x` is a bareword, `x=>` a hash key and `x5` one name.
+    assert_eq!(kinds("(x => 1);")[1], TokenKind::IDENT);
+    assert_eq!(kinds("(x=> 1);")[1], TokenKind::IDENT);
+    assert_eq!(kinds("$a x5;")[2], T!["x"]);
 }
 
 // ===== D1: an indented `=head1` is not POD =====

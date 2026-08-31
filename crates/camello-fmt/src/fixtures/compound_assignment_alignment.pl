@@ -4,12 +4,16 @@ sub compound_alignment {
     my $sum+=3;
     $flag&&=check();
     $concat .= value();
+    $repeated x=3;
 }
 
-# The `=` is what lines up, whatever the operator's length
+# The `=` is what lines up, whatever the operator's length — `x=` included,
+# which is the one of them spelled with a letter and so the one the word
+# scanner has to take both characters of.
 sub mixed_widths {
     my $x = 1;
     $y -= 2;
     $longer //= 3;
     $z **= 4;
+    $w x= 5;
 }
