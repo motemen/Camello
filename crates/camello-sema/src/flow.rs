@@ -926,6 +926,7 @@ impl Pass<'_> {
                 }
             }
             NodeKind::ASSIGN_EXPR => self.assignment(node),
+            NodeKind::MATCH_EXPR => self.match_expression(node),
             NodeKind::METHOD_CALL_EXPR => self.method_call(node),
             NodeKind::CALL_EXPR | NodeKind::LIST_CALL_EXPR | NodeKind::CODE_CALL_EXPR => {
                 self.call(node)
@@ -1385,6 +1386,12 @@ impl Pass<'_> {
                 bound_from(&shape, variable.sigil(), index)
             } else if view.is_plain() {
                 ty.clone()
+            } else if view.operator() == Some(TokenKind::DOT_EQ) {
+                // `$x .= EXPR` assigns a concatenation, which is a string
+                // whatever either side held (`docs/types.md`, INFER-3d).
+                // Unlike the substitutions below there is no caveat: the
+                // operator always writes one back, even over a reference.
+                Type::Str
             } else {
                 // `$x //= ...` and friends combine rather than replace.
                 Type::union(vec![self.env.get(variable.sigil(), &name), ty.clone()])
@@ -1403,6 +1410,34 @@ impl Pass<'_> {
             self.expression(&target);
         }
         ty
+    }
+
+    /// `$x =~ s/…/…/`, which leaves a string in `$x` (`docs/types.md`,
+    /// INFER-3d).
+    ///
+    /// A substitution that fires assigns the rewritten string back, so the
+    /// variable holds a `Str` from here on — the same reading an `$x .=
+    /// EXPR` gets, and the one that types the `my $v = ...; $v =~ s/^ *//;
+    /// $v` that half the corpus's string-shaping subs are written as.
+    ///
+    /// It is a reading rather than a guarantee. A substitution that matches
+    /// nothing leaves what was there, so a reference the program never
+    /// meant as a string survives one — but a program that writes `s///`
+    /// over `$x` is a program that means `$x` for a string, which is the
+    /// same pragmatism INFER-2g takes with `Foo->new`.
+    ///
+    /// The `/r` flag is the exception the flag exists for: it hands back the
+    /// modified copy and leaves the variable alone.
+    fn match_expression(&mut self, node: &SyntaxNode) -> Type {
+        for child in node.children() {
+            self.expression(&child);
+        }
+        if let Some(target) = substituted_target(node) {
+            if let Some(name) = target.name() {
+                self.env.set(target.sigil(), &name, Type::Str);
+            }
+        }
+        Type::Unknown
     }
 
     fn subscript(&mut self, node: &SyntaxNode) -> Type {
@@ -3571,6 +3606,28 @@ fn leaves_the_sub(statement: &SyntaxNode) -> bool {
         .and_then(|call| call.method_name())
         .as_deref()
         == Some("throw")
+}
+
+/// The scalar a substitution writes back into, where it writes into one.
+///
+/// `$x =~ s/…/…/` and `$x =~ tr/…/…/` assign to `$x`; a bare match (`$x =~
+/// /…/`) only reads it, and `s/…/…/r` hands back a copy. A target that is
+/// not a plain variable — `$h->{k} =~ s/…/…/` — is not one this records,
+/// the same rule assignment holds to.
+fn substituted_target(node: &SyntaxNode) -> Option<Variable> {
+    let mut children = node.children();
+    let target = children.next()?;
+    let operator = children.next()?;
+    if !matches!(operator.node_kind(), NodeKind::S_EXPR | NodeKind::TR_EXPR) {
+        return None;
+    }
+    let returns_a_copy = ast::tokens(&operator).any(|token| {
+        token.token_kind() == TokenKind::REGEX_FLAGS && token.text().contains('r')
+    });
+    if returns_a_copy {
+        return None;
+    }
+    Variable::cast(target).filter(|variable| variable.sigil() == Sigil::Scalar)
 }
 
 /// The sub a `goto` names, where it names one at all.

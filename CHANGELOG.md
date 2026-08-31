@@ -60,6 +60,16 @@ One line per change. The reasoning is in the commit it came from.
 
 ### Changed
 
+- **An in-place string operator leaves a `Str` behind** (`docs/types.md`,
+  INFER-3d). After `$x =~ s/…/…/`, `$x =~ tr/…/…/` or `$x .= EXPR`, `$x` is a
+  string — which is what types the `my $v = ...; $v =~ s/^ *//; $v` that a
+  corpus writes its string-shaping subs as, and what made `Carmel::App::quote`
+  `Unknown` from end to end. `.=` has no caveat; a substitution is a reading
+  rather than a guarantee, the same pragmatism INFER-2g takes with `Foo->new`.
+  Three spellings say nothing: `s/…/…/r` hands back a copy, a bare match only
+  reads its target, and `chomp` is intent rather than evidence — a reference
+  survives one unchanged. Not one diagnostic over @INC moved either way.
+
 - **A `goto &NAME` is followed** instead of making the whole sub `Unknown`
   (`docs/return-inference.md`, "A `goto` is a tail call"). perl replaces the
   frame with the target's, `@_` and all, so the value the caller receives is
