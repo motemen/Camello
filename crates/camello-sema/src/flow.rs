@@ -1420,11 +1420,19 @@ impl Pass<'_> {
     /// EXPR` gets, and the one that types the `my $v = ...; $v =~ s/^ *//;
     /// $v` that half the corpus's string-shaping subs are written as.
     ///
-    /// It is a reading rather than a guarantee. A substitution that matches
-    /// nothing leaves what was there, so a reference the program never
-    /// meant as a string survives one — but a program that writes `s///`
-    /// over `$x` is a program that means `$x` for a string, which is the
-    /// same pragmatism INFER-2g takes with `Foo->new`.
+    /// It is a reading rather than a guarantee. A substitution only assigns
+    /// where it *fires*, so what it matched nothing against is still there —
+    /// but a program that writes `s///` over `$x` is a program that means
+    /// `$x` for a string, which is the same pragmatism INFER-2g takes with
+    /// `Foo->new`.
+    ///
+    /// Where the variable was already known to be possibly `undef`, that
+    /// half survives: `my $s; $s =~ s/abc/def/;` leaves `$s` **undef**,
+    /// because the pattern found nothing to replace. The reading fills in
+    /// what nothing was known about; it does not overrule what the program
+    /// already said (POLICY-2). `$x .= EXPR` has no such caveat — the
+    /// concatenation is written back either way, so an undef `$x` comes out
+    /// of it defined.
     ///
     /// The `/r` flag is the exception the flag exists for: it hands back the
     /// modified copy and leaves the variable alone.
@@ -1434,7 +1442,13 @@ impl Pass<'_> {
         }
         if let Some(target) = substituted_target(node) {
             if let Some(name) = target.name() {
-                self.env.set(target.sigil(), &name, Type::Str);
+                let was = self.env.get(target.sigil(), &name);
+                let now = if was.is_maybe() {
+                    Type::maybe(Type::Str)
+                } else {
+                    Type::Str
+                };
+                self.env.set(target.sigil(), &name, now);
             }
         }
         Type::Unknown
