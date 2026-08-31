@@ -17,15 +17,6 @@ One line per change. The reasoning is in the commit it came from.
   in `@ISA` — so a bare `use Class::Tiny;`, and a `use parent
   'Class::Tiny::Object'`, both leave a `new` behind. `Class::Tiny::Antlers`
   exports `has` and reads as Moose, types and all.
-
-### Fixed
-
-- The declaration cache's `FORMAT` is bumped with the recogniser above. A
-  dependency's bytes do not change when camello learns to read them, so
-  neither does the key over them, and a cached "no framework, no attributes,
-  no `new`" would have outlived the release that fixed it: `Carton::Dist` is
-  a `Class::Tiny` class, and a `.camello-cache/` written by the previous build
-  went on reporting `unknown-method` on its own constructor.
 - **`camello lsp`**, a language server over the machinery that was already
   here (`docs/lsp.md`). One binary, no separate executable to version-match: a
   client configures the command `camello lsp` and is done. It publishes the
@@ -116,6 +107,23 @@ One line per change. The reasoning is in the commit it came from.
   `lint`, and `lint`'s output was a strict subset of `typecheck`'s. `--disable`
   is how a code is turned off now. `scripts/corpus-check` takes `--check` in
   place of `--lint` and `--typecheck`.
+
+### Fixed
+
+- **`x=` lexes as one token.** It is the only compound assignment spelled with
+  a letter, so it never reaches the punctuation scanner and has to be taken by
+  the word scanner, where the repetition operator is. Split, it lexed as `x`
+  and a bare `=` — and `$v x` is nothing to assign to, so the statement was a
+  parse error and the whole file went untouched by the formatter and unseen by
+  the checker. `Tie::SubstrHash`, shipped with perl, is one such file: the
+  corpus goes from 6 clean-parse failures below `@INC` to 5. `x==`, `x=~` and
+  `x=>` are each their own thing and are left alone.
+- The declaration cache's `FORMAT` is bumped with the recogniser above. A
+  dependency's bytes do not change when camello learns to read them, so
+  neither does the key over them, and a cached "no framework, no attributes,
+  no `new`" would have outlived the release that fixed it: `Carton::Dist` is
+  a `Class::Tiny` class, and a `.camello-cache/` written by the previous build
+  went on reporting `unknown-method` on its own constructor.
 
 ### Added
 
