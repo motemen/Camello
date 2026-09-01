@@ -225,6 +225,16 @@ impl<'a> Lexer<'a> {
         ident_len_at(self.rest_at(offset))
     }
 
+    /// Whether the byte at `offset` opens an `x=` rather than another
+    /// operator that happens to start with `=`.
+    ///
+    /// `x==`, `x=~` and `x=>` are each their own thing, and none of them is a
+    /// compound assignment.
+    fn is_x_equals(&self, offset: usize) -> bool {
+        let rest = self.rest_at(offset).as_bytes();
+        rest.first() == Some(&b'=') && !matches!(rest.get(1), Some(b'=' | b'~' | b'>'))
+    }
+
     fn scan_word(&mut self) {
         let start = self.scan_pos;
         let len = self.ident_len(0);
@@ -245,6 +255,18 @@ impl<'a> Lexer<'a> {
             && text[1..].bytes().all(|byte| byte.is_ascii_digit())
         {
             self.push(T!["x"], start, start + 1);
+            return;
+        }
+
+        // `$v x= 3`: the repetition operator's compound assignment. It is the
+        // one entry of the punctuation table that does not start with
+        // punctuation, so it never reaches the punctuation scanner and has to
+        // be taken here, where the word `x` is. Left to split, it lexed as
+        // `x` and a bare `=`, and `$v x` is not something to assign to — the
+        // statement was a parse error, which took the whole file out of both
+        // the formatter and the checker.
+        if self.expect == Expect::Operator && text == "x" && self.is_x_equals(1) {
+            self.push(T!["x="], start, start + 2);
             return;
         }
 

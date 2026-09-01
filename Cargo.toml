@@ -1,9 +1,20 @@
 [workspace]
-members = ["crates/camello-syntax", "crates/camello-fmt"]
+members = [
+    "crates/camello-syntax",
+    "crates/camello-fmt",
+    "crates/camello-sema",
+    "crates/camello-lsp",
+]
 # The root package is a member too, and cargo would otherwise take it alone as
 # the default — `cargo test -q`, which is the sequence docs/architecture.md
 # asks for before pushing, has to mean the whole workspace.
-default-members = [".", "crates/camello-syntax", "crates/camello-fmt"]
+default-members = [
+    ".",
+    "crates/camello-syntax",
+    "crates/camello-fmt",
+    "crates/camello-sema",
+    "crates/camello-lsp",
+]
 
 # The split of `docs/typecheck.md` ("Where it lives"): the checker must not be
 # able to reach the formatter's Doc IR, and Cargo is what enforces the direction
@@ -19,6 +30,9 @@ unicode-width = "0.2"
 miette = { version = "7.0", features = ["fancy"] }
 thiserror = "1.0"
 insta = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
 
 [package]
 name = "camello"
@@ -37,6 +51,8 @@ mimalloc = ["dep:mimalloc"]
 [dependencies]
 camello-syntax = { path = "crates/camello-syntax" }
 camello-fmt = { path = "crates/camello-fmt" }
+camello-sema = { path = "crates/camello-sema" }
+camello-lsp = { path = "crates/camello-lsp" }
 
 # CST操作のコアライブラリ
 rowan = { workspace = true }
@@ -59,6 +75,11 @@ thiserror = { workspace = true }
 
 # Character encoding conversion
 encoding_rs = "0.8"
+
+# camello.toml, and --format json (docs/typecheck.md, milestone 6)
+toml = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 mimalloc = { version = "0.1.52", optional = true }
 
 [dev-dependencies]

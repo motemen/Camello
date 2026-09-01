@@ -1,0 +1,17 @@
+[package]
+name = "camello-sema"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+camello-syntax = { path = "../camello-syntax" }
+
+# CST操作のコアライブラリ
+rowan = { workspace = true }
+
+# 宣言キャッシュの直列化（docs/typecheck.md「Dependencies」）
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# camello.toml、CLI と `camello lsp` が同じ [check] を読むため
+toml = { workspace = true }

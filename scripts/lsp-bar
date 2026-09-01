@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+#
+# The language server's corpus bars (docs/lsp.md, "Testing").
+#
+#   scripts/lsp-bar                  index every @INC directory
+#   scripts/lsp-bar <dir>...         index these instead
+#   scripts/lsp-bar --edits 200      and time an edit loop afterwards
+#   scripts/lsp-bar --cache          use the declaration cache
+#   scripts/lsp-bar --list           print the roots and exit
+#
+# ── What is here, and what is not ─────────────────────────────────────────────
+#
+# The same split scripts/corpus-check makes: the question belongs to the binary
+# — `camello dev index` walks a tree, runs the declaration pass over it, and
+# prints the files, the wall time and the peak resident size — and the corpus
+# belongs to this script.
+#
+# Two bars, and both are numbers rather than assertions, because what they
+# guard is a trend:
+#
+# * **the index.** The design retains `FileDecls` and nothing else — never a
+#   tree, never the source text — on the assumption that this fits a large
+#   repository comfortably. The peak resident size is that assumption made
+#   checkable. If it fails, the decl cache already on disk makes drop-and-
+#   recache the obvious spill strategy, and this is the run that would say so.
+#
+# * **the edit loop.** N decl-diff-clean edits to one file: reparse,
+#   declaration pass, fingerprint, body pass. That is step 4 of "Incremental
+#   reanalysis", it is what happens between two keystrokes, and the number to
+#   compare it against is the 300 ms debounce. The declaration-change count
+#   must be zero: a trailing comment changes no declaration, so anything else
+#   is the fingerprint claiming a change that is not there — which would make
+#   every keystroke sweep every open file.
+#
+# A cold start is the default, because a warm cache measures the disk rather
+# than the pass. `--cache` asks for the warm number, which is what a developer
+# who has run `camello check` in the repository actually gets.
+
+set -uo pipefail
+
+base_dir="$(cd "$(dirname "$0")/.." && pwd)"
+
+edits=""
+cache=0
+list_only=0
+roots=()
+
+while [ $# -gt 0 ]; do
+  case $1 in
+    --edits) edits=$2; shift 2 ;;
+    --cache) cache=1; shift ;;
+    --list)  list_only=1; shift ;;
+    --help|-h)
+      sed -n '2,40p' "$0" | sed 's/^#\{0,1\} \{0,1\}//'
+      exit 0 ;;
+    *) roots+=("$1"); shift ;;
+  esac
+done
+
+if [ ${#roots[@]} -eq 0 ]; then
+  # `.` and relative entries in @INC would resolve against this repository, and
+  # the repository is not the corpus.
+  mapfile -t roots < <(perl -e 'print "$_\n" for grep { !ref && m{^/} && -d } @INC' | sort -u)
+fi
+
+if [ ${#roots[@]} -eq 0 ]; then
+  echo "lsp-bar: no roots found" >&2
+  exit 1
+fi
+
+if [ "$list_only" -eq 1 ]; then
+  printf '%s\n' "${roots[@]}"
+  exit 0
+fi
+
+( cd "$base_dir" && cargo build --quiet --release ) || exit 1
+
+forward=()
+[ -n "$edits" ] && forward+=(--edits "$edits")
+[ "$cache" -eq 1 ] && forward+=(--cache)
+
+echo "==== dev index: ${#roots[@]} root(s)"
+"$base_dir/target/release/camello" dev index "${forward[@]}" "${roots[@]}"

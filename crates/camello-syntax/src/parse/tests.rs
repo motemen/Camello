@@ -87,6 +87,24 @@ fn calls_are_split_by_shape() {
 }
 
 #[test]
+fn a_my_declaration_is_a_key_the_pair_lookahead_sees() {
+    // A `Smart::Args` list writes its keys as `my $name`, and a parameterised
+    // type is a bareword call written as one of its values. Reading the rest
+    // of the list as that call's arguments loses every rule after it, so the
+    // lookahead knows this spelling of a key too (docs/contracts.md).
+    let source = "args my $a => ArrayRef [Str],\n     my $b => 'Int';\n";
+    assert!(errors(source).is_empty(), "{:#?}", errors(source));
+    // Two `my`s at one level: the second is the list's, not `ArrayRef`'s.
+    let call = parse(source)
+        .syntax()
+        .descendants()
+        .filter(|node| node.kind() == crate::lang::SyntaxKind::from(NodeKind::LIST_CALL_EXPR))
+        .find(|node| node.text().to_string().starts_with("ArrayRef"))
+        .expect("the parameterised type is a call");
+    assert_eq!(call.text().to_string().trim_end(), "ArrayRef [Str]");
+}
+
+#[test]
 fn a_bareword_before_a_fat_comma_is_a_name() {
     // `=>` quotes the bareword to its left, so the key is a string and not a
     // call — including where the word is a keyword, and including where the

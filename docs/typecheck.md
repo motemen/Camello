@@ -1,16 +1,21 @@
-# Design: `camello typecheck` and `camello lint`
+# Design: `camello check`
 
-Status: proposal, 2026-08-26. Nothing below is implemented. This document
-decides the shape; the code that follows it is the authority once it exists,
-in the same way `docs/contracts.md` treats its ADRs.
+Status: implemented, 2026-08-26. This document decided the shape; the code is
+now the authority, in the same way `docs/contracts.md` treats its ADRs. Where
+the two disagree, the code is right and "Decisions made during implementation"
+at the end of this file says why.
+
+This is the *design*. What the checker concludes about a program, and what it
+deliberately leaves unknown, is specified for its users in
+[types.md](types.md) — the checker's `formatting.md`.
 
 ## What is being built
 
 A static checker for Perl that runs over the CST camello already produces,
 and that treats the type annotations Perl code actually carries — `has ...
-isa => 'Str'`, `args my $x => 'Int'`, `Class::Accessor::Typed`, and a
-`Returns:` comment introduced here — as first-class input rather than as
-strings it happens to see.
+isa => 'Str'`, `args my $x => 'Int'`, `Class::Accessor::Typed`, the
+`mk_accessors` family, and a `Returns:` comment introduced here — as
+first-class input rather than as strings it happens to see.
 
 Perl has no static types, so almost every answer is a derivation from
 evidence: a sigil, a literal, a constructor call, an annotation on the callee.
@@ -19,7 +24,9 @@ compiler's type checker, and weaker still: where pyright has a nominal type
 system underneath, this has a lattice of *shapes* and a set of annotations
 that a real program may or may not honour at run time.
 
-Two subcommands, one analysis:
+Two subcommands, one analysis — since merged into one `camello check`, for the
+reasons under "Decisions made during implementation"; what each half of the
+pair reported is still what the halves of the analysis report:
 
 - `camello lint lib t` — diagnostics that need no type lattice: undeclared or
   unused lexicals, shadowing, arity against a signature or an `args` list,
@@ -31,9 +38,9 @@ Two subcommands, one analysis:
   that has no such key, an `InstanceOf['Foo']` where a `Maybe[...]` was
   returned and never checked.
 
-Both exit `1` if anything at or above `--error-on` (default: `error`) was
-reported, print one diagnostic per line in `path:line:col: severity: message`
-form, and take `--format json` for tooling. CI is the first consumer; an
+It exits `1` if anything at or above `--error-on` (default: `error`) was
+reported, prints one diagnostic per line in `path:line:col: severity: message`
+form, and takes `--format json` for tooling. CI is the first consumer; an
 editor is the second and the design keeps it possible (the "Incremental
 reanalysis" section) without building it.
 
@@ -41,10 +48,10 @@ reanalysis" section) without building it.
 
 - Soundness. The checker is silent when it does not know. A program with no
   annotations and no recognisable constructors gets no type diagnostics at
-  all, and that is correct behaviour, not a gap. `lint` diagnostics about
-  scope are the exception: `my` is a declaration and `use strict` makes an
-  undeclared name an error, so those are sound within a file.
-- Running Perl. Neither subcommand executes the program, loads a module, or
+  all, and that is correct behaviour, not a gap. The scope diagnostics are the
+  exception: `my` is a declaration and `use strict` makes an undeclared name an
+  error, so those are sound within a file.
+- Running Perl. The checker never executes the program, loads a module, or
   asks `perl -c`. `dev perl-deparse` is the only place camello runs perl, and
   it stays that way. Consequences: `BEGIN` blocks, `eval "..."`, `AUTOLOAD`,
   `local *glob = ...`, string-named method calls `$obj->$name`, and `no
@@ -66,7 +73,7 @@ src/lang, src/lex, src/parse    (unchanged)  ->  crate camello-syntax
 src/fmt                         (unchanged)  ->  crate camello-fmt
 src/ast        typed views over the CST      ->  crate camello-syntax
 src/sema       symbols, scopes, types, flow  ->  crate camello-sema
-src/cli        format | lint | typecheck     ->  crate camello
+src/cli        format | check                ->  crate camello
 ```
 
 `sema` depends on `syntax` and on nothing in `fmt`; the lossless-CST and
@@ -100,11 +107,12 @@ pass and nothing else.
 
 ## The AST layer
 
-`src/parse` produces a rowan CST and `src/lang` offers `NodeExt` and nothing
-more. The formatter walks kinds directly because its questions are about
-tokens and trivia. The checker's questions are about structure, and asking
-them by kind-matching over child iterators in every pass is how a checker
-becomes unmaintainable.
+`crates/camello-syntax/src/parse` produces a rowan CST and
+`crates/camello-syntax/src/lang` offers `NodeExt` and nothing more. The
+formatter walks kinds directly because its questions are about tokens and
+trivia. The checker's questions are about structure, and asking them by
+kind-matching over child iterators in every pass is how a checker becomes
+unmaintainable.
 
 `ast` is the standard rowan pattern: one newtype per `NodeKind` that carries
 meaning, `AstNode::cast(SyntaxNode) -> Option<Self>`, and accessors that
@@ -126,9 +134,10 @@ and the checker cannot do without: it is where `Returns:` lives.
 
 Views are generated from the `nodes` section of `define_language!` for the
 `cast`/`syntax` boilerplate, and hand-written for accessors, the way
-`src/lang/predicates.rs` is hand-written beside the generated enums. The
-generation must not change the CST, `SyntaxKind` numbering, or any formatter
-output — `cargo test -q` over the formatter fixtures is the check.
+`crates/camello-syntax/src/lang/predicates.rs` is hand-written beside the
+generated enums. The generation must not change the CST, `SyntaxKind`
+numbering, or any formatter output — `cargo test -q` over the formatter
+fixtures is the check.
 
 Expression views that matter most, because the checker spends its time in
 them:
@@ -161,16 +170,28 @@ A **symbol** belongs to a package and is one of:
   Unknown }`
 - `Attribute { name, type: Type, access: Ro | Rw | Wo, required, default,
   source }` — produced by `has`, `Class::Accessor::Typed`, and the
-  `__PACKAGE__->mk_accessors` family
+  `Class::Accessor::Lite` / `__PACKAGE__->mk_accessors` family and by
+  `Class::Tiny`, whose attributes have no type at all
 - `Constant { name, type }` from `use constant`
 - `Import { name, from: package }` from `use Foo qw(bar)` when `Foo` is
   analysable and exports `bar`
 
+A `(package, sub)` pair may be declared by more than one file — legally, where
+a package spans files, and by accident, where a copy of the tree sits inside
+it. The global name index keeps the first and calls the rest redefinitions,
+because either answer is a guess. A question asked *from* a file is not a
+guess, though: the body being walked, the bareword call being resolved and the
+`sub` name under a cursor all belong to one file, and that file's own
+declaration is the answer for them (`Program::sub_in`). The global index is
+what is left when the file declares nothing of the name.
+
 Package-level facts that are not symbols: `isa: Vec<Package>` (from
 `use parent`, `use base`, `extends`, `our @ISA = (...)`), `roles` (`with`,
 `does`), and the object framework in use (Moose, Moo, Mouse,
-Class::Accessor::Typed, plain `bless`, or none), because the framework
-decides whether `new` exists and what it accepts.
+Class::Accessor::Typed, Class::Accessor::Lite, Class::Tiny, plain `bless`, or
+none),
+because the framework decides whether `new` exists and what it accepts — and
+whether it *checks* what it accepts, which the `mk_new` family's does not.
 
 Method resolution is C3 over `isa` with roles flattened in, and falls back to
 `Unknown` — not an error — when any ancestor is itself `Unknown`. A class
@@ -180,18 +201,19 @@ method" there would be the worst kind of false positive.
 ### Scopes
 
 Lexical scopes are built per file from `my` / `our` / `state` / `local`,
-signature parameters, `foreach my $x`, `catch ($e)`, and the implicit `$_`
-/ `@_` / `%ENV` / `$0` set. `our $x` binds a lexical alias to a package
-variable; `local` does not declare. String interpolation is the notable
+the `class` feature's `field`, signature parameters, `foreach my $x`,
+`catch ($e)`, and the implicit `$_` / `@_` / `%ENV` / `$0` set. `our $x`
+binds a lexical alias to a package variable; `local` does not declare; a
+`field` declares its name for every `method` of the class. String interpolation is the notable
 extra: `"hi $who"` and `"$h->{k}[0]"` contain variable uses, so the
-`INTERPOLATED_STRING` token (one token today, `src/lex/atomic.rs`) is
-re-scanned by a small interpolation scanner in `sema` that finds `$name`,
-`@name`, `${...}`, `@{[ ... ]}` and subscripts. It produces uses, not a
-CST; the CST is not changed. Getting this wrong means either a phantom
-"unused variable" or a missed "undeclared variable", both of which are
-`lint` bread and butter, so the scanner is tested against perl's own
-interpolation rules (`perldoc perlop`, "Gory details of parsing quoted
-constructs") as a fixture set.
+`INTERPOLATED_STRING` token (one token today,
+`crates/camello-syntax/src/lex/atomic.rs`) is re-scanned by a small
+interpolation scanner in `sema` that finds `$name`, `@name`, `${...}`,
+`@{[ ... ]}` and subscripts. It produces uses, not a CST; the CST is not
+changed. Getting this wrong means either a phantom "unused variable" or a
+missed "undeclared variable", both of which are this pass's bread and butter, so
+the scanner is tested against perl's own interpolation rules (`perldoc
+perlop`, "Gory details of parsing quoted constructs") as a fixture set.
 
 `use strict` is taken as on by default (a project with `no strict` in it
 almost certainly wants it reported); `no strict 'vars'` in scope suppresses
@@ -365,6 +387,43 @@ view exposes the arguments as an expression, and the recogniser reads the
 `has` does. `new => 0` removes the generated constructor; otherwise `new`
 takes a `Dict` of the attributes.
 
+**Class::Accessor::Lite, and the `mk_accessors` family.**
+
+```perl
+use Class::Accessor::Lite (new => 1, rw => [qw(foo bar)], ro => [qw(baz)]);
+
+use base 'Class::Accessor';
+__PACKAGE__->mk_accessors(qw(foo bar));
+```
+
+The same idea with the types taken out: the values are names, so every
+attribute is `Unknown` rather than `Any` — the module never said `Any`. Two
+things about it are their own decisions. The `mk_*` spelling is a *statement*
+rather than a `use`, and where its accessors land is decided by the invocant:
+`Class::Accessor::Lite->mk_accessors` installs into `caller` and a
+`Class::Accessor` subclass calls the inherited method on itself, so both mean
+the package the statement is in, while a variable invocant means a package
+this pass cannot name and is left alone. And the generated `new` blesses the
+hash it was handed without looking at it, so the constructor is *open*: a key
+with no accessor behind it contradicts nothing, and `unknown-key` stays quiet.
+`follow_best_practice` renames the accessors below it to `get_x`/`set_x`; the
+attribute keeps its own name, because that is still the hash key.
+
+**Class::Tiny.**
+
+```perl
+use Class::Tiny qw( name email ), { created => sub { time } };
+```
+
+A `use` whose arguments are a flat list of names rather than a list of pairs,
+plus an optional hashref whose keys are names too and whose values are their
+defaults. Untyped and read-write, like the family above, and open the same
+way — its `new` blesses the hash it was handed. What it does not share is the
+opt-in: `use Class::Tiny` is itself what puts `Class::Tiny::Object` into
+`@ISA`, so the constructor is there even with an empty argument list, and so
+is it for a package that names that base class in a `use parent` instead. The
+`Class::Tiny::Antlers` spelling exports `has` and reads as Moose.
+
 **Signatures.**
 
 ```perl
@@ -388,8 +447,12 @@ slurpy makes the maximum unbounded; a sub that touches `@_` in any other way
 # Returns: ArrayRef[Item]
 sub items { ... }
 
-# Returns: Maybe[Str] | list: (Str, Int)
+# Returns: Maybe[Str]
+# Returns: (Str, Int)
 sub pair { ... }
+
+# Returns: (Item ...)
+sub every_item { ... }
 
 # Returns: ()
 sub notify { ... }
@@ -398,11 +461,28 @@ sub notify { ... }
 Grammar: within the comment block immediately preceding a `sub` (blank
 lines allowed between the block and the `sub`, not within it), a line whose
 comment text after `#` and whitespace starts with `Returns:`. The rest of the
-line is `<type>` for scalar context, `list: (<type>, <type>, ...)` for list
-context, both joined by `|`, or `()` meaning "returns nothing; calling in a
+line is one of four things — a `<type>` for scalar context; a body
+parenthesised from its first character to its last for list context, whose
+top-level commas separate slots and whose single type followed by `...` is
+any number of that type; or `()`, meaning "returns nothing; calling in a
 context that uses the value is a diagnostic". The `<type>` is the string
-grammar. A `Returns:` that fails to parse is a diagnostic on the comment,
-because an annotation that is silently ignored is worse than none.
+grammar.
+
+A parenthesis is spent on the list shape rather than on grouping because a
+grouping parenthesis around a whole scalar type has no use that `Str | Undef`
+does not serve, and because `()` being a list of none forces `(Str)` to be a
+list of one. Parentheses *inside* a slot still group, so `(Str | Undef, Int)`
+is two slots.
+
+A sub with both halves writes **two `Returns:` lines**, one of each kind, in
+either order: every line in the block is read, and a second line of the same
+kind is a diagnostic. The halves are independent, and a sub that says only
+one of them says nothing about the other — the comma operator would make
+`Returns: (A, B)` a `B` in scalar context and `(Row ...)` a count, the two
+rules disagree, and a sub that wants a scalar type writes one.
+
+A `Returns:` that fails to parse is a diagnostic on the comment, because an
+annotation that is silently ignored is worse than none.
 
 `Returns:` is placed in a comment rather than an attribute (`sub f :Returns(Str)`)
 because it has to be addable to code that runs on any perl and under any
@@ -482,14 +562,17 @@ local, forward, and gives up early.
   narrow within the guarded branch. `Maybe[T]` is what most of this is for:
   a method call on a `Maybe[InstanceOf[...]]` with no narrowing is the
   checker's most useful diagnostic and its most likely false positive, so it
-  is reported at `warning`, and the narrowing set is a fixture-tested list
-  rather than a general theorem.
+  is reported at `info`, and the narrowing set is a fixture-tested list
+  rather than a general theorem. The list is applied to the *structure* of
+  the condition (`docs/types.md`, NARROW-6): a condition is read as a tree
+  and yields what holds on each side of it, because `!` swaps those two, `||`
+  empties the true one, and a call nobody read fills neither.
 - **Calls.** A call to a symbol with `returns` yields it; a call to an
   `Unknown` symbol, an unresolved bareword, a `&$code`, or a dynamic method
   name yields `Unknown`. Builtins get a table (`length` → `Int`, `keys` →
   list of `Str`, `shift` → the element type when the array is known…),
-  derived from `src/parse/grammar/builtins.rs`'s list and extended with a
-  return column.
+  derived from `crates/camello-syntax/src/parse/grammar/builtins.rs`'s list
+  and extended with a return column.
 - **Subscripts.** `$x->{k}` on a `Dict` yields the slot's type or a
   diagnostic when the key is a literal not in the `Dict` and the `Dict` is
   not slurpy; on a `HashRef[T]` yields `Maybe[T]`; on `Unknown` yields
@@ -497,10 +580,12 @@ local, forward, and gives up early.
   `Maybe[T]`. Autovivification means a subscript on the *left* of an
   assignment is never a diagnostic.
 - **Returns.** A sub with no `Returns:` gets `returns` from the join of its
-  `return` sites and its final statement, under both contexts, but only when
-  every site is known; one `Unknown` site makes the whole `Unknown`. This
-  is the one place inference crosses a sub boundary, and it is done in
-  dependency order with recursion cut to `Unknown`.
+  `return` sites and its final statement, but only when every site is known;
+  one `Unknown` site makes the whole `Unknown`. This is the one place
+  inference crosses a sub boundary, and it is done in dependency order with
+  recursion cut to `Unknown`. Built in two tiers — one inside the declaration
+  pass, one over the program after `link` — and specified as INFER-4a and
+  INFER-4e..h; the design is [return-inference.md](return-inference.md).
 
 Nothing is inferred across files except through symbols, and nothing is
 inferred *for* a dependency: its subs are `Unknown` unless declared or
@@ -509,21 +594,25 @@ stubbed.
 ## Diagnostics
 
 Every diagnostic has a stable code (`undeclared-variable`, `unknown-method`,
-`arity`, `type-mismatch`, `unknown-key`, `maybe-deref`, `bad-annotation`,
-…), a severity, a span, and a message that names both sides ("`Str` passed to
+`arity`, `type-mismatch`, `unknown-key`, `missing-argument`, `maybe-deref`,
+`bad-annotation`, …), a severity, a span, and a message that names both sides ("`Str` passed to
 parameter `$count` declared `Int` at lib/Foo.pm:12"). Severities:
 
 - `error` — a contradiction between two declared things, or a scope error:
   arity against a signature, a literal against an annotation, a key not in a
-  restricted `Dict`, an undeclared variable under `strict`.
+  restricted `Dict`, a name the callee requires and the call omits, an
+  undeclared variable under `strict`.
 - `warning` — a contradiction between a declared thing and an *inferred*
   one, or anything resting on narrowing.
 - `info` — the annotation is unparseable, the sub is public and unannotated
   under `--strict-annotations`, and other things a user asked to be told.
 
-`--error-on warning` promotes for CI. Codes can be disabled per project in
-the config and per line with `## camello-disable: <code>` (a comment, so
-`format` keeps it; the form is chosen not to collide with `## no critic`).
+`--error-on warning` promotes for CI, and `--min-severity` decides what is
+printed at all — a filter on the report rather than on the analysis, so what it
+drops is not counted and not a reason to fail. Codes can be disabled per
+project in the config and per line with `## camello-disable: <code>` (a
+comment, so `format` keeps it; the form is chosen not to collide with `## no
+critic`).
 
 The `GUESS:` discipline from `docs/architecture.md` applies unchanged: a
 diagnostic that depends on a parser guess (`foo %h` read as a call, an
@@ -633,3 +722,261 @@ Decided provisionally; written down so that the decision is visible.
 - **Where the config lives.** `camello.toml` at the root the command is
   run from, shared with the formatter's options when those become
   configurable. Not `.perlcriticrc`.
+
+## Decisions made during implementation
+
+The document above was written before the code. Where the code found it wrong
+or short of an answer, the reading that keeps the checker *quiet* was taken,
+the section was corrected, and the decision is recorded here so that it can be
+reviewed as a decision rather than discovered as a difference.
+
+- **`Subscript` is `SubscriptChain`** (milestone 1). Views are generated one
+  per `NodeKind` and named after the kind, so `SUBSCRIPT` — the node holding
+  one key between one pair of braces — already claims `Subscript`. The union
+  the document describes, base plus steps, is `SubscriptChain`. `Call`,
+  `MethodCall`, `Assign` and `AnonSub` keep their names, the last three as
+  aliases for the generated `MethodCallExpr` / `AssignExpr` / `AnonSubExpr`.
+- **A view for every kind, not only the meaningful ones** (milestone 1). The
+  document says "one newtype per `NodeKind` that carries meaning", which would
+  need a list of which kinds those are and a second list for `dev dump` to
+  print from. Generating all of them costs nothing, and `NodeKind::view_name`
+  is then total, which is what makes the dump's second column exhaustive.
+- **`strict` is read, and positional** (milestone 2). The "Scopes" section
+  said `use strict` is taken as on by default. Over @INC that reported an
+  undeclared variable in every file written before the pragma was common —
+  code perl accepts, because without `strict` an undeclared name *is* a
+  package variable. So `strict` is read from the file (`use strict`, a module
+  whose import turns it on, `use v5.12` and up), and it is read *positionally*:
+  it is a lexical pragma, and `WWW::RobotRules` sets `$VERSION` on line 3 and
+  says `use strict` on line 6. `no strict` (bare, or naming `vars`) turns it
+  off from where it appears to the end of the file — taking it to the end of
+  its block would be more precise and less quiet.
+- **`use vars` declares for the file, `our` for its scope** (milestone 2). The
+  `vars` pragma's own documentation calls its declarations package-wide rather
+  than lexical, and `Time::Zone` relies on it: `use vars qw(%zoneOff)` inside a
+  block, read in a sub two hundred lines below. `our` stays lexical, which is
+  what perl does with it.
+- **Modules that export variables are a table for now** (milestone 2). `use
+  English` binds sixty long names to punctuation variables and `use Config`
+  binds `%Config`, and neither is visible without running the module's
+  `import`. Until the dependency resolver of milestone 4 can read an `@EXPORT`,
+  those two are a table, and an import list that names a variable
+  (`use POSIX qw($errno)`) declares it.
+- **The interpolation scanner has four rules the corpus wrote** (milestone 2).
+  A single colon ends a name (`"$filename: not found"`), a subscript after a
+  dereference belongs to the dereference (`"$$argv[0]"` reads `$argv`, not
+  `@argv`), an `/x` pattern's `#` comments hold no interpolation, and an
+  `s///e` replacement is code rather than a string — its `my` is a declaration
+  this pass never sees, so scanning it reported the use two lines later.
+  Between them these were 402 of the 408 undeclared-variable errors the first
+  run over @INC produced.
+- **An unpacking list has no minimum** (milestone 3). `my ($data, $header,
+  $password, $cipher) = @_` is routinely called with two arguments: perl fills
+  the rest with `undef` and the body asks `if defined`. All 285 of the arity
+  findings the first run over @INC produced were that shape. So a parameter
+  list read off an `@_` unpacking bounds only the *maximum*, and the design's
+  "for arity's sake" is read as "for the maximum's sake". A signature and an
+  `args` list still bound both, because perl and Smart::Args both die.
+- **A bare `shift` past the leading run means the list is unknown**
+  (milestone 3). `Net::DBus::RemoteService::new` shifts its class and then
+  shifts three more into a hash; `Carp::str_len_trim` writes `shift || 0` on
+  its second line. The second is a parameter with a default and is read as
+  one; the first makes the whole parameter list `Unknown`.
+- **`($)` is a prototype, whatever the parser called it** (milestone 3). The
+  parser reads `sub is_info ($)` as a signature with one nameless parameter,
+  which is a `GUESS:` — perl has no such signature, since every signature
+  parameter is named. A "signature" with a nameless parameter is therefore a
+  prototype and the sub's parameters are `Unknown`. This was a run of arity
+  errors across `HTTP::Status`, `Crypt::PRNG` and `Getopt::Long`.
+- **A method call counts its invocant on both sides** (milestone 3). The
+  parameter list keeps its leading `$self` and a call through `->` counts one
+  more argument than it writes, because that is what perl passes. Stripping it
+  from one side and not the other reported `Dpkg::Email::Address->new()` as
+  passing nothing to a sub that wants one.
+- **One type-expression parser, not two** (milestone 4). The document has the
+  string syntax parsed from text and the bareword syntax walked as a CST
+  subtree. They are the same grammar written the same way —
+  `ArrayRef[HashRef[Str]]` is one string either way — and a declaration keeps
+  the annotation's *text* rather than its subtree, because a declaration
+  outlives the tree it was read from and a rowan node is not `Send`. So there
+  is one parser, and the bareword form reaches it as the source text the CST
+  covered.
+- **An annotation is told from prose** (milestone 4). "A `Returns:` that fails
+  to parse is a diagnostic" met `File::Temp`, which writes `# Returns:
+  modified template` as a sentence and predates the syntax by twenty years.
+  So a `Returns:` or an `isa` whose text is not *shaped* like a type — two
+  bare names side by side outside any bracket, or anything holding a sigil, an
+  arrow or a call — is read as prose or as code, and nothing is said about it.
+  What is still reported is `'ArrayRef[Str'`, which is a type expression with
+  a bracket missing.
+- **A dependency is followed only by `typecheck`** (milestone 4). `lint`'s
+  questions are about the roots' own calls, so asking perl for its `@INC` and
+  reading a hundred modules to answer them would buy nothing. `require Foo` is
+  followed as well as `use Foo`: `HTTP::Date` reaches `Time::Local` that way
+  and no other.
+- **A hand-written `new` *does* return its own class** (milestone 5, revised).
+  This first read the other way — an instance came only from a
+  framework-generated constructor or a `Returns:` — on the strength of 380
+  `unknown-method` warnings over @INC. That was measured wrong: the 380 fell
+  to 31 when opaque packages started reading as `Unknown`, and only 31 to 8
+  from refusing to type `Foo->new`. The refusal cost every plain `bless`
+  class in the language its types, so the design's reading is back: `Foo->new`
+  is an `InstanceOf['Foo']` wherever the run actually read a `sub new`. A
+  class it never saw stays `Unknown`, a `Returns:` wins, and a framework's
+  constructor never came this way.
+- **Four rules keep `$self` honest** (milestone 5, revised). Restoring the
+  above made `$self` and `$class` reachable in every body and lit up four
+  things that had been quietly wrong: the unpacking statement overwrote the
+  parameters it declared (`my ($class, %args) = @_` assigned `Unknown` over
+  what `from_unpacking` had just read); an empty `()` is a prototype and not a
+  zero-parameter signature, which the body reading `@_` is the evidence for;
+  `SUPER::init` was resolved as a method of that name; and a `bless` whose
+  class could not be read left the old type in place, when a `bless` always
+  changes what its argument is and "unreadable" means nobody knows any more.
+- **A dynamic package makes its whole namespace dynamic** (milestone 5,
+  revised). XS registers into a distribution's namespace and a distribution's
+  namespace is a name prefix: `Net::DBus` calls `XSLoader::load` and the
+  methods land on `Net::DBus::Binding::Iterator`, whose own file has no idea.
+- **A class the run knows only the name of is `Unknown`** (milestone 5).
+  Three more shapes make a package one whose method set nobody can enumerate,
+  and each was a run of warnings over @INC: a file that loads XS (every
+  package *in that file*, because XS registers methods where it likes), an
+  `@ISA` assigned something computed (`File::Spec` picks its parent at run
+  time), and a glob assignment. `UNIVERSAL`'s methods — `isa`, `can`, `DOES`,
+  `VERSION` — and `import`/`unimport` are on every class and are never
+  missing.
+- **An element names its container in the flow pass too** (milestone 5).
+  `$options{"suffixlen"}` reads `%options`, and reading it as `$options` gave
+  every such subscript the scalar's type — which was where all eleven
+  `maybe-deref` warnings over @INC came from. The scope pass had this rule
+  from the start; the flow pass needed it too.
+- **Return inference did not cross a sub boundary** (milestone 5, lifted
+  since). A sub with no `Returns:` returned `Unknown`, which is silence, and
+  the design's alternative — the join of its return sites, in dependency
+  order with recursion cut to `Unknown` — was the one place inference needed
+  a fixpoint over the program. It is built: two tiers, the local one inside
+  the declaration pass and a program-wide one after `link`, designed in
+  [return-inference.md](return-inference.md) and specified as INFER-4a and
+  INFER-4e..h in [types.md](types.md). What the corpus said about it is
+  below.
+- **A suppression comment reads two ways** (milestone 6). `##
+  camello-disable: <code>` on a line of code is about that line, and on a line
+  of its own is about the line below it. The second is what a long line needs,
+  and what a diagnostic whose span *is* a comment needs: a marker about a
+  `# Returns:` line cannot sit on that line without becoming part of the
+  annotation. A marker naming nothing, or naming something that is not a code,
+  silences the whole line — guessing which code was meant would be worse than
+  taking the user at their word.
+- **`camello.toml` has one table** (milestone 6). `[check]`, not `[lint]` and
+  `[typecheck]`: what it holds is true of both subcommands, and a project that
+  wanted them to differ would be asking the same question two ways. A flag on
+  the command line wins over it, because the file says what the project is and
+  the flag says what this run is. A file that does not parse is an error, not a
+  shrug: a config silently ignored is a project checked under rules nobody
+  asked for.
+- **A lone parenthesised list is that list** (milestone 1). `Args::elements`
+  and `Args::pairs` descend into a `PAREN_EXPR` that is a list's only element,
+  so `use Foo (a => 1)` and `use Foo a => 1` reach a recogniser as the same
+  import. perl flattens `f((1, 2))` to two arguments for the same reason.
+- **The two subcommands are one, `check`** (after milestone 6). The split above
+  was justified by speed — the lattice needs the dependency resolver behind it,
+  and `lint` was to be what runs where `perlcritic` runs. Measurements showed
+  that both commands were comfortably below the threshold at which a user would
+  choose between them. Two other things said the same: the subcommands took an
+  *identical*
+  argument set, in which `--stubs`, `--inc`, `--cache-dir` and `--no-cache` did
+  nothing under `lint`; and `lint`'s output was a strict subset of
+  `typecheck`'s, so the pair offered no answer the other could not give. The
+  only thing `lint` could do that `typecheck` could not was decline to read
+  @INC, and a missing dependency already reads as silence rather than as noise
+  (METHOD-5a), so nothing is lost by always reading it. `Options.types`,
+  `Code::needs_types` and the `lint` column of the diagnostics table went with
+  the split; `--disable` is how a project turns a code off now.
+
+### Where the corpus bars actually landed
+
+- **Milestone 2, undeclared variables over @INC.** Six remain, all of them in
+  `Debconf::Element::Noninteractive::Error`, and `perl -c` reports the same
+  six: the file opens `my $mail` in the condition of an `unless` and reads it
+  after the statement, which is out of scope. They are true positives in a file
+  that does not compile, so the bar — zero *false* undeclared-variable errors —
+  is met. 590 warnings (457 unused, 133 shadowed) and 18 files not checked (17
+  in an encoding the run was not told about, 1 a parse error).
+- **Milestone 3, arity over @INC.** Zero errors. One warning:
+  `XML::XPathEngine` calls `XML::XPathEngine::NodeSet->new($results)`, and
+  that constructor shifts its class and ignores everything after it — the
+  argument is silently dropped, which is what the warning is for.
+- **Milestone 4, annotations over @INC.** Zero `bad-annotation`. Every
+  annotation the corpus carries parses or is correctly read as something that
+  is not one; the single finding of the first run was `File::Temp`'s prose
+  `Returns:` line, which the "shaped like a type" test above now leaves alone.
+- **Milestone 5, type flow over @INC.** Zero errors from the type
+  diagnostics — no `type-mismatch`, no `unknown-key`, no `return-mismatch`,
+  no `unknown-type`. 627 warnings in all: 457 `unused-variable`, 133
+  `shadowed-variable`, 30 `unknown-method`, 5 `maybe-deref`, 2 `arity`.
+
+  The 5 `maybe-deref` are one file (`LWP::Protocol::nntp`) setting `$nntp =
+  undef` in one branch and calling a method on it in another, which is the
+  documented cost of an analysis with no path-sensitivity beyond narrowing.
+
+  The 30 `unknown-method` are two kinds of thing. 23 are three families whose
+  `new` hands back something that is not an instance of them: `URI` (a
+  `URI::http`), `JSON` (a backend chosen at run time), `Crypt::Mode::*` (XS
+  bootstrapped from `CryptX`, which is not a prefix of them). That is a fact
+  about those three and a stub is what it is for. The other 7 are template
+  methods — a base class calling something its subclasses supply, as
+  `Dpkg::Interface::Storable` does after asking `$self->can('parse')`. `$self`
+  is really "this class or any subclass" and a subclass may define anything;
+  reading it that way is the honest fix and is not built.
+- **Return inference, the scalar half, over @INC.** The bar
+  (`docs/return-inference.md`, "Cost and the corpus bar") is that no
+  diagnostic the run did not already report becomes an error, and that every
+  new warning is either a true positive or a shape of return the site table
+  should have made `Unknown`. Both are met: over 1755 files the diagnostics
+  before and after are the same set plus **twelve** `maybe-deref` at `info`,
+  with nothing lost and no new error, warning or `unknown-method` at all.
+
+  All twelve are the family the feature exists for: a sub with a `return;`
+  or a `return undef` among object returns, so its type is a `Maybe` and
+  something dereferences it without checking. `CPAN::Tarzip::gzip_read`
+  hands back `undef` on one path and the handle on another, eight times over;
+  `File::pushd::_pop_dir` the same. None of them is a shape the table got
+  wrong, and none of the families the design warned about showed up: no
+  `unknown-method` from a `$self` returned through a helper the invocant rule
+  cannot see, no `type-mismatch` from an incidental tail.
+
+  All twelve are also tier 1's: tier 2 installed types over this corpus and
+  changed no diagnostic by doing it. That is a fact about @INC rather than
+  about the tier — core modules annotate little and chain across files
+  through classes the run cannot type — and it is the reason tier 2's own
+  bar is the `cross-file/` fixture rather than this count.
+
+  The cost, over the same corpus: `camello check` goes from 0.82 s to 1.03 s
+  with tier 1 and to 1.72 s with both, and the declaration walk alone
+  (`camello dev index`) from 0.28 s to 0.52 s and then 1.19 s. Tier 1 is one
+  extra body walk per file and it roughly doubles that walk, which is what
+  the design predicted and accepted; tier 2's rounds are the rest, and the
+  reparse per round is the simple choice the corpus says holds. (The 248
+  `undeclared-variable` errors this perl's `ExtUtils::*` and `Encode::*` draw
+  are identical before and after and have nothing to do with returns: they
+  are `use Config;`-style imported package variables, which the scope pass
+  does not read.)
+- **Return inference, the list half, over @INC.** One new diagnostic:
+  `CPAN::Meta::Merge` writes `my ($left, $right) = map { ... } @_[0,1]`, and
+  a `map` is a list whose length nobody here counts, so a single scalar
+  target off it is a `Maybe`. That is the open question the design left to
+  this count — whether `(T ...)` binds `Maybe[T]` or `T` to one target — and
+  one `info` over 1755 files answers it: `Maybe[T]` stays. It is also the
+  honest answer, since `my ($first) = grep {...}` really can find nothing.
+
+  No length is read off a slice, which is why this one is a `Maybe` where a
+  reader can see two: `@_[0,1]` is two elements and the shape says `Unknown`.
+  Reading a literal slice's length is the refinement if the count grows.
+
+  The cost is not measurable: `camello check` is the same 1.7 s it was with
+  the scalar half alone. `shape_of` is a second dispatch over the same nodes
+  and the consumers are edits to walks that already ran, so there is no new
+  pass and no new phase to pay for — which is what the design predicted.
+
+  The annotation fixtures use the parenthesised notation a reader naturally
+  reaches for, and retain the legacy `| list: (...)` form as a migration error.

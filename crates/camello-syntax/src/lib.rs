@@ -11,6 +11,7 @@
 //! checker both sit on top of it, and neither can see the other
 //! (`docs/typecheck.md`, "Where it lives").
 
+pub mod ast;
 pub mod diagnostic;
 pub mod hash;
 pub mod lang;
@@ -19,9 +20,10 @@ pub mod parse;
 
 use std::sync::Arc;
 
+pub use ast::AstNode;
 pub use diagnostic::ParseError;
 pub use lang::{NodeKind, SyntaxKind, SyntaxNode, SyntaxToken, TokenKind};
-pub use parse::TriviaMap;
+pub use parse::{is_builtin, TriviaMap};
 
 /// The root of a parsed file.
 pub type PerlNode = SyntaxNode;

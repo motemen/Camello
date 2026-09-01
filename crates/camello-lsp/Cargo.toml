@@ -1,0 +1,20 @@
+[package]
+name = "camello-lsp"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+camello-syntax = { path = "../camello-syntax" }
+camello-sema = { path = "../camello-sema" }
+camello-fmt = { path = "../camello-fmt" }
+
+rowan = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+
+tower-lsp-server = "0.23"
+tokio = { version = "1", features = ["rt-multi-thread", "io-std", "macros", "sync", "time"] }
+
+[dev-dependencies]
+tempfile = "3.0"

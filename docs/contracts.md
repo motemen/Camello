@@ -1,8 +1,8 @@
 # The contracts
 
-Five names carry the design of camello, and 166 comments in `src/` refer to them
-by name — "the lexer contract", "I3 of the formatter contract". This file is
-what they refer to.
+Five names carry the design of camello, and 172 comments across `src/` and
+`crates/` refer to them by name — "the lexer contract", "I3 of the formatter
+contract". This file is what they refer to.
 
 The names come from ADRs 0004-0008, written on 2026-07-28 as proposals against
 the implementation of the time. That implementation is gone and so are the ADRs;
@@ -17,21 +17,22 @@ where a rule rests on evidence too thin to be a rule, the `GUESS:` label
 
 ## The language model
 
-`src/lang`. Tokens and nodes are different things and are typed as such.
+`crates/camello-syntax/src/lang`. Tokens and nodes are different things and are
+typed as such.
 
 - `TokenKind` and `NodeKind` are separate enums. `SyntaxKind(u16)` is a
   generated conversion layer for rowan: tokens map to `0..TOKEN_COUNT`, nodes
   above it. Discriminants follow the order of the macro, and the tree is never
   persisted between processes, so reordering is allowed.
-- One macro, `define_language!` (`src/lang/macros.rs`), is the single source.
-  From it come both enums, the `SyntaxKind` conversions, the `T![...]` macro,
-  `is_keyword` / `is_punct` / `is_trivia` derived from the section a kind is
-  declared in, the keyword lookup the lexer uses, and `display_name` — so a
-  diagnostic says `` `}` `` rather than `R_BRACE`.
+- One macro, `define_language!` (`crates/camello-syntax/src/lang/macros.rs`),
+  is the single source. From it come both enums, the `SyntaxKind` conversions,
+  the `T![...]` macro, `is_keyword` / `is_punct` / `is_trivia` derived from the
+  section a kind is declared in, the keyword lookup the lexer uses, and
+  `display_name` — so a diagnostic says `` `}` `` rather than `R_BRACE`.
 - Semantic predicates — `can_start_term`, `starts_statement`, `is_sigil` —
   carry grammar knowledge that cannot be derived, and stay hand-written in
-  `src/lang/predicates.rs`. They are typed on `TokenKind`, which is what makes
-  "a node kind reached a token predicate" unrepresentable.
+  `crates/camello-syntax/src/lang/predicates.rs`. They are typed on `TokenKind`,
+  which is what makes "a node kind reached a token predicate" unrepresentable.
 - Only the replay pass touches `GreenNodeBuilder`, through an API typed on
   `NodeKind` and `TokenKind`.
 - Failure has a kind of its own: `UNTERMINATED_REGEX`, `UNTERMINATED_QUOTE_LIKE`,
@@ -43,9 +44,9 @@ where a rule rests on evidence too thin to be a rule, the `GUESS:` label
 
 ## The lexer contract
 
-`src/lex`. The scanner is hand-written and parser-directed. Perl cannot be lexed
-without knowing whether a term or an operator is due, so that expectation is
-state, and the grammar owns it.
+`crates/camello-syntax/src/lex`. The scanner is hand-written and
+parser-directed. Perl cannot be lexed without knowing whether a term or an
+operator is due, so that expectation is state, and the grammar owns it.
 
 - `Expect` is `Term` or `Operator`, held by the lexer, set by the parser at
   syntactic decision points. `peek` and `bump` do not take it as an argument.
@@ -82,7 +83,8 @@ state, and the grammar owns it.
 
 ## The parser contract
 
-`src/parse`. The parser records events; nothing writes the tree as it goes.
+`crates/camello-syntax/src/parse`. The parser records events; nothing writes the
+tree as it goes.
 
 - `Event` is `Start { kind, forward_parent }`, `Token`, `Finish`,
   `Error(Diagnostic)`, `Tombstone`. `forward_parent` is how a left-associative
@@ -124,7 +126,11 @@ state, and the grammar owns it.
   argument. Reading it either way is reading a prototype nobody can see — `($)`
   against none at all — so neither is the faithful answer and the label says
   which was chosen. `getopt \@args, 'a|all' => \$all` is not the value of a
-  pair and keeps its whole list.
+  pair and keeps its whole list. The key of the next pair may be a `my $name`,
+  because that is how every `Smart::Args` list writes one: without it
+  `args my $a => ArrayRef[Str], my $b => 'Int'` hands the whole rest of the
+  list to `ArrayRef` and every rule after the first parameterised type is
+  lost.
 - **`=>` quotes the bareword to its left** (perlop, "Comma Operator"), so
   `key => 1`, `sort => $by` and `package => 'x'` hold strings whatever those
   names mean elsewhere. One predicate says so — `quoted_bareword` — and every
@@ -139,7 +145,7 @@ state, and the grammar owns it.
 
 ## The trivia model
 
-`src/parse/trivia.rs`, built during replay.
+`crates/camello-syntax/src/parse/trivia.rs`, built during replay.
 
 - `WHITESPACE` is horizontal only. `NEWLINE` is exactly one `\r?\n`, so blank
   lines survive as consecutive newline tokens. `COMMENT` runs to just before the
@@ -169,14 +175,15 @@ state, and the grammar owns it.
 
 ## The formatter contract
 
-`src/fmt`, in three phases: **build** (CST + `TriviaMap` → `Doc`, where every
-flat/broken decision is made), **render** (`Doc` → `Vec<Line>`, applying spacing
-and indentation), **align** (inserting padding). A fourth, **skip**, is the one
-place the source's own text is put back over the answer: the lines a `#<<<` /
-`#>>>` pair covers (`docs/formatting.md` VERBATIM-2). It runs last and over
-lines, because a marked region is a run of lines and what it overrides is
-indentation, spacing and alignment together. `docs/formatting.md` is the
-specification of what comes out; these are the rules of how.
+`crates/camello-fmt/src`, in three phases: **build** (CST + `TriviaMap` →
+`Doc`, where every flat/broken decision is made), **render** (`Doc` →
+`Vec<Line>`, applying spacing and indentation), **align** (inserting padding).
+A fourth, **skip**, is the one place the source's own text is put back over the
+answer: the lines a `#<<<` / `#>>>` pair covers (`docs/formatting.md`
+VERBATIM-2). It runs last and over lines, because a marked region is a run of
+lines and what it overrides is indentation, spacing and alignment together.
+`docs/formatting.md` is the specification of what comes out; these are the
+rules of how.
 
 - **Spacing is decided at build time** and emitted as `Doc::Space`. The renderer
   never puts a space between two tokens on its own, so there is no path that

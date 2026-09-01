@@ -17,6 +17,18 @@ mod grammar;
 mod replay;
 pub mod trivia;
 
+/// Whether a name is one of perl's own builtins (`grammar/builtins.rs`).
+///
+/// The table is the parser's, and this is the one question about it that a
+/// caller outside the parser has: a `sub` of that name, defined in the package
+/// the call is written in, does not take the call. perl reaches its builtin
+/// first, and the only way past that is an import — which is the mechanism
+/// perlsub documents for overriding one, and which not every builtin allows.
+#[must_use]
+pub fn is_builtin(name: &str) -> bool {
+    grammar::builtins::lookup(name).is_some()
+}
+
 use event::{CompletedMarker, Diagnostic, Events, Marker};
 pub use trivia::TriviaMap;
 

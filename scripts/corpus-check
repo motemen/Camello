@@ -8,6 +8,7 @@
 #   scripts/corpus-check --jobs 8         worker count (default: the binary's)
 #   scripts/corpus-check --list           print the corpus and exit
 #   scripts/corpus-check --no-perl        the invariants only, without the oracle
+#   scripts/corpus-check --check          `camello check` over the corpus instead
 #
 # ── What is here, and what is not ─────────────────────────────────────────────
 #
@@ -17,6 +18,12 @@
 # output as the program the input was. Both walk directories, both run one file
 # per core, and both separate a check they could not answer from one that
 # failed, with the reasons counted and the messages grouped.
+#
+# `--check` asks the checker (docs/typecheck.md) instead. The
+# bar there is *zero errors*, not because CPAN is well-typed but because a
+# checker that cannot stay silent on code it was told nothing about is broken.
+# Warnings are counted and reported, and the count going up is a regression to
+# look at.
 #
 # This script is the corpus. Selecting one is the part the binary has no opinion
 # about: the `.pm` files below @INC, deduplicated because @INC entries nest, and
@@ -44,6 +51,7 @@ base_dir="$(cd "$(dirname "$0")/.." && pwd)"
 limit=0
 list_only=0
 run_perl=1
+mode=invariants
 paths=()
 forward=()
 
@@ -53,8 +61,9 @@ while [ $# -gt 0 ]; do
     --limit)   limit=$2; shift 2 ;;
     --list)    list_only=1; shift ;;
     --no-perl) run_perl=0; shift ;;
+    --check)     mode=check; shift ;;
     --help|-h)
-      sed -n '2,40p' "$0" | sed 's/^#\{0,1\} \{0,1\}//'
+      sed -n '2,48p' "$0" | sed 's/^#\{0,1\} \{0,1\}//'
       exit 0 ;;
     *) paths+=("$1"); shift ;;
   esac
@@ -107,6 +116,14 @@ fi
 camello="$base_dir/target/release/camello"
 
 status=0
+
+if [ "$mode" != invariants ]; then
+  echo "==== $mode: ${#corpus[@]} files"
+  # The diagnostics go to stdout and the tally to stderr, so a run that says
+  # nothing on stdout is a run with nothing to say.
+  "$camello" "$mode" "${forward[@]}" "${corpus[@]}" || status=1
+  exit "$status"
+fi
 
 echo "==== dev check: ${#corpus[@]} files"
 "$camello" dev check "${forward[@]}" "${corpus[@]}" || status=1
