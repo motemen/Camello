@@ -1,0 +1,159 @@
+name: Release
+
+# A `v*` tag is the release. Every other tag in this repository — the `wip`
+# ones — is a bookmark and must not build anything.
+on:
+  push:
+    tags: [ 'v*' ]
+  # The same build, without publishing, to prove the matrix still works before
+  # a tag depends on it.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  # Released binaries carry no symbols. Set here rather than in Cargo.toml so a
+  # local `cargo build --release` keeps whatever a profiler needs.
+  CARGO_PROFILE_RELEASE_STRIP: symbols
+
+jobs:
+  # The version lives in one place (Cargo.toml's [workspace.package]); the tag
+  # has to agree with it, and the release notes are the CHANGELOG section for
+  # it. Both are settled before anything is built.
+  prepare:
+    name: Prepare
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Resolve the version
+      id: version
+      run: |
+        crate=$(sed -n '/^\[workspace\.package\]/,/^\[/p' Cargo.toml \
+                | sed -n 's/^version = "\(.*\)"/\1/p')
+        if [ "$GITHUB_REF_TYPE" = tag ]; then
+          version=${GITHUB_REF_NAME#v}
+          if [ "$version" != "$crate" ]; then
+            echo "::error::tag $GITHUB_REF_NAME disagrees with Cargo.toml version $crate"
+            exit 1
+          fi
+        else
+          version=$crate
+        fi
+        echo "version=$version" >>"$GITHUB_OUTPUT"
+
+    - name: Cut the release notes out of the CHANGELOG
+      run: |
+        awk -v ver="${{ steps.version.outputs.version }}" '
+          /^## / { found = ($2 == ver); next }
+          found { print }
+        ' CHANGELOG.md >notes.md
+        # An entry is not required — a tag may come before one is written — but
+        # an empty file would publish a release with no body at all.
+        if ! grep -q '[^[:space:]]' notes.md; then
+          echo "No CHANGELOG entry for ${{ steps.version.outputs.version }}." >notes.md
+        fi
+        cat notes.md
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: notes
+        path: notes.md
+
+  build:
+    name: ${{ matrix.target }}
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux is musl throughout, for the reason scripts/build-linux gives:
+          # static, so there is no glibc at the far end to be too old.
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+          # Apple's clang links either architecture, so the Intel build is a
+          # cross build on the same arm64 runner — one fewer runner image to
+          # depend on. It cannot be run here, hence no smoke test below.
+          - target: x86_64-apple-darwin
+            runner: macos-latest
+            cross: true
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: 1.91.0
+        targets: ${{ matrix.target }}
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ matrix.target }}
+
+    # The default feature set has no C dependency, but the musl target still
+    # links through `cc`; musl-tools supplies one for the runner's own arch.
+    - name: Install the musl toolchain
+      if: endsWith(matrix.target, '-musl')
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y musl-tools
+
+    - name: Build
+      run: cargo build --release --locked --target ${{ matrix.target }}
+
+    # The binary has to at least run on the machine that made it.
+    - name: Smoke test
+      if: ${{ !matrix.cross }}
+      run: |
+        ./target/${{ matrix.target }}/release/camello --version
+        ./target/${{ matrix.target }}/release/camello format -e 'my %h=(a=>1);'
+
+    - name: Package
+      id: package
+      run: |
+        name=camello-${{ needs.prepare.outputs.version }}-${{ matrix.target }}
+        mkdir -p "dist/$name"
+        cp target/${{ matrix.target }}/release/camello README.md CHANGELOG.md "dist/$name/"
+        (cd dist && tar -czf "$name.tar.gz" "$name" \
+                 && shasum -a 256 "$name.tar.gz" >"$name.tar.gz.sha256")
+        echo "name=$name" >>"$GITHUB_OUTPUT"
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.package.outputs.name }}
+        path: dist/*.tar.gz*
+        if-no-files-found: error
+
+  release:
+    name: Publish
+    # One release, made after every target has built: a target that fails
+    # leaves no half-published release behind.
+    needs: [ prepare, build ]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Publish the release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        mkdir -p upload
+        find artifacts -type f -name '*.tar.gz*' -exec mv {} upload/ \;
+        ls -l upload
+        gh release create "$GITHUB_REF_NAME" \
+          --repo "$GITHUB_REPOSITORY" \
+          --title "$GITHUB_REF_NAME" \
+          --notes-file artifacts/notes/notes.md \
+          --verify-tag \
+          upload/*
