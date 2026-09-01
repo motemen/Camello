@@ -1,9 +1,5 @@
 # Changelog
 
-One line per change — two or three where it takes them, never a paragraph.
-The reasoning, the measurements and the caveats belong in the commit it came
-from, in a comment, or in `docs/`.
-
 ## Unreleased
 
 ### Added
