@@ -117,7 +117,7 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
 name = "camello"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "camello-fmt",
  "camello-lsp",
@@ -141,7 +141,7 @@ dependencies = [
 
 [[package]]
 name = "camello-fmt"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "camello-syntax",
  "insta",
@@ -152,7 +152,7 @@ dependencies = [
 
 [[package]]
 name = "camello-lsp"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "camello-fmt",
  "camello-sema",
@@ -168,7 +168,7 @@ dependencies = [
 
 [[package]]
 name = "camello-sema"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "camello-syntax",
  "rowan",
@@ -179,7 +179,7 @@ dependencies = [
 
 [[package]]
 name = "camello-syntax"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "insta",
  "miette",

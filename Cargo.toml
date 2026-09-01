@@ -20,7 +20,7 @@ default-members = [
 # able to reach the formatter's Doc IR, and Cargo is what enforces the direction
 # rather than review.
 [workspace.package]
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 
 [workspace.dependencies]

@@ -14,8 +14,8 @@ There is no marketplace release. Build the server, then package the extension:
 cargo install --path ../..        # puts `camello` on PATH
 cd editors/vscode
 npm install
-npx vsce package                  # camello-0.1.1.vsix
-code --install-extension camello-0.1.1.vsix
+npx vsce package                  # camello-0.2.0.vsix
+code --install-extension camello-0.2.0.vsix
 ```
 
 During development, `npm run watch` and F5 from this folder opens an Extension
