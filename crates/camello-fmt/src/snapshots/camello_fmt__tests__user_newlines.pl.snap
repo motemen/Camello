@@ -60,7 +60,10 @@ my $output = some_function(
 );
 
 # chained method calls with newlines
-my $obj = $factory->create()->initialize()->configure();
+my $obj = $factory
+    ->create()
+    ->initialize()
+    ->configure();
 
 # hash with fat comma alignment and newlines
 my %config = (

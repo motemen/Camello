@@ -639,16 +639,31 @@ impl<'a> Builder<'a> {
         // the statement's own level — the comment in column 0 of a statement
         // indented four.
         let deferred_comment = !wants_space && self.has_user_comment_between(previous, next);
-        if !wants_space && !deferred_terminator && !deferred_comment {
+        // `->` hugs on both sides, but a newline written before one is a line
+        // the writer drew and not spacing: a chain broken across lines was
+        // broken on purpose, and it is the one break in a long chain that
+        // carries any meaning (docs/formatting.md NEWLINE-4). Dropped with the
+        // rest of the gap, `$obj\n    ->one\n    ->two` came back as one line,
+        // and a chain whose middle call held an argument list written across
+        // lines came back with everything after that list's `)` glued onto the
+        // closing brace's line.
+        let deferred_arrow = !wants_space
+            && next
+                .as_token()
+                .is_some_and(|token| token.token_kind() == T!["->"])
+            && self.has_user_newline_between(previous, next);
+        if !wants_space && !deferred_terminator && !deferred_comment && !deferred_arrow {
             return parts;
         }
 
         // A newline the user put here is kept, and the continuation is indented
         // by the enclosing Indent (the formatter contract) — no separate rule for
         // continuation indent, with no separate branch per syntax shape. A
-        // deferred `;` is the tight-spacing exception: `$obj->method\n# why\n;`
-        // still needs the break so its comment and terminator remain a
-        // continuation, even though the one-line spelling has no space.
+        // deferred `;` and a broken chain are the tight-spacing exceptions:
+        // `$obj->method\n# why\n;` still needs the break so its comment and
+        // terminator remain a continuation, and `$obj\n    ->method` needs it so
+        // the arrow stays on the line it was written on, even though neither
+        // one-line spelling has a space.
         // A block's opening brace is placed by the formatter, not the user
         // (docs/formatting.md NEWLINE-2), so a newline before it is not preserved.
         // A chained keyword goes on the closing brace's line whatever the user
