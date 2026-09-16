@@ -8,6 +8,8 @@
   (NEWLINE-4).
 - A bracket written as a list element closes where its siblings are written,
   where the list goes on below it (INDENT-4).
+- `try { ... } if $x` parses: a modifier makes it the call to a function named
+  `try` that it is.
 
 ## 0.2.0 — 2026-09-01
 

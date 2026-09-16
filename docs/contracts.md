@@ -95,7 +95,8 @@ tree as it goes.
   both the event list and the lexer cursor, so an ambiguity is settled by trying
   a reading rather than by scanning ahead for evidence: an anonymous hash before
   a block, a signature before a prototype, a `try` statement before a call to a
-  function named `try`.
+  function named `try` — and, where a modifier follows one, the modifier reading
+  before the two-statement one, kept only where it parses without complaint.
   Bounded lookahead — is the next token a `=>` — is fine. Unbounded scanning of
   the token stream is not, and no longer exists.
 - **Normal form.** The children of a `ROOT` or a `BLOCK` are statement nodes

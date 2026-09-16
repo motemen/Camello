@@ -1,0 +1,202 @@
+---
+source: crates/camello-syntax/src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  EXPR_STMT
+    LIST_EXPR
+      TRY_STMT
+        `try` "try"
+        BLOCK
+          `{` "{"
+          EXPR_STMT
+            LIST_EXPR
+              CALL_EXPR
+                SUB_NAME
+                  identifier "do_something"
+                ARG_LIST
+                  `(` "("
+                  LIST_EXPR
+                  `)` ")"
+            `;` ";"
+          `}` "}"
+    STMT_MODIFIER
+      `if` "if"
+      LIST_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "enabled"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      TRY_STMT
+        `try` "try"
+        BLOCK
+          `{` "{"
+          EXPR_STMT
+            LIST_EXPR
+              CALL_EXPR
+                SUB_NAME
+                  identifier "risky"
+                ARG_LIST
+                  `(` "("
+                  LIST_EXPR
+                  `)` ")"
+            `;` ";"
+          `}` "}"
+        CATCH_CLAUSE
+          `catch` "catch"
+          BLOCK
+            `{` "{"
+            EXPR_STMT
+              LIST_EXPR
+                CALL_EXPR
+                  SUB_NAME
+                    identifier "handle_error"
+                  ARG_LIST
+                    `(` "("
+                    LIST_EXPR
+                      SCALAR_VAR
+                        `$` "$"
+                        identifier "_"
+                    `)` ")"
+              `;` ";"
+            `}` "}"
+    STMT_MODIFIER
+      `unless` "unless"
+      LIST_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "skip"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      TRY_STMT
+        `try` "try"
+        BLOCK
+          `{` "{"
+          EXPR_STMT
+            LIST_EXPR
+              CALL_EXPR
+                SUB_NAME
+                  identifier "step"
+                ARG_LIST
+                  `(` "("
+                  LIST_EXPR
+                    SCALAR_VAR
+                      `$` "$"
+                      identifier "_"
+                  `)` ")"
+          `}` "}"
+    STMT_MODIFIER
+      `for` "for"
+      LIST_EXPR
+        ARRAY_VAR
+          `@` "@"
+          identifier "items"
+    `;` ";"
+  TRY_STMT
+    `try` "try"
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          CALL_EXPR
+            SUB_NAME
+              identifier "risky"
+            ARG_LIST
+              `(` "("
+              LIST_EXPR
+              `)` ")"
+        `;` ";"
+      `}` "}"
+    CATCH_CLAUSE
+      `catch` "catch"
+      CATCH_PARAM
+        `(` "("
+        SCALAR_VAR
+          `$` "$"
+          identifier "e"
+        `)` ")"
+      BLOCK
+        `{` "{"
+        EXPR_STMT
+          LIST_EXPR
+            LIST_CALL_EXPR
+              SUB_NAME
+                identifier "warn"
+              LIST_EXPR
+                SCALAR_VAR
+                  `$` "$"
+                  identifier "e"
+          `;` ";"
+        `}` "}"
+  IF_STMT
+    `if` "if"
+    PAREN_EXPR
+      `(` "("
+      LIST_EXPR
+        SCALAR_VAR
+          `$` "$"
+          identifier "retry"
+      `)` ")"
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          CALL_EXPR
+            SUB_NAME
+              identifier "again"
+            ARG_LIST
+              `(` "("
+              LIST_EXPR
+              `)` ")"
+        `;` ";"
+      `}` "}"
+  TRY_STMT
+    `try` "try"
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          CALL_EXPR
+            SUB_NAME
+              identifier "risky"
+            ARG_LIST
+              `(` "("
+              LIST_EXPR
+              `)` ")"
+        `;` ";"
+      `}` "}"
+  LOOP_STMT
+    `for` "for"
+    FOREACH_HEADER
+      VAR_DECL
+        `my` "my"
+        DECL_TARGET
+          SCALAR_VAR
+            `$` "$"
+            identifier "item"
+      PAREN_EXPR
+        `(` "("
+        LIST_EXPR
+          ARRAY_VAR
+            `@` "@"
+            identifier "items"
+        `)` ")"
+    BLOCK
+      `{` "{"
+      EXPR_STMT
+        LIST_EXPR
+          CALL_EXPR
+            SUB_NAME
+              identifier "process"
+            ARG_LIST
+              `(` "("
+              LIST_EXPR
+                SCALAR_VAR
+                  `$` "$"
+                  identifier "item"
+              `)` ")"
+        `;` ";"
+      `}` "}"

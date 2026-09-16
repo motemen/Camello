@@ -745,10 +745,21 @@ fn try_stmt(parser: &mut Parser<'_>) {
     // `try`. Rather than deciding in advance which it is, parse the statement
     // form and reconsider if something follows that only an expression can
     // continue with (the parser contract).
+    // A statement modifier is the other continuation only an expression has:
+    // perl's `try` statement takes none, so `try { ... } if $x` is a call to a
+    // function named `try` (Try::Tiny) with a modifier on it.
+    //
+    // `try { ... }\nif ($x) { ... }` is two statements and reads the same for
+    // two tokens, so this is settled by taking the modifier reading and undoing
+    // it rather than by guessing (the parser contract). A modifier runs to the
+    // end of the statement and reads cleanly; the `if` of a statement leaves its
+    // block where only a subscript could go, and says so — `(1) { bar() }` is
+    // the diagnostic about a hash subscript needing a `->`.
     if parser.at_any(&[T!["->"], T!["?"]])
         || parser
             .current()
             .is_some_and(|kind| super::grammar::precedence::infix_op(kind).is_some())
+        || a_modifier_follows(parser)
     {
         parser.abandon(marker);
         parser.rollback(checkpoint);
@@ -760,6 +771,26 @@ fn try_stmt(parser: &mut Parser<'_>) {
         parser.bump();
     }
     parser.complete(marker, NodeKind::TRY_STMT);
+}
+
+/// Is what follows a modifier on this statement, rather than a statement of its
+/// own that happens to begin with the same word?
+///
+/// Taken and undone rather than guessed (the parser contract). A modifier runs
+/// to the end of the statement and reads cleanly; the `if` of a statement leaves
+/// its block where only a subscript could go and says so — `(1) { bar() }` is
+/// the diagnostic about a hash subscript needing a `->`.
+fn a_modifier_follows(parser: &mut Parser<'_>) -> bool {
+    if !parser.current().is_some_and(TokenKind::is_stmt_modifier) || quoted_bareword(parser) {
+        return false;
+    }
+    let probe = parser.checkpoint();
+    let before = parser.diagnostic_count();
+    stmt_modifier(parser);
+    let reads_as_one = parser.diagnostic_count() == before
+        && (parser.at_end() || parser.at_any(&[T![";"], T!["}"], T!["__END__"], T!["__DATA__"]]));
+    parser.rollback(probe);
+    reads_as_one
 }
 
 /// The block and handlers of a `try`, shared between statement and expression
