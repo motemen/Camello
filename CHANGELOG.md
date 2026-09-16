@@ -6,6 +6,8 @@
 
 - A chain the writer broke against `->`, on either side of it, keeps its lines
   (NEWLINE-4).
+- A bracket written as a list element closes where its siblings are written,
+  where the list goes on below it (INDENT-4).
 
 ## 0.2.0 — 2026-09-01
 

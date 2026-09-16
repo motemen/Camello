@@ -128,7 +128,19 @@ pub enum Doc {
     /// condition or signature belongs to the block after it: `if ($a\n&& $b) {`
     /// begins where the `if` does, and its body takes the statement's level
     /// however far the condition wrapped.
-    Rooted(Box<Doc>),
+    Rooted {
+        /// Whether the construct is an element of a list that goes on below it.
+        ///
+        /// Such a list writes its elements at the continuation level, and a
+        /// closing delimiter at the line's own level is one column short of
+        /// them — `f('x', {\n k => 1,\n},\n $y)` closed its argument four
+        /// columns inside of the argument under it. Rooted as an element it
+        /// closes where its siblings are written. The bracket that ends its
+        /// list, or whose siblings share its closing line, is not one: there
+        /// is nothing below for it to disagree with.
+        element: bool,
+        body: Box<Doc>,
+    },
     /// The extent of a continuation indent (docs/formatting.md INDENT-3).
     ///
     /// The first line break the user made inside this takes one indent level,
@@ -232,8 +244,19 @@ impl Doc {
     }
 
     #[must_use]
+    /// A bracketed group rooted as an element of the list around it.
+    pub fn rooted_element(body: Doc) -> Doc {
+        Doc::Rooted {
+            element: true,
+            body: Box::new(body),
+        }
+    }
+
     pub fn rooted(body: Doc) -> Doc {
-        Doc::Rooted(Box::new(body))
+        Doc::Rooted {
+            element: false,
+            body: Box::new(body),
+        }
     }
 
     pub fn hanging(columns: Option<usize>, body: Doc) -> Doc {

@@ -1598,7 +1598,19 @@ impl<'a> Builder<'a> {
                 Doc::SoftLine,
             ];
             inside.extend(closing_doc);
-            parts.push(Doc::rooted(Doc::hanging(Some(0), Doc::concat(inside))));
+            // The bracket closes at the level of the line it was opened on
+            // (INDENT-4) — but where the list it is an element of goes on after
+            // it, that level is one to the left of the elements around it, and
+            // the `}` closing an argument reads as closing the call. Rooted as
+            // an element, it closes where its siblings are written. With
+            // nothing written below it there is nothing for it to disagree
+            // with, and it stays where INDENT-4 puts it.
+            let root = if an_element_below_follows(node) {
+                Doc::rooted_element
+            } else {
+                Doc::rooted
+            };
+            parts.push(root(Doc::hanging(Some(0), Doc::concat(inside))));
             return Doc::group(true, Doc::concat(parts));
         }
 
@@ -1865,7 +1877,7 @@ fn breaks(doc: &Doc) -> bool {
         Doc::UserLine { broken, .. } => *broken,
         Doc::Raw(text) => text.contains('\n'),
         Doc::Group { broken, body, .. } => *broken || breaks(body),
-        Doc::Indent(body) | Doc::Continuation(body) | Doc::Rooted(body) => breaks(body),
+        Doc::Indent(body) | Doc::Continuation(body) | Doc::Rooted { body, .. } => breaks(body),
         Doc::Concat(parts) => parts.iter().any(breaks),
         _ => false,
     }
@@ -2147,6 +2159,28 @@ fn begins_its_line(node: &SyntaxNode) -> bool {
         token = current.prev_token();
     }
     true
+}
+
+/// Does an element of the same list begin a line of its own after this one?
+///
+/// Only such an element is written at the continuation level, and so only it
+/// can disagree with a closing delimiter that is not. `f({\n k => 1,\n}, 1, 0)`
+/// has siblings, and they are on the `}`'s own line with nothing to disagree
+/// about; `f({\n k => 1,\n},\n $x)` has one a line below, four columns to the
+/// right of the `}` that closes the argument beside it.
+///
+/// This asks the input, and may: the list around it is flat — a bracket the
+/// writer opened mid-line is what put us here — so camello adds no break
+/// between its elements, and the writer's own newline is kept (POLICY-4). The
+/// answer is the same on the next pass (the formatter contract, I2).
+fn an_element_below_follows(node: &SyntaxNode) -> bool {
+    node.parent()
+        .filter(|parent| parent.node_kind() == NodeKind::LIST_EXPR)
+        .into_iter()
+        .flat_map(|list| list.children())
+        .any(|sibling| {
+            sibling.text_range().start() >= node.text_range().end() && begins_its_line(&sibling)
+        })
 }
 
 /// Is the next thing written after this node a `,`?

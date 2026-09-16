@@ -192,7 +192,7 @@ impl<'a> Renderer<'a> {
                 self.walk(body);
                 self.hanging = outer;
             }
-            Doc::Rooted(body) => {
+            Doc::Rooted { element, body } => {
                 // The level of the line this begins on. Once something is on
                 // the line, that line's own level is the answer — the
                 // continuation, if there was one, is already in it. On a line
@@ -214,6 +214,11 @@ impl<'a> Renderer<'a> {
                     // the bracket and its closer in column zero.
                     self.indent = self.current.indent;
                     self.origin = origin;
+                    // EXPERIMENT (A): an element of a wrapping list roots where
+                    // its siblings will be written, not one level to their left.
+                    if *element && self.continued == Some(false) && self.hanging.is_none() {
+                        self.indent += 1;
+                    }
                 }
                 self.walk(body);
                 self.indent = outer_indent;
