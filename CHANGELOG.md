@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- The VS Code extension is a release asset, and fetches its own server when
+  there is none on `PATH`.
+- `Camello: Check Workspace`, a `camello` task type and a `$camello` problem
+  matcher: `camello check` over the tree, in the Problems panel.
+
 ## 0.2.1 — 2026-09-16
 
 ### Fixed

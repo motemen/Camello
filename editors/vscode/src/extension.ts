@@ -6,6 +6,11 @@
 // camello.toml is read by the server, not by this file — so an eglot or
 // nvim-lspconfig user who points at `camello lsp` themselves gets the
 // identical server.
+//
+// Two things are the extension's own, and both are about reaching the server
+// rather than about answering for it: fetching a binary when the machine has
+// none (`bootstrap.ts`), and running `camello check` over the whole tree, which
+// the server does not do by design (`check.ts`).
 
 import * as vscode from "vscode";
 import {
@@ -13,8 +18,13 @@ import {
   LanguageClientOptions,
   ServerOptions,
 } from "vscode-languageclient/node";
+import { serverCommand } from "./bootstrap";
+import * as check from "./check";
 
 let client: LanguageClient | undefined;
+// The command the running server was spawned from, so the workspace check runs
+// the same binary the editor is being answered by rather than resolving its own.
+let spawnedFrom = "camello";
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   context.subscriptions.push(
@@ -23,6 +33,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await start(context);
     }),
   );
+  check.register(context, () => spawnedFrom);
   await start(context);
 }
 
@@ -31,7 +42,14 @@ export async function deactivate(): Promise<void> {
 }
 
 async function start(context: vscode.ExtensionContext): Promise<void> {
-  const command = serverPath();
+  let command: string;
+  try {
+    command = await serverCommand(context);
+  } catch (error) {
+    vscode.window.showErrorMessage(`camello: no server to run — ${error}.`);
+    return;
+  }
+  spawnedFrom = command;
   // No `transport`: for an Executable that is not a default but a flag —
   // vscode-languageclient appends `--stdio` to the arguments, and `camello
   // lsp` has no such flag. Left out, the client spawns the same process and
@@ -83,9 +101,3 @@ async function stop(): Promise<void> {
   }
 }
 
-function serverPath(): string {
-  const configured = vscode.workspace
-    .getConfiguration("camello")
-    .get<string>("path");
-  return configured && configured.length > 0 ? configured : "camello";
-}

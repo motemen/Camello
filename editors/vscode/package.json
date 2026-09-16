@@ -21,7 +21,8 @@
   ],
   "activationEvents": [
     "onLanguage:perl",
-    "workspaceContains:**/camello.toml"
+    "workspaceContains:**/camello.toml",
+    "onCommand:camello.checkWorkspace"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -31,7 +32,7 @@
         "camello.path": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Path to the `camello` binary. Empty means whatever is on `PATH`."
+          "markdownDescription": "Path to the `camello` binary. Empty means whatever is on `PATH`, and if there is nothing there either, the server for this extension's version is downloaded from its GitHub release."
         },
         "camello.trace.server": {
           "type": "string",
@@ -49,6 +50,45 @@
       {
         "command": "camello.restartServer",
         "title": "Camello: Restart Language Server"
+      },
+      {
+        "command": "camello.checkWorkspace",
+        "title": "Camello: Check Workspace"
+      }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "camello",
+        "required": [],
+        "properties": {
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Extra arguments for `camello check`, such as `--min-severity warning`.",
+            "default": []
+          }
+        }
+      }
+    ],
+    "problemMatchers": [
+      {
+        "name": "camello",
+        "owner": "camello",
+        "source": "camello",
+        "fileLocation": [
+          "autoDetect",
+          "${workspaceFolder}"
+        ],
+        "pattern": {
+          "regexp": "^(.*):(\\d+):(\\d+):\\s+(error|warning|info):\\s+(.*)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "severity": 4,
+          "message": 5
+        }
       }
     ]
   },

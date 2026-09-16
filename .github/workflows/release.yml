@@ -132,11 +132,49 @@ jobs:
         path: dist/*.tar.gz*
         if-no-files-found: error
 
+  # The extension carries no native code, so one runner packages it for every
+  # platform. It ships beside the binaries rather than on a marketplace: the
+  # server it spawns is one of the tarballs in the same release, and the version
+  # it names is the tag, which is how it knows which one to fetch.
+  vsix:
+    name: vsix
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: npm
+        cache-dependency-path: editors/vscode/package-lock.json
+
+    - name: Package
+      working-directory: editors/vscode
+      run: |
+        # The manifest's version is the workspace's; a tag that disagrees with
+        # it was already refused in `prepare`, so this only catches a manifest
+        # left behind by a version bump that forgot it.
+        manifest=$(node -p 'require("./package.json").version')
+        if [ "$manifest" != "${{ needs.prepare.outputs.version }}" ]; then
+          echo "::error::editors/vscode/package.json says $manifest, not ${{ needs.prepare.outputs.version }}"
+          exit 1
+        fi
+        npm ci
+        npx --yes @vscode/vsce package \
+          --out "camello-${{ needs.prepare.outputs.version }}.vsix"
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: vsix
+        path: editors/vscode/*.vsix
+        if-no-files-found: error
+
   release:
     name: Publish
     # One release, made after every target has built: a target that fails
     # leaves no half-published release behind.
-    needs: [ prepare, build ]
+    needs: [ prepare, build, vsix ]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
@@ -149,7 +187,8 @@ jobs:
         GH_TOKEN: ${{ github.token }}
       run: |
         mkdir -p upload
-        find artifacts -type f -name '*.tar.gz*' -exec mv {} upload/ \;
+        find artifacts -type f \( -name '*.tar.gz*' -o -name '*.vsix' \) \
+          -exec mv {} upload/ \;
         ls -l upload
         gh release create "$GITHUB_REF_NAME" \
           --repo "$GITHUB_REPOSITORY" \

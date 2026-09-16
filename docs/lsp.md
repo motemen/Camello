@@ -374,13 +374,30 @@ what it cannot fully parse. On-save formatting is the client's choice
 `editors/vscode/`: TypeScript, `vscode-languageclient`, and as little else
 as possible — find the server (a `camello.path` setting, else `camello` on
 `PATH`), spawn `camello lsp`, declare the `perl` language activation, done.
-No bundled binary, no marketplace publication yet; installation is `vsce
-package` + install-from-VSIX, or F5 from the extension folder during
-development. The extension surfaces the server's version from `initialize`'s
-`serverInfo` so a mismatch is visible. Anything the extension configures
-must be a pass-through of server/CLI configuration, so eglot and
-nvim-lspconfig users get the identical server by pointing at `camello lsp`
-themselves.
+The extension surfaces the server's version from `initialize`'s `serverInfo`
+so a mismatch is visible. Anything the extension configures must be a
+pass-through of server/CLI configuration, so eglot and nvim-lspconfig users
+get the identical server by pointing at `camello lsp` themselves.
+
+Two things are the extension's own, and neither answers a question the server
+answers:
+
+- **A server to spawn.** With no `camello.path` and nothing on `PATH`, the
+  extension fetches the release asset for its own version — the `v*` tag names
+  it, the `.sha256` beside it is checked, and it is unpacked once into
+  `globalStorage` under a version-keyed name. No bundled binary: a marketplace
+  build would carry four, and this way the tag stays the single place a version
+  is written. A platform with no published target says so rather than
+  downloading something that will not run.
+- **The whole-tree check.** The server publishes diagnostics for open files
+  only (above, "Diagnostics"), so the extension contributes a `camello` task
+  type and a `$camello` problem matcher that run `camello check .` and put its
+  output in the Problems panel. It is the CLI's answer, shown in the editor —
+  not a second implementation of it, and not the server growing a
+  workspace-diagnostics mode.
+
+There is no marketplace publication; the release attaches the `.vsix` beside
+the binaries, and F5 from the extension folder is what development uses.
 
 ## Testing
 
