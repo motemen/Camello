@@ -4,7 +4,8 @@
 
 ### Fixed
 
-- A chain the writer broke before `->` keeps its lines (NEWLINE-4).
+- A chain the writer broke against `->`, on either side of it, keeps its lines
+  (NEWLINE-4).
 
 ## 0.2.0 — 2026-09-01
 

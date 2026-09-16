@@ -639,18 +639,21 @@ impl<'a> Builder<'a> {
         // the statement's own level — the comment in column 0 of a statement
         // indented four.
         let deferred_comment = !wants_space && self.has_user_comment_between(previous, next);
-        // `->` hugs on both sides, but a newline written before one is a line
+        // `->` hugs on both sides, but a newline written against one is a line
         // the writer drew and not spacing: a chain broken across lines was
         // broken on purpose, and it is the one break in a long chain that
         // carries any meaning (docs/formatting.md NEWLINE-4). Dropped with the
         // rest of the gap, `$obj\n    ->one\n    ->two` came back as one line,
         // and a chain whose middle call held an argument list written across
         // lines came back with everything after that list's `)` glued onto the
-        // closing brace's line.
+        // closing brace's line. Either side of the arrow: `$obj->\n    method`
+        // is the same break written one token later, and the writer who put it
+        // there gets the same answer.
         let deferred_arrow = !wants_space
-            && next
-                .as_token()
-                .is_some_and(|token| token.token_kind() == T!["->"])
+            && [previous, next]
+                .iter()
+                .filter_map(|element| element.as_token())
+                .any(|token| token.token_kind() == T!["->"])
             && self.has_user_newline_between(previous, next);
         if !wants_space && !deferred_terminator && !deferred_comment && !deferred_arrow {
             return parts;
