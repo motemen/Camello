@@ -9,6 +9,11 @@
 - `Camello: Check Workspace`, a `camello` task type and a `$camello` problem
   matcher: `camello check` over the tree, in the Problems panel.
 
+### Fixed
+
+- `foo $x++` and `f {} ++$x` parse: a `++` or `--` opens an argument only where
+  it is written against what follows it.
+
 ## 0.2.1 — 2026-09-16
 
 ### Fixed

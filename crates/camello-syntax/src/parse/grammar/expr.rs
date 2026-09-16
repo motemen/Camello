@@ -647,7 +647,9 @@ pub(crate) fn bareword_call(parser: &mut Parser<'_>) -> CompletedMarker {
 /// The tie is broken by which reading parses. A term cannot follow an expression
 /// with no operator between them, so if one does, the hash reading was wrong.
 /// `-` and `+` are held back: they are terms and operators both, and
-/// `$config->{limit} - 1` must not be read as a block call on `-1`.
+/// `$config->{limit} - 1` must not be read as a block call on `-1`. `++` and
+/// `--` are terms and operators both as well, but there the spelling settles it
+/// — see `opens_an_argument`.
 ///
 /// Consumes the block and returns true when it takes that reading; leaves the
 /// parser exactly where it found it otherwise.
@@ -662,7 +664,8 @@ fn block_call_follows(parser: &mut Parser<'_>) -> bool {
     parser.expect_term();
 
     let list_follows = parser.diagnostic_count() == errors_before
-        && !parser.at_any(&[T!["-"], T!["+"], T!["++"], T!["--"]])
+        && !parser.at_any(&[T!["-"], T!["+"]])
+        && opens_an_argument(parser, 0)
         && parser.current().is_some_and(TokenKind::can_start_term);
     if list_follows {
         if parser.at(T![","]) {
@@ -718,6 +721,7 @@ fn at_filehandle(parser: &mut Parser<'_>, base: usize) -> bool {
         && !parser.nth_at(base + 2, T!["{"])
         && !parser.nth_at(base + 2, T!["["])
         && !parser.nth_at(base + 2, T!["->"])
+        && opens_an_argument(parser, base + 2)
         && parser
             .nth(base + 2)
             .is_some_and(|kind| kind.can_start_term() || kind == TokenKind::HEREDOC_START);
@@ -733,11 +737,27 @@ fn at_filehandle(parser: &mut Parser<'_>, base: usize) -> bool {
             .nth(base + 2)
             .is_some_and(|kind| kind == TokenKind::IDENT || kind.is_keyword())
         && parser.nth_at(base + 3, T!["}"])
+        && opens_an_argument(parser, base + 4)
         && parser
             .nth(base + 4)
             .is_some_and(|kind| kind.can_start_term() || kind == TokenKind::HEREDOC_START);
 
     is_bareword_handle || is_block_handle || is_scalar_handle || is_braced_scalar_handle
+}
+
+/// Does the `n`th token open an argument, rather than close the term before it?
+///
+/// `++` and `--` are prefix operators and postfix ones both, and only the
+/// spelling tells the two apart: perl reads `f $x++` as a postfix increment on
+/// `$x` and `print $fh ++$x` as a handle followed by a prefix one. Written
+/// against what follows it, the token starts a term; written against what
+/// precedes it, it finishes one. Every other token that can start a term does
+/// so here.
+fn opens_an_argument(parser: &mut Parser<'_>, n: usize) -> bool {
+    if parser.nth_at(n, T!["++"]) || parser.nth_at(n, T!["--"]) {
+        return parser.nth_is_glued_prefix(n);
+    }
+    true
 }
 
 fn filehandle(parser: &mut Parser<'_>) {

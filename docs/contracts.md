@@ -141,6 +141,13 @@ tree as it goes.
   than as a `LIST_CALL_EXPR`. A hash subscript's key is read the same way, and
   for the same reason: a name recorded as a call is one that every later pass
   has to know not to believe.
+- **How an operator was written is evidence where nothing else is.** perl's
+  symbol table says whether the `+` in `ok +Foo->bar` opens an argument or adds
+  to a constant, and its tokeniser says whether the `++` in `foo $x++` closes a
+  term or opens one after a filehandle. camello has neither, so the grammar asks
+  `current_is_glued_prefix` — spaced from what precedes it and written against
+  what follows — and it asks it only for `+`, `++` and `--`, only where the two
+  readings are otherwise tied. Spacing decides nothing else.
 - A heredoc body is a token that lands where the line its marker is on ends,
   which is between two statements. Anything walking only child *nodes* drops it.
 

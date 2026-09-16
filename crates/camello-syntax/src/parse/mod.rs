@@ -271,13 +271,26 @@ impl<'a> Parser<'a> {
     /// Was the current token written with whitespace before it and none after —
     /// the shape of an operator someone glued to what follows it?
     ///
-    /// Asked of the source rather than of the token stream, so it needs no
-    /// lookahead and cannot disagree with the `expect` the next token will be
+    /// The spacing is read off the source rather than off the token stream, so
+    /// the answer cannot disagree with the `expect` the neighbouring tokens were
     /// lexed under. It is evidence about intent and nothing more: the grammar
     /// uses it only where a symbol table would otherwise be needed to choose
     /// between two readings (the parser contract).
     pub(crate) fn current_is_glued_prefix(&mut self) -> bool {
-        let range = self.current_range();
+        self.nth_is_glued_prefix(0)
+    }
+
+    /// The same question asked of the `n`th token, for a predicate that looks
+    /// past a filehandle slot before committing to it. The lookahead is the
+    /// predicate's own and bounded; this only spells the answer.
+    pub(crate) fn nth_is_glued_prefix(&mut self, n: usize) -> bool {
+        let Some(range) = self
+            .nth(n)
+            .and_then(|_| self.lexer.peek(n))
+            .map(|token| token.range)
+        else {
+            return false;
+        };
         let source = self.lexer.source();
         let before = &source[..usize::from(range.start())];
         let after = &source[usize::from(range.end())..];
