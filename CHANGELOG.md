@@ -18,9 +18,11 @@
   where `$u` is annotated `URI` — is an `info` rather than a `warning`
   (DIAG-7a). `URI->host`, which names the package, is unchanged.
 - An accessor declaration whose name list is not on the page — `ro => [
-  @FIELDS ]`, `ro => ACCESSORS()`, `use Class::Tiny @FIELDS`, `rw => \%spec` —
-  leaves the class's attribute set unknown instead of empty, so its accessors
-  are no longer reported as methods it does not declare (ANNOT-14).
+  @FIELDS ]`, `ro => ACCESSORS()`, `ro => [FF]`, `use Class::Tiny @FIELDS`,
+  `rw => \%spec` — leaves the class's attribute set unknown instead of empty,
+  so its accessors are no longer reported as methods it does not declare
+  (ANNOT-14). A bareword in such a list is a call, the way perl reads one
+  written anywhere but before a `=>`.
 - A `use`d module that writes a glob into a package it works out at run time —
   `*{"${caller}::$name"} = ...`, how a generator hands methods to its importer
   — is a hole in the importer's method surface, so `unknown-method` there is an

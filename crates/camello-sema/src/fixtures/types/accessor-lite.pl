@@ -152,3 +152,16 @@ Computed->new->absent;
 ViaConstant->new->gamma;
 ViaConstant->new->absent;
 Empty->new->absent;             #~ warning unknown-method: `absent`
+
+# A bareword inside a list is a call, not a name (ANNOT-14e). perl quotes a
+# bareword before `=>` and not inside a list, so this asks for whatever the
+# constant returns — and `use constant` does not say what that is (ANNOT-11b).
+package ViaBareword;
+use constant F  => func();
+use constant FF => map { $_->name } F;
+use Class::Accessor::Lite (new => 1, ro => [FF]);
+
+package main;
+ViaBareword->new->absent;
+# `FF` is a sub of the package all the same, so the constant itself resolves.
+ViaBareword->FF;

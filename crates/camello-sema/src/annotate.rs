@@ -658,6 +658,36 @@ fn attribute_names(node: &SyntaxNode) -> Vec<String> {
     }
 }
 
+/// The names one element of an *accessor list* spells out.
+///
+/// [`attribute_names`] with one thing taken away: a bareword is a call, not a
+/// name. The difference is perl's. Before a `=>` a bareword is quoted for you,
+/// which is what makes `has name => (is => 'ro')` a name; inside a list
+/// nothing quotes it, and under `use strict` a bareword there is a call to a
+/// sub of that name — commonly a constant:
+///
+/// ```perl
+/// use constant FF => map { $_->name } F;
+/// use Class::Accessor::Lite (ro => [FF]);
+/// ```
+///
+/// That asks for whatever `FF` returns. Read as a name it declared one
+/// accessor called `FF` and hid the real ones, which then came back as
+/// methods the class does not declare. Naming nothing is what makes the list
+/// unreadable ([`names_are_readable`], ANNOT-14).
+fn accessor_list_names(node: &SyntaxNode) -> Vec<String> {
+    match node.node_kind() {
+        NodeKind::ANON_ARRAY => ast::AnonArray::cast(node.clone())
+            .expect("kind checked")
+            .elements()
+            .iter()
+            .flat_map(accessor_list_names)
+            .collect(),
+        NodeKind::LIST_CALL_EXPR => Vec::new(),
+        _ => attribute_names(node),
+    }
+}
+
 /// `handles => [qw(a b)]` and `handles => { local => 'remote' }` name their
 /// delegates; a regexp or a role name does not.
 fn delegated(node: &SyntaxNode) -> Option<Vec<String>> {
@@ -936,7 +966,7 @@ pub fn listed_names(node: &SyntaxNode, lazy: bool) -> Vec<AccessorName> {
     if lazy {
         accessor_names(node)
     } else {
-        attribute_names(node)
+        accessor_list_names(node)
             .into_iter()
             .map(AccessorName::implicit)
             .collect()
@@ -996,7 +1026,7 @@ fn accessor_names(node: &SyntaxNode) -> Vec<AccessorName> {
             .iter()
             .flat_map(accessor_names)
             .collect(),
-        _ => attribute_names(&node)
+        _ => accessor_list_names(&node)
             .into_iter()
             .map(AccessorName::implicit)
             .collect(),

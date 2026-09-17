@@ -692,6 +692,7 @@ use Class::Accessor::Lite (ro => [ @FIELDS ]);   # 名前はここに無い
 use Class::Tiny @FIELDS;
 use Class::Accessor::Typed (rw => \%spec);
 use Class::Accessor::Lite (ro => ACCESSORS());   # 定数越しでも同じ
+use Class::Accessor::Lite (ro => [FF]);          # 裸名も呼び出し (ANNOT-14e)
 ```
 
 - (ANNOT-14a) 読めないリストを持つパッケージは `dynamic` になります。glob
@@ -706,6 +707,22 @@ use Class::Accessor::Lite (ro => ACCESSORS());   # 定数越しでも同じ
   `ro => [qw(alpha), @rest]` で `alpha` だけを信じる根拠はありません。
 - (ANNOT-14d) メソッド呼び出しの形（`__PACKAGE__->mk_ro_accessors(@fields)`）は
   もともとこう読まれていました。`use` の形だけが抜けていたものです。
+- (ANNOT-14e) **リストの中の裸名は名前ではなく呼び出しです。** perl が裸名を
+  勝手にクォートするのは `=>` の前だけで、リストの中ではしません。`use strict`
+  の下ではそこの裸名は同名のサブへの呼び出しで、たいていは定数です。
+
+  ```perl
+  use constant FF => map { $_->name } F;
+  use Class::Accessor::Lite (ro => [FF]);   # FF が返すものを要求している
+  ```
+
+  名前として読むと、`FF` というアクセサが1つ宣言されたことになり、本物の
+  アクセサは全部「宣言されていないメソッド」になります。名前を一つも
+  挙げていないので、ANNOT-14a のとおり属性の集合は不明です。`FF` 自体は
+  `use constant` が宣言したサブなので、`Foo->FF` は従来どおり解決します。
+
+  `has name => (is => 'ro')` の `name` は `=>` の前なので文字列です。そちらは
+  変わりません。
 
 ## 4. 推論 (INFER)
 
