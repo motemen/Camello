@@ -17,6 +17,11 @@
 - `unknown-method` on a value whose class has a factory `new` — `$u->host`
   where `$u` is annotated `URI` — is an `info` rather than a `warning`
   (DIAG-7a). `URI->host`, which names the package, is unchanged.
+- A `use`d module that writes a glob into a package it works out at run time —
+  `*{"${caller}::$name"} = ...`, how a generator hands methods to its importer
+  — is a hole in the importer's method surface, so `unknown-method` there is an
+  `info` (DIAG-7a). A glob into a package the source names, `Carp`'s
+  `*{"warnings::$_"}` included, is not one.
 
 ## 0.2.2 — 2026-09-17
 

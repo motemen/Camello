@@ -178,7 +178,7 @@ impl Cache {
     /// attributes and no `new`" would outlive the release that fixed it —
     /// `Carton::Dist`, a `Class::Tiny` class, kept reporting `unknown-method`
     /// on its own constructor. Bump this with the recogniser.
-    const FORMAT: &'static str = "class-tiny-1";
+    const FORMAT: &'static str = "glob-target-1";
 
     #[must_use]
     pub fn key(path: &Path, source: &str, salt: &str) -> String {

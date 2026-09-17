@@ -259,6 +259,17 @@ pub struct PackageFacts {
     /// scope, which is where a code generator is invoked (METHOD-5g).
     #[serde(default)]
     pub file_scope_calls: Vec<(String, String)>,
+    /// The package writes a glob into *somebody else's* namespace, or into one
+    /// it cannot name: `*{"${caller}::$symbol"} = sub {...}`.
+    ///
+    /// [`PackageFacts::dynamic`] is about what this package might have;
+    /// this is about what its importers might have, which is a different
+    /// question with a different answer. `Carp` assigns `*_blessed` to
+    /// itself and adds nothing to whoever `use`s it; `Badger::Class` writes
+    /// into `caller()` and adds a set nobody here can enumerate
+    /// (`docs/types.md`, DIAG-7a).
+    #[serde(default)]
+    pub installs_by_computed_name: bool,
 }
 
 /// What one file declares.
@@ -322,6 +333,7 @@ pub fn declare_in(root: &SyntaxNode, dialect: &Dialect) -> FileDecls {
         frameworks,
         dialect: dialect.clone(),
         dynamic: false,
+        installs_by_computed_name: false,
         best_practice: HashSet::new(),
         decided_constructor: HashSet::new(),
     };
@@ -332,6 +344,14 @@ pub fn declare_in(root: &SyntaxNode, dialect: &Dialect) -> FileDecls {
     if pass.dynamic {
         for facts in &mut pass.decls.facts {
             facts.dynamic = true;
+        }
+    }
+    // The same reach, and the same reason to spread it across the file: the
+    // sub that writes into `caller()` is a sub of every package in the file as
+    // far as a reader of the file's declarations can tell.
+    if pass.installs_by_computed_name {
+        for facts in &mut pass.decls.facts {
+            facts.installs_by_computed_name = true;
         }
     }
     // A package with a framework generates a constructor unless it said not to
@@ -399,6 +419,9 @@ struct Pass {
     dialect: Dialect,
     /// The file loads XS or assigns a glob.
     dynamic: bool,
+    /// The file assigns a glob it cannot show belongs to the package the
+    /// assignment is written in.
+    installs_by_computed_name: bool,
     /// Packages that have called `follow_best_practice`. Positional, because
     /// the renaming only applies to the `mk_*` calls below it.
     best_practice: HashSet<String>,
@@ -709,8 +732,12 @@ impl Pass {
         ) && ast::tokens(&target)
             .chain(target.descendants().flat_map(|inner| ast::tokens(&inner)))
             .any(|token| token.token_kind() == TokenKind::TYPEGLOB_SIGIL);
-        if is_glob {
-            self.dynamic = true;
+        if !is_glob {
+            return;
+        }
+        self.dynamic = true;
+        if !glob_target_is_nameable(&target) {
+            self.installs_by_computed_name = true;
         }
     }
 
@@ -1445,6 +1472,47 @@ fn constructs_its_class(definition: &SubDef) -> bool {
                 .as_node()
                 .is_some_and(|node| node.node_kind() == NodeKind::SUB_NAME && is_super(node))
     })
+}
+
+/// Whether a glob assignment names the package it writes into.
+///
+/// `*name` and `*Foo::name` name one — the package the line is written in, and
+/// `Foo`. So does `*{"Foo::$name"}`, which is the same line with the *symbol*
+/// computed and the package still written down. What does not is
+/// `*{"${caller}::$symbol"}` or `*{ $pkg . "::$name" }`, where the package
+/// itself is worked out at run time.
+///
+/// That is the line worth drawing, and it is not "somewhere else". `Carp`
+/// writes `*{"warnings::$_"}`, which is somewhere else and is still no
+/// business of whoever `use`s `Carp`: the package is on the page, so it is not
+/// the importer. Only a package the pass cannot name *can* be the importer —
+/// a generator learns who called it and writes there — so an unnameable
+/// target is the evidence, and a named one, wherever it points, is not
+/// (`docs/types.md`, DIAG-7a).
+fn glob_target_is_nameable(target: &SyntaxNode) -> bool {
+    match target.node_kind() {
+        NodeKind::TYPEGLOB_VAR => true,
+        NodeKind::BLOCK_DEREF_EXPR => {
+            let Some(literal) = target
+                .children()
+                .find(|child| child.node_kind() == NodeKind::LITERAL)
+            else {
+                return false;
+            };
+            let Some(text) = ast::tokens(&literal)
+                .find(|token| token.token_kind() == TokenKind::STRING)
+                .map(|token| token.text().to_string())
+            else {
+                return false;
+            };
+            // No `::` is the current package, named by being here.
+            let Some((package, _)) = text.rsplit_once("::") else {
+                return true;
+            };
+            !package.contains('$') && !package.contains('@')
+        }
+        _ => false,
+    }
 }
 
 /// `SUPER::new` and the rest — a call into the parent's method of that name.

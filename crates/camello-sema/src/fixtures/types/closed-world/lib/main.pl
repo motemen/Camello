@@ -3,6 +3,8 @@ use warnings;
 use Sealed;
 use Open;
 use Factory;
+use Generated;
+use Tidy;
 
 # Every module `Sealed` uses was read or is recognised, so "declares no method"
 # is about a closed world.
@@ -29,3 +31,12 @@ $made->absent;                  #~ info unknown-method: `Factory` declares no me
 # Named rather than held: `Factory` here is exactly the package asked about,
 # and that package really does declare no such method.
 Factory->absent;                #~ warning unknown-method: `Factory` declares no method `absent`
+
+# `Generated` uses a module that was read, and reading it is what says the
+# names it installs cannot be listed: the package it writes into comes from
+# `caller`. Read is not the same as closed.
+Generated->absent;              #~ info unknown-method: `Generated` declares no method `absent`
+
+# `Named` assigns globs too, and every target is written down — its own
+# package and `Elsewhere`. Neither is the importer, so `Tidy` is closed.
+Tidy->absent;                   #~ warning unknown-method: `Tidy` declares no method `absent`

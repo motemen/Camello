@@ -700,6 +700,13 @@ impl Program {
     /// A pragma is not a hole: `use strict` declares nothing, and the resolver
     /// does not read one either ([`crate::resolve::Resolver::worth_resolving`]).
     ///
+    /// A module the run *did* read can still be one:
+    /// [`crate::decl::PackageFacts::installs_by_computed_name`] is a module
+    /// that writes a glob into a package it works out at run time, which is
+    /// how a generator hands methods to whoever called it. Reading such a file
+    /// is what tells us the names cannot be enumerated, so counting it as read
+    /// and therefore closed had the evidence exactly backwards.
+    ///
     /// Nor is it the only question. [`Program::hands_back_another_class`] is
     /// the other half: a complete reading of the wrong class says nothing
     /// about the right one.
@@ -710,7 +717,11 @@ impl Program {
                 facts.uses.iter().all(|module| {
                     !crate::resolve::Resolver::worth_resolving(module)
                         || crate::annotate::is_recognised(module)
-                        || self.knows_package(module)
+                        || (self.knows_package(module)
+                            && !self
+                                .facts(module)
+                                .iter()
+                                .any(|exporter| exporter.installs_by_computed_name))
                 })
             })
         })
