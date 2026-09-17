@@ -1688,7 +1688,7 @@ fn parse_returns(body: &str, range: TextRange, into: &mut Sink) -> Written {
         if !types::is_type_shaped(body) {
             return Written::Silent;
         }
-        return match types::parse(body) {
+        return match types::parse_in_comment(body) {
             Ok(ty) => {
                 into.note(&ty, range);
                 Written::Scalar(ty)
@@ -1715,7 +1715,7 @@ fn parse_returns(body: &str, range: TextRange, into: &mut Sink) -> Written {
         if !types::is_type_shaped(repeated) {
             return Written::Silent;
         }
-        return match types::parse(repeated) {
+        return match types::parse_in_comment(repeated) {
             Ok(ty) => {
                 into.note(&ty, range);
                 Written::List(ListShape::Of(ty))
@@ -1743,7 +1743,7 @@ fn fixed_slots(inner: &str, body: &str, range: TextRange, into: &mut Sink) -> Op
     }
     let mut members = Vec::new();
     for part in parts {
-        match types::parse(part.trim()) {
+        match types::parse_in_comment(part.trim()) {
             Ok(ty) => {
                 into.note(&ty, range);
                 members.push(ty);

@@ -294,7 +294,7 @@ pub struct ParseError {
 /// nothing, hence `Unknown`, hence silent — which is the price of not
 /// reporting every class from an unresolved dependency. A quoted string is the
 /// other reading, and [`Parser::primary`] has it.
-fn constructor(name: &str, arguments: Vec<Arg>) -> Result<Type, ParseError> {
+fn constructor(name: &str, arguments: Vec<Arg>, in_comment: bool) -> Result<Type, ParseError> {
     let arity = arguments.len();
     let plain = || -> Result<Vec<Type>, ParseError> {
         arguments
@@ -335,6 +335,12 @@ fn constructor(name: &str, arguments: Vec<Arg>) -> Result<Type, ParseError> {
         "Defined" => Type::Defined,
         "Value" => Type::Value,
         "Bool" => Type::Bool,
+        // A `Returns:` comment is camello's own notation and nothing but
+        // camello reads it, so the word a writer reached for is the word.
+        // Not in a declaration: `isa => 'boolean'` is a string Moose
+        // evaluates, and an unknown name there *is* a class name — the one
+        // `boolean.pm` blesses into (TYPE-3, ANNOT-7f).
+        "boolean" | "Boolean" if in_comment => Type::Bool,
         "RoleName" => Type::RoleName,
         "Undef" => Type::Undef,
         "CodeRef" | "CodeLike" => Type::CodeRef,
@@ -444,9 +450,28 @@ enum Arg {
 ///
 /// When the text is not a type expression at all.
 pub fn parse(text: &str) -> Result<Type, ParseError> {
+    read(text, false)
+}
+
+/// The same, for the text of a `Returns:` comment.
+///
+/// One vocabulary word more: `boolean` (ANNOT-7f). The comment is read by
+/// nothing but camello, so what a name means there is camello's to say; a
+/// declaration is a string perl gives to a framework, and there an unknown
+/// name means what that framework makes of it.
+///
+/// # Errors
+///
+/// When the text is not a type expression at all.
+pub fn parse_in_comment(text: &str) -> Result<Type, ParseError> {
+    read(text, true)
+}
+
+fn read(text: &str, in_comment: bool) -> Result<Type, ParseError> {
     let mut parser = Parser {
         tokens: lex(text)?,
         index: 0,
+        in_comment,
     };
     let ty = parser.union()?;
     if parser.peek().is_some() {
@@ -627,6 +652,9 @@ fn lex(text: &str) -> Result<Vec<Token>, ParseError> {
 struct Parser {
     tokens: Vec<Token>,
     index: usize,
+    /// Whether the text came from a `Returns:` comment rather than from a
+    /// declaration perl itself reads.
+    in_comment: bool,
 }
 
 impl Parser {
@@ -697,7 +725,7 @@ impl Parser {
                 } else {
                     Vec::new()
                 };
-                constructor(&name, arguments)
+                constructor(&name, arguments, self.in_comment)
             }
             Some(other) => Err(ParseError {
                 message: format!("a type expression cannot begin with `{other}`"),
