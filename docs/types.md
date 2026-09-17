@@ -225,6 +225,11 @@ Dict[name => Str, slurpy HashRef[Str]]            # 他の鍵もあってよい
 - (TYPE-7c) `is_assignable` は**まだどこからも報告されません**。厳格な読みを
   入れるときの土台であり、二つの関係を互いに突き合わせるテスト
   （`assignable ⇒ compatible`）の片方です。
+- (TYPE-7d) クラスどうしは名前で比べます。`InstanceOf['Child']` は
+  `InstanceOf['Parent']` に入ります —— `use parent`、`use base`、`@ISA`、
+  `extends` のどれで書かれていても同じです。ただし**否と言えるのは、値の側の
+  継承の鎖を最後まで読めているときだけ**で、読めない親が一つでもあれば
+  その先で繋がっているかもしれないので黙ります。`ClassName[...]` も同じです。
 
 ## 3. アノテーションの読み取り (ANNOT)
 

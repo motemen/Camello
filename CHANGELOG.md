@@ -17,6 +17,9 @@
 - `unknown-method` on a value whose class has a factory `new` — `$u->host`
   where `$u` is annotated `URI` — is an `info` rather than a `warning`
   (DIAG-7a). `URI->host`, which names the package, is unchanged.
+- `Child` passed where `Parent` was declared is no longer a `type-mismatch`
+  when `Child` has a parent the run never read — it may inherit `Parent`
+  through it (TYPE-7d).
 - An accessor declaration whose name list is not on the page — `ro => [
   @FIELDS ]`, `ro => ACCESSORS()`, `ro => [FF]`, `use Class::Tiny @FIELDS`,
   `rw => \%spec` — leaves the class's attribute set unknown instead of empty,

@@ -3003,7 +3003,10 @@ pub fn compatible(value: &Type, slot: &Type, program: &Program) -> bool {
         // `InstanceOf` gets, one level up.
         (Type::ClassName(_), Type::ClassName(None)) => true,
         (Type::ClassName(Some(value)), Type::ClassName(Some(slot))) => {
-            value == slot || program.linearise(value).iter().any(|class| class == slot)
+            value == slot
+                || !program.knows_package(slot)
+                || !program.ancestry_is_known(value)
+                || program.isa(value, slot)
         }
 
         // Bool is nominal: `0`, `1`, `''` and `undef` are the values it has,
@@ -3075,8 +3078,11 @@ pub fn compatible(value: &Type, slot: &Type, program: &Program) -> bool {
         }
 
         (Type::InstanceOf(left), Type::InstanceOf(right)) => {
-            // Both classes have to be known before a "no" means anything.
-            if !program.knows_package(left) || !program.knows_package(right) {
+            // Both classes have to be known before a "no" means anything, and
+            // the value's chain has to be all of it: a class whose parent the
+            // run never read may inherit the slot's class through it
+            // (`docs/types.md`, TYPE-7d).
+            if !program.knows_package(right) || !program.ancestry_is_known(left) {
                 return true;
             }
             program.isa(left, right)

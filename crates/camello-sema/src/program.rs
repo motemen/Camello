@@ -549,6 +549,27 @@ impl Program {
             .any(|class| class == ancestor)
     }
 
+    /// Whether every class above this one was read.
+    ///
+    /// The question [`Program::isa`] has to be asked beside, because a *no*
+    /// from it is a claim about the whole chain and a chain is only as
+    /// complete as the files behind it. `use parent 'Some::Base'` where
+    /// `Some::Base` is in neither the roots nor `@INC` leaves a class that may
+    /// inherit from anything, so `Child` passed where `Parent` was declared is
+    /// not a contradiction — it is a thing camello cannot see either way.
+    ///
+    /// A computed `@ISA` — `our @ISA = ($module)` — is the same gap written
+    /// differently, and it is what `dynamic` is set for there.
+    ///
+    /// [`Program::has_unknown_ancestor`] is the wider question, about whether
+    /// the *method set* is complete; this is about the chain alone.
+    #[must_use]
+    pub fn ancestry_is_known(&self, package: &str) -> bool {
+        self.linearise(package).iter().all(|class| {
+            self.knows_package(class) && !self.facts(class).iter().any(|facts| facts.dynamic)
+        })
+    }
+
     /// The methods `UNIVERSAL` gives every class, and the two `Exporter`
     /// gives every module. None of them is declared anywhere, and all of them
     /// are there.

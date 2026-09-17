@@ -149,3 +149,49 @@ sub opaque {
     Kinds2->any_object(x => $ref);
     return;
 }
+
+# Classes are compared by name, whichever way the parent was written (TYPE-7d).
+package Animal;
+sub new   { my $class = shift; bless {}, $class }
+sub speak { 'generic' }
+
+package Dog;
+use parent -norequire, 'Animal';
+
+package Cat;
+use base 'Animal';
+
+package Puppy;
+use parent -norequire, 'Dog';
+
+package Moggy;
+our @ISA = ('Cat');
+
+package Rock;
+sub new { bless {}, shift }
+
+# A parent the run never read: `Orphan` may be an `Animal` through it, so
+# nothing is ruled out about it either way.
+package Orphan;
+use parent -norequire, 'Nowhere::To::Be::Found';
+sub new { bless {}, shift }
+
+package Takes;
+use Smart::Args qw(args);
+sub animal { args my $class, my $a => 'Animal'; return $a }
+sub dog    { args my $class, my $d => 'Dog';    return $d }
+
+package main;
+
+Takes->animal(a => Animal->new);
+Takes->animal(a => Dog->new);
+Takes->animal(a => Cat->new);
+Takes->animal(a => Puppy->new);
+Takes->animal(a => Moggy->new);
+Takes->animal(a => Orphan->new);
+Takes->animal(a => Rock->new);
+#~ warning type-mismatch: declared `InstanceOf['Animal']`
+
+# Downwards is not inheritance: an `Animal` is not shown to be a `Dog`.
+Takes->dog(d => Animal->new);
+#~ warning type-mismatch: declared `InstanceOf['Dog']`
