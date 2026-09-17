@@ -292,9 +292,12 @@ nothing having checked it. `--disable` leaves any of them unreported.
 
 It prints one diagnostic per line as `path:line:col: severity: message [code]`,
 takes `--format json` for tooling, and exits 1 when anything at or above
-`--error-on` (default `error`) was reported. It takes `--stubs`, `--inc`,
-`--cache-dir` / `--no-cache`, and reads `camello.toml` from the directory it is
-run in.
+`--error-on` (default `error`) was reported. `--min-severity` (default
+`warning`) says what is printed at all, and what it drops is dropped whole —
+uncounted, and no reason to fail — so the default yields where `--error-on`
+names something quieter, and a `min-severity` somebody wrote down does not. It
+takes `--stubs`, `--inc`, `--cache-dir` / `--no-cache`, and reads
+`camello.toml` from the directory it is run in.
 
 The analysis is two passes, and the split is what makes it cheap. The
 **declaration pass** reads no sub body — a body can only *use* a declaration,

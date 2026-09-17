@@ -177,7 +177,7 @@ Two producers, one publication:
   `min-severity`, `lib`, `stubs`, …) apply exactly as in the CLI — the LSP
   is another consumer of the same configuration, not a new dialect of it.
 
-The deliberate divergence from the CLI: **the checker runs even when the
+The first deliberate divergence from the CLI: **the checker runs even when the
 parse has errors.** `check_one` in `src/report.rs` discards all sema
 diagnostics for a file that fails to parse, which is the right call for a
 batch tool — a broken file is one error, not fifty — and the wrong one for
@@ -193,6 +193,14 @@ keeps its full signal. The statement granularity matches the parser's own
 recovery synchronisation points, which is what makes it the natural blast
 radius. This policy lives in `camello-lsp`; `check_one` and the CLI keep
 their behaviour.
+
+The second: **`min-severity` defaults to `info` here and to `warning` on the
+command line.** The default is the only part that differs — a `min-severity`
+the project wrote down applies exactly as it does there. What `camello check`
+weighs is a wall of lines against the few in it worth reading, and an editor
+has no wall: an `info` is a squiggle under the name it is about, in the file
+already on screen, and `unused-variable` is what the grey name in every other
+editor means.
 
 Timing: recompute on `didChange` after a **~300 ms debounce** (interview
 decision — feedback while typing, not only on save), on `didOpen`, and on

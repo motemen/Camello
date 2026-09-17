@@ -39,6 +39,10 @@ pub struct Request {
     /// The quietest severity worth printing. What it drops is dropped whole:
     /// it is not counted in the summary and it does not decide the exit
     /// status, because a diagnostic nobody was shown is not one to fail on.
+    ///
+    /// Which is why `camello check`'s default of `warning` yields to an
+    /// `--error-on` below it (`crate::cli`): a default that silently made the
+    /// flag vacuous would answer 0 to a run that asked to fail.
     pub min_severity: Severity,
     pub format: Format,
     pub extensions: String,

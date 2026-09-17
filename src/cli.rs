@@ -389,13 +389,16 @@ pub struct CheckArgs {
     pub error_on: String,
 
     /// The quietest severity worth printing
+    // No clap default, so that "the flag was not typed" is a state this can
+    // see rather than guess at: `--min-severity warning` is a thing somebody
+    // chose, and the default that happens to agree with it is not.
     #[arg(
         long = "min-severity",
         value_name = "SEVERITY",
-        default_value = "info",
-        help = "Print nothing below this severity (`--min-severity error` for errors only)"
+        help = "Print nothing below this severity (`info` for the advice too) [default: warning]",
+        long_help = "Print nothing below this severity (`info` for the advice too)\n\n[default: warning]"
     )]
-    pub min_severity: String,
+    pub min_severity: Option<String>,
 
     /// File extensions to walk into when given a directory
     #[arg(
@@ -528,17 +531,26 @@ impl CheckArgs {
             miette::miette!("--error-on takes `error`, `warning` or `info`, not `{severity}`")
         })?;
 
-        let quietest = match &self.min_severity[..] {
-            "info" => config
-                .check
-                .min_severity
-                .clone()
-                .unwrap_or_else(|| "info".into()),
-            typed => typed.to_string(),
+        // The flag says what this run is, the file says what the project is,
+        // and the default is what nobody said.
+        let quietest = self
+            .min_severity
+            .clone()
+            .or_else(|| config.check.min_severity.clone());
+        let mut min_severity = match &quietest {
+            Some(name) => camello_sema::Severity::parse(name).ok_or_else(|| {
+                miette::miette!("--min-severity takes `error`, `warning` or `info`, not `{name}`")
+            })?,
+            None => camello_sema::Severity::Warning,
         };
-        let min_severity = camello_sema::Severity::parse(&quietest).ok_or_else(|| {
-            miette::miette!("--min-severity takes `error`, `warning` or `info`, not `{quietest}`")
-        })?;
+        // What is dropped for being too quiet is dropped whole, exit status
+        // included (`crate::report::Request::min_severity`), so a default that
+        // outranks `--error-on` would answer 0 to a run that asked to fail on
+        // the advice. Nobody chose that default over the flag they typed, so it
+        // yields; a `min-severity` somebody did write down stands.
+        if quietest.is_none() && min_severity > error_on {
+            min_severity = error_on;
+        }
 
         let format = crate::report::Format::parse(&self.format)
             .ok_or_else(|| miette::miette!("--format takes `text` or `json`"))?;

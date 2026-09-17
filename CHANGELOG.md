@@ -6,6 +6,9 @@
 
 - A block written on one line stays on one line however many statements it
   holds, as long as the last one carries no `;` (NEWLINE-2).
+- `camello check` prints from `warning` up: `--min-severity` defaults to
+  `warning` rather than `info`. `--min-severity info` asks for the advice, and
+  `camello lsp` still publishes it by default.
 
 ## 0.2.2 — 2026-09-17
 

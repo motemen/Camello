@@ -36,6 +36,13 @@ pub struct Settings {
     pub options: Options,
     /// The quietest severity worth publishing. What it drops is dropped
     /// whole, the way the CLI drops it.
+    ///
+    /// The default is `info` where the CLI's is `warning`, and that is the
+    /// second deliberate divergence (`docs/lsp.md`): what a batch tool has to
+    /// weigh is a wall of lines against the few worth reading, and an editor
+    /// has no wall — an `info` is a squiggle under the name it is about, in
+    /// the file already on screen. A `min-severity` the project wrote down
+    /// applies here exactly as it does there.
     pub min_severity: Severity,
     pub formatter: FormatterOptions,
 }

@@ -609,7 +609,12 @@ parameter `$count` declared `Int` at lib/Foo.pm:12"). Severities:
 
 `--error-on warning` promotes for CI, and `--min-severity` decides what is
 printed at all — a filter on the report rather than on the analysis, so what it
-drops is not counted and not a reason to fail. Codes can be disabled per
+drops is not counted and not a reason to fail. It defaults to `warning`: the
+`info` level is where a thing a user asked to be told lives, and a run nobody
+asked that of should not open with it. `--min-severity info` asks. Where
+`--error-on` names something quieter, the default yields to it rather than
+silently making it vacuous — a `min-severity` written down in the config or
+typed on the command line does not. Codes can be disabled per
 project in the config and per line with `## camello-disable: <code>` (a
 comment, so `format` keeps it; the form is chosen not to collide with `## no
 critic`).

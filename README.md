@@ -50,7 +50,8 @@ save hook is safe to wire up without a wrapper around it.
 ## Check
 
 ```bash
-camello check lib t                          # everything, over the tree
+camello check lib t                          # the warnings and errors, over the tree
+camello check --min-severity info            # the advice as well
 camello check --error-on warning             # exit 1 on a warning too, for CI
 camello check --min-severity error           # print the errors and nothing else
 camello check --format json lib              # one JSON array, for tooling
@@ -63,6 +64,15 @@ reported.
 
 `--error-on` decides the exit status; `--min-severity` decides what is printed,
 and what it drops is dropped whole — not counted, and not a reason to fail.
+
+`--min-severity` defaults to `warning`, so the `info` codes — the advice, and
+the bulk of what a first run on an unannotated tree has to say — are there for
+`--min-severity info` to ask for rather than in the way. Nothing else changes:
+an `info` is still an `info`, and a `camello.toml` that names `min-severity`
+still wins over the default. Asking to fail on something quieter than the
+default prints it too, so `--error-on info` means what it says on its own.
+`camello lsp` keeps `info` as its default, because a squiggle in the file on
+screen is not a wall of lines ([docs/lsp.md](docs/lsp.md)).
 
 It reports undeclared, unused and shadowed lexicals, and arity against a
 signature, a Smart::Args list or an `@_` unpacking. An unread *parameter* is
