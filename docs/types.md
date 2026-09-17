@@ -683,33 +683,27 @@ use Class::Tiny qw( name email ), {
 
 アクセサを宣言する三つの族 — `Class::Accessor::Typed`（ANNOT-4）、
 `Class::Accessor::Lite` 一族（ANNOT-10）、`Class::Tiny`（ANNOT-13）— は
-いずれも `use` の引数リストに名前を並べます。その並びが**実行時にしか
+いずれも名前を並べたリストで宣言します。`use` の引数リストでも、
+`__PACKAGE__->mk_ro_accessors(...)` でも同じです。そのリストが**実行時にしか
 決まらない**とき、そのクラスの属性の集合は下限であって全体ではありません。
 
 ```perl
 our @FIELDS = qw(alpha beta);
-use Class::Accessor::Lite (ro => [ @FIELDS ]);   # 名前はここに無い
+use Class::Accessor::Lite (ro => [ @FIELDS ]);
 use Class::Tiny @FIELDS;
 use Class::Accessor::Typed (rw => \%spec);
 use Class::Accessor::Lite (ro => ACCESSORS());   # 定数越しでも同じ
-use Class::Accessor::Lite (ro => [FF]);          # 裸名も呼び出し (ANNOT-14e)
+use Class::Accessor::Lite (ro => [FF]);          # リストの中の裸名は呼び出し
 ```
 
 - (ANNOT-14a) 読めないリストを持つパッケージは `dynamic` になります。glob
   代入と同じ扱いで、「このクラスにそのメソッドは無い」を言いません
-  （METHOD-5、DIAG-7a）。宣言はスロットを宣言しているのに名前が紙の上に
-  無いので、読めた分だけを全体として扱うと、**実在するアクセサを
-  `unknown-method` として報告します**。`new` の引数検査（`unknown-key`、
-  `missing-argument`）も同じ理由で止まります。
+  （METHOD-5、DIAG-7a）。`new` の引数検査（`unknown-key`、`missing-argument`）
+  も、照合する相手が無いので止まります。
 - (ANNOT-14b) **空のリストは読めています。** `ro => []` はアクセサを一つも
   宣言しないと言っているのであって、言えないわけではありません。
 - (ANNOT-14c) 読めない要素が一つあれば、そのパッケージ全体が対象です。
   `ro => [qw(alpha), @rest]` で `alpha` だけを信じる根拠はありません。
-- (ANNOT-14d) メソッド呼び出しの形（`__PACKAGE__->mk_ro_accessors(@fields)`）は
-  もともとこう読まれていました。`use` の形だけが抜けていたものです。
-- (ANNOT-14e) リストの中の裸名は名前ではなく呼び出しとして読みます。
-  `ro => [FF]` は `FF()` です。`has name => (...)` のような名前を書く位置は
-  これに当たりません。
 
 ## 4. 推論 (INFER)
 

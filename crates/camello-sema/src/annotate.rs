@@ -661,13 +661,9 @@ fn attribute_names(node: &SyntaxNode) -> Vec<String> {
 /// The names one element of an *accessor list* spells out.
 ///
 /// [`attribute_names`] with one thing taken away: a bareword element is a
-/// call, not a name (ANNOT-14e). `use Class::Accessor::Lite (ro => [FF])`
-/// after a `use constant FF` asks for whatever `FF` returns; read as a name
-/// it declared one accessor called `FF` and hid the real ones, which then
-/// came back as methods the class does not declare.
-///
-/// The name positions [`attribute_names`] is asked about elsewhere — `has`'s
-/// first argument, a `handles` list — keep their own reading.
+/// call, not a name, so `ro => [FF]` names nothing and the list is unreadable
+/// (ANNOT-14). The name positions [`attribute_names`] is asked about
+/// elsewhere — `has`'s first argument, a `handles` list — are unaffected.
 fn accessor_list_names(node: &SyntaxNode) -> Vec<String> {
     match node.node_kind() {
         NodeKind::ANON_ARRAY => ast::AnonArray::cast(node.clone())
