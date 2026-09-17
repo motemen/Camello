@@ -762,11 +762,12 @@ reviewed as a decision rather than discovered as a difference.
   block, read in a sub two hundred lines below. `our` stays lexical, which is
   what perl does with it.
 - **Modules that export variables are a table for now** (milestone 2). `use
-  English` binds sixty long names to punctuation variables and `use Config`
-  binds `%Config`, and neither is visible without running the module's
-  `import`. Until the dependency resolver of milestone 4 can read an `@EXPORT`,
-  those two are a table, and an import list that names a variable
-  (`use POSIX qw($errno)`) declares it.
+  English` binds sixty long names to punctuation variables, `use Config` binds
+  `%Config`, and `use Regexp::Common` binds `%RE`; none of them is visible
+  without running the module's `import`, and none of them would be visible from
+  an `@EXPORT` either — all three assign to a glob. So they are a table rather
+  than something the dependency resolver of milestone 4 will collect, and an
+  import list that names a variable (`use POSIX qw($errno)`) declares it.
 - **The interpolation scanner has four rules the corpus wrote** (milestone 2).
   A single colon ends a name (`"$filename: not found"`), a subscript after a
   dereference belongs to the dereference (`"$$argv[0]"` reads `$argv`, not

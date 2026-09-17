@@ -1529,8 +1529,15 @@ Moose 系として読みます（[ANNOT-10e](#310-classaccessorlite-一族-annot
 `$_` / `@_`、`sort` が渡す `$a` と `$b`、そして `ARGV`, `ARGVOUT`, `ENV`,
 `INC`, `SIG`, `STDIN`, `STDOUT`, `STDERR`, `DATA`, `AUTOLOAD`, `ISA`, `$0`。
 
-### A.10 変数を export するコアモジュール (`scope::exported_variables`)
+### A.10 変数を export するモジュール (`scope::exported_variables`)
 
-`English`（`$PROGRAM_NAME` などの一覧を持っています）と `Config`（`%Config`）。
-サブルーチンではなく変数を export するモジュールは、`@EXPORT` を読むだけでは
-足りないので表になっています。
+`English`（`$PROGRAM_NAME` などの一覧を持っています）、`Config`（`%Config`）、
+`Regexp::Common`（`%RE`）。サブルーチンではなく変数を export するモジュールは、
+`@EXPORT` を読むだけでは足りないので表になっています。いずれも自分の `import` の
+中で glob に代入していて、`Regexp::Common` は import リストを見るより先に
+無条件で `*{caller() . "::RE"} = \%RE` を書くので、`use Regexp::Common qw/number/`
+のように書いても `%RE` は来ます。
+
+`Regexp::Common::number` のような下位モジュールを直接 `use` しただけでは来ません。
+それらは `Regexp::Common` を経由して読まれるもので、直接名指しした側のパッケージに
+`%RE` は生えないからです。

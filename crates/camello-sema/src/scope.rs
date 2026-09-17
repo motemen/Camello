@@ -69,8 +69,8 @@ const STRICT_BY_IMPORT: &[&str] = &[
 ///
 /// A module that exports a variable is running code camello does not run
 /// (`docs/typecheck.md`, non-goals), so in general the export list is not
-/// visible until the dependency resolver of milestone 4. These two are in core
-/// and are the ones the corpus actually reaches for, so they are a table.
+/// visible until the dependency resolver of milestone 4. The few the corpus
+/// actually reaches for are a table (see [`exported_variables`]).
 const ENGLISH_NAMES: &[&str] = &[
     "ACCUMULATOR",
     "ARG",
@@ -133,12 +133,22 @@ const ENGLISH_NAMES: &[&str] = &[
     "WARNING",
 ];
 
-/// Modules in core that export a variable rather than a sub, and what they
-/// export. See [`ENGLISH_NAMES`] for why this is a table.
+/// Modules that export a variable rather than a sub, and what they export.
+/// See [`ENGLISH_NAMES`] for why this is a table.
+///
+/// Reading `@EXPORT` would not find any of these, which is what earns them the
+/// table rather than a wait for the resolver: `English` and `Config` assign to
+/// globs from their own `import`, and `Regexp::Common` writes
+/// `*{caller() . "::RE"} = \%RE` — unconditionally, before it has looked at
+/// its import list, so `%RE` is there whatever the `use` line says.
 fn exported_variables(module: &str) -> &'static [&'static str] {
     match module {
         "English" => ENGLISH_NAMES,
         "Config" => &["Config"],
+        // Not `Regexp::Common::number` and its siblings: they are loaded
+        // through this one, and a file that names a sub-module directly gets
+        // the patterns registered without the `%RE` that reads them.
+        "Regexp::Common" => &["RE"],
         _ => &[],
     }
 }

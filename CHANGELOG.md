@@ -10,6 +10,11 @@
   `warning` rather than `info`. `--min-severity info` asks for the advice, and
   `camello lsp` still publishes it by default.
 
+### Fixed
+
+- `use Regexp::Common` declares `%RE`, so reading `$RE{net}{IPv4}` is no longer
+  an `undeclared-variable`.
+
 ## 0.2.2 — 2026-09-17
 
 ### Added
