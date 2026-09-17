@@ -660,21 +660,14 @@ fn attribute_names(node: &SyntaxNode) -> Vec<String> {
 
 /// The names one element of an *accessor list* spells out.
 ///
-/// [`attribute_names`] with one thing taken away: a bareword is a call, not a
-/// name. The difference is perl's. Before a `=>` a bareword is quoted for you,
-/// which is what makes `has name => (is => 'ro')` a name; inside a list
-/// nothing quotes it, and under `use strict` a bareword there is a call to a
-/// sub of that name — commonly a constant:
+/// [`attribute_names`] with one thing taken away: a bareword element is a
+/// call, not a name (ANNOT-14e). `use Class::Accessor::Lite (ro => [FF])`
+/// after a `use constant FF` asks for whatever `FF` returns; read as a name
+/// it declared one accessor called `FF` and hid the real ones, which then
+/// came back as methods the class does not declare.
 ///
-/// ```perl
-/// use constant FF => map { $_->name } F;
-/// use Class::Accessor::Lite (ro => [FF]);
-/// ```
-///
-/// That asks for whatever `FF` returns. Read as a name it declared one
-/// accessor called `FF` and hid the real ones, which then came back as
-/// methods the class does not declare. Naming nothing is what makes the list
-/// unreadable ([`names_are_readable`], ANNOT-14).
+/// The name positions [`attribute_names`] is asked about elsewhere — `has`'s
+/// first argument, a `handles` list — keep their own reading.
 fn accessor_list_names(node: &SyntaxNode) -> Vec<String> {
     match node.node_kind() {
         NodeKind::ANON_ARRAY => ast::AnonArray::cast(node.clone())
