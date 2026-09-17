@@ -17,7 +17,8 @@
 - `unknown-method` on a value whose class has a factory `new` — `$u->host`
   where `$u` is annotated `URI` — is an `info` rather than a `warning`
   (DIAG-7a). `URI->host`, which names the package, is unchanged.
-- `Returns: boolean` (and `Boolean`) is `Bool`, at any depth (ANNOT-7f).
+- `Returns: boolean` (and `Boolean`) is `Bool`, and `Returns: undef` is
+  `Undef`, at any depth (ANNOT-7f).
 - `Child` passed where `Parent` was declared is no longer a `type-mismatch`
   when `Child` has a parent the run never read — it may inherit `Parent`
   through it (TYPE-7d).

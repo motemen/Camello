@@ -1,7 +1,8 @@
-# `boolean` is `Bool` in a `Returns:` comment (`docs/types.md`, ANNOT-7f). The
+# The spellings a `Returns:` comment has and a declaration does not
+# (`docs/types.md`, ANNOT-7f): `boolean` is `Bool` and `undef` is `Undef`. The
 # comment is read by nothing but camello, so the word a writer reached for is
-# the word; read as a class name it was an `unknown-type` and a
-# `return-mismatch` on the `1` that satisfied it.
+# the word; read as class names they were an `unknown-type` each and a
+# `return-mismatch` on the value that satisfied them.
 use strict;
 use warnings;
 
@@ -37,9 +38,32 @@ Flag->wants_bool(b => Flag->maybe_flag);
 Flag->wants_hash(h => Flag->lower);
 #~ warning type-mismatch: declared `HashRef[Any]`
 
+package Nil;
+use Smart::Args qw(args);
+
+# Returns: undef
+sub nothing { return undef }
+
+# Returns: Str | undef
+sub maybe_str { return undef }
+
+# Returns: undef
+sub lies { return 'x' }
+#~ warning return-mismatch: (`Str`) returned from a sub declared `Returns: Undef`
+
+sub wants_str { args my $class, my $s => 'Str'; return $s }
+
+package main;
+
+Nil->wants_str(s => Nil->maybe_str);
+Nil->wants_str(s => Nil->nothing);
+#~ warning type-mismatch: declared `Str`
+
 # A declaration is a string perl gives to a framework, and there an unknown
-# name is a class name (TYPE-3) — the one `boolean.pm` blesses into.
+# name is a class name (TYPE-3) — `boolean.pm` blesses into one.
 package Declared;
 use Smart::Args qw(args);
-sub takes { args my $class, my $b => 'boolean'; return $b }
+sub takes_bool { args my $class, my $b => 'boolean'; return $b }
 #~ info unknown-type: `boolean` is not known
+sub takes_nil  { args my $class, my $n => 'undef';   return $n }
+#~ info unknown-type: `undef` is not known

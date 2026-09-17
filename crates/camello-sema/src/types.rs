@@ -335,12 +335,6 @@ fn constructor(name: &str, arguments: Vec<Arg>, in_comment: bool) -> Result<Type
         "Defined" => Type::Defined,
         "Value" => Type::Value,
         "Bool" => Type::Bool,
-        // A `Returns:` comment is camello's own notation and nothing but
-        // camello reads it, so the word a writer reached for is the word.
-        // Not in a declaration: `isa => 'boolean'` is a string Moose
-        // evaluates, and an unknown name there *is* a class name — the one
-        // `boolean.pm` blesses into (TYPE-3, ANNOT-7f).
-        "boolean" | "Boolean" if in_comment => Type::Bool,
         "RoleName" => Type::RoleName,
         "Undef" => Type::Undef,
         "CodeRef" | "CodeLike" => Type::CodeRef,
@@ -348,6 +342,14 @@ fn constructor(name: &str, arguments: Vec<Arg>, in_comment: bool) -> Result<Type
         "GlobRef" => Type::GlobRef,
         "FileHandle" => Type::FileHandle,
         "Object" => Type::Object,
+
+        // The spellings a `Returns:` comment has and a declaration does not.
+        // Nothing but camello reads the comment, so the word a writer reached
+        // for is the word; a declaration is a string a framework evaluates,
+        // and an unknown name there is a class name — `boolean.pm` blesses
+        // into one (TYPE-3, ANNOT-7f).
+        "boolean" | "Boolean" if in_comment => Type::Bool,
+        "undef" if in_comment => Type::Undef,
 
         // `Types::Common::String` and `Types::Common::Numeric` read as their
         // base type: the refinement is a run-time predicate, and the

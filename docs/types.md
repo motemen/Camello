@@ -467,11 +467,11 @@ sub notify { ... }
 - (ANNOT-7c) ただし、型の**形をしていない**ものは散文として扱われ、何も言いません。
   `# Returns:    modified template` のような行はアノテーションではありません。
   「括弧の外に裸の名前が二つ並んでいる」ものは散文です。
-- (ANNOT-7f) 型の名前は宣言と同じ語彙に `boolean` を足したものです。
-  `Returns: boolean`（`Boolean` も）は `Bool` で、入れ子の中でも同じです。
-  このコメントを読むのは camello だけなので語彙も camello のものですが、
-  `isa => 'boolean'` は Moose が評価する文字列で、そこでは知らない名前は
-  クラス名です（TYPE-3）。
+- (ANNOT-7f) 型の名前は宣言と同じ語彙に、Perl の綴りを足したものです。
+  `boolean`（`Boolean` も）は `Bool`、`undef` は `Undef` で、入れ子の中でも
+  同じです。このコメントを読むのは camello だけなので語彙も camello のもの
+  ですが、`isa => 'boolean'` は Moose が評価する文字列で、そこでは知らない
+  名前はクラス名です（TYPE-3）。
 
 ### 3.8 型ライブラリ (ANNOT-8)
 
