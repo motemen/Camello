@@ -692,6 +692,47 @@ pub(crate) fn is_true(node: &SyntaxNode) -> bool {
         .is_none_or(|text| text != "0")
 }
 
+/// What an accessor declaration said, and whether the pass read all of it.
+///
+/// `unreadable` is the part with no attributes to show for it: `ro => [
+/// @FIELDS ]`, `use Class::Tiny @FIELDS`, `rw => \%spec`. The declaration
+/// plainly declares slots and the names are not on the page, so what
+/// `attributes` holds is a floor rather than the set — and a class whose
+/// attributes are a floor is one that might answer to any name, the same as a
+/// glob assignment makes it (`docs/types.md`, ANNOT-14).
+///
+/// Skipping them silently is what let `Computed->new->alpha` be reported as a
+/// method `Computed` does not declare.
+#[derive(Debug, Default)]
+pub struct Accessors {
+    pub attributes: Vec<AttributeDecl>,
+    /// Whether the declaration asked for a generated `new`.
+    pub constructor: bool,
+    pub unreadable: bool,
+}
+
+/// Whether a name list spells its names out.
+///
+/// An empty list is readable and names nothing — `ro => []` declares no
+/// accessor and says so. A list holding anything that yields no name is not:
+/// `[ @FIELDS ]` and `\@FIELDS` name slots this pass cannot enumerate.
+fn names_are_readable(node: &SyntaxNode, lazy: bool) -> bool {
+    let node = ast::without_plus(node);
+    match node.node_kind() {
+        NodeKind::ANON_ARRAY => ast::AnonArray::cast(node.clone())
+            .expect("kind checked")
+            .elements()
+            .iter()
+            .all(|element| names_are_readable(element, lazy)),
+        NodeKind::ANON_HASH => AnonHash::cast(node.clone())
+            .expect("kind checked")
+            .pairs()
+            .iter()
+            .all(|slot| slot.key().is_some()),
+        _ => !listed_names(&node, lazy).is_empty(),
+    }
+}
+
 // ===== `Class::Accessor::Typed` =====
 
 /// ```perl
@@ -704,9 +745,10 @@ pub(crate) fn is_true(node: &SyntaxNode) -> bool {
 ///
 /// A `use` statement whose argument list is a declaration.
 #[must_use]
-pub fn read_accessor_typed(arguments: &SyntaxNode, into: &mut Sink) -> (Vec<AttributeDecl>, bool) {
+pub fn read_accessor_typed(arguments: &SyntaxNode, into: &mut Sink) -> Accessors {
     let mut attributes = Vec::new();
     let mut constructor = true;
+    let mut unreadable = false;
     for pair in Args::pairs(arguments) {
         let access = match pair.key() {
             Some("rw" | "rw_lazy") => Access::Rw,
@@ -720,12 +762,17 @@ pub fn read_accessor_typed(arguments: &SyntaxNode, into: &mut Sink) -> (Vec<Attr
         };
         let lazy = matches!(pair.key(), Some("rw_lazy" | "ro_lazy" | "wo_lazy"));
         let value = ast::without_plus(pair.node());
+        // `rw => \%spec` declares slots and names none of them here.
         if value.node_kind() != NodeKind::ANON_HASH {
+            unreadable = true;
             continue;
         }
         let hash = AnonHash::cast(value).expect("kind checked");
         for slot in hash.pairs() {
-            let Some(name) = slot.key() else { continue };
+            let Some(name) = slot.key() else {
+                unreadable = true;
+                continue;
+            };
             let (ty, required, defaulted) = read_slot(slot.node(), into);
             attributes.push(AttributeDecl {
                 name: name.to_string(),
@@ -745,7 +792,11 @@ pub fn read_accessor_typed(arguments: &SyntaxNode, into: &mut Sink) -> (Vec<Attr
             });
         }
     }
-    (attributes, constructor)
+    Accessors {
+        attributes,
+        constructor,
+        unreadable,
+    }
 }
 
 /// A slot's value: a type, or a hashref with `isa` / `default` / `builder`.
@@ -841,9 +892,10 @@ impl AccessorMaker {
 ///
 /// The constructor is opt-in: no `new => 1`, no `new`.
 #[must_use]
-pub fn read_accessor_lite(arguments: &SyntaxNode) -> (Vec<AttributeDecl>, bool) {
+pub fn read_accessor_lite(arguments: &SyntaxNode) -> Accessors {
     let mut attributes = Vec::new();
     let mut constructor = false;
+    let mut unreadable = false;
     for pair in Args::pairs(arguments) {
         let (access, lazy) = match pair.key() {
             Some("rw") => (Access::Rw, false),
@@ -857,10 +909,17 @@ pub fn read_accessor_lite(arguments: &SyntaxNode) -> (Vec<AttributeDecl>, bool) 
             }
             _ => continue,
         };
+        if !names_are_readable(pair.node(), lazy) {
+            unreadable = true;
+        }
         let names = accessor_names(pair.node());
         attributes.extend(accessor_attributes(&names, access, lazy, pair.range()));
     }
-    (attributes, constructor)
+    Accessors {
+        attributes,
+        constructor,
+        unreadable,
+    }
 }
 
 /// The names one argument of a `mk_accessors(...)` call spells out.
@@ -1039,24 +1098,40 @@ pub fn best_practice_methods(name: &str, access: Access) -> Vec<GeneratedMethod>
 /// `Class::Tiny` puts `Class::Tiny::Object` in `@ISA`, so a package that says
 /// `use Class::Tiny` at all has a `new`, even with nothing after it.
 #[must_use]
-pub fn read_class_tiny(arguments: &SyntaxNode) -> Vec<AttributeDecl> {
+pub fn read_class_tiny(arguments: &SyntaxNode) -> Accessors {
     let mut attributes = Vec::new();
+    let mut unreadable = false;
     for element in Args::elements(arguments) {
         let element = ast::without_plus(&element);
         if element.node_kind() == NodeKind::ANON_HASH {
             let hash = AnonHash::cast(element).expect("kind checked");
             for slot in hash.pairs() {
-                let Some(name) = slot.key() else { continue };
+                let Some(name) = slot.key() else {
+                    unreadable = true;
+                    continue;
+                };
                 attributes.push(class_tiny_attribute(name, slot.range()));
             }
             continue;
         }
         let range = element.text_range();
-        for name in attribute_names(&element) {
+        let names = attribute_names(&element);
+        // `use Class::Tiny @FIELDS` — every element here is a slot, so one
+        // that yields no name is one this pass cannot list.
+        if names.is_empty() {
+            unreadable = true;
+        }
+        for name in names {
             attributes.push(class_tiny_attribute(&name, range));
         }
     }
-    attributes
+    Accessors {
+        attributes,
+        // `Class::Tiny` puts `Class::Tiny::Object` in `@ISA`, so the `new` is
+        // there whatever the list said.
+        constructor: true,
+        unreadable,
+    }
 }
 
 /// One `Class::Tiny` slot: read-write, untyped, and never missing.

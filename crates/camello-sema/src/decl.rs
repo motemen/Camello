@@ -613,12 +613,12 @@ impl Pass {
             }
             "Class::Accessor::Typed" => {
                 if let Some(arguments) = &arguments {
-                    let (attributes, constructor) =
-                        annotate::read_accessor_typed(arguments, &mut self.sink);
+                    let read = annotate::read_accessor_typed(arguments, &mut self.sink);
                     self.decided_constructor.insert(package.to_string());
                     let facts = self.facts(package);
-                    facts.attributes.extend(attributes);
-                    facts.constructor = constructor;
+                    facts.attributes.extend(read.attributes);
+                    facts.constructor = read.constructor;
+                    facts.dynamic |= read.unreadable;
                 }
                 return;
             }
@@ -644,12 +644,13 @@ impl Pass {
                 return;
             }
             "Class::Tiny" => {
-                let attributes = arguments
+                let read = arguments
                     .as_ref()
                     .map(annotate::read_class_tiny)
                     .unwrap_or_default();
                 let facts = self.facts(package);
-                facts.attributes.extend(attributes);
+                facts.attributes.extend(read.attributes);
+                facts.dynamic |= read.unreadable;
                 // Not opt-in: `use Class::Tiny` is what puts
                 // `Class::Tiny::Object` in `@ISA`, and its `new` blesses the
                 // hash it was handed (`docs/types.md`, ANNOT-13).
@@ -661,10 +662,14 @@ impl Pass {
             }
             "Class::Accessor::Lite" | "Class::Accessor::Lite::Lazy" => {
                 if let Some(arguments) = &arguments {
-                    let (attributes, constructor) = annotate::read_accessor_lite(arguments);
+                    let read = annotate::read_accessor_lite(arguments);
                     let facts = self.facts(package);
-                    facts.attributes.extend(attributes);
-                    if constructor {
+                    facts.attributes.extend(read.attributes);
+                    // A list this pass cannot read leaves the attribute set a
+                    // floor, and a class whose attributes are a floor might
+                    // answer to any name (`docs/types.md`, ANNOT-14).
+                    facts.dynamic |= read.unreadable;
+                    if read.constructor {
                         facts.constructor = true;
                         facts.open_constructor = true;
                     }

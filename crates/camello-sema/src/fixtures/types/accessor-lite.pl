@@ -128,3 +128,27 @@ $built->plain->absent;
 # The subclass's `_build_implicit` is the one the accessor reaches.
 Inherited->new->implicit->alpha;
 Inherited->new->implicit->absent;   #~ warning unknown-method: `absent`
+
+# A list that is not on the page (ANNOT-14). The declaration declares slots and
+# does not say which, so the attribute set is a floor and the class might
+# answer to any name — nothing is said about a method either way.
+package Computed;
+our @FIELDS = qw(alpha beta);
+use Class::Accessor::Lite (new => 1, ro => [ @FIELDS ]);
+
+package ViaConstant;
+use constant ACCESSORS => [qw(gamma)];
+use Class::Accessor::Lite (new => 1, ro => ACCESSORS());
+
+# An empty list is read, and names nothing: `Empty` declares no accessor and
+# says so, so a method it does not have is still a method it does not have
+# (ANNOT-14b).
+package Empty;
+use Class::Accessor::Lite (new => 1, ro => []);
+
+package main;
+Computed->new->alpha;
+Computed->new->absent;
+ViaConstant->new->gamma;
+ViaConstant->new->absent;
+Empty->new->absent;             #~ warning unknown-method: `absent`

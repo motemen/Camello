@@ -679,6 +679,34 @@ use Class::Tiny qw( name email ), {
   ANNOT-10f が builder に型を求められるのは、それが**名前で呼ばれるメソッド**で
   あって解決先が MRO で決まるからです。ここにはその名前がありません。
 
+### 3.14 読めない名前のリスト (ANNOT-14)
+
+アクセサを宣言する三つの族 — `Class::Accessor::Typed`（ANNOT-4）、
+`Class::Accessor::Lite` 一族（ANNOT-10）、`Class::Tiny`（ANNOT-13）— は
+いずれも `use` の引数リストに名前を並べます。その並びが**実行時にしか
+決まらない**とき、そのクラスの属性の集合は下限であって全体ではありません。
+
+```perl
+our @FIELDS = qw(alpha beta);
+use Class::Accessor::Lite (ro => [ @FIELDS ]);   # 名前はここに無い
+use Class::Tiny @FIELDS;
+use Class::Accessor::Typed (rw => \%spec);
+use Class::Accessor::Lite (ro => ACCESSORS());   # 定数越しでも同じ
+```
+
+- (ANNOT-14a) 読めないリストを持つパッケージは `dynamic` になります。glob
+  代入と同じ扱いで、「このクラスにそのメソッドは無い」を言いません
+  （METHOD-5、DIAG-7a）。宣言はスロットを宣言しているのに名前が紙の上に
+  無いので、読めた分だけを全体として扱うと、**実在するアクセサを
+  `unknown-method` として報告します**。`new` の引数検査（`unknown-key`、
+  `missing-argument`）も同じ理由で止まります。
+- (ANNOT-14b) **空のリストは読めています。** `ro => []` はアクセサを一つも
+  宣言しないと言っているのであって、言えないわけではありません。
+- (ANNOT-14c) 読めない要素が一つあれば、そのパッケージ全体が対象です。
+  `ro => [qw(alpha), @rest]` で `alpha` だけを信じる根拠はありません。
+- (ANNOT-14d) メソッド呼び出しの形（`__PACKAGE__->mk_ro_accessors(@fields)`）は
+  もともとこう読まれていました。`use` の形だけが抜けていたものです。
+
 ## 4. 推論 (INFER)
 
 推論は、アノテーションのある部分に照合する相手を与えるために存在します。

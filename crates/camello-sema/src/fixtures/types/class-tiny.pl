@@ -47,3 +47,14 @@ print $child->extra, $child->name;
 
 print Antlers->new(count => 3)->count;
 print Antlers->new(count => 'three')->count;    #~ error type-mismatch: `count`
+
+# A flat list that is not on the page (ANNOT-14): the slots are declared and
+# not named, so neither an accessor nor a missing one is reported.
+package Computed;
+our @FIELDS = qw(alpha);
+use Class::Tiny @FIELDS;
+
+package main;
+Computed->new->alpha;
+Computed->new->absent;
+Computed->new(whatever => 1);

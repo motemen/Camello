@@ -99,3 +99,14 @@ print $lazy->rw1, $lazy->rw2, $lazy->rw3, $lazy->ro1, $lazy->ro2;
 # A role name in a type position is satisfied by a class that consumes it.
 Held->new(held => Doer->new);
 Held->new(held => Other->new);  #~ warning type-mismatch: `held`
+
+# `rw => \%spec` declares slots and names none of them here (ANNOT-14), so the
+# constructor's own checks stop too: there is nothing to contradict.
+package Computed;
+my %spec = (alpha => 'Str');
+use Class::Accessor::Typed (rw => \%spec, new => 1);
+
+package main;
+Computed->new->alpha;
+Computed->new->absent;
+Computed->new(whatever => 1);
