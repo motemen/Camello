@@ -699,6 +699,10 @@ impl Program {
     ///
     /// A pragma is not a hole: `use strict` declares nothing, and the resolver
     /// does not read one either ([`crate::resolve::Resolver::worth_resolving`]).
+    ///
+    /// Nor is it the only question. [`Program::hands_back_another_class`] is
+    /// the other half: a complete reading of the wrong class says nothing
+    /// about the right one.
     #[must_use]
     pub fn closed_world(&self, package: &str) -> bool {
         self.linearise(package).iter().all(|class| {
@@ -710,6 +714,28 @@ impl Program {
                 })
             })
         })
+    }
+
+    /// Whether the `new` this class would reach hands back something that is
+    /// not one of it (`docs/types.md`, INFER-2g).
+    ///
+    /// `constructs_own_class` is the declaration pass's reading of a `new`'s
+    /// body, and the inference already trusts it: `URI->new(...)` is `Unknown`
+    /// rather than an `InstanceOf[URI]` because `URI::new` ends
+    /// `$impclass->_init(...)`. An annotation reaches the same class by
+    /// another road — `Returns: URI`, `isa => 'URI'` — and the road is all
+    /// that differs, so what the body said still holds: the methods that
+    /// value answers to are its own class's, and its own class is not this
+    /// one. Not a reason to stay silent, because the annotation is evidence
+    /// too, but a reason not to call the answer closed.
+    ///
+    /// The first `new` in the linearisation is the one perl would reach.
+    #[must_use]
+    pub fn hands_back_another_class(&self, package: &str) -> bool {
+        self.linearise(package)
+            .iter()
+            .find_map(|class| self.sub(class, "new"))
+            .is_some_and(|new| !new.constructs_own_class)
     }
 
     /// Everything callable on a class, in MRO order (`docs/lsp.md`, "The

@@ -1696,13 +1696,22 @@ impl Pass<'_> {
         // A bareword invocant is a class; a value's class comes from its type.
         let bareword = bareword_class(&invocant);
         let through_a_value = bareword.is_none();
+        // Whether the class is one a *value* was said to be an instance of,
+        // rather than one the call names. `URI->host` asks about the package
+        // `URI`; `$u->host` asks about whatever `$u` holds, and the annotation
+        // that said `URI` is only as good as `URI::new` was
+        // ([`Program::hands_back_another_class`]).
+        let mut on_an_instance = false;
         let class = match bareword {
             Some(class) => Some(class),
             None => {
                 let ty = self.type_of(&invocant);
                 self.warn_maybe(&ty, call.method_range(), &source_of(&invocant));
                 match ty.without_undef() {
-                    Type::InstanceOf(class) => Some(class),
+                    Type::InstanceOf(class) => {
+                        on_an_instance = true;
+                        Some(class)
+                    }
                     // `$class->m` in a class method: `$class` is this package
                     // or a subclass, and a method the package declares is one
                     // every subclass has too (`docs/types.md`, INFER-9a).
@@ -1824,10 +1833,14 @@ impl Pass<'_> {
                     None => format!("`{class}` declares no method `{method}`"),
                 };
                 // Louder where nothing could have been missed: every module
-                // the class and its ancestors `use` was read, so "declares no
-                // method" is about a closed world (`docs/types.md`, DIAG-7a).
+                // the class and its ancestors `use` was read, *and* the class
+                // is one whose own `new` hands back one of it — so "declares
+                // no method" is about a closed world, and about the world the
+                // value is actually in (`docs/types.md`, DIAG-7a).
                 let diagnostic = Diagnostic::new(Code::UnknownMethod, call.method_range(), message);
-                self.diagnostics.push(if self.program.closed_world(&class) {
+                let closed = self.program.closed_world(&class)
+                    && !(on_an_instance && self.program.hands_back_another_class(&class));
+                self.diagnostics.push(if closed {
                     diagnostic.at(Severity::Warning)
                 } else {
                     diagnostic

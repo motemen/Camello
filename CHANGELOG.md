@@ -14,6 +14,9 @@
 
 - `use Regexp::Common` declares `%RE`, so reading `$RE{net}{IPv4}` is no longer
   an `undeclared-variable`.
+- `unknown-method` on a value whose class has a factory `new` — `$u->host`
+  where `$u` is annotated `URI` — is an `info` rather than a `warning`
+  (DIAG-7a). `URI->host`, which names the package, is unchanged.
 
 ## 0.2.2 — 2026-09-17
 
