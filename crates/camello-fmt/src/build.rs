@@ -1302,7 +1302,12 @@ impl<'a> Builder<'a> {
 
         let mut body = Vec::new();
         if flat {
-            for statement in &statements {
+            // A `;` ends the statement it belongs to, so what separates the
+            // next one from it is the space: `sub f { a; b }`.
+            for (index, statement) in statements.iter().enumerate() {
+                if index > 0 {
+                    body.push(Doc::Space);
+                }
                 body.push(self.node(statement));
             }
         } else {
@@ -1364,8 +1369,8 @@ impl<'a> Builder<'a> {
     }
 
     /// GUESS: a block written on one line was meant to stay on one line.
-    /// Evidence: one statement at most, no `;`, no comment, and no newline in
-    /// the source (docs/formatting.md NEWLINE-2).
+    /// Evidence: no trailing `;`, no comment, and no newline in the source
+    /// (docs/formatting.md NEWLINE-2).
     /// Wrong: only the shape changes, never the meaning.
     ///
     /// The single rule that replaces `is_simple_block`'s seven rejections plus
@@ -1426,20 +1431,19 @@ impl<'a> Builder<'a> {
         if statements.is_empty() {
             return !self.contains_comment(node);
         }
-        if statements.len() != 1 {
-            return false;
-        }
         if !self.options.allow_single_line_blocks {
             return false;
         }
         // A statement that was written across lines stays across lines, and a
-        // statement that ends in `;` reads as a body rather than a value
-        // (the formatter contract: single statement, no semicolon, no comment, no source
-        // newline).
+        // block whose last statement ends in `;` reads as a body rather than a
+        // value (the formatter contract: no trailing semicolon, no comment, no
+        // source newline). The statements before it keep their own `;` — they
+        // are what separates them on the line the writer put them all on.
         if self.contains_newline(node) {
             return false;
         }
-        if statements[0]
+        let last = statements.last().expect("statements is not empty");
+        if last
             .children_with_tokens()
             .filter_map(|child| child.into_token())
             .any(|token| token.token_kind() == T![";"])

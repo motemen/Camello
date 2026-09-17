@@ -79,8 +79,15 @@ fn multiline_string_literals_are_left_alone() {
 #[test]
 fn crammed_subroutine_formats_in_one_pass() {
     assert_formats_to(
+        "sub f{my $x=shift;return $x+1;}\n",
+        "sub f {\n    my $x = shift;\n    return $x + 1;\n}\n",
+    );
+    // Without the trailing `;` the body is a value, and a body written on one
+    // line stays on it (docs/formatting.md NEWLINE-2) — however many statements
+    // lead up to that value.
+    assert_formats_to(
         "sub f{my $x=shift;return $x+1}\n",
-        "sub f {\n    my $x = shift;\n    return $x + 1\n}\n",
+        "sub f { my $x = shift; return $x + 1 }\n",
     );
 }
 

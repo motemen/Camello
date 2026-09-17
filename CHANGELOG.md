@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- A block written on one line stays on one line however many statements it
+  holds, as long as the last one carries no `;` (NEWLINE-2).
+
 ## 0.2.2 — 2026-09-17
 
 ### Added
