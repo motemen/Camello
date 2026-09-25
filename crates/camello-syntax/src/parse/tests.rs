@@ -561,6 +561,30 @@ fn a_limit_is_a_diagnostic_and_not_an_abort() {
 }
 
 #[test]
+fn a_limit_reached_on_the_way_into_a_variable_is_not_an_abort() {
+    // A rule that has seen a sigil opens its node before asking for the
+    // variable, and that `start` can be the one that reaches the limit. Which
+    // nesting lands it there depends on the rule, so every depth near it.
+    for n in 240..270 {
+        let (open, close) = ("{".repeat(n), "}".repeat(n));
+        for source in [
+            format!("L: {open}for $x (1) {{}}{close}\n"),
+            format!("{open}print $fh 1;{close}\n"),
+            format!("{open}$obj->$m;{close}\n"),
+        ] {
+            let parsed = parse(&source);
+            let rebuilt: String = parsed
+                .syntax()
+                .descendants_with_tokens()
+                .filter_map(|element| element.into_token())
+                .map(|token| token.text().to_string())
+                .collect();
+            assert_eq!(rebuilt, source, "the tail of the input was dropped");
+        }
+    }
+}
+
+#[test]
 fn a_speculative_parse_leaves_no_stale_lookahead() {
     // P1-4. `anon_hash_or_block` tries the hash reading, scans the `}` in
     // operator position, rolls back, and re-parses as a block — reaching that

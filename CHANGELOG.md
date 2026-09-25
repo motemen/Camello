@@ -12,6 +12,8 @@
 
 ### Fixed
 
+- A variable opened at the parser's nesting limit is reported rather than
+  aborting the run.
 - `use Regexp::Common` declares `%RE`, so reading `$RE{net}{IPv4}` is no longer
   an `undeclared-variable`.
 - `unknown-method` on a value whose class has a factory `new` — `$u->host`
