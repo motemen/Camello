@@ -12,6 +12,7 @@
 
 ### Fixed
 
+- A blank line after a comment that ends in `{` is kept (BLANK_LINE-2).
 - A variable opened at the parser's nesting limit is reported rather than
   aborting the run.
 - `use Regexp::Common` declares `%RE`, so reading `$RE{net}{IPv4}` is no longer
