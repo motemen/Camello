@@ -12,6 +12,8 @@
 
 ### Fixed
 
+- A closing bracket written on its own line keeps it where a call without
+  parentheses inside the list wraps: `f(g $a,\n    $b\n)`.
 - A blank line after a comment that ends in `{` is kept (BLANK_LINE-2).
 - A variable opened at the parser's nesting limit is reported rather than
   aborting the run.

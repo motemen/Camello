@@ -1881,9 +1881,21 @@ fn breaks(doc: &Doc) -> bool {
         Doc::UserLine { broken, .. } => *broken,
         Doc::Raw(text) => text.contains('\n'),
         Doc::Group { broken, body, .. } => *broken || breaks(body),
-        Doc::Indent(body) | Doc::Continuation(body) | Doc::Rooted { body, .. } => breaks(body),
+        Doc::Indent(body)
+        | Doc::Continuation(body)
+        | Doc::Rooted { body, .. }
+        | Doc::Statements(body)
+        | Doc::Hanging { body, .. } => breaks(body),
         Doc::Concat(parts) => parts.iter().any(breaks),
-        _ => false,
+        // No wildcard: a wrapper added to `Doc` has to say here whether what
+        // it holds is looked into.
+        Doc::Token(_)
+        | Doc::Space
+        | Doc::Line
+        | Doc::SoftLine
+        | Doc::Anchor(_, _)
+        | Doc::Shape(_)
+        | Doc::Nil => false,
     }
 }
 
