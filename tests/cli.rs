@@ -142,3 +142,35 @@ fn one_good_file_is_still_formatted() {
         "my $foo = 1;\n"
     );
 }
+
+/// A flag says what this run is and `camello.toml` what the project is, so a
+/// typed `--error-on` wins over the file even where it spells the default.
+#[test]
+fn a_typed_error_on_wins_over_the_config() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    std::fs::write(
+        directory.path().join("arity.pl"),
+        "sub g { my ($a) = @_; return $a }\ng(1, 2);\n",
+    )
+    .expect("failed to write");
+    std::fs::write(
+        directory.path().join("camello.toml"),
+        "[check]\nerror-on = \"warning\"\n",
+    )
+    .expect("failed to write");
+
+    let from_the_file = camello(directory.path(), &["check", "arity.pl"]);
+    assert!(
+        !from_the_file.status.success(),
+        "the file's `error-on` fails the run on a warning"
+    );
+
+    let typed = camello(
+        directory.path(),
+        &["check", "--error-on", "error", "arity.pl"],
+    );
+    assert!(
+        typed.status.success(),
+        "`--error-on error` typed over the file is what this run asked for"
+    );
+}

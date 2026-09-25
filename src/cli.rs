@@ -380,13 +380,16 @@ pub struct CheckArgs {
     pub paths: Vec<PathBuf>,
 
     /// The severity that makes the run fail
+    // No clap default, for the reason `min_severity` has none: `--error-on
+    // error` typed over a `camello.toml` that says `warning` is a choice, and
+    // a default spelled the same way would be read as one.
     #[arg(
         long = "error-on",
         value_name = "SEVERITY",
-        default_value = "error",
-        help = "Exit 1 when anything at or above this severity was reported"
+        help = "Exit 1 when anything at or above this severity was reported [default: error]",
+        long_help = "Exit 1 when anything at or above this severity was reported\n\n[default: error]"
     )]
-    pub error_on: String,
+    pub error_on: Option<String>,
 
     /// The quietest severity worth printing
     // No clap default, so that "the flag was not typed" is a state this can
@@ -517,16 +520,11 @@ impl CheckArgs {
             crate::config::read(self.config_dir.as_deref().unwrap_or_else(|| Path::new(".")))?
         };
 
-        let severity = match &self.error_on[..] {
-            // clap's default; a config `error-on` is only reached when the
-            // flag was not typed.
-            "error" => config
-                .check
-                .error_on
-                .clone()
-                .unwrap_or_else(|| "error".into()),
-            typed => typed.to_string(),
-        };
+        let severity = self
+            .error_on
+            .clone()
+            .or_else(|| config.check.error_on.clone())
+            .unwrap_or_else(|| "error".into());
         let error_on = camello_sema::Severity::parse(&severity).ok_or_else(|| {
             miette::miette!("--error-on takes `error`, `warning` or `info`, not `{severity}`")
         })?;

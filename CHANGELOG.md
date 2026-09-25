@@ -12,6 +12,7 @@
 
 ### Fixed
 
+- `camello check --error-on error` wins over an `error-on` in `camello.toml`.
 - A closing bracket written on its own line keeps it where a call without
   parentheses inside the list wraps: `f(g $a,\n    $b\n)`.
 - A blank line after a comment that ends in `{` is kept (BLANK_LINE-2).
