@@ -1803,10 +1803,21 @@ fn breaks(doc: &Doc) -> bool {
         Doc::UserLine { broken, .. } => *broken,
         Doc::Raw(text) => text.contains('\n'),
         Doc::Group { broken, .. } => *broken || doc.children().iter().any(breaks),
-        Doc::Concat(_) | Doc::Indent(_) | Doc::Continuation(_) | Doc::Rooted { .. } => {
-            doc.children().iter().any(breaks)
-        }
-        _ => false,
+        Doc::Concat(_)
+        | Doc::Indent(_)
+        | Doc::Continuation(_)
+        | Doc::Rooted { .. }
+        | Doc::Statements(_)
+        | Doc::Hanging { .. } => doc.children().iter().any(breaks),
+        // No wildcard: a wrapper added to `Doc` has to say here whether what
+        // it holds is looked into.
+        Doc::Token(_)
+        | Doc::Space
+        | Doc::Line
+        | Doc::SoftLine
+        | Doc::Anchor(_, _)
+        | Doc::Shape(_)
+        | Doc::Nil => false,
     }
 }
 
