@@ -210,7 +210,13 @@ pub(crate) fn primary(parser: &mut Parser<'_>) -> Option<CompletedMarker> {
 /// One implementation, where the old parser had four entry points
 /// (the parser contract).
 pub(crate) fn variable(parser: &mut Parser<'_>) -> CompletedMarker {
-    let sigil = parser.current().expect("caller checked for a sigil");
+    // The caller saw a sigil, but a limit reached since — by its own `start`,
+    // or by the step that asked — reports end of input from then on. The
+    // node is empty and the rules unwind, as they do anywhere after a limit.
+    let Some(sigil) = parser.current() else {
+        let marker = parser.start();
+        return parser.complete(marker, NodeKind::ERROR);
+    };
     let marker = parser.start();
     parser.bump();
 
