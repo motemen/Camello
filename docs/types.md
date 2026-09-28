@@ -1051,8 +1051,8 @@ Child->build->extra;            # extra は Child のもの。通る。
 - (NARROW-2) `if ($x)` — 真偽の検査そのものも `undef` を外します。
 - (NARROW-3) `$x->isa('Foo')` は `$x` を `InstanceOf['Foo']` にします。
 - (NARROW-4) `$x // $default` と `$x || $default` の結果からは `undef` が外れます。
-- (NARROW-5) **ガード文**: `return` / `die` / `croak` / `confess` / `next` / `last`
-  を含む文が `unless COND` / `COND or LEAVE` と書かれていればそれ以降で COND が、
+- (NARROW-5) **ガード文**: `return` / `die` / `croak` / `confess` / `throw` / `exit` /
+  `goto` / `next` / `last`、または `->throw` を含む文が `unless COND` / `COND or LEAVE` と書かれていればそれ以降で COND が、
   `if COND` と書かれていればそれ以降で COND の**否定**が成り立ちます。読むのは
   条件の部分だけで、文の残りではありません。
 
