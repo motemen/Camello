@@ -18,7 +18,7 @@
 use std::collections::HashMap;
 
 use camello_syntax::ast::{
-    self, Args, AstNode, DeclKeyword, Literal, Sigil, SubDef, SubName, VarDecl, Variable,
+    self, Args, AstNode, DeclKeyword, Sigil, SubDef, SubName, VarDecl, Variable,
 };
 use camello_syntax::lang::{NodeExt, NodeKind, SyntaxNode, SyntaxToken, TokenExt, TokenKind};
 use rowan::{TextRange, TextSize};
@@ -1114,21 +1114,11 @@ fn split_sigil(text: &str) -> (Option<Sigil>, String) {
 
 /// The names in a `use vars` argument list, however it is written.
 fn declared_names(arguments: &SyntaxNode) -> Vec<String> {
-    let mut acc = Vec::new();
-    for element in Args::elements(arguments) {
-        match element.node_kind() {
-            NodeKind::QW_EXPR => {
-                acc.extend(ast::QwExpr::cast(element).expect("kind checked").words());
-            }
-            NodeKind::LITERAL => {
-                if let Some(text) = Literal::cast(element).and_then(|literal| literal.as_string()) {
-                    acc.push(text);
-                }
-            }
-            _ => {}
-        }
-    }
-    acc
+    Args::elements(arguments)
+        .iter()
+        .filter_map(crate::decl::listed_words)
+        .flatten()
+        .collect()
 }
 
 /// Whether the quote-like operator this token belongs to carries `flag`.

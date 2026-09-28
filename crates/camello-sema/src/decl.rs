@@ -760,11 +760,7 @@ impl Pass {
     /// The recognisers that are calls: `has`, `extends`, `with`, and the
     /// `Type::Library` family.
     fn expression_statement(&mut self, node: &SyntaxNode, package: &str) {
-        let Some(call) = node
-            .descendants()
-            .find_map(ast::Call::cast)
-            .filter(|call| call.syntax().text_range().start() == node.text_range().start())
-        else {
+        let Some(call) = leading_call(node, ast::Call::cast) else {
             // `our @ISA = ('Base');` is an assignment, not a call.
             self.isa_assignment(node, package);
             return;
@@ -823,11 +819,7 @@ impl Pass {
         if !self.frameworks(package).accessor_lite {
             return;
         }
-        let Some(call) = node
-            .descendants()
-            .find_map(ast::MethodCallExpr::cast)
-            .filter(|call| call.syntax().text_range().start() == node.text_range().start())
-        else {
+        let Some(call) = leading_call(node, ast::MethodCallExpr::cast) else {
             return;
         };
         let Some(maker) = call.method_name().as_deref().and_then(AccessorMaker::of) else {
@@ -916,11 +908,7 @@ impl Pass {
     /// (`docs/types.md`, METHOD-5g). Only file scope, because that is when a
     /// generator has to run.
     fn file_scope_call(&mut self, node: &SyntaxNode, package: &str) {
-        let Some(call) = node
-            .descendants()
-            .find_map(ast::MethodCallExpr::cast)
-            .filter(|call| call.syntax().text_range().start() == node.text_range().start())
-        else {
+        let Some(call) = leading_call(node, ast::MethodCallExpr::cast) else {
             return;
         };
         let Some(method) = call.method_name() else {
@@ -1060,12 +1048,7 @@ fn exported_names(value: &SyntaxNode) -> Option<Vec<String>> {
         return None;
     }
     for element in elements {
-        let words = match element.node_kind() {
-            NodeKind::QW_EXPR => ast::QwExpr::cast(element).expect("kind checked").words(),
-            NodeKind::LITERAL => vec![Literal::cast(element).and_then(|view| view.as_string())?],
-            _ => return None,
-        };
-        for word in words {
+        for word in listed_words(&element)? {
             let name = word.strip_prefix('&').unwrap_or(&word);
             if name.starts_with(['$', '@', '%', '*']) {
                 continue;
@@ -1088,21 +1071,27 @@ fn imported_names(arguments: &SyntaxNode) -> Vec<String> {
         }
     };
     for element in Args::elements(arguments) {
-        match element.node_kind() {
-            NodeKind::QW_EXPR => {
-                for word in ast::QwExpr::cast(element).expect("kind checked").words() {
-                    push(word);
-                }
-            }
-            NodeKind::LITERAL => {
-                if let Some(text) = Literal::cast(element).and_then(|view| view.as_string()) {
-                    push(text);
-                }
-            }
-            _ => {}
+        for word in listed_words(&element).unwrap_or_default() {
+            push(word);
         }
     }
     acc
+}
+
+/// The names one element of a list of names spells: every word of a `qw`,
+/// or one string — and `None` for anything else, a number included.
+pub(crate) fn listed_words(element: &SyntaxNode) -> Option<Vec<String>> {
+    match element.node_kind() {
+        NodeKind::QW_EXPR => Some(
+            ast::QwExpr::cast(element.clone())
+                .expect("kind checked")
+                .words(),
+        ),
+        NodeKind::LITERAL => Some(vec![
+            Literal::cast(element.clone()).and_then(|view| view.as_string())?
+        ]),
+        _ => None,
+    }
 }
 
 // ===== Parameter lists =====
@@ -1380,10 +1369,7 @@ pub const PLACEHOLDER: &str = "undef";
 /// declares nothing.
 fn from_args(body: &ast::Block, into: &mut annotate::Sink) -> Option<Params> {
     let first = body.statements().next()?;
-    let call = first
-        .descendants()
-        .find_map(ast::Call::cast)
-        .filter(|call| call.syntax().text_range().start() == leading_offset(&first))?;
+    let call = leading_call(&first, ast::Call::cast)?;
     let callee = call.callee_name()?;
     let positional = match callee.as_str() {
         "args" => false,
@@ -1573,9 +1559,19 @@ fn collect_frameworks(
     }
 }
 
-/// Where a statement's code begins, trivia excluded.
-fn leading_offset(statement: &SyntaxNode) -> rowan::TextSize {
-    statement.text_range().start()
+/// The call a statement opens with, when it opens with one of this kind.
+///
+/// A call anywhere further in — `my $x = has(...)`, `foo() if has(...)` — is
+/// not the statement's.
+fn leading_call<T>(statement: &SyntaxNode, cast: impl Fn(SyntaxNode) -> Option<T>) -> Option<T> {
+    let start = statement.text_range().start();
+    statement
+        .descendants()
+        .find_map(|node| {
+            let at = node.text_range().start();
+            cast(node).map(|call| (call, at))
+        })
+        .and_then(|(call, at)| (at == start).then_some(call))
 }
 
 /// `my $who` inside an `args` list — the variable it declares.
