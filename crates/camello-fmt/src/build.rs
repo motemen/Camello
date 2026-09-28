@@ -1202,20 +1202,13 @@ impl<'a> Builder<'a> {
     /// another statement, `brace_follows` claimed the previous statement's
     /// trailing comment and this re-emitted it on the brace's line.
     fn comment_before_brace(&mut self, node: &SyntaxNode) -> Doc {
-        let Some(first) = first_token(node) else {
+        let Some(previous) = first_token(node).and_then(|first| prev_code_token(&first)) else {
             return Doc::Nil;
         };
-        let mut previous = first.prev_token();
-        while let Some(token) = previous {
-            if !token.token_kind().is_trivia() {
-                if !self.brace_follows(&token) {
-                    return Doc::Nil;
-                }
-                return self.trailing_comment(&token);
-            }
-            previous = token.prev_token();
+        if !self.brace_follows(&previous) {
+            return Doc::Nil;
         }
-        Doc::Nil
+        self.trailing_comment(&previous)
     }
 
     /// A block. Control-structure blocks always break; a `map`/`sub`/`do` block
@@ -1650,23 +1643,18 @@ impl<'a> Builder<'a> {
                     // its left, so nothing precedes it, and a `=>` whose left
                     // neighbour is a separator has its space already and no
                     // column of its own to align to.
-                    let empty_before = adjacent_separator(&token, rowan::Direction::Prev).is_some();
+                    let element = SyntaxElement::Token(token.clone());
+                    let empty_before =
+                        adjacent_separator(&element, rowan::Direction::Prev).is_some();
                     let empty_after =
-                        adjacent_separator(&token, rowan::Direction::Next) == Some(T![","]);
+                        adjacent_separator(&element, rowan::Direction::Next) == Some(T![","]);
                     if token.token_kind() == T!["=>"] && !empty_before {
                         parts.push(Doc::Anchor(self.fat_comma_class(), 0));
                         parts.push(Doc::Space);
                     }
                     let value_on_next_line =
                         token.token_kind() == T!["=>"] && self.newline_follows(&token);
-                    let last = token
-                        .siblings_with_tokens(rowan::Direction::Next)
-                        .skip(1)
-                        .all(|sibling| {
-                            sibling
-                                .as_token()
-                                .is_some_and(|token| token.token_kind().is_trivia())
-                        });
+                    let last = code_sibling(&element, rowan::Direction::Next).is_none();
                     let user_break = self.newline_follows(&token);
                     parts.push(self.token(&token));
                     if empty_after {
@@ -1732,21 +1720,15 @@ impl<'a> Builder<'a> {
     /// Walks tokens rather than siblings: a closing bracket's left neighbour is
     /// inside the node before it.
     fn closes_on_its_own_line(&self, closing: &SyntaxToken, body: &Doc) -> bool {
-        let mut cursor = closing.prev_token();
-        loop {
-            match cursor {
-                Some(token) if token.token_kind() == TokenKind::NEWLINE => break,
-                Some(token) if token.token_kind().is_trivia() => cursor = token.prev_token(),
-                _ => return false,
-            }
-        }
+        let written_on_its_own_line = newline_or_code_before(closing)
+            .is_some_and(|token| token.token_kind() == TokenKind::NEWLINE);
         // …and only where the contents are going to occupy more than one line.
         // Asked of the document rather than of the source, because that is what
         // decides it: `Mail::Mailer` writes its list with the newline in front
         // of each comma, which is not a break the formatter keeps, so the
         // contents come out on one line — and a closer left on the next line
         // would be pulled back up by the pass after that (the formatter contract, I2).
-        breaks(body)
+        written_on_its_own_line && breaks(body)
     }
 }
 
@@ -1877,23 +1859,46 @@ fn trivia_docs(items: &[Trivia]) -> Doc {
     Doc::concat(parts)
 }
 
+/// Is the nearest thing written before this token a heredoc body?
+fn follows_heredoc_body(token: &SyntaxToken) -> bool {
+    prev_code_token(token).is_some_and(|previous| previous.token_kind().is_heredoc_body())
+}
+
+/// The nearest token before this one that is not trivia, wherever it is.
+fn prev_code_token(token: &SyntaxToken) -> Option<SyntaxToken> {
+    tokens_before(token).find(|previous| !previous.token_kind().is_trivia())
+}
+
+/// The nearest token before this one that is code or ends a line.
+fn newline_or_code_before(token: &SyntaxToken) -> Option<SyntaxToken> {
+    tokens_before(token).find(|previous| {
+        previous.token_kind() == TokenKind::NEWLINE || !previous.token_kind().is_trivia()
+    })
+}
+
+/// The tokens before this one, nearest first, across node boundaries.
+fn tokens_before(token: &SyntaxToken) -> impl Iterator<Item = SyntaxToken> {
+    std::iter::successors(token.prev_token(), SyntaxToken::prev_token)
+}
+
+/// The nearest sibling in `direction` that is not trivia.
+fn code_sibling(element: &SyntaxElement, direction: rowan::Direction) -> Option<SyntaxElement> {
+    let step: fn(&SyntaxElement) -> Option<SyntaxElement> = match direction {
+        rowan::Direction::Next => SyntaxElement::next_sibling_or_token,
+        rowan::Direction::Prev => SyntaxElement::prev_sibling_or_token,
+    };
+    std::iter::successors(step(element), step).find(|sibling| {
+        !sibling
+            .as_token()
+            .is_some_and(|token| token.token_kind().is_trivia())
+    })
+}
+
 /// Whether this token may carry leading and trailing trivia of its own.
 ///
 /// Both, unless it is inside an atomic quote-like run, where only the first
 /// token of the run can be preceded by a comment and only the last can be
 /// followed by one.
-/// Is the nearest thing written before this token a heredoc body?
-fn follows_heredoc_body(token: &SyntaxToken) -> bool {
-    let mut previous = token.prev_token();
-    while let Some(candidate) = previous {
-        if !candidate.token_kind().is_trivia() {
-            return candidate.token_kind().is_heredoc_body();
-        }
-        previous = candidate.prev_token();
-    }
-    false
-}
-
 fn run_edges(token: &SyntaxToken) -> (bool, bool) {
     let Some(parent) = token.parent() else {
         return (true, true);
@@ -1926,14 +1931,8 @@ fn wants_preceding_blank_line(node: &SyntaxNode) -> bool {
 ///
 /// Two separators with nothing between them are an empty element, which perl
 /// allows and drops.
-fn adjacent_separator(token: &SyntaxToken, direction: rowan::Direction) -> Option<TokenKind> {
-    token
-        .siblings_with_tokens(direction)
-        .skip(1)
-        .find(|sibling| match sibling.as_token() {
-            Some(token) => !token.token_kind().is_trivia(),
-            None => true,
-        })
+fn adjacent_separator(element: &SyntaxElement, direction: rowan::Direction) -> Option<TokenKind> {
+    code_sibling(element, direction)
         .and_then(SyntaxElement::into_token)
         .map(|sibling| sibling.token_kind())
         .filter(|kind| matches!(kind, T![","] | T!["=>"]))
@@ -2047,17 +2046,13 @@ fn edge_token(
     direction: rowan::Direction,
 ) -> Option<SyntaxToken> {
     let range = node.text_range();
-    let mut token = token;
-    while token.token_kind().is_trivia() {
-        token = match direction {
-            rowan::Direction::Next => token.next_token()?,
-            rowan::Direction::Prev => token.prev_token()?,
-        };
-        if !range.contains_range(token.text_range()) {
-            return None;
-        }
-    }
-    Some(token)
+    let step: fn(&SyntaxToken) -> Option<SyntaxToken> = match direction {
+        rowan::Direction::Next => SyntaxToken::next_token,
+        rowan::Direction::Prev => SyntaxToken::prev_token,
+    };
+    std::iter::successors(Some(token), step)
+        .take_while(|token| range.contains_range(token.text_range()))
+        .find(|token| !token.token_kind().is_trivia())
 }
 
 fn brace(node: &SyntaxNode, kind: TokenKind, last: bool) -> Option<SyntaxToken> {
@@ -2085,20 +2080,7 @@ fn brace(node: &SyntaxNode, kind: TokenKind, last: bool) -> Option<SyntaxToken> 
 /// list's level instead of hanging under an argument list perl may not agree
 /// the call has.
 fn list_separator_before(node: &SyntaxNode) -> Option<TokenKind> {
-    let mut cursor = node.prev_sibling_or_token();
-    while let Some(element) = cursor {
-        match element {
-            SyntaxElement::Token(token) if token.token_kind().is_trivia() => {
-                cursor = token.prev_sibling_or_token();
-            }
-            SyntaxElement::Token(token) => {
-                return matches!(token.token_kind(), T![","] | T!["=>"])
-                    .then(|| token.token_kind());
-            }
-            SyntaxElement::Node(_) => return None,
-        }
-    }
-    None
+    adjacent_separator(&SyntaxElement::Node(node.clone()), rowan::Direction::Prev)
 }
 
 /// Is a filehandle or a block written beside this call's name?
@@ -2117,17 +2099,7 @@ fn begins_its_line(node: &SyntaxNode) -> bool {
     let Some(first) = node.first_token() else {
         return true;
     };
-    let mut token = first.prev_token();
-    while let Some(current) = token {
-        if current.token_kind() == TokenKind::NEWLINE {
-            return true;
-        }
-        if !current.token_kind().is_trivia() {
-            return false;
-        }
-        token = current.prev_token();
-    }
-    true
+    newline_or_code_before(&first).is_none_or(|token| token.token_kind() == TokenKind::NEWLINE)
 }
 
 /// Does an element of the same list begin a line of its own after this one?
