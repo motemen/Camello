@@ -500,16 +500,10 @@ impl Analysis {
         let mut diagnostics = std::mem::take(&mut scope.diagnostics);
         if let Some(file) = self.program.index_of(path) {
             diagnostics.extend(arity::analyse(root, file, &self.program));
-            let guards = if record {
-                let (found, table, guards) = flow::analyse_recording(root, file, &self.program);
-                diagnostics.extend(found);
-                types = table;
-                guards
-            } else {
-                let (found, guards) = flow::analyse(root, file, &self.program);
-                diagnostics.extend(found);
-                guards
-            };
+            let checked = flow::analyse(root, file, &self.program, record);
+            diagnostics.extend(checked.diagnostics);
+            types = checked.types;
+            let guards = checked.guards;
             // A value held for its destructor is bound so that the destructor
             // runs, and never reading it is the point (`docs/types.md`,
             // DIAG-12d). The scope pass names what is never read and has no
