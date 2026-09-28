@@ -428,24 +428,26 @@ impl<'a> Builder<'a> {
     /// The default: children in order, with spacing decided pairwise but with
     /// the parent node in hand, and user newlines preserved.
     fn sequence(&mut self, node: &SyntaxNode) -> Doc {
+        self.sequence_with(node, Self::node)
+    }
+
+    /// [`Self::sequence`], with each child node's document made by `child_doc`.
+    fn sequence_with(
+        &mut self,
+        node: &SyntaxNode,
+        mut child_doc: impl FnMut(&mut Self, &SyntaxNode) -> Doc,
+    ) -> Doc {
         let parent = Some(node.node_kind());
         let mut parts = Vec::new();
         let mut previous: Option<SyntaxElement> = None;
 
-        for child in node.children_with_tokens() {
-            if child
-                .as_token()
-                .is_some_and(|token| token.token_kind().is_trivia())
-            {
-                continue;
-            }
-
+        for child in code_children(node) {
             if let Some(previous) = &previous {
                 parts.extend(self.separator(previous, &child, parent));
             }
 
             match &child {
-                SyntaxElement::Node(child) => parts.push(self.node(child)),
+                SyntaxElement::Node(child) => parts.push(child_doc(self, child)),
                 SyntaxElement::Token(token) => parts.push(self.token(token)),
             }
             previous = Some(child);
@@ -465,14 +467,7 @@ impl<'a> Builder<'a> {
     /// ordinary sequence rules both were continuation lines, and `@{\n
     /// $self->list\n}` closed one level in from the `@` that opened it.
     fn deref_block(&mut self, node: &SyntaxNode) -> Doc {
-        let children: Vec<SyntaxElement> = node
-            .children_with_tokens()
-            .filter(|child| {
-                !child
-                    .as_token()
-                    .is_some_and(|token| token.token_kind().is_trivia())
-            })
-            .collect();
+        let children: Vec<SyntaxElement> = code_children(node).collect();
         let brace = |child: &SyntaxElement, kind: TokenKind| {
             child
                 .as_token()
@@ -540,7 +535,6 @@ impl<'a> Builder<'a> {
     /// ordinary continuation indent instead; measured from an indent the name is
     /// nowhere near, the offset put `bbb` two columns right of its own list.
     fn list_call(&mut self, node: &SyntaxNode) -> Doc {
-        let parent = Some(node.node_kind());
         let name = node
             .children()
             .find(|child| child.node_kind() == NodeKind::SUB_NAME);
@@ -584,33 +578,12 @@ impl<'a> Builder<'a> {
             hanging.map(Some)
         };
 
-        let mut parts = Vec::new();
-        let mut previous: Option<SyntaxElement> = None;
-        for child in node.children_with_tokens() {
-            if child
-                .as_token()
-                .is_some_and(|token| token.token_kind().is_trivia())
-            {
-                continue;
+        self.sequence_with(node, |this, child| match offset {
+            Some(offset) if child.node_kind() == NodeKind::LIST_EXPR => {
+                Doc::hanging(offset, this.node(child))
             }
-            if let Some(previous) = &previous {
-                parts.extend(self.separator(previous, &child, parent));
-            }
-            match &child {
-                SyntaxElement::Node(child)
-                    if child.node_kind() == NodeKind::LIST_EXPR && offset.is_some() =>
-                {
-                    parts.push(Doc::hanging(
-                        offset.expect("checked above"),
-                        self.node(child),
-                    ));
-                }
-                SyntaxElement::Node(child) => parts.push(self.node(child)),
-                SyntaxElement::Token(token) => parts.push(self.token(token)),
-            }
-            previous = Some(child);
-        }
-        Doc::concat(parts)
+            _ => this.node(child),
+        })
     }
 
     /// What goes between two adjacent children.
@@ -1834,6 +1807,15 @@ impl<'a> Builder<'a> {
         // would be pulled back up by the pass after that (the formatter contract, I2).
         breaks(body)
     }
+}
+
+/// The node's children, less the trivia between them.
+fn code_children(node: &SyntaxNode) -> impl Iterator<Item = SyntaxElement> {
+    node.children_with_tokens().filter(|child| {
+        !child
+            .as_token()
+            .is_some_and(|token| token.token_kind().is_trivia())
+    })
 }
 
 /// The one thing this bracket holds, if it holds exactly one.
