@@ -373,6 +373,25 @@ pub struct AttributeDecl {
 }
 
 impl AttributeDecl {
+    /// An attribute that is neither required nor defaulted, coerces nothing
+    /// and generates no method besides its accessor — what each recogniser
+    /// starts from before saying what its declaration adds.
+    #[must_use]
+    pub fn new(name: String, ty: Type, access: Access, range: TextRange) -> Self {
+        AttributeDecl {
+            name,
+            ty,
+            access,
+            required: false,
+            defaulted: false,
+            coerce: false,
+            methods: Vec::new(),
+            opaque_delegation: false,
+            builder: None,
+            range,
+        }
+    }
+
     /// Whether this attribute answers to `name`, as its accessor or as one of
     /// the methods it generates.
     #[must_use]
@@ -633,21 +652,23 @@ pub fn read_has(call: &ast::Call, into: &mut Sink) -> Vec<AttributeDecl> {
             // `+name` overrides the parent's attribute; the type is the
             // parent's, which this pass has no way to reach.
             let overriding = name.starts_with('+');
+            let ty = if overriding {
+                Type::Unknown
+            } else {
+                ty.clone()
+            };
             AttributeDecl {
-                name: name.trim_start_matches('+').to_string(),
-                ty: if overriding {
-                    Type::Unknown
-                } else {
-                    ty.clone()
-                },
-                access,
                 required,
                 defaulted,
                 coerce,
                 methods: methods.clone(),
                 opaque_delegation,
-                builder: None,
-                range: first.text_range(),
+                ..AttributeDecl::new(
+                    name.trim_start_matches('+').to_string(),
+                    ty,
+                    access,
+                    first.text_range(),
+                )
             }
         })
         .collect()
@@ -803,22 +824,15 @@ pub fn read_accessor_typed(arguments: &SyntaxNode, into: &mut Sink) -> Accessors
                 unreadable = true;
                 continue;
             };
-            let (ty, required, defaulted) = read_slot(slot.node(), into);
+            let read = read_slot(slot.node(), into);
+            // This family writes the type down; a builder would add nothing
+            // the `isa` did not already say, so none is kept.
             attributes.push(AttributeDecl {
-                name: name.to_string(),
-                ty,
-                access,
                 // A lazy slot is filled by its builder, so `new` skips it
                 // rather than finding it missing.
-                required: required && !lazy,
-                defaulted: defaulted || lazy,
-                coerce: false,
-                methods: Vec::new(),
-                opaque_delegation: false,
-                // This family writes the type down; the builder adds nothing
-                // the `isa` did not already say.
-                builder: None,
-                range: slot.range(),
+                required: read.required && !lazy,
+                defaulted: read.defaulted || lazy,
+                ..AttributeDecl::new(name.to_string(), read.ty, access, slot.range())
             });
         }
     }
@@ -829,13 +843,20 @@ pub fn read_accessor_typed(arguments: &SyntaxNode, into: &mut Sink) -> Accessors
     }
 }
 
+/// What one `Class::Accessor::Typed` slot says.
+struct Slot {
+    ty: Type,
+    required: bool,
+    defaulted: bool,
+}
+
 /// A slot's value: a type, or a hashref with `isa` / `default` / `builder`.
 ///
 /// Requiredness follows `Class::Accessor::Typed`'s rule, which is the reverse
 /// of Moose's: a slot is **mandatory** unless it says `optional`, gives a
 /// `default`, or is lazy. The generated `new` dies with "missing mandatory
 /// parameter named '$x'" otherwise, so this is a rule and not a guess.
-fn read_slot(node: &SyntaxNode, into: &mut Sink) -> (Type, bool, bool) {
+fn read_slot(node: &SyntaxNode, into: &mut Sink) -> Slot {
     let node = ast::without_plus(node);
     if node.node_kind() == NodeKind::ANON_HASH {
         let hash = AnonHash::cast(node.clone()).expect("kind checked");
@@ -855,12 +876,20 @@ fn read_slot(node: &SyntaxNode, into: &mut Sink) -> (Type, bool, bool) {
                 _ => {}
             }
         }
-        return (ty, required, defaulted);
+        return Slot {
+            ty,
+            required,
+            defaulted,
+        };
     }
     let ty = crate::decl::annotation_of(&node).map_or(Type::Unknown, |annotation| {
         read_annotation(&annotation, into)
     });
-    (ty, true, false)
+    Slot {
+        ty,
+        required: true,
+        defaulted: false,
+    }
 }
 
 // ===== `Class::Accessor::Lite` =====
@@ -1068,16 +1097,9 @@ pub fn accessor_attributes(
     names
         .iter()
         .map(|listed| AttributeDecl {
-            name: listed.name.clone(),
-            ty: Type::Unknown,
-            access,
-            required: false,
             // Nothing here is required by the constructor, and a lazy slot is
             // filled by its builder, so `new` may leave either out.
             defaulted: true,
-            coerce: false,
-            methods: Vec::new(),
-            opaque_delegation: false,
             builder: lazy
                 .then(|| match &listed.builder {
                     Builder::Implicit => Some(format!("_build_{}", listed.name)),
@@ -1085,7 +1107,7 @@ pub fn accessor_attributes(
                     Builder::Anonymous => None,
                 })
                 .flatten(),
-            range,
+            ..AttributeDecl::new(listed.name.clone(), Type::Unknown, access, range)
         })
         .collect()
 }
@@ -1170,19 +1192,11 @@ pub fn read_class_tiny(arguments: &SyntaxNode) -> Accessors {
 /// without looking for a key — and every slot is `defaulted`, whether or not
 /// a default was written, because that is what says `new` may leave it out.
 fn class_tiny_attribute(name: &str, range: TextRange) -> AttributeDecl {
+    // The default is written inline, as a value or an anonymous sub, so
+    // there is no builder to ask what the slot holds.
     AttributeDecl {
-        name: name.to_string(),
-        ty: Type::Unknown,
-        access: Access::Rw,
-        required: false,
         defaulted: true,
-        coerce: false,
-        methods: Vec::new(),
-        opaque_delegation: false,
-        // The default is written inline, as a value or an anonymous sub, so
-        // there is no name to ask what the slot holds.
-        builder: None,
-        range,
+        ..AttributeDecl::new(name.to_string(), Type::Unknown, Access::Rw, range)
     }
 }
 
