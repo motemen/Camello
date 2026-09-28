@@ -441,7 +441,7 @@ impl<'a> Pass<'a> {
     }
 
     fn run(&mut self, root: &SyntaxNode) {
-        self.heredocs = heredoc_interpolation(root);
+        self.heredocs = interp::heredoc_interpolation(root);
         self.push_scope();
         for name in ALWAYS_IN_SCOPE {
             for sigil in [
@@ -911,51 +911,14 @@ impl<'a> Pass<'a> {
     // ----- quoted constructs -----
 
     fn scan_token(&mut self, token: &SyntaxToken) {
-        let mut extended = false;
-        let text = match token.token_kind() {
-            // A double-quoted string interpolates; a single-quoted one is one
-            // token of the same kind and does not.
-            TokenKind::STRING => {
-                if token.text().starts_with('"') {
-                    token.text()
-                } else {
-                    return;
-                }
-            }
-            // The replacement of an `s///e` is Perl code, not a string: the
-            // `my $indent` in it is a declaration this pass never saw, so
-            // scanning it reported the use two lines later as undeclared.
-            TokenKind::INTERPOLATED_STRING => {
-                if evaluated_replacement(token) {
-                    return;
-                }
-                token.text()
-            }
-            TokenKind::REGEX_PATTERN => {
-                if !delimiter_interpolates(token) {
-                    return;
-                }
-                extended = has_flag(token, 'x');
-                token.text()
-            }
-            TokenKind::HEREDOC_CONTENT
-                if self
-                    .heredocs
-                    .get(&token.text_range().start())
-                    .copied()
-                    .unwrap_or(true) =>
-            {
-                token.text()
-            }
-            _ => return,
-        };
+        // The replacement of an `s///e` is Perl code, not a string: the
+        // `my $indent` in it is a declaration this pass never saw, so
+        // scanning it reported the use two lines later as undeclared.
+        if token.token_kind() == TokenKind::INTERPOLATED_STRING && evaluated_replacement(token) {
+            return;
+        }
         let start = usize::from(token.text_range().start());
-        let found = if extended {
-            interp::scan_extended(text)
-        } else {
-            interp::scan(text)
-        };
-        for found in found {
+        for found in interp::uses_in(token, &self.heredocs) {
             let range = TextRange::new(
                 TextSize::from((start + found.offset) as u32),
                 TextSize::from((start + found.offset + found.len) as u32),
@@ -1001,7 +964,7 @@ fn initialiser(node: &SyntaxNode) -> Option<SyntaxNode> {
 /// Whether this `my` is the sub's parameter list rather than a local.
 ///
 /// The two shapes `docs/types.md` calls unpacking (ANNOT-6) — `my (...) = @_` and `my $x
-/// = shift` — and Smart::Args' `args my $x => T`, which is a `my` written
+/// = shift`, with or without a default — and Smart::Args' `args my $x => T`, which is a `my` written
 /// inside a call.
 fn declares_parameters(node: &SyntaxNode) -> bool {
     for ancestor in node.ancestors().skip(1) {
@@ -1019,43 +982,7 @@ fn declares_parameters(node: &SyntaxNode) -> bool {
     let Some(value) = initialiser(node) else {
         return false;
     };
-    if value.node_kind() == NodeKind::ARRAY_VAR {
-        return names_the_argument_array(&value);
-    }
-    let Some(call) = ast::Call::cast(value) else {
-        return false;
-    };
-    if call.callee_name().as_deref() != Some("shift") {
-        return false;
-    }
-    // `shift @list` is a list operation; `shift` and `shift @_` are the
-    // parameter list, one name at a time.
-    //
-    // A one-argument list call holds its argument as a child of its own, with
-    // no `LIST_EXPR` around it, so `Call::args` is empty there and the
-    // children are what has to be read.
-    let operands: Vec<SyntaxNode> = match call.args().as_slice() {
-        [] => call
-            .syntax()
-            .children()
-            .filter(|child| !matches!(child.node_kind(), NodeKind::SUB_NAME | NodeKind::ARG_LIST))
-            .collect(),
-        found => found.to_vec(),
-    };
-    match operands.as_slice() {
-        [] => true,
-        [only] => names_the_argument_array(only),
-        _ => false,
-    }
-}
-
-/// Whether this node is `@_` itself.
-fn names_the_argument_array(node: &SyntaxNode) -> bool {
-    node.node_kind() == NodeKind::ARRAY_VAR
-        && Variable::cast(node.clone())
-            .and_then(|variable| variable.name())
-            .as_deref()
-            == Some("_")
+    crate::decl::is_argument_list(&value) || crate::decl::shifted_argument(value).is_some()
 }
 
 /// Whether this `my` holds a value for its destructor ([`GUARD_NAMES`]).
@@ -1121,15 +1048,6 @@ fn declared_names(arguments: &SyntaxNode) -> Vec<String> {
         .collect()
 }
 
-/// Whether the quote-like operator this token belongs to carries `flag`.
-fn has_flag(token: &SyntaxToken, flag: char) -> bool {
-    token.parent().is_some_and(|parent| {
-        ast::tokens(&parent)
-            .find(|sibling| sibling.token_kind() == TokenKind::REGEX_FLAGS)
-            .is_some_and(|flags| flags.text().contains(flag))
-    })
-}
-
 /// Whether this is the replacement half of an `s///e`.
 fn evaluated_replacement(token: &SyntaxToken) -> bool {
     let Some(parent) = token.parent() else {
@@ -1138,39 +1056,5 @@ fn evaluated_replacement(token: &SyntaxToken) -> bool {
     if parent.node_kind() != NodeKind::S_EXPR {
         return false;
     }
-    has_flag(token, 'e')
-}
-
-/// `m'...'` does not interpolate; every other delimiter does.
-fn delimiter_interpolates(token: &SyntaxToken) -> bool {
-    let Some(parent) = token.parent() else {
-        return true;
-    };
-    ast::tokens(&parent)
-        .find(|sibling| sibling.token_kind() == TokenKind::DELIMITER)
-        .is_none_or(|delimiter| delimiter.text() != "'")
-}
-
-/// Which heredoc bodies interpolate, keyed by where each body starts.
-///
-/// The marker that decides it (`<<'EOT'` against `<<"EOT"`) is on the line
-/// above and belongs to another node — the body is a token that lands between
-/// two statements (the parser contract). Pairing them in document order is
-/// what perl does too: bodies arrive in the order their markers were written.
-fn heredoc_interpolation(root: &SyntaxNode) -> HashMap<TextSize, bool> {
-    let mut markers = Vec::new();
-    let mut bodies = Vec::new();
-    for token in root
-        .descendants_with_tokens()
-        .filter_map(|element| element.into_token())
-    {
-        match token.token_kind() {
-            TokenKind::HEREDOC_START => {
-                markers.push(!token.text().contains('\''));
-            }
-            TokenKind::HEREDOC_CONTENT => bodies.push(token.text_range().start()),
-            _ => {}
-        }
-    }
-    bodies.into_iter().zip(markers).collect::<HashMap<_, _>>()
+    interp::has_flag(token, 'e')
 }

@@ -22,7 +22,7 @@ use camello_syntax::ast::{
     self, AnonHash, Args, AstNode, DeclKeyword, Literal, Sigil, SubDef, VarDecl, Variable,
 };
 use camello_syntax::lang::{NodeExt, NodeKind, SyntaxNode, SyntaxToken, TokenExt, TokenKind};
-use rowan::TextRange;
+use rowan::{TextRange, TextSize};
 
 use crate::annotate::{
     self, Access, AccessorMaker, AttributeDecl, Dialect, Framework, Frameworks, NamedType, Returns,
@@ -1743,9 +1743,6 @@ fn unpacked_slots(declaration: &VarDecl) -> Vec<Option<ast::Variable>> {
 }
 
 /// `my $x = shift;`, `my $x = shift @_;`, `my $x = shift || 'default';`.
-///
-/// The third form is the same parameter with a default, which makes it
-/// optional; `Carp::str_len_trim` writes both in two lines.
 fn shift_unpacking(statement: &SyntaxNode) -> Option<(String, bool)> {
     if statement.node_kind() != NodeKind::VAR_DECL_STMT {
         return None;
@@ -1754,7 +1751,24 @@ fn shift_unpacking(statement: &SyntaxNode) -> Option<(String, bool)> {
     if !assign.is_plain() {
         return None;
     }
-    let (value, optional) = match assign.value()? {
+    let optional = shifted_argument(assign.value()?)?;
+    let declaration = VarDecl::cast(assign.target()?)?;
+    if declaration.keyword() != Some(DeclKeyword::My) {
+        return None;
+    }
+    let targets = declaration.targets();
+    (targets.len() == 1 && targets[0].sigil() == Sigil::Scalar)
+        .then(|| (targets[0].display(), optional))
+}
+
+/// Whether a value takes one argument off `@_` — `shift` or `shift @_`, with
+/// or without a default — and `Some(true)` when the default makes it optional.
+///
+/// The default is the same parameter written optional; `Carp::str_len_trim`
+/// writes both in two lines. `shift @list` is a list operation, not an
+/// argument.
+pub(crate) fn shifted_argument(value: SyntaxNode) -> Option<bool> {
+    let (value, optional) = match value {
         node if node.node_kind() == NodeKind::BINARY_EXPR => {
             let binary = ast::BinaryExpr::cast(node)?;
             match binary.operator() {
@@ -1770,20 +1784,25 @@ fn shift_unpacking(statement: &SyntaxNode) -> Option<(String, bool)> {
     if call.callee_name().as_deref() != Some("shift") {
         return None;
     }
-    let arguments = call.args();
-    if !arguments.is_empty() && !arguments.iter().all(is_argument_list) {
-        return None;
+    // A one-argument list call holds its argument as a child of its own, with
+    // no `LIST_EXPR` around it, so `Call::args` is empty there and the
+    // children are what has to be read.
+    let operands: Vec<SyntaxNode> = match call.args().as_slice() {
+        [] => call
+            .syntax()
+            .children()
+            .filter(|child| !matches!(child.node_kind(), NodeKind::SUB_NAME | NodeKind::ARG_LIST))
+            .collect(),
+        found => found.to_vec(),
+    };
+    match operands.as_slice() {
+        [] => Some(optional),
+        [only] if is_argument_list(only) => Some(optional),
+        _ => None,
     }
-    let declaration = VarDecl::cast(assign.target()?)?;
-    if declaration.keyword() != Some(DeclKeyword::My) {
-        return None;
-    }
-    let targets = declaration.targets();
-    (targets.len() == 1 && targets[0].sigil() == Sigil::Scalar)
-        .then(|| (targets[0].display(), optional))
 }
 
-fn is_argument_list(node: &SyntaxNode) -> bool {
+pub(crate) fn is_argument_list(node: &SyntaxNode) -> bool {
     Variable::cast(node.clone()).is_some_and(|variable| {
         variable.sigil() == Sigil::Array && variable.name().as_deref() == Some("_")
     })
@@ -1797,6 +1816,17 @@ fn is_argument_list(node: &SyntaxNode) -> bool {
 /// into a hash, and `Carp::str_len_trim` writes `shift || 0` on its second
 /// line; both were reported as taking one argument until this looked.
 fn touches_arguments_elsewhere(body: &ast::Block, consumed: &[TextRange]) -> bool {
+    // A heredoc body is paired with its marker over the whole file: the
+    // marker may sit on the line the sub opens on, outside it.
+    let has_heredoc = body
+        .syntax()
+        .descendants_with_tokens()
+        .filter_map(|element| element.into_token())
+        .any(|token| token.token_kind() == TokenKind::HEREDOC_CONTENT);
+    let heredocs = match body.syntax().ancestors().last() {
+        Some(root) if has_heredoc => crate::interp::heredoc_interpolation(&root),
+        _ => HashMap::new(),
+    };
     body.syntax().descendants().any(|node| {
         if consumed
             .iter()
@@ -1809,7 +1839,7 @@ fn touches_arguments_elsewhere(body: &ast::Block, consumed: &[TextRange]) -> boo
         // interpolation scanner is what sees it (`docs/typecheck.md`,
         // "Scopes"). `IO::Uncompress::Base::HeaderError` is written this way,
         // and its whole family was reported as taking no arguments.
-        if ast::tokens(&node).any(|token| interpolates_arguments(&token)) {
+        if ast::tokens(&node).any(|token| interpolates_arguments(&token, &heredocs)) {
             return true;
         }
         if let Some(call) = ast::Call::cast(node.clone()) {
@@ -1841,25 +1871,8 @@ fn touches_arguments_elsewhere(body: &ast::Block, consumed: &[TextRange]) -> boo
 }
 
 /// Whether a quoted construct interpolates `@_`.
-///
-/// Over-eager on purpose: a construct this misreads makes the parameter list
-/// `Unknown`, which is the quiet answer.
-fn interpolates_arguments(token: &SyntaxToken) -> bool {
-    let text = match token.token_kind() {
-        // A single-quoted string is the same token kind and interpolates
-        // nothing.
-        TokenKind::STRING => {
-            if token.text().starts_with('\'') {
-                return false;
-            }
-            token.text()
-        }
-        TokenKind::INTERPOLATED_STRING | TokenKind::REGEX_PATTERN | TokenKind::HEREDOC_CONTENT => {
-            token.text()
-        }
-        _ => return false,
-    };
-    crate::interp::scan(text)
+fn interpolates_arguments(token: &SyntaxToken, heredocs: &HashMap<TextSize, bool>) -> bool {
+    crate::interp::uses_in(token, heredocs)
         .iter()
         .any(|found| found.sigil == Sigil::Array && found.name == "_")
 }

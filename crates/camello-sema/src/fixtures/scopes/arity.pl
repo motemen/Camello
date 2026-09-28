@@ -67,6 +67,24 @@ sub shifts_later {
 
 shifts_later(1, 2, 3);
 
+# `shift @list` takes from a list of its own, not from the arguments.
+our @queue = (1);
+sub shifts_a_list {
+    my $first = shift @queue;
+    return $first;
+}
+
+shifts_a_list(1, 2, 3);
+
+# `m'...'` and a `<<'EOT'` body interpolate nothing, so the `@_` written in
+# them is not a read of the arguments.
+sub quotes_the_list {
+    my $first = shift;
+    return $first =~ m'@_';
+}
+
+quotes_the_list(1, 2);          #~ warning arity: takes at most 1 argument; 2 passed
+
 # A sub that reads `@_` as a list has no parameter list to compare against.
 sub reads_the_list {
     my ($first) = @_;
@@ -82,3 +100,13 @@ sub ignores_everything {
 }
 
 ignores_everything(1, 2, 3);
+
+sub heredocs_the_list {
+    my $first = shift;
+    my $text = <<'EOT';
+@_
+EOT
+    return $first . $text;
+}
+
+heredocs_the_list(1, 2);        #~ warning arity: takes at most 1 argument; 2 passed
