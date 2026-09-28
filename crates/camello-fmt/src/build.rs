@@ -560,9 +560,7 @@ impl<'a> Builder<'a> {
         let mut parts = Vec::new();
 
         // An anchor goes immediately before the thing it aligns.
-        if let Some((class, tail)) = self.anchor_class(next, parent) {
-            parts.push(Doc::Anchor(class, tail));
-        }
+        parts.extend(self.anchor(next, parent));
 
         let wants_space = self.wants_space(previous, next, parent);
         let deferred_terminator = !wants_space
@@ -707,15 +705,14 @@ impl<'a> Builder<'a> {
         node.node_kind() == NodeKind::BLOCK && self.block_breaks(node)
     }
 
-    /// The class this token is an alignment point for, and how much of it has to
-    /// end at the group's column.
-    fn fat_comma_class(&self) -> AnchorClass {
-        AnchorClass::FatComma {
-            depth: self.fat_comma_depth,
-            hashes: self.fat_comma_hashes,
-        }
+    /// The anchor that goes immediately before this child, if it aligns.
+    fn anchor(&self, next: &SyntaxElement, parent: Option<NodeKind>) -> Option<Doc> {
+        self.anchor_class(next, parent)
+            .map(|(class, tail)| Doc::Anchor(class, tail))
     }
 
+    /// The class this child is an alignment point for, and how much of it has to
+    /// end at the group's column.
     fn anchor_class(
         &self,
         next: &SyntaxElement,
@@ -740,7 +737,11 @@ impl<'a> Builder<'a> {
             return Some((AnchorClass::Assign, token.text().width()));
         }
         if token.token_kind() == T!["=>"] {
-            return Some((self.fat_comma_class(), 0));
+            let class = AnchorClass::FatComma {
+                depth: self.fat_comma_depth,
+                hashes: self.fat_comma_hashes,
+            };
+            return Some((class, 0));
         }
         if matches!(token.token_kind(), T!["//"] | T!["||"])
             && parent == Some(NodeKind::BINARY_EXPR)
@@ -1649,7 +1650,7 @@ impl<'a> Builder<'a> {
                     let empty_after =
                         adjacent_separator(&element, rowan::Direction::Next) == Some(T![","]);
                     if token.token_kind() == T!["=>"] && !empty_before {
-                        parts.push(Doc::Anchor(self.fat_comma_class(), 0));
+                        parts.extend(self.anchor(&element, Some(NodeKind::LIST_EXPR)));
                         parts.push(Doc::Space);
                     }
                     let value_on_next_line =
