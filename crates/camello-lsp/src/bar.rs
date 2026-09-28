@@ -107,7 +107,7 @@ pub fn edit_bar(index: &mut Index, path: &Path, edits: usize) -> Option<EditBar>
             i32::try_from(edit).unwrap_or(i32::MAX),
             crate::position::Encoding::Utf16,
         );
-        let decls = index::declarations(path, &text, &settings.dialect, &cache);
+        let decls = camello_sema::read_declarations(path, &text, &settings.dialect, &cache);
         let fingerprint = index::fingerprint(&decls);
         let mut changed = previous.as_deref().is_some_and(|held| held != fingerprint);
         previous = Some(fingerprint);

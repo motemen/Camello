@@ -157,6 +157,39 @@ impl Options {
     }
 }
 
+/// One file's declarations, off the cache when the file has not changed since
+/// they were written.
+///
+/// The key is the path, size, mtime and content hash, salted with the dialect
+/// fingerprint. [`Analysis::resolve_dependencies`] reads every dependency
+/// through it, and the language server every workspace file, so the two share
+/// their warm entries.
+pub fn read_declarations(
+    path: &Path,
+    source: &str,
+    dialect: &annotate::Dialect,
+    cache: &resolve::Cache,
+) -> decl::FileDecls {
+    let key = cache
+        .is_enabled()
+        .then(|| resolve::Cache::key(path, source, &dialect.fingerprint()));
+    if let Some(key) = &key {
+        if let Some(text) = cache.read(key) {
+            if let Ok(decls) = serde_json::from_str(&text) {
+                return decls;
+            }
+        }
+    }
+    let parsed = camello_syntax::parse::parse(source);
+    let decls = decl::declare_in(&parsed.syntax(), dialect);
+    if let Some(key) = &key {
+        if let Ok(text) = serde_json::to_string(&decls) {
+            cache.write(key, &text);
+        }
+    }
+    decls
+}
+
 /// How many rounds tier 2 gives a program (`docs/return-inference.md`,
 /// "Tier 2").
 ///
@@ -233,7 +266,9 @@ impl Analysis {
             let Ok(source) = std::fs::read_to_string(&path) else {
                 continue;
             };
-            let decls = self.read_declarations(&path, &source);
+            let disabled = resolve::Cache::disabled();
+            let cache = self.cache.as_ref().unwrap_or(&disabled);
+            let decls = read_declarations(&path, &source, self.program.dialect(), cache);
             for used in &decls.uses {
                 if seen.insert(used.clone()) {
                     pending.push(used.clone());
@@ -241,31 +276,6 @@ impl Analysis {
             }
             self.program.add(&path, decls, false);
         }
-    }
-
-    /// A dependency's declarations, off the cache when the file has not
-    /// changed since they were written.
-    fn read_declarations(&self, path: &std::path::Path, source: &str) -> decl::FileDecls {
-        let key = self
-            .cache
-            .as_ref()
-            .filter(|cache| cache.is_enabled())
-            .map(|_| resolve::Cache::key(path, source, &self.program.dialect().fingerprint()));
-        if let (Some(cache), Some(key)) = (&self.cache, &key) {
-            if let Some(text) = cache.read(key) {
-                if let Ok(decls) = serde_json::from_str(&text) {
-                    return decls;
-                }
-            }
-        }
-        let parsed = camello_syntax::parse::parse(source);
-        let decls = decl::declare_in(&parsed.syntax(), self.program.dialect());
-        if let (Some(cache), Some(key)) = (&self.cache, &key) {
-            if let Ok(text) = serde_json::to_string(&decls) {
-                cache.write(key, &text);
-            }
-        }
-        decls
     }
 
     /// Fold one file's declarations into the graph.

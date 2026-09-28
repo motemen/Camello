@@ -535,7 +535,7 @@ mod declarations_reach_the_graph {
         source: &str,
         path: &std::path::Path,
     ) -> camello_sema::decl::FileDecls {
-        index::declarations(
+        camello_sema::read_declarations(
             path,
             source,
             &settings.dialect,
@@ -673,7 +673,7 @@ mod an_edit_only_the_program_can_see {
 
         let path = dir.path().join("Mid.pm");
         let edited = mid("parse");
-        let decls = index::declarations(
+        let decls = camello_sema::read_declarations(
             &path,
             &edited,
             &settings.dialect,

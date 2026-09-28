@@ -115,7 +115,7 @@ impl Backend {
         };
         let outcome = tokio::task::spawn_blocking(move || {
             let cache = crate::settings::cache(snapshot.settings.cache_dir.as_deref());
-            let decls = index::declarations(
+            let decls = camello_sema::read_declarations(
                 &path,
                 &snapshot.document.text,
                 &snapshot.settings.dialect,
@@ -193,7 +193,7 @@ impl Backend {
         let changed = tokio::task::spawn_blocking(move || {
             let source = std::fs::read_to_string(&path).ok()?;
             let cache = crate::settings::cache(settings.cache_dir.as_deref());
-            let decls = index::declarations(&path, &source, &settings.dialect, &cache);
+            let decls = camello_sema::read_declarations(&path, &source, &settings.dialect, &cache);
             let mut index = index.write().expect("no reader panics holding this");
             let mut changed = index.install(&path, decls);
             if changed {
@@ -285,8 +285,12 @@ impl Backend {
                     let Some(path) = document.path.as_ref() else {
                         continue;
                     };
-                    let decls =
-                        index::declarations(path, &document.text, &settings.dialect, &cache);
+                    let decls = camello_sema::read_declarations(
+                        path,
+                        &document.text,
+                        &settings.dialect,
+                        &cache,
+                    );
                     any |= built.install(path, decls);
                 }
                 if any {
@@ -559,7 +563,8 @@ impl LanguageServer for Backend {
                 let Ok(source) = std::fs::read_to_string(&path) else {
                     continue;
                 };
-                let decls = index::declarations(&path, &source, &settings.dialect, &cache);
+                let decls =
+                    camello_sema::read_declarations(&path, &source, &settings.dialect, &cache);
                 updated.push((path, decls, source));
             }
             let mut index = index.write().expect("no reader panics holding this");
