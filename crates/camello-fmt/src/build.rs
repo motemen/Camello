@@ -978,47 +978,44 @@ impl<'a> Builder<'a> {
         true
     }
 
-    /// Whether the source has a line break between two adjacent children.
-    ///
-    /// The gap between them is exactly the previous token's trailing trivia plus
-    /// the next token's leading trivia (the trivia model), and because no node's
-    /// range includes trivia, that is the whole gap — no guessing from node
-    /// extents, and nothing from *after* `next` can leak in.
     /// Whether the source has a comment between two adjacent children.
     ///
     /// The same gap `has_user_newline_between` reads, asked about the trivia
     /// that cannot be dropped: a comment is kept whatever the spacing rule
     /// between its neighbours is, so the line break carrying it is kept too.
     fn has_user_comment_between(&self, previous: &SyntaxElement, next: &SyntaxElement) -> bool {
-        let is_comment =
-            |item: &camello_syntax::parse::trivia::Trivia| item.kind == TokenKind::COMMENT;
-
-        let after_previous = last_token_of(previous)
-            .map(|token| self.trivia.of(token.text_range()))
-            .is_some_and(|trivia| trivia.trailing.iter().any(is_comment));
-        if after_previous {
-            return true;
-        }
-
-        first_token_of(next)
-            .map(|token| self.trivia.of(token.text_range()))
-            .is_some_and(|trivia| trivia.leading.iter().any(is_comment))
+        self.gap_contains(previous, next, TokenKind::COMMENT)
     }
 
+    /// Whether the source has a line break between two adjacent children.
     fn has_user_newline_between(&self, previous: &SyntaxElement, next: &SyntaxElement) -> bool {
-        let is_newline =
-            |item: &camello_syntax::parse::trivia::Trivia| item.kind == TokenKind::NEWLINE;
+        self.gap_contains(previous, next, TokenKind::NEWLINE)
+    }
+
+    /// Whether the gap between two adjacent children holds trivia of this kind.
+    ///
+    /// The gap between them is exactly the previous token's trailing trivia plus
+    /// the next token's leading trivia (the trivia model), and because no node's
+    /// range includes trivia, that is the whole gap — no guessing from node
+    /// extents, and nothing from *after* `next` can leak in.
+    fn gap_contains(
+        &self,
+        previous: &SyntaxElement,
+        next: &SyntaxElement,
+        kind: TokenKind,
+    ) -> bool {
+        let is_kind = |item: &camello_syntax::parse::trivia::Trivia| item.kind == kind;
 
         let after_previous = last_token_of(previous)
             .map(|token| self.trivia.of(token.text_range()))
-            .is_some_and(|trivia| trivia.trailing.iter().any(is_newline));
+            .is_some_and(|trivia| trivia.trailing.iter().any(is_kind));
         if after_previous {
             return true;
         }
 
         first_token_of(next)
             .map(|token| self.trivia.of(token.text_range()))
-            .is_some_and(|trivia| trivia.leading.iter().any(is_newline))
+            .is_some_and(|trivia| trivia.leading.iter().any(is_kind))
     }
 
     fn token(&mut self, token: &SyntaxToken) -> Doc {
