@@ -21,6 +21,9 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Commands {
     /// Format Perl code
+    #[command(mut_arg("jobs", |arg| arg.help(
+        "How many files to format at once (default: one per core)"
+    )))]
     Format {
         /// Files or directories to format (reads from stdin if not provided)
         #[arg(help = "Files or directories to format (recursive; stdin if omitted)")]
@@ -62,23 +65,11 @@ pub enum Commands {
         )]
         write: bool,
 
-        /// Extensions to consider when walking a directory
-        #[arg(
-            long,
-            value_name = "EXT,...",
-            default_value_t = camello_sema::workspace::EXTENSIONS.join(","),
-            help = "Extensions to consider when walking a directory"
-        )]
-        extensions: String,
+        #[command(flatten)]
+        extensions: ExtensionsArg,
 
-        /// How many files to format at once
-        #[arg(
-            short = 'j',
-            long,
-            value_name = "N",
-            help = "How many files to format at once (default: one per core)"
-        )]
-        jobs: Option<usize>,
+        #[command(flatten)]
+        jobs: JobsArg,
 
         /// Stop formatting after the first parse error is reported
         #[arg(
@@ -107,13 +98,8 @@ pub enum Commands {
         )]
         output: Option<PathBuf>,
 
-        /// Encodings a source may be in, tried in order
-        #[arg(
-            long,
-            value_name = "NAME,...",
-            help = "Encodings to try, in order, until one reads the file (default: utf-8)"
-        )]
-        encoding: Option<String>,
+        #[command(flatten)]
+        encoding: EncodingArg,
 
         #[command(flatten)]
         layout: LayoutArgs,
@@ -203,13 +189,8 @@ pub enum DevCommands {
         )]
         stop_on_first_error: bool,
 
-        /// Encodings a source may be in, tried in order
-        #[arg(
-            long,
-            value_name = "NAME,...",
-            help = "Encodings to try, in order, until one reads the file (default: utf-8)"
-        )]
-        encoding: Option<String>,
+        #[command(flatten)]
+        encoding: EncodingArg,
     },
     /// Ask the formatter's invariants of arbitrary Perl
     ///
@@ -223,14 +204,8 @@ pub enum DevCommands {
         #[arg(help = "Files or directories to check (recursive; stdin if omitted)")]
         paths: Vec<PathBuf>,
 
-        /// How many files to check at once
-        #[arg(
-            short = 'j',
-            long,
-            value_name = "N",
-            help = "How many files to check at once (default: one per core)"
-        )]
-        jobs: Option<usize>,
+        #[command(flatten)]
+        jobs: JobsArg,
 
         /// Only report these invariants (comma-separated slugs)
         #[arg(
@@ -244,36 +219,14 @@ pub enum DevCommands {
         #[arg(long, help = "List the invariants and exit")]
         list_invariants: bool,
 
-        /// One line per violation, without the evidence
-        #[arg(short, long, help = "One line per violation, without the evidence")]
-        quiet: bool,
+        #[command(flatten)]
+        verbosity: VerbosityArgs,
 
-        /// Every unanswered file and every message, not a few of each
-        #[arg(
-            short,
-            long,
-            conflicts_with = "quiet",
-            help = "Every message a check could not be answered with, and every file it \
-                    came from"
-        )]
-        verbose: bool,
+        #[command(flatten)]
+        extensions: ExtensionsArg,
 
-        /// File extensions to walk into when given a directory
-        #[arg(
-            long,
-            value_name = "EXT,...",
-            default_value_t = camello_sema::workspace::EXTENSIONS.join(","),
-            help = "Extensions to consider when walking a directory"
-        )]
-        extensions: String,
-
-        /// Encodings a source may be in, tried in order
-        #[arg(
-            long,
-            value_name = "NAME,...",
-            help = "Encodings to try, in order, until one reads the file (default: utf-8)"
-        )]
-        encoding: Option<String>,
+        #[command(flatten)]
+        encoding: EncodingArg,
     },
 
     /// Ask perl whether the formatter's output is the same program
@@ -286,50 +239,30 @@ pub enum DevCommands {
     /// Its own command rather than a flag on `check`, because asking runs perl
     /// over the file, and `perl -c` runs that file's BEGIN blocks — arbitrary
     /// code out of somebody's corpus. That is a thing to type on purpose.
+    #[command(
+        mut_arg("jobs", |arg| arg.help(
+            "How many files to ask about at once (default: one per core)"
+        )),
+        mut_arg("verbose", |arg| arg.help(
+            "Every message a file could not be answered with, and every file it came from"
+        ))
+    )]
     PerlDeparse {
         /// Files or directories to ask about (reads from stdin if not provided)
         #[arg(help = "Files or directories to ask about (recursive; stdin if omitted)")]
         paths: Vec<PathBuf>,
 
-        /// How many files to ask about at once
-        #[arg(
-            short = 'j',
-            long,
-            value_name = "N",
-            help = "How many files to ask about at once (default: one per core)"
-        )]
-        jobs: Option<usize>,
+        #[command(flatten)]
+        jobs: JobsArg,
 
-        /// One line per violation, without the evidence
-        #[arg(short, long, help = "One line per violation, without the evidence")]
-        quiet: bool,
+        #[command(flatten)]
+        verbosity: VerbosityArgs,
 
-        /// Every unanswered file and every message, not a few of each
-        #[arg(
-            short,
-            long,
-            conflicts_with = "quiet",
-            help = "Every message a file could not be answered with, and every file it \
-                    came from"
-        )]
-        verbose: bool,
+        #[command(flatten)]
+        extensions: ExtensionsArg,
 
-        /// File extensions to walk into when given a directory
-        #[arg(
-            long,
-            value_name = "EXT,...",
-            default_value_t = camello_sema::workspace::EXTENSIONS.join(","),
-            help = "Extensions to consider when walking a directory"
-        )]
-        extensions: String,
-
-        /// Encodings a source may be in, tried in order
-        #[arg(
-            long,
-            value_name = "NAME,...",
-            help = "Encodings to try, in order, until one reads the file (default: utf-8)"
-        )]
-        encoding: Option<String>,
+        #[command(flatten)]
+        encoding: EncodingArg,
     },
 
     /// Build the language server's workspace index over a corpus, and say what
@@ -373,6 +306,68 @@ pub enum DevCommands {
     },
 }
 
+/// `--extensions`, on every command that walks a directory.
+#[derive(clap::Args, Debug, Clone)]
+pub struct ExtensionsArg {
+    /// File extensions to walk into when given a directory
+    #[arg(
+        long,
+        value_name = "EXT,...",
+        default_value_t = camello_sema::workspace::EXTENSIONS.join(","),
+        help = "Extensions to consider when walking a directory"
+    )]
+    pub extensions: String,
+}
+
+/// `-j`, on every command that works on many files at once.
+///
+/// The help says what `check` does to them; a command that does something
+/// else says so with `mut_arg("jobs", ...)`.
+#[derive(clap::Args, Debug, Clone)]
+pub struct JobsArg {
+    /// How many files to work on at once
+    #[arg(
+        short = 'j',
+        long,
+        value_name = "N",
+        help = "How many files to check at once (default: one per core)"
+    )]
+    pub jobs: Option<usize>,
+}
+
+/// `--encoding`, on every command that reads a source.
+#[derive(clap::Args, Debug, Clone)]
+pub struct EncodingArg {
+    /// Encodings a source may be in, tried in order
+    #[arg(
+        long,
+        value_name = "NAME,...",
+        help = "Encodings to try, in order, until one reads the file (default: utf-8)"
+    )]
+    pub encoding: Option<String>,
+}
+
+/// `-q` and `-v`, on the commands that report violations with their evidence.
+///
+/// The help for `-v` says what a check leaves unanswered; a command that asks
+/// something else says so with `mut_arg("verbose", ...)`.
+#[derive(clap::Args, Debug, Clone)]
+pub struct VerbosityArgs {
+    /// One line per violation, without the evidence
+    #[arg(short, long, help = "One line per violation, without the evidence")]
+    pub quiet: bool,
+
+    /// Every unanswered file and every message, not a few of each
+    #[arg(
+        short,
+        long,
+        conflicts_with = "quiet",
+        help = "Every message a check could not be answered with, and every file it \
+                came from"
+    )]
+    pub verbose: bool,
+}
+
 /// What `check` takes.
 #[derive(clap::Args, Debug, Clone)]
 pub struct CheckArgs {
@@ -401,31 +396,14 @@ pub struct CheckArgs {
     )]
     pub min_severity: Option<String>,
 
-    /// File extensions to walk into when given a directory
-    #[arg(
-        long,
-        value_name = "EXT,...",
-        default_value_t = camello_sema::workspace::EXTENSIONS.join(","),
-        help = "Extensions to consider when walking a directory"
-    )]
-    pub extensions: String,
+    #[command(flatten)]
+    pub extensions: ExtensionsArg,
 
-    /// How many files to check at once
-    #[arg(
-        short = 'j',
-        long,
-        value_name = "N",
-        help = "How many files to check at once (default: one per core)"
-    )]
-    pub jobs: Option<usize>,
+    #[command(flatten)]
+    pub jobs: JobsArg,
 
-    /// Encodings a source may be in, tried in order
-    #[arg(
-        long,
-        value_name = "NAME,...",
-        help = "Encodings to try, in order, until one reads the file (default: utf-8)"
-    )]
-    pub encoding: Option<String>,
+    #[command(flatten)]
+    pub encoding: EncodingArg,
 
     /// Directories holding stub `.pm` files, which shadow the real modules
     #[arg(
@@ -585,9 +563,9 @@ impl CheckArgs {
             error_on,
             min_severity,
             format,
-            extensions: self.extensions,
-            jobs: self.jobs,
-            encoding: self.encoding,
+            extensions: self.extensions.extensions,
+            jobs: self.jobs.jobs,
+            encoding: self.encoding.encoding,
             stubs,
             inc: self.inc.as_deref().map(split_paths_owned),
             cache_dir: if self.no_cache {
@@ -847,12 +825,12 @@ pub fn run() -> Result<()> {
             check,
             // Asks for the default; see the flag.
             write: _,
-            extensions,
-            jobs,
+            extensions: ExtensionsArg { extensions },
+            jobs: JobsArg { jobs },
             stop_on_first_error,
             list_different,
             output,
-            encoding,
+            encoding: EncodingArg { encoding },
             layout,
         } => {
             // One source can be sent somewhere. A tree cannot: there is no one
@@ -903,7 +881,7 @@ pub fn run() -> Result<()> {
                 quiet,
                 very_quiet,
                 stop_on_first_error,
-                encoding,
+                encoding: EncodingArg { encoding },
             } => {
                 dump_file(
                     path,
@@ -917,13 +895,12 @@ pub fn run() -> Result<()> {
             }
             DevCommands::Check {
                 paths,
-                jobs,
+                jobs: JobsArg { jobs },
                 only,
                 list_invariants,
-                quiet,
-                verbose,
-                extensions,
-                encoding,
+                verbosity: VerbosityArgs { quiet, verbose },
+                extensions: ExtensionsArg { extensions },
+                encoding: EncodingArg { encoding },
             } => {
                 if list_invariants {
                     return list_invariants_and_exit();
@@ -941,11 +918,10 @@ pub fn run() -> Result<()> {
             }
             DevCommands::PerlDeparse {
                 paths,
-                jobs,
-                quiet,
-                verbose,
-                extensions,
-                encoding,
+                jobs: JobsArg { jobs },
+                verbosity: VerbosityArgs { quiet, verbose },
+                extensions: ExtensionsArg { extensions },
+                encoding: EncodingArg { encoding },
             } => {
                 // Better here than 4000 files later, one failed spawn at a time.
                 if !crate::check::deparse::available() {
@@ -1012,7 +988,6 @@ struct Formatted {
 /// the tree is under already keeps it — so the names are behind
 /// `--list-different`, and what stays is what a run cannot be understood
 /// without: the files that were left alone, and why.
-#[allow(clippy::too_many_arguments)]
 fn format_tree(
     paths: Vec<PathBuf>,
     check: bool,
@@ -1673,7 +1648,6 @@ fn wanted_invariants(only: Option<&str>) -> Result<Vec<crate::check::Invariant>>
     Ok(wanted)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn check_paths(
     paths: Vec<PathBuf>,
     jobs: Option<usize>,
