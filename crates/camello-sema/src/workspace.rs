@@ -70,6 +70,11 @@ where
         .collect()
 }
 
+/// The extensions a directory is walked for when nobody named others: what
+/// `camello check` defaults `--extensions` to, and what the language server
+/// indexes.
+pub const EXTENSIONS: &[&str] = &["pl", "pm", "t", "psgi"];
+
 /// The Perl files under a path, or the path itself when it names a file.
 ///
 /// Recursive, sorted, and it does not follow a symlink found below a

@@ -22,9 +22,10 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use camello_sema::decl::FileDecls;
+use camello_sema::workspace::EXTENSIONS;
 use camello_sema::Analysis;
 
-use crate::settings::{Settings, EXTENSIONS};
+use crate::settings::Settings;
 
 /// The program graph, and whether it is the whole of one yet.
 pub struct Index {

@@ -66,7 +66,7 @@ pub enum Commands {
         #[arg(
             long,
             value_name = "EXT,...",
-            default_value = "pl,pm,t,psgi",
+            default_value_t = camello_sema::workspace::EXTENSIONS.join(","),
             help = "Extensions to consider when walking a directory"
         )]
         extensions: String,
@@ -262,7 +262,7 @@ pub enum DevCommands {
         #[arg(
             long,
             value_name = "EXT,...",
-            default_value = "pl,pm,t,psgi",
+            default_value_t = camello_sema::workspace::EXTENSIONS.join(","),
             help = "Extensions to consider when walking a directory"
         )]
         extensions: String,
@@ -318,7 +318,7 @@ pub enum DevCommands {
         #[arg(
             long,
             value_name = "EXT,...",
-            default_value = "pl,pm,t,psgi",
+            default_value_t = camello_sema::workspace::EXTENSIONS.join(","),
             help = "Extensions to consider when walking a directory"
         )]
         extensions: String,
@@ -405,7 +405,7 @@ pub struct CheckArgs {
     #[arg(
         long,
         value_name = "EXT,...",
-        default_value = "pl,pm,t,psgi",
+        default_value_t = camello_sema::workspace::EXTENSIONS.join(","),
         help = "Extensions to consider when walking a directory"
     )]
     pub extensions: String,
@@ -447,7 +447,10 @@ pub struct CheckArgs {
     #[arg(
         long,
         value_name = "DIR",
-        help = "Where to cache dependency declarations (default: .camello-cache)"
+        help = format!(
+            "Where to cache dependency declarations (default: {})",
+            camello_sema::resolve::CACHE_DIR
+        )
     )]
     pub cache_dir: Option<PathBuf>,
 
@@ -592,7 +595,7 @@ impl CheckArgs {
             } else {
                 Some(
                     self.cache_dir
-                        .unwrap_or_else(|| PathBuf::from(".camello-cache")),
+                        .unwrap_or_else(|| PathBuf::from(camello_sema::resolve::CACHE_DIR)),
                 )
             },
             dialect: camello_sema::annotate::Dialect::new(config.check.read_as.clone()),
