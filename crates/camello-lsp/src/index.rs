@@ -70,24 +70,45 @@ impl Index {
         self.analysis.program().index_of(path).is_some()
     }
 
-    /// Install one file's declarations, and say whether they were news.
+    /// Put files into the graph, and say whether anything another file can
+    /// see changed.
     ///
-    /// The only way declarations enter the graph after the walk, so that the
-    /// memo cannot be updated by some paths and not others — which is the
-    /// whole of the bug this replaced (`docs/lsp.md`, "Incremental
-    /// reanalysis", step 3).
+    /// The one way declarations enter the graph after the walk, so that the
+    /// memo cannot be updated by some paths and not others (`docs/lsp.md`,
+    /// "Incremental reanalysis", step 3). Every file is installed, the graph
+    /// is linked once if any of them were news — linking walks every file,
+    /// and a watched-file event may carry many — and then each file's returns
+    /// are inferred again: what tier 2 says about a file may have changed
+    /// without anything tier 1 saw changing — `return $self->load` edited to
+    /// `return $self->parse`, both cross-file — and that is step 4′
+    /// (`docs/return-inference.md`).
+    pub fn apply<'a>(&mut self, files: Vec<(&'a Path, FileDecls, &'a str)>) -> bool {
+        let mut changed = false;
+        let mut sources = Vec::with_capacity(files.len());
+        for (path, decls, source) in files {
+            changed |= self.install(path, decls);
+            sources.push((path, source));
+        }
+        if changed {
+            self.analysis.link();
+        }
+        for (path, source) in sources {
+            changed |= self.analysis.reinfer_returns(path, source);
+        }
+        changed
+    }
+
+    /// Install one file's declarations, and say whether they were news. The
+    /// server goes through [`Index::apply`]; this is its first step.
     ///
     /// Unchanged declarations are not installed at all, and that is not only
     /// an economy: [`Program::replace`] rebuilds the name indexes over every
     /// file, and it would put back the *unlinked* declarations that
     /// [`Analysis::link`] had already resolved.
     ///
-    /// A caller that gets `true` owes the graph a `link` — batched, because
-    /// linking walks every file and a watched-file event may carry many.
-    ///
     /// [`Program::replace`]: camello_sema::program::Program::replace
     /// [`Analysis::link`]: camello_sema::Analysis::link
-    pub fn install(&mut self, path: &Path, decls: FileDecls) -> bool {
+    pub(crate) fn install(&mut self, path: &Path, decls: FileDecls) -> bool {
         let fingerprint = fingerprint(&decls);
         if self
             .fingerprints
