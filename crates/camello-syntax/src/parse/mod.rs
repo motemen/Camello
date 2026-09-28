@@ -474,12 +474,8 @@ impl<'a> Parser<'a> {
 
     /// Consume the current token as a name (the parser contract).
     pub(crate) fn bump_name(&mut self) -> bool {
-        if self.lexer.take_name().is_none() {
-            return false;
-        }
-        self.steps_without_progress = 0;
-        self.events.token();
-        true
+        let taken = self.lexer.take_name().is_some();
+        self.record_taken(taken, 1)
     }
 
     /// The text a punctuation variable's name would be, if the current token is
@@ -495,22 +491,14 @@ impl<'a> Parser<'a> {
 
     /// Consume `^NAME` as one token (`${^MATCH}`).
     pub(crate) fn bump_caret_name(&mut self) -> bool {
-        if self.lexer.take_caret_name().is_none() {
-            return false;
-        }
-        self.steps_without_progress = 0;
-        self.events.token();
-        true
+        let taken = self.lexer.take_caret_name().is_some();
+        self.record_taken(taken, 1)
     }
 
     /// Consume the current token as a bare sigil (signature placeholders).
     pub(crate) fn bump_sigil(&mut self) -> bool {
-        if self.lexer.take_sigil().is_none() {
-            return false;
-        }
-        self.steps_without_progress = 0;
-        self.events.token();
-        true
+        let taken = self.lexer.take_sigil().is_some();
+        self.record_taken(taken, 1)
     }
 
     /// The raw body of the `(...)` group at the cursor, without consuming it.
@@ -520,16 +508,25 @@ impl<'a> Parser<'a> {
 
     /// Consume a `(...)` group as raw text (prototypes, attribute arguments).
     pub(crate) fn bump_raw_parens(&mut self) -> bool {
-        if self.lexer.take_raw_parens().is_none() {
+        let taken = self.lexer.take_raw_parens().is_some();
+        self.record_taken(taken, 3)
+    }
+
+    /// Record the `tokens` tokens a `take_*` on the lexer just consumed, if it
+    /// did, and pass on whether it did.
+    ///
+    /// Input was consumed, so the no-progress counter starts again. Every
+    /// `bump_*` built on a `take_*` goes through here so none of them can forget
+    /// that: one once did, and a file with enough prototypes in it could reach
+    /// the step limit on legitimate progress.
+    fn record_taken(&mut self, taken: bool, tokens: usize) -> bool {
+        if !taken {
             return false;
         }
-        // Input was consumed, so the no-progress counter starts again. Every
-        // other `bump_*` says so; this one did not, and a file with enough
-        // prototypes in it could reach the step limit on legitimate progress.
         self.steps_without_progress = 0;
-        self.events.token();
-        self.events.token();
-        self.events.token();
+        for _ in 0..tokens {
+            self.events.token();
+        }
         true
     }
 }
