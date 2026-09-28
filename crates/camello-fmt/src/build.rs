@@ -863,17 +863,7 @@ impl<'a> Builder<'a> {
                             .find(|child| child.node_kind() == NodeKind::SUBSCRIPT)
                     });
                 // No `SUBSCRIPT` node means empty brackets, which stay empty.
-                let Some(subscript) = subscript else {
-                    return false;
-                };
-                return match self.options.delimiter_spacing {
-                    DelimiterSpacing::Tight => false,
-                    DelimiterSpacing::Standard => {
-                        Self::item_count(&subscript) >= 2
-                            || sole_item(&subscript).is_some_and(|item| !is_simple_term(&item))
-                    }
-                    DelimiterSpacing::Loose => true,
-                };
+                return subscript.is_some_and(|subscript| self.pads_inside(&subscript));
             }
         }
         // A dereference's braces hug a name and open up around anything else:
@@ -1565,26 +1555,8 @@ impl<'a> Builder<'a> {
             return Doc::group(true, Doc::concat(parts));
         }
 
-        // docs/formatting.md SPACING-7: whether a flat literal pads its inside
-        // depends on the configured spacing and how many items it holds.
-        // An `a => 1` pair is two items, so `{ a => 1 }` keeps its spaces
-        // under Standard while `[$x]` stays tight. Parentheses are always
-        // tight, whatever the setting.
-        let spacious = open != T!["("]
-            && match self.options.delimiter_spacing {
-                DelimiterSpacing::Tight => false,
-                // A lone item closes the brackets up only where it is a
-                // name: `[$x]` and `{ $single }` are what the arity rule was
-                // for, and `[ map { $_->foo } @$list ]`, `{ $obj->qux }` and
-                // `[ foo($body) ]` are what it caught by accident — a
-                // literal with something inside it, squeezed against its own
-                // brackets because it held one thing.
-                DelimiterSpacing::Standard => {
-                    Self::item_count(node) >= 2
-                        || sole_item(node).is_some_and(|item| !is_simple_term(&item))
-                }
-                DelimiterSpacing::Loose => true,
-            };
+        // Parentheses are always tight, whatever the setting (SPACING-7).
+        let spacious = open != T!["("] && self.pads_inside(node);
         if spacious {
             parts.push(Doc::Space);
         }
@@ -1612,6 +1584,28 @@ impl<'a> Builder<'a> {
             return Doc::group_across_lines(Doc::concat(parts));
         }
         Doc::group(false, Doc::concat(parts))
+    }
+
+    /// Does a flat bracket pair holding these contents pad its inside?
+    ///
+    /// docs/formatting.md SPACING-7: it depends on the configured spacing and
+    /// how many items the brackets hold. An `a => 1` pair is two items, so
+    /// `{ a => 1 }` keeps its spaces under Standard while `[$x]` stays tight.
+    /// A literal and a subscript read the same way.
+    fn pads_inside(&self, node: &SyntaxNode) -> bool {
+        match self.options.delimiter_spacing {
+            DelimiterSpacing::Tight => false,
+            // A lone item closes the brackets up only where it is a name:
+            // `[$x]` and `{ $single }` are what the arity rule was for, and
+            // `[ map { $_->foo } @$list ]`, `{ $obj->qux }` and `[ foo($body) ]`
+            // are what it caught by accident — a literal with something inside
+            // it, squeezed against its own brackets because it held one thing.
+            DelimiterSpacing::Standard => {
+                Self::item_count(node) >= 2
+                    || sole_item(node).is_some_and(|item| !is_simple_term(&item))
+            }
+            DelimiterSpacing::Loose => true,
+        }
     }
 
     /// How many items a delimited literal holds, where both `,` and `=>`
