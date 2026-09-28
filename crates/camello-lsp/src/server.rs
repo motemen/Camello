@@ -16,17 +16,18 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
+use rowan::TextSize;
 use tower_lsp_server::jsonrpc::Result;
 use tower_lsp_server::ls_types::*;
 use tower_lsp_server::{Client, LanguageServer};
 
-use crate::analysis;
+use crate::analysis::{self, Tables};
 use crate::document::Document;
 use crate::handlers;
 use crate::index;
 use crate::position::Encoding;
 use crate::settings::Settings;
-use crate::state::GlobalState;
+use crate::state::{GlobalState, Snapshot};
 
 /// How long after a keystroke the checker runs.
 ///
@@ -75,6 +76,37 @@ impl Backend {
     /// Check a document now and publish the result.
     async fn check_and_publish(&self, uri: Uri) {
         publish_for(&self.state, &self.client, uri).await;
+    }
+
+    /// Answer a request about one position in an open document: its tables
+    /// as of now and the graph, or the file alone, as context — on a blocking
+    /// thread, as every analysis is.
+    ///
+    /// `None` when the document is not open. A thread that panicked answers
+    /// with nothing found rather than an error.
+    async fn with_analysis<T>(
+        &self,
+        position: TextDocumentPositionParams,
+        answer: impl FnOnce(&Snapshot, &Tables, &analysis::Context<'_>, TextSize) -> T + Send + 'static,
+    ) -> Option<T>
+    where
+        T: Default + Send + 'static,
+    {
+        let snapshot = self.read().snapshot(&position.text_document.uri)?;
+        let offset = snapshot.document.positions.offset(position.position);
+        Some(
+            tokio::task::spawn_blocking(move || {
+                let tables = snapshot.tables_now();
+                let index = snapshot
+                    .index
+                    .read()
+                    .expect("no writer panics holding this");
+                let context = analysis::context(&snapshot.document, &index, &snapshot.settings);
+                answer(&snapshot, &tables, &context, offset)
+            })
+            .await
+            .unwrap_or_default(),
+        )
     }
 
     /// Wait out the debounce, then run the edit loop — unless a newer edit
@@ -598,81 +630,61 @@ impl LanguageServer for Backend {
     }
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
-        let position = params.text_document_position_params;
-        let Some(snapshot) = self.read().snapshot(&position.text_document.uri) else {
-            return Ok(None);
-        };
-        let offset = snapshot.document.positions.offset(position.position);
-        Ok(tokio::task::spawn_blocking(move || {
-            let tables = snapshot.tables_now();
-            let index = snapshot
-                .index
-                .read()
-                .expect("no writer panics holding this");
-            let context = analysis::context(&snapshot.document, &index, &snapshot.settings);
-            handlers::hover::hover(&snapshot.document, &tables, &context, offset)
-        })
-        .await
-        .unwrap_or(None))
+        Ok(self
+            .with_analysis(
+                params.text_document_position_params,
+                |snapshot, tables, context, offset| {
+                    handlers::hover::hover(&snapshot.document, tables, context, offset)
+                },
+            )
+            .await
+            .flatten())
     }
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
-        let position = params.text_document_position;
-        let Some(snapshot) = self.read().snapshot(&position.text_document.uri) else {
-            return Ok(None);
-        };
-        let offset = snapshot.document.positions.offset(position.position);
-        let items = tokio::task::spawn_blocking(move || {
-            let tables = snapshot.tables_now();
-            let fallback = snapshot.clean_tables.clone();
-            let index = snapshot
-                .index
-                .read()
-                .expect("no writer panics holding this");
-            let context = analysis::context(&snapshot.document, &index, &snapshot.settings);
-            handlers::completion::completion(
-                &snapshot.document,
-                &tables,
-                fallback.as_deref(),
-                &context,
-                offset,
+        Ok(self
+            .with_analysis(
+                params.text_document_position,
+                |snapshot, tables, context, offset| {
+                    handlers::completion::completion(
+                        &snapshot.document,
+                        tables,
+                        snapshot.clean_tables.as_deref(),
+                        context,
+                        offset,
+                    )
+                },
             )
-        })
-        .await
-        .unwrap_or_default();
-        Ok(Some(CompletionResponse::Array(items)))
+            .await
+            .map(CompletionResponse::Array))
     }
 
     async fn goto_definition(
         &self,
         params: GotoDefinitionParams,
     ) -> Result<Option<GotoDefinitionResponse>> {
-        let position = params.text_document_position_params;
-        let uri = position.text_document.uri.clone();
-        let Some(snapshot) = self.read().snapshot(&uri) else {
-            return Ok(None);
-        };
-        let encoding = self.read().encoding;
-        let offset = snapshot.document.positions.offset(position.position);
-        let found = tokio::task::spawn_blocking(move || {
-            let tables = snapshot.tables_now();
-            let index = snapshot
-                .index
-                .read()
-                .expect("no writer panics holding this");
-            let context = analysis::context(&snapshot.document, &index, &snapshot.settings);
-            handlers::definition::definition(
-                &snapshot.document,
-                &uri,
-                &tables,
-                &context,
-                offset,
-                encoding,
+        let uri = params
+            .text_document_position_params
+            .text_document
+            .uri
+            .clone();
+        Ok(self
+            .with_analysis(
+                params.text_document_position_params,
+                move |snapshot, tables, context, offset| {
+                    handlers::definition::definition(
+                        &snapshot.document,
+                        &uri,
+                        tables,
+                        context,
+                        offset,
+                        snapshot.encoding,
+                    )
+                },
             )
-        })
-        .await
-        .unwrap_or(None);
-        Ok(found.map(GotoDefinitionResponse::Scalar))
+            .await
+            .flatten()
+            .map(GotoDefinitionResponse::Scalar))
     }
 
     async fn document_symbol(
