@@ -235,8 +235,13 @@ impl BindingInfo {
     /// `$x`, `@list` — the name as it is written.
     #[must_use]
     pub fn display(&self) -> String {
-        format!("{}{}", self.sigil.as_str(), self.name)
+        written(self.sigil, &self.name)
     }
+}
+
+/// `$x`, `@list` — a name as it is written, sigil first.
+fn written(sigil: Sigil, name: &str) -> String {
+    format!("{}{name}", sigil.as_str())
 }
 
 /// One reference, and the binding it resolved to.
@@ -477,7 +482,7 @@ impl<'a> Pass<'a> {
             let Some(code) = binding.kind.unused_code() else {
                 continue;
             };
-            let display = format!("{}{}", binding.sigil.as_str(), binding.name);
+            let display = written(binding.sigil, &binding.name);
             let message = if code == Code::UnusedParameter {
                 format!("`{display}` is taken as a parameter and never read")
             } else {
@@ -495,6 +500,23 @@ impl<'a> Pass<'a> {
         range: TextRange,
         kind: BindingKind,
     ) -> usize {
+        let scope = self
+            .scopes
+            .len()
+            .checked_sub(1)
+            .expect("a scope is always open");
+        self.declare_in(scope, sigil, name, range, kind)
+    }
+
+    /// Bind a name in the scope at `scope`, counted from the file's.
+    fn declare_in(
+        &mut self,
+        scope: usize,
+        sigil: Sigil,
+        name: String,
+        range: TextRange,
+        kind: BindingKind,
+    ) -> usize {
         let index = self.bindings.len();
         self.bindings.push(Binding {
             sigil,
@@ -504,7 +526,7 @@ impl<'a> Pass<'a> {
             used: false,
             guard: false,
         });
-        let scope = self.scopes.last_mut().expect("a scope is always open");
+        let scope = &mut self.scopes[scope];
         scope.bindings.push(index);
         scope.names.insert((sigil, name), index);
         index
@@ -514,7 +536,7 @@ impl<'a> Pass<'a> {
         let name = variable.name()?;
         if kind.reports_shadowing() && reports_unused_name(&name) {
             if let Some(outer) = self.lookup_outer(variable.sigil(), &name) {
-                let display = format!("{}{name}", variable.sigil().as_str());
+                let display = variable.display();
                 let outer_line = self.line_of(self.bindings[outer].range.start());
                 self.diagnostics.push(Diagnostic::new(
                     Code::ShadowedVariable,
@@ -594,7 +616,7 @@ impl<'a> Pass<'a> {
         if found.is_some() || !self.strict.at(range.start()) {
             return;
         }
-        let display = format!("{}{name}", sigil.as_str());
+        let display = written(sigil, name);
         self.diagnostics.push(Diagnostic::new(
             Code::UndeclaredVariable,
             range,
@@ -806,6 +828,16 @@ impl<'a> Pass<'a> {
 
     fn walk_sub(&mut self, node: &SyntaxNode) {
         let definition = SubDef::cast(node.clone()).expect("kind checked");
+        self.walk_sub_parts(definition.signature(), definition.body());
+    }
+
+    fn walk_anon_sub(&mut self, node: &SyntaxNode) {
+        let definition = ast::AnonSubExpr::cast(node.clone()).expect("kind checked");
+        self.walk_sub_parts(definition.signature(), definition.body());
+    }
+
+    /// A sub, named or not: one scope for its signature and body together.
+    fn walk_sub_parts(&mut self, signature: Option<ast::SubSignature>, body: Option<ast::Block>) {
         self.push_scope();
         // `@_` and `$_` are bound inside every sub whatever its shape.
         self.declare_raw(
@@ -814,31 +846,13 @@ impl<'a> Pass<'a> {
             TextRange::default(),
             BindingKind::Implicit,
         );
-        if let Some(signature) = definition.signature() {
+        if let Some(signature) = signature {
             self.walk(signature.syntax());
         }
-        if let Some(body) = definition.body() {
+        if let Some(body) = body {
             // The body's own BLOCK scope would hide the parameters from an
             // `unused` report that belongs to the sub, so the block is walked
             // without a second scope.
-            self.walk_children(body.syntax());
-        }
-        self.pop_scope();
-    }
-
-    fn walk_anon_sub(&mut self, node: &SyntaxNode) {
-        let definition = ast::AnonSubExpr::cast(node.clone()).expect("kind checked");
-        self.push_scope();
-        self.declare_raw(
-            Sigil::Array,
-            "_".to_string(),
-            TextRange::default(),
-            BindingKind::Implicit,
-        );
-        if let Some(signature) = definition.signature() {
-            self.walk(signature.syntax());
-        }
-        if let Some(body) = definition.body() {
             self.walk_children(body.syntax());
         }
         self.pop_scope();
@@ -891,18 +905,7 @@ impl<'a> Pass<'a> {
         range: TextRange,
         kind: BindingKind,
     ) {
-        let index = self.bindings.len();
-        self.bindings.push(Binding {
-            sigil,
-            name: name.clone(),
-            range,
-            kind,
-            used: false,
-            guard: false,
-        });
-        let scope = self.scopes.first_mut().expect("the file scope is open");
-        scope.bindings.push(index);
-        scope.names.insert((sigil, name), index);
+        self.declare_in(0, sigil, name, range, kind);
     }
 
     // ----- quoted constructs -----
