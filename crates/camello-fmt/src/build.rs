@@ -691,16 +691,8 @@ impl<'a> Builder<'a> {
     }
 
     /// Will this block be written across lines?
-    ///
-    /// The memo is consulted before the block's statements are collected: this
-    /// is asked of every node that has a block under it, and by then the block
-    /// has almost always answered for itself already.
     fn block_breaks(&mut self, block: &SyntaxNode) -> bool {
-        if let Some(&flat) = self.flat_blocks.get(&block.text_range().start()) {
-            return !flat;
-        }
-        let statements: Vec<SyntaxNode> = block.children().collect();
-        !self.block_can_be_flat(block, &statements)
+        !self.block_can_be_flat(block)
     }
 
     /// Does this element finish on a line of its own, at the level the
@@ -1229,18 +1221,17 @@ impl<'a> Builder<'a> {
     /// A block. Control-structure blocks always break; a `map`/`sub`/`do` block
     /// may stay on one line.
     fn block(&mut self, node: &SyntaxNode) -> Doc {
-        let statements: Vec<SyntaxNode> = node.children().collect();
-        let flat = self.block_can_be_flat(node, &statements);
+        let flat = self.block_can_be_flat(node);
 
         let mut body = Vec::new();
         if flat {
             // A `;` ends the statement it belongs to, so what separates the
             // next one from it is the space: `sub f { a; b }`.
-            for (index, statement) in statements.iter().enumerate() {
+            for (index, statement) in node.children().enumerate() {
                 if index > 0 {
                     body.push(Doc::Space);
                 }
-                body.push(self.node(statement));
+                body.push(self.node(&statement));
             }
         } else {
             self.statements_into(node, &mut body);
@@ -1313,17 +1304,17 @@ impl<'a> Builder<'a> {
     /// ninety seconds: recursing into every descendant block meant each level
     /// re-answered the question for every level below it, and each answer
     /// allocated the node's whole text to look for a newline in it.
-    fn block_can_be_flat(&mut self, node: &SyntaxNode, statements: &[SyntaxNode]) -> bool {
+    fn block_can_be_flat(&mut self, node: &SyntaxNode) -> bool {
         let key = node.text_range().start();
         if let Some(&answer) = self.flat_blocks.get(&key) {
             return answer;
         }
-        let answer = self.compute_block_can_be_flat(node, statements);
+        let answer = self.compute_block_can_be_flat(node);
         self.flat_blocks.insert(key, answer);
         answer
     }
 
-    fn compute_block_can_be_flat(&mut self, node: &SyntaxNode, statements: &[SyntaxNode]) -> bool {
+    fn compute_block_can_be_flat(&mut self, node: &SyntaxNode) -> bool {
         // Error recovery can leave a block with no closing brace. There is no
         // `{ x }` to fit on a line, so there is nothing to be flat, and saying
         // otherwise makes the output re-read as a different shape on the next
@@ -1360,9 +1351,9 @@ impl<'a> Builder<'a> {
         }
         // An empty block elsewhere is `{ }`; there is nothing to put on a line
         // of its own.
-        if statements.is_empty() {
+        let Some(last) = node.children().last() else {
             return !self.contains_comment(node);
-        }
+        };
         if !self.options.allow_single_line_blocks {
             return false;
         }
@@ -1374,7 +1365,6 @@ impl<'a> Builder<'a> {
         if self.contains_newline(node) {
             return false;
         }
-        let last = statements.last().expect("statements is not empty");
         if last
             .children_with_tokens()
             .filter_map(|child| child.into_token())
@@ -1395,8 +1385,7 @@ impl<'a> Builder<'a> {
         // its own, so the answer covers every depth without this level walking
         // there itself.
         for child in nearest_blocks(node) {
-            let statements: Vec<SyntaxNode> = child.children().collect();
-            if !self.block_can_be_flat(&child, &statements) {
+            if !self.block_can_be_flat(&child) {
                 return false;
             }
         }
