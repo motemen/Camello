@@ -332,7 +332,7 @@ struct Inference {
 }
 
 /// Every place a value leaves one sub, as the walk collected them.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct Sites {
     /// The scalar type of each.
     scalar: Vec<Type>,
@@ -360,40 +360,54 @@ impl Sites {
         if self.opaque {
             return Returns::default();
         }
-        let mut members = self.scalar.clone();
-        let mut shapes = self.list.clone();
-        let mut invocant = self.invocant;
+        let mut sites = self.clone();
+        // A loop, a bare block, a `package`, a nested `sub`, an empty body —
+        // and an `if` chain with no `else`, whose false value is its
+        // condition's.
+        if !sites.push_tail(tail) {
+            sites.push(Type::Unknown, ListShape::Unknown, false);
+        }
+        let scalar = Type::union(sites.scalar);
+        Returns::inferred(
+            scalar.clone(),
+            join_shapes(sites.list),
+            sites.invocant && holds_own_class(&scalar, package),
+        )
+    }
+
+    /// One more site.
+    fn push(&mut self, ty: Type, shape: ListShape, invocant: bool) {
+        self.scalar.push(ty);
+        self.list.push(shape);
+        self.invocant |= invocant;
+    }
+
+    /// What a tail leaves, as one more site — and `false`, adding nothing,
+    /// when the tail is opaque, which each caller reads its own way. A
+    /// `return` or a `die` adds nothing either: counted already, or never
+    /// read.
+    fn push_tail(&mut self, tail: &Tail) -> bool {
         match tail {
             Tail::Value {
                 ty,
                 shape,
-                invocant: tail,
+                invocant,
             } => {
-                members.push(ty.clone());
-                shapes.push(shape.clone());
-                invocant |= tail;
+                self.push(ty.clone(), shape.clone(), *invocant);
+                true
             }
-            // A `return` or a `die`: counted already, or never read.
-            Tail::Left => {}
-            // A loop, a bare block, a `package`, a nested `sub`, an empty
-            // body — and an `if` chain with no `else`, whose false value is
-            // its condition's.
-            Tail::Opaque => {
-                members.push(Type::Unknown);
-                shapes.push(ListShape::Unknown);
-            }
+            Tail::Left => true,
+            Tail::Opaque => false,
         }
-        let scalar = Type::union(members);
-        let list = shapes
-            .into_iter()
-            .reduce(ListShape::join)
-            .unwrap_or(ListShape::Unknown);
-        Returns::inferred(
-            scalar.clone(),
-            list,
-            invocant && holds_own_class(&scalar, package),
-        )
     }
+}
+
+/// The join of every list shape, and `Unknown` for none.
+fn join_shapes(shapes: Vec<ListShape>) -> ListShape {
+    shapes
+        .into_iter()
+        .reduce(ListShape::join)
+        .unwrap_or(ListShape::Unknown)
 }
 
 /// What the statement just walked leaves as the value of the sub it is in.
@@ -670,30 +684,14 @@ impl Pass<'_> {
 
         for child in node.children() {
             match child.node_kind() {
-                NodeKind::BLOCK => {
-                    self.set_tail(Tail::Opaque);
-                    self.block(&child);
-                    tails.extend(self.tail());
-                    let ended = std::mem::replace(&mut self.env, otherwise.clone());
-                    match &mut after {
-                        Some(env) => env.join(&ended),
-                        None => after = Some(ended),
-                    }
-                }
+                NodeKind::BLOCK => self.branch(&child, &otherwise, &mut tails, &mut after),
                 NodeKind::ELSIF_CLAUSE | NodeKind::ELSE_CLAUSE => {
                     has_else |= child.node_kind() == NodeKind::ELSE_CLAUSE;
                     self.env = otherwise.clone();
                     let mut clause_seen = false;
                     for inner in child.children() {
                         if inner.node_kind() == NodeKind::BLOCK {
-                            self.set_tail(Tail::Opaque);
-                            self.block(&inner);
-                            tails.extend(self.tail());
-                            let ended = std::mem::replace(&mut self.env, otherwise.clone());
-                            match &mut after {
-                                Some(env) => env.join(&ended),
-                                None => after = Some(ended),
-                            }
+                            self.branch(&inner, &otherwise, &mut tails, &mut after);
                         } else {
                             self.expression(&inner);
                             // An `elsif` carries a condition of its own, and
@@ -738,6 +736,25 @@ impl Pass<'_> {
         }
         if self.infer.is_some() {
             self.set_tail(join_tails(&tails, has_else));
+        }
+    }
+
+    /// One block of an `if` chain: walked, its tail kept, and what it left
+    /// joined into `after` before the next branch starts from `otherwise`.
+    fn branch(
+        &mut self,
+        block: &SyntaxNode,
+        otherwise: &Env,
+        tails: &mut Vec<Tail>,
+        after: &mut Option<Env>,
+    ) {
+        self.set_tail(Tail::Opaque);
+        self.block(block);
+        tails.extend(self.tail());
+        let ended = std::mem::replace(&mut self.env, otherwise.clone());
+        match after {
+            Some(env) => env.join(&ended),
+            None => *after = Some(ended),
         }
     }
 
@@ -1052,10 +1069,7 @@ impl Pass<'_> {
                     if asked {
                         return shapes.into_iter().next().unwrap_or(ListShape::Unknown);
                     }
-                    return shapes
-                        .into_iter()
-                        .reduce(ListShape::join)
-                        .unwrap_or(ListShape::Unknown);
+                    return join_shapes(shapes);
                 }
                 ListShape::Unknown
             }
@@ -1681,6 +1695,25 @@ impl Pass<'_> {
         returns.scalar
     }
 
+    /// The argument count of a method call, against what `name` declares.
+    fn check_method_arity(
+        &mut self,
+        params: &Params,
+        call: &ast::MethodCall,
+        arguments: &[SyntaxNode],
+        name: &str,
+    ) {
+        let shape = crate::arity::CallShape::of(arguments, &call.pairs());
+        crate::arity::check_shape(
+            params,
+            &shape,
+            true,
+            name,
+            call.method_range(),
+            &mut self.diagnostics,
+        );
+    }
+
     fn method_call(&mut self, node: &SyntaxNode) -> Type {
         let call = ast::MethodCall::cast(node.clone()).expect("kind checked");
         let arguments = call.args();
@@ -1749,15 +1782,7 @@ impl Pass<'_> {
                 // the arity pass never saw: that pass resolves a bareword
                 // invocant and nothing else, and would otherwise say it twice.
                 if through_a_value {
-                    let shape = crate::arity::CallShape::of(&arguments, &call.pairs());
-                    crate::arity::check_shape(
-                        &params,
-                        &shape,
-                        true,
-                        &symbol.name,
-                        call.method_range(),
-                        &mut self.diagnostics,
-                    );
+                    self.check_method_arity(&params, &call, &arguments, &symbol.name);
                 }
                 self.check_arguments(&params, &call.pairs(), &typed, &method, call.method_range());
                 // `Foo->new(...)` is an `InstanceOf['Foo']` (`docs/typecheck.md`,
@@ -1798,15 +1823,7 @@ impl Pass<'_> {
                 let params = attribute.params(&method);
                 let returns = self.program.slot_type(&class, attribute, &method);
                 if through_a_value {
-                    let shape = crate::arity::CallShape::of(&arguments, &call.pairs());
-                    crate::arity::check_shape(
-                        &params,
-                        &shape,
-                        true,
-                        &method,
-                        call.method_range(),
-                        &mut self.diagnostics,
-                    );
+                    self.check_method_arity(&params, &call, &arguments, &method);
                 }
                 self.check_arguments(&params, &call.pairs(), &typed, &method, call.method_range());
                 // An accessor hands back one value, whatever the context.
@@ -1927,9 +1944,7 @@ impl Pass<'_> {
         // answered is one value of *that* type in list context too.
         let shape = self.return_shape(typed, &ty);
         if let Some(inference) = &mut self.infer {
-            inference.sites.scalar.push(ty);
-            inference.sites.list.push(shape);
-            inference.sites.invocant |= invocant;
+            inference.sites.push(ty, shape, invocant);
         }
     }
 
@@ -1962,10 +1977,7 @@ impl Pass<'_> {
             return;
         };
         match target {
-            Some(returns) => {
-                inference.sites.scalar.push(returns.scalar);
-                inference.sites.list.push(returns.list);
-            }
+            Some(returns) => inference.sites.push(returns.scalar, returns.list, false),
             None => inference.sites.opaque = true,
         }
     }
@@ -2630,14 +2642,7 @@ fn bind_params(env: &mut Env, params: &Params, package: &str) {
         } => {
             for (index, param) in params.iter().enumerate() {
                 let ty = if index == 0 && *invocant {
-                    if param.name == "$class" {
-                        // Not `InstanceOf`: `$class` holds a *name*, and what
-                        // it names is this package or something below it
-                        // (`docs/types.md`, INFER-9a).
-                        Type::ClassName(Some(package.to_string()))
-                    } else {
-                        Type::InstanceOf(package.to_string())
-                    }
+                    invocant_type(&param.name, package)
                 } else {
                     param.ty.clone()
                 };
@@ -2648,20 +2653,25 @@ fn bind_params(env: &mut Env, params: &Params, package: &str) {
             params, invocant, ..
         } => {
             if let Some(name) = invocant {
-                // The same reading a positional invocant gets: `$class` holds
-                // a class name, `$self` an instance (`docs/types.md`, INFER-9a).
-                let ty = if name == "$class" {
-                    Type::ClassName(Some(package.to_string()))
-                } else {
-                    Type::InstanceOf(package.to_string())
-                };
-                bind(env, name, ty);
+                bind(env, name, invocant_type(name, package));
             }
             for param in params {
                 bind(env, &param.name, param.ty.clone());
             }
         }
         Params::Unknown => {}
+    }
+}
+
+/// What a sub's invocant holds, by the name it was given.
+///
+/// Not `InstanceOf` for `$class`: it holds a *name*, and what it names is this
+/// package or something below it (`docs/types.md`, INFER-9a).
+fn invocant_type(name: &str, package: &str) -> Type {
+    if name == "$class" {
+        Type::ClassName(Some(package.to_string()))
+    } else {
+        Type::InstanceOf(package.to_string())
     }
 }
 
@@ -3589,35 +3599,20 @@ fn join_tails(tails: &[Tail], has_else: bool) -> Tail {
     if !has_else {
         return Tail::Opaque;
     }
-    let mut members = Vec::new();
-    let mut shapes = Vec::new();
-    let mut invocant = false;
+    let mut sites = Sites::default();
     for tail in tails {
-        match tail {
-            Tail::Value {
-                ty,
-                shape,
-                invocant: one,
-            } => {
-                members.push(ty.clone());
-                shapes.push(shape.clone());
-                invocant |= one;
-            }
-            Tail::Left => {}
-            Tail::Opaque => return Tail::Opaque,
+        if !sites.push_tail(tail) {
+            return Tail::Opaque;
         }
     }
-    if members.is_empty() {
+    if sites.scalar.is_empty() {
         // Every branch returned or died, so nothing falls out of the chain.
         return Tail::Left;
     }
     Tail::Value {
-        ty: Type::union(members),
-        shape: shapes
-            .into_iter()
-            .reduce(ListShape::join)
-            .unwrap_or(ListShape::Unknown),
-        invocant,
+        ty: Type::union(sites.scalar),
+        shape: join_shapes(sites.list),
+        invocant: sites.invocant,
     }
 }
 
