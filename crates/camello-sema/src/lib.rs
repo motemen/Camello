@@ -338,13 +338,8 @@ impl Analysis {
             if pending.is_empty() {
                 return;
             }
-            let program = &self.program;
-            let found = workspace::in_parallel(&pending, jobs, |file| {
-                let only = program.unresolved_returns(*file);
-                let path = program.file(*file).map(|entry| entry.path.clone())?;
-                let source = read(&path)?;
-                let parsed = camello_syntax::parse::parse(&source);
-                Some(flow::infer_returns(&parsed.syntax(), *file, program, &only))
+            let found = walk_returns(&self.program, &pending, jobs, &read, |file| {
+                self.program.unresolved_returns(file)
             });
             let mut installed = false;
             for (file, results) in pending.iter().zip(found) {
@@ -389,13 +384,8 @@ impl Analysis {
             .copied()
             .filter(|file| !self.program.written_returns(*file).is_empty())
             .collect();
-        let program = &self.program;
-        let found = workspace::in_parallel(&wanted, jobs, |file| {
-            let only = program.written_returns(*file);
-            let path = program.file(*file).map(|entry| entry.path.clone())?;
-            let source = read(&path)?;
-            let parsed = camello_syntax::parse::parse(&source);
-            Some(flow::infer_returns(&parsed.syntax(), *file, program, &only))
+        let found = walk_returns(&self.program, &wanted, jobs, &read, |file| {
+            self.program.written_returns(file)
         });
         let mut drifted = Vec::new();
         for (file, results) in wanted.iter().zip(found) {
@@ -472,14 +462,14 @@ impl Analysis {
         source: &str,
         options: &Options,
     ) -> Vec<Diagnostic> {
-        self.analyse_file(path, root, source, options, false)
+        self.analyse_file(path, root, source, options, Record::Nothing)
             .diagnostics
     }
 
     /// The same, keeping the tables the passes built on the way
     /// (`docs/lsp.md`, "What sema must newly expose").
     ///
-    /// `record` is what an editor asks for and the CLI does not: the scope
+    /// [`Record::Types`] is what an editor asks for and the CLI does not: the scope
     /// resolution comes out either way — the pass computes it and the only
     /// question was whether anything kept it — while the type side-table
     /// costs a clone per typed expression and is built only when asked.
@@ -490,7 +480,7 @@ impl Analysis {
         root: &SyntaxNode,
         source: &str,
         options: &Options,
-        record: bool,
+        record: Record,
     ) -> FileAnalysis {
         let mut scope = scope::analyse(root, source, &options.guard_classes);
         let mut types = flow::TypeTable::default();
@@ -500,7 +490,7 @@ impl Analysis {
         let mut diagnostics = std::mem::take(&mut scope.diagnostics);
         if let Some(file) = self.program.index_of(path) {
             diagnostics.extend(arity::analyse(root, file, &self.program));
-            let checked = flow::analyse(root, file, &self.program, record);
+            let checked = flow::analyse(root, file, &self.program, record == Record::Types);
             diagnostics.extend(checked.diagnostics);
             types = checked.types;
             let guards = checked.guards;
@@ -545,6 +535,35 @@ impl Analysis {
             file: self.program.index_of(path),
         }
     }
+}
+
+/// What [`Analysis::analyse_file`] keeps beside the diagnostics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Record {
+    /// The diagnostics alone, which is what `camello check` reads.
+    Nothing,
+    /// The type side-table too, which hover and completion read.
+    Types,
+}
+
+/// Walk each file's bodies for the returns of the subs `subs` names in it,
+/// one file per job.
+///
+/// `None` for a file whose source could not be read.
+fn walk_returns(
+    program: &Program,
+    files: &[usize],
+    jobs: Option<usize>,
+    read: &(impl Fn(&Path) -> Option<String> + Sync),
+    subs: impl Fn(usize) -> Vec<usize> + Sync,
+) -> Vec<Option<Vec<(usize, annotate::Returns)>>> {
+    workspace::in_parallel(files, jobs, |file| {
+        let only = subs(*file);
+        let path = program.file(*file).map(|entry| entry.path.clone())?;
+        let source = read(&path)?;
+        let parsed = camello_syntax::parse::parse(&source);
+        Some(flow::infer_returns(&parsed.syntax(), *file, program, &only))
+    })
 }
 
 /// One file's answers, and the tables behind them.

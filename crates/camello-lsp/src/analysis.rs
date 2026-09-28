@@ -101,6 +101,11 @@ pub fn analyse(
 ) -> Analysed {
     let root = document.tree();
     let path = document.analysis_path();
+    let record = if record {
+        camello_sema::Record::Types
+    } else {
+        camello_sema::Record::Nothing
+    };
     let found =
         context
             .analysis()
