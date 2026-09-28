@@ -12,7 +12,7 @@ use camello_syntax::hash::OffsetMap;
 use camello_syntax::lang::{
     NodeExt, NodeKind, SyntaxElement, SyntaxNode, SyntaxToken, TokenExt, TokenKind, T,
 };
-use camello_syntax::parse::trivia::TriviaMap;
+use camello_syntax::parse::trivia::{Trivia, TriviaMap};
 
 use super::doc::{AnchorClass, Doc, Placement, ShapeKey};
 use super::{DelimiterSpacing, FormatterOptions};
@@ -174,27 +174,7 @@ impl<'a> Builder<'a> {
     /// the one place it is emitted. `feature.pm` ends with
     /// `# ex: set ro ft=perl:` and lost it.
     fn end_of_file_docs(&self) -> Doc {
-        let mut parts = Vec::new();
-        let mut items = self.trivia.at_end().iter().peekable();
-        while let Some(item) = items.next() {
-            match item.kind {
-                TokenKind::COMMENT => {
-                    parts.push(Doc::Comment(item.text.clone(), Placement::OwnLine));
-                    parts.push(Doc::HardLine);
-                    // The newline ending the comment's own line is not a blank
-                    // line, the same reading `leading_docs` takes.
-                    if items
-                        .peek()
-                        .is_some_and(|next| next.kind == TokenKind::NEWLINE)
-                    {
-                        items.next();
-                    }
-                }
-                TokenKind::NEWLINE => parts.push(Doc::BlankLine),
-                _ => {}
-            }
-        }
-        Doc::concat(parts)
+        trivia_docs(self.trivia.at_end())
     }
 
     /// Is there a comment anywhere inside this node?
@@ -339,8 +319,7 @@ impl<'a> Builder<'a> {
         // trailing trivia (the trivia model), so every NEWLINE here is a line the
         // user left empty. The renderer collapses runs of them to one
         // (docs/formatting.md BLANK_LINE-3).
-        let mut parts = Vec::new();
-        let mut items = trivia.leading.iter().peekable();
+        let mut items = trivia.leading.as_slice();
         // With one exception. A heredoc body is invisible to the parser
         // (the parser contract), so it holds no trivia of its own and the newline that
         // ended its terminator's line has no token to be trailing trivia of: it
@@ -348,30 +327,12 @@ impl<'a> Builder<'a> {
         // line ending, not a line the user left empty — the ones after it are.
         if follows_heredoc_body(token)
             && items
-                .peek()
+                .first()
                 .is_some_and(|item| item.kind == TokenKind::NEWLINE)
         {
-            items.next();
+            items = &items[1..];
         }
-        while let Some(item) = items.next() {
-            match item.kind {
-                TokenKind::COMMENT => {
-                    parts.push(Doc::Comment(item.text.clone(), Placement::OwnLine));
-                    parts.push(Doc::HardLine);
-                    // The newline that ends the comment's own line is not a
-                    // blank line.
-                    if items
-                        .peek()
-                        .is_some_and(|next| next.kind == TokenKind::NEWLINE)
-                    {
-                        items.next();
-                    }
-                }
-                TokenKind::NEWLINE => parts.push(Doc::BlankLine),
-                _ => {}
-            }
-        }
-        Doc::concat(parts)
+        trivia_docs(items)
     }
 
     /// The comment sharing a line with this token.
@@ -1004,7 +965,7 @@ impl<'a> Builder<'a> {
         next: &SyntaxElement,
         kind: TokenKind,
     ) -> bool {
-        let is_kind = |item: &camello_syntax::parse::trivia::Trivia| item.kind == kind;
+        let is_kind = |item: &Trivia| item.kind == kind;
 
         let after_previous = last_token_of(previous)
             .map(|token| self.trivia.of(token.text_range()))
@@ -1905,6 +1866,32 @@ fn nearest_blocks(node: &SyntaxNode) -> Vec<SyntaxNode> {
         }
     }
     found
+}
+
+/// A run of own-line trivia: each comment on a line of its own, and each
+/// newline a blank line.
+fn trivia_docs(items: &[Trivia]) -> Doc {
+    let mut parts = Vec::new();
+    let mut items = items.iter().peekable();
+    while let Some(item) = items.next() {
+        match item.kind {
+            TokenKind::COMMENT => {
+                parts.push(Doc::Comment(item.text.clone(), Placement::OwnLine));
+                parts.push(Doc::HardLine);
+                // The newline that ends the comment's own line is not a blank
+                // line.
+                if items
+                    .peek()
+                    .is_some_and(|next| next.kind == TokenKind::NEWLINE)
+                {
+                    items.next();
+                }
+            }
+            TokenKind::NEWLINE => parts.push(Doc::BlankLine),
+            _ => {}
+        }
+    }
+    Doc::concat(parts)
 }
 
 /// Whether this token may carry leading and trailing trivia of its own.
