@@ -798,15 +798,15 @@ impl Pass<'_> {
                 .filter_map(|element| element.into_token())
                 .any(|token| token.token_kind() == kind)
         };
-        let leaves = statement.descendants().any(|node| {
-            ast::Call::cast(node).is_some_and(|call| {
-                matches!(
-                    call.callee_name().as_deref(),
-                    Some("return" | "die" | "croak" | "confess" | "next" | "last")
-                )
-            })
+        // `next` and `last` leave what is below the guard as surely as
+        // `return` does, though not the sub.
+        let leaves_below = statement.descendants().any(|node| {
+            leaves(&node)
+                || ast::Call::cast(node).is_some_and(|call| {
+                    matches!(call.callee_name().as_deref(), Some("next" | "last"))
+                })
         });
-        if !leaves {
+        if !leaves_below {
             return;
         }
         // `return unless COND` and `COND or return` both mean "below here,
@@ -3611,20 +3611,22 @@ fn join_tails(tails: &[Tail], has_else: bool) -> Tail {
 }
 
 /// Whether a statement hands control back rather than leaving a value.
+fn leaves_the_sub(statement: &SyntaxNode) -> bool {
+    sole_expression(statement).is_some_and(|expression| leaves(&expression))
+}
+
+/// Whether a call is one control does not come back from.
 ///
 /// `throw` is here as a method as well as a bareword: `My::Error->throw(...)`
 /// is how a class-based exception is raised, and it is the same bottom.
-fn leaves_the_sub(statement: &SyntaxNode) -> bool {
-    let Some(expression) = sole_expression(statement) else {
-        return false;
-    };
-    if let Some(call) = ast::Call::cast(expression.clone()) {
+fn leaves(node: &SyntaxNode) -> bool {
+    if let Some(call) = ast::Call::cast(node.clone()) {
         return matches!(
             call.callee_name().as_deref(),
             Some("return" | "die" | "croak" | "confess" | "throw" | "exit" | "goto")
         );
     }
-    ast::MethodCall::cast(expression)
+    ast::MethodCall::cast(node.clone())
         .and_then(|call| call.method_name())
         .as_deref()
         == Some("throw")

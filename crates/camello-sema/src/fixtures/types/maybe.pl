@@ -30,6 +30,14 @@ my $guarded = find();
 return unless defined $guarded;
 print $guarded->id;
 
+my $exited = find();
+exit unless defined $exited;
+print $exited->id;
+
+my $thrown = find();
+My::Error->throw unless defined $thrown;
+print $thrown->id;
+
 my $defaulted = find() // Row->new(id => 1);
 print $defaulted->id;
 
