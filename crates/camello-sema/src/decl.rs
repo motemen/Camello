@@ -22,7 +22,7 @@ use camello_syntax::ast::{
     self, AnonHash, Args, AstNode, DeclKeyword, Literal, Sigil, SubDef, VarDecl, Variable,
 };
 use camello_syntax::lang::{NodeExt, NodeKind, SyntaxNode, SyntaxToken, TokenExt, TokenKind};
-use rowan::TextRange;
+use rowan::{TextRange, TextSize};
 
 use crate::annotate::{
     self, Access, AccessorMaker, AttributeDecl, Dialect, Framework, Frameworks, NamedType, Returns,
@@ -42,7 +42,7 @@ pub enum ParamSource {
     /// `my ($self, $x) = @_` and a run of `my $x = shift`. perl does *not*
     /// die: a missing argument is `undef` and an extra one is ignored. So a
     /// mismatch here is a warning about a shape, not an error about a rule.
-    Unpacking,
+    ArgUnpacking,
     /// What an attribute declaration generates: an accessor, a `writer`, a
     /// `predicate`. The shape is the framework's rather than the author's,
     /// and what each of them does with an argument it did not want is the
@@ -1242,7 +1242,7 @@ fn written_parameters(
             .body()
             .is_some_and(|body| touches_arguments_elsewhere(&body, &[]));
         if is_method || !(empty && reads_arguments) {
-            return from_signature(&signature);
+            return params_from_signature(&signature);
         }
         return Params::Unknown;
     }
@@ -1252,11 +1252,11 @@ fn written_parameters(
     // Recognition is by callee name *and* by an import that could have
     // provided it: a project's own `sub args` is not Smart::Args'.
     if smart_args {
-        if let Some(params) = from_args(&body, into) {
+        if let Some(params) = params_from_smart_args(&body, into) {
             return params;
         }
     }
-    from_unpacking(&body)
+    params_from_arg_unpacking(&body)
 }
 
 /// The invocant a `method` has and never names.
@@ -1300,7 +1300,7 @@ fn with_implicit_invocant(params: Params) -> Params {
     }
 }
 
-fn from_signature(signature: &ast::SubSignature) -> Params {
+fn params_from_signature(signature: &ast::SubSignature) -> Params {
     // GUESS: a parameter with a sigil and no name means this was a prototype.
     // Evidence: perl has no such signature — every signature parameter is
     // named — while `($)`, `($$;@)` and `(\@)` are ordinary prototypes. The
@@ -1367,7 +1367,7 @@ pub const PLACEHOLDER: &str = "undef";
 /// The *first statement* of the body being an `args` or `args_pos` call is
 /// what makes this a parameter list; an `args` anywhere else is a call that
 /// declares nothing.
-fn from_args(body: &ast::Block, into: &mut annotate::Sink) -> Option<Params> {
+fn params_from_smart_args(body: &ast::Block, into: &mut annotate::Sink) -> Option<Params> {
     let first = body.statements().next()?;
     let call = leading_call(&first, ast::Call::cast)?;
     let callee = call.callee_name()?;
@@ -1633,7 +1633,7 @@ pub fn annotation_of(node: &SyntaxNode) -> Option<Annotation> {
 /// Only when the sub touches `@_` in no other way. `$_[0]`, `scalar @_` and
 /// `goto &sub` all mean the list is read as a list, and a parameter list read
 /// off the first statement would then be a fiction.
-fn from_unpacking(body: &ast::Block) -> Params {
+fn params_from_arg_unpacking(body: &ast::Block) -> Params {
     let mut params = Vec::new();
     let mut slurpy = false;
     let mut consumed = Vec::new();
@@ -1641,7 +1641,7 @@ fn from_unpacking(body: &ast::Block) -> Params {
 
     // Form one: one list assignment from `@_`.
     if let Some(statement) = statements.peek() {
-        if let Some((names, has_slurpy)) = list_unpacking(statement) {
+        if let Some((names, has_slurpy)) = params_from_list(statement) {
             params = names;
             slurpy = has_slurpy;
             consumed.push(statement.text_range());
@@ -1653,11 +1653,11 @@ fn from_unpacking(body: &ast::Block) -> Params {
     let mut optionals = Vec::new();
     if params.is_empty() && !slurpy {
         while let Some(statement) = statements.peek() {
-            let Some((name, optional)) = shift_unpacking(statement) else {
+            let Some((name, shift)) = param_from_shift(statement) else {
                 break;
             };
             params.push(name);
-            optionals.push(optional);
+            optionals.push(shift == ShiftArg::Defaulted);
             consumed.push(statement.text_range());
             statements.next();
         }
@@ -1685,12 +1685,12 @@ fn from_unpacking(body: &ast::Block) -> Params {
         params,
         slurpy,
         invocant,
-        source: ParamSource::Unpacking,
+        source: ParamSource::ArgUnpacking,
     }
 }
 
 /// `my ($a, $b, %rest) = @_;` — the names, and whether the last one slurps.
-fn list_unpacking(statement: &SyntaxNode) -> Option<(Vec<String>, bool)> {
+fn params_from_list(statement: &SyntaxNode) -> Option<(Vec<String>, bool)> {
     if statement.node_kind() != NodeKind::VAR_DECL_STMT {
         return None;
     }
@@ -1742,11 +1742,17 @@ fn unpacked_slots(declaration: &VarDecl) -> Vec<Option<ast::Variable>> {
     acc
 }
 
-/// `my $x = shift;`, `my $x = shift @_;`, `my $x = shift || 'default';`.
+/// The parameter a `my $x = shift;` statement declares: its name, and whether
+/// a default makes it optional.
 ///
-/// The third form is the same parameter with a default, which makes it
-/// optional; `Carp::str_len_trim` writes both in two lines.
-fn shift_unpacking(statement: &SyntaxNode) -> Option<(String, bool)> {
+/// [`params_from_arg_unpacking`] asks this of each statement from the top of
+/// the body, and the run it answers for is the parameter list. The value is
+/// whatever [`shift_of_args`] reads — `shift`, `shift @_`, `shift || 'default'`
+/// — and the statement around it has to declare one scalar with `my` and a
+/// plain `=`: `our $x = shift` and `$x = shift` take an argument but declare
+/// no parameter of the sub's, and `my ($x, $y) = shift` leaves `$y` empty.
+/// `my ($x) = shift` is the same parameter in parentheses.
+fn param_from_shift(statement: &SyntaxNode) -> Option<(String, ShiftArg)> {
     if statement.node_kind() != NodeKind::VAR_DECL_STMT {
         return None;
     }
@@ -1754,36 +1760,69 @@ fn shift_unpacking(statement: &SyntaxNode) -> Option<(String, bool)> {
     if !assign.is_plain() {
         return None;
     }
-    let (value, optional) = match assign.value()? {
-        node if node.node_kind() == NodeKind::BINARY_EXPR => {
-            let binary = ast::BinaryExpr::cast(node)?;
-            match binary.operator() {
-                Some(TokenKind::LOGICAL_OR | TokenKind::DEFINED_OR | TokenKind::OR_KW) => {
-                    (binary.left()?, true)
-                }
-                _ => return None,
-            }
-        }
-        node => (node, false),
-    };
-    let call = ast::Call::cast(value)?;
-    if call.callee_name().as_deref() != Some("shift") {
-        return None;
-    }
-    let arguments = call.args();
-    if !arguments.is_empty() && !arguments.iter().all(is_argument_list) {
-        return None;
-    }
+    let shift = shift_of_args(assign.value()?)?;
     let declaration = VarDecl::cast(assign.target()?)?;
     if declaration.keyword() != Some(DeclKeyword::My) {
         return None;
     }
     let targets = declaration.targets();
     (targets.len() == 1 && targets[0].sigil() == Sigil::Scalar)
-        .then(|| (targets[0].display(), optional))
+        .then(|| (targets[0].display(), shift))
 }
 
-fn is_argument_list(node: &SyntaxNode) -> bool {
+/// How a value takes one argument off `@_`, if it does: `shift` or `shift @_`,
+/// with or without a default.
+///
+/// The default is the same parameter written optional; `Carp::str_len_trim`
+/// writes both in two lines. `shift @list` is a list operation, not an
+/// argument.
+pub(crate) fn shift_of_args(value: SyntaxNode) -> Option<ShiftArg> {
+    let (value, shift) = match value {
+        node if node.node_kind() == NodeKind::BINARY_EXPR => {
+            let binary = ast::BinaryExpr::cast(node)?;
+            match binary.operator() {
+                Some(TokenKind::LOGICAL_OR | TokenKind::DEFINED_OR | TokenKind::OR_KW) => {
+                    (binary.left()?, ShiftArg::Defaulted)
+                }
+                _ => return None,
+            }
+        }
+        node => (node, ShiftArg::Plain),
+    };
+    let call = ast::Call::cast(value)?;
+    if call.callee_name().as_deref() != Some("shift") {
+        return None;
+    }
+    // A one-argument list call holds its argument as a child of its own, with
+    // no `LIST_EXPR` around it, so `Call::args` is empty there and the
+    // children are what has to be read.
+    let operands: Vec<SyntaxNode> = match call.args().as_slice() {
+        [] => call
+            .syntax()
+            .children()
+            .filter(|child| !matches!(child.node_kind(), NodeKind::SUB_NAME | NodeKind::ARG_LIST))
+            .collect(),
+        found => found.to_vec(),
+    };
+    match operands.as_slice() {
+        [] => Some(shift),
+        [only] if is_argument_list(only) => Some(shift),
+        _ => None,
+    }
+}
+
+/// A `shift` off `@_`, and whether a default is written beside it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ShiftArg {
+    /// `shift`, `shift @_`. A missing argument is `undef`, which the body may
+    /// well expect.
+    Plain,
+    /// `shift || 'default'`, `shift // {}`: the default says leaving it out is
+    /// meant.
+    Defaulted,
+}
+
+pub(crate) fn is_argument_list(node: &SyntaxNode) -> bool {
     Variable::cast(node.clone()).is_some_and(|variable| {
         variable.sigil() == Sigil::Array && variable.name().as_deref() == Some("_")
     })
@@ -1797,6 +1836,17 @@ fn is_argument_list(node: &SyntaxNode) -> bool {
 /// into a hash, and `Carp::str_len_trim` writes `shift || 0` on its second
 /// line; both were reported as taking one argument until this looked.
 fn touches_arguments_elsewhere(body: &ast::Block, consumed: &[TextRange]) -> bool {
+    // A heredoc body is paired with its marker over the whole file: the
+    // marker may sit on the line the sub opens on, outside it.
+    let has_heredoc = body
+        .syntax()
+        .descendants_with_tokens()
+        .filter_map(|element| element.into_token())
+        .any(|token| token.token_kind() == TokenKind::HEREDOC_CONTENT);
+    let heredocs = match body.syntax().ancestors().last() {
+        Some(root) if has_heredoc => crate::interp::heredoc_interpolation(&root),
+        _ => HashMap::new(),
+    };
     body.syntax().descendants().any(|node| {
         if consumed
             .iter()
@@ -1809,7 +1859,7 @@ fn touches_arguments_elsewhere(body: &ast::Block, consumed: &[TextRange]) -> boo
         // interpolation scanner is what sees it (`docs/typecheck.md`,
         // "Scopes"). `IO::Uncompress::Base::HeaderError` is written this way,
         // and its whole family was reported as taking no arguments.
-        if ast::tokens(&node).any(|token| interpolates_arguments(&token)) {
+        if ast::tokens(&node).any(|token| interpolates_arguments(&token, &heredocs)) {
             return true;
         }
         if let Some(call) = ast::Call::cast(node.clone()) {
@@ -1841,25 +1891,8 @@ fn touches_arguments_elsewhere(body: &ast::Block, consumed: &[TextRange]) -> boo
 }
 
 /// Whether a quoted construct interpolates `@_`.
-///
-/// Over-eager on purpose: a construct this misreads makes the parameter list
-/// `Unknown`, which is the quiet answer.
-fn interpolates_arguments(token: &SyntaxToken) -> bool {
-    let text = match token.token_kind() {
-        // A single-quoted string is the same token kind and interpolates
-        // nothing.
-        TokenKind::STRING => {
-            if token.text().starts_with('\'') {
-                return false;
-            }
-            token.text()
-        }
-        TokenKind::INTERPOLATED_STRING | TokenKind::REGEX_PATTERN | TokenKind::HEREDOC_CONTENT => {
-            token.text()
-        }
-        _ => return false,
-    };
-    crate::interp::scan(text)
+fn interpolates_arguments(token: &SyntaxToken, heredocs: &HashMap<TextSize, bool>) -> bool {
+    crate::interp::uses_in(token, heredocs)
         .iter()
         .any(|found| found.sigil == Sigil::Array && found.name == "_")
 }

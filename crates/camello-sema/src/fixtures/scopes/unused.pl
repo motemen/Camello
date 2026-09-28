@@ -38,6 +38,11 @@ sub ignores_a_shifted_one {
     return 1;
 }
 
+sub ignores_a_defaulted_one {
+    my $spare = shift || 'd';   #~ info unused-parameter: `$spare`
+    return 1;
+}
+
 # `catch ($e)` is bound by the construct whether the body wants it or not, so
 # it is neither a variable nobody wanted nor a parameter.
 use feature 'try';

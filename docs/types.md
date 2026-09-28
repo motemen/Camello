@@ -1350,7 +1350,7 @@ print $row->id;             # 診断なし
   うるさければ `disable = ["unused-parameter"]` で丸ごと止められます。
 - (DIAG-12b) 引数とみなされるのは、シグネチャの引数、`args` / `args_pos` の項目、
   そして `my (...) = @_` と `my $x = shift` / `my $x = shift @_` で束縛された名前です
-  ([ANNOT-6](#36-_-の展開-annot-6))。`my $x = shift @list` はリスト操作であって
+  （`shift || 'default'` も同じ。[ANNOT-6](#36-_-の展開-annot-6)）。`my $x = shift @list` はリスト操作であって
   引数ではありません。
 - (DIAG-12c) `catch ($e)` は構文が束縛するもので、本体が要求したものではないので、
   どちらのコードでも報告されません。`foreach my $x` は普通のレキシカルです。

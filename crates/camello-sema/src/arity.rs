@@ -184,7 +184,7 @@ fn compare(
     // the body asks `if defined`. So an unpacking list has no minimum worth
     // reporting — 285 of the 285 arity findings over @INC were this — and only
     // an argument the sub can never read is a shape worth a word.
-    let minimum = if source == ParamSource::Unpacking {
+    let minimum = if source == ParamSource::ArgUnpacking {
         0
     } else {
         minimum
@@ -223,7 +223,7 @@ fn compare(
 fn severity(source: ParamSource) -> Severity {
     match source {
         ParamSource::Signature | ParamSource::Args => Severity::Error,
-        ParamSource::Unpacking | ParamSource::Generated => Severity::Warning,
+        ParamSource::ArgUnpacking | ParamSource::Generated => Severity::Warning,
     }
 }
 

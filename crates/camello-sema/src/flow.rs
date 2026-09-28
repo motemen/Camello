@@ -1378,10 +1378,11 @@ impl Pass<'_> {
             return ty;
         }
         // `my ($class, %args) = @_;` and `my $self = shift;` are the statements
-        // the parameter list was *read from* (`decl::from_unpacking`), so the
-        // types are already bound and this would only overwrite them with the
-        // `Unknown` that a list assignment hands out. Which it did: every
-        // `$class` in the corpus was `Unknown` by the time its `bless` asked.
+        // the parameter list was *read from*
+        // (`decl::params_from_arg_unpacking`), so the types are already bound
+        // and this would only overwrite them with the `Unknown` that a list
+        // assignment hands out. Which it did: every `$class` in the corpus was
+        // `Unknown` by the time its `bless` asked.
         if view.value().is_some_and(|value| unpacks_arguments(&value)) {
             return ty;
         }
