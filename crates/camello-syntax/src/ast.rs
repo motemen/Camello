@@ -123,37 +123,33 @@ impl PackageStmt {
     }
 }
 
-impl UseStmt {
-    /// The module, or `None` for `use 5.010` and `use strict` written oddly.
-    #[must_use]
-    pub fn module(&self) -> Option<String> {
-        child::<SubName>(&self.0).map(|name| name.text())
-    }
+/// `use` and `no` have one shape, and so one set of accessors.
+macro_rules! module_statement {
+    ($($view:ident),*) => {
+        $(
+            impl $view {
+                /// The module, or `None` for `use 5.010` and `use strict`
+                /// written oddly.
+                #[must_use]
+                pub fn module(&self) -> Option<String> {
+                    child::<SubName>(&self.0).map(|name| name.text())
+                }
 
-    /// The import list as one expression — `use Foo qw(a b)`, `use
-    /// Class::Accessor::Typed (rw => {...})`. A declaration for the
-    /// recognisers, not an argument list for the checker.
-    #[must_use]
-    pub fn arguments(&self) -> Option<SyntaxNode> {
-        self.0
-            .children()
-            .find(|child| child.node_kind() != NodeKind::SUB_NAME)
-    }
+                /// The import list as one expression — `use Foo qw(a b)`, `use
+                /// Class::Accessor::Typed (rw => {...})`. A declaration for the
+                /// recognisers, not an argument list for the checker.
+                #[must_use]
+                pub fn arguments(&self) -> Option<SyntaxNode> {
+                    self.0
+                        .children()
+                        .find(|child| child.node_kind() != NodeKind::SUB_NAME)
+                }
+            }
+        )*
+    };
 }
 
-impl NoStmt {
-    #[must_use]
-    pub fn module(&self) -> Option<String> {
-        child::<SubName>(&self.0).map(|name| name.text())
-    }
-
-    #[must_use]
-    pub fn arguments(&self) -> Option<SyntaxNode> {
-        self.0
-            .children()
-            .find(|child| child.node_kind() != NodeKind::SUB_NAME)
-    }
-}
+module_statement!(UseStmt, NoStmt);
 
 impl SubName {
     #[must_use]
@@ -687,28 +683,38 @@ impl Args {
         matches!(node.node_kind(), NodeKind::LIST_EXPR | NodeKind::PAREN_EXPR)
     }
 
-    /// The elements of a comma series, parentheses and single elements alike.
-    #[must_use]
-    pub fn elements(node: &SyntaxNode) -> Vec<SyntaxNode> {
+    /// What a comma series is read from once parentheses are seen through: a
+    /// `LIST_EXPR`, a single element, or `None` for `()`.
+    ///
+    /// A list holding one parenthesised list is that list: `use Foo (a => 1)`
+    /// and `use Foo a => 1` are the same import, and perl flattens `f((1, 2))`
+    /// to two arguments too.
+    fn through_parens(node: &SyntaxNode) -> Option<SyntaxNode> {
         match node.node_kind() {
             NodeKind::PAREN_EXPR => node
                 .children()
                 .next()
-                .map(|inner| Args::elements(&inner))
-                .unwrap_or_default(),
+                .and_then(|inner| Args::through_parens(&inner)),
             NodeKind::LIST_EXPR => {
-                // A list holding one parenthesised list is that list: `use Foo
-                // (a => 1)` and `use Foo a => 1` are the same import, and perl
-                // flattens `f((1, 2))` to two arguments too.
                 let mut children = node.children();
                 match (children.next(), children.next()) {
                     (Some(only), None) if only.node_kind() == NodeKind::PAREN_EXPR => {
-                        Args::elements(&only)
+                        Args::through_parens(&only)
                     }
-                    _ => node.children().collect(),
+                    _ => Some(node.clone()),
                 }
             }
-            _ => vec![node.clone()],
+            _ => Some(node.clone()),
+        }
+    }
+
+    /// The elements of a comma series, parentheses and single elements alike.
+    #[must_use]
+    pub fn elements(node: &SyntaxNode) -> Vec<SyntaxNode> {
+        match Args::through_parens(node) {
+            None => Vec::new(),
+            Some(list) if list.node_kind() == NodeKind::LIST_EXPR => list.children().collect(),
+            Some(single) => vec![single],
         }
     }
 
@@ -718,22 +724,10 @@ impl Args {
     /// the separators rather than guessed from the shape of the elements.
     #[must_use]
     pub fn pairs(node: &SyntaxNode) -> Vec<Arg> {
-        let list = match node.node_kind() {
-            NodeKind::PAREN_EXPR => match node.children().next() {
-                Some(inner) => return Args::pairs(&inner),
-                None => return Vec::new(),
-            },
-            NodeKind::LIST_EXPR => {
-                // See `elements`: one parenthesised list is that list.
-                let mut children = node.children();
-                match (children.next(), children.next()) {
-                    (Some(only), None) if only.node_kind() == NodeKind::PAREN_EXPR => {
-                        return Args::pairs(&only)
-                    }
-                    _ => node.clone(),
-                }
-            }
-            _ => return vec![Arg::Positional(node.clone())],
+        let list = match Args::through_parens(node) {
+            None => return Vec::new(),
+            Some(list) if list.node_kind() == NodeKind::LIST_EXPR => list,
+            Some(single) => return vec![Arg::Positional(single)],
         };
 
         let mut acc: Vec<Arg> = Vec::new();

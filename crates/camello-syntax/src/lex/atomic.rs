@@ -33,10 +33,6 @@ fn closing_delimiter(open: char) -> (char, bool) {
 }
 
 impl<'a> Lexer<'a> {
-    fn remaining(&self) -> &'a str {
-        &self.source[self.scan_pos..]
-    }
-
     /// Push trivia until a delimiter character is reached, and return it.
     ///
     /// A `#` immediately after the keyword is a delimiter; a `#` after any
@@ -46,7 +42,7 @@ impl<'a> Lexer<'a> {
     fn skip_to_delimiter(&mut self) -> Option<char> {
         let mut skipped_any = false;
         loop {
-            let rest = self.remaining();
+            let rest = self.rest();
             let mut chars = rest.chars();
             let first = chars.next()?;
 
@@ -164,7 +160,7 @@ impl<'a> Lexer<'a> {
         construct_start: usize,
     ) -> bool {
         let start = self.scan_pos;
-        let rest = self.remaining();
+        let rest = self.rest();
         let mut depth = 1usize;
         let content_len;
 
@@ -225,7 +221,7 @@ impl<'a> Lexer<'a> {
 
     fn scan_flags(&mut self, allowed: &[u8]) {
         let start = self.scan_pos;
-        let bytes = self.remaining().as_bytes();
+        let bytes = self.rest().as_bytes();
         let len = bytes
             .iter()
             .position(|byte| !allowed.contains(byte))
@@ -273,7 +269,7 @@ impl<'a> Lexer<'a> {
     /// on it, the quotes being what lets the terminator hold characters no
     /// identifier could.
     pub(super) fn heredoc_marker_len(&self) -> Option<usize> {
-        let rest = self.remaining();
+        let rest = self.rest();
         let after = rest.strip_prefix("<<")?;
         let indent_len = usize::from(after.starts_with('~'));
         let after = &after[indent_len..];
@@ -391,7 +387,7 @@ impl<'a> Lexer<'a> {
                     //
                     // Only between bodies: with none left the newline is the
                     // ordinary scanner's, exactly as before.
-                    if self.next_heredoc().is_some() && self.remaining().starts_with('\n') {
+                    if self.next_heredoc().is_some() && self.rest().starts_with('\n') {
                         let newline = self.scan_pos;
                         self.push(TokenKind::NEWLINE, newline, newline + 1);
                     }
@@ -411,22 +407,11 @@ impl<'a> Lexer<'a> {
     /// Byte length of the body and of the terminator line, measured from the
     /// current position.
     fn find_heredoc_end(&self, terminator: &str, indentable: bool) -> Option<(usize, usize)> {
-        let rest = self.remaining();
-        let mut offset = 0usize;
-        loop {
-            let line_end = rest[offset..]
-                .find('\n')
-                .map_or(rest.len(), |index| offset + index);
-            let line = &rest[offset..line_end];
+        let line = find_line(self.rest(), |line| {
             let candidate = if indentable { line.trim_start() } else { line };
-            if candidate.trim_end_matches('\r') == terminator {
-                return Some((offset, line.len()));
-            }
-            if line_end >= rest.len() {
-                return None;
-            }
-            offset = line_end + 1;
-        }
+            candidate.trim_end_matches('\r') == terminator
+        })?;
+        Some((line.start, line.len()))
     }
 
     /// Byte length of a `format` header — `format NAME =` up to end of line —
@@ -434,7 +419,7 @@ impl<'a> Lexer<'a> {
     ///
     /// `keyword_len` is the length of `format` itself, already scanned.
     pub(super) fn format_header_len(&self, keyword_len: usize) -> Option<usize> {
-        let rest = &self.remaining()[keyword_len..];
+        let rest = &self.rest()[keyword_len..];
         let mut offset = rest.len() - rest.trim_start_matches([' ', '\t']).len();
 
         // The name is optional: a bare `format =` writes to the currently
@@ -478,12 +463,7 @@ impl<'a> Lexer<'a> {
             self.push(TokenKind::RAW_CONTENT, header_start, start + header_len);
         }
 
-        let rest = self.remaining();
-        let newline_len = if rest.starts_with("\r\n") {
-            2
-        } else {
-            usize::from(rest.starts_with('\n'))
-        };
+        let newline_len = line_terminator_len(self.rest());
         if newline_len == 0 {
             return;
         }
@@ -495,20 +475,9 @@ impl<'a> Lexer<'a> {
         );
 
         // Everything up to and including the line holding only `.`.
-        let body = self.remaining();
-        let mut offset = 0usize;
-        let end = loop {
-            let line_end = body[offset..]
-                .find('\n')
-                .map_or(body.len(), |index| offset + index);
-            if body[offset..line_end].trim_end_matches('\r') == "." {
-                break line_end;
-            }
-            if line_end >= body.len() {
-                break body.len();
-            }
-            offset = line_end + 1;
-        };
+        let body = self.rest();
+        let end = find_line(body, |line| line.trim_end_matches('\r') == ".")
+            .map_or(body.len(), |line| line.end);
         if end > 0 {
             let body_start = self.scan_pos;
             self.push(TokenKind::FORMAT_CONTENT, body_start, body_start + end);
@@ -518,38 +487,21 @@ impl<'a> Lexer<'a> {
     /// A POD block, from a `=command` in column 0 to the end of its `=cut` line.
     pub(super) fn scan_pod(&mut self) {
         let start = self.scan_pos;
-        let rest = self.remaining();
-        let mut offset = 0usize;
-
-        loop {
-            let line_end = rest[offset..]
-                .find('\n')
-                .map_or(rest.len(), |index| offset + index);
-            if rest[offset..line_end].trim_end() == "=cut" {
-                self.push(TokenKind::POD_CONTENT, start, start + line_end);
-                return;
-            }
-            if line_end >= rest.len() {
-                // POD running to end of file is legal and needs no `=cut`.
-                self.push(TokenKind::POD_CONTENT, start, self.source.len());
-                return;
-            }
-            offset = line_end + 1;
-        }
+        let rest = self.rest();
+        // POD running to end of file is legal and needs no `=cut`.
+        let end =
+            find_line(rest, |line| line.trim_end() == "=cut").map_or(rest.len(), |line| line.end);
+        self.push(TokenKind::POD_CONTENT, start, start + end);
     }
 
     /// Everything after `__END__` / `__DATA__` is carried verbatim.
     pub(super) fn scan_data_section(&mut self) {
-        let rest = self.remaining();
+        let rest = self.rest();
         if rest.is_empty() {
             return;
         }
         let start = self.scan_pos;
-        let newline_len = if rest.starts_with("\r\n") {
-            2
-        } else {
-            usize::from(rest.starts_with('\n'))
-        };
+        let newline_len = line_terminator_len(rest);
         if newline_len > 0 {
             self.push(TokenKind::NEWLINE, start, start + newline_len);
         }
@@ -557,6 +509,36 @@ impl<'a> Lexer<'a> {
             let content_start = self.scan_pos;
             self.push(TokenKind::DATA_CONTENT, content_start, self.source.len());
         }
+    }
+}
+
+/// The first line of `text` that `wanted` accepts, as its byte range without
+/// the `\n`, or `None` if no line does.
+///
+/// Lines are split at `\n` alone, so a CRLF line reaches `wanted` with its
+/// `\r` still on; each caller says whether that matters to it.
+fn find_line(text: &str, wanted: impl Fn(&str) -> bool) -> Option<std::ops::Range<usize>> {
+    let mut offset = 0usize;
+    loop {
+        let line_end = text[offset..]
+            .find('\n')
+            .map_or(text.len(), |index| offset + index);
+        if wanted(&text[offset..line_end]) {
+            return Some(offset..line_end);
+        }
+        if line_end >= text.len() {
+            return None;
+        }
+        offset = line_end + 1;
+    }
+}
+
+/// Byte length of the `\n` or `\r\n` that `text` begins with, or 0.
+fn line_terminator_len(text: &str) -> usize {
+    if text.starts_with("\r\n") {
+        2
+    } else {
+        usize::from(text.starts_with('\n'))
     }
 }
 
