@@ -1303,44 +1303,42 @@ struct Live {
 /// From the right, because the end of a path is the part that says which file
 /// it is: forty files under `local/lib/perl5/` share every column on the left.
 fn path_tail(path: &str, room: usize) -> String {
-    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+    use unicode_width::UnicodeWidthStr;
 
     if path.width() <= room {
         return path.to_string();
     }
-    let mut tail = String::new();
-    let mut used = 1; // the ellipsis standing in for what was cut
-    for ch in path.chars().rev() {
-        let w = ch.width().unwrap_or(0);
-        if used + w > room {
-            break;
-        }
-        used += w;
-        tail.push(ch);
-    }
+    let tail = fitting(path.chars().rev(), room);
     format!("…{}", tail.chars().rev().collect::<String>())
 }
 
 /// The first `room` columns of a line, for the lines that are read from the
 /// left — which is every line here that is not a bare path.
 fn head_within(line: &str, room: usize) -> String {
-    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+    use unicode_width::UnicodeWidthStr;
 
     if line.width() <= room {
         return line.to_string();
     }
-    let mut head = String::new();
+    format!("{}…", fitting(line.chars(), room))
+}
+
+/// As many of `chars` as fit in `room` columns, with one column kept back for
+/// the ellipsis standing in for what was cut.
+fn fitting(chars: impl Iterator<Item = char>, room: usize) -> String {
+    use unicode_width::UnicodeWidthChar;
+
+    let mut kept = String::new();
     let mut used = 1;
-    for ch in line.chars() {
+    for ch in chars {
         let w = ch.width().unwrap_or(0);
         if used + w > room {
             break;
         }
         used += w;
-        head.push(ch);
+        kept.push(ch);
     }
-    head.push('…');
-    head
+    kept
 }
 
 impl Progress {
@@ -2060,39 +2058,28 @@ pub(crate) fn read_source(
     eval_escape: Option<String>,
     encodings: &Encodings,
 ) -> Result<(String, String, &'static Encoding)> {
-    if let Some(code) = eval {
+    if let Some(code) = eval.or_else(|| eval_escape.map(|code| interpret_escape_sequences(&code))) {
         return Ok((code, "<command-line>".to_string(), encodings.first()));
     }
-    if let Some(code) = eval_escape {
-        let interpreted_code = interpret_escape_sequences(&code);
-        return Ok((
-            interpreted_code,
-            "<command-line>".to_string(),
-            encodings.first(),
-        ));
-    }
 
-    if let Some(path) = path {
+    // What the source is called in the result, and in the refusal.
+    let (bytes, name, described) = if let Some(path) = path {
         let bytes = fs::read(path).into_diagnostic()?;
-        let Some((decoded, encoding)) = encodings.decode(&bytes) else {
-            return Err(miette::miette!(
-                "'{}' is not decodable as {}; refusing lossy formatting",
-                path.display(),
-                encodings.names()
-            ));
-        };
-        Ok((decoded, path.display().to_string(), encoding))
+        let name = path.display().to_string();
+        let described = format!("'{name}'");
+        (bytes, name, described)
     } else {
         let mut bytes = Vec::new();
         io::stdin().read_to_end(&mut bytes).into_diagnostic()?;
-        let Some((decoded, encoding)) = encodings.decode(&bytes) else {
-            return Err(miette::miette!(
-                "stdin is not decodable as {}; refusing lossy formatting",
-                encodings.names()
-            ));
-        };
-        Ok((decoded, "<stdin>".to_string(), encoding))
-    }
+        (bytes, "<stdin>".to_string(), "stdin".to_string())
+    };
+    let Some((decoded, encoding)) = encodings.decode(&bytes) else {
+        return Err(miette::miette!(
+            "{described} is not decodable as {}; refusing lossy formatting",
+            encodings.names()
+        ));
+    };
+    Ok((decoded, name, encoding))
 }
 
 fn encode_to_vec(contents: &str, encoding: &'static Encoding) -> Result<Vec<u8>> {

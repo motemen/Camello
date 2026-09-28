@@ -250,26 +250,16 @@ pub fn run(request: &Request) -> Result<()> {
     // call site. Its rounds parse the bodies again — the honest cost of the
     // feature, and the reason the roots are what it is given rather than
     // everything the resolver dragged in.
-    {
-        let roots: Vec<PathBuf> = files.iter().map(|(path, _)| path.clone()).collect();
-        let inline: std::collections::HashMap<&Path, &str> = files
-            .iter()
-            .filter_map(|(path, inline)| inline.as_deref().map(|text| (path.as_path(), text)))
-            .collect();
-        analysis.infer_returns(&roots, request.jobs, |path| {
-            read_one(path, inline.get(path).copied(), &encodings).ok()
-        });
-    }
+    let roots: Vec<PathBuf> = files.iter().map(|(path, _)| path.clone()).collect();
+    let inline: std::collections::HashMap<&Path, &str> = files
+        .iter()
+        .filter_map(|(path, inline)| inline.as_deref().map(|text| (path.as_path(), text)))
+        .collect();
+    let read = |path: &Path| read_one(path, inline.get(path).copied(), &encodings).ok();
+    analysis.infer_returns(&roots, request.jobs, read);
 
     if request.returns_drift {
-        let roots: Vec<PathBuf> = files.iter().map(|(path, _)| path.clone()).collect();
-        let inline: std::collections::HashMap<&Path, &str> = files
-            .iter()
-            .filter_map(|(path, inline)| inline.as_deref().map(|text| (path.as_path(), text)))
-            .collect();
-        return report_drift(&analysis, &roots, request, |path| {
-            read_one(path, inline.get(path).copied(), &encodings).ok()
-        });
+        return report_drift(&analysis, &roots, request, read);
     }
 
     let reports = crate::cli::in_parallel(&files, request.jobs, |(path, inline)| {
