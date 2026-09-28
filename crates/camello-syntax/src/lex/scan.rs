@@ -730,99 +730,15 @@ fn starts_identifier(ch: char) -> bool {
     ch.is_ascii_alphabetic() || ch == '_' || !ch.is_ascii()
 }
 
-/// Symbolic operators, longest first so that `**=` wins over `**` and `*`.
+/// The symbolic operators, grouped by the byte an operator begins with.
 ///
-/// Built from the language definition rather than repeated here: every entry is
-/// a kind whose `text()` is its spelling.
-static OPERATORS: &[TokenKind] = &{
-    // Order matters, so this is written out rather than sorted at runtime.
-    // Grouped by length, descending.
-    [
-        // 4
-        T!["->$#*"],
-        // 3
-        T!["->@*"],
-        T!["->%*"],
-        T!["->$*"],
-        T!["->&*"],
-        T!["->**"],
-        T!["**="],
-        T!["//="],
-        T!["||="],
-        T!["&&="],
-        T!["<<="],
-        T![">>="],
-        T!["<=>"],
-        T!["..."],
-        // 2
-        T!["=>"],
-        T!["->"],
-        T!["=="],
-        T!["!="],
-        T!["<="],
-        T![">="],
-        T!["=~"],
-        T!["!~"],
-        T!["~~"],
-        T!["&&"],
-        T!["||"],
-        T!["//"],
-        T!["**"],
-        T!["++"],
-        T!["--"],
-        T!["<<"],
-        T![">>"],
-        T!["+="],
-        T!["-="],
-        T!["*="],
-        T!["/="],
-        T!["%="],
-        T![".="],
-        T!["x="],
-        T!["|="],
-        T!["&="],
-        T!["^="],
-        T![".."],
-        T!["::"],
-        T!["$#"],
-        // 1
-        T!["{"],
-        T!["}"],
-        T!["("],
-        T![")"],
-        T!["["],
-        T!["]"],
-        T![";"],
-        T![","],
-        T!["?"],
-        T![":"],
-        T!["="],
-        T!["+"],
-        T!["-"],
-        T!["."],
-        T!["/"],
-        T!["<"],
-        T![">"],
-        T!["!"],
-        T!["|"],
-        T!["^"],
-        T!["~"],
-        T!["\\"],
-        T!["$"],
-        T!["@"],
-        TokenKind::MODULO,
-        TokenKind::STAR,
-        TokenKind::BITWISE_AND,
-        TokenKind::HASH_SIGIL,
-        TokenKind::TYPEGLOB_SIGIL,
-        TokenKind::CODE_SIGIL,
-    ]
-};
-
-/// [`OPERATORS`], grouped by the byte an operator begins with.
-///
-/// The order inside a group is the order written above — longest first, so
-/// `**=` wins over `**` — because the grouping pass is stable.
+/// Built from the language definition rather than repeated here: every
+/// punctuation kind is one, spelled by its `text()`, except those that begin
+/// like a word — `x=` — which [`ident_len_at`] hands to the word scanner before
+/// this table is reached. Inside a group the longest come first, so `**=` wins
+/// over `**` and `*`. The order among spellings of one length does not matter:
+/// two of them can both match only if they are spelled alike, `%` as a sigil
+/// and as modulo, and `operator_applies_here` lets exactly one of those through.
 struct OperatorTable {
     spellings: Vec<(TokenKind, &'static str)>,
     /// Where each first byte's group begins and ends in `spellings`.
@@ -839,14 +755,20 @@ impl OperatorTable {
 fn operator_table() -> &'static OperatorTable {
     static TABLE: std::sync::OnceLock<OperatorTable> = std::sync::OnceLock::new();
     TABLE.get_or_init(|| {
-        let mut spellings = Vec::with_capacity(OPERATORS.len());
+        let mut operators: Vec<(TokenKind, &'static str)> = TokenKind::PUNCT
+            .iter()
+            .map(|&kind| (kind, kind.text().expect("punctuation is spelled")))
+            .filter(|(_, text)| !text.starts_with(starts_identifier))
+            .collect();
+        operators.sort_by_key(|(_, text)| std::cmp::Reverse(text.len()));
+
+        let mut spellings = Vec::with_capacity(operators.len());
         let mut groups = [(0u8, 0u8); 256];
         for byte in 0..=u8::MAX {
             let from = u8::try_from(spellings.len()).expect("the table is far short of 255");
-            for kind in OPERATORS {
-                let text = kind.text().expect("operator table holds spelled kinds");
+            for &(kind, text) in &operators {
                 if text.as_bytes()[0] == byte {
-                    spellings.push((*kind, text));
+                    spellings.push((kind, text));
                 }
             }
             let to = u8::try_from(spellings.len()).expect("the table is far short of 255");

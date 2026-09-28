@@ -11,7 +11,8 @@
 //!   `0..TOKEN_COUNT`, nodes occupy `TOKEN_COUNT..`.
 //! * The `T![…]` macro, keyed uniformly by the source spelling.
 //! * `is_keyword` / `is_punct` / `is_trivia`, derived from the section a kind
-//!   was declared in rather than from a hand-maintained list.
+//!   was declared in rather than from a hand-maintained list, and the
+//!   `PUNCT` list the lexer builds its operator table from.
 //! * The keyword string → `TokenKind` lookup used by the lexer.
 //! * `Display`, so diagnostics read ``expected `}` `` instead of
 //!   `Expected R_BRACE`.
@@ -64,6 +65,10 @@ macro_rules! define_language {
         pub const NODE_COUNT: u16 = ([$(stringify!($nd_name),)* ""].len() - 1) as u16;
 
         impl TokenKind {
+            /// Every kind [`Self::is_punct`] accepts, in declaration order.
+            pub(crate) const PUNCT: &'static [TokenKind] =
+                &[$(TokenKind::$p_name,)* $(TokenKind::$pc_name,)*];
+
             /// Reserved words and named operators (`if`, `eq`, `qw`, …).
             #[must_use]
             pub const fn is_keyword(self) -> bool {
