@@ -1802,9 +1802,10 @@ fn breaks(doc: &Doc) -> bool {
         Doc::HardLine | Doc::BlankLine | Doc::VerbatimLines(_) | Doc::Comment(_, _) => true,
         Doc::UserLine { broken, .. } => *broken,
         Doc::Raw(text) => text.contains('\n'),
-        Doc::Group { broken, body, .. } => *broken || breaks(body),
-        Doc::Indent(body) | Doc::Continuation(body) | Doc::Rooted { body, .. } => breaks(body),
-        Doc::Concat(parts) => parts.iter().any(breaks),
+        Doc::Group { broken, .. } => *broken || doc.children().iter().any(breaks),
+        Doc::Concat(_) | Doc::Indent(_) | Doc::Continuation(_) | Doc::Rooted { .. } => {
+            doc.children().iter().any(breaks)
+        }
         _ => false,
     }
 }

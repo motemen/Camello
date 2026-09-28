@@ -144,18 +144,11 @@ pub fn format_source(source: &str, options: &FormatterOptions) -> String {
 #[must_use]
 pub fn layout_seeds(source: &str) -> Vec<bool> {
     fn collect(document: &doc::Doc, into: &mut Vec<bool>) {
-        match document {
-            doc::Doc::Group { broken, body, .. } => {
-                into.push(*broken);
-                collect(body, into);
-            }
-            doc::Doc::Concat(parts) => parts.iter().for_each(|part| collect(part, into)),
-            doc::Doc::Indent(body)
-            | doc::Doc::Continuation(body)
-            | doc::Doc::Rooted { body, .. }
-            | doc::Doc::Statements(body)
-            | doc::Doc::Hanging { body, .. } => collect(body, into),
-            _ => {}
+        if let doc::Doc::Group { broken, .. } = document {
+            into.push(*broken);
+        }
+        for child in document.children() {
+            collect(child, into);
         }
     }
 
