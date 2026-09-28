@@ -500,38 +500,39 @@ impl CheckArgs {
     fn into_request(self, mut options: camello_sema::Options) -> Result<crate::report::Request> {
         // The file says what the project is; a flag says what this run is, so
         // the flag wins.
+        let base = self.config_dir.as_deref().unwrap_or_else(|| Path::new("."));
         let config = if self.no_config {
             crate::config::Config::default()
         } else {
-            crate::config::read(self.config_dir.as_deref().unwrap_or_else(|| Path::new(".")))?
+            crate::config::read(base)?
         };
+        // A value the file could not read stops the run, as a file that does
+        // not parse does: a project checked under rules nobody asked for is
+        // worse than no check.
+        let (check, problems) = config.check.resolve(base);
+        if let Some(problem) = problems.into_iter().next() {
+            return Err(miette::miette!("{problem}"));
+        }
 
-        let severity = match &self.error_on[..] {
+        let error_on = match &self.error_on[..] {
             // clap's default; a config `error-on` is only reached when the
             // flag was not typed.
-            "error" => config
-                .check
-                .error_on
-                .clone()
-                .unwrap_or_else(|| "error".into()),
-            typed => typed.to_string(),
+            "error" => check.error_on.unwrap_or(camello_sema::Severity::Error),
+            typed => camello_sema::Severity::parse(typed).ok_or_else(|| {
+                miette::miette!("--error-on takes `error`, `warning` or `info`, not `{typed}`")
+            })?,
         };
-        let error_on = camello_sema::Severity::parse(&severity).ok_or_else(|| {
-            miette::miette!("--error-on takes `error`, `warning` or `info`, not `{severity}`")
-        })?;
 
         // The flag says what this run is, the file says what the project is,
         // and the default is what nobody said.
-        let quietest = self
-            .min_severity
-            .clone()
-            .or_else(|| config.check.min_severity.clone());
-        let mut min_severity = match &quietest {
-            Some(name) => camello_sema::Severity::parse(name).ok_or_else(|| {
+        let flagged = match &self.min_severity {
+            Some(name) => Some(camello_sema::Severity::parse(name).ok_or_else(|| {
                 miette::miette!("--min-severity takes `error`, `warning` or `info`, not `{name}`")
-            })?,
-            None => camello_sema::Severity::Warning,
+            })?),
+            None => None,
         };
+        let quietest = flagged.or(check.min_severity);
+        let mut min_severity = quietest.unwrap_or(camello_sema::Severity::Warning);
         // What is dropped for being too quiet is dropped whole, exit status
         // included (`crate::report::Request::min_severity`), so a default that
         // outranks `--error-on` would answer 0 to a run that asked to fail on
@@ -544,26 +545,17 @@ impl CheckArgs {
         let format = crate::report::Format::parse(&self.format)
             .ok_or_else(|| miette::miette!("--format takes `text` or `json`"))?;
 
-        options.strict_annotations = self.strict_annotations || config.check.strict_annotations;
+        options.strict_annotations = self.strict_annotations || check.strict_annotations;
         options.disabled = crate::report::parse_codes(self.disable.as_deref().unwrap_or(""))?;
-        options.guard_classes = config.check.guard_classes.clone();
-        for name in &config.check.disable {
-            options
-                .disabled
-                .push(camello_sema::Code::parse(name).ok_or_else(|| {
-                    miette::miette!(
-                        "unknown diagnostic code `{name}` in {}",
-                        crate::config::FILE_NAME
-                    )
-                })?);
-        }
+        options.disabled.extend(check.disabled);
+        options.guard_classes = check.guard_classes;
 
         let mut paths = self.paths;
-        if paths.is_empty() && !config.check.lib.is_empty() {
-            paths = config.check.lib.clone();
+        if paths.is_empty() && !check.lib.is_empty() {
+            paths = check.lib;
         }
         let mut stubs = split_paths(self.stubs.as_deref());
-        stubs.extend(config.check.stubs.iter().cloned());
+        stubs.extend(check.stubs);
 
         Ok(crate::report::Request {
             paths,
@@ -583,7 +575,7 @@ impl CheckArgs {
                         .unwrap_or_else(|| PathBuf::from(camello_sema::resolve::CACHE_DIR)),
                 )
             },
-            dialect: camello_sema::annotate::Dialect::new(config.check.read_as.clone()),
+            dialect: camello_sema::annotate::Dialect::new(check.read_as),
             options,
             returns_drift: self.returns_drift,
             group: self.group,
