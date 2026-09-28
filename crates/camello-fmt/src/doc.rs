@@ -12,9 +12,10 @@ use camello_syntax::lang::SyntaxToken;
 pub enum AnchorClass {
     /// `=` and the compound assignments.
     Assign,
-    /// `=>`, distinguished by nesting depth so that an inner hash aligns
-    /// separately from the one containing it.
-    FatComma(u8),
+    /// `=>`, distinguished by how many brackets it is inside so that an inner
+    /// list aligns separately from the one containing it. `hashes` counts the
+    /// anonymous hashes among them.
+    FatComma { depth: u8, hashes: u8 },
     /// The operator that supplies a default: `$args->{port} // 8080`,
     /// `$opt->{name} || 'anon'`. One class, so a run of lines mixing the two
     /// still agrees on one column. `or` is not one of these: it binds loosely

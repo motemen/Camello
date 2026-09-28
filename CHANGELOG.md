@@ -33,6 +33,8 @@
   — is a hole in the importer's method surface, so `unknown-method` there is an
   `info` (DIAG-7a). A glob into a package the source names, `Carp`'s
   `*{"warnings::$_"}` included, is not one.
+- A `=>` whose value opens a `[ ]` or `( )` holding another `=>` on the same
+  line keeps its alignment on the second pass (#374).
 
 ## 0.2.2 — 2026-09-17
 

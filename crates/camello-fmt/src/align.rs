@@ -16,14 +16,14 @@ use crate::FormatterOptions;
 /// The order classes are aligned in. Earlier classes shift the columns of later
 /// ones, so an assignment settles before the comment that follows it on the same
 /// line.
-fn class_order(class: AnchorClass) -> (u8, u8) {
+fn class_order(class: AnchorClass) -> (u8, u8, u8) {
     match class {
-        AnchorClass::Assign => (0, 0),
-        AnchorClass::FatComma(depth) => (1, depth),
-        AnchorClass::Fallback => (2, 0),
-        AnchorClass::UseImports => (3, 0),
-        AnchorClass::PostfixKeyword => (4, 0),
-        AnchorClass::TrailingComment => (5, 0),
+        AnchorClass::Assign => (0, 0, 0),
+        AnchorClass::FatComma { depth, hashes } => (1, depth, hashes),
+        AnchorClass::Fallback => (2, 0, 0),
+        AnchorClass::UseImports => (3, 0, 0),
+        AnchorClass::PostfixKeyword => (4, 0, 0),
+        AnchorClass::TrailingComment => (5, 0, 0),
     }
 }
 

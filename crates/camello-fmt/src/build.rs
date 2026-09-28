@@ -20,9 +20,12 @@ use super::{DelimiterSpacing, FormatterOptions};
 pub struct Builder<'a> {
     trivia: &'a TriviaMap,
     options: &'a FormatterOptions,
-    /// Nesting depth of `=>`, so that an inner hash aligns separately from the
-    /// one containing it (the formatter contract).
+    /// How many brackets of every kind a `=>` is written inside, so that the
+    /// pairs of an inner list align separately from the one containing it (the
+    /// formatter contract).
     fat_comma_depth: u8,
+    /// How many of those brackets are anonymous hashes.
+    fat_comma_hashes: u8,
     /// Where every comment in the file starts, ascending.
     ///
     /// "Does this node contain a comment" is asked once per group and once per
@@ -58,6 +61,7 @@ impl<'a> Builder<'a> {
             trivia,
             options,
             fat_comma_depth: 0,
+            fat_comma_hashes: 0,
             comment_starts: Vec::new(),
             newline_starts: Vec::new(),
             heredoc_marker_starts: Vec::new(),
@@ -779,6 +783,13 @@ impl<'a> Builder<'a> {
 
     /// The class this token is an alignment point for, and how much of it has to
     /// end at the group's column.
+    fn fat_comma_class(&self) -> AnchorClass {
+        AnchorClass::FatComma {
+            depth: self.fat_comma_depth,
+            hashes: self.fat_comma_hashes,
+        }
+    }
+
     fn anchor_class(
         &self,
         next: &SyntaxElement,
@@ -803,7 +814,7 @@ impl<'a> Builder<'a> {
             return Some((AnchorClass::Assign, token.text().width()));
         }
         if token.token_kind() == T!["=>"] {
-            return Some((AnchorClass::FatComma(self.fat_comma_depth), 0));
+            return Some((self.fat_comma_class(), 0));
         }
         if matches!(token.token_kind(), T!["//"] | T!["||"])
             && parent == Some(NodeKind::BINARY_EXPR)
@@ -1505,9 +1516,13 @@ impl<'a> Builder<'a> {
         // it, and that is the greater loss.
         let broken = self.breaks_at_its_seed(node, opening.as_ref());
 
+        // Every bracket, not only a hash: `override => [ x => sub {` puts the
+        // `=>` of the array on the line of the one it is the value of, and a line
+        // with two anchors of one class keeps neither of them.
         let is_hash = open == T!["{"];
+        self.fat_comma_depth = self.fat_comma_depth.saturating_add(1);
         if is_hash {
-            self.fat_comma_depth = self.fat_comma_depth.saturating_add(1);
+            self.fat_comma_hashes = self.fat_comma_hashes.saturating_add(1);
         }
 
         // `children_with_tokens`, not `children`: a heredoc body is a token, and
@@ -1539,8 +1554,9 @@ impl<'a> Builder<'a> {
             }
         }
 
+        self.fat_comma_depth = self.fat_comma_depth.saturating_sub(1);
         if is_hash {
-            self.fat_comma_depth = self.fat_comma_depth.saturating_sub(1);
+            self.fat_comma_hashes = self.fat_comma_hashes.saturating_sub(1);
         }
 
         let mut parts = Vec::new();
@@ -1724,7 +1740,7 @@ impl<'a> Builder<'a> {
                     let empty_after =
                         adjacent_separator(&token, rowan::Direction::Next) == Some(T![","]);
                     if token.token_kind() == T!["=>"] && !empty_before {
-                        parts.push(Doc::Anchor(AnchorClass::FatComma(self.fat_comma_depth), 0));
+                        parts.push(Doc::Anchor(self.fat_comma_class(), 0));
                         parts.push(Doc::Space);
                     }
                     let value_on_next_line =

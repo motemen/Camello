@@ -332,7 +332,7 @@ impl<'a> Renderer<'a> {
                 // on adjacent lines. Other one-line groups stay anchor-free so a
                 // one-line call cannot leak into a vertical group around it.
                 let nested_flat_fat_comma =
-                    matches!(class, AnchorClass::FatComma(depth) if *depth > 1);
+                    matches!(class, AnchorClass::FatComma { hashes, .. } if *hashes > 1);
                 if self.anchored || nested_flat_fat_comma {
                     self.current.anchors.push(Anchor {
                         class: *class,

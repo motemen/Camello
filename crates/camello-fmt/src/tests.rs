@@ -245,6 +245,29 @@ fn fat_commas_in_adjacent_flat_nested_hashes_align() {
 }
 
 #[test]
+fn a_pair_opening_a_bracket_on_the_line_of_another_keeps_its_alignment() {
+    // The inner `=>` is on the line of the outer one. Counting only hashes as
+    // depth gave the two one class, and a line holding a class twice keeps
+    // neither — so the second pass, where the bracket already spans lines,
+    // took `override` out of the table.
+    for value in [
+        "[ x => sub { my ($c) = @_; $c->e(1); } ]",
+        "bar(x => sub { my ($c) = @_; $c->e(1); })",
+        "{ x => sub { my ($c) = @_; $c->e(1); } }",
+    ] {
+        let source =
+            format!("my $g = Foo->new(\n    class    => \"Bar\",\n    override => {value},\n);\n");
+        let formatted = format(&source);
+        assert!(
+            formatted.contains("    class    => \"Bar\",\n"),
+            "alignment lost:\n{formatted}"
+        );
+        assert_idempotent(&source);
+        assert_preserves_semantics(&source);
+    }
+}
+
+#[test]
 fn bareword_call_arguments_hang_from_the_first_argument() {
     assert_formats_to(
         "args my $class => 'A',\n     my $arg   => 'B';\n",
