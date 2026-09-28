@@ -144,7 +144,8 @@ fn grouped(diagnostics: &[Diagnostic]) -> Vec<(&Diagnostic, usize)> {
     shown
 }
 
-fn plural(count: usize, noun: &str) -> String {
+/// `1 file`, `2 files`: a count and its noun, read as English.
+pub(crate) fn plural(count: usize, noun: impl std::fmt::Display) -> String {
     format!("{count} {noun}{}", if count == 1 { "" } else { "s" })
 }
 
@@ -464,11 +465,7 @@ fn summarise(counts: &[usize; 3], files: usize, unreadable: usize) {
     for severity in [Severity::Error, Severity::Warning, Severity::Info] {
         let count = counts[severity as usize];
         if count > 0 {
-            parts.push(format!(
-                "{count} {}{}",
-                severity,
-                if count == 1 { "" } else { "s" }
-            ));
+            parts.push(plural(count, severity));
         }
     }
     if unreadable > 0 {
@@ -477,11 +474,7 @@ fn summarise(counts: &[usize; 3], files: usize, unreadable: usize) {
     if parts.is_empty() {
         parts.push("nothing to report".to_string());
     }
-    eprintln!(
-        "{} in {files} file{}",
-        parts.join(", "),
-        if files == 1 { "" } else { "s" }
-    );
+    eprintln!("{} in {}", parts.join(", "), plural(files, "file"));
 }
 
 /// The codes a run may be told to ignore, parsed from a comma-separated list.
