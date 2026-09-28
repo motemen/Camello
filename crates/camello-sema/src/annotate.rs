@@ -121,37 +121,13 @@ impl Frameworks {
     /// Fold one `use Foo` into what the file can be expected to mean.
     pub fn note(&mut self, module: &str) {
         let module = self.dialect.read_as(module);
-        match module {
-            "Moose"
-            | "Moo"
-            | "Mouse"
-            | "Moose::Role"
-            | "Moo::Role"
-            | "Mouse::Role"
-            | "MooseX::Declare"
-            | "Mojo::Base"
-            | "Moose::Util::TypeConstraints"
-            | "Mouse::Util::TypeConstraints" => {
-                self.moose = true;
-            }
-            "Smart::Args" | "Smart::Args::TypeTiny" => self.smart_args = true,
-            "Class::Accessor::Typed" => self.accessor_typed = true,
-            // `Class::Accessor::Lite` installs its accessors from `import`;
-            // the other three are inherited from and hand out the same
-            // `mk_accessors` family. Reached by `use`, and by the `use base`
-            // that is how a `Class::Accessor` subclass says it.
-            "Class::Accessor::Lite"
-            | "Class::Accessor::Lite::Lazy"
-            | "Class::Accessor"
-            | "Class::Accessor::Fast"
-            | "Class::Accessor::Faster" => self.accessor_lite = true,
-            // `Class::Tiny::Antlers` is the one spelling of this distribution
-            // that exports `has`, `extends` and `with`, so it reads as Moose;
-            // `Class::Tiny::Object` is the base class the other spelling puts
-            // in `@ISA`, and inheriting from it is what carries the `new`.
-            "Class::Tiny" | "Class::Tiny::Object" => self.class_tiny = true,
-            "Class::Tiny::Antlers" => self.moose = true,
-            _ => {}
+        match recognised(module) {
+            Some(Recognised::Moose) => self.moose = true,
+            Some(Recognised::SmartArgs) => self.smart_args = true,
+            Some(Recognised::AccessorTyped) => self.accessor_typed = true,
+            Some(Recognised::AccessorLite) => self.accessor_lite = true,
+            Some(Recognised::ClassTiny) => self.class_tiny = true,
+            Some(Recognised::Statement | Recognised::Xs) | None => {}
         }
         if supplies_the_type_dsl(module) {
             self.type_library = true;
@@ -201,6 +177,73 @@ impl Frameworks {
     }
 }
 
+/// What a module the checker knows by name is to it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Recognised {
+    /// Moose and the dialects that read as it: `has` declares an attribute.
+    Moose,
+    /// A parameter list.
+    SmartArgs,
+    AccessorTyped,
+    AccessorLite,
+    ClassTiny,
+    /// A statement the declaration pass reads for itself.
+    Statement,
+    /// XS, whose meaning is that the package is dynamic — which
+    /// `Program::has_unknown_ancestor` answers, not this.
+    Xs,
+}
+
+/// The modules the checker understands without reading them, and what each
+/// one is: the one list [`Frameworks::note`], [`is_recognised`] and
+/// [`loads_xs`] all read.
+const RECOGNISED: &[(&str, Recognised)] = &[
+    ("Moose", Recognised::Moose),
+    ("Moo", Recognised::Moose),
+    ("Mouse", Recognised::Moose),
+    ("Moose::Role", Recognised::Moose),
+    ("Moo::Role", Recognised::Moose),
+    ("Mouse::Role", Recognised::Moose),
+    ("MooseX::Declare", Recognised::Moose),
+    ("Mojo::Base", Recognised::Moose),
+    ("Moose::Util::TypeConstraints", Recognised::Moose),
+    ("Mouse::Util::TypeConstraints", Recognised::Moose),
+    ("Smart::Args", Recognised::SmartArgs),
+    ("Smart::Args::TypeTiny", Recognised::SmartArgs),
+    ("Class::Accessor::Typed", Recognised::AccessorTyped),
+    // `Class::Accessor::Lite` installs its accessors from `import`; the other
+    // three are inherited from and hand out the same `mk_accessors` family.
+    // Reached by `use`, and by the `use base` that is how a `Class::Accessor`
+    // subclass says it.
+    ("Class::Accessor::Lite", Recognised::AccessorLite),
+    ("Class::Accessor::Lite::Lazy", Recognised::AccessorLite),
+    ("Class::Accessor", Recognised::AccessorLite),
+    ("Class::Accessor::Fast", Recognised::AccessorLite),
+    ("Class::Accessor::Faster", Recognised::AccessorLite),
+    // `Class::Tiny::Antlers` is the one spelling of this distribution that
+    // exports `has`, `extends` and `with`, so it reads as Moose;
+    // `Class::Tiny::Object` is the base class the other spelling puts in
+    // `@ISA`, and inheriting from it is what carries the `new`.
+    ("Class::Tiny", Recognised::ClassTiny),
+    ("Class::Tiny::Object", Recognised::ClassTiny),
+    ("Class::Tiny::Antlers", Recognised::Moose),
+    ("parent", Recognised::Statement),
+    ("base", Recognised::Statement),
+    ("constant", Recognised::Statement),
+    ("Exporter", Recognised::Statement),
+    ("XSLoader", Recognised::Xs),
+    ("DynaLoader", Recognised::Xs),
+    ("Inline", Recognised::Xs),
+    ("Alien::Base", Recognised::Xs),
+];
+
+fn recognised(module: &str) -> Option<Recognised> {
+    RECOGNISED
+        .iter()
+        .find(|(name, _)| *name == module)
+        .map(|&(_, what)| what)
+}
+
 /// Whether a `use` of this module is one the checker understands without
 /// reading it (`docs/types.md`, DIAG-7a).
 ///
@@ -209,48 +252,16 @@ impl Frameworks {
 /// being on the search path is not a hole in the method surface. Everything
 /// else that is `use`d and was never found is one, because a module installs
 /// subs into its importer and may assign to its globs.
-///
-/// This is the list [`Frameworks::note`] and the declaration pass's `use`
-/// recogniser branch on, kept beside them so the three stay in step.
 #[must_use]
 pub fn is_recognised(module: &str) -> bool {
-    matches!(
-        module,
-        // Moose and the dialects that read as it.
-        "Moose"
-            | "Moo"
-            | "Mouse"
-            | "Moose::Role"
-            | "Moo::Role"
-            | "Mouse::Role"
-            | "MooseX::Declare"
-            | "Mojo::Base"
-            | "Moose::Util::TypeConstraints"
-            | "Mouse::Util::TypeConstraints"
-            // Parameter lists, and the accessor families.
-            | "Smart::Args"
-            | "Smart::Args::TypeTiny"
-            | "Class::Accessor::Typed"
-            | "Class::Accessor::Lite"
-            | "Class::Accessor::Lite::Lazy"
-            | "Class::Accessor"
-            | "Class::Accessor::Fast"
-            | "Class::Accessor::Faster"
-            | "Class::Tiny"
-            | "Class::Tiny::Object"
-            | "Class::Tiny::Antlers"
-            // Statements the declaration pass reads for itself.
-            | "parent"
-            | "base"
-            | "constant"
-            | "Exporter"
-            // XS, whose meaning is that the package is dynamic — which
-            // `Program::has_unknown_ancestor` answers, not this.
-            | "XSLoader"
-            | "DynaLoader"
-            | "Inline"
-            | "Alien::Base"
-    ) || supplies_the_type_dsl(module)
+    recognised(module).is_some() || supplies_the_type_dsl(module)
+}
+
+/// Whether a module loads XS, whose methods are written in C where no
+/// recogniser can reach them.
+#[must_use]
+pub fn loads_xs(module: &str) -> bool {
+    recognised(module) == Some(Recognised::Xs)
 }
 
 /// Whether a module could have supplied the type-library DSL (`docs/types.md`,

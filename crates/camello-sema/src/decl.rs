@@ -593,10 +593,7 @@ impl Pass {
 
         // A module that loads XS has its methods written in C, where no
         // recogniser can reach them.
-        if matches!(
-            read_as.as_str(),
-            "XSLoader" | "DynaLoader" | "Inline" | "Alien::Base"
-        ) {
+        if annotate::loads_xs(&read_as) {
             self.dynamic = true;
         }
 
