@@ -2,6 +2,9 @@
 
 ## 0.2.3 — 2026-09-30
 
+`camello format` lays out code differently from 0.2.2, so a file 0.2.2
+formatted may change: one-line blocks (NEWLINE-2) and `=>` alignment (#374).
+
 ### Changed
 
 - A block written on one line stays on one line however many statements it
@@ -35,8 +38,8 @@
   — is a hole in the importer's method surface, so `unknown-method` there is an
   `info` (DIAG-7a). A glob into a package the source names, `Carp`'s
   `*{"warnings::$_"}` included, is not one.
-- A `=>` whose value opens a `[ ]` or `( )` holding another `=>` on the same
-  line keeps its alignment on the second pass (#374).
+- A `=>` keeps its alignment when the `[ ]` or `( )` it is the value of holds
+  another `=>` on its line (#374).
 
 ## 0.2.2 — 2026-09-17
 
