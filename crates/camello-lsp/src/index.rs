@@ -206,8 +206,8 @@ fn walk(settings: &Settings) -> Vec<PathBuf> {
 #[must_use]
 pub fn fingerprint(decls: &FileDecls) -> String {
     let mut parts: Vec<String> = Vec::new();
-    for (_, name) in &decls.packages {
-        parts.push(format!("package {name}"));
+    for span in &decls.packages {
+        parts.push(format!("package {}", span.name));
     }
     for symbol in &decls.subs {
         parts.push(format!(
