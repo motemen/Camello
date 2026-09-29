@@ -61,15 +61,7 @@ pub(crate) fn primary(parser: &mut Parser<'_>) -> Option<CompletedMarker> {
             let marker = parser.start();
             parser.bump();
             parser.expect_term();
-            let list = parser.start();
-            super::expr::list_contents(parser, &[T![")"]]);
-            parser.complete(list, NodeKind::LIST_EXPR);
-            if !parser.expect(T![")"]) {
-                parser.recover(Recovery::List);
-                if parser.at(T![")"]) {
-                    parser.bump();
-                }
-            }
+            super::expr::bracketed_list(parser, T![")"]);
             parser.expect_operator();
             parser.complete(marker, NodeKind::PAREN_EXPR)
         }
@@ -78,10 +70,7 @@ pub(crate) fn primary(parser: &mut Parser<'_>) -> Option<CompletedMarker> {
             let marker = parser.start();
             parser.bump();
             parser.expect_term();
-            let list = parser.start();
-            super::expr::list_contents(parser, &[T!["]"]]);
-            parser.complete(list, NodeKind::LIST_EXPR);
-            parser.expect(T!["]"]);
+            super::expr::bracketed_list(parser, T!["]"]);
             parser.expect_operator();
             parser.complete(marker, NodeKind::ANON_ARRAY)
         }
@@ -294,10 +283,7 @@ pub(crate) fn var_decl(parser: &mut Parser<'_>) -> CompletedMarker {
     if parser.at(T!["("]) {
         parser.bump();
         parser.expect_term();
-        let list = parser.start();
-        super::expr::list_contents(parser, &[T![")"]]);
-        parser.complete(list, NodeKind::LIST_EXPR);
-        parser.expect(T![")"]);
+        super::expr::bracketed_list(parser, T![")"]);
     } else if parser.at(TokenKind::IDENT) && parser.nth_at(1, T!["->"]) {
         // `local Module->hash->{key} = $value;` — the target is a general
         // lvalue, not necessarily a variable.
