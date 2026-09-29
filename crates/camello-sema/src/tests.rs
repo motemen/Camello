@@ -384,3 +384,36 @@ fn a_bool_or_an_enum_is_not_drift() {
         &body(Type::maybe(Type::Str))
     ));
 }
+
+/// perl's package scope is lexical: a `package Foo;` in a block ends with the
+/// block, and the package around a `package Bar { ... }` is back after it.
+#[test]
+fn a_package_reaches_as_far_as_perl_says() {
+    let source = "\
+package Outer;
+sub a { 1 }
+package Block {
+    sub b { 1 }
+}
+sub c { 1 }
+{
+    package Bare;
+    sub d { 1 }
+}
+sub e { 1 }
+package Next;
+sub f { 1 }
+";
+    let root = camello_syntax::parse::parse(source).syntax();
+    let spans = crate::decl::package_spans(&root);
+    let at = |needle: &str| {
+        let offset = u32::try_from(source.find(needle).expect("in the source")).unwrap();
+        crate::decl::package_at(&spans, offset).to_string()
+    };
+    assert_eq!(at("sub a"), "Outer");
+    assert_eq!(at("sub b"), "Block");
+    assert_eq!(at("sub c"), "Outer");
+    assert_eq!(at("sub d"), "Bare");
+    assert_eq!(at("sub e"), "Outer");
+    assert_eq!(at("sub f"), "Next");
+}

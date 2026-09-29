@@ -172,24 +172,10 @@ pub fn target_at(
     None
 }
 
-/// The package an offset is written in, by the same rule the declaration pass
-/// reads: the last `package` statement at or before it, or `main`.
+/// The package an offset is written in, by the rule the declaration pass
+/// reads it under ([`camello_sema::decl::package_spans`]).
 #[must_use]
 pub fn package_at(root: &SyntaxNode, offset: TextSize) -> String {
-    use camello_syntax::ast::{AstNode, PackageStmt};
-    use camello_syntax::lang::{NodeExt, NodeKind};
-
-    let mut package = "main".to_string();
-    for node in root.descendants() {
-        if node.node_kind() != NodeKind::PACKAGE_STMT {
-            continue;
-        }
-        if node.text_range().start() > offset {
-            break;
-        }
-        if let Some(name) = PackageStmt::cast(node).and_then(|view| view.name()) {
-            package = name;
-        }
-    }
-    package
+    let spans = camello_sema::decl::package_spans(root);
+    camello_sema::decl::package_at(&spans, u32::from(offset)).to_string()
 }

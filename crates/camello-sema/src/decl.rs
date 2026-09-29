@@ -278,8 +278,9 @@ pub struct FileDecls {
     pub subs: Vec<SubDecl>,
     /// `use Foo qw(bar)` — the name and the package it came from.
     pub imports: HashMap<String, String>,
-    /// The packages this file opens, with the offset each takes effect at.
-    pub packages: Vec<(u32, String)>,
+    /// The packages this file opens, each with how far it reaches
+    /// ([`package_spans`]).
+    pub packages: Vec<PackageSpan>,
     /// What each package here is, beyond its subs.
     pub facts: Vec<PackageFacts>,
     /// Every module this file `use`s or `require`s, for the resolver.
@@ -303,12 +304,78 @@ impl FileDecls {
     /// The package in effect at an offset.
     #[must_use]
     pub fn package_at(&self, offset: u32) -> &str {
-        self.packages
-            .iter()
-            .take_while(|(at, _)| *at <= offset)
-            .last()
-            .map_or("main", |(_, name)| name.as_str())
+        package_at(&self.packages, offset)
     }
+}
+
+/// How far one package statement reaches, in byte offsets.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PackageSpan {
+    pub name: String,
+    /// Where the statement starts.
+    pub start: u32,
+    /// Where its reach ends: the end of its own block for `package Foo { ...
+    /// }`, and for `package Foo;` the next `package Foo;` beside it or the
+    /// end of the block — or file — it is written in.
+    pub end: u32,
+    /// The statement itself, which is where the name is written.
+    #[serde(with = "crate::serde_range")]
+    pub statement: TextRange,
+}
+
+/// Every package statement in a file, and how far each reaches — perl's rule,
+/// which is lexical: `package Foo;` inside a block ends with the block, and
+/// the package around a `package Bar { ... }` is back in effect after it.
+#[must_use]
+pub fn package_spans(root: &SyntaxNode) -> Vec<PackageSpan> {
+    let statements: Vec<(ast::PackageStmt, Option<SyntaxNode>)> = root
+        .descendants()
+        .filter_map(ast::PackageStmt::cast)
+        .map(|statement| {
+            let scope = statement
+                .syntax()
+                .ancestors()
+                .skip(1)
+                .find(|node| matches!(node.node_kind(), NodeKind::BLOCK | NodeKind::ROOT));
+            (statement, scope)
+        })
+        .collect();
+    let mut spans = Vec::new();
+    for (index, (statement, scope)) in statements.iter().enumerate() {
+        let Some(name) = statement.name() else {
+            continue;
+        };
+        let range = statement.syntax().text_range();
+        let end = if statement.block().is_some() {
+            range.end()
+        } else {
+            statements[index + 1..]
+                .iter()
+                .find(|(next, next_scope)| next.block().is_none() && next_scope == scope)
+                .map(|(next, _)| next.syntax().text_range().start())
+                .or_else(|| scope.as_ref().map(|scope| scope.text_range().end()))
+                .unwrap_or_else(|| root.text_range().end())
+        };
+        spans.push(PackageSpan {
+            name,
+            start: u32::from(range.start()),
+            end: u32::from(end),
+            statement: range,
+        });
+    }
+    spans
+}
+
+/// The package in effect at an offset: the innermost span holding it, or
+/// `main`. Spans nest or keep apart, so the innermost is the one that starts
+/// last.
+#[must_use]
+pub fn package_at(spans: &[PackageSpan], offset: u32) -> &str {
+    spans
+        .iter()
+        .filter(|span| span.start <= offset && offset <= span.end)
+        .max_by_key(|span| span.start)
+        .map_or("main", |span| span.name.as_str())
 }
 
 /// Read what a file declares.
@@ -338,6 +405,7 @@ pub fn declare_in(root: &SyntaxNode, dialect: &Dialect) -> FileDecls {
         decided_constructor: HashSet::new(),
     };
     pass.walk(root, "main");
+    pass.decls.packages = package_spans(root);
     // XS registers methods into whichever package it likes, and a glob
     // assignment can too, so a file that does either makes every package in it
     // one whose method set nobody here can enumerate.
@@ -480,12 +548,7 @@ impl Pass {
                         match statement.block() {
                             // `package Foo { ... }` scopes the name to the block.
                             Some(block) => self.walk(block.syntax(), &name),
-                            None => {
-                                self.decls
-                                    .packages
-                                    .push((u32::from(child.text_range().start()), name.clone()));
-                                package = name;
-                            }
+                            None => package = name,
                         }
                     }
                 }
