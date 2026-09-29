@@ -12,6 +12,8 @@
 
 ### Fixed
 
+- `f $x - 1` and `print $x - 1` are no longer rewritten to `$x -1`, which perl
+  reads as a filehandle followed by `-1` (#375).
 - `use Regexp::Common` declares `%RE`, so reading `$RE{net}{IPv4}` is no longer
   an `undeclared-variable`.
 - `unknown-method` on a value whose class has a factory `new` — `$u->host`

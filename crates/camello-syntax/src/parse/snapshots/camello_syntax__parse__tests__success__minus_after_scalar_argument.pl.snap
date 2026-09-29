@@ -1,0 +1,192 @@
+---
+source: crates/camello-syntax/src/parse/tests.rs
+expression: rendered
+---
+ROOT
+  VAR_DECL_STMT
+    LIST_EXPR
+      ASSIGN_EXPR
+        VAR_DECL
+          `my` "my"
+          DECL_TARGET
+            ARRAY_VAR
+              `@` "@"
+              identifier "r"
+        `=` "="
+        LIST_CALL_EXPR
+          SUB_NAME
+            identifier "head"
+          LIST_EXPR
+            BINARY_EXPR
+              SCALAR_VAR
+                `$` "$"
+                identifier "limit"
+              `-` "-"
+              SCALAR_VAR
+                `$` "$"
+                identifier "n"
+            `,` ","
+            ARRAY_VAR
+              `@` "@"
+              identifier "rest"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "print"
+        LIST_EXPR
+          BINARY_EXPR
+            SCALAR_VAR
+              `$` "$"
+              identifier "limit"
+            `-` "-"
+            SCALAR_VAR
+              `$` "$"
+              identifier "n"
+          `,` ","
+          LITERAL
+            string literal "\"\\n\""
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "print"
+        LIST_EXPR
+          BINARY_EXPR
+            SCALAR_VAR
+              `$` "$"
+              identifier "limit"
+            `-` "-"
+            SCALAR_VAR
+              `$` "$"
+              identifier "n"
+          `,` ","
+          LITERAL
+            string literal "\"\\n\""
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "print"
+        LIST_EXPR
+          BINARY_EXPR
+            SCALAR_VAR
+              `$` "$"
+              identifier "limit"
+            `-` "-"
+            SCALAR_VAR
+              `$` "$"
+              identifier "n"
+          `,` ","
+          LITERAL
+            string literal "\"\\n\""
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "unknownsub"
+        LIST_EXPR
+          BINARY_EXPR
+            SCALAR_VAR
+              `$` "$"
+              identifier "limit"
+            `+` "+"
+            SCALAR_VAR
+              `$` "$"
+              identifier "n"
+          `,` ","
+          ARRAY_VAR
+            `@` "@"
+            identifier "rest"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "_find_next"
+        LIST_EXPR
+          BINARY_EXPR
+            SCALAR_VAR
+              `$` "$"
+              identifier "idx"
+            `+` "+"
+            LITERAL
+              number "1"
+          `,` ","
+          SCALAR_VAR
+            `$` "$"
+            identifier "tokens"
+          `,` ","
+          SCALAR_VAR
+            `$` "$"
+            identifier "len"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "print"
+        FILEHANDLE
+          SCALAR_VAR
+            `$` "$"
+            identifier "fh"
+        LIST_EXPR
+          PREFIX_EXPR
+            `-` "-"
+            LITERAL
+              number "1"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "print"
+        FILEHANDLE
+          SCALAR_VAR
+            `$` "$"
+            identifier "fh"
+        LIST_EXPR
+          PREFIX_EXPR
+            `+` "+"
+            SCALAR_VAR
+              `$` "$"
+              identifier "n"
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "print"
+        FILEHANDLE
+          SCALAR_VAR
+            `$` "$"
+            identifier "limit"
+        LIST_EXPR
+          PREFIX_EXPR
+            `-` "-"
+            SCALAR_VAR
+              `$` "$"
+              identifier "n"
+          `,` ","
+          LITERAL
+            string literal "\"\\n\""
+    `;` ";"
+  EXPR_STMT
+    LIST_EXPR
+      LIST_CALL_EXPR
+        SUB_NAME
+          identifier "autoflush"
+        FILEHANDLE
+          SCALAR_VAR
+            `$` "$"
+            identifier "fh"
+        LIST_EXPR
+          PREFIX_EXPR
+            `-` "-"
+            LITERAL
+              number "1"
+    `;` ";"

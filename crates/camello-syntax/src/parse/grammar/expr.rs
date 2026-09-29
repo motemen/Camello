@@ -749,12 +749,18 @@ fn at_filehandle(parser: &mut Parser<'_>, base: usize) -> bool {
 ///
 /// `++` and `--` are prefix operators and postfix ones both, and only the
 /// spelling tells the two apart: perl reads `f $x++` as a postfix increment on
-/// `$x` and `print $fh ++$x` as a handle followed by a prefix one. Written
-/// against what follows it, the token starts a term; written against what
-/// precedes it, it finishes one. Every other token that can start a term does
-/// so here.
+/// `$x` and `print $fh ++$x` as a handle followed by a prefix one. `-` and `+`
+/// are unary operators and binary ones, and perl tells them apart the same way:
+/// `print $fh -1` prints `-1` to `$fh`, while `print $x - 1`, `print $x-1` and
+/// `print $x- 1` print a difference. Written against what follows it, the token
+/// starts a term; written any other way, it continues the one before it. Every
+/// other token that can start a term does so here.
 fn opens_an_argument(parser: &mut Parser<'_>, n: usize) -> bool {
-    if parser.nth_at(n, T!["++"]) || parser.nth_at(n, T!["--"]) {
+    if parser.nth_at(n, T!["++"])
+        || parser.nth_at(n, T!["--"])
+        || parser.nth_at(n, T!["-"])
+        || parser.nth_at(n, T!["+"])
+    {
         return parser.nth_is_glued_prefix(n);
     }
     true
