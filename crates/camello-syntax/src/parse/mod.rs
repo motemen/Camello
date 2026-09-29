@@ -13,7 +13,7 @@ use crate::lang::{NodeKind, SyntaxKind, TokenKind};
 use crate::lex::{Expect, Lexer, Mark};
 
 pub mod event;
-mod grammar;
+pub(crate) mod grammar;
 mod replay;
 pub mod trivia;
 

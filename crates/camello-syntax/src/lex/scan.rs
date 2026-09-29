@@ -323,22 +323,10 @@ impl<'a> Lexer<'a> {
             // In operator position a quote-like operator cannot start.
             Expect::Operator => !infix_only,
             Expect::Term => {
-                if matches!(
-                    keyword,
-                    T!["x"]
-                        | T!["eq"]
-                        | T!["ne"]
-                        | T!["lt"]
-                        | T!["gt"]
-                        | T!["le"]
-                        | T!["ge"]
-                        | T!["cmp"]
-                        | T!["and"]
-                        | T!["or"]
-                        | T!["xor"]
-                ) {
-                    // These can only be infix, so in term position they are a
-                    // bareword: `x(1)`, `{ or => 1 }`.
+                if crate::parse::grammar::precedence::infix_op(keyword).is_some() {
+                    // A keyword the grammar reads only as an infix operator is
+                    // a bareword in term position: `x(1)`, `{ or => 1 }`,
+                    // `isa($x, 'Foo')`.
                     return false;
                 }
                 if infix_only {
