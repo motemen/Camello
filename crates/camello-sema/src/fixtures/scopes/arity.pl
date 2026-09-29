@@ -56,6 +56,14 @@ sub shifts_two {
 shifts_two(1);
 shifts_two(1, 2, 3);            #~ warning arity: takes at most 2 arguments; 3 passed
 
+# A repeated string and a choice between two values are one value each; a
+# repeated list and a choice that may be a list are not counted.
+shifts_two('-' x 3, 1, 2);      #~ warning arity: takes at most 2 arguments; 3 passed
+shifts_two($ARGV[0] ? 1 : 2, 1, 2);
+                                #~ warning arity: takes at most 2 arguments; 3 passed
+shifts_two((1) x 3);
+shifts_two($ARGV[0] ? @ARGV : 1, 2);
+
 # A body that reaches for `shift` past its leading run takes an argument the
 # run did not name, so nothing is known about how many it takes.
 sub shifts_later {

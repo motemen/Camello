@@ -277,14 +277,15 @@ fn cannot_be_a_hash(node: &SyntaxNode) -> bool {
 /// How many arguments a call passes, or `None` when nobody can know.
 ///
 /// Perl flattens lists into the argument list, so a count exists only when
-/// every argument is exactly one value. That rules out an array, a hash, a
-/// slice, a call (which may return a list), a `wantarray`-dependent ternary,
-/// and a parenthesised list — which is most of what makes this safe.
+/// every argument is exactly one value ([`Valence::One`]). That rules out an
+/// array, a hash, a slice, a call (which may return a list), a ternary with a
+/// branch that is not one value, and a parenthesised list — which is most of
+/// what makes this safe.
 #[must_use]
 pub fn arg_count(arguments: &[SyntaxNode]) -> Option<usize> {
     let mut count = 0;
     for argument in arguments {
-        if !is_single_value(argument) {
+        if valence(argument) != Valence::One {
             return None;
         }
         count += 1;
@@ -292,7 +293,32 @@ pub fn arg_count(arguments: &[SyntaxNode]) -> Option<usize> {
     Some(count)
 }
 
-fn is_single_value(node: &SyntaxNode) -> bool {
+/// How many values an expression is, as far as its shape says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Valence {
+    /// Exactly one, whatever the context.
+    One,
+    /// A list: an array, a hash, a slice, a range, `(A, B)`.
+    Many,
+    /// Nobody can say from here — a call, whose answer is the callee's.
+    Unknown,
+}
+
+/// The one reading of how many values an expression is.
+///
+/// `arity` counts only where every argument is [`Valence::One`], and the flow
+/// pass takes a list shape only where it is [`Valence::Many`]; what neither
+/// can be sure of is [`Valence::Unknown`], and both leave it alone.
+pub(crate) fn valence(node: &SyntaxNode) -> Valence {
+    use Valence::{Many, One, Unknown};
+    let sigils = |one: &[TokenKind], many: &[TokenKind]| {
+        let mut tokens = ast::tokens(node).map(|token| token.token_kind());
+        match tokens.find(|kind| one.contains(kind) || many.contains(kind)) {
+            Some(kind) if one.contains(&kind) => One,
+            Some(_) => Many,
+            None => Unknown,
+        }
+    };
     match node.node_kind() {
         NodeKind::LITERAL
         | NodeKind::ANON_HASH
@@ -310,49 +336,113 @@ fn is_single_value(node: &SyntaxNode) -> bool {
         | NodeKind::TR_EXPR
         | NodeKind::FILE_TEST_EXPR
         | NodeKind::ARRAY_LAST_INDEX
-        | NodeKind::POSTFIX_EXPR => true,
+        | NodeKind::POSTFIX_EXPR
+        | NodeKind::SCALAR_VAR => One,
 
-        NodeKind::SCALAR_VAR => true,
+        NodeKind::ARRAY_VAR | NodeKind::HASH_VAR | NodeKind::SLICE_EXPR | NodeKind::RANGE_EXPR => {
+            Many
+        }
 
-        // `$h{k}` and `$x->[0]` are one element; `@h{...}` is a slice.
-        NodeKind::HASH_SUBSCRIPT_EXPR | NodeKind::ARRAY_SUBSCRIPT_EXPR => node
-            .children()
-            .next()
-            .is_some_and(|base| yields_one_element(node, &base)),
+        // `$h{k}` and `$x->[0]` are one element; `@h{...}` is a slice. A
+        // subscript of a list, `(stat $f)[7]`, is as many as its subscript
+        // asks for, which is not read here.
+        NodeKind::HASH_SUBSCRIPT_EXPR | NodeKind::ARRAY_SUBSCRIPT_EXPR => {
+            let Some(base) = node.children().next() else {
+                return Unknown;
+            };
+            if yields_one_element(node, &base) {
+                return One;
+            }
+            match Variable::cast(base).map(|variable| variable.sigil()) {
+                Some(Sigil::Array | Sigil::Hash) => Many,
+                _ => Unknown,
+            }
+        }
 
-        // A dereference is one value only when the sigil says so.
-        NodeKind::DEREF_EXPR | NodeKind::BLOCK_DEREF_EXPR | NodeKind::POSTFIX_DEREF_EXPR => {
-            ast::tokens(node).any(|token| {
+        // A dereference is as many as its sigil says.
+        NodeKind::DEREF_EXPR | NodeKind::BLOCK_DEREF_EXPR => sigils(
+            &[TokenKind::SCALAR_SIGIL],
+            &[TokenKind::ARRAY_SIGIL, TokenKind::HASH_SIGIL],
+        ),
+        NodeKind::POSTFIX_DEREF_EXPR => sigils(
+            &[TokenKind::POSTFIX_DEREF_SCALAR],
+            &[
+                TokenKind::POSTFIX_DEREF_ARRAY,
+                TokenKind::POSTFIX_DEREF_HASH,
+            ],
+        ),
+
+        // `$a . $b`, `$a + 1`, `$a == $b` are one value, and so is `'-' x 10`;
+        // `(1) x 3` repeats a list.
+        NodeKind::BINARY_EXPR => {
+            let view = ast::BinaryExpr::cast(node.clone());
+            match view.as_ref().and_then(ast::BinaryExpr::operator) {
+                None => Unknown,
+                Some(TokenKind::X_OP) => {
+                    let repeated = view.and_then(|view| view.left());
+                    if repeated.is_some_and(|left| left.node_kind() == NodeKind::PAREN_EXPR) {
+                        Many
+                    } else {
+                        One
+                    }
+                }
+                Some(_) => One,
+            }
+        }
+
+        NodeKind::PREFIX_EXPR => {
+            let one = ast::tokens(node).next().is_some_and(|token| {
                 matches!(
                     token.token_kind(),
-                    TokenKind::SCALAR_SIGIL | TokenKind::POSTFIX_DEREF_SCALAR
+                    TokenKind::MINUS
+                        | TokenKind::PLUS
+                        | TokenKind::LOGICAL_NOT
+                        | TokenKind::BITWISE_NOT
+                        | TokenKind::BACKSLASH
+                        | TokenKind::NOT_KW
+                        | TokenKind::INCREMENT
+                        | TokenKind::DECREMENT
                 )
-            })
+            });
+            if one {
+                One
+            } else {
+                Unknown
+            }
         }
 
-        // `$a . $b`, `$a + 1`, `$a == $b` — an operator that is not `x` or a
-        // range, both of which build lists.
-        NodeKind::BINARY_EXPR => {
-            let operator = ast::BinaryExpr::cast(node.clone()).and_then(|view| view.operator());
-            !matches!(operator, Some(TokenKind::X_OP) | None)
+        NodeKind::PAREN_EXPR => ast::ParenExpr::cast(node.clone())
+            .and_then(|view| view.inner())
+            .map_or(Many, |inner| valence(&inner)),
+        NodeKind::LIST_EXPR => {
+            let mut children = node.children();
+            match (children.next(), children.next()) {
+                (Some(only), None) => valence(&only),
+                // `(A, B)`, and also `()`, whose scalar value is `undef` but
+                // whose *list* half is what an author writing it meant.
+                _ => Many,
+            }
         }
-        NodeKind::RANGE_EXPR => false,
 
-        NodeKind::PREFIX_EXPR => ast::tokens(node).next().is_some_and(|token| {
-            matches!(
-                token.token_kind(),
-                TokenKind::MINUS
-                    | TokenKind::PLUS
-                    | TokenKind::LOGICAL_NOT
-                    | TokenKind::BITWISE_NOT
-                    | TokenKind::BACKSLASH
-                    | TokenKind::NOT_KW
-                    | TokenKind::INCREMENT
-                    | TokenKind::DECREMENT
-            )
-        }),
+        // Either branch being a list makes the whole thing one, whichever way
+        // the condition goes — `wantarray` included; both being one value
+        // makes it one.
+        NodeKind::TERNARY_EXPR => {
+            let branches: Vec<Valence> = node
+                .children()
+                .skip(1)
+                .map(|branch| valence(&branch))
+                .collect();
+            if branches.contains(&Many) {
+                Many
+            } else if !branches.is_empty() && branches.iter().all(|branch| *branch == One) {
+                One
+            } else {
+                Unknown
+            }
+        }
 
-        _ => false,
+        _ => Unknown,
     }
 }
 

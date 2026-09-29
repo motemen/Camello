@@ -3743,34 +3743,7 @@ fn has_hash_sigil(node: &SyntaxNode) -> bool {
 
 /// Whether an expression is a list rather than one value.
 fn is_plural(node: &SyntaxNode) -> bool {
-    match node.node_kind() {
-        NodeKind::ARRAY_VAR | NodeKind::HASH_VAR | NodeKind::SLICE_EXPR => true,
-        NodeKind::DEREF_EXPR | NodeKind::BLOCK_DEREF_EXPR => ast::tokens(node).any(|token| {
-            matches!(
-                token.token_kind(),
-                TokenKind::ARRAY_SIGIL | TokenKind::HASH_SIGIL
-            )
-        }),
-        NodeKind::POSTFIX_DEREF_EXPR => ast::tokens(node).any(|token| {
-            matches!(
-                token.token_kind(),
-                TokenKind::POSTFIX_DEREF_ARRAY | TokenKind::POSTFIX_DEREF_HASH
-            )
-        }),
-        NodeKind::PAREN_EXPR => ast::ParenExpr::cast(node.clone())
-            .and_then(|view| view.inner())
-            .is_some_and(|inner| is_plural(&inner)),
-        NodeKind::LIST_EXPR => match sole_child(node) {
-            Some(only) => is_plural(&only),
-            // `(A, B)`, and also `()`, whose scalar value is `undef` but
-            // whose *list* half is what an author writing it meant.
-            None => true,
-        },
-        // Either branch being a list makes the whole thing one, whichever way
-        // the condition goes — `wantarray` included.
-        NodeKind::TERNARY_EXPR => node.children().skip(1).any(|branch| is_plural(&branch)),
-        _ => false,
-    }
+    crate::arity::valence(node) == crate::arity::Valence::Many
 }
 
 /// The two branches of `wantarray ? LIST : SCALAR`, in that order.
