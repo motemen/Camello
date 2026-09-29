@@ -90,6 +90,9 @@ fn check_method_call(call: &MethodCall, program: &Program, into: &mut Vec<Diagno
 }
 
 /// The name of a bareword invocant, `Foo::Bar` in `Foo::Bar->new`.
+///
+/// Any word, unlike the flow pass's reading of one: the caller asks the
+/// program for the sub before it says anything, and `shift->new` finds none.
 fn bareword_name(node: &SyntaxNode) -> Option<String> {
     let call = Call::cast(node.clone())?;
     call.args().is_empty().then(|| call.callee_name()).flatten()
