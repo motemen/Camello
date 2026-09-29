@@ -1906,11 +1906,7 @@ impl Pass<'_> {
             if text == "__PACKAGE__" {
                 return Type::InstanceOf(self.package.clone());
             }
-            if text
-                .chars()
-                .next()
-                .is_some_and(|ch| ch.is_uppercase() || ch == '_')
-            {
+            if looks_like_a_package(&text) {
                 return Type::InstanceOf(text);
             }
             return Type::Unknown;
@@ -2828,11 +2824,24 @@ fn bareword_class(node: &SyntaxNode) -> Option<String> {
         return None;
     }
     let name = call.callee_name()?;
-    // `__PACKAGE__` and `shift` are not class names.
-    name.chars()
-        .next()
-        .is_some_and(char::is_uppercase)
-        .then_some(name)
+    looks_like_a_package(&name).then_some(name)
+}
+
+/// Whether a bareword or a literal reads as a package name.
+///
+/// GUESS: a package is spelled with a capital or a leading `_`.
+/// Evidence: that is how CPAN spells them, while a lowercase word before `->`
+/// is a call — `shift->method` — or a pragma, and `__PACKAGE__` is read
+/// where it is written. `arity`'s bareword invocant takes any word, because it
+/// asks the program for the sub before it says anything.
+/// Wrong: a lowercase package (`main->new`) gets no class, and a capitalised
+/// sub called with no arguments before `->` is taken for one.
+fn looks_like_a_package(word: &str) -> bool {
+    word != "__PACKAGE__"
+        && word
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_uppercase() || ch == '_')
 }
 
 /// What an arithmetic operator does to whole numbers.
