@@ -178,12 +178,7 @@ struct FileReport {
 /// interface here: a CI step reads it and nothing else.
 pub fn run(request: &Request) -> Result<()> {
     let encodings = crate::cli::Encodings::parse(request.encoding.as_ref())?;
-    let extensions: Vec<&str> = request
-        .extensions
-        .split(',')
-        .map(str::trim)
-        .filter(|extension| !extension.is_empty())
-        .collect();
+    let extensions = crate::cli::extension_list(&request.extensions);
 
     let mut files = Vec::new();
     if request.paths.is_empty() {

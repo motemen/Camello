@@ -660,6 +660,15 @@ fn run_index_bar(
 }
 
 /// A comma-separated list of directories.
+/// `--extensions`, split. An empty item — a trailing comma — names nothing,
+/// rather than the empty extension of a file whose name ends in `.`.
+pub(crate) fn extension_list(list: &str) -> Vec<&str> {
+    list.split(',')
+        .map(str::trim)
+        .filter(|extension| !extension.is_empty())
+        .collect()
+}
+
 fn split_paths(list: Option<&str>) -> Vec<PathBuf> {
     list.map(split_paths_owned).unwrap_or_default()
 }
@@ -1011,7 +1020,7 @@ fn format_tree(
     options: &FormatterOptions,
 ) -> Result<()> {
     let encodings = Encodings::parse(encoding.as_ref())?;
-    let extensions: Vec<&str> = extensions.split(',').map(str::trim).collect();
+    let extensions = extension_list(extensions);
 
     let mut files = Vec::new();
     for path in &paths {
@@ -1673,7 +1682,7 @@ fn check_paths(
 ) -> Result<()> {
     use crate::check::{check_report, Invariant};
 
-    let extensions: Vec<&str> = extensions.split(',').map(str::trim).collect();
+    let extensions = extension_list(extensions);
     let encodings = Encodings::parse(encoding.as_ref())?;
 
     let mut files = Vec::new();
