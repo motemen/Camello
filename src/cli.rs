@@ -265,6 +265,13 @@ pub enum DevCommands {
         encoding: EncodingArg,
     },
 
+    /// Normalise a B::Deparse listing on stdin the way perl-deparse compares
+    /// two
+    ///
+    /// For `scripts/perl-check`, which runs perl under a context of its own
+    /// and compares the listings by the same rule.
+    DeparseNormalize,
+
     /// Build the language server's workspace index over a corpus, and say what
     /// it cost
     ///
@@ -907,6 +914,18 @@ pub fn run() -> Result<()> {
                 }
                 let wanted = wanted_invariants(only.as_deref())?;
                 return check_paths(paths, jobs, &wanted, quiet, verbose, &extensions, encoding);
+            }
+            DevCommands::DeparseNormalize => {
+                // Lossy, as a deparse run by `perl-deparse` is read: B::Deparse
+                // echoes the source's bytes, whatever encoding they are in.
+                let mut raw = Vec::new();
+                io::stdin()
+                    .read_to_end(&mut raw)
+                    .map_err(|error| miette::miette!("could not read standard input: {error}"))?;
+                for line in crate::check::deparse::normalise(&String::from_utf8_lossy(&raw)) {
+                    println!("{line}");
+                }
+                return Ok(());
             }
             DevCommands::Index {
                 paths,
