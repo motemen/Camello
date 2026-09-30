@@ -938,28 +938,7 @@ impl AssignExpr {
     pub fn operator(&self) -> Option<TokenKind> {
         tokens(&self.0)
             .map(|token| token.token_kind())
-            .find(|kind| {
-                matches!(
-                    kind,
-                    T!["="]
-                        | T!["+="]
-                        | T!["-="]
-                        | T!["*="]
-                        | T!["/="]
-                        | T!["%="]
-                        | T!["**="]
-                        | T![".="]
-                        | T!["x="]
-                        | T!["//="]
-                        | T!["||="]
-                        | T!["&&="]
-                        | T!["|="]
-                        | T!["&="]
-                        | T!["^="]
-                        | T!["<<="]
-                        | T![">>="]
-                )
-            })
+            .find(|kind| kind.is_assignment_op())
     }
 
     /// Whether the assignment is a plain `=`, which is the only one that

@@ -885,12 +885,7 @@ fn starts_argument(parser: &mut Parser<'_>, argument_is_optional: bool) -> bool 
         // `decode <$fh>` reads a line and `f < $x` compares, and the two are
         // told apart by whether a complete readline operator lexes here.
         if parser.at(T!["<"]) {
-            parser.expect_term();
-            if parser.at(TokenKind::IO_HANDLE) {
-                return true;
-            }
-            parser.expect_operator();
-            return false;
+            return lexes_in_term_as(parser, TokenKind::IO_HANDLE);
         }
         // `matches <<"EOF"` hands over a heredoc and `$bits << 2` shifts, and
         // the same question tells them apart: does a complete heredoc marker
@@ -898,12 +893,7 @@ fn starts_argument(parser: &mut Parser<'_>, argument_is_optional: bool) -> bool 
         // body is then read as code, and only says so when it does not happen
         // to be valid Perl.
         if parser.at(T!["<<"]) {
-            parser.expect_term();
-            if parser.at(TokenKind::HEREDOC_START) {
-                return true;
-            }
-            parser.expect_operator();
-            return false;
+            return lexes_in_term_as(parser, TokenKind::HEREDOC_START);
         }
         // GUESS: `-` here starts a file test rather than a subtraction.
         // Evidence: whether a file test operator lexes at all. `ok -f $path`
@@ -912,12 +902,7 @@ fn starts_argument(parser: &mut Parser<'_>, argument_is_optional: bool) -> bool 
         // so `ok -s $path` read as subtraction starts a substitution whose body
         // runs to the end of the file.
         if parser.at(T!["-"]) {
-            parser.expect_term();
-            if parser.at(TokenKind::FILE_TEST_OP) {
-                return true;
-            }
-            parser.expect_operator();
-            return false;
+            return lexes_in_term_as(parser, TokenKind::FILE_TEST_OP);
         }
         // GUESS: a `+` glued to its operand is perl's documented disambiguating
         // unary plus, whose only purpose is to open an argument list where a
@@ -962,6 +947,19 @@ fn starts_argument(parser: &mut Parser<'_>, argument_is_optional: bool) -> bool 
         }
         Some(kind) => kind.can_start_term(),
     }
+}
+
+/// Does the token at the cursor, re-read in term position, come out as `kind`?
+///
+/// Leaves `expect` in term position if it does and in operator position if it
+/// does not, which is where each answer has the caller carry on.
+fn lexes_in_term_as(parser: &mut Parser<'_>, kind: TokenKind) -> bool {
+    parser.expect_term();
+    if parser.at(kind) {
+        return true;
+    }
+    parser.expect_operator();
+    false
 }
 
 impl Parser<'_> {

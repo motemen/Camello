@@ -150,20 +150,7 @@ impl Program {
         for symbol in &mut decls.subs {
             symbol.file = index;
         }
-        for (_, name) in &decls.packages {
-            self.packages.entry(name.clone()).or_default().push(index);
-        }
-        for symbol in &decls.subs {
-            let key = (symbol.package.clone(), symbol.name.clone());
-            if !self.by_name.contains_key(&key) {
-                self.by_name.insert(key, self.subs.len());
-                self.by_package
-                    .entry(symbol.package.clone())
-                    .or_default()
-                    .push(self.subs.len());
-                self.subs.push(symbol.clone());
-            }
-        }
+        self.index_file(index, &decls);
         self.by_path.insert(path.to_path_buf(), index);
         self.files.push(FileEntry {
             path: path.to_path_buf(),
@@ -307,20 +294,29 @@ impl Program {
         self.by_name.clear();
         self.by_package.clear();
         self.packages.clear();
-        for (index, entry) in self.files.iter().enumerate() {
-            for (_, name) in &entry.decls.packages {
-                self.packages.entry(name.clone()).or_default().push(index);
-            }
-            for symbol in &entry.decls.subs {
-                let key = (symbol.package.clone(), symbol.name.clone());
-                if !self.by_name.contains_key(&key) {
-                    self.by_name.insert(key, self.subs.len());
-                    self.by_package
-                        .entry(symbol.package.clone())
-                        .or_default()
-                        .push(self.subs.len());
-                    self.subs.push(symbol.clone());
-                }
+        let files = std::mem::take(&mut self.files);
+        for (index, entry) in files.iter().enumerate() {
+            self.index_file(index, &entry.decls);
+        }
+        self.files = files;
+    }
+
+    /// Fold one file's packages and subs into the name indexes, after the
+    /// files before it. The first file to declare a sub is the one its name
+    /// means.
+    fn index_file(&mut self, index: usize, decls: &FileDecls) {
+        for (_, name) in &decls.packages {
+            self.packages.entry(name.clone()).or_default().push(index);
+        }
+        for symbol in &decls.subs {
+            let key = (symbol.package.clone(), symbol.name.clone());
+            if !self.by_name.contains_key(&key) {
+                self.by_name.insert(key, self.subs.len());
+                self.by_package
+                    .entry(symbol.package.clone())
+                    .or_default()
+                    .push(self.subs.len());
+                self.subs.push(symbol.clone());
             }
         }
     }

@@ -12,7 +12,7 @@ use camello_syntax::hash::OffsetMap;
 use camello_syntax::lang::{
     NodeExt, NodeKind, SyntaxElement, SyntaxNode, SyntaxToken, TokenExt, TokenKind, T,
 };
-use camello_syntax::parse::trivia::TriviaMap;
+use camello_syntax::parse::trivia::{Trivia, TriviaMap};
 
 use super::doc::{AnchorClass, Doc, Placement, ShapeKey};
 use super::{DelimiterSpacing, FormatterOptions};
@@ -174,27 +174,7 @@ impl<'a> Builder<'a> {
     /// the one place it is emitted. `feature.pm` ends with
     /// `# ex: set ro ft=perl:` and lost it.
     fn end_of_file_docs(&self) -> Doc {
-        let mut parts = Vec::new();
-        let mut items = self.trivia.at_end().iter().peekable();
-        while let Some(item) = items.next() {
-            match item.kind {
-                TokenKind::COMMENT => {
-                    parts.push(Doc::Comment(item.text.clone(), Placement::OwnLine));
-                    parts.push(Doc::HardLine);
-                    // The newline ending the comment's own line is not a blank
-                    // line, the same reading `leading_docs` takes.
-                    if items
-                        .peek()
-                        .is_some_and(|next| next.kind == TokenKind::NEWLINE)
-                    {
-                        items.next();
-                    }
-                }
-                TokenKind::NEWLINE => parts.push(Doc::BlankLine),
-                _ => {}
-            }
-        }
-        Doc::concat(parts)
+        trivia_docs(self.trivia.at_end())
     }
 
     /// Is there a comment anywhere inside this node?
@@ -339,8 +319,7 @@ impl<'a> Builder<'a> {
         // trailing trivia (the trivia model), so every NEWLINE here is a line the
         // user left empty. The renderer collapses runs of them to one
         // (docs/formatting.md BLANK_LINE-3).
-        let mut parts = Vec::new();
-        let mut items = trivia.leading.iter().peekable();
+        let mut items = trivia.leading.as_slice();
         // With one exception. A heredoc body is invisible to the parser
         // (the parser contract), so it holds no trivia of its own and the newline that
         // ended its terminator's line has no token to be trailing trivia of: it
@@ -348,30 +327,12 @@ impl<'a> Builder<'a> {
         // line ending, not a line the user left empty — the ones after it are.
         if follows_heredoc_body(token)
             && items
-                .peek()
+                .first()
                 .is_some_and(|item| item.kind == TokenKind::NEWLINE)
         {
-            items.next();
+            items = &items[1..];
         }
-        while let Some(item) = items.next() {
-            match item.kind {
-                TokenKind::COMMENT => {
-                    parts.push(Doc::Comment(item.text.clone(), Placement::OwnLine));
-                    parts.push(Doc::HardLine);
-                    // The newline that ends the comment's own line is not a
-                    // blank line.
-                    if items
-                        .peek()
-                        .is_some_and(|next| next.kind == TokenKind::NEWLINE)
-                    {
-                        items.next();
-                    }
-                }
-                TokenKind::NEWLINE => parts.push(Doc::BlankLine),
-                _ => {}
-            }
-        }
-        Doc::concat(parts)
+        trivia_docs(items)
     }
 
     /// The comment sharing a line with this token.
@@ -428,24 +389,26 @@ impl<'a> Builder<'a> {
     /// The default: children in order, with spacing decided pairwise but with
     /// the parent node in hand, and user newlines preserved.
     fn sequence(&mut self, node: &SyntaxNode) -> Doc {
+        self.sequence_with(node, Self::node)
+    }
+
+    /// [`Self::sequence`], with each child node's document made by `child_doc`.
+    fn sequence_with(
+        &mut self,
+        node: &SyntaxNode,
+        mut child_doc: impl FnMut(&mut Self, &SyntaxNode) -> Doc,
+    ) -> Doc {
         let parent = Some(node.node_kind());
         let mut parts = Vec::new();
         let mut previous: Option<SyntaxElement> = None;
 
-        for child in node.children_with_tokens() {
-            if child
-                .as_token()
-                .is_some_and(|token| token.token_kind().is_trivia())
-            {
-                continue;
-            }
-
+        for child in code_children(node) {
             if let Some(previous) = &previous {
                 parts.extend(self.separator(previous, &child, parent));
             }
 
             match &child {
-                SyntaxElement::Node(child) => parts.push(self.node(child)),
+                SyntaxElement::Node(child) => parts.push(child_doc(self, child)),
                 SyntaxElement::Token(token) => parts.push(self.token(token)),
             }
             previous = Some(child);
@@ -465,14 +428,7 @@ impl<'a> Builder<'a> {
     /// ordinary sequence rules both were continuation lines, and `@{\n
     /// $self->list\n}` closed one level in from the `@` that opened it.
     fn deref_block(&mut self, node: &SyntaxNode) -> Doc {
-        let children: Vec<SyntaxElement> = node
-            .children_with_tokens()
-            .filter(|child| {
-                !child
-                    .as_token()
-                    .is_some_and(|token| token.token_kind().is_trivia())
-            })
-            .collect();
+        let children: Vec<SyntaxElement> = code_children(node).collect();
         let brace = |child: &SyntaxElement, kind: TokenKind| {
             child
                 .as_token()
@@ -540,7 +496,6 @@ impl<'a> Builder<'a> {
     /// ordinary continuation indent instead; measured from an indent the name is
     /// nowhere near, the offset put `bbb` two columns right of its own list.
     fn list_call(&mut self, node: &SyntaxNode) -> Doc {
-        let parent = Some(node.node_kind());
         let name = node
             .children()
             .find(|child| child.node_kind() == NodeKind::SUB_NAME);
@@ -584,33 +539,12 @@ impl<'a> Builder<'a> {
             hanging.map(Some)
         };
 
-        let mut parts = Vec::new();
-        let mut previous: Option<SyntaxElement> = None;
-        for child in node.children_with_tokens() {
-            if child
-                .as_token()
-                .is_some_and(|token| token.token_kind().is_trivia())
-            {
-                continue;
+        self.sequence_with(node, |this, child| match offset {
+            Some(offset) if child.node_kind() == NodeKind::LIST_EXPR => {
+                Doc::hanging(offset, this.node(child))
             }
-            if let Some(previous) = &previous {
-                parts.extend(self.separator(previous, &child, parent));
-            }
-            match &child {
-                SyntaxElement::Node(child)
-                    if child.node_kind() == NodeKind::LIST_EXPR && offset.is_some() =>
-                {
-                    parts.push(Doc::hanging(
-                        offset.expect("checked above"),
-                        self.node(child),
-                    ));
-                }
-                SyntaxElement::Node(child) => parts.push(self.node(child)),
-                SyntaxElement::Token(token) => parts.push(self.token(token)),
-            }
-            previous = Some(child);
-        }
-        Doc::concat(parts)
+            _ => this.node(child),
+        })
     }
 
     /// What goes between two adjacent children.
@@ -626,9 +560,7 @@ impl<'a> Builder<'a> {
         let mut parts = Vec::new();
 
         // An anchor goes immediately before the thing it aligns.
-        if let Some((class, tail)) = self.anchor_class(next, parent) {
-            parts.push(Doc::Anchor(class, tail));
-        }
+        parts.extend(self.anchor(next, parent));
 
         let wants_space = self.wants_space(previous, next, parent);
         let deferred_terminator = !wants_space
@@ -757,16 +689,8 @@ impl<'a> Builder<'a> {
     }
 
     /// Will this block be written across lines?
-    ///
-    /// The memo is consulted before the block's statements are collected: this
-    /// is asked of every node that has a block under it, and by then the block
-    /// has almost always answered for itself already.
     fn block_breaks(&mut self, block: &SyntaxNode) -> bool {
-        if let Some(&flat) = self.flat_blocks.get(&block.text_range().start()) {
-            return !flat;
-        }
-        let statements: Vec<SyntaxNode> = block.children().collect();
-        !self.block_can_be_flat(block, &statements)
+        !self.block_can_be_flat(block)
     }
 
     /// Does this element finish on a line of its own, at the level the
@@ -781,15 +705,14 @@ impl<'a> Builder<'a> {
         node.node_kind() == NodeKind::BLOCK && self.block_breaks(node)
     }
 
-    /// The class this token is an alignment point for, and how much of it has to
-    /// end at the group's column.
-    fn fat_comma_class(&self) -> AnchorClass {
-        AnchorClass::FatComma {
-            depth: self.fat_comma_depth,
-            hashes: self.fat_comma_hashes,
-        }
+    /// The anchor that goes immediately before this child, if it aligns.
+    fn anchor(&self, next: &SyntaxElement, parent: Option<NodeKind>) -> Option<Doc> {
+        self.anchor_class(next, parent)
+            .map(|(class, tail)| Doc::Anchor(class, tail))
     }
 
+    /// The class this child is an alignment point for, and how much of it has to
+    /// end at the group's column.
     fn anchor_class(
         &self,
         next: &SyntaxElement,
@@ -814,7 +737,11 @@ impl<'a> Builder<'a> {
             return Some((AnchorClass::Assign, token.text().width()));
         }
         if token.token_kind() == T!["=>"] {
-            return Some((self.fat_comma_class(), 0));
+            let class = AnchorClass::FatComma {
+                depth: self.fat_comma_depth,
+                hashes: self.fat_comma_hashes,
+            };
+            return Some((class, 0));
         }
         if matches!(token.token_kind(), T!["//"] | T!["||"])
             && parent == Some(NodeKind::BINARY_EXPR)
@@ -929,17 +856,7 @@ impl<'a> Builder<'a> {
                             .find(|child| child.node_kind() == NodeKind::SUBSCRIPT)
                     });
                 // No `SUBSCRIPT` node means empty brackets, which stay empty.
-                let Some(subscript) = subscript else {
-                    return false;
-                };
-                return match self.options.delimiter_spacing {
-                    DelimiterSpacing::Tight => false,
-                    DelimiterSpacing::Standard => {
-                        Self::item_count(&subscript) >= 2
-                            || sole_item(&subscript).is_some_and(|item| !is_simple_term(&item))
-                    }
-                    DelimiterSpacing::Loose => true,
-                };
+                return subscript.is_some_and(|subscript| self.pads_inside(&subscript));
             }
         }
         // A dereference's braces hug a name and open up around anything else:
@@ -1005,47 +922,44 @@ impl<'a> Builder<'a> {
         true
     }
 
-    /// Whether the source has a line break between two adjacent children.
-    ///
-    /// The gap between them is exactly the previous token's trailing trivia plus
-    /// the next token's leading trivia (the trivia model), and because no node's
-    /// range includes trivia, that is the whole gap — no guessing from node
-    /// extents, and nothing from *after* `next` can leak in.
     /// Whether the source has a comment between two adjacent children.
     ///
     /// The same gap `has_user_newline_between` reads, asked about the trivia
     /// that cannot be dropped: a comment is kept whatever the spacing rule
     /// between its neighbours is, so the line break carrying it is kept too.
     fn has_user_comment_between(&self, previous: &SyntaxElement, next: &SyntaxElement) -> bool {
-        let is_comment =
-            |item: &camello_syntax::parse::trivia::Trivia| item.kind == TokenKind::COMMENT;
-
-        let after_previous = last_token_of(previous)
-            .map(|token| self.trivia.of(token.text_range()))
-            .is_some_and(|trivia| trivia.trailing.iter().any(is_comment));
-        if after_previous {
-            return true;
-        }
-
-        first_token_of(next)
-            .map(|token| self.trivia.of(token.text_range()))
-            .is_some_and(|trivia| trivia.leading.iter().any(is_comment))
+        self.gap_contains(previous, next, TokenKind::COMMENT)
     }
 
+    /// Whether the source has a line break between two adjacent children.
     fn has_user_newline_between(&self, previous: &SyntaxElement, next: &SyntaxElement) -> bool {
-        let is_newline =
-            |item: &camello_syntax::parse::trivia::Trivia| item.kind == TokenKind::NEWLINE;
+        self.gap_contains(previous, next, TokenKind::NEWLINE)
+    }
+
+    /// Whether the gap between two adjacent children holds trivia of this kind.
+    ///
+    /// The gap between them is exactly the previous token's trailing trivia plus
+    /// the next token's leading trivia (the trivia model), and because no node's
+    /// range includes trivia, that is the whole gap — no guessing from node
+    /// extents, and nothing from *after* `next` can leak in.
+    fn gap_contains(
+        &self,
+        previous: &SyntaxElement,
+        next: &SyntaxElement,
+        kind: TokenKind,
+    ) -> bool {
+        let is_kind = |item: &Trivia| item.kind == kind;
 
         let after_previous = last_token_of(previous)
             .map(|token| self.trivia.of(token.text_range()))
-            .is_some_and(|trivia| trivia.trailing.iter().any(is_newline));
+            .is_some_and(|trivia| trivia.trailing.iter().any(is_kind));
         if after_previous {
             return true;
         }
 
         first_token_of(next)
             .map(|token| self.trivia.of(token.text_range()))
-            .is_some_and(|trivia| trivia.leading.iter().any(is_newline))
+            .is_some_and(|trivia| trivia.leading.iter().any(is_kind))
     }
 
     fn token(&mut self, token: &SyntaxToken) -> Doc {
@@ -1289,37 +1203,29 @@ impl<'a> Builder<'a> {
     /// another statement, `brace_follows` claimed the previous statement's
     /// trailing comment and this re-emitted it on the brace's line.
     fn comment_before_brace(&mut self, node: &SyntaxNode) -> Doc {
-        let Some(first) = first_token(node) else {
+        let Some(previous) = first_token(node).and_then(|first| prev_code_token(&first)) else {
             return Doc::Nil;
         };
-        let mut previous = first.prev_token();
-        while let Some(token) = previous {
-            if !token.token_kind().is_trivia() {
-                if !self.brace_follows(&token) {
-                    return Doc::Nil;
-                }
-                return self.trailing_comment(&token);
-            }
-            previous = token.prev_token();
+        if !self.brace_follows(&previous) {
+            return Doc::Nil;
         }
-        Doc::Nil
+        self.trailing_comment(&previous)
     }
 
     /// A block. Control-structure blocks always break; a `map`/`sub`/`do` block
     /// may stay on one line.
     fn block(&mut self, node: &SyntaxNode) -> Doc {
-        let statements: Vec<SyntaxNode> = node.children().collect();
-        let flat = self.block_can_be_flat(node, &statements);
+        let flat = self.block_can_be_flat(node);
 
         let mut body = Vec::new();
         if flat {
             // A `;` ends the statement it belongs to, so what separates the
             // next one from it is the space: `sub f { a; b }`.
-            for (index, statement) in statements.iter().enumerate() {
+            for (index, statement) in node.children().enumerate() {
                 if index > 0 {
                     body.push(Doc::Space);
                 }
-                body.push(self.node(statement));
+                body.push(self.node(&statement));
             }
         } else {
             self.statements_into(node, &mut body);
@@ -1392,17 +1298,17 @@ impl<'a> Builder<'a> {
     /// ninety seconds: recursing into every descendant block meant each level
     /// re-answered the question for every level below it, and each answer
     /// allocated the node's whole text to look for a newline in it.
-    fn block_can_be_flat(&mut self, node: &SyntaxNode, statements: &[SyntaxNode]) -> bool {
+    fn block_can_be_flat(&mut self, node: &SyntaxNode) -> bool {
         let key = node.text_range().start();
         if let Some(&answer) = self.flat_blocks.get(&key) {
             return answer;
         }
-        let answer = self.compute_block_can_be_flat(node, statements);
+        let answer = self.compute_block_can_be_flat(node);
         self.flat_blocks.insert(key, answer);
         answer
     }
 
-    fn compute_block_can_be_flat(&mut self, node: &SyntaxNode, statements: &[SyntaxNode]) -> bool {
+    fn compute_block_can_be_flat(&mut self, node: &SyntaxNode) -> bool {
         // Error recovery can leave a block with no closing brace. There is no
         // `{ x }` to fit on a line, so there is nothing to be flat, and saying
         // otherwise makes the output re-read as a different shape on the next
@@ -1439,9 +1345,9 @@ impl<'a> Builder<'a> {
         }
         // An empty block elsewhere is `{ }`; there is nothing to put on a line
         // of its own.
-        if statements.is_empty() {
+        let Some(last) = node.children().last() else {
             return !self.contains_comment(node);
-        }
+        };
         if !self.options.allow_single_line_blocks {
             return false;
         }
@@ -1453,7 +1359,6 @@ impl<'a> Builder<'a> {
         if self.contains_newline(node) {
             return false;
         }
-        let last = statements.last().expect("statements is not empty");
         if last
             .children_with_tokens()
             .filter_map(|child| child.into_token())
@@ -1474,8 +1379,7 @@ impl<'a> Builder<'a> {
         // its own, so the answer covers every depth without this level walking
         // there itself.
         for child in nearest_blocks(node) {
-            let statements: Vec<SyntaxNode> = child.children().collect();
-            if !self.block_can_be_flat(&child, &statements) {
+            if !self.block_can_be_flat(&child) {
                 return false;
             }
         }
@@ -1634,26 +1538,8 @@ impl<'a> Builder<'a> {
             return Doc::group(true, Doc::concat(parts));
         }
 
-        // docs/formatting.md SPACING-7: whether a flat literal pads its inside
-        // depends on the configured spacing and how many items it holds.
-        // An `a => 1` pair is two items, so `{ a => 1 }` keeps its spaces
-        // under Standard while `[$x]` stays tight. Parentheses are always
-        // tight, whatever the setting.
-        let spacious = open != T!["("]
-            && match self.options.delimiter_spacing {
-                DelimiterSpacing::Tight => false,
-                // A lone item closes the brackets up only where it is a
-                // name: `[$x]` and `{ $single }` are what the arity rule was
-                // for, and `[ map { $_->foo } @$list ]`, `{ $obj->qux }` and
-                // `[ foo($body) ]` are what it caught by accident — a
-                // literal with something inside it, squeezed against its own
-                // brackets because it held one thing.
-                DelimiterSpacing::Standard => {
-                    Self::item_count(node) >= 2
-                        || sole_item(node).is_some_and(|item| !is_simple_term(&item))
-                }
-                DelimiterSpacing::Loose => true,
-            };
+        // Parentheses are always tight, whatever the setting (SPACING-7).
+        let spacious = open != T!["("] && self.pads_inside(node);
         if spacious {
             parts.push(Doc::Space);
         }
@@ -1681,6 +1567,28 @@ impl<'a> Builder<'a> {
             return Doc::group_across_lines(Doc::concat(parts));
         }
         Doc::group(false, Doc::concat(parts))
+    }
+
+    /// Does a flat bracket pair holding these contents pad its inside?
+    ///
+    /// docs/formatting.md SPACING-7: it depends on the configured spacing and
+    /// how many items the brackets hold. An `a => 1` pair is two items, so
+    /// `{ a => 1 }` keeps its spaces under Standard while `[$x]` stays tight.
+    /// A literal and a subscript read the same way.
+    fn pads_inside(&self, node: &SyntaxNode) -> bool {
+        match self.options.delimiter_spacing {
+            DelimiterSpacing::Tight => false,
+            // A lone item closes the brackets up only where it is a name:
+            // `[$x]` and `{ $single }` are what the arity rule was for, and
+            // `[ map { $_->foo } @$list ]`, `{ $obj->qux }` and `[ foo($body) ]`
+            // are what it caught by accident — a literal with something inside
+            // it, squeezed against its own brackets because it held one thing.
+            DelimiterSpacing::Standard => {
+                Self::item_count(node) >= 2
+                    || sole_item(node).is_some_and(|item| !is_simple_term(&item))
+            }
+            DelimiterSpacing::Loose => true,
+        }
     }
 
     /// How many items a delimited literal holds, where both `,` and `=>`
@@ -1736,23 +1644,18 @@ impl<'a> Builder<'a> {
                     // its left, so nothing precedes it, and a `=>` whose left
                     // neighbour is a separator has its space already and no
                     // column of its own to align to.
-                    let empty_before = adjacent_separator(&token, rowan::Direction::Prev).is_some();
+                    let element = SyntaxElement::Token(token.clone());
+                    let empty_before =
+                        adjacent_separator(&element, rowan::Direction::Prev).is_some();
                     let empty_after =
-                        adjacent_separator(&token, rowan::Direction::Next) == Some(T![","]);
+                        adjacent_separator(&element, rowan::Direction::Next) == Some(T![","]);
                     if token.token_kind() == T!["=>"] && !empty_before {
-                        parts.push(Doc::Anchor(self.fat_comma_class(), 0));
+                        parts.extend(self.anchor(&element, Some(NodeKind::LIST_EXPR)));
                         parts.push(Doc::Space);
                     }
                     let value_on_next_line =
                         token.token_kind() == T!["=>"] && self.newline_follows(&token);
-                    let last = token
-                        .siblings_with_tokens(rowan::Direction::Next)
-                        .skip(1)
-                        .all(|sibling| {
-                            sibling
-                                .as_token()
-                                .is_some_and(|token| token.token_kind().is_trivia())
-                        });
+                    let last = code_sibling(&element, rowan::Direction::Next).is_none();
                     let user_break = self.newline_follows(&token);
                     parts.push(self.token(&token));
                     if empty_after {
@@ -1818,22 +1721,25 @@ impl<'a> Builder<'a> {
     /// Walks tokens rather than siblings: a closing bracket's left neighbour is
     /// inside the node before it.
     fn closes_on_its_own_line(&self, closing: &SyntaxToken, body: &Doc) -> bool {
-        let mut cursor = closing.prev_token();
-        loop {
-            match cursor {
-                Some(token) if token.token_kind() == TokenKind::NEWLINE => break,
-                Some(token) if token.token_kind().is_trivia() => cursor = token.prev_token(),
-                _ => return false,
-            }
-        }
+        let written_on_its_own_line = newline_or_code_before(closing)
+            .is_some_and(|token| token.token_kind() == TokenKind::NEWLINE);
         // …and only where the contents are going to occupy more than one line.
         // Asked of the document rather than of the source, because that is what
         // decides it: `Mail::Mailer` writes its list with the newline in front
         // of each comma, which is not a break the formatter keeps, so the
         // contents come out on one line — and a closer left on the next line
         // would be pulled back up by the pass after that (the formatter contract, I2).
-        breaks(body)
+        written_on_its_own_line && breaks(body)
     }
+}
+
+/// The node's children, less the trivia between them.
+fn code_children(node: &SyntaxNode) -> impl Iterator<Item = SyntaxElement> {
+    node.children_with_tokens().filter(|child| {
+        !child
+            .as_token()
+            .is_some_and(|token| token.token_kind().is_trivia())
+    })
 }
 
 /// The one thing this bracket holds, if it holds exactly one.
@@ -1896,9 +1802,10 @@ fn breaks(doc: &Doc) -> bool {
         Doc::HardLine | Doc::BlankLine | Doc::VerbatimLines(_) | Doc::Comment(_, _) => true,
         Doc::UserLine { broken, .. } => *broken,
         Doc::Raw(text) => text.contains('\n'),
-        Doc::Group { broken, body, .. } => *broken || breaks(body),
-        Doc::Indent(body) | Doc::Continuation(body) | Doc::Rooted { body, .. } => breaks(body),
-        Doc::Concat(parts) => parts.iter().any(breaks),
+        Doc::Group { broken, .. } => *broken || doc.children().iter().any(breaks),
+        Doc::Concat(_) | Doc::Indent(_) | Doc::Continuation(_) | Doc::Rooted { .. } => {
+            doc.children().iter().any(breaks)
+        }
         _ => false,
     }
 }
@@ -1928,23 +1835,72 @@ fn nearest_blocks(node: &SyntaxNode) -> Vec<SyntaxNode> {
     found
 }
 
+/// A run of own-line trivia: each comment on a line of its own, and each
+/// newline a blank line.
+fn trivia_docs(items: &[Trivia]) -> Doc {
+    let mut parts = Vec::new();
+    let mut items = items.iter().peekable();
+    while let Some(item) = items.next() {
+        match item.kind {
+            TokenKind::COMMENT => {
+                parts.push(Doc::Comment(item.text.clone(), Placement::OwnLine));
+                parts.push(Doc::HardLine);
+                // The newline that ends the comment's own line is not a blank
+                // line.
+                if items
+                    .peek()
+                    .is_some_and(|next| next.kind == TokenKind::NEWLINE)
+                {
+                    items.next();
+                }
+            }
+            TokenKind::NEWLINE => parts.push(Doc::BlankLine),
+            _ => {}
+        }
+    }
+    Doc::concat(parts)
+}
+
+/// Is the nearest thing written before this token a heredoc body?
+fn follows_heredoc_body(token: &SyntaxToken) -> bool {
+    prev_code_token(token).is_some_and(|previous| previous.token_kind().is_heredoc_body())
+}
+
+/// The nearest token before this one that is not trivia, wherever it is.
+fn prev_code_token(token: &SyntaxToken) -> Option<SyntaxToken> {
+    tokens_before(token).find(|previous| !previous.token_kind().is_trivia())
+}
+
+/// The nearest token before this one that is code or ends a line.
+fn newline_or_code_before(token: &SyntaxToken) -> Option<SyntaxToken> {
+    tokens_before(token).find(|previous| {
+        previous.token_kind() == TokenKind::NEWLINE || !previous.token_kind().is_trivia()
+    })
+}
+
+/// The tokens before this one, nearest first, across node boundaries.
+fn tokens_before(token: &SyntaxToken) -> impl Iterator<Item = SyntaxToken> {
+    std::iter::successors(token.prev_token(), SyntaxToken::prev_token)
+}
+
+/// The nearest sibling in `direction` that is not trivia.
+fn code_sibling(element: &SyntaxElement, direction: rowan::Direction) -> Option<SyntaxElement> {
+    let step: fn(&SyntaxElement) -> Option<SyntaxElement> = match direction {
+        rowan::Direction::Next => SyntaxElement::next_sibling_or_token,
+        rowan::Direction::Prev => SyntaxElement::prev_sibling_or_token,
+    };
+    std::iter::successors(step(element), step).find(|sibling| {
+        !sibling
+            .as_token()
+            .is_some_and(|token| token.token_kind().is_trivia())
+    })
+}
+
 /// Whether this token may carry leading and trailing trivia of its own.
 ///
 /// Both, unless it is inside an atomic quote-like run, where only the first
 /// token of the run can be preceded by a comment and only the last can be
 /// followed by one.
-/// Is the nearest thing written before this token a heredoc body?
-fn follows_heredoc_body(token: &SyntaxToken) -> bool {
-    let mut previous = token.prev_token();
-    while let Some(candidate) = previous {
-        if !candidate.token_kind().is_trivia() {
-            return candidate.token_kind().is_heredoc_body();
-        }
-        previous = candidate.prev_token();
-    }
-    false
-}
-
 fn run_edges(token: &SyntaxToken) -> (bool, bool) {
     let Some(parent) = token.parent() else {
         return (true, true);
@@ -1977,14 +1933,8 @@ fn wants_preceding_blank_line(node: &SyntaxNode) -> bool {
 ///
 /// Two separators with nothing between them are an empty element, which perl
 /// allows and drops.
-fn adjacent_separator(token: &SyntaxToken, direction: rowan::Direction) -> Option<TokenKind> {
-    token
-        .siblings_with_tokens(direction)
-        .skip(1)
-        .find(|sibling| match sibling.as_token() {
-            Some(token) => !token.token_kind().is_trivia(),
-            None => true,
-        })
+fn adjacent_separator(element: &SyntaxElement, direction: rowan::Direction) -> Option<TokenKind> {
+    code_sibling(element, direction)
         .and_then(SyntaxElement::into_token)
         .map(|sibling| sibling.token_kind())
         .filter(|kind| matches!(kind, T![","] | T!["=>"]))
@@ -2098,17 +2048,13 @@ fn edge_token(
     direction: rowan::Direction,
 ) -> Option<SyntaxToken> {
     let range = node.text_range();
-    let mut token = token;
-    while token.token_kind().is_trivia() {
-        token = match direction {
-            rowan::Direction::Next => token.next_token()?,
-            rowan::Direction::Prev => token.prev_token()?,
-        };
-        if !range.contains_range(token.text_range()) {
-            return None;
-        }
-    }
-    Some(token)
+    let step: fn(&SyntaxToken) -> Option<SyntaxToken> = match direction {
+        rowan::Direction::Next => SyntaxToken::next_token,
+        rowan::Direction::Prev => SyntaxToken::prev_token,
+    };
+    std::iter::successors(Some(token), step)
+        .take_while(|token| range.contains_range(token.text_range()))
+        .find(|token| !token.token_kind().is_trivia())
 }
 
 fn brace(node: &SyntaxNode, kind: TokenKind, last: bool) -> Option<SyntaxToken> {
@@ -2136,20 +2082,7 @@ fn brace(node: &SyntaxNode, kind: TokenKind, last: bool) -> Option<SyntaxToken> 
 /// list's level instead of hanging under an argument list perl may not agree
 /// the call has.
 fn list_separator_before(node: &SyntaxNode) -> Option<TokenKind> {
-    let mut cursor = node.prev_sibling_or_token();
-    while let Some(element) = cursor {
-        match element {
-            SyntaxElement::Token(token) if token.token_kind().is_trivia() => {
-                cursor = token.prev_sibling_or_token();
-            }
-            SyntaxElement::Token(token) => {
-                return matches!(token.token_kind(), T![","] | T!["=>"])
-                    .then(|| token.token_kind());
-            }
-            SyntaxElement::Node(_) => return None,
-        }
-    }
-    None
+    adjacent_separator(&SyntaxElement::Node(node.clone()), rowan::Direction::Prev)
 }
 
 /// Is a filehandle or a block written beside this call's name?
@@ -2168,17 +2101,7 @@ fn begins_its_line(node: &SyntaxNode) -> bool {
     let Some(first) = node.first_token() else {
         return true;
     };
-    let mut token = first.prev_token();
-    while let Some(current) = token {
-        if current.token_kind() == TokenKind::NEWLINE {
-            return true;
-        }
-        if !current.token_kind().is_trivia() {
-            return false;
-        }
-        token = current.prev_token();
-    }
-    true
+    newline_or_code_before(&first).is_none_or(|token| token.token_kind() == TokenKind::NEWLINE)
 }
 
 /// Does an element of the same list begin a line of its own after this one?

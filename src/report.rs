@@ -144,7 +144,8 @@ fn grouped(diagnostics: &[Diagnostic]) -> Vec<(&Diagnostic, usize)> {
     shown
 }
 
-fn plural(count: usize, noun: &str) -> String {
+/// `1 file`, `2 files`: a count and its noun, read as English.
+pub(crate) fn plural(count: usize, noun: impl std::fmt::Display) -> String {
     format!("{count} {noun}{}", if count == 1 { "" } else { "s" })
 }
 
@@ -177,12 +178,7 @@ struct FileReport {
 /// interface here: a CI step reads it and nothing else.
 pub fn run(request: &Request) -> Result<()> {
     let encodings = crate::cli::Encodings::parse(request.encoding.as_ref())?;
-    let extensions: Vec<&str> = request
-        .extensions
-        .split(',')
-        .map(str::trim)
-        .filter(|extension| !extension.is_empty())
-        .collect();
+    let extensions = crate::cli::extension_list(&request.extensions);
 
     let mut files = Vec::new();
     if request.paths.is_empty() {
@@ -464,11 +460,7 @@ fn summarise(counts: &[usize; 3], files: usize, unreadable: usize) {
     for severity in [Severity::Error, Severity::Warning, Severity::Info] {
         let count = counts[severity as usize];
         if count > 0 {
-            parts.push(format!(
-                "{count} {}{}",
-                severity,
-                if count == 1 { "" } else { "s" }
-            ));
+            parts.push(plural(count, severity));
         }
     }
     if unreadable > 0 {
@@ -477,11 +469,7 @@ fn summarise(counts: &[usize; 3], files: usize, unreadable: usize) {
     if parts.is_empty() {
         parts.push("nothing to report".to_string());
     }
-    eprintln!(
-        "{} in {files} file{}",
-        parts.join(", "),
-        if files == 1 { "" } else { "s" }
-    );
+    eprintln!("{} in {}", parts.join(", "), plural(files, "file"));
 }
 
 /// The codes a run may be told to ignore, parsed from a comma-separated list.

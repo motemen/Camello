@@ -267,6 +267,21 @@ impl Doc {
         }
     }
 
+    /// The documents directly inside this one, in order.
+    #[must_use]
+    pub fn children(&self) -> &[Doc] {
+        match self {
+            Doc::Concat(parts) => parts,
+            Doc::Group { body, .. }
+            | Doc::Indent(body)
+            | Doc::Statements(body)
+            | Doc::Hanging { body, .. }
+            | Doc::Rooted { body, .. }
+            | Doc::Continuation(body) => std::slice::from_ref(body),
+            _ => &[],
+        }
+    }
+
     /// Whether this contributes nothing to the output.
     #[must_use]
     pub fn is_nil(&self) -> bool {

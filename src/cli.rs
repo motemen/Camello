@@ -6,6 +6,7 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use crate::report::plural;
 use crate::{format_perl_with_options, parse_perl, DelimiterSpacing, FormatterOptions};
 
 #[derive(Parser)]
@@ -648,22 +649,26 @@ fn run_index_bar(
         return Err(miette::miette!("could not read {}", target.display()));
     };
     println!(
-        "edit loop: {} edits to {} in {:.2}s ({:.1} ms each), {} declaration change{}",
+        "edit loop: {} edits to {} in {:.2}s ({:.1} ms each), {}",
         loop_bar.edits,
         target.display(),
         loop_bar.elapsed.as_secs_f64(),
         loop_bar.elapsed.as_secs_f64() * 1000.0 / loop_bar.edits.max(1) as f64,
-        loop_bar.declaration_changes,
-        if loop_bar.declaration_changes == 1 {
-            ""
-        } else {
-            "s"
-        },
+        plural(loop_bar.declaration_changes, "declaration change"),
     );
     Ok(())
 }
 
 /// A comma-separated list of directories.
+/// `--extensions`, split. An empty item — a trailing comma — names nothing,
+/// rather than the empty extension of a file whose name ends in `.`.
+pub(crate) fn extension_list(list: &str) -> Vec<&str> {
+    list.split(',')
+        .map(str::trim)
+        .filter(|extension| !extension.is_empty())
+        .collect()
+}
+
 fn split_paths(list: Option<&str>) -> Vec<PathBuf> {
     list.map(split_paths_owned).unwrap_or_default()
 }
@@ -1015,7 +1020,7 @@ fn format_tree(
     options: &FormatterOptions,
 ) -> Result<()> {
     let encodings = Encodings::parse(encoding.as_ref())?;
-    let extensions: Vec<&str> = extensions.split(',').map(str::trim).collect();
+    let extensions = extension_list(extensions);
 
     let mut files = Vec::new();
     for path in &paths {
@@ -1044,13 +1049,8 @@ fn format_tree(
         }
         if !report.diagnostics.is_empty() {
             with_diagnostics += 1;
-            let count = report.diagnostics.len();
-            let diagnostic = if count == 1 {
-                "diagnostic"
-            } else {
-                "diagnostics"
-            };
-            writeln!(out, "{path}: left alone, {count} {diagnostic}").into_diagnostic()?;
+            let diagnostics = plural(report.diagnostics.len(), "diagnostic");
+            writeln!(out, "{path}: left alone, {diagnostics}").into_diagnostic()?;
             // The diagnostics themselves are a screenful each, and they are all
             // still there in `camello format <that file>`.
             if list_different {
@@ -1073,11 +1073,11 @@ fn format_tree(
     let total = files.len();
     let mut summary = if check {
         format!(
-            "{changed} of {total} {} would be reformatted",
-            plural(total)
+            "{changed} of {} would be reformatted",
+            plural(total, "file")
         )
     } else {
-        format!("formatted {changed} of {total} {}", plural(total))
+        format!("formatted {changed} of {}", plural(total, "file"))
     };
     if with_diagnostics > 0 {
         summary.push_str(&format!(", {with_diagnostics} left alone"));
@@ -1144,15 +1144,6 @@ fn format_one(
         diagnostics,
         changed,
         failure: None,
-    }
-}
-
-/// `file` or `files`, for a count that is read as English.
-fn plural(count: usize) -> &'static str {
-    if count == 1 {
-        "file"
-    } else {
-        "files"
     }
 }
 
@@ -1263,10 +1254,10 @@ impl Messages {
             let files = group.files.len();
             writeln!(
                 out,
-                "     {} ({}), {files} file{}",
+                "     {} ({}), {}",
                 group.why,
                 group.slug,
-                if files == 1 { "" } else { "s" }
+                plural(files, "file")
             )
             .into_diagnostic()?;
             for line in group.message.lines() {
@@ -1691,7 +1682,7 @@ fn check_paths(
 ) -> Result<()> {
     use crate::check::{check_report, Invariant};
 
-    let extensions: Vec<&str> = extensions.split(',').map(str::trim).collect();
+    let extensions = extension_list(extensions);
     let encodings = Encodings::parse(encoding.as_ref())?;
 
     let mut files = Vec::new();

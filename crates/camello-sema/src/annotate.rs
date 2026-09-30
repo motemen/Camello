@@ -121,37 +121,13 @@ impl Frameworks {
     /// Fold one `use Foo` into what the file can be expected to mean.
     pub fn note(&mut self, module: &str) {
         let module = self.dialect.read_as(module);
-        match module {
-            "Moose"
-            | "Moo"
-            | "Mouse"
-            | "Moose::Role"
-            | "Moo::Role"
-            | "Mouse::Role"
-            | "MooseX::Declare"
-            | "Mojo::Base"
-            | "Moose::Util::TypeConstraints"
-            | "Mouse::Util::TypeConstraints" => {
-                self.moose = true;
-            }
-            "Smart::Args" | "Smart::Args::TypeTiny" => self.smart_args = true,
-            "Class::Accessor::Typed" => self.accessor_typed = true,
-            // `Class::Accessor::Lite` installs its accessors from `import`;
-            // the other three are inherited from and hand out the same
-            // `mk_accessors` family. Reached by `use`, and by the `use base`
-            // that is how a `Class::Accessor` subclass says it.
-            "Class::Accessor::Lite"
-            | "Class::Accessor::Lite::Lazy"
-            | "Class::Accessor"
-            | "Class::Accessor::Fast"
-            | "Class::Accessor::Faster" => self.accessor_lite = true,
-            // `Class::Tiny::Antlers` is the one spelling of this distribution
-            // that exports `has`, `extends` and `with`, so it reads as Moose;
-            // `Class::Tiny::Object` is the base class the other spelling puts
-            // in `@ISA`, and inheriting from it is what carries the `new`.
-            "Class::Tiny" | "Class::Tiny::Object" => self.class_tiny = true,
-            "Class::Tiny::Antlers" => self.moose = true,
-            _ => {}
+        match recognised(module) {
+            Some(Recognised::Moose) => self.moose = true,
+            Some(Recognised::SmartArgs) => self.smart_args = true,
+            Some(Recognised::AccessorTyped) => self.accessor_typed = true,
+            Some(Recognised::AccessorLite) => self.accessor_lite = true,
+            Some(Recognised::ClassTiny) => self.class_tiny = true,
+            Some(Recognised::Statement | Recognised::Xs) | None => {}
         }
         if supplies_the_type_dsl(module) {
             self.type_library = true;
@@ -201,6 +177,73 @@ impl Frameworks {
     }
 }
 
+/// What a module the checker knows by name is to it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Recognised {
+    /// Moose and the dialects that read as it: `has` declares an attribute.
+    Moose,
+    /// A parameter list.
+    SmartArgs,
+    AccessorTyped,
+    AccessorLite,
+    ClassTiny,
+    /// A statement the declaration pass reads for itself.
+    Statement,
+    /// XS, whose meaning is that the package is dynamic — which
+    /// `Program::has_unknown_ancestor` answers, not this.
+    Xs,
+}
+
+/// The modules the checker understands without reading them, and what each
+/// one is: the one list [`Frameworks::note`], [`is_recognised`] and
+/// [`loads_xs`] all read.
+const RECOGNISED: &[(&str, Recognised)] = &[
+    ("Moose", Recognised::Moose),
+    ("Moo", Recognised::Moose),
+    ("Mouse", Recognised::Moose),
+    ("Moose::Role", Recognised::Moose),
+    ("Moo::Role", Recognised::Moose),
+    ("Mouse::Role", Recognised::Moose),
+    ("MooseX::Declare", Recognised::Moose),
+    ("Mojo::Base", Recognised::Moose),
+    ("Moose::Util::TypeConstraints", Recognised::Moose),
+    ("Mouse::Util::TypeConstraints", Recognised::Moose),
+    ("Smart::Args", Recognised::SmartArgs),
+    ("Smart::Args::TypeTiny", Recognised::SmartArgs),
+    ("Class::Accessor::Typed", Recognised::AccessorTyped),
+    // `Class::Accessor::Lite` installs its accessors from `import`; the other
+    // three are inherited from and hand out the same `mk_accessors` family.
+    // Reached by `use`, and by the `use base` that is how a `Class::Accessor`
+    // subclass says it.
+    ("Class::Accessor::Lite", Recognised::AccessorLite),
+    ("Class::Accessor::Lite::Lazy", Recognised::AccessorLite),
+    ("Class::Accessor", Recognised::AccessorLite),
+    ("Class::Accessor::Fast", Recognised::AccessorLite),
+    ("Class::Accessor::Faster", Recognised::AccessorLite),
+    // `Class::Tiny::Antlers` is the one spelling of this distribution that
+    // exports `has`, `extends` and `with`, so it reads as Moose;
+    // `Class::Tiny::Object` is the base class the other spelling puts in
+    // `@ISA`, and inheriting from it is what carries the `new`.
+    ("Class::Tiny", Recognised::ClassTiny),
+    ("Class::Tiny::Object", Recognised::ClassTiny),
+    ("Class::Tiny::Antlers", Recognised::Moose),
+    ("parent", Recognised::Statement),
+    ("base", Recognised::Statement),
+    ("constant", Recognised::Statement),
+    ("Exporter", Recognised::Statement),
+    ("XSLoader", Recognised::Xs),
+    ("DynaLoader", Recognised::Xs),
+    ("Inline", Recognised::Xs),
+    ("Alien::Base", Recognised::Xs),
+];
+
+fn recognised(module: &str) -> Option<Recognised> {
+    RECOGNISED
+        .iter()
+        .find(|(name, _)| *name == module)
+        .map(|&(_, what)| what)
+}
+
 /// Whether a `use` of this module is one the checker understands without
 /// reading it (`docs/types.md`, DIAG-7a).
 ///
@@ -209,48 +252,16 @@ impl Frameworks {
 /// being on the search path is not a hole in the method surface. Everything
 /// else that is `use`d and was never found is one, because a module installs
 /// subs into its importer and may assign to its globs.
-///
-/// This is the list [`Frameworks::note`] and the declaration pass's `use`
-/// recogniser branch on, kept beside them so the three stay in step.
 #[must_use]
 pub fn is_recognised(module: &str) -> bool {
-    matches!(
-        module,
-        // Moose and the dialects that read as it.
-        "Moose"
-            | "Moo"
-            | "Mouse"
-            | "Moose::Role"
-            | "Moo::Role"
-            | "Mouse::Role"
-            | "MooseX::Declare"
-            | "Mojo::Base"
-            | "Moose::Util::TypeConstraints"
-            | "Mouse::Util::TypeConstraints"
-            // Parameter lists, and the accessor families.
-            | "Smart::Args"
-            | "Smart::Args::TypeTiny"
-            | "Class::Accessor::Typed"
-            | "Class::Accessor::Lite"
-            | "Class::Accessor::Lite::Lazy"
-            | "Class::Accessor"
-            | "Class::Accessor::Fast"
-            | "Class::Accessor::Faster"
-            | "Class::Tiny"
-            | "Class::Tiny::Object"
-            | "Class::Tiny::Antlers"
-            // Statements the declaration pass reads for itself.
-            | "parent"
-            | "base"
-            | "constant"
-            | "Exporter"
-            // XS, whose meaning is that the package is dynamic — which
-            // `Program::has_unknown_ancestor` answers, not this.
-            | "XSLoader"
-            | "DynaLoader"
-            | "Inline"
-            | "Alien::Base"
-    ) || supplies_the_type_dsl(module)
+    recognised(module).is_some() || supplies_the_type_dsl(module)
+}
+
+/// Whether a module loads XS, whose methods are written in C where no
+/// recogniser can reach them.
+#[must_use]
+pub fn loads_xs(module: &str) -> bool {
+    recognised(module) == Some(Recognised::Xs)
 }
 
 /// Whether a module could have supplied the type-library DSL (`docs/types.md`,
@@ -362,6 +373,25 @@ pub struct AttributeDecl {
 }
 
 impl AttributeDecl {
+    /// An attribute that is neither required nor defaulted, coerces nothing
+    /// and generates no method besides its accessor — what each recogniser
+    /// starts from before saying what its declaration adds.
+    #[must_use]
+    pub fn new(name: String, ty: Type, access: Access, range: TextRange) -> Self {
+        AttributeDecl {
+            name,
+            ty,
+            access,
+            required: false,
+            defaulted: false,
+            coerce: false,
+            methods: Vec::new(),
+            opaque_delegation: false,
+            builder: None,
+            range,
+        }
+    }
+
     /// Whether this attribute answers to `name`, as its accessor or as one of
     /// the methods it generates.
     #[must_use]
@@ -622,21 +652,23 @@ pub fn read_has(call: &ast::Call, into: &mut Sink) -> Vec<AttributeDecl> {
             // `+name` overrides the parent's attribute; the type is the
             // parent's, which this pass has no way to reach.
             let overriding = name.starts_with('+');
+            let ty = if overriding {
+                Type::Unknown
+            } else {
+                ty.clone()
+            };
             AttributeDecl {
-                name: name.trim_start_matches('+').to_string(),
-                ty: if overriding {
-                    Type::Unknown
-                } else {
-                    ty.clone()
-                },
-                access,
                 required,
                 defaulted,
                 coerce,
                 methods: methods.clone(),
                 opaque_delegation,
-                builder: None,
-                range: first.text_range(),
+                ..AttributeDecl::new(
+                    name.trim_start_matches('+').to_string(),
+                    ty,
+                    access,
+                    first.text_range(),
+                )
             }
         })
         .collect()
@@ -792,22 +824,15 @@ pub fn read_accessor_typed(arguments: &SyntaxNode, into: &mut Sink) -> Accessors
                 unreadable = true;
                 continue;
             };
-            let (ty, required, defaulted) = read_slot(slot.node(), into);
+            let read = read_slot(slot.node(), into);
+            // This family writes the type down; a builder would add nothing
+            // the `isa` did not already say, so none is kept.
             attributes.push(AttributeDecl {
-                name: name.to_string(),
-                ty,
-                access,
                 // A lazy slot is filled by its builder, so `new` skips it
                 // rather than finding it missing.
-                required: required && !lazy,
-                defaulted: defaulted || lazy,
-                coerce: false,
-                methods: Vec::new(),
-                opaque_delegation: false,
-                // This family writes the type down; the builder adds nothing
-                // the `isa` did not already say.
-                builder: None,
-                range: slot.range(),
+                required: read.required && !lazy,
+                defaulted: read.defaulted || lazy,
+                ..AttributeDecl::new(name.to_string(), read.ty, access, slot.range())
             });
         }
     }
@@ -818,13 +843,20 @@ pub fn read_accessor_typed(arguments: &SyntaxNode, into: &mut Sink) -> Accessors
     }
 }
 
+/// What one `Class::Accessor::Typed` slot says.
+struct Slot {
+    ty: Type,
+    required: bool,
+    defaulted: bool,
+}
+
 /// A slot's value: a type, or a hashref with `isa` / `default` / `builder`.
 ///
 /// Requiredness follows `Class::Accessor::Typed`'s rule, which is the reverse
 /// of Moose's: a slot is **mandatory** unless it says `optional`, gives a
 /// `default`, or is lazy. The generated `new` dies with "missing mandatory
 /// parameter named '$x'" otherwise, so this is a rule and not a guess.
-fn read_slot(node: &SyntaxNode, into: &mut Sink) -> (Type, bool, bool) {
+fn read_slot(node: &SyntaxNode, into: &mut Sink) -> Slot {
     let node = ast::without_plus(node);
     if node.node_kind() == NodeKind::ANON_HASH {
         let hash = AnonHash::cast(node.clone()).expect("kind checked");
@@ -844,12 +876,20 @@ fn read_slot(node: &SyntaxNode, into: &mut Sink) -> (Type, bool, bool) {
                 _ => {}
             }
         }
-        return (ty, required, defaulted);
+        return Slot {
+            ty,
+            required,
+            defaulted,
+        };
     }
     let ty = crate::decl::annotation_of(&node).map_or(Type::Unknown, |annotation| {
         read_annotation(&annotation, into)
     });
-    (ty, true, false)
+    Slot {
+        ty,
+        required: true,
+        defaulted: false,
+    }
 }
 
 // ===== `Class::Accessor::Lite` =====
@@ -1057,16 +1097,9 @@ pub fn accessor_attributes(
     names
         .iter()
         .map(|listed| AttributeDecl {
-            name: listed.name.clone(),
-            ty: Type::Unknown,
-            access,
-            required: false,
             // Nothing here is required by the constructor, and a lazy slot is
             // filled by its builder, so `new` may leave either out.
             defaulted: true,
-            coerce: false,
-            methods: Vec::new(),
-            opaque_delegation: false,
             builder: lazy
                 .then(|| match &listed.builder {
                     Builder::Implicit => Some(format!("_build_{}", listed.name)),
@@ -1074,7 +1107,7 @@ pub fn accessor_attributes(
                     Builder::Anonymous => None,
                 })
                 .flatten(),
-            range,
+            ..AttributeDecl::new(listed.name.clone(), Type::Unknown, access, range)
         })
         .collect()
 }
@@ -1159,19 +1192,11 @@ pub fn read_class_tiny(arguments: &SyntaxNode) -> Accessors {
 /// without looking for a key — and every slot is `defaulted`, whether or not
 /// a default was written, because that is what says `new` may leave it out.
 fn class_tiny_attribute(name: &str, range: TextRange) -> AttributeDecl {
+    // The default is written inline, as a value or an anonymous sub, so
+    // there is no builder to ask what the slot holds.
     AttributeDecl {
-        name: name.to_string(),
-        ty: Type::Unknown,
-        access: Access::Rw,
-        required: false,
         defaulted: true,
-        coerce: false,
-        methods: Vec::new(),
-        opaque_delegation: false,
-        // The default is written inline, as a value or an anonymous sub, so
-        // there is no name to ask what the slot holds.
-        builder: None,
-        range,
+        ..AttributeDecl::new(name.to_string(), Type::Unknown, Access::Rw, range)
     }
 }
 

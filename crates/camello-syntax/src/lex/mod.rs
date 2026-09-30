@@ -271,12 +271,7 @@ impl<'a> Lexer<'a> {
         if len == 0 {
             return None;
         }
-
-        self.cursor = index;
-        self.invalidate_from_cursor();
-        self.push(TokenKind::IDENT, start, start + len);
-        self.cursor = self.buffer.len();
-        self.buffer.last().copied()
+        Some(self.rescan_as(index, TokenKind::IDENT, start, start + len))
     }
 
     /// Read `^NAME` at the cursor as one token.
@@ -299,12 +294,7 @@ impl<'a> Lexer<'a> {
         if len == 1 {
             return None;
         }
-
-        self.cursor = index;
-        self.invalidate_from_cursor();
-        self.push(TokenKind::RAW_CONTENT, start, start + len);
-        self.cursor = self.buffer.len();
-        self.buffer.last().copied()
+        Some(self.rescan_as(index, TokenKind::RAW_CONTENT, start, start + len))
     }
 
     /// Read the token at the cursor as a bare sigil, without the name the
@@ -322,12 +312,20 @@ impl<'a> Lexer<'a> {
         }
         let start = usize::from(token.range.start());
         let len = self.source[start..].chars().next()?.len_utf8();
+        Some(self.rescan_as(index, token.kind, start, start + len))
+    }
 
+    /// Replace the token at `index`, and everything scanned after it, with one
+    /// `kind` token spanning `start..end`, and step past it.
+    ///
+    /// This is what every single-token `take_*` does once it has decided how
+    /// long the token is.
+    fn rescan_as(&mut self, index: usize, kind: TokenKind, start: usize, end: usize) -> LexedToken {
         self.cursor = index;
         self.invalidate_from_cursor();
-        self.push(token.kind, start, start + len);
+        self.push(kind, start, end);
         self.cursor = self.buffer.len();
-        self.buffer.last().copied()
+        *self.buffer.last().expect("just pushed")
     }
 
     /// The raw body of the `(...)` group at the cursor, without consuming it.
