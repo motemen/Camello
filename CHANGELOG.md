@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Internal cleanup: duplicated code in the parser, the formatter, the checker
+  and the command line is folded together, with no change to formatting or
+  diagnostics (#376).
+
 ## 0.2.3 — 2026-09-30
 
 `camello format` lays out code differently from 0.2.2, so a file 0.2.2
