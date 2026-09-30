@@ -7,6 +7,8 @@
 - Internal cleanup: duplicated code in the parser, the formatter, the checker
   and the command line is folded together, with no change to formatting or
   diagnostics (#376).
+- `camello --version` names a build past a release, as `0.2.3-1-g3fb3a78`, and
+  adds `-dirty` when the tree had uncommitted changes.
 
 ## 0.2.3 — 2026-09-30
 
