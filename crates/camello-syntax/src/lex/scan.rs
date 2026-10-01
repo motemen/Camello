@@ -21,7 +21,7 @@ const FORM_FEED: u8 = 0x0c;
 const PUNCT_VAR_CHARS: &[u8] = b"!@/\\,;.&`'+^:?<>()[]|\"-_0=$%~*";
 
 impl<'a> Lexer<'a> {
-    fn rest(&self) -> &'a str {
+    pub(super) fn rest(&self) -> &'a str {
         &self.source[self.scan_pos..]
     }
 

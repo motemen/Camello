@@ -16,17 +16,18 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
+use rowan::TextSize;
 use tower_lsp_server::jsonrpc::Result;
 use tower_lsp_server::ls_types::*;
 use tower_lsp_server::{Client, LanguageServer};
 
-use crate::analysis;
+use crate::analysis::{self, Tables};
 use crate::document::Document;
 use crate::handlers;
 use crate::index;
 use crate::position::Encoding;
 use crate::settings::Settings;
-use crate::state::GlobalState;
+use crate::state::{GlobalState, Snapshot};
 
 /// How long after a keystroke the checker runs.
 ///
@@ -77,6 +78,37 @@ impl Backend {
         publish_for(&self.state, &self.client, uri).await;
     }
 
+    /// Answer a request about one position in an open document: its tables
+    /// as of now and the graph, or the file alone, as context — on a blocking
+    /// thread, as every analysis is.
+    ///
+    /// `None` when the document is not open. A thread that panicked answers
+    /// with nothing found rather than an error.
+    async fn with_analysis<T>(
+        &self,
+        position: TextDocumentPositionParams,
+        answer: impl FnOnce(&Snapshot, &Tables, &analysis::Context<'_>, TextSize) -> T + Send + 'static,
+    ) -> Option<T>
+    where
+        T: Default + Send + 'static,
+    {
+        let snapshot = self.read().snapshot(&position.text_document.uri)?;
+        let offset = snapshot.document.positions.offset(position.position);
+        Some(
+            tokio::task::spawn_blocking(move || {
+                let tables = snapshot.tables_now();
+                let index = snapshot
+                    .index
+                    .read()
+                    .expect("no writer panics holding this");
+                let context = analysis::context(&snapshot.document, &index, &snapshot.settings);
+                answer(&snapshot, &tables, &context, offset)
+            })
+            .await
+            .unwrap_or_default(),
+        )
+    }
+
     /// Wait out the debounce, then run the edit loop — unless a newer edit
     /// arrived meanwhile, in which case that one's timer is already running
     /// and this text is not what anybody is looking at.
@@ -115,7 +147,7 @@ impl Backend {
         };
         let outcome = tokio::task::spawn_blocking(move || {
             let cache = crate::settings::cache(snapshot.settings.cache_dir.as_deref());
-            let decls = index::declarations(
+            let decls = camello_sema::read_declarations(
                 &path,
                 &snapshot.document.text,
                 &snapshot.settings.dialect,
@@ -193,7 +225,7 @@ impl Backend {
         let changed = tokio::task::spawn_blocking(move || {
             let source = std::fs::read_to_string(&path).ok()?;
             let cache = crate::settings::cache(settings.cache_dir.as_deref());
-            let decls = index::declarations(&path, &source, &settings.dialect, &cache);
+            let decls = camello_sema::read_declarations(&path, &source, &settings.dialect, &cache);
             let mut index = index.write().expect("no reader panics holding this");
             let mut changed = index.install(&path, decls);
             if changed {
@@ -285,8 +317,12 @@ impl Backend {
                     let Some(path) = document.path.as_ref() else {
                         continue;
                     };
-                    let decls =
-                        index::declarations(path, &document.text, &settings.dialect, &cache);
+                    let decls = camello_sema::read_declarations(
+                        path,
+                        &document.text,
+                        &settings.dialect,
+                        &cache,
+                    );
                     any |= built.install(path, decls);
                 }
                 if any {
@@ -559,7 +595,8 @@ impl LanguageServer for Backend {
                 let Ok(source) = std::fs::read_to_string(&path) else {
                     continue;
                 };
-                let decls = index::declarations(&path, &source, &settings.dialect, &cache);
+                let decls =
+                    camello_sema::read_declarations(&path, &source, &settings.dialect, &cache);
                 updated.push((path, decls, source));
             }
             let mut index = index.write().expect("no reader panics holding this");
@@ -593,81 +630,61 @@ impl LanguageServer for Backend {
     }
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
-        let position = params.text_document_position_params;
-        let Some(snapshot) = self.read().snapshot(&position.text_document.uri) else {
-            return Ok(None);
-        };
-        let offset = snapshot.document.positions.offset(position.position);
-        Ok(tokio::task::spawn_blocking(move || {
-            let tables = snapshot.tables_now();
-            let index = snapshot
-                .index
-                .read()
-                .expect("no writer panics holding this");
-            let context = analysis::context(&snapshot.document, &index, &snapshot.settings);
-            handlers::hover::hover(&snapshot.document, &tables, &context, offset)
-        })
-        .await
-        .unwrap_or(None))
+        Ok(self
+            .with_analysis(
+                params.text_document_position_params,
+                |snapshot, tables, context, offset| {
+                    handlers::hover::hover(&snapshot.document, tables, context, offset)
+                },
+            )
+            .await
+            .flatten())
     }
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
-        let position = params.text_document_position;
-        let Some(snapshot) = self.read().snapshot(&position.text_document.uri) else {
-            return Ok(None);
-        };
-        let offset = snapshot.document.positions.offset(position.position);
-        let items = tokio::task::spawn_blocking(move || {
-            let tables = snapshot.tables_now();
-            let fallback = snapshot.clean_tables.clone();
-            let index = snapshot
-                .index
-                .read()
-                .expect("no writer panics holding this");
-            let context = analysis::context(&snapshot.document, &index, &snapshot.settings);
-            handlers::completion::completion(
-                &snapshot.document,
-                &tables,
-                fallback.as_deref(),
-                &context,
-                offset,
+        Ok(self
+            .with_analysis(
+                params.text_document_position,
+                |snapshot, tables, context, offset| {
+                    handlers::completion::completion(
+                        &snapshot.document,
+                        tables,
+                        snapshot.clean_tables.as_deref(),
+                        context,
+                        offset,
+                    )
+                },
             )
-        })
-        .await
-        .unwrap_or_default();
-        Ok(Some(CompletionResponse::Array(items)))
+            .await
+            .map(CompletionResponse::Array))
     }
 
     async fn goto_definition(
         &self,
         params: GotoDefinitionParams,
     ) -> Result<Option<GotoDefinitionResponse>> {
-        let position = params.text_document_position_params;
-        let uri = position.text_document.uri.clone();
-        let Some(snapshot) = self.read().snapshot(&uri) else {
-            return Ok(None);
-        };
-        let encoding = self.read().encoding;
-        let offset = snapshot.document.positions.offset(position.position);
-        let found = tokio::task::spawn_blocking(move || {
-            let tables = snapshot.tables_now();
-            let index = snapshot
-                .index
-                .read()
-                .expect("no writer panics holding this");
-            let context = analysis::context(&snapshot.document, &index, &snapshot.settings);
-            handlers::definition::definition(
-                &snapshot.document,
-                &uri,
-                &tables,
-                &context,
-                offset,
-                encoding,
+        let uri = params
+            .text_document_position_params
+            .text_document
+            .uri
+            .clone();
+        Ok(self
+            .with_analysis(
+                params.text_document_position_params,
+                move |snapshot, tables, context, offset| {
+                    handlers::definition::definition(
+                        &snapshot.document,
+                        &uri,
+                        tables,
+                        context,
+                        offset,
+                        snapshot.encoding,
+                    )
+                },
             )
-        })
-        .await
-        .unwrap_or(None);
-        Ok(found.map(GotoDefinitionResponse::Scalar))
+            .await
+            .flatten()
+            .map(GotoDefinitionResponse::Scalar))
     }
 
     async fn document_symbol(

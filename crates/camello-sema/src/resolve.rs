@@ -131,6 +131,11 @@ pub fn perl_inc() -> Vec<PathBuf> {
         .collect()
 }
 
+/// Where the declaration cache lives when nobody named a directory:
+/// `camello check`'s `--cache-dir` default, and the language server's, so the
+/// two share their entries.
+pub const CACHE_DIR: &str = ".camello-cache";
+
 /// The declaration cache (`docs/typecheck.md`, "Dependencies").
 ///
 /// One file per cached module, named by a key over the path, the size, the

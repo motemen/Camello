@@ -11,9 +11,10 @@
 //! checked. That is why it is `dev perl-deparse`, a command of its own: opting in is
 //! the command typed, not a flag that some other run could carry along.
 //!
-//! The normalisation below is `scripts/corpus-check`'s, in Rust: B::Deparse
-//! emits a few kinds of line from a hash walk, so two deparses of the *same*
-//! file can differ in their order.
+//! B::Deparse emits a few kinds of line from a hash walk, so two deparses of
+//! the *same* file can differ in their order; [`normalise`] is what they are
+//! compared after. `scripts/perl-check` compares through it too, by way of
+//! `camello dev deparse-normalize`.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -319,22 +320,28 @@ fn deparse(path: &Path) -> Result<Option<Vec<String>>, NoAnswer> {
             detail: evidence(&String::from_utf8_lossy(&output.stderr)),
         });
     }
-    let raw = String::from_utf8_lossy(&output.stdout);
+    let body = normalise(&String::from_utf8_lossy(&output.stdout));
+    Ok((!body.is_empty()).then_some(body))
+}
 
-    // Two kinds of line are dropped or reordered before comparing, because
-    // B::Deparse emits them from a hash walk and their order varies between
-    // runs of the same file: forward declarations (`sub name;`) and the
-    // inlinable constant stubs that `use constant` and Errno leave behind (`sub
-    // NAME () { 42 }`). Neither carries behaviour; the constants are sorted
-    // rather than dropped so a changed *value* still shows up.
-    //
-    // Two more things that walk moves around. A reference stringified into the
-    // output — `autodie` puts one in `%^H` — carries the address it happened to
-    // be allocated at. And a blank line sometimes accompanies a constant stub
-    // and sometimes does not: deparsing `JSON::backportPP::Compat5006` twice
-    // gives two different answers with no camello involved at all. Deparsed
-    // output has no blank line that means anything — a newline inside a string
-    // comes out escaped — so they go.
+/// A deparse listing, reduced to what two runs over the same program agree on.
+///
+/// Two kinds of line are dropped or reordered before comparing, because
+/// B::Deparse emits them from a hash walk and their order varies between
+/// runs of the same file: forward declarations (`sub name;`) and the
+/// inlinable constant stubs that `use constant` and Errno leave behind (`sub
+/// NAME () { 42 }`). Neither carries behaviour; the constants are sorted
+/// rather than dropped so a changed *value* still shows up.
+///
+/// Two more things that walk moves around. A reference stringified into the
+/// output — `autodie` puts one in `%^H` — carries the address it happened to
+/// be allocated at. And a blank line sometimes accompanies a constant stub
+/// and sometimes does not: deparsing `JSON::backportPP::Compat5006` twice
+/// gives two different answers with no camello involved at all. Deparsed
+/// output has no blank line that means anything — a newline inside a string
+/// comes out escaped — so they go.
+#[must_use]
+pub fn normalise(raw: &str) -> Vec<String> {
     let mut body: Vec<String> = Vec::new();
     let mut constants: Vec<String> = Vec::new();
     for line in raw.lines() {
@@ -347,7 +354,7 @@ fn deparse(path: &Path) -> Result<Option<Vec<String>>, NoAnswer> {
     }
     constants.sort();
     body.extend(constants);
-    Ok((!body.is_empty()).then_some(body))
+    body
 }
 
 /// The two shapes of `sub` line that deparse order is not stable in.

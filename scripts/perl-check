@@ -29,7 +29,16 @@
 
 set -uo pipefail
 
-files=("$@")
+# The files named are the caller's, relative to where it stands; everything
+# else is the repository's.
+files=()
+for file in "$@"; do
+  case $file in
+    /*) files+=("$file") ;;
+    *)  files+=("$PWD/$file") ;;
+  esac
+done
+cd "$(dirname "$0")/.." || exit 1
 if [ ${#files[@]} -eq 0 ]; then
   mapfile -t files < <(find crates/camello-fmt/src/fixtures crates/camello-syntax/src/parse/fixtures/success -name '*.pl' | sort)
 fi
@@ -75,12 +84,12 @@ changed=0
 # Is the file still the same program after formatting, read under this dialect?
 # Returns 0 for yes, 1 for "the output does not compile", 2 for "it compiles but
 # says something else".
-# B::Deparse does not emit forward declarations in a stable order, and they
-# carry no behaviour, so they take no part in the comparison.
+# B::Deparse emits a few kinds of line in no stable order, so both sides go
+# through the normalisation `camello dev perl-deparse` compares under.
 deparse() { # deparse <dialect-flags> <file>
   perl -I "$lib" -I "$work/lib" -MCamelloOracle "$1" \
     -MCamelloPredeclare -MO=Deparse,-p,-d "$2" 2>/dev/null \
-    | grep -vE '^sub [A-Za-z_][A-Za-z0-9_:]* ;$'
+    | "$camello" dev deparse-normalize
 }
 
 survives() { # survives <dialect-flags> <input> <output>

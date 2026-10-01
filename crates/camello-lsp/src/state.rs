@@ -70,6 +70,7 @@ impl GlobalState {
         Some(Snapshot {
             document,
             settings: Arc::clone(&self.settings),
+            encoding: self.encoding,
             index: Arc::clone(&self.index),
             tables: self.tables.get(uri).cloned(),
             clean_tables: self.clean_tables.get(uri).cloned(),
@@ -128,6 +129,7 @@ impl GlobalState {
 pub struct Snapshot {
     pub document: Arc<Document>,
     pub settings: Arc<Settings>,
+    pub encoding: Encoding,
     pub index: Arc<RwLock<Index>>,
     /// The tables of the last analysis, of whatever version that was.
     pub tables: Option<Arc<Tables>>,

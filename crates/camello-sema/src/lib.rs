@@ -157,6 +157,39 @@ impl Options {
     }
 }
 
+/// One file's declarations, off the cache when the file has not changed since
+/// they were written.
+///
+/// The key is the path, size, mtime and content hash, salted with the dialect
+/// fingerprint. [`Analysis::resolve_dependencies`] reads every dependency
+/// through it, and the language server every workspace file, so the two share
+/// their warm entries.
+pub fn read_declarations(
+    path: &Path,
+    source: &str,
+    dialect: &annotate::Dialect,
+    cache: &resolve::Cache,
+) -> decl::FileDecls {
+    let key = cache
+        .is_enabled()
+        .then(|| resolve::Cache::key(path, source, &dialect.fingerprint()));
+    if let Some(key) = &key {
+        if let Some(text) = cache.read(key) {
+            if let Ok(decls) = serde_json::from_str(&text) {
+                return decls;
+            }
+        }
+    }
+    let parsed = camello_syntax::parse::parse(source);
+    let decls = decl::declare_in(&parsed.syntax(), dialect);
+    if let Some(key) = &key {
+        if let Ok(text) = serde_json::to_string(&decls) {
+            cache.write(key, &text);
+        }
+    }
+    decls
+}
+
 /// How many rounds tier 2 gives a program (`docs/return-inference.md`,
 /// "Tier 2").
 ///
@@ -233,7 +266,9 @@ impl Analysis {
             let Ok(source) = std::fs::read_to_string(&path) else {
                 continue;
             };
-            let decls = self.read_declarations(&path, &source);
+            let disabled = resolve::Cache::disabled();
+            let cache = self.cache.as_ref().unwrap_or(&disabled);
+            let decls = read_declarations(&path, &source, self.program.dialect(), cache);
             for used in &decls.uses {
                 if seen.insert(used.clone()) {
                     pending.push(used.clone());
@@ -241,31 +276,6 @@ impl Analysis {
             }
             self.program.add(&path, decls, false);
         }
-    }
-
-    /// A dependency's declarations, off the cache when the file has not
-    /// changed since they were written.
-    fn read_declarations(&self, path: &std::path::Path, source: &str) -> decl::FileDecls {
-        let key = self
-            .cache
-            .as_ref()
-            .filter(|cache| cache.is_enabled())
-            .map(|_| resolve::Cache::key(path, source, &self.program.dialect().fingerprint()));
-        if let (Some(cache), Some(key)) = (&self.cache, &key) {
-            if let Some(text) = cache.read(key) {
-                if let Ok(decls) = serde_json::from_str(&text) {
-                    return decls;
-                }
-            }
-        }
-        let parsed = camello_syntax::parse::parse(source);
-        let decls = decl::declare_in(&parsed.syntax(), self.program.dialect());
-        if let (Some(cache), Some(key)) = (&self.cache, &key) {
-            if let Ok(text) = serde_json::to_string(&decls) {
-                cache.write(key, &text);
-            }
-        }
-        decls
     }
 
     /// Fold one file's declarations into the graph.
@@ -338,13 +348,8 @@ impl Analysis {
             if pending.is_empty() {
                 return;
             }
-            let program = &self.program;
-            let found = workspace::in_parallel(&pending, jobs, |file| {
-                let only = program.unresolved_returns(*file);
-                let path = program.file(*file).map(|entry| entry.path.clone())?;
-                let source = read(&path)?;
-                let parsed = camello_syntax::parse::parse(&source);
-                Some(flow::infer_returns(&parsed.syntax(), *file, program, &only))
+            let found = walk_returns(&self.program, &pending, jobs, &read, |file| {
+                self.program.unresolved_returns(file)
             });
             let mut installed = false;
             for (file, results) in pending.iter().zip(found) {
@@ -389,13 +394,8 @@ impl Analysis {
             .copied()
             .filter(|file| !self.program.written_returns(*file).is_empty())
             .collect();
-        let program = &self.program;
-        let found = workspace::in_parallel(&wanted, jobs, |file| {
-            let only = program.written_returns(*file);
-            let path = program.file(*file).map(|entry| entry.path.clone())?;
-            let source = read(&path)?;
-            let parsed = camello_syntax::parse::parse(&source);
-            Some(flow::infer_returns(&parsed.syntax(), *file, program, &only))
+        let found = walk_returns(&self.program, &wanted, jobs, &read, |file| {
+            self.program.written_returns(file)
         });
         let mut drifted = Vec::new();
         for (file, results) in wanted.iter().zip(found) {
@@ -472,14 +472,14 @@ impl Analysis {
         source: &str,
         options: &Options,
     ) -> Vec<Diagnostic> {
-        self.analyse_file(path, root, source, options, false)
+        self.analyse_file(path, root, source, options, Record::Nothing)
             .diagnostics
     }
 
     /// The same, keeping the tables the passes built on the way
     /// (`docs/lsp.md`, "What sema must newly expose").
     ///
-    /// `record` is what an editor asks for and the CLI does not: the scope
+    /// [`Record::Types`] is what an editor asks for and the CLI does not: the scope
     /// resolution comes out either way — the pass computes it and the only
     /// question was whether anything kept it — while the type side-table
     /// costs a clone per typed expression and is built only when asked.
@@ -490,7 +490,7 @@ impl Analysis {
         root: &SyntaxNode,
         source: &str,
         options: &Options,
-        record: bool,
+        record: Record,
     ) -> FileAnalysis {
         let mut scope = scope::analyse(root, source, &options.guard_classes);
         let mut types = flow::TypeTable::default();
@@ -500,16 +500,10 @@ impl Analysis {
         let mut diagnostics = std::mem::take(&mut scope.diagnostics);
         if let Some(file) = self.program.index_of(path) {
             diagnostics.extend(arity::analyse(root, file, &self.program));
-            let guards = if record {
-                let (found, table, guards) = flow::analyse_recording(root, file, &self.program);
-                diagnostics.extend(found);
-                types = table;
-                guards
-            } else {
-                let (found, guards) = flow::analyse(root, file, &self.program);
-                diagnostics.extend(found);
-                guards
-            };
+            let checked = flow::analyse(root, file, &self.program, record == Record::Types);
+            diagnostics.extend(checked.diagnostics);
+            types = checked.types;
+            let guards = checked.guards;
             // A value held for its destructor is bound so that the destructor
             // runs, and never reading it is the point (`docs/types.md`,
             // DIAG-12d). The scope pass names what is never read and has no
@@ -551,6 +545,35 @@ impl Analysis {
             file: self.program.index_of(path),
         }
     }
+}
+
+/// What [`Analysis::analyse_file`] keeps beside the diagnostics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Record {
+    /// The diagnostics alone, which is what `camello check` reads.
+    Nothing,
+    /// The type side-table too, which hover and completion read.
+    Types,
+}
+
+/// Walk each file's bodies for the returns of the subs `subs` names in it,
+/// one file per job.
+///
+/// `None` for a file whose source could not be read.
+fn walk_returns(
+    program: &Program,
+    files: &[usize],
+    jobs: Option<usize>,
+    read: &(impl Fn(&Path) -> Option<String> + Sync),
+    subs: impl Fn(usize) -> Vec<usize> + Sync,
+) -> Vec<Option<Vec<(usize, annotate::Returns)>>> {
+    workspace::in_parallel(files, jobs, |file| {
+        let only = subs(*file);
+        let path = program.file(*file).map(|entry| entry.path.clone())?;
+        let source = read(&path)?;
+        let parsed = camello_syntax::parse::parse(&source);
+        Some(flow::infer_returns(&parsed.syntax(), *file, program, &only))
+    })
 }
 
 /// One file's answers, and the tables behind them.

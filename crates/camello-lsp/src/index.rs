@@ -2,9 +2,10 @@
 //!
 //! At `initialize` the server walks the workspace roots — plus whatever
 //! `[check] lib` and `[check] stubs` name — and runs the **declaration pass
-//! only** over every Perl file it finds, through the same on-disk cache
-//! `camello check` uses. A repository that has ever been checked therefore
-//! warm-starts.
+//! only** over every Perl file it finds, through the on-disk cache
+//! `camello check` reads dependencies through. A workspace the server has
+//! indexed before therefore warm-starts, and so does any module a check has
+//! read as a dependency.
 //!
 //! What is retained is `FileDecls` and nothing else: packages, subs with their
 //! name ranges, imports, facts. Serde-sized data, never a tree and never the
@@ -21,9 +22,10 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use camello_sema::decl::FileDecls;
+use camello_sema::workspace::EXTENSIONS;
 use camello_sema::Analysis;
 
-use crate::settings::{Settings, EXTENSIONS};
+use crate::settings::Settings;
 
 /// The program graph, and whether it is the whole of one yet.
 pub struct Index {
@@ -109,11 +111,13 @@ pub fn build(settings: &Settings) -> Index {
     let cache = crate::settings::cache(settings.cache_dir.as_deref());
 
     // The declaration pass over every file, on every core — the same pass
-    // `camello check` runs, through the same cache key, so the two share
-    // their warm entries.
+    // `camello check` reads its dependencies through, under the same cache
+    // key, so the two share their warm entries.
     let declared = camello_sema::workspace::in_parallel(&files, None, |path| {
         let source = std::fs::read_to_string(path).ok()?;
-        Some(declarations(path, &source, &dialect, &cache))
+        Some(camello_sema::read_declarations(
+            path, &source, &dialect, &cache,
+        ))
     });
 
     let mut analysis = Analysis::new()
@@ -151,38 +155,6 @@ pub fn build(settings: &Settings) -> Index {
         ready: true,
         files: read,
     }
-}
-
-/// One file's declarations, off the cache when the file has not changed.
-///
-/// The same key `camello check` writes under: path, size, mtime, content hash
-/// and the dialect fingerprint. Nothing new is persisted — the design's
-/// decision not to grow a project index until a cold start is measured and
-/// found wanting (`docs/lsp.md`, non-goals).
-pub fn declarations(
-    path: &Path,
-    source: &str,
-    dialect: &camello_sema::annotate::Dialect,
-    cache: &camello_sema::resolve::Cache,
-) -> FileDecls {
-    let key = cache
-        .is_enabled()
-        .then(|| camello_sema::resolve::Cache::key(path, source, &dialect.fingerprint()));
-    if let Some(key) = &key {
-        if let Some(text) = cache.read(key) {
-            if let Ok(decls) = serde_json::from_str(&text) {
-                return decls;
-            }
-        }
-    }
-    let parsed = camello_syntax::parse::parse(source);
-    let decls = camello_sema::decl::declare_in(&parsed.syntax(), dialect);
-    if let Some(key) = &key {
-        if let Ok(text) = serde_json::to_string(&decls) {
-            cache.write(key, &text);
-        }
-    }
-    decls
 }
 
 /// Every Perl file under the roots, each named once.

@@ -8,6 +8,9 @@ mod primary;
 use crate::lang::{NodeKind, TokenKind, T};
 use crate::parse::{Parser, Recovery};
 
+/// The keywords that open a variable declaration.
+const DECLARATORS: &[TokenKind] = &[T!["my"], T!["our"], T!["state"], T!["local"]];
+
 pub(super) fn root(parser: &mut Parser<'_>) {
     while !parser.at_end() {
         statement(parser);
@@ -183,7 +186,7 @@ fn sub_name_follows(parser: &mut Parser<'_>, introducers: usize) -> bool {
 /// An expression statement, plus any postfix modifier and the terminating `;`.
 fn expr_stmt(parser: &mut Parser<'_>) {
     let marker = parser.start();
-    let declaration = parser.at_any(&[T!["my"], T!["our"], T!["state"], T!["local"]])
+    let declaration = parser.at_any(DECLARATORS)
         || (parser.at(T!["field"]) && parser.nth(1).is_some_and(TokenKind::is_sigil));
 
     let before = parser.checkpoint();
@@ -675,11 +678,11 @@ fn continue_clause(parser: &mut Parser<'_>) {
 /// Both `for (init; test; step)` and `for my $x (@xs)`.
 fn for_header(parser: &mut Parser<'_>) {
     // `for my $x (...)` / `for $x (...)`
-    if parser.at_any(&[T!["my"], T!["our"], T!["state"], T!["local"]])
+    if parser.at_any(DECLARATORS)
         || (parser.current().is_some_and(TokenKind::is_sigil) && !parser.at(T!["("]))
     {
         let header = parser.start();
-        if parser.at_any(&[T!["my"], T!["our"], T!["state"], T!["local"]]) {
+        if parser.at_any(DECLARATORS) {
             // The same builder as any other declaration, so `for my $x` and
             // `my $x` have the same internal shape (the parser contract).
             primary::var_decl(parser);

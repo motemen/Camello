@@ -32,55 +32,35 @@ use crate::diag::{Code, Diagnostic, Severity};
 use crate::program::{MethodLookup, Program};
 use crate::types::Type;
 
+/// What checking one file's bodies found.
+#[derive(Debug, Default)]
+pub struct Checked {
+    pub diagnostics: Vec<Diagnostic>,
+    /// The type inferred for every expression the pass typed, when `record`
+    /// asked for it, and empty when not.
+    pub types: TypeTable,
+    /// Declarations of a value held for its destructor, by the range of the
+    /// name (`docs/types.md`, DIAG-12d).
+    pub guards: Vec<TextRange>,
+}
+
 /// Check one file's bodies against everything the program declares.
-#[must_use]
-pub fn analyse(
-    root: &SyntaxNode,
-    file: usize,
-    program: &Program,
-) -> (Vec<Diagnostic>, Vec<TextRange>) {
-    let (diagnostics, _, guards) = run(root, file, program, false);
-    (diagnostics, guards)
-}
-
-/// The same walk, keeping the type it inferred for every expression it typed
-/// (`docs/lsp.md`, "The type side-table").
 ///
-/// Off for the CLI and on for an editor's per-file pass: the pass computes
-/// these types either way, and the only question is whether they are written
-/// down or dropped. One table backs both hover and completion.
+/// `record` keeps the type the walk inferred for every expression it typed
+/// (`docs/lsp.md`, "The type side-table"). Off for the CLI and on for an
+/// editor's per-file pass: the pass computes these types either way, and the
+/// only question is whether they are written down or dropped. One table backs
+/// both hover and completion.
 #[must_use]
-pub fn analyse_recording(
-    root: &SyntaxNode,
-    file: usize,
-    program: &Program,
-) -> (Vec<Diagnostic>, TypeTable, Vec<TextRange>) {
-    let (diagnostics, table, guards) = run(root, file, program, true);
-    (diagnostics, table.unwrap_or_default(), guards)
-}
-
-fn run(
-    root: &SyntaxNode,
-    file: usize,
-    program: &Program,
-    record: bool,
-) -> (Vec<Diagnostic>, Option<TypeTable>, Vec<TextRange>) {
-    let mut pass = Pass {
-        program,
-        file,
-        env: Env::default(),
-        diagnostics: Vec::new(),
-        package: "main".to_string(),
-        returns: Returns::default(),
-        record: record.then(TypeTable::default),
-        infer: None,
-        call_shape: None,
-        self_call: None,
-        guards: Vec::new(),
-    };
+pub fn analyse(root: &SyntaxNode, file: usize, program: &Program, record: bool) -> Checked {
+    let mut pass = Pass::new(program, file, record.then(TypeTable::default), None);
     pass.block(root);
     pass.check_annotations();
-    (pass.diagnostics, pass.record, pass.guards)
+    Checked {
+        diagnostics: pass.diagnostics,
+        types: pass.record.unwrap_or_default(),
+        guards: pass.guards,
+    }
 }
 
 /// What the subs named by `only` return, read off their bodies
@@ -121,24 +101,13 @@ pub fn infer_returns(
     if wanted.is_empty() {
         return Vec::new();
     }
-    let mut pass = Pass {
-        program,
-        file,
-        env: Env::default(),
-        diagnostics: Vec::new(),
-        package: "main".to_string(),
-        returns: Returns::default(),
-        record: None,
-        infer: Some(Box::new(Inference {
-            wanted,
-            ..Inference::default()
-        })),
-        call_shape: None,
-        self_call: None,
-        guards: Vec::new(),
+    let inference = Inference {
+        wanted,
+        ..Inference::default()
     };
+    let mut pass = Pass::new(program, file, None, Some(Box::new(inference)));
     pass.block(root);
-    pass.infer.expect("set above").found
+    pass.inference.expect("set above").found
 }
 
 /// What the walk inferred, kept by range.
@@ -283,7 +252,7 @@ struct Pass<'a> {
     record: Option<TypeTable>,
     /// Where the return walk collects, and `None` when the pass is checking
     /// bodies rather than reading returns off them.
-    infer: Option<Box<Inference>>,
+    inference: Option<Box<Inference>>,
     /// The list shape of the last call this pass resolved, with the range of
     /// the call it belongs to.
     ///
@@ -305,6 +274,29 @@ struct Pass<'a> {
     /// never read and has no types to decide this with, so the answer is
     /// carried out of here and applied to its diagnostics.
     guards: Vec<TextRange>,
+}
+
+impl<'a> Pass<'a> {
+    fn new(
+        program: &'a Program,
+        file: usize,
+        record: Option<TypeTable>,
+        inference: Option<Box<Inference>>,
+    ) -> Self {
+        Pass {
+            program,
+            file,
+            env: Env::default(),
+            diagnostics: Vec::new(),
+            package: "main".to_string(),
+            returns: Returns::default(),
+            record,
+            inference,
+            call_shape: None,
+            self_call: None,
+            guards: Vec::new(),
+        }
+    }
 }
 
 /// What an enclosing sub's walk had going when a nested one interrupted it.
@@ -332,7 +324,7 @@ struct Inference {
 }
 
 /// Every place a value leaves one sub, as the walk collected them.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct Sites {
     /// The scalar type of each.
     scalar: Vec<Type>,
@@ -360,40 +352,54 @@ impl Sites {
         if self.opaque {
             return Returns::default();
         }
-        let mut members = self.scalar.clone();
-        let mut shapes = self.list.clone();
-        let mut invocant = self.invocant;
+        let mut sites = self.clone();
+        // A loop, a bare block, a `package`, a nested `sub`, an empty body —
+        // and an `if` chain with no `else`, whose false value is its
+        // condition's.
+        if !sites.push_tail(tail) {
+            sites.push(Type::Unknown, ListShape::Unknown, false);
+        }
+        let scalar = Type::union(sites.scalar);
+        Returns::inferred(
+            scalar.clone(),
+            join_shapes(sites.list),
+            sites.invocant && holds_own_class(&scalar, package),
+        )
+    }
+
+    /// One more site.
+    fn push(&mut self, ty: Type, shape: ListShape, invocant: bool) {
+        self.scalar.push(ty);
+        self.list.push(shape);
+        self.invocant |= invocant;
+    }
+
+    /// What a tail leaves, as one more site — and `false`, adding nothing,
+    /// when the tail is opaque, which each caller reads its own way. A
+    /// `return` or a `die` adds nothing either: counted already, or never
+    /// read.
+    fn push_tail(&mut self, tail: &Tail) -> bool {
         match tail {
             Tail::Value {
                 ty,
                 shape,
-                invocant: tail,
+                invocant,
             } => {
-                members.push(ty.clone());
-                shapes.push(shape.clone());
-                invocant |= tail;
+                self.push(ty.clone(), shape.clone(), *invocant);
+                true
             }
-            // A `return` or a `die`: counted already, or never read.
-            Tail::Left => {}
-            // A loop, a bare block, a `package`, a nested `sub`, an empty
-            // body — and an `if` chain with no `else`, whose false value is
-            // its condition's.
-            Tail::Opaque => {
-                members.push(Type::Unknown);
-                shapes.push(ListShape::Unknown);
-            }
+            Tail::Left => true,
+            Tail::Opaque => false,
         }
-        let scalar = Type::union(members);
-        let list = shapes
-            .into_iter()
-            .reduce(ListShape::join)
-            .unwrap_or(ListShape::Unknown);
-        Returns::inferred(
-            scalar.clone(),
-            list,
-            invocant && holds_own_class(&scalar, package),
-        )
     }
+}
+
+/// The join of every list shape, and `Unknown` for none.
+fn join_shapes(shapes: Vec<ListShape>) -> ListShape {
+    shapes
+        .into_iter()
+        .reduce(ListShape::join)
+        .unwrap_or(ListShape::Unknown)
 }
 
 /// What the statement just walked leaves as the value of the sub it is in.
@@ -557,7 +563,7 @@ impl Pass<'_> {
 
     /// Put the enclosing sub's sites aside: a `return` in here is this sub's.
     fn enter_sub(&mut self, invocant: Invocant) -> Option<Box<Saved>> {
-        let inference = self.infer.as_mut()?;
+        let inference = self.inference.as_mut()?;
         Some(Box::new((
             std::mem::take(&mut inference.sites),
             std::mem::take(&mut inference.tail),
@@ -575,7 +581,7 @@ impl Pass<'_> {
         let Some(saved) = saved else { return };
         let package = self.package.clone();
         let key = name.map(|name| (package.clone(), name));
-        let inference = self.infer.as_mut().expect("saved implies collecting");
+        let inference = self.inference.as_mut().expect("saved implies collecting");
         if let Some(index) = key.and_then(|key| inference.wanted.get(&key).copied()) {
             let returns = inference.sites.joined(&inference.tail, &package);
             // Only what became known: an answer of `Unknown` is the round
@@ -595,7 +601,7 @@ impl Pass<'_> {
     /// Remember, or forget, that a lexical holds a value built from the
     /// invocant (`docs/types.md`, INFER-9b).
     fn note_self_var(&mut self, name: &str, carries: bool) {
-        let Some(inference) = &mut self.infer else {
+        let Some(inference) = &mut self.inference else {
             return;
         };
         if carries {
@@ -607,7 +613,7 @@ impl Pass<'_> {
 
     /// Note what the statement just walked leaves as the sub's value.
     fn set_tail(&mut self, tail: Tail) {
-        if let Some(inference) = &mut self.infer {
+        if let Some(inference) = &mut self.inference {
             inference.tail = tail;
         }
     }
@@ -623,7 +629,7 @@ impl Pass<'_> {
         // A guard narrows what follows it: `return unless defined $x;` is how
         // half the corpus turns a `Maybe` into a value.
         self.apply_guard(node);
-        if self.infer.is_some() {
+        if self.inference.is_some() {
             // A modified statement falls through to the value of its own
             // condition when the condition does not hold, so `$h{k} = 1 if
             // $ok` is not a tail this walk can read — and neither is `return
@@ -670,30 +676,14 @@ impl Pass<'_> {
 
         for child in node.children() {
             match child.node_kind() {
-                NodeKind::BLOCK => {
-                    self.set_tail(Tail::Opaque);
-                    self.block(&child);
-                    tails.extend(self.tail());
-                    let ended = std::mem::replace(&mut self.env, otherwise.clone());
-                    match &mut after {
-                        Some(env) => env.join(&ended),
-                        None => after = Some(ended),
-                    }
-                }
+                NodeKind::BLOCK => self.branch(&child, &otherwise, &mut tails, &mut after),
                 NodeKind::ELSIF_CLAUSE | NodeKind::ELSE_CLAUSE => {
                     has_else |= child.node_kind() == NodeKind::ELSE_CLAUSE;
                     self.env = otherwise.clone();
                     let mut clause_seen = false;
                     for inner in child.children() {
                         if inner.node_kind() == NodeKind::BLOCK {
-                            self.set_tail(Tail::Opaque);
-                            self.block(&inner);
-                            tails.extend(self.tail());
-                            let ended = std::mem::replace(&mut self.env, otherwise.clone());
-                            match &mut after {
-                                Some(env) => env.join(&ended),
-                                None => after = Some(ended),
-                            }
+                            self.branch(&inner, &otherwise, &mut tails, &mut after);
                         } else {
                             self.expression(&inner);
                             // An `elsif` carries a condition of its own, and
@@ -736,14 +726,35 @@ impl Pass<'_> {
         } else {
             self.env = before;
         }
-        if self.infer.is_some() {
+        if self.inference.is_some() {
             self.set_tail(join_tails(&tails, has_else));
+        }
+    }
+
+    /// One block of an `if` chain: walked, its tail kept, and what it left
+    /// joined into `after` before the next branch starts from `otherwise`.
+    fn branch(
+        &mut self,
+        block: &SyntaxNode,
+        otherwise: &Env,
+        tails: &mut Vec<Tail>,
+        after: &mut Option<Env>,
+    ) {
+        self.set_tail(Tail::Opaque);
+        self.block(block);
+        tails.extend(self.tail());
+        let ended = std::mem::replace(&mut self.env, otherwise.clone());
+        match after {
+            Some(env) => env.join(&ended),
+            None => *after = Some(ended),
         }
     }
 
     /// What the statement just walked left, for a caller collecting branches.
     fn tail(&self) -> Option<Tail> {
-        self.infer.as_ref().map(|inference| inference.tail.clone())
+        self.inference
+            .as_ref()
+            .map(|inference| inference.tail.clone())
     }
 
     fn loop_statement(&mut self, node: &SyntaxNode) {
@@ -1052,10 +1063,7 @@ impl Pass<'_> {
                     if asked {
                         return shapes.into_iter().next().unwrap_or(ListShape::Unknown);
                     }
-                    return shapes
-                        .into_iter()
-                        .reduce(ListShape::join)
-                        .unwrap_or(ListShape::Unknown);
+                    return join_shapes(shapes);
                 }
                 ListShape::Unknown
             }
@@ -1626,7 +1634,7 @@ impl Pass<'_> {
         };
         if name == "return" {
             self.check_return(&typed, call.callee_range());
-            if self.infer.is_some() {
+            if self.inference.is_some() {
                 self.return_site(&typed);
             }
             return Type::Unknown;
@@ -1679,6 +1687,25 @@ impl Pass<'_> {
         self.check_arguments(&params, &call.pairs(), &typed, &name, call.callee_range());
         self.call_shape = Some((node.text_range(), returns.list));
         returns.scalar
+    }
+
+    /// The argument count of a method call, against what `name` declares.
+    fn check_method_arity(
+        &mut self,
+        params: &Params,
+        call: &ast::MethodCall,
+        arguments: &[SyntaxNode],
+        name: &str,
+    ) {
+        let shape = crate::arity::CallShape::of(arguments, &call.pairs());
+        crate::arity::check_shape(
+            params,
+            &shape,
+            true,
+            name,
+            call.method_range(),
+            &mut self.diagnostics,
+        );
     }
 
     fn method_call(&mut self, node: &SyntaxNode) -> Type {
@@ -1749,15 +1776,7 @@ impl Pass<'_> {
                 // the arity pass never saw: that pass resolves a bareword
                 // invocant and nothing else, and would otherwise say it twice.
                 if through_a_value {
-                    let shape = crate::arity::CallShape::of(&arguments, &call.pairs());
-                    crate::arity::check_shape(
-                        &params,
-                        &shape,
-                        true,
-                        &symbol.name,
-                        call.method_range(),
-                        &mut self.diagnostics,
-                    );
+                    self.check_method_arity(&params, &call, &arguments, &symbol.name);
                 }
                 self.check_arguments(&params, &call.pairs(), &typed, &method, call.method_range());
                 // `Foo->new(...)` is an `InstanceOf['Foo']` (`docs/typecheck.md`,
@@ -1798,15 +1817,7 @@ impl Pass<'_> {
                 let params = attribute.params(&method);
                 let returns = self.program.slot_type(&class, attribute, &method);
                 if through_a_value {
-                    let shape = crate::arity::CallShape::of(&arguments, &call.pairs());
-                    crate::arity::check_shape(
-                        &params,
-                        &shape,
-                        true,
-                        &method,
-                        call.method_range(),
-                        &mut self.diagnostics,
-                    );
+                    self.check_method_arity(&params, &call, &arguments, &method);
                 }
                 self.check_arguments(&params, &call.pairs(), &typed, &method, call.method_range());
                 // An accessor hands back one value, whatever the context.
@@ -1926,10 +1937,8 @@ impl Pass<'_> {
         // The scalar reading first, so that a site the invocant marker
         // answered is one value of *that* type in list context too.
         let shape = self.return_shape(typed, &ty);
-        if let Some(inference) = &mut self.infer {
-            inference.sites.scalar.push(ty);
-            inference.sites.list.push(shape);
-            inference.sites.invocant |= invocant;
+        if let Some(inference) = &mut self.inference {
+            inference.sites.push(ty, shape, invocant);
         }
     }
 
@@ -1948,7 +1957,7 @@ impl Pass<'_> {
     /// the target as it stands *now*, which a `shift` above may already have
     /// taken the invocant off.
     fn goto_site(&mut self, arguments: &[SyntaxNode], node: &SyntaxNode) {
-        if self.infer.is_none() {
+        if self.inference.is_none() {
             return;
         }
         let offset = u32::from(node.text_range().start());
@@ -1958,14 +1967,11 @@ impl Pass<'_> {
         }
         .and_then(|name| self.program.resolve_call(self.file, offset, &name))
         .map(|symbol| symbol.returns.clone());
-        let Some(inference) = &mut self.infer else {
+        let Some(inference) = &mut self.inference else {
             return;
         };
         match target {
-            Some(returns) => {
-                inference.sites.scalar.push(returns.scalar);
-                inference.sites.list.push(returns.list);
-            }
+            Some(returns) => inference.sites.push(returns.scalar, returns.list, false),
             None => inference.sites.opaque = true,
         }
     }
@@ -2099,7 +2105,7 @@ impl Pass<'_> {
 
     /// Whether an expression is a lexical [`Pass::note_self_var`] marked.
     fn holds_self(&self, node: &SyntaxNode) -> bool {
-        let Some(inference) = &self.infer else {
+        let Some(inference) = &self.inference else {
             return false;
         };
         if node.node_kind() != NodeKind::SCALAR_VAR {
@@ -2117,7 +2123,7 @@ impl Pass<'_> {
     /// class. Nothing deeper than that — `$self->{parent}` mentions `$self`
     /// and is not it.
     fn is_invocant(&self, node: &SyntaxNode) -> bool {
-        let Some(inference) = &self.infer else {
+        let Some(inference) = &self.inference else {
             return false;
         };
         if inference.invocant == Invocant::None {
@@ -2242,17 +2248,7 @@ impl Pass<'_> {
         match (&declared, &found) {
             (ListShape::Fixed(want), ListShape::Fixed(have)) if want.len() != have.len() => {
                 let range = typed.nodes.first().map_or(at, |node| node.text_range());
-                self.diagnostics.push(Diagnostic::new(
-                    Code::ReturnMismatch,
-                    range,
-                    format!(
-                        "this `return` hands back {} value{} where `Returns: {}` names {}",
-                        have.len(),
-                        if have.len() == 1 { "" } else { "s" },
-                        declared.written().unwrap_or_default(),
-                        want.len(),
-                    ),
-                ));
+                self.report_returned_width(range, have.len(), &declared, want.len());
             }
             (ListShape::Fixed(want), ListShape::Fixed(have)) => {
                 for (index, (slot, value)) in want.iter().zip(have).enumerate() {
@@ -2298,16 +2294,7 @@ impl Pass<'_> {
         let want = declared.slots().map_or(0, |slots| slots.len());
         let range = typed.nodes.first().map_or(at, |node| node.text_range());
         if want != have.len() {
-            self.diagnostics.push(Diagnostic::new(
-                Code::ReturnMismatch,
-                range,
-                format!(
-                    "this `return` hands back {} value{} where `Returns: {}` names {want}",
-                    have.len(),
-                    if have.len() == 1 { "" } else { "s" },
-                    declared.written().unwrap_or_default(),
-                ),
-            ));
+            self.report_returned_width(range, have.len(), declared, want);
             return;
         }
         let fits = shapes.iter().any(|want| {
@@ -2325,6 +2312,25 @@ impl Pass<'_> {
             format!(
                 "`{written}` returned, which is none of the shapes `Returns: {}` names",
                 declared.written().unwrap_or_default()
+            ),
+        ));
+    }
+
+    /// A `return` of `have` values where the annotation names `want`.
+    fn report_returned_width(
+        &mut self,
+        range: TextRange,
+        have: usize,
+        declared: &ListShape,
+        want: usize,
+    ) {
+        self.diagnostics.push(Diagnostic::new(
+            Code::ReturnMismatch,
+            range,
+            format!(
+                "this `return` hands back {have} value{} where `Returns: {}` names {want}",
+                if have == 1 { "" } else { "s" },
+                declared.written().unwrap_or_default(),
             ),
         ));
     }
@@ -2630,14 +2636,7 @@ fn bind_params(env: &mut Env, params: &Params, package: &str) {
         } => {
             for (index, param) in params.iter().enumerate() {
                 let ty = if index == 0 && *invocant {
-                    if param.name == "$class" {
-                        // Not `InstanceOf`: `$class` holds a *name*, and what
-                        // it names is this package or something below it
-                        // (`docs/types.md`, INFER-9a).
-                        Type::ClassName(Some(package.to_string()))
-                    } else {
-                        Type::InstanceOf(package.to_string())
-                    }
+                    invocant_type(&param.name, package)
                 } else {
                     param.ty.clone()
                 };
@@ -2648,20 +2647,25 @@ fn bind_params(env: &mut Env, params: &Params, package: &str) {
             params, invocant, ..
         } => {
             if let Some(name) = invocant {
-                // The same reading a positional invocant gets: `$class` holds
-                // a class name, `$self` an instance (`docs/types.md`, INFER-9a).
-                let ty = if name == "$class" {
-                    Type::ClassName(Some(package.to_string()))
-                } else {
-                    Type::InstanceOf(package.to_string())
-                };
-                bind(env, name, ty);
+                bind(env, name, invocant_type(name, package));
             }
             for param in params {
                 bind(env, &param.name, param.ty.clone());
             }
         }
         Params::Unknown => {}
+    }
+}
+
+/// What a sub's invocant holds, by the name it was given.
+///
+/// Not `InstanceOf` for `$class`: it holds a *name*, and what it names is this
+/// package or something below it (`docs/types.md`, INFER-9a).
+fn invocant_type(name: &str, package: &str) -> Type {
+    if name == "$class" {
+        Type::ClassName(Some(package.to_string()))
+    } else {
+        Type::InstanceOf(package.to_string())
     }
 }
 
@@ -3589,35 +3593,20 @@ fn join_tails(tails: &[Tail], has_else: bool) -> Tail {
     if !has_else {
         return Tail::Opaque;
     }
-    let mut members = Vec::new();
-    let mut shapes = Vec::new();
-    let mut invocant = false;
+    let mut sites = Sites::default();
     for tail in tails {
-        match tail {
-            Tail::Value {
-                ty,
-                shape,
-                invocant: one,
-            } => {
-                members.push(ty.clone());
-                shapes.push(shape.clone());
-                invocant |= one;
-            }
-            Tail::Left => {}
-            Tail::Opaque => return Tail::Opaque,
+        if !sites.push_tail(tail) {
+            return Tail::Opaque;
         }
     }
-    if members.is_empty() {
+    if sites.scalar.is_empty() {
         // Every branch returned or died, so nothing falls out of the chain.
         return Tail::Left;
     }
     Tail::Value {
-        ty: Type::union(members),
-        shape: shapes
-            .into_iter()
-            .reduce(ListShape::join)
-            .unwrap_or(ListShape::Unknown),
-        invocant,
+        ty: Type::union(sites.scalar),
+        shape: join_shapes(sites.list),
+        invocant: sites.invocant,
     }
 }
 

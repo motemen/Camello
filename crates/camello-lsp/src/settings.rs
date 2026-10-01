@@ -13,14 +13,8 @@ use std::path::{Path, PathBuf};
 
 use camello_fmt::FormatterOptions;
 use camello_sema::annotate::Dialect;
+use camello_sema::resolve::CACHE_DIR;
 use camello_sema::{Code, Options, Severity};
-
-/// The extensions the index walks, matching `camello check`'s default.
-pub const EXTENSIONS: &[&str] = &["pl", "pm", "t", "psgi"];
-
-/// Where the declaration cache lives, matching `camello check`'s default —
-/// so a repository that has ever run the checker warm-starts the index.
-pub const CACHE_DIR: &str = ".camello-cache";
 
 #[derive(Debug, Clone)]
 pub struct Settings {
