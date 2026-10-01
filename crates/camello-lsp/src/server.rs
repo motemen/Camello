@@ -163,34 +163,28 @@ impl Backend {
         let changed = {
             let index = Arc::clone(&self.read().index);
             let mut index = index.write().expect("no reader panics holding this");
-            let mut changed = index.install(&path, decls);
-            if changed {
-                index.analysis.link();
-            }
-            // Step 4′ (`docs/return-inference.md`): what tier 2 says about
-            // this file may have changed without anything tier 1 saw changing
-            // — `return $self->load` edited to `return $self->parse`, both
-            // cross-file — and the callers in other open files would go on
-            // seeing the old type.
-            changed |= index.analysis.reinfer_returns(&path, &document.text);
-            changed
+            index.apply(vec![(&path, decls, &document.text)])
         };
-        if !changed {
-            return;
+        if changed {
+            self.sweep(Some(uri)).await;
         }
-        // Every *open* file, and no other: nobody is told about a broken
-        // caller in a file nobody is looking at — that is `camello check`'s
-        // job in CI, not the editor's.
+    }
+
+    /// Re-check every open file but `except` after the graph changed.
+    ///
+    /// Every *open* file, and no other: nobody is told about a broken caller
+    /// in a file nobody is looking at — that is `camello check`'s job in CI,
+    /// not the editor's. And step 4′ for each of them in turn: what changed
+    /// may be what *their* returns were read from. Bounded by the open set,
+    /// which is the same coarseness the sweep itself accepts.
+    async fn sweep(&self, except: Option<&Uri>) {
         let open = { self.read().open_uris() };
-        for other in open {
-            if &other == uri {
+        for uri in open {
+            if Some(&uri) == except {
                 continue;
             }
-            // And 4′ for each of them in turn: what this edit changed may be
-            // what *their* returns were read from. Bounded by the open set,
-            // which is the same coarseness the sweep itself accepts.
-            self.reinfer(&other).await;
-            self.check_and_publish(other).await;
+            self.reinfer(&uri).await;
+            self.check_and_publish(uri).await;
         }
     }
 
@@ -227,20 +221,11 @@ impl Backend {
             let cache = crate::settings::cache(settings.cache_dir.as_deref());
             let decls = camello_sema::read_declarations(&path, &source, &settings.dialect, &cache);
             let mut index = index.write().expect("no reader panics holding this");
-            let mut changed = index.install(&path, decls);
-            if changed {
-                index.analysis.link();
-            }
-            changed |= index.analysis.reinfer_returns(&path, &source);
-            Some(changed)
+            Some(index.apply(vec![(&path, decls, &source)]))
         })
         .await;
-        if !matches!(changed, Ok(Some(true))) {
-            return;
-        }
-        let open = { self.read().open_uris() };
-        for uri in open {
-            self.check_and_publish(uri).await;
+        if matches!(changed, Ok(Some(true))) {
+            self.sweep(None).await;
         }
     }
 
@@ -312,22 +297,20 @@ impl Backend {
             };
             let relinked = tokio::task::spawn_blocking(move || {
                 let cache = crate::settings::cache(settings.cache_dir.as_deref());
-                let mut any = false;
-                for document in buffers {
-                    let Some(path) = document.path.as_ref() else {
-                        continue;
-                    };
-                    let decls = camello_sema::read_declarations(
-                        path,
-                        &document.text,
-                        &settings.dialect,
-                        &cache,
-                    );
-                    any |= built.install(path, decls);
-                }
-                if any {
-                    built.analysis.link();
-                }
+                let files = buffers
+                    .iter()
+                    .filter_map(|document| {
+                        let path = document.path.as_deref()?;
+                        let decls = camello_sema::read_declarations(
+                            path,
+                            &document.text,
+                            &settings.dialect,
+                            &cache,
+                        );
+                        Some((path, decls, &*document.text))
+                    })
+                    .collect();
+                built.apply(files);
                 built
             })
             .await;
@@ -590,42 +573,29 @@ impl LanguageServer for Backend {
         let index = Arc::clone(&self.read().index);
         let updated = tokio::task::spawn_blocking(move || {
             let cache = crate::settings::cache(settings.cache_dir.as_deref());
-            let mut updated = Vec::new();
-            for path in changed {
-                let Ok(source) = std::fs::read_to_string(&path) else {
-                    continue;
-                };
-                let decls =
-                    camello_sema::read_declarations(&path, &source, &settings.dialect, &cache);
-                updated.push((path, decls, source));
-            }
+            let read: Vec<(PathBuf, String)> = changed
+                .into_iter()
+                .filter_map(|path| Some((std::fs::read_to_string(&path).ok()?, path)))
+                .map(|(source, path)| (path, source))
+                .collect();
+            let files = read
+                .iter()
+                .map(|(path, source)| {
+                    let decls =
+                        camello_sema::read_declarations(path, source, &settings.dialect, &cache);
+                    (path.as_path(), decls, source.as_str())
+                })
+                .collect();
             let mut index = index.write().expect("no reader panics holding this");
             // The same decl-diff an edit applies: a file that was touched, or
             // rewritten with the same declarations, is nobody else's business,
             // and a sweep of the open files for it would be a sweep for
             // nothing.
-            let mut any = false;
-            let mut sources = Vec::new();
-            for (path, decls, source) in updated {
-                any |= index.install(&path, decls);
-                sources.push((path, source));
-            }
-            if any {
-                index.analysis.link();
-            }
-            // Step 4′, after the batch is in and linked: a file rewritten on
-            // disk is one whose returns another file's may have been read off.
-            for (path, source) in &sources {
-                any |= index.analysis.reinfer_returns(path, source);
-            }
-            any
+            index.apply(files)
         })
         .await;
         if matches!(updated, Ok(true)) {
-            let open = { self.read().open_uris() };
-            for uri in open {
-                self.check_and_publish(uri).await;
-            }
+            self.sweep(None).await;
         }
     }
 

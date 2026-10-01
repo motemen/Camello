@@ -280,6 +280,30 @@ fn missing_semicolon_does_not_swallow_the_next_statement() {
     assert_lossless(source);
 }
 
+/// A list missing its closing bracket keeps the bracket it does have: what
+/// the list could not hold is an error inside it, and the bracket closes the
+/// node its opener is in rather than dangling in the statement.
+#[test]
+fn a_broken_list_keeps_its_closing_bracket() {
+    for (source, list) in [
+        ("my $a = (1, 2 3);\n", "(1, 2 3)"),
+        ("my $a = [1, 2 3];\n", "[1, 2 3]"),
+        ("my ($x, $y $z) = @_;\n", "($x, $y $z)"),
+        ("local ($x, $y $z);\n", "($x, $y $z)"),
+        ("map({ $_ } @a 1);\n", "({ $_ } @a 1)"),
+        ("print(STDOUT 1 2);\n", "(STDOUT 1 2)"),
+    ] {
+        assert_eq!(errors(source).len(), 1, "{source:?}: {:#?}", errors(source));
+        let root = parse(source).syntax();
+        assert!(
+            root.descendants().any(|node| node.text() == list),
+            "{source:?} has no node that is `{list}`:\n{}",
+            tree(source)
+        );
+        assert_lossless(source);
+    }
+}
+
 #[test]
 fn diagnostics_do_not_leak_internal_names() {
     for source in ["sub f {", "my $x = ;", "foo(", "if ($x {"] {

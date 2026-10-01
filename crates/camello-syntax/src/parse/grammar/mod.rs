@@ -626,15 +626,7 @@ fn condition(parser: &mut Parser<'_>) {
     let marker = parser.start();
     parser.bump();
     parser.expect_term();
-    let list = parser.start();
-    expr::list_contents(parser, &[T![")"]]);
-    parser.complete(list, NodeKind::LIST_EXPR);
-    if !parser.expect(T![")"]) {
-        parser.recover(Recovery::List);
-        if parser.at(T![")"]) {
-            parser.bump();
-        }
-    }
+    expr::bracketed_list(parser, T![")"]);
     parser.complete(marker, NodeKind::PAREN_EXPR);
     parser.expect_term();
 }
@@ -727,12 +719,7 @@ fn for_header(parser: &mut Parser<'_>) {
         parser.complete(part, NodeKind::LIST_EXPR);
     }
 
-    if !parser.expect(T![")"]) {
-        parser.recover(Recovery::List);
-        if parser.at(T![")"]) {
-            parser.bump();
-        }
-    }
+    parser.expect_closing(T![")"]);
     parser.expect_term();
     parser.complete(header, NodeKind::C_STYLE_LOOP_HEADER);
 }

@@ -407,6 +407,15 @@ fn subscript(
     parser.complete(marker, node)
 }
 
+/// A bracketed list after its opener: the contents, as a `LIST_EXPR`, and the
+/// closing bracket.
+pub(crate) fn bracketed_list(parser: &mut Parser<'_>, close: TokenKind) {
+    let list = parser.start();
+    list_contents(parser, &[close]);
+    parser.complete(list, NodeKind::LIST_EXPR);
+    parser.expect_closing(close);
+}
+
 /// The inside of `[...]` or `{...}` used as a subscript.
 fn bracketed_index(parser: &mut Parser<'_>, close: TokenKind) {
     let marker = parser.start();
@@ -423,12 +432,7 @@ fn bracketed_index(parser: &mut Parser<'_>, close: TokenKind) {
     }
 
     parser.complete(marker, NodeKind::SUBSCRIPT);
-    if !parser.expect(close) {
-        parser.recover(Recovery::List);
-        if parser.at(close) {
-            parser.bump();
-        }
-    }
+    parser.expect_closing(close);
     parser.expect_operator();
 }
 
@@ -442,15 +446,7 @@ fn is_bareword_key(kind: TokenKind) -> bool {
 pub(crate) fn arg_list(parser: &mut Parser<'_>) {
     let marker = parser.start();
     parser.expect(T!["("]);
-    let list = parser.start();
-    list_contents(parser, &[T![")"]]);
-    parser.complete(list, NodeKind::LIST_EXPR);
-    if !parser.expect(T![")"]) {
-        parser.recover(Recovery::List);
-        if parser.at(T![")"]) {
-            parser.bump();
-        }
-    }
+    bracketed_list(parser, T![")"]);
     parser.complete(marker, NodeKind::ARG_LIST);
     parser.expect_operator();
 }
@@ -542,10 +538,7 @@ pub(crate) fn bareword_call(parser: &mut Parser<'_>) -> CompletedMarker {
             // A `,` after the block is perl's and stays in the list, where the
             // formatter can see it: consuming it here dropped it from the
             // output, and `map({$_}, @list)` came back a token short.
-            let list = parser.start();
-            list_contents(parser, &[T![")"]]);
-            parser.complete(list, NodeKind::LIST_EXPR);
-            parser.expect(T![")"]);
+            bracketed_list(parser, T![")"]);
             parser.complete(args, NodeKind::ARG_LIST);
             parser.expect_operator();
             parser.complete(marker, NodeKind::BLOCK_CALL_EXPR)
@@ -604,10 +597,7 @@ pub(crate) fn bareword_call(parser: &mut Parser<'_>) -> CompletedMarker {
             }
             filehandle(parser);
             if let Some(args) = args {
-                let list = parser.start();
-                list_contents(parser, &[T![")"]]);
-                parser.complete(list, NodeKind::LIST_EXPR);
-                parser.expect(T![")"]);
+                bracketed_list(parser, T![")"]);
                 parser.complete(args, NodeKind::ARG_LIST);
                 parser.expect_operator();
             } else {

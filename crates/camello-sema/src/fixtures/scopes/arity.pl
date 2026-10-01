@@ -56,6 +56,14 @@ sub shifts_two {
 shifts_two(1);
 shifts_two(1, 2, 3);            #~ warning arity: takes at most 2 arguments; 3 passed
 
+# A repeated string and a choice between two values are one value each; a
+# repeated list and a choice that may be a list are not counted.
+shifts_two('-' x 3, 1, 2);      #~ warning arity: takes at most 2 arguments; 3 passed
+shifts_two($ARGV[0] ? 1 : 2, 1, 2);
+                                #~ warning arity: takes at most 2 arguments; 3 passed
+shifts_two((1) x 3);
+shifts_two($ARGV[0] ? @ARGV : 1, 2);
+
 # A body that reaches for `shift` past its leading run takes an argument the
 # run did not name, so nothing is known about how many it takes.
 sub shifts_later {
@@ -66,6 +74,24 @@ sub shifts_later {
 }
 
 shifts_later(1, 2, 3);
+
+# `shift @list` takes from a list of its own, not from the arguments.
+our @queue = (1);
+sub shifts_a_list {
+    my $first = shift @queue;
+    return $first;
+}
+
+shifts_a_list(1, 2, 3);
+
+# `m'...'` and a `<<'EOT'` body interpolate nothing, so the `@_` written in
+# them is not a read of the arguments.
+sub quotes_the_list {
+    my $first = shift;
+    return $first =~ m'@_';
+}
+
+quotes_the_list(1, 2);          #~ warning arity: takes at most 1 argument; 2 passed
 
 # A sub that reads `@_` as a list has no parameter list to compare against.
 sub reads_the_list {
@@ -82,3 +108,13 @@ sub ignores_everything {
 }
 
 ignores_everything(1, 2, 3);
+
+sub heredocs_the_list {
+    my $first = shift;
+    my $text = <<'EOT';
+@_
+EOT
+    return $first . $text;
+}
+
+heredocs_the_list(1, 2);        #~ warning arity: takes at most 1 argument; 2 passed
