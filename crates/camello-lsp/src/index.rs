@@ -165,7 +165,12 @@ fn walk(settings: &Settings) -> Vec<PathBuf> {
         // name a directory this checkout does not have, and an editor that
         // refused to start over it would be answering a question nobody
         // asked.
-        let _ = camello_sema::workspace::collect_files(root, EXTENSIONS, &mut files);
+        let _ = camello_sema::workspace::collect_files(
+            root,
+            EXTENSIONS,
+            &camello_sema::workspace::Ignore::default(),
+            &mut files,
+        );
     }
     files.sort();
     files.dedup();

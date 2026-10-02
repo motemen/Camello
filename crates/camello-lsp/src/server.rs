@@ -258,13 +258,16 @@ impl Backend {
         let client = self.client.clone();
         tokio::spawn(async move {
             // The two Perl extensions the checker walks, the two a script may
-            // carry, and the configuration — which reloads and relinks.
+            // carry, and the configuration and the ignore files — which
+            // reload and rewalk.
             let watchers = [
                 "**/*.pl",
                 "**/*.pm",
                 "**/*.t",
                 "**/*.psgi",
                 "**/camello.toml",
+                "**/.camelloignore",
+                "**/.gitignore",
             ]
             .into_iter()
             .map(|pattern| FileSystemWatcher {
@@ -548,10 +551,15 @@ impl LanguageServer for Backend {
             let Some(path) = event.uri.to_file_path() else {
                 continue;
             };
-            if path
-                .file_name()
-                .is_some_and(|name| name == std::ffi::OsStr::new(camello_sema::config::FILE_NAME))
-            {
+            if path.file_name().is_some_and(|name| {
+                [
+                    camello_sema::config::FILE_NAME,
+                    camello_sema::workspace::IGNORE_FILE,
+                    ".gitignore",
+                ]
+                .iter()
+                .any(|reloads| name == std::ffi::OsStr::new(reloads))
+            }) {
                 reload = true;
             } else {
                 changed.push(path.into_owned());
@@ -572,7 +580,8 @@ impl LanguageServer for Backend {
             }
             // The dialect and the stub roots may have moved, and both are
             // read during the declaration pass — so the graph is rebuilt
-            // rather than patched.
+            // rather than patched. An ignore file moves which files the walk
+            // finds, which is the same rebuild.
             self.spawn_index();
             return;
         }

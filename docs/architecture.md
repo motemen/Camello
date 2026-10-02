@@ -242,7 +242,10 @@ command. The design, and what it deliberately does not do, is in
 The stable command-line surface is `camello format`. It reads its sources from
 paths, `-e`/`-E`, or standard input, and writes each one back over the file it
 came from — a file, a directory, or several of either. Directory traversal is
-recursive and does not follow symlinks discovered below a requested root. Work
+recursive and does not follow symlinks discovered below a requested root; it
+leaves out what `.gitignore`, `.camelloignore` and `--exclude` say to, under the
+rules of `docs/formatting.md` (IGNORE), which `check` and the language server's
+index walk by too. Work
 across files is parallelized, but reports remain in input order.
 
 Writing it back is the default because formatting a file is a thing done to the

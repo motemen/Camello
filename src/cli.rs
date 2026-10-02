@@ -66,7 +66,7 @@ pub enum Commands {
         write: bool,
 
         #[command(flatten)]
-        extensions: ExtensionsArg,
+        walk: WalkArgs,
 
         #[command(flatten)]
         jobs: JobsArg,
@@ -223,7 +223,7 @@ pub enum DevCommands {
         verbosity: VerbosityArgs,
 
         #[command(flatten)]
-        extensions: ExtensionsArg,
+        walk: WalkArgs,
 
         #[command(flatten)]
         encoding: EncodingArg,
@@ -259,7 +259,7 @@ pub enum DevCommands {
         verbosity: VerbosityArgs,
 
         #[command(flatten)]
-        extensions: ExtensionsArg,
+        walk: WalkArgs,
 
         #[command(flatten)]
         encoding: EncodingArg,
@@ -313,9 +313,10 @@ pub enum DevCommands {
     },
 }
 
-/// `--extensions`, on every command that walks a directory.
+/// What a directory is walked for and what it leaves out, on every command
+/// that walks one.
 #[derive(clap::Args, Debug, Clone)]
-pub struct ExtensionsArg {
+pub struct WalkArgs {
     /// File extensions to walk into when given a directory
     #[arg(
         long,
@@ -324,6 +325,45 @@ pub struct ExtensionsArg {
         help = "Extensions to consider when walking a directory"
     )]
     pub extensions: String,
+
+    /// Leave out what matches, relative to the working directory
+    #[arg(
+        long,
+        value_name = "GLOB",
+        help = "Leave out paths matching this gitignore pattern, even when named (repeatable)"
+    )]
+    pub exclude: Vec<String>,
+
+    /// Read neither .gitignore nor .camelloignore
+    #[arg(
+        long = "no-ignore",
+        help = "Do not read .gitignore or .camelloignore (--exclude still applies)"
+    )]
+    pub no_ignore: bool,
+}
+
+impl WalkArgs {
+    /// The Perl files under every path, each named path checked against what
+    /// is left out first.
+    ///
+    /// A path somebody named and the rules leave out is said so on stderr,
+    /// in the words a source left alone for a parse error is: a name typed
+    /// and silently skipped reads as a name formatted.
+    pub(crate) fn collect(&self, paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
+        let extensions = extension_list(&self.extensions);
+        let ignore = self.ignore()?;
+        let mut files = Vec::new();
+        for path in paths {
+            collect_perl_files(path, &extensions, &ignore, &mut files)?;
+        }
+        Ok(files)
+    }
+
+    pub(crate) fn ignore(&self) -> Result<camello_sema::workspace::Ignore> {
+        let base = std::env::current_dir().into_diagnostic()?;
+        camello_sema::workspace::Ignore::new(&base, &self.exclude, !self.no_ignore)
+            .into_diagnostic()
+    }
 }
 
 /// `-j`, on every command that works on many files at once.
@@ -404,7 +444,7 @@ pub struct CheckArgs {
     pub min_severity: Option<String>,
 
     #[command(flatten)]
-    pub extensions: ExtensionsArg,
+    pub walk: WalkArgs,
 
     #[command(flatten)]
     pub jobs: JobsArg,
@@ -570,7 +610,7 @@ impl CheckArgs {
             error_on,
             min_severity,
             format,
-            extensions: self.extensions.extensions,
+            walk: self.walk,
             jobs: self.jobs.jobs,
             encoding: self.encoding.encoding,
             stubs,
@@ -832,7 +872,7 @@ pub fn run() -> Result<()> {
             check,
             // Asks for the default; see the flag.
             write: _,
-            extensions: ExtensionsArg { extensions },
+            walk,
             jobs: JobsArg { jobs },
             stop_on_first_error,
             list_different,
@@ -854,14 +894,23 @@ pub fn run() -> Result<()> {
                     paths,
                     check,
                     list_different,
-                    &extensions,
+                    &walk,
                     jobs,
                     encoding,
                     &layout.to_options(),
                 );
             }
+            // One file is still a file named, and what `.camelloignore` and
+            // `--exclude` leave out they leave out here too: a pre-commit hook
+            // hands files over one at a time.
+            let path = paths.into_iter().next();
+            let ignored = match &path {
+                Some(path) => walk.ignore()?.named(path).into_diagnostic()?,
+                None => None,
+            };
             format_file(
-                paths.into_iter().next(),
+                path,
+                ignored,
                 eval,
                 eval_escape,
                 check,
@@ -906,14 +955,14 @@ pub fn run() -> Result<()> {
                 only,
                 list_invariants,
                 verbosity: VerbosityArgs { quiet, verbose },
-                extensions: ExtensionsArg { extensions },
+                walk,
                 encoding: EncodingArg { encoding },
             } => {
                 if list_invariants {
                     return list_invariants_and_exit();
                 }
                 let wanted = wanted_invariants(only.as_deref())?;
-                return check_paths(paths, jobs, &wanted, quiet, verbose, &extensions, encoding);
+                return check_paths(paths, jobs, &wanted, quiet, verbose, &walk, encoding);
             }
             DevCommands::DeparseNormalize => {
                 // Lossy, as a deparse run by `perl-deparse` is read: B::Deparse
@@ -939,7 +988,7 @@ pub fn run() -> Result<()> {
                 paths,
                 jobs: JobsArg { jobs },
                 verbosity: VerbosityArgs { quiet, verbose },
-                extensions: ExtensionsArg { extensions },
+                walk,
                 encoding: EncodingArg { encoding },
             } => {
                 // Better here than 4000 files later, one failed spawn at a time.
@@ -952,7 +1001,7 @@ pub fn run() -> Result<()> {
                     &[crate::check::Invariant::Deparse],
                     quiet,
                     verbose,
-                    &extensions,
+                    &walk,
                     encoding,
                 );
             }
@@ -1011,18 +1060,13 @@ fn format_tree(
     paths: Vec<PathBuf>,
     check: bool,
     list_different: bool,
-    extensions: &str,
+    walk: &WalkArgs,
     jobs: Option<usize>,
     encoding: Option<String>,
     options: &FormatterOptions,
 ) -> Result<()> {
     let encodings = Encodings::parse(encoding.as_ref())?;
-    let extensions = extension_list(extensions);
-
-    let mut files = Vec::new();
-    for path in &paths {
-        collect_perl_files(path, &extensions, &mut files)?;
-    }
+    let files = walk.collect(&paths)?;
 
     let reports = in_parallel(&files, jobs, |path| {
         format_one(path, check, &encodings, options)
@@ -1671,18 +1715,13 @@ fn check_paths(
     wanted: &[crate::check::Invariant],
     quiet: bool,
     verbose: bool,
-    extensions: &str,
+    walk: &WalkArgs,
     encoding: Option<String>,
 ) -> Result<()> {
     use crate::check::{check_report, Invariant};
 
-    let extensions = extension_list(extensions);
     let encodings = Encodings::parse(encoding.as_ref())?;
-
-    let mut files = Vec::new();
-    for path in &paths {
-        collect_perl_files(path, &extensions, &mut files)?;
-    }
+    let files = walk.collect(&paths)?;
 
     // No paths at all means stdin, so the command composes with a pipeline the
     // way `format` does. `None` is a file this command has nothing to say about
@@ -1997,9 +2036,15 @@ fn check_paths(
 pub(crate) fn collect_perl_files(
     path: &Path,
     extensions: &[&str],
+    ignore: &camello_sema::workspace::Ignore,
     into: &mut Vec<PathBuf>,
 ) -> Result<()> {
-    camello_sema::workspace::collect_files(path, extensions, into).into_diagnostic()
+    if let Some(why) =
+        camello_sema::workspace::collect_files(path, extensions, ignore, into).into_diagnostic()?
+    {
+        eprintln!("Left '{}' alone: ignored by {why}.", path.display());
+    }
+    Ok(())
 }
 
 /// The encodings a source may be in, in the order they are tried.
@@ -2197,6 +2242,7 @@ fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
 #[allow(clippy::too_many_arguments)]
 fn format_file(
     path: Option<PathBuf>,
+    ignored: Option<camello_sema::workspace::Ignored>,
     eval: Option<String>,
     eval_escape: Option<String>,
     check: bool,
@@ -2211,9 +2257,6 @@ fn format_file(
     let (input, source_name, encoding) =
         read_source(path.as_deref(), eval, eval_escape, &encodings)?;
 
-    // Execute formatting
-    let (formatted, errors) = format_perl_with_options(&input, options);
-
     // `-` is standard output under the flag that otherwise names a file, so
     // that "do not write it back" is one thing to say however it is meant.
     let destination = match output {
@@ -2221,6 +2264,20 @@ fn format_file(
         Some(named) => Some(named),
         None => path,
     };
+
+    // Left alone as a source with a parse error is, except that nothing went
+    // wrong: the run did what the project asked.
+    if let Some(why) = ignored {
+        eprintln!("Left '{source_name}' alone: ignored by {why}.");
+        if !check && destination.is_none() {
+            print!("{input}");
+            io::stdout().flush().into_diagnostic()?;
+        }
+        return Ok(());
+    }
+
+    // Execute formatting
+    let (formatted, errors) = format_perl_with_options(&input, options);
 
     // A source the parser had something to say about is reported and left
     // alone, and one source is no exception: an editor that formats on save and
@@ -2390,6 +2447,7 @@ mod tests {
         assert!(format_file(
             None,
             None,
+            None,
             Some("my$var=1;\\nprint $var;".to_string()),
             false,
             false,
@@ -2405,6 +2463,7 @@ mod tests {
     fn test_format_string_to_stdout() -> Result<(), Box<dyn std::error::Error>> {
         // Execute formatting (not actually executed, but confirm no errors)
         assert!(format_file(
+            None,
             None,
             Some("my$var=1;".to_string()),
             None,
@@ -2427,6 +2486,7 @@ mod tests {
 
         format_file(
             Some(file_path.clone()),
+            None,
             None,
             None,
             false,
@@ -2455,6 +2515,7 @@ mod tests {
             Some(file_path.clone()),
             None,
             None,
+            None,
             false,
             false,
             Some(PathBuf::from("-")),
@@ -2475,6 +2536,7 @@ mod tests {
         // Check that the file is correctly formatted
         assert!(format_file(
             Some(file_path),
+            None,
             None,
             None,
             true,
@@ -2505,6 +2567,7 @@ mod tests {
 
             format_file(
                 Some(path.clone()),
+                None,
                 None,
                 None,
                 false,
@@ -2611,7 +2674,12 @@ mod tests {
         symlink(dir.path(), dir.path().join("cycle"))?;
 
         let mut files = Vec::new();
-        collect_perl_files(dir.path(), &["pl"], &mut files)?;
+        collect_perl_files(
+            dir.path(),
+            &["pl"],
+            &camello_sema::workspace::Ignore::default(),
+            &mut files,
+        )?;
 
         assert_eq!(files, [dir.path().join("one.pl")]);
         Ok(())

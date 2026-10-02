@@ -47,6 +47,13 @@ own, named beside others, or found under a directory. A source read from
 standard input is handed back the way it arrived, so a filter in an editor's
 save hook is safe to wire up without a wrapper around it.
 
+A walk leaves out what `.gitignore` does. What camello is never to touch —
+generated code, a vendored tree — goes in a `.camelloignore` (gitignore syntax),
+or in `--exclude <glob>` for one run; those two hold even for a file named on the
+command line, which is left alone with a line on stderr saying why.
+`--no-ignore` reads neither file. `camello check` and `camello lsp` walk by the
+same rules (`docs/formatting.md`, IGNORE).
+
 ## Check
 
 ```bash
