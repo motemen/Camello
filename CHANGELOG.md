@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+
+- Walking a directory leaves out what `.gitignore`, `.camelloignore` and
+  `--exclude <glob>` say to; `--no-ignore` reads neither file (IGNORE).
+
 ### Changed
 
 - Internal cleanup: duplicated code in the parser, the formatter, the checker,
