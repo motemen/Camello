@@ -31,14 +31,18 @@ nothing beyond rustup.
 
 Each [release](https://github.com/motemen/Camello/releases) carries binaries for
 Linux (musl) and macOS, x86_64 and aarch64, and the VS Code extension. Every one
-is attested by the workflow that built it, from the tagged commit, and the
-release cannot be altered once published:
+is attested by the workflow that built it, and the release cannot be altered
+once published. Given a downloaded file, the first command checks that
+`release-build.yml` built it from the `v0.2.4` tag of this repository, and the
+second that it is the asset the release was published with:
 
 ```bash
 gh attestation verify camello-0.2.4-x86_64-unknown-linux-musl.tar.gz \
   --repo motemen/Camello \
-  --signer-workflow motemen/Camello/.github/workflows/release-build.yml
-gh release verify v0.2.4
+  --signer-workflow motemen/Camello/.github/workflows/release-build.yml \
+  --source-ref refs/tags/v0.2.4
+gh release verify-asset v0.2.4 camello-0.2.4-x86_64-unknown-linux-musl.tar.gz \
+  --repo motemen/Camello
 ```
 
 ## Use
