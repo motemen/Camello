@@ -2,14 +2,6 @@
 
 ## Unreleased
 
-### Changed
-
-- Internal cleanup: duplicated code in the parser, the formatter, the checker,
-  the language server and the command line is folded together, with no change
-  to formatting or diagnostics (#376, #377).
-- `camello --version` names a build past a release, as `0.2.3-1-g3fb3a78`, and
-  adds `-dirty` when the tree had uncommitted changes.
-
 ### Fixed
 
 - `exit`, `goto`, `throw` and `->throw` guard like `return` and `die`:
@@ -29,6 +21,23 @@
 - `lib` and `stubs` in `camello.toml` are relative to the file, so `camello check
   --config-dir DIR` finds them; a bad value in the file is reported by its own
   name rather than as a flag (#378).
+
+## 0.2.4 — 2026-10-14
+
+### Added
+
+- Walking a directory leaves out what `.gitignore`, `.camelloignore` and
+  `--exclude <glob>` say to; `--no-ignore` reads neither file (IGNORE).
+
+### Changed
+
+- Internal cleanup: duplicated code in the parser, the formatter, the checker,
+  the language server and the command line is folded together, with no change
+  to formatting or diagnostics (#376, #377).
+- `camello --version` names a build past a release, as `0.2.3-1-g3fb3a78`, and
+  adds `-dirty` when the tree had uncommitted changes.
+- Release binaries and the VS Code extension carry a build provenance
+  attestation, and releases are immutable; README says how to verify them.
 
 ## 0.2.3 — 2026-09-30
 

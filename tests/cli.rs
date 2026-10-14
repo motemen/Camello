@@ -142,3 +142,183 @@ fn one_good_file_is_still_formatted() {
         "my $foo = 1;\n"
     );
 }
+
+/// Source the formatter changes, so that whether a file was touched shows.
+const UNFORMATTED: &str = "my$x=1;\n";
+
+/// A tree of `UNFORMATTED` files, at the paths given, under a fresh directory.
+fn tree(files: &[&str]) -> tempfile::TempDir {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    for file in files {
+        let path = directory.path().join(file);
+        std::fs::create_dir_all(path.parent().expect("a file has a parent"))
+            .expect("failed to make the fixture's directory");
+        std::fs::write(&path, UNFORMATTED).expect("failed to write the fixture");
+    }
+    directory
+}
+
+fn write(directory: &Path, file: &str, text: &str) {
+    std::fs::write(directory.join(file), text).expect("failed to write the fixture");
+}
+
+fn touched(directory: &Path, file: &str) -> bool {
+    std::fs::read_to_string(directory.join(file)).expect("failed to read the fixture back")
+        != UNFORMATTED
+}
+
+/// `.gitignore` says what a walk does not descend into, and nothing about a
+/// file somebody named.
+#[test]
+fn gitignore_applies_beneath_a_named_path_and_not_to_it() {
+    let directory = tree(&["lib/Kept.pm", "lib/Built.pm"]);
+    write(directory.path(), ".gitignore", "Built.pm\n");
+
+    let output = camello(directory.path(), &["format", "lib"]);
+    assert!(output.status.success(), "{output:?}");
+    assert!(touched(directory.path(), "lib/Kept.pm"));
+    assert!(
+        !touched(directory.path(), "lib/Built.pm"),
+        "a gitignored file was walked into"
+    );
+
+    let output = camello(directory.path(), &["format", "lib/Built.pm"]);
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        touched(directory.path(), "lib/Built.pm"),
+        "a named file was not formatted"
+    );
+}
+
+/// `.camelloignore` says what camello is not to touch, and naming the file is
+/// no exception — but the run says so, and it is not a failure.
+#[test]
+fn camelloignore_applies_to_a_named_file_too_and_says_so() {
+    let directory = tree(&["lib/Kept.pm", "lib/Gen/Table.pm"]);
+    write(directory.path(), ".camelloignore", "lib/Gen/\n");
+
+    let output = camello(directory.path(), &["format", "lib"]);
+    assert!(output.status.success(), "{output:?}");
+    assert!(touched(directory.path(), "lib/Kept.pm"));
+    assert!(!touched(directory.path(), "lib/Gen/Table.pm"));
+
+    for named in ["lib/Gen/Table.pm", "lib/Gen"] {
+        let output = camello(directory.path(), &["format", named]);
+        assert!(output.status.success(), "{output:?}");
+        assert!(
+            !touched(directory.path(), "lib/Gen/Table.pm"),
+            "{named} was formatted"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("ignored by `lib/Gen/`"),
+            "{named}: the run did not say why: {stderr}"
+        );
+    }
+
+    // To standard output, what comes out is what went in.
+    let output = camello(directory.path(), &["format", "lib/Gen/Table.pm", "-o", "-"]);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(String::from_utf8_lossy(&output.stdout), UNFORMATTED);
+}
+
+/// The nearest `.camelloignore` decides, the way a nested `.gitignore` does.
+#[test]
+fn a_nested_camelloignore_overrides_the_one_above_it() {
+    let directory = tree(&["lib/Gen/Table.pm", "lib/Gen/Kept.pm"]);
+    write(directory.path(), ".camelloignore", "lib/Gen/*.pm\n");
+    write(directory.path(), "lib/Gen/.camelloignore", "!Kept.pm\n");
+
+    let output = camello(directory.path(), &["format", "."]);
+    assert!(output.status.success(), "{output:?}");
+    assert!(!touched(directory.path(), "lib/Gen/Table.pm"));
+    assert!(touched(directory.path(), "lib/Gen/Kept.pm"));
+
+    let directory = tree(&["lib/Gen/Kept.pm"]);
+    write(directory.path(), ".camelloignore", "lib/Gen/*.pm\n");
+    write(directory.path(), "lib/Gen/.camelloignore", "!Kept.pm\n");
+    let output = camello(directory.path(), &["format", "lib/Gen/Kept.pm"]);
+    assert!(output.status.success(), "{output:?}");
+    assert!(touched(directory.path(), "lib/Gen/Kept.pm"));
+}
+
+/// `--exclude` is this run's `.camelloignore`, relative to where it runs.
+#[test]
+fn exclude_leaves_out_what_it_matches_walked_or_named() {
+    let directory = tree(&["lib/Kept.pm", "lib/Table.gen.pm"]);
+
+    let output = camello(
+        directory.path(),
+        &["format", "lib", "--exclude", "*.gen.pm"],
+    );
+    assert!(output.status.success(), "{output:?}");
+    assert!(touched(directory.path(), "lib/Kept.pm"));
+    assert!(!touched(directory.path(), "lib/Table.gen.pm"));
+
+    let output = camello(
+        directory.path(),
+        &["format", "lib/Table.gen.pm", "--exclude", "lib/*.gen.pm"],
+    );
+    assert!(output.status.success(), "{output:?}");
+    assert!(!touched(directory.path(), "lib/Table.gen.pm"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--exclude `lib/*.gen.pm`"));
+}
+
+/// `--no-ignore` sets the files aside; what was typed for this run stays.
+#[test]
+fn no_ignore_reads_no_ignore_file_but_keeps_exclude() {
+    let directory = tree(&["lib/Built.pm", "lib/Gen.pm", "lib/Table.gen.pm"]);
+    write(directory.path(), ".gitignore", "Built.pm\n");
+    write(directory.path(), ".camelloignore", "Gen.pm\n");
+
+    let output = camello(
+        directory.path(),
+        &["format", "lib", "--no-ignore", "--exclude", "*.gen.pm"],
+    );
+    assert!(output.status.success(), "{output:?}");
+    assert!(touched(directory.path(), "lib/Built.pm"));
+    assert!(touched(directory.path(), "lib/Gen.pm"));
+    assert!(!touched(directory.path(), "lib/Table.gen.pm"));
+}
+
+/// `check` walks the way `format` does.
+#[test]
+fn check_leaves_out_what_format_does() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    std::fs::create_dir(directory.path().join("lib")).expect("failed to make lib");
+    write(directory.path(), "lib/Gen.pm", "my $unused = 1;\n");
+    write(directory.path(), ".camelloignore", "Gen.pm\n");
+
+    let output = camello(
+        directory.path(),
+        &["check", "lib", "--min-severity", "info"],
+    );
+    assert!(
+        !String::from_utf8_lossy(&output.stdout).contains("Gen.pm"),
+        "{output:?}"
+    );
+
+    let output = camello(
+        directory.path(),
+        &["check", "lib", "--min-severity", "info", "--no-ignore"],
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("Gen.pm"),
+        "{output:?}"
+    );
+}
+
+/// A `.camelloignore` line that does not parse is an error, not a rule dropped.
+#[test]
+fn a_camelloignore_that_does_not_parse_is_an_error() {
+    let directory = tree(&["lib/Gen.pm"]);
+    write(directory.path(), "lib/.camelloignore", "Gen{.pm\n");
+
+    let output = camello(directory.path(), &["format", "."]);
+    assert!(!output.status.success(), "{output:?}");
+    assert!(!touched(directory.path(), "lib/Gen.pm"));
+
+    let output = camello(directory.path(), &["format", "lib/Gen.pm"]);
+    assert!(!output.status.success(), "{output:?}");
+    assert!(!touched(directory.path(), "lib/Gen.pm"));
+}

@@ -14,9 +14,8 @@ and what the annotations Perl code already carries — `has ... isa => 'Str'`,
 
 > **Status: early.** The output is not yet stable across versions, and the
 > layout options below are hidden from `--help` because their names and
-> defaults may still change. There is no release yet; build it from source.
-> What moved between tags, and what it does to a file already formatted, is in
-> [CHANGELOG.md](CHANGELOG.md).
+> defaults may still change. What moved between tags, and what it does to a
+> file already formatted, is in [CHANGELOG.md](CHANGELOG.md).
 
 ## Build
 
@@ -29,6 +28,22 @@ cargo install --path .     # or put it on your PATH
 
 `scripts/build-linux` cross-compiles a static Linux binary from macOS with
 nothing beyond rustup.
+
+Each [release](https://github.com/motemen/Camello/releases) carries binaries for
+Linux (musl) and macOS, x86_64 and aarch64, and the VS Code extension. Every one
+is attested by the workflow that built it, and the release cannot be altered
+once published. Given a downloaded file, the first command checks that
+`release-build.yml` built it from the `v0.2.4` tag of this repository, and the
+second that it is the asset the release was published with:
+
+```bash
+gh attestation verify camello-0.2.4-x86_64-unknown-linux-musl.tar.gz \
+  --repo motemen/Camello \
+  --signer-workflow motemen/Camello/.github/workflows/release-build.yml \
+  --source-ref refs/tags/v0.2.4
+gh release verify-asset v0.2.4 camello-0.2.4-x86_64-unknown-linux-musl.tar.gz \
+  --repo motemen/Camello
+```
 
 ## Use
 
@@ -46,6 +61,13 @@ diagnostic on is left alone and the run exits 1 — whether it was named on its
 own, named beside others, or found under a directory. A source read from
 standard input is handed back the way it arrived, so a filter in an editor's
 save hook is safe to wire up without a wrapper around it.
+
+A walk leaves out what `.gitignore` does. What camello is never to touch —
+generated code, a vendored tree — goes in a `.camelloignore` (gitignore syntax),
+or in `--exclude <glob>` for one run; those two hold even for a file named on the
+command line, which is left alone with a line on stderr saying why.
+`--no-ignore` reads neither file. `camello check` and `camello lsp` walk by the
+same rules (`docs/formatting.md`, IGNORE).
 
 ## Check
 

@@ -1,0 +1,8 @@
+# Every action is pinned to a commit, so nothing moves under a workflow until a
+# pull request here says it should.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

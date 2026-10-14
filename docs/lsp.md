@@ -239,7 +239,8 @@ outside the editor arrive via `workspace/didChangeWatchedFiles`
 — the four extensions `camello check` walks, plus `camello.toml`, which
 reloads the configuration and rebuilds the graph, since the dialect and the
 stub roots are read *during* the declaration pass and neither can be patched
-into a graph already built. The registration is dynamic, asked for only where
+into a graph already built. `.camelloignore` and `.gitignore` rebuild it too:
+they move which files the walk finds (`docs/formatting.md`, IGNORE). The registration is dynamic, asked for only where
 the client says it accepts one, and spawned rather than awaited: a request to
 the client inside a notification handler holds up every notification behind it
 — the `didOpen` that follows immediately included. Each file event re-runs the

@@ -15,3 +15,6 @@ serde_json = { workspace = true }
 
 # camello.toml、CLI と `camello lsp` が同じ [check] を読むため
 toml = { workspace = true }
+
+# ディレクトリの走査で .gitignore と .camelloignore を読むため（docs/formatting.md「IGNORE」）
+ignore = "0.4"
