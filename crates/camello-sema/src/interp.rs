@@ -22,7 +22,11 @@
 //! - a method call is not interpolated: `"$obj->name"` uses `$obj` and then
 //!   says `->name`.
 
-use camello_syntax::ast::Sigil;
+use std::collections::HashMap;
+
+use camello_syntax::ast::{self, Sigil};
+use camello_syntax::lang::{SyntaxNode, SyntaxToken, TokenExt, TokenKind};
+use rowan::TextSize;
 
 /// One variable use found inside a quoted construct.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,6 +39,83 @@ pub struct Use {
     pub len: usize,
 }
 
+/// Every variable use perl interpolates in a quoted token, with offsets
+/// relative to the token.
+///
+/// Empty for a token that interpolates nothing: a single-quoted string, a
+/// pattern delimited by `'`, a body under `<<'EOT'`. `heredocs` is
+/// [`heredoc_interpolation`] of a tree that holds the token; a body it does
+/// not know is taken to interpolate. The replacement of an `s///e` is scanned
+/// like any other: it is code, and whether its text is a use is the caller's
+/// to say.
+pub(crate) fn uses_in(token: &SyntaxToken, heredocs: &HashMap<TextSize, bool>) -> Vec<Use> {
+    let text = token.text();
+    match token.token_kind() {
+        // A double-quoted string interpolates; a single-quoted one is one
+        // token of the same kind and does not.
+        TokenKind::STRING if text.starts_with('"') => scan(text),
+        TokenKind::INTERPOLATED_STRING => scan(text),
+        TokenKind::REGEX_PATTERN if delimiter_interpolates(token) => {
+            if has_flag(token, 'x') {
+                scan_extended(text)
+            } else {
+                scan(text)
+            }
+        }
+        TokenKind::HEREDOC_CONTENT
+            if heredocs
+                .get(&token.text_range().start())
+                .copied()
+                .unwrap_or(true) =>
+        {
+            scan(text)
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// Whether the quote-like operator this token belongs to carries `flag`.
+pub(crate) fn has_flag(token: &SyntaxToken, flag: char) -> bool {
+    token.parent().is_some_and(|parent| {
+        ast::tokens(&parent)
+            .find(|sibling| sibling.token_kind() == TokenKind::REGEX_FLAGS)
+            .is_some_and(|flags| flags.text().contains(flag))
+    })
+}
+
+/// `m'...'` does not interpolate; every other delimiter does.
+fn delimiter_interpolates(token: &SyntaxToken) -> bool {
+    let Some(parent) = token.parent() else {
+        return true;
+    };
+    ast::tokens(&parent)
+        .find(|sibling| sibling.token_kind() == TokenKind::DELIMITER)
+        .is_none_or(|delimiter| delimiter.text() != "'")
+}
+
+/// Which heredoc bodies interpolate, keyed by where each body starts.
+///
+/// The marker that decides it (`<<'EOT'` against `<<"EOT"`) is on the line
+/// above and belongs to another node — the body is a token that lands between
+/// two statements (the parser contract). Pairing them in document order is
+/// what perl does too: bodies arrive in the order their markers were written.
+pub(crate) fn heredoc_interpolation(root: &SyntaxNode) -> HashMap<TextSize, bool> {
+    let mut markers = Vec::new();
+    let mut bodies = Vec::new();
+    for token in root
+        .descendants_with_tokens()
+        .filter_map(|element| element.into_token())
+    {
+        match token.token_kind() {
+            TokenKind::HEREDOC_START => {
+                markers.push(!token.text().contains('\''));
+            }
+            TokenKind::HEREDOC_CONTENT => bodies.push(token.text_range().start()),
+            _ => {}
+        }
+    }
+    bodies.into_iter().zip(markers).collect::<HashMap<_, _>>()
+}
 /// Every variable use in an interpolating construct.
 #[must_use]
 pub fn scan(text: &str) -> Vec<Use> {

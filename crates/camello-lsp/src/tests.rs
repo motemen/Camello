@@ -695,4 +695,31 @@ mod an_edit_only_the_program_can_see {
             "{found:?}",
         );
     }
+
+    /// The graph the walk built is read from disk, and a buffer put over it
+    /// — the startup race, a `camello.toml` reload — carries step 4′ in with
+    /// it, or the buffer's returns stay what disk said until its next edit.
+    #[test]
+    fn a_buffer_applied_over_the_walk_brings_its_returns() {
+        let (dir, settings) = workspace();
+        let main = dir.path().join("main.pl");
+        let mut index = index::build(&settings);
+
+        let path = dir.path().join("Mid.pm");
+        let edited = mid("parse");
+        let decls = camello_sema::read_declarations(
+            &path,
+            &edited,
+            &settings.dialect,
+            &camello_sema::resolve::Cache::disabled(),
+        );
+        assert!(index.apply(vec![(&path, decls, &edited)]));
+        let found = messages(&index, &main);
+        assert!(
+            found
+                .iter()
+                .any(|message| message.contains("`Sheet` declares no method `row_only`")),
+            "{found:?}",
+        );
+    }
 }

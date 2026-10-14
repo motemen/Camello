@@ -35,6 +35,8 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
+use crate::diag::{Code, Severity};
+
 pub const FILE_NAME: &str = "camello.toml";
 
 /// A `camello.toml` that does not parse, named with the path it was read
@@ -96,6 +98,85 @@ pub struct Check {
     pub read_as: BTreeMap<String, String>,
 }
 
+/// A `[check]` table read into camello's vocabulary: codes and severities
+/// rather than their spellings, and paths that no longer depend on where the
+/// reader stands.
+///
+/// What a field falls back to when the file says nothing is left to the
+/// reader — the command line prints from `warning` up, the language server
+/// from `info` — and so is what to do with a problem: the command line stops,
+/// the server logs it and carries on without that field.
+#[derive(Debug, Default)]
+pub struct Resolved {
+    pub lib: Vec<PathBuf>,
+    pub stubs: Vec<PathBuf>,
+    pub disabled: Vec<Code>,
+    pub error_on: Option<Severity>,
+    pub min_severity: Option<Severity>,
+    pub guard_classes: Vec<String>,
+    pub strict_annotations: bool,
+    pub read_as: BTreeMap<String, String>,
+}
+
+impl Check {
+    /// Read the table, with `lib` and `stubs` relative to `base` — the
+    /// directory the file was read from — and every value it could not read
+    /// said as a sentence naming the field.
+    #[must_use]
+    pub fn resolve(&self, base: &Path) -> (Resolved, Vec<String>) {
+        let mut problems = Vec::new();
+        let mut disabled = Vec::new();
+        for name in &self.disable {
+            match Code::parse(name) {
+                Some(code) => disabled.push(code),
+                None => problems.push(format!("unknown diagnostic code `{name}` in {FILE_NAME}")),
+            }
+        }
+        let mut severity = |field: &str, value: &Option<String>| {
+            let name = value.as_deref()?;
+            let parsed = Severity::parse(name);
+            if parsed.is_none() {
+                problems.push(format!(
+                    "`{field}` in {FILE_NAME} takes `error`, `warning` or `info`, not `{name}`"
+                ));
+            }
+            parsed
+        };
+        let error_on = severity("error-on", &self.error_on);
+        let min_severity = severity("min-severity", &self.min_severity);
+        let resolved = Resolved {
+            lib: self
+                .lib
+                .iter()
+                .map(|path| relative_to(base, path))
+                .collect(),
+            stubs: self
+                .stubs
+                .iter()
+                .map(|path| relative_to(base, path))
+                .collect(),
+            disabled,
+            error_on,
+            min_severity,
+            guard_classes: self.guard_classes.clone(),
+            strict_annotations: self.strict_annotations,
+            read_as: self.read_as.clone(),
+        };
+        (resolved, problems)
+    }
+}
+
+/// `path` read from a file in `base`. A file in the working directory
+/// leaves it as written, so that what is reported under it reads the way the
+/// user wrote it.
+fn relative_to(base: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() || base.as_os_str().is_empty() || base == Path::new(".") {
+        path.to_path_buf()
+    } else {
+        base.join(path)
+    }
+}
+
 impl Config {
     /// Read `camello.toml` from a directory, or the default when there is none.
     ///
@@ -110,5 +191,45 @@ impl Config {
             path,
             message: error.to_string(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn check(text: &str) -> Check {
+        toml::from_str::<Config>(text).expect("a table").check
+    }
+
+    #[test]
+    fn paths_are_read_from_where_the_file_is() {
+        let table = check("[check]\nlib = [\"lib\", \"/abs\"]\nstubs = [\"stubs\"]\n");
+        let (resolved, problems) = table.resolve(Path::new("proj"));
+        assert!(problems.is_empty(), "{problems:?}");
+        assert_eq!(
+            resolved.lib,
+            [PathBuf::from("proj/lib"), PathBuf::from("/abs")]
+        );
+        assert_eq!(resolved.stubs, [PathBuf::from("proj/stubs")]);
+        let (here, _) = table.resolve(Path::new("."));
+        assert_eq!(here.lib[0], PathBuf::from("lib"), "as the user wrote it");
+    }
+
+    #[test]
+    fn every_value_it_cannot_read_is_named() {
+        let table = check(
+            "[check]\ndisable = [\"no-such-code\", \"unused-variable\"]\nmin-severity = \"loud\"\n",
+        );
+        let (resolved, problems) = table.resolve(Path::new("."));
+        assert_eq!(resolved.disabled, [Code::UnusedVariable]);
+        assert_eq!(resolved.min_severity, None);
+        assert_eq!(
+            problems,
+            [
+                "unknown diagnostic code `no-such-code` in camello.toml",
+                "`min-severity` in camello.toml takes `error`, `warning` or `info`, not `loud`",
+            ],
+        );
     }
 }

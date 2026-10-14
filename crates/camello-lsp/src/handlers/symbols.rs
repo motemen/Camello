@@ -6,8 +6,8 @@
 //! feature that is genuinely free: no new analysis, only a shape the client
 //! understands.
 
-use camello_syntax::ast::{AstNode, PackageStmt, SubDef};
-use camello_syntax::lang::{NodeExt, NodeKind, SyntaxNode};
+use camello_syntax::ast::{AstNode, SubDef};
+use camello_syntax::lang::{NodeExt, NodeKind};
 use rowan::TextRange;
 use tower_lsp_server::ls_types::{DocumentSymbol, SymbolKind};
 
@@ -21,7 +21,7 @@ use crate::document::Document;
 #[must_use]
 pub fn symbols(document: &Document) -> Vec<DocumentSymbol> {
     let root = document.tree();
-    let packages = package_extents(&root);
+    let packages = camello_sema::decl::package_spans(&root);
     let subs: Vec<(TextRange, TextRange, String)> = root
         .descendants()
         .filter(|node| node.node_kind() == NodeKind::SUB_DEF)
@@ -35,81 +35,50 @@ pub fn symbols(document: &Document) -> Vec<DocumentSymbol> {
             ))
         })
         .collect();
+    // A sub belongs to the innermost package around it: `package Foo { ... }`
+    // inside `package Outer;` holds its own subs, and Outer the rest.
+    let owner = |range: &TextRange| {
+        packages
+            .iter()
+            .enumerate()
+            .filter(|(_, span)| {
+                span.start <= u32::from(range.start()) && u32::from(range.end()) <= span.end
+            })
+            .max_by_key(|(_, span)| span.start)
+            .map(|(index, _)| index)
+    };
+    let function = |(range, selection, name): &(TextRange, TextRange, String)| {
+        build(
+            document,
+            name.clone(),
+            SymbolKind::FUNCTION,
+            *range,
+            *selection,
+            None,
+        )
+    };
 
     let mut out: Vec<DocumentSymbol> = subs
         .iter()
-        .filter(|(range, _, _)| {
-            !packages
-                .iter()
-                .any(|(extent, ..)| extent.contains_range(*range))
-        })
-        .map(|(range, selection, name)| {
-            build(
-                document,
-                name.clone(),
-                SymbolKind::FUNCTION,
-                *range,
-                *selection,
-                None,
-            )
-        })
+        .filter(|(range, ..)| owner(range).is_none())
+        .map(function)
         .collect();
-
-    for (extent, header, name) in &packages {
+    for (index, span) in packages.iter().enumerate() {
         let children: Vec<DocumentSymbol> = subs
             .iter()
-            .filter(|(range, _, _)| extent.contains_range(*range))
-            .map(|(range, selection, sub)| {
-                build(
-                    document,
-                    sub.clone(),
-                    SymbolKind::FUNCTION,
-                    *range,
-                    *selection,
-                    None,
-                )
-            })
+            .filter(|(range, ..)| owner(range) == Some(index))
+            .map(function)
             .collect();
         out.push(build(
             document,
-            name.clone(),
+            span.name.clone(),
             SymbolKind::MODULE,
-            *extent,
-            *header,
+            TextRange::new(span.start.into(), span.end.into()),
+            span.statement,
             (!children.is_empty()).then_some(children),
         ));
     }
     out.sort_by_key(|symbol| (symbol.range.start.line, symbol.range.start.character));
-    out
-}
-
-/// Each package statement: how far its declarations reach, where its own name
-/// is, and what it is called.
-///
-/// `package Foo { ... }` says how far itself. `package Foo;` runs to the next
-/// package statement or to the end of the file, which is the rule
-/// `FileDecls::package_at` already reads offsets under.
-fn package_extents(root: &SyntaxNode) -> Vec<(TextRange, TextRange, String)> {
-    let statements: Vec<SyntaxNode> = root
-        .descendants()
-        .filter(|node| node.node_kind() == NodeKind::PACKAGE_STMT)
-        .collect();
-    let mut out = Vec::new();
-    for (index, node) in statements.iter().enumerate() {
-        let Some(view) = PackageStmt::cast(node.clone()) else {
-            continue;
-        };
-        let Some(name) = view.name() else { continue };
-        let extent = if view.block().is_some() {
-            node.text_range()
-        } else {
-            let end = statements
-                .get(index + 1)
-                .map_or(root.text_range().end(), |next| next.text_range().start());
-            TextRange::new(node.text_range().start(), end)
-        };
-        out.push((extent, node.text_range(), name));
-    }
     out
 }
 

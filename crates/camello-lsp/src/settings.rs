@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use camello_fmt::FormatterOptions;
 use camello_sema::annotate::Dialect;
 use camello_sema::resolve::CACHE_DIR;
-use camello_sema::{Code, Options, Severity};
+use camello_sema::{Options, Severity};
 
 #[derive(Debug, Clone)]
 pub struct Settings {
@@ -60,32 +60,12 @@ impl Settings {
             }
         };
 
-        let mut options = Options {
-            strict_annotations: config.check.strict_annotations,
-            disabled: Vec::new(),
-            guard_classes: config.check.guard_classes.clone(),
-        };
-        for name in &config.check.disable {
-            match Code::parse(name) {
-                Some(code) => options.disabled.push(code),
-                None => problems.push(format!(
-                    "unknown diagnostic code `{name}` in {}",
-                    camello_sema::config::FILE_NAME
-                )),
-            }
-        }
-
-        let min_severity = match &config.check.min_severity {
-            None => Severity::Info,
-            Some(name) => match Severity::parse(name) {
-                Some(severity) => severity,
-                None => {
-                    problems.push(format!(
-                        "min-severity takes `error`, `warning` or `info`, not `{name}`"
-                    ));
-                    Severity::Info
-                }
-            },
+        let (check, found) = config.check.resolve(root);
+        problems.extend(found);
+        let options = Options {
+            strict_annotations: check.strict_annotations,
+            disabled: check.disabled,
+            guard_classes: check.guard_classes,
         };
 
         // The workspace folders first — they are what the editor is open on —
@@ -95,25 +75,18 @@ impl Settings {
         if roots.is_empty() {
             roots.push(root.to_path_buf());
         }
-        for lib in &config.check.lib {
-            roots.push(absolute(root, lib));
-        }
+        roots.extend(check.lib);
         roots.dedup();
 
         (
             Settings {
                 root: root.to_path_buf(),
                 roots,
-                stubs: config
-                    .check
-                    .stubs
-                    .iter()
-                    .map(|path| absolute(root, path))
-                    .collect(),
+                stubs: check.stubs,
                 cache_dir: Some(root.join(CACHE_DIR)),
-                dialect: Dialect::new(config.check.read_as.clone()),
+                dialect: Dialect::new(check.read_as),
                 options,
-                min_severity,
+                min_severity: check.min_severity.unwrap_or(Severity::Info),
                 // There is no `[format]` table yet, and the layout flags on
                 // `camello format` are hidden because their names and
                 // defaults may still move (`docs/architecture.md`). So the
@@ -140,14 +113,6 @@ impl Settings {
                 cache(self.cache_dir.as_deref()),
             )
             .with_dialect(self.dialect.clone())
-    }
-}
-
-fn absolute(root: &Path, path: &Path) -> PathBuf {
-    if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        root.join(path)
     }
 }
 

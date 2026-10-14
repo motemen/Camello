@@ -220,3 +220,15 @@ $held->set_items;
 #~ warning arity: takes at least 2 arguments including its invocant; 1 passed
 $held->items([2]);
 #~ warning arity: takes at most 1 argument including its invocant; 2 passed
+
+# A package spelled with a leading `_` is a class before `->` as it is in
+# `bless`'s second slot.
+package _Hidden;
+use Moose;
+sub known { return 1 }
+
+package main;
+
+my $hidden = _Hidden->new;
+$hidden->known;
+$hidden->unknown;               #~ warning unknown-method: declares no method `unknown`

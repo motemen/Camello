@@ -354,6 +354,18 @@ impl<'a> Parser<'a> {
         false
     }
 
+    /// Consume a closing bracket. Where it is missing, report, skip what the
+    /// list could not hold, and take the bracket if that reached it — so the
+    /// bracket stays in the node its opener is in.
+    pub(crate) fn expect_closing(&mut self, close: TokenKind) {
+        if !self.expect(close) {
+            self.recover(Recovery::List);
+            if self.at(close) {
+                self.bump();
+            }
+        }
+    }
+
     fn found_suffix(&mut self) -> String {
         match self.current() {
             Some(kind) => format!(", found {kind}"),
