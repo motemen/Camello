@@ -1,0 +1,153 @@
+name: Release build
+
+# Everything that ends up in a release is built and attested here, in a
+# workflow of its own. An attestation names the workflow that signed it, so
+# keeping the build apart from release.yml means the signer is this file and
+# nothing else: `gh attestation verify --signer-workflow` can insist on it, and
+# a change to how the release is published cannot sign a binary.
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Released binaries carry no symbols. Set here rather than in Cargo.toml so a
+  # local `cargo build --release` keeps whatever a profiler needs.
+  CARGO_PROFILE_RELEASE_STRIP: symbols
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux is musl throughout, for the reason scripts/build-linux gives:
+          # static, so there is no glibc at the far end to be too old.
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+          # Apple's clang links either architecture, so the Intel build is a
+          # cross build on the same arm64 runner — one fewer runner image to
+          # depend on. It cannot be run here, hence no smoke test below.
+          - target: x86_64-apple-darwin
+            runner: macos-latest
+            cross: true
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+      with:
+        toolchain: 1.91.0
+        targets: ${{ matrix.target }}
+
+    - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      with:
+        key: ${{ matrix.target }}
+
+    # The default feature set has no C dependency, but the musl target still
+    # links through `cc`; musl-tools supplies one for the runner's own arch.
+    - name: Install the musl toolchain
+      if: endsWith(matrix.target, '-musl')
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y musl-tools
+
+    - name: Build
+      run: cargo build --release --locked --target ${{ matrix.target }}
+
+    # The binary has to at least run on the machine that made it.
+    - name: Smoke test
+      if: ${{ !matrix.cross }}
+      run: |
+        ./target/${{ matrix.target }}/release/camello --version
+        ./target/${{ matrix.target }}/release/camello format -e 'my %h=(a=>1);'
+
+    - name: Package
+      id: package
+      run: |
+        name=camello-${{ inputs.version }}-${{ matrix.target }}
+        mkdir -p "dist/$name"
+        cp target/${{ matrix.target }}/release/camello README.md CHANGELOG.md "dist/$name/"
+        (cd dist && tar -czf "$name.tar.gz" "$name" \
+                 && shasum -a 256 "$name.tar.gz" >"$name.tar.gz.sha256")
+        echo "name=$name" >>"$GITHUB_OUTPUT"
+
+    # Only a tag is a release; a dispatched dry run builds the same thing but
+    # leaves no attestation behind for a binary nobody will download.
+    - name: Attest
+      if: github.ref_type == 'tag'
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+      with:
+        subject-path: dist/${{ steps.package.outputs.name }}.tar.gz
+
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: ${{ steps.package.outputs.name }}
+        path: dist/*.tar.gz*
+        if-no-files-found: error
+
+  # The extension carries no native code, so one runner packages it for every
+  # platform. It ships beside the binaries rather than on a marketplace: the
+  # server it spawns is one of the tarballs in the same release, and the version
+  # it names is the tag, which is how it knows which one to fetch.
+  vsix:
+    name: vsix
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: 22
+        cache: npm
+        cache-dependency-path: editors/vscode/package-lock.json
+
+    - name: Package
+      working-directory: editors/vscode
+      run: |
+        # The manifest's version is the workspace's; a tag that disagrees with
+        # it was already refused in `prepare`, so this only catches a manifest
+        # left behind by a version bump that forgot it.
+        manifest=$(node -p 'require("./package.json").version')
+        if [ "$manifest" != "${{ inputs.version }}" ]; then
+          echo "::error::editors/vscode/package.json says $manifest, not ${{ inputs.version }}"
+          exit 1
+        fi
+        npm ci
+        # vsce is a devDependency, so the lockfile fixes which one packages
+        # the release rather than whatever npm calls latest that day.
+        npx --no-install vsce package \
+          --out "camello-${{ inputs.version }}.vsix"
+
+    - name: Attest
+      if: github.ref_type == 'tag'
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+      with:
+        subject-path: editors/vscode/camello-${{ inputs.version }}.vsix
+
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: vsix
+        path: editors/vscode/*.vsix
+        if-no-files-found: error

@@ -45,7 +45,7 @@ pub struct Request {
     /// flag vacuous would answer 0 to a run that asked to fail.
     pub min_severity: Severity,
     pub format: Format,
-    pub extensions: String,
+    pub walk: crate::cli::WalkArgs,
     pub jobs: Option<usize>,
     pub encoding: Option<String>,
     /// Directories of stub modules, which shadow the real ones.
@@ -178,7 +178,6 @@ struct FileReport {
 /// interface here: a CI step reads it and nothing else.
 pub fn run(request: &Request) -> Result<()> {
     let encodings = crate::cli::Encodings::parse(request.encoding.as_ref())?;
-    let extensions = crate::cli::extension_list(&request.extensions);
 
     let mut files = Vec::new();
     if request.paths.is_empty() {
@@ -186,10 +185,7 @@ pub fn run(request: &Request) -> Result<()> {
         let (source, name, _) = crate::cli::read_source(None, None, None, &encodings)?;
         files.push((PathBuf::from(name), Some(source)));
     } else {
-        let mut collected = Vec::new();
-        for path in &request.paths {
-            crate::cli::collect_perl_files(path, &extensions, &mut collected)?;
-        }
+        let collected = request.walk.collect(&request.paths)?;
         files.extend(collected.into_iter().map(|path| (path, None)));
     }
 
