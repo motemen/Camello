@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+`camello format` lays out code differently from 0.2.4, so a file 0.2.4
+formatted may change: a closing bracket after a wrapped bareword call, and a
+blank line after a comment ending in `{`.
+
+### Fixed
+
+- A closing bracket written on its own line keeps it where a bareword call
+  inside the list wraps: `f(g $a,` / `$b` / `)`.
+- A blank line after a comment that ends in `{` is kept (BLANK_LINE-2).
+- A variable opened at the parser's nesting limit is reported rather than
+  aborting the run.
+- `camello check --error-on error` wins over an `error-on` in `camello.toml`.
+
 ## 0.2.4 — 2026-10-14
 
 ### Added
