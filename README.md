@@ -14,9 +14,8 @@ and what the annotations Perl code already carries — `has ... isa => 'Str'`,
 
 > **Status: early.** The output is not yet stable across versions, and the
 > layout options below are hidden from `--help` because their names and
-> defaults may still change. There is no release yet; build it from source.
-> What moved between tags, and what it does to a file already formatted, is in
-> [CHANGELOG.md](CHANGELOG.md).
+> defaults may still change. What moved between tags, and what it does to a
+> file already formatted, is in [CHANGELOG.md](CHANGELOG.md).
 
 ## Build
 
@@ -29,6 +28,18 @@ cargo install --path .     # or put it on your PATH
 
 `scripts/build-linux` cross-compiles a static Linux binary from macOS with
 nothing beyond rustup.
+
+Each [release](https://github.com/motemen/Camello/releases) carries binaries for
+Linux (musl) and macOS, x86_64 and aarch64, and the VS Code extension. Every one
+is attested by the workflow that built it, from the tagged commit, and the
+release cannot be altered once published:
+
+```bash
+gh attestation verify camello-0.2.4-x86_64-unknown-linux-musl.tar.gz \
+  --repo motemen/Camello \
+  --signer-workflow motemen/Camello/.github/workflows/release-build.yml
+gh release verify v0.2.4
+```
 
 ## Use
 

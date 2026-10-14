@@ -14,6 +14,8 @@
   to formatting or diagnostics (#376, #377).
 - `camello --version` names a build past a release, as `0.2.3-1-g3fb3a78`, and
   adds `-dirty` when the tree had uncommitted changes.
+- Release binaries and the VS Code extension carry a build provenance
+  attestation, and releases are immutable; README says how to verify them.
 
 ## 0.2.3 — 2026-09-30
 
