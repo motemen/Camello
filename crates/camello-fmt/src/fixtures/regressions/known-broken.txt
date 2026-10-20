@@ -20,3 +20,5 @@
 # One path per line, relative to the repository root.
 
 crates/camello-fmt/src/fixtures/regressions/qw_contents_follow_the_block_depth.pl
+crates/camello-fmt/src/fixtures/regressions/qw_contents_are_placed_from_the_qw_line.pl
+crates/camello-fmt/src/fixtures/regressions/qw_keeps_what_comes_before_its_delimiter.pl
