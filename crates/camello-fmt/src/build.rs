@@ -1062,7 +1062,7 @@ impl<'a> Builder<'a> {
         };
         let mut it = tokens(node);
         let mut next = |kind| it.next().filter(|token| token.token_kind() == kind);
-        let (Some(qw), Some(opening), Some(qw_string), Some(closing)) = (
+        let (Some(_), Some(opening), Some(qw_string), Some(closing)) = (
             next(TokenKind::QW_KW),
             next(TokenKind::DELIMITER),
             next(TokenKind::QW_STRING),
@@ -1071,6 +1071,8 @@ impl<'a> Builder<'a> {
             return self.quote_like(node);
         };
 
+        let end = opening.text_range().end() - node.text_range().start();
+        let prefix = node.text().slice(..end).to_string();
         let broken = qw_string
             .text()
             .split_once('\n')
@@ -1089,8 +1091,7 @@ impl<'a> Builder<'a> {
                 broken,
                 Doc::concat(vec![
                     leading,
-                    Doc::Token(qw),
-                    Doc::Token(opening),
+                    Doc::Raw(prefix.into()),
                     Doc::indent(Doc::concat(items)),
                     Doc::SoftLine,
                     Doc::Token(closing),
