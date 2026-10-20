@@ -19,3 +19,4 @@
 #
 # One path per line, relative to the repository root.
 
+crates/camello-fmt/src/fixtures/regressions/qw_contents_follow_the_block_depth.pl
