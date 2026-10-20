@@ -5,6 +5,7 @@
 //! — replacing the seven separate "does the source have a newline here"
 //! predicates the old formatter had scattered across five files.
 
+use camello_syntax::ast::tokens;
 use rowan::TextSize;
 use unicode_width::UnicodeWidthStr;
 
@@ -381,6 +382,7 @@ impl<'a> Builder<'a> {
             NodeKind::SUBSCRIPT => self.sequence(node),
             NodeKind::BLOCK_DEREF_EXPR => self.deref_block(node),
             NodeKind::LIST_CALL_EXPR => self.list_call(node),
+            NodeKind::QW_EXPR => self.qw(node),
             kind if is_quote_like_node(kind) => self.quote_like(node),
             _ => self.sequence(node),
         }
@@ -1050,6 +1052,52 @@ impl<'a> Builder<'a> {
             .map(|token| Doc::Raw(token.text().into()))
             .collect();
         Doc::concat(parts)
+    }
+
+    fn qw(&mut self, node: &SyntaxNode) -> Doc {
+        let leading = self.leading_docs_of(node);
+        let trailing = match last_token(node) {
+            Some(token) => self.trailing_comment(&token),
+            None => Doc::Nil,
+        };
+        let mut it = tokens(node);
+        let mut next = |kind| it.next().filter(|token| token.token_kind() == kind);
+        let (Some(qw), Some(opening), Some(qw_string), Some(closing)) = (
+            next(TokenKind::QW_KW),
+            next(TokenKind::DELIMITER),
+            next(TokenKind::QW_STRING),
+            next(TokenKind::DELIMITER),
+        ) else {
+            return self.quote_like(node);
+        };
+
+        let broken = qw_string
+            .text()
+            .split_once('\n')
+            .is_some_and(|(first, _)| first.trim().is_empty());
+
+        let mut items = vec![Doc::SoftLine];
+        for (i, line) in qw_string.text().split('\n').enumerate() {
+            if i > 0 {
+                items.push(Doc::HardLine);
+            }
+            items.push(Doc::Raw(line.trim_ascii().into()));
+        }
+        Doc::rooted(Doc::hanging(
+            Some(0),
+            Doc::group(
+                broken,
+                Doc::concat(vec![
+                    leading,
+                    Doc::Token(qw),
+                    Doc::Token(opening),
+                    Doc::indent(Doc::concat(items)),
+                    Doc::SoftLine,
+                    Doc::Token(closing),
+                    trailing,
+                ]),
+            ),
+        ))
     }
 
     /// A quote-like operator: one lexical run (the lexer contract), and so one atom.
