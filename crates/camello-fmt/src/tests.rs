@@ -22,13 +22,30 @@ fn assert_idempotent(source: &str) {
 
 /// The non-trivia token sequence must survive formatting (the formatter contract).
 fn tokens(source: &str) -> Vec<(TokenKind, String)> {
+    // FIXME: This implementation duplicates token_stream()
     use camello_syntax::lang::TokenExt;
     camello_syntax::parse::parse(source)
         .syntax()
         .descendants_with_tokens()
         .filter_map(|element| element.into_token())
         .filter(|token| !token.token_kind().is_trivia())
-        .map(|token| (token.token_kind(), token.text().to_string()))
+        .map(|token| {
+            (
+                token.token_kind(),
+                // QW_STRING is stored as-is, so we split and rejoin to normalize whitespace
+                if token.token_kind() == TokenKind::QW_STRING {
+                    token
+                        .text()
+                        .to_string()
+                        .split_ascii_whitespace()
+                        .filter(|s| !s.is_empty())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                } else {
+                    token.text().to_string()
+                },
+            )
+        })
         .collect()
 }
 
@@ -284,7 +301,6 @@ fn verbatim_regions_survive_untouched() {
         "=head1 NAME\n\n   indented pod\n\n=cut\n\nmy $x = 1;\n",
         "my $x = 1;\n__DATA__\n   raw ; stuff\n",
         "$x =~ s{  a  }{  b  }g;\n",
-        "my @w = qw(  a   b  );\n",
     ] {
         assert_idempotent(source);
         assert_preserves_semantics(source);

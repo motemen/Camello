@@ -1072,33 +1072,68 @@ impl<'a> Builder<'a> {
         };
 
         let end = opening.text_range().end() - node.text_range().start();
+        // "qw("
         let prefix = node.text().slice(..end).to_string();
-        let broken = qw_string
-            .text()
-            .split_once('\n')
-            .is_some_and(|(first, _)| first.trim().is_empty());
+        let qw_string_text = qw_string.text();
+        let broken = match qw_string_text.split_once('\n') {
+            // One line case
+            None => {
+                let words = qw_string_text.split_ascii_whitespace().collect::<Vec<_>>();
+                let padded = !words.is_empty()
+                    && qw_string_text.starts_with(|c: char| c.is_ascii_whitespace());
+                return Doc::concat(vec![
+                    leading,
+                    Doc::Raw(prefix.into()),
+                    if padded { Doc::Space } else { Doc::Nil },
+                    Doc::Raw(words.join(" ").into()),
+                    if padded { Doc::Space } else { Doc::Nil },
+                    Doc::Token(closing),
+                    trailing,
+                ]);
+            }
+            Some((first, _)) => first.trim_ascii().is_empty(),
+        };
 
         let mut items = vec![Doc::SoftLine];
-        for (i, line) in qw_string.text().split('\n').enumerate() {
+        let lines = qw_string.text().split('\n').collect::<Vec<_>>();
+        let own_line = lines
+            .last()
+            .is_some_and(|line| line.trim_ascii().is_empty());
+        let num_lines = lines.len();
+        for (i, line) in lines.iter().enumerate() {
             if i > 0 {
                 items.push(Doc::HardLine);
             }
-            items.push(Doc::Raw(line.trim_ascii().into()));
+            let line = line.trim_ascii();
+            if line.is_empty() && 0 < i && i < num_lines - 1 {
+                items.push(Doc::BlankLine);
+            } else {
+                items.push(Doc::Raw(line.trim_ascii().into()));
+            }
         }
-        Doc::rooted(Doc::hanging(
-            Some(0),
+
+        Doc::concat(vec![
+            leading,
             Doc::group(
                 broken,
                 Doc::concat(vec![
-                    leading,
                     Doc::Raw(prefix.into()),
-                    Doc::indent(Doc::concat(items)),
-                    Doc::SoftLine,
-                    Doc::Token(closing),
-                    trailing,
+                    Doc::rooted(Doc::hanging(
+                        Some(0),
+                        Doc::concat(vec![
+                            Doc::indent(Doc::concat(items)),
+                            if own_line {
+                                Doc::HardLine
+                            } else {
+                                Doc::SoftLine
+                            },
+                            Doc::Token(closing),
+                        ]),
+                    )),
                 ]),
             ),
-        ))
+            trailing,
+        ])
     }
 
     /// A quote-like operator: one lexical run (the lexer contract), and so one atom.
@@ -1852,9 +1887,12 @@ fn breaks(doc: &Doc) -> bool {
         Doc::UserLine { broken, .. } => *broken,
         Doc::Raw(text) => text.contains('\n'),
         Doc::Group { broken, .. } => *broken || doc.children().iter().any(breaks),
-        Doc::Concat(_) | Doc::Indent(_) | Doc::Continuation(_) | Doc::Rooted { .. } => {
-            doc.children().iter().any(breaks)
-        }
+        Doc::Concat(_)
+        | Doc::Indent(_)
+        | Doc::Continuation(_)
+        | Doc::Rooted { .. }
+        | Doc::Hanging { .. }
+        | Doc::Statements(_) => doc.children().iter().any(breaks),
         _ => false,
     }
 }
