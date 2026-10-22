@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+`camello format` output changes: a file formatted by 0.2.4 may not pass
+`--check` where it holds a `qw(...)` (Changed) or a bracket closed on a line of
+its own after a call without parentheses (Fixed).
+
+### Changed
+
+- A multi-line `qw(...)` is indented like a bracket, and the spacing inside a
+  one-line one is normalised (INDENT-2, SPACING-7, #386).
+
+### Fixed
+
+- A closing bracket written on a line of its own stays there when the bracket
+  holds a call without parentheses (INDENT-2).
+
 ## 0.2.4 — 2026-10-14
 
 ### Added
