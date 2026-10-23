@@ -5,7 +5,7 @@
 //! — replacing the seven separate "does the source have a newline here"
 //! predicates the old formatter had scattered across five files.
 
-use camello_syntax::ast::tokens;
+use camello_syntax::ast::{qw_words, tokens, QW_WHITESPACE};
 use rowan::TextSize;
 use unicode_width::UnicodeWidthStr;
 
@@ -1078,9 +1078,8 @@ impl<'a> Builder<'a> {
         let broken = match qw_string_text.split_once('\n') {
             // One line case
             None => {
-                let words = qw_string_text.split_ascii_whitespace().collect::<Vec<_>>();
-                let padded = !words.is_empty()
-                    && qw_string_text.starts_with(|c: char| c.is_ascii_whitespace());
+                let words = qw_words(qw_string_text).collect::<Vec<_>>();
+                let padded = !words.is_empty() && qw_string_text.starts_with(QW_WHITESPACE);
                 return Doc::concat(vec![
                     leading,
                     Doc::Raw(prefix.into()),
@@ -1893,7 +1892,13 @@ fn breaks(doc: &Doc) -> bool {
         | Doc::Rooted { .. }
         | Doc::Hanging { .. }
         | Doc::Statements(_) => doc.children().iter().any(breaks),
-        _ => false,
+        Doc::Anchor(_, _)
+        | Doc::Shape(_)
+        | Doc::Space
+        | Doc::Token(_)
+        | Doc::Nil
+        | Doc::Line
+        | Doc::SoftLine => false,
     }
 }
 

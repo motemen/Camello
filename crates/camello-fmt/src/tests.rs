@@ -22,31 +22,7 @@ fn assert_idempotent(source: &str) {
 
 /// The non-trivia token sequence must survive formatting (the formatter contract).
 fn tokens(source: &str) -> Vec<(TokenKind, String)> {
-    // FIXME: This implementation duplicates token_stream()
-    use camello_syntax::lang::TokenExt;
-    camello_syntax::parse::parse(source)
-        .syntax()
-        .descendants_with_tokens()
-        .filter_map(|element| element.into_token())
-        .filter(|token| !token.token_kind().is_trivia())
-        .map(|token| {
-            (
-                token.token_kind(),
-                // QW_STRING is stored as-is, so we split and rejoin to normalize whitespace
-                if token.token_kind() == TokenKind::QW_STRING {
-                    token
-                        .text()
-                        .to_string()
-                        .split_ascii_whitespace()
-                        .filter(|s| !s.is_empty())
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                } else {
-                    token.text().to_string()
-                },
-            )
-        })
-        .collect()
+    camello_syntax::ast::semantic_tokens(&camello_syntax::parse::parse(source).syntax()).collect()
 }
 
 #[track_caller]
