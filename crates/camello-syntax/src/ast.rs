@@ -95,6 +95,16 @@ pub fn joined_text(node: &SyntaxNode) -> String {
     out
 }
 
+/// The words of a `qw` list's contents, split as perl splits them.
+///
+/// Only on the six ASCII whitespace characters, whatever the pragmas: perl
+/// splits a `qw` while it tokenizes, so `use utf8` does not make a no-break
+/// space a separator, and a vertical tab is one.
+pub fn qw_words(text: &str) -> impl Iterator<Item = &str> {
+    text.split([' ', '\t', '\n', '\x0B', '\x0C', '\r'])
+        .filter(|word| !word.is_empty())
+}
+
 // ===== Files, packages, uses =====
 
 impl Root {
@@ -867,13 +877,7 @@ impl QwExpr {
     pub fn words(&self) -> Vec<String> {
         tokens(&self.0)
             .find(|token| token.token_kind() == TokenKind::QW_STRING)
-            .map(|token| {
-                token
-                    .text()
-                    .split_whitespace()
-                    .map(str::to_string)
-                    .collect()
-            })
+            .map(|token| qw_words(token.text()).map(str::to_string).collect())
             .unwrap_or_default()
     }
 }
