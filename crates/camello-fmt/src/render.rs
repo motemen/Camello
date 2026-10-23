@@ -50,6 +50,9 @@ pub struct Line {
     /// Part of a verbatim region. Its trailing whitespace is content, not
     /// formatting, so it is left alone.
     pub verbatim: bool,
+    /// The last code written on it opens a brace. Asked of what was written
+    /// rather than of the text, where a comment can end in `{` too.
+    pub opens: bool,
 }
 
 impl Line {
@@ -306,11 +309,11 @@ impl<'a> Renderer<'a> {
                 // pass closes up, so the first pass was not a fixed point.
                 let pending = !self.current.text.trim().is_empty();
                 let suppress = if pending {
-                    self.current.text.trim_end().ends_with('{')
+                    self.current.opens
                 } else {
                     self.lines
                         .last()
-                        .is_none_or(|line| line.is_blank() || line.text.trim_end().ends_with('{'))
+                        .is_none_or(|line| line.is_blank() || line.opens)
                 };
                 if !suppress {
                     if pending {
@@ -379,6 +382,7 @@ impl<'a> Renderer<'a> {
                     self.newline();
                 }
                 self.write(text);
+                self.current.opens = false;
                 self.continuation = continuation;
                 self.hanging_continuation = hanging_continuation;
             }
@@ -411,6 +415,7 @@ impl<'a> Renderer<'a> {
                     self.current.text.push(' ');
                 }
                 self.current.text.push_str(text);
+                self.current.opens = false;
                 self.line_closed = true;
             }
         }
@@ -425,6 +430,9 @@ impl<'a> Renderer<'a> {
         }
         self.ensure_indent();
         self.current.text.push_str(text);
+        if !text.trim().is_empty() {
+            self.current.opens = text.trim_end().ends_with('{');
+        }
     }
 
     /// Verbatim content: written exactly, and any newlines inside it end lines
@@ -447,6 +455,7 @@ impl<'a> Renderer<'a> {
             // Deliberately not `write`: the continuation of a raw atom starts at
             // column 0, because that is where it was.
             self.current.text.push_str(part);
+            self.current.opens = false;
             mark_terminator(&mut self.current, index, &parts);
         }
     }

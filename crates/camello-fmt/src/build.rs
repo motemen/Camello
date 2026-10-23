@@ -5,6 +5,7 @@
 //! — replacing the seven separate "does the source have a newline here"
 //! predicates the old formatter had scattered across five files.
 
+use camello_syntax::ast::{qw_words, tokens, QW_WHITESPACE};
 use rowan::TextSize;
 use unicode_width::UnicodeWidthStr;
 
@@ -381,6 +382,7 @@ impl<'a> Builder<'a> {
             NodeKind::SUBSCRIPT => self.sequence(node),
             NodeKind::BLOCK_DEREF_EXPR => self.deref_block(node),
             NodeKind::LIST_CALL_EXPR => self.list_call(node),
+            NodeKind::QW_EXPR => self.qw(node),
             kind if is_quote_like_node(kind) => self.quote_like(node),
             _ => self.sequence(node),
         }
@@ -1050,6 +1052,87 @@ impl<'a> Builder<'a> {
             .map(|token| Doc::Raw(token.text().into()))
             .collect();
         Doc::concat(parts)
+    }
+
+    fn qw(&mut self, node: &SyntaxNode) -> Doc {
+        let leading = self.leading_docs_of(node);
+        let trailing = match last_token(node) {
+            Some(token) => self.trailing_comment(&token),
+            None => Doc::Nil,
+        };
+        let mut it = tokens(node);
+        let mut next = |kind| it.next().filter(|token| token.token_kind() == kind);
+        let (Some(_), Some(opening), Some(qw_string), Some(closing)) = (
+            next(TokenKind::QW_KW),
+            next(TokenKind::DELIMITER),
+            next(TokenKind::QW_STRING),
+            next(TokenKind::DELIMITER),
+        ) else {
+            return self.quote_like(node);
+        };
+
+        let end = opening.text_range().end() - node.text_range().start();
+        // "qw("
+        let prefix = node.text().slice(..end).to_string();
+        let qw_string_text = qw_string.text();
+        let broken = match qw_string_text.split_once('\n') {
+            // One line case
+            None => {
+                let words = qw_words(qw_string_text).collect::<Vec<_>>();
+                let padded = !words.is_empty() && qw_string_text.starts_with(QW_WHITESPACE);
+                return Doc::concat(vec![
+                    leading,
+                    Doc::Raw(prefix.into()),
+                    if padded { Doc::Space } else { Doc::Nil },
+                    Doc::Raw(words.join(" ").into()),
+                    if padded { Doc::Space } else { Doc::Nil },
+                    Doc::Token(closing),
+                    trailing,
+                ]);
+            }
+            Some((first, _)) => first.trim_ascii().is_empty(),
+        };
+
+        let mut items = vec![Doc::SoftLine];
+        let lines = qw_string.text().split('\n').collect::<Vec<_>>();
+        let own_line = lines
+            .last()
+            .is_some_and(|line| line.trim_ascii().is_empty());
+        let num_lines = lines.len();
+        for (i, line) in lines.iter().enumerate() {
+            if i > 0 {
+                items.push(Doc::HardLine);
+            }
+            let line = line.trim_ascii();
+            if line.is_empty() && 0 < i && i < num_lines - 1 {
+                items.push(Doc::BlankLine);
+            } else {
+                items.push(Doc::Raw(line.trim_ascii().into()));
+            }
+        }
+
+        Doc::concat(vec![
+            leading,
+            Doc::group(
+                broken,
+                Doc::concat(vec![
+                    Doc::Raw(prefix.into()),
+                    Doc::rooted(Doc::hanging(
+                        Some(0),
+                        Doc::concat(vec![
+                            Doc::indent(Doc::concat(items)),
+                            if own_line {
+                                Doc::HardLine
+                            } else {
+                                Doc::SoftLine
+                            },
+                            Doc::Token(closing),
+                        ]),
+                    )),
+                ]),
+            ),
+            trailing,
+        ])
     }
 
     /// A quote-like operator: one lexical run (the lexer contract), and so one atom.
@@ -1803,10 +1886,19 @@ fn breaks(doc: &Doc) -> bool {
         Doc::UserLine { broken, .. } => *broken,
         Doc::Raw(text) => text.contains('\n'),
         Doc::Group { broken, .. } => *broken || doc.children().iter().any(breaks),
-        Doc::Concat(_) | Doc::Indent(_) | Doc::Continuation(_) | Doc::Rooted { .. } => {
-            doc.children().iter().any(breaks)
-        }
-        _ => false,
+        Doc::Concat(_)
+        | Doc::Indent(_)
+        | Doc::Continuation(_)
+        | Doc::Rooted { .. }
+        | Doc::Hanging { .. }
+        | Doc::Statements(_) => doc.children().iter().any(breaks),
+        Doc::Anchor(_, _)
+        | Doc::Shape(_)
+        | Doc::Space
+        | Doc::Token(_)
+        | Doc::Nil
+        | Doc::Line
+        | Doc::SoftLine => false,
     }
 }
 
