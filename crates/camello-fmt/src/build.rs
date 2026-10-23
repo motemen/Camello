@@ -1893,7 +1893,13 @@ fn breaks(doc: &Doc) -> bool {
         | Doc::Rooted { .. }
         | Doc::Hanging { .. }
         | Doc::Statements(_) => doc.children().iter().any(breaks),
-        _ => false,
+        Doc::Anchor(_, _)
+        | Doc::Shape(_)
+        | Doc::Space
+        | Doc::Token(_)
+        | Doc::Nil
+        | Doc::Line
+        | Doc::SoftLine => false,
     }
 }
 
