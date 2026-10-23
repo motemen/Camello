@@ -219,6 +219,19 @@ fn a_word_list_is_its_words() {
 }
 
 #[test]
+fn a_word_list_splits_on_ascii_whitespace_only() {
+    assert_eq!(
+        qw_words(" a\tb\n\x0Bc\x0C\rd  ").collect::<Vec<_>>(),
+        vec!["a", "b", "c", "d"]
+    );
+    // Not a separator to perl, even under `use utf8`.
+    assert_eq!(
+        qw_words("a\u{A0}b c\u{3000}d").collect::<Vec<_>>(),
+        vec!["a\u{A0}b", "c\u{3000}d"]
+    );
+}
+
+#[test]
 fn an_assignment_has_a_target_and_a_value() {
     let assign: Assign = first("$x //= 1;");
     assert_eq!(

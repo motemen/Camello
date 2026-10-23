@@ -2,8 +2,24 @@
 
 ## Unreleased
 
+`camello format` output changes: a file formatted by 0.2.4 may not pass
+`--check` where it holds a `qw(...)` (Changed), a bracket closed on a line of
+its own after a call without parentheses, or a blank line after a comment
+ending in `{` (Fixed).
+
+### Changed
+
+- A multi-line `qw(...)` is indented like a bracket, and the spacing inside a
+  one-line one is normalised (INDENT-2, SPACING-7, #386).
+
 ### Fixed
 
+- A closing bracket written on a line of its own stays there when the bracket
+  holds a call without parentheses (INDENT-2).
+- A blank line after a comment that ends in `{` is kept (BLANK_LINE-2).
+- A variable opened at the parser's nesting limit is reported rather than
+  aborting the run.
+- `camello check --error-on error` wins over an `error-on` in `camello.toml`.
 - `exit`, `goto`, `throw` and `->throw` guard like `return` and `die`:
   `exit unless defined $x;` leaves `$x` defined below it (NARROW-5, #378).
 - `my $x = shift || 'default'` left unread is an `unused-parameter`, and

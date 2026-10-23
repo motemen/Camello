@@ -246,7 +246,8 @@ These are asked rather than assumed. `camello dev check` puts six invariants to
 arbitrary source (`src/check`), and I1-I3 are among them: verbatim preservation
 is I1, and idempotency covers I2 and I3 both. The rest are a clean parse, the
 tree's normal form — the trivia model's placement rule, asserted — semantic
-preservation (input and output re-lex to the same non-trivia tokens), and
-comment preservation. A seventh, the deparse oracle, asks perl itself and is
+preservation (input and output re-lex to the same non-trivia tokens, a
+`qw(...)` compared by its words, since the whitespace between them is layout),
+and comment preservation. A seventh, the deparse oracle, asks perl itself and is
 opt-in: running a perl over a file runs that file's `BEGIN` blocks, which is not
 something a checker may do to somebody's corpus unless told to.
