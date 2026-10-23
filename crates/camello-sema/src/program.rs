@@ -305,8 +305,11 @@ impl Program {
     /// files before it. The first file to declare a sub is the one its name
     /// means.
     fn index_file(&mut self, index: usize, decls: &FileDecls) {
-        for (_, name) in &decls.packages {
-            self.packages.entry(name.clone()).or_default().push(index);
+        for span in &decls.packages {
+            self.packages
+                .entry(span.name.clone())
+                .or_default()
+                .push(index);
         }
         for symbol in &decls.subs {
             let key = (symbol.package.clone(), symbol.name.clone());

@@ -798,15 +798,15 @@ impl Pass<'_> {
                 .filter_map(|element| element.into_token())
                 .any(|token| token.token_kind() == kind)
         };
-        let leaves = statement.descendants().any(|node| {
-            ast::Call::cast(node).is_some_and(|call| {
-                matches!(
-                    call.callee_name().as_deref(),
-                    Some("return" | "die" | "croak" | "confess" | "next" | "last")
-                )
-            })
+        // `next` and `last` leave what is below the guard as surely as
+        // `return` does, though not the sub.
+        let leaves_below = statement.descendants().any(|node| {
+            leaves(&node)
+                || ast::Call::cast(node).is_some_and(|call| {
+                    matches!(call.callee_name().as_deref(), Some("next" | "last"))
+                })
         });
-        if !leaves {
+        if !leaves_below {
             return;
         }
         // `return unless COND` and `COND or return` both mean "below here,
@@ -1906,11 +1906,7 @@ impl Pass<'_> {
             if text == "__PACKAGE__" {
                 return Type::InstanceOf(self.package.clone());
             }
-            if text
-                .chars()
-                .next()
-                .is_some_and(|ch| ch.is_uppercase() || ch == '_')
-            {
+            if looks_like_a_package(&text) {
                 return Type::InstanceOf(text);
             }
             return Type::Unknown;
@@ -2828,11 +2824,24 @@ fn bareword_class(node: &SyntaxNode) -> Option<String> {
         return None;
     }
     let name = call.callee_name()?;
-    // `__PACKAGE__` and `shift` are not class names.
-    name.chars()
-        .next()
-        .is_some_and(char::is_uppercase)
-        .then_some(name)
+    looks_like_a_package(&name).then_some(name)
+}
+
+/// Whether a bareword or a literal reads as a package name.
+///
+/// GUESS: a package is spelled with a capital or a leading `_`.
+/// Evidence: that is how CPAN spells them, while a lowercase word before `->`
+/// is a call — `shift->method` — or a pragma, and `__PACKAGE__` is read
+/// where it is written. `arity`'s bareword invocant takes any word, because it
+/// asks the program for the sub before it says anything.
+/// Wrong: a lowercase package (`main->new`) gets no class, and a capitalised
+/// sub called with no arguments before `->` is taken for one.
+fn looks_like_a_package(word: &str) -> bool {
+    word != "__PACKAGE__"
+        && word
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_uppercase() || ch == '_')
 }
 
 /// What an arithmetic operator does to whole numbers.
@@ -3611,20 +3620,22 @@ fn join_tails(tails: &[Tail], has_else: bool) -> Tail {
 }
 
 /// Whether a statement hands control back rather than leaving a value.
+fn leaves_the_sub(statement: &SyntaxNode) -> bool {
+    sole_expression(statement).is_some_and(|expression| leaves(&expression))
+}
+
+/// Whether a call is one control does not come back from.
 ///
 /// `throw` is here as a method as well as a bareword: `My::Error->throw(...)`
 /// is how a class-based exception is raised, and it is the same bottom.
-fn leaves_the_sub(statement: &SyntaxNode) -> bool {
-    let Some(expression) = sole_expression(statement) else {
-        return false;
-    };
-    if let Some(call) = ast::Call::cast(expression.clone()) {
+fn leaves(node: &SyntaxNode) -> bool {
+    if let Some(call) = ast::Call::cast(node.clone()) {
         return matches!(
             call.callee_name().as_deref(),
             Some("return" | "die" | "croak" | "confess" | "throw" | "exit" | "goto")
         );
     }
-    ast::MethodCall::cast(expression)
+    ast::MethodCall::cast(node.clone())
         .and_then(|call| call.method_name())
         .as_deref()
         == Some("throw")
@@ -3732,34 +3743,7 @@ fn has_hash_sigil(node: &SyntaxNode) -> bool {
 
 /// Whether an expression is a list rather than one value.
 fn is_plural(node: &SyntaxNode) -> bool {
-    match node.node_kind() {
-        NodeKind::ARRAY_VAR | NodeKind::HASH_VAR | NodeKind::SLICE_EXPR => true,
-        NodeKind::DEREF_EXPR | NodeKind::BLOCK_DEREF_EXPR => ast::tokens(node).any(|token| {
-            matches!(
-                token.token_kind(),
-                TokenKind::ARRAY_SIGIL | TokenKind::HASH_SIGIL
-            )
-        }),
-        NodeKind::POSTFIX_DEREF_EXPR => ast::tokens(node).any(|token| {
-            matches!(
-                token.token_kind(),
-                TokenKind::POSTFIX_DEREF_ARRAY | TokenKind::POSTFIX_DEREF_HASH
-            )
-        }),
-        NodeKind::PAREN_EXPR => ast::ParenExpr::cast(node.clone())
-            .and_then(|view| view.inner())
-            .is_some_and(|inner| is_plural(&inner)),
-        NodeKind::LIST_EXPR => match sole_child(node) {
-            Some(only) => is_plural(&only),
-            // `(A, B)`, and also `()`, whose scalar value is `undef` but
-            // whose *list* half is what an author writing it meant.
-            None => true,
-        },
-        // Either branch being a list makes the whole thing one, whichever way
-        // the condition goes — `wantarray` included.
-        NodeKind::TERNARY_EXPR => node.children().skip(1).any(|branch| is_plural(&branch)),
-        _ => false,
-    }
+    crate::arity::valence(node) == crate::arity::Valence::Many
 }
 
 /// The two branches of `wantarray ? LIST : SCALAR`, in that order.
