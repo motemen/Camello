@@ -599,7 +599,18 @@ fn token_stream(source: &str) -> Vec<(String, String)> {
         .map(|token| {
             (
                 format!("{:?}", token.token_kind()),
-                token.text().to_string(),
+                // QW_STRING is stored as-is, so we split and rejoin to normalize whitespace
+                if token.token_kind() == TokenKind::QW_STRING {
+                    token
+                        .text()
+                        .to_string()
+                        .split_ascii_whitespace()
+                        .filter(|s| !s.is_empty())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                } else {
+                    token.text().to_string()
+                },
             )
         })
         .collect()
