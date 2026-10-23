@@ -3,8 +3,9 @@
 ## Unreleased
 
 `camello format` output changes: a file formatted by 0.2.4 may not pass
-`--check` where it holds a `qw(...)` (Changed) or a bracket closed on a line of
-its own after a call without parentheses (Fixed).
+`--check` where it holds a `qw(...)` (Changed), a bracket closed on a line of
+its own after a call without parentheses, or a blank line after a comment
+ending in `{` (Fixed).
 
 ### Changed
 
@@ -15,6 +16,10 @@ its own after a call without parentheses (Fixed).
 
 - A closing bracket written on a line of its own stays there when the bracket
   holds a call without parentheses (INDENT-2).
+- A blank line after a comment that ends in `{` is kept (BLANK_LINE-2).
+- A variable opened at the parser's nesting limit is reported rather than
+  aborting the run.
+- `camello check --error-on error` wins over an `error-on` in `camello.toml`.
 
 ## 0.2.4 — 2026-10-14
 
