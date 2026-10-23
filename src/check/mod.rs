@@ -19,7 +19,10 @@
 pub mod deparse;
 
 use crate::{format_perl, parse_perl};
-use camello_syntax::lang::{TokenExt, TokenKind};
+use camello_syntax::{
+    ast::semantic_tokens,
+    lang::{TokenExt, TokenKind},
+};
 use std::ops::Range;
 
 /// Whose defect a violation is.
@@ -591,28 +594,8 @@ fn verbatim_preservation(source: &str, formatted: &str) -> Option<Violation> {
 /// Lexing is parser-driven — `expect` comes from the grammar (the lexer contract) — so
 /// the faithful way to re-lex is to parse and read the leaves.
 fn token_stream(source: &str) -> Vec<(String, String)> {
-    parse_perl(source)
-        .0
-        .descendants_with_tokens()
-        .filter_map(|element| element.into_token())
-        .filter(|token| !token.token_kind().is_trivia())
-        .map(|token| {
-            (
-                format!("{:?}", token.token_kind()),
-                // QW_STRING is stored as-is, so we split and rejoin to normalize whitespace
-                if token.token_kind() == TokenKind::QW_STRING {
-                    token
-                        .text()
-                        .to_string()
-                        .split_ascii_whitespace()
-                        .filter(|s| !s.is_empty())
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                } else {
-                    token.text().to_string()
-                },
-            )
-        })
+    semantic_tokens(&parse_perl(source).0)
+        .map(|(kind, text)| (format!("{:?}", kind), text))
         .collect()
 }
 

@@ -77,6 +77,25 @@ pub fn tokens(node: &SyntaxNode) -> impl Iterator<Item = SyntaxToken> {
         .filter(|token| !token.token_kind().is_trivia())
 }
 
+/// Every non-trivia token of the node, with its kind and text.
+///
+/// Specifically, `QW_STRING` is compared by its words.
+pub fn semantic_tokens(node: &SyntaxNode) -> impl Iterator<Item = (TokenKind, String)> {
+    node.descendants_with_tokens()
+        .filter_map(|element| element.into_token())
+        .filter(|token| !token.token_kind().is_trivia())
+        .map(|token| {
+            (
+                token.token_kind(),
+                if token.token_kind() == TokenKind::QW_STRING {
+                    qw_words(token.text()).collect::<Vec<_>>().join(" ")
+                } else {
+                    token.text().to_string()
+                },
+            )
+        })
+}
+
 /// The node's non-trivia token text, concatenated.
 ///
 /// This is how a dotted name (`Foo::Bar`) is read back: the lexer emits it as
@@ -95,14 +114,15 @@ pub fn joined_text(node: &SyntaxNode) -> String {
     out
 }
 
+pub const QW_WHITESPACE: [char; 6] = [' ', '\t', '\n', '\x0B', '\x0C', '\r'];
+
 /// The words of a `qw` list's contents, split as perl splits them.
 ///
 /// Only on the six ASCII whitespace characters, whatever the pragmas: perl
 /// splits a `qw` while it tokenizes, so `use utf8` does not make a no-break
 /// space a separator, and a vertical tab is one.
 pub fn qw_words(text: &str) -> impl Iterator<Item = &str> {
-    text.split([' ', '\t', '\n', '\x0B', '\x0C', '\r'])
-        .filter(|word| !word.is_empty())
+    text.split(QW_WHITESPACE).filter(|word| !word.is_empty())
 }
 
 // ===== Files, packages, uses =====
