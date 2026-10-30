@@ -5,12 +5,8 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use camello::cli;
 
-fn main() -> std::process::ExitCode {
-    match cli::run() {
-        Ok(exit) => exit.into(),
-        Err(err) => {
-            eprintln!("Error: {err}");
-            std::process::ExitCode::FAILURE
-        }
-    }
+/// The one place the process ends. An error is printed through miette's
+/// report handler — the same rendering a parse error already gets — and exits 1.
+fn main() -> miette::Result<std::process::ExitCode> {
+    cli::run().map(Into::into)
 }
