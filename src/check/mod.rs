@@ -222,10 +222,67 @@ pub struct Outcome {
 pub struct Unanswered {
     pub invariant: Invariant,
     /// The class, which is what a run's counts are grouped by.
-    pub why: &'static str,
+    pub why: Reason,
     /// What the thing that declined actually said. Empty where there is
     /// nothing to add — a parse failure is already reported on its own row.
     pub detail: String,
+}
+
+/// Why an invariant went unanswered: the class a run counts and folds by.
+///
+/// A closed set rather than a sentence, because a report groups by it and the
+/// hints in [`deparse::hint`] are keyed on it. [`Reason::as_str`] is what the
+/// report prints.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Reason {
+    /// The input does not parse cleanly, so none of the formatter's questions
+    /// are about a tree it was asked to handle.
+    NoCleanParse,
+    /// There was nowhere to put the text for perl to read.
+    NoWorkingDirectory,
+    /// The input uses a module perl cannot find. The reason a corpus run is
+    /// mostly unanswered, and the one worth telling the reader what to do
+    /// about: a file checked out of the tree it was installed in cannot find
+    /// what it uses.
+    NotInInc,
+    /// perl declined to load the input for some other reason: an XS
+    /// bootstrap, a `$VERSION` check.
+    CannotLoad,
+    /// The file compiled and means nothing at run time — POD, `package`, `use`,
+    /// forward declarations, and no ops under any of it. There is no program
+    /// here for perl to read differently, so there is nothing to ask about the
+    /// output.
+    NoOps,
+    /// perl never ran. Not something a file can be blamed for: no perl on PATH
+    /// any more, or no room to start a process.
+    CouldNotRun,
+    /// perl started and would not stop, and was killed at the timeout.
+    TimedOut,
+    /// `perl -c` was happy and `B::Deparse` was not — it exited non-zero, or
+    /// the file's own `BEGIN` time did.
+    WouldNotDeparse,
+}
+
+impl Reason {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Reason::NoCleanParse => "no clean parse",
+            Reason::NoWorkingDirectory => "a working directory could not be made",
+            Reason::NotInInc => "a module it uses is not in @INC",
+            Reason::CannotLoad => "perl cannot load the input",
+            Reason::NoOps => "the input deparses to nothing: no runtime ops in it",
+            Reason::CouldNotRun => "perl could not be run",
+            Reason::TimedOut => "perl did not finish before the timeout",
+            Reason::WouldNotDeparse => "perl would not deparse it",
+        }
+    }
+}
+
+impl std::fmt::Display for Reason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 /// Ask every invariant of `source` that camello can answer by itself.
@@ -268,7 +325,7 @@ pub fn check_report(source: &str, wanted: &[Invariant]) -> Outcome {
             .filter(|invariant| **invariant != Invariant::CleanParse)
             .map(|invariant| Unanswered {
                 invariant: *invariant,
-                why: "no clean parse",
+                why: Reason::NoCleanParse,
                 detail: String::new(),
             })
             .collect();
