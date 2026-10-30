@@ -424,6 +424,13 @@ impl Program {
     /// reporting one missing there would be the worst kind of false positive.
     #[must_use]
     pub fn has_unknown_ancestor(&self, package: &str) -> bool {
+        self.has_unknown_ancestor_in(package, &self.linearise(package))
+    }
+
+    /// [`Program::has_unknown_ancestor`] over a linearisation the caller has
+    /// already made, so that a resolution asking it last does not walk the
+    /// class graph a third time.
+    fn has_unknown_ancestor_in(&self, package: &str, order: &[String]) -> bool {
         if !self.knows_package(package) {
             return true;
         }
@@ -439,16 +446,16 @@ impl Program {
             }
             prefix = outer;
         }
-        for class in self.linearise(package) {
-            if !self.knows_package(&class) {
+        for class in order {
+            if !self.knows_package(class) {
                 return true;
             }
             // `AUTOLOAD` answers anything.
-            if self.sub(&class, "AUTOLOAD").is_some() {
+            if self.sub(class, "AUTOLOAD").is_some() {
                 return true;
             }
             let mut declares_anything = false;
-            for facts in self.facts(&class) {
+            for facts in self.facts(class) {
                 if facts.dynamic {
                     return true;
                 }
@@ -493,7 +500,7 @@ impl Program {
             // A package the run has seen the *name* of and nothing else — an
             // XS module whose `.pm` only loads a shared library — cannot be
             // said to be missing anything.
-            declares_anything |= self.by_package.contains_key(&class);
+            declares_anything |= self.by_package.contains_key(class);
             if !declares_anything {
                 return true;
             }
@@ -620,11 +627,12 @@ impl Program {
         if Self::UNIVERSAL.contains(&name) {
             return MethodLookup::Universal;
         }
-        for class in self.linearise(package) {
-            if let Some(symbol) = self.sub(&class, name) {
+        let order = self.linearise(package);
+        for class in &order {
+            if let Some(symbol) = self.sub(class, name) {
                 return MethodLookup::Sub(symbol);
             }
-            for facts in self.facts(&class) {
+            for facts in self.facts(class) {
                 for attribute in &facts.attributes {
                     if attribute.answers_to(name) {
                         return MethodLookup::Attribute(attribute);
@@ -640,8 +648,8 @@ impl Program {
         // (`docs/types.md`, METHOD-6). Asked after the class's own
         // declarations, because that is the order perl would find them in and
         // it keeps the common lookup as short as it was.
-        for class in self.linearise(package) {
-            for facts in self.facts(&class) {
+        for class in &order {
+            for facts in self.facts(class) {
                 for module in &facts.uses {
                     if !self
                         .facts(module)
@@ -656,7 +664,7 @@ impl Program {
                 }
             }
         }
-        if self.has_unknown_ancestor(package) {
+        if self.has_unknown_ancestor_in(package, &order) {
             MethodLookup::Unknown
         } else {
             MethodLookup::Missing
