@@ -11,6 +11,8 @@ ending in `{` (Fixed).
 
 - A multi-line `qw(...)` is indented like a bracket, and the spacing inside a
   one-line one is normalised (INDENT-2, SPACING-7, #386).
+- `camello check` stops on a value in `camello.toml` it cannot read even where
+  a flag overrides it, as it does on a file that does not parse (#384).
 
 ### Fixed
 
@@ -21,22 +23,27 @@ ending in `{` (Fixed).
   aborting the run.
 - `camello check --error-on error` wins over an `error-on` in `camello.toml`.
 - `exit`, `goto`, `throw` and `->throw` guard like `return` and `die`:
-  `exit unless defined $x;` leaves `$x` defined below it (NARROW-5, #378).
+  `exit unless defined $x;` leaves `$x` defined below it (NARROW-5, #384).
 - `my $x = shift || 'default'` left unread is an `unused-parameter`, and
   `my $x = shift @list` is no longer taken for a parameter by `arity`
-  (DIAG-12b, #378).
-- `@_` written in `m'...'` or a `<<'EOT'` body no longer silences `arity` (#378).
+  (DIAG-12b, #384).
+- `@_` written in `m'...'` or a `<<'EOT'` body no longer silences `arity`
+  (#384).
 - `arity` counts an argument that is a repeated string or a choice between two
-  single values: `f('-' x 3, 1)`, `f($c ? 1 : 2, 1)` (#378).
+  single values: `f('-' x 3, 1)`, `f($c ? 1 : 2, 1)` (#384).
+- A package spelled with a leading `_` is a class before `->` as it is in
+  `bless`: `_Hidden->new` makes an instance of `_Hidden` (#384).
+- A list missing its closing bracket, as `[1, 2 3]`, is one parse error, and
+  the bracket stays with the list rather than being reported again (#384).
 - A call inside `package Foo { ... }` resolves against `Foo`, and a `package`
   statement ends with the block it is written in, for the checker, the LSP's
-  definitions and its outline (ANNOT-1a, #378).
+  definitions and its outline (ANNOT-1a, #384).
 - `camello lsp` infers an open buffer's returns from the buffer, not disk, once
   the workspace is indexed, and re-derives the other open files' returns when a
-  file changes on disk (#378).
-- `lib` and `stubs` in `camello.toml` are relative to the file, so `camello check
-  --config-dir DIR` finds them; a bad value in the file is reported by its own
-  name rather than as a flag (#378).
+  file changes on disk (#384).
+- `lib` and `stubs` in `camello.toml` are relative to the file, so
+  `camello check --config-dir DIR` finds them; a bad value in the file is
+  reported by its own name rather than as a flag (#384).
 
 ## 0.2.4 — 2026-10-14
 
