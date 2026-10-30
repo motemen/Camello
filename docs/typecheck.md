@@ -189,10 +189,10 @@ what is left when the file declares nothing of the name.
 Package-level facts that are not symbols: `isa: Vec<Package>` (from
 `use parent`, `use base`, `extends`, `our @ISA = (...)`), `roles` (`with`,
 `does`), and the object framework in use (Moose, Moo, Mouse,
-Class::Accessor::Typed, Class::Accessor::Lite, Class::Tiny, plain `bless`, or
-none),
-because the framework decides whether `new` exists and what it accepts — and
-whether it *checks* what it accepts, which the `mk_new` family's does not.
+Class::Accessor::Typed, Class::Accessor::Lite, Class::Tiny, or none — a plain
+`bless` is none), because the framework decides whether `new` exists and what
+it accepts — and whether it *checks* what it accepts, which the `mk_new`
+family's does not.
 
 Method resolution is C3 over `isa` with roles flattened in, and falls back to
 `Unknown` — not an error — when any ancestor is itself `Unknown`. A class
