@@ -148,6 +148,10 @@ impl Backend {
     ///
     /// `None` when the document is not open. A thread that panicked answers
     /// with nothing found rather than an error, and says so in the log.
+    ///
+    /// Tables computed here because the held ones were a version behind are
+    /// remembered, while that version is still the open one: the next hover
+    /// before the debounced check runs is then answered without a body pass.
     async fn with_analysis<T>(
         &self,
         position: TextDocumentPositionParams,
@@ -156,20 +160,31 @@ impl Backend {
     where
         T: Default + Send + 'static,
     {
-        let snapshot = self.read().snapshot(&position.text_document.uri)?;
+        let uri = position.text_document.uri;
+        let snapshot = self.read().snapshot(&uri)?;
         let offset = snapshot.document.positions.offset(position.position);
         let outcome = tokio::task::spawn_blocking(move || {
-            let tables = snapshot.tables_now();
             let index = state::read(&snapshot.index);
             let context = analysis::context(&snapshot.document, &index, &snapshot.settings);
-            answer(&snapshot, &tables, &context, offset)
+            let tables = snapshot.tables_now(&context);
+            let answered = answer(&snapshot, &tables, &context, offset);
+            (answered, snapshot.computed(&tables).then_some(tables))
         })
         .await;
-        Some(
-            joined(&self.client, "a request", outcome)
-                .await
-                .unwrap_or_default(),
-        )
+        let (answered, computed) = joined(&self.client, "a request", outcome)
+            .await
+            .unwrap_or_default();
+        if let Some(tables) = computed {
+            let mut held = self.write();
+            if held
+                .documents
+                .get(&uri)
+                .is_some_and(|document| document.version == tables.version)
+            {
+                held.remember(&uri, tables);
+            }
+        }
+        Some(answered)
     }
 
     /// Wait out the debounce, then run the edit loop — unless a newer edit

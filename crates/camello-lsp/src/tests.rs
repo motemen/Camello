@@ -763,6 +763,40 @@ fn a_definition_in_an_unsaved_buffer_is_the_buffers() {
     assert!(found.ends_with("Dog.pm:3:5"), "{found}");
 }
 
+/// A request between an edit and its debounced check computes the new
+/// version's tables, and says they are worth keeping; one after the check
+/// reuses what the check left.
+#[test]
+fn tables_computed_for_a_request_are_marked_for_keeping() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let path = dir.path().join("main.pl");
+    fs::write(&path, "my $x = 1;\n").expect("a writable fixture");
+    let mut harness = Harness::open_workspace(dir.path());
+    let uri = harness.uri(&path);
+    harness.edit(&path, "my $x = 1;\n", 1);
+
+    let ask = |harness: &Harness| {
+        let snapshot = harness.state.snapshot(&uri).expect("the file is open");
+        let index = crate::state::read(&snapshot.index);
+        let context = analysis::context(&snapshot.document, &index, &snapshot.settings);
+        let tables = snapshot.tables_now(&context);
+        (tables.version, snapshot.computed(&tables))
+    };
+    assert_eq!(ask(&harness), (1, false));
+
+    // The edit is stored; its check has not run.
+    harness.state.documents.insert(
+        uri.clone(),
+        Arc::new(Document::new(
+            Some(path.clone()),
+            "my $x = 2;\n",
+            2,
+            Encoding::Utf16,
+        )),
+    );
+    assert_eq!(ask(&harness), (2, true));
+}
+
 /// Two walks in flight — startup and a `camello.toml` reload — and the older
 /// one finishing last: its graph read the configuration the newer one
 /// replaced, and it does not go in over the newer one's.

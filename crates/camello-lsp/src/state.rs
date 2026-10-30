@@ -14,7 +14,7 @@ use std::sync::{Arc, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use tower_lsp_server::ls_types::Uri;
 
-use crate::analysis::Tables;
+use crate::analysis::{Context, Tables};
 use crate::document::Document;
 use crate::index::{Builds, Index};
 use crate::position::Encoding;
@@ -148,16 +148,27 @@ impl Snapshot {
     /// the cached tables are usually a version or two behind. One body pass
     /// over one file is milliseconds; answering from a table that describes
     /// text the user has since changed is a wrong answer, which costs more.
+    ///
+    /// `context` is the one the request answers from: for a file the graph
+    /// does not hold it is a whole analysis of its own, and building it once
+    /// for the tables and again for the answer would be the same work twice.
     #[must_use]
-    pub fn tables_now(&self) -> Arc<Tables> {
+    pub fn tables_now(&self, context: &Context<'_>) -> Arc<Tables> {
         if let Some(tables) = &self.tables {
             if tables.version == self.document.version {
                 return Arc::clone(tables);
             }
         }
-        let index = read(&self.index);
-        let context = crate::analysis::context(&self.document, &index, &self.settings);
-        crate::analysis::analyse(&self.document, &context, &self.settings, true).tables
+        crate::analysis::analyse(&self.document, context, &self.settings, true).tables
+    }
+
+    /// Whether these tables are not the ones the snapshot was taken with —
+    /// computed for this request, and worth remembering for the next one.
+    #[must_use]
+    pub fn computed(&self, tables: &Arc<Tables>) -> bool {
+        self.tables
+            .as_ref()
+            .is_none_or(|held| !Arc::ptr_eq(held, tables))
     }
 }
 
