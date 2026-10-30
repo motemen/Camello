@@ -102,10 +102,11 @@ pub struct Program {
     files: Vec<FileEntry>,
     by_path: HashMap<PathBuf, usize>,
     subs: Vec<SubDecl>,
-    /// `(package, name)` to the first declaration of it. First rather than
+    /// Package, then name, to the first declaration of it. First rather than
     /// last: a redefinition later in a file is usually a conditional
-    /// alternative, and either answer is a guess.
-    by_name: HashMap<(String, String), usize>,
+    /// alternative, and either answer is a guess. Nested rather than keyed on
+    /// the pair so that a lookup borrows both names instead of copying them.
+    by_name: HashMap<String, HashMap<String, usize>>,
     /// Every sub a package declares, in declaration order. The closed set is
     /// what completion needs and what asking `by_name` cannot give
     /// (`docs/lsp.md`, "The method surface"); scanning `subs` for it would be
@@ -200,11 +201,15 @@ impl Program {
             return;
         };
         symbol.returns = returns.clone();
-        let key = (symbol.package.clone(), symbol.name.clone());
         // The flattened copy is only this sub's where the first-wins rule
         // picked this file; where it picked another, the name means the other
         // file's sub and this is not it.
-        if let Some(flat) = self.by_name.get(&key).copied() {
+        let flat = self
+            .by_name
+            .get(&symbol.package)
+            .and_then(|names| names.get(&symbol.name))
+            .copied();
+        if let Some(flat) = flat {
             if self.subs[flat].file == file {
                 self.subs[flat].returns = returns;
             }
@@ -312,9 +317,9 @@ impl Program {
                 .push(index);
         }
         for symbol in &decls.subs {
-            let key = (symbol.package.clone(), symbol.name.clone());
-            if !self.by_name.contains_key(&key) {
-                self.by_name.insert(key, self.subs.len());
+            let names = self.by_name.entry(symbol.package.clone()).or_default();
+            if !names.contains_key(&symbol.name) {
+                names.insert(symbol.name.clone(), self.subs.len());
                 self.by_package
                     .entry(symbol.package.clone())
                     .or_default()
@@ -341,7 +346,8 @@ impl Program {
     #[must_use]
     pub fn sub(&self, package: &str, name: &str) -> Option<&SubDecl> {
         self.by_name
-            .get(&(package.to_string(), name.to_string()))
+            .get(package)
+            .and_then(|names| names.get(name))
             .map(|index| &self.subs[*index])
     }
 
