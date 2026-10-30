@@ -144,19 +144,6 @@ pub struct Options {
     pub guard_classes: Vec<String>,
 }
 
-impl Options {
-    /// What a fixture asks for, read from where it lives, so that the one
-    /// setting a fixture can ask for needs no marker inside the file that the
-    /// formatter would have to preserve.
-    #[must_use]
-    pub fn for_fixture(path: &Path) -> Self {
-        Options {
-            strict_annotations: path.to_string_lossy().contains("strict-annotations"),
-            ..Options::default()
-        }
-    }
-}
-
 /// One file's declarations, off the cache when the file has not changed since
 /// they were written.
 ///
