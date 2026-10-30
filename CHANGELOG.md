@@ -44,6 +44,16 @@ ending in `{` (Fixed).
 - `lib` and `stubs` in `camello.toml` are relative to the file, so
   `camello check --config-dir DIR` finds them; a bad value in the file is
   reported by its own name rather than as a flag (#384).
+- `camello lsp` answers hover and completion while edits are being checked,
+  rather than after their debounce (#399).
+- `camello lsp` keeps answering after the checker panics, and logs the panic
+  (#399).
+- Go-to-definition into an open, unsaved file lands on the buffer's line, not
+  disk's (#399).
+- A `camello.toml` change while the workspace is still being indexed is not
+  undone when the first index finishes (#399).
+- The VS Code extension makes no new output channel or file watcher on each
+  server restart, and the server gets each watched-file event once (#399).
 
 ## 0.2.4 — 2026-10-14
 
