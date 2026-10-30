@@ -74,7 +74,8 @@ collect() {
   if [ ${#paths[@]} -gt 0 ]; then
     for path in "${paths[@]}"; do
       if [ -d "$path" ]; then
-        find "$path" \( -name '*.pm' -o -name '*.pl' -o -name '*.t' \) 2>/dev/null
+        # The binary's own list (`EXTENSIONS` in camello-sema's workspace.rs).
+        find "$path" \( -name '*.pl' -o -name '*.pm' -o -name '*.t' -o -name '*.psgi' \) 2>/dev/null
       else
         printf '%s\n' "$path"
       fi
