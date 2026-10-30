@@ -487,7 +487,7 @@ impl Program {
             // A package the run has seen the *name* of and nothing else — an
             // XS module whose `.pm` only loads a shared library — cannot be
             // said to be missing anything.
-            declares_anything |= self.subs.iter().any(|symbol| symbol.package == class);
+            declares_anything |= self.by_package.contains_key(&class);
             if !declares_anything {
                 return true;
             }
