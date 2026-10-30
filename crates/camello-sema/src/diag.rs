@@ -89,9 +89,10 @@ pub enum Code {
     /// unknown ancestor.
     UnknownMethod,
     /// A `Maybe[...]` dereferenced or called on without a narrowing check.
-    /// `info`, because every subscript is a `Maybe` by construction: the code
-    /// this is about is idiomatic and mostly right, and it is asked for rather
-    /// than pressed on the reader.
+    /// `warning`, though every subscript is a `Maybe` by construction and the
+    /// code it points at is often idiomatic: "this may dereference `undef`" is
+    /// a claim about the program in front of it, not about a world camello has
+    /// not read (`docs/types.md`, DIAG-14a).
     MaybeDeref,
     /// An annotation that does not parse. Reported because an annotation that
     /// is silently ignored is worse than none.
