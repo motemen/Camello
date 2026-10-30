@@ -473,6 +473,7 @@ fn read(text: &str, in_comment: bool) -> Result<Type, ParseError> {
     let mut parser = Parser {
         tokens: lex(text)?,
         index: 0,
+        depth: 0,
         in_comment,
     };
     let ty = parser.union()?;
@@ -654,6 +655,8 @@ fn lex(text: &str) -> Result<Vec<Token>, ParseError> {
 struct Parser {
     tokens: Vec<Token>,
     index: usize,
+    /// How many brackets and parentheses the parser is inside.
+    depth: usize,
     /// Whether the text came from a `Returns:` comment rather than from a
     /// declaration perl itself reads.
     in_comment: bool,
@@ -695,7 +698,24 @@ impl Parser {
         Ok(Type::union(members))
     }
 
+    /// How deep a type expression may nest. No type a program declares comes
+    /// near it; it is there so that one written to be deep is an error rather
+    /// than a stack overflow.
+    const MAX_DEPTH: usize = 64;
+
     fn primary(&mut self) -> Result<Type, ParseError> {
+        if self.depth >= Self::MAX_DEPTH {
+            return Err(ParseError {
+                message: "a type expression nested too deep".to_string(),
+            });
+        }
+        self.depth += 1;
+        let ty = self.term();
+        self.depth -= 1;
+        ty
+    }
+
+    fn term(&mut self) -> Result<Type, ParseError> {
         match self.bump() {
             Some(Token::OpenParen) => {
                 let inner = self.union()?;

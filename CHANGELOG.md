@@ -16,6 +16,19 @@ ending in `{` (Fixed).
 
 ### Fixed
 
+- `0x1E` and other hex, binary and octal literals are `Int`, not `Num` (#401).
+- A `return` or `die` inside an anonymous sub or `eval` no longer makes the
+  statement holding it a guard; `COND or do { ...; return }` still is
+  (NARROW-5, #401).
+- `my $x :Attr(...) = f()` is a scalar assignment (#401).
+- `required => ''`, `'0'`, `0.0` and `undef` are false, as perl reads them
+  (#401).
+- A list `Returns:` such as `(Name ...)` resolves a type-library name as a
+  scalar one does (#401).
+- A corrupt declaration-cache entry is re-read rather than a panic, and the
+  cache is rebuilt once under a key whose parts cannot cancel (#401).
+- A type annotation nested past 64 levels is reported, not a stack overflow
+  (#401).
 - A closing bracket written on a line of its own stays there when the bracket
   holds a call without parentheses (INDENT-2).
 - A blank line after a comment that ends in `{` is kept (BLANK_LINE-2).

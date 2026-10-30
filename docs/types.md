@@ -1053,9 +1053,13 @@ Child->build->extra;            # extra は Child のもの。通る。
 - (NARROW-3) `$x->isa('Foo')` は `$x` を `InstanceOf['Foo']` にします。
 - (NARROW-4) `$x // $default` と `$x || $default` の結果からは `undef` が外れます。
 - (NARROW-5) **ガード文**: `return` / `die` / `croak` / `confess` / `throw` / `exit` /
-  `goto` / `next` / `last`、または `->throw` を含む文が `unless COND` / `COND or LEAVE` と書かれていればそれ以降で COND が、
-  `if COND` と書かれていればそれ以降で COND の**否定**が成り立ちます。読むのは
-  条件の部分だけで、文の残りではありません。
+  `goto` / `next` / `last`、または `->throw` を LEAVE として、`LEAVE unless COND` /
+  `COND or LEAVE`（`||` も同じ）と書かれた文ではそれ以降で COND が、`LEAVE if COND`
+  ではそれ以降で COND の**否定**が成り立ちます。LEAVE は文そのもの（`or` の右辺）で
+  なければならず、文が抱える無名サブや `eval` の中の `return` はその外へは出ないので
+  ガードになりません。ただし `COND or do { warn ...; return }` のように、`do` ブロックの
+  最後の文が修飾子なしの LEAVE であれば、そのブロックも LEAVE です。読むのは条件の
+  部分だけで、文の残りではありません。
 
 ```perl
 my $row = find_row();       # Maybe[InstanceOf['Row']]

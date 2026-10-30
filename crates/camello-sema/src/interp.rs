@@ -136,39 +136,32 @@ pub fn scan(text: &str) -> Vec<Use> {
 /// points where it did.
 #[must_use]
 pub fn scan_extended(text: &str) -> Vec<Use> {
-    let mut blanked = text.to_string();
-    let bytes = unsafe {
-        // Safe: every byte written is a space, and the bytes overwritten are
-        // whole characters — the loop walks `char_indices`.
-        blanked.as_bytes_mut()
-    };
+    let mut blanked = String::with_capacity(text.len());
     let mut in_class = false;
     let mut escape = false;
     let mut comment = false;
-    for (offset, ch) in text.char_indices() {
-        if escape {
+    for ch in text.chars() {
+        let blank = if escape {
             escape = false;
-            continue;
-        }
-        if comment {
-            if ch == '\n' {
-                comment = false;
-            } else {
-                for byte in &mut bytes[offset..offset + ch.len_utf8()] {
-                    *byte = b' ';
-                }
+            false
+        } else if comment {
+            comment = ch != '\n';
+            comment
+        } else {
+            match ch {
+                '\\' => escape = true,
+                '[' => in_class = true,
+                ']' => in_class = false,
+                '#' if !in_class => comment = true,
+                _ => {}
             }
-            continue;
-        }
-        match ch {
-            '\\' => escape = true,
-            '[' => in_class = true,
-            ']' => in_class = false,
-            '#' if !in_class => {
-                comment = true;
-                bytes[offset] = b' ';
-            }
-            _ => {}
+            comment
+        };
+        if blank {
+            // As many spaces as the character had bytes.
+            blanked.extend(std::iter::repeat_n(' ', ch.len_utf8()));
+        } else {
+            blanked.push(ch);
         }
     }
     scan(&blanked)
@@ -478,6 +471,12 @@ mod tests {
         assert_eq!(
             scan_extended(pattern)[0].offset,
             pattern.find("$real").expect("it is there")
+        );
+        // However many bytes the comment's characters take.
+        let wide = "x # é $quote\n$real";
+        assert_eq!(
+            scan_extended(wide)[0].offset,
+            wide.find("$real").expect("it is there")
         );
         // A `#` inside a character class is a character, not a comment.
         assert_eq!(

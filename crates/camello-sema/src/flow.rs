@@ -791,46 +791,19 @@ impl Pass<'_> {
 
     /// `return unless $x;`, `$x or die;`, `die unless defined $x;` — a
     /// statement whose whole job is to leave `$x` defined below it.
+    ///
+    /// Only the statement's own two parts are read: its modifier and its
+    /// expression. A `return` or an `unless` inside an anonymous sub or an
+    /// `eval` it holds leaves that sub or that `eval`, not this statement.
     fn apply_guard(&mut self, statement: &SyntaxNode) {
-        let text_has = |kind: TokenKind| {
-            statement
-                .descendants_with_tokens()
-                .filter_map(|element| element.into_token())
-                .any(|token| token.token_kind() == kind)
-        };
-        // `next` and `last` leave what is below the guard as surely as
-        // `return` does, though not the sub.
-        let leaves_below = statement.descendants().any(|node| {
-            leaves(&node)
-                || ast::Call::cast(node).is_some_and(|call| {
-                    matches!(call.callee_name().as_deref(), Some("next" | "last"))
-                })
-        });
-        if !leaves_below {
+        let Some((condition, held)) = guard_condition(statement) else {
             return;
-        }
-        // `return unless COND` and `COND or return` both mean "below here,
-        // COND held"; `return if COND` means the opposite of it did. Which
-        // part of the statement is the condition depends on which of the
-        // three it is, and reading the whole statement instead — as a flat
-        // scan of every variable in it did — narrows on the strength of names
-        // the guard never tested.
-        let (condition, held) = if text_has(TokenKind::UNLESS_KW) {
-            (modifier_condition(statement, TokenKind::UNLESS_KW), true)
-        } else if text_has(TokenKind::IF_KW) {
-            (modifier_condition(statement, TokenKind::IF_KW), false)
-        } else if text_has(TokenKind::OR_KW) || text_has(TokenKind::LOGICAL_OR) {
-            (leaving_alternative(statement), true)
-        } else {
-            (None, true)
         };
-        if let Some(condition) = condition {
-            let facts = narrowing(&self.env, &condition);
-            if held {
-                facts.apply_true(&mut self.env);
-            } else {
-                facts.apply_false(&mut self.env);
-            }
+        let facts = narrowing(&self.env, &condition);
+        if held {
+            facts.apply_true(&mut self.env);
+        } else {
+            facts.apply_false(&mut self.env);
         }
     }
 
@@ -1334,10 +1307,7 @@ impl Pass<'_> {
             // the left is never a diagnostic anyway (autovivification).
             None => Variable::cast(target.clone()).into_iter().collect(),
         };
-        let plural = targets.len() > 1
-            || declaration
-                .as_ref()
-                .is_some_and(|d| d.syntax().text().to_string().contains('('));
+        let plural = targets.len() > 1 || declaration.as_ref().is_some_and(ast::VarDecl::is_list);
 
         // A left side written as a list, or as an array or a hash, *imposes*
         // list context: this is one of the places the context is written down
@@ -2684,16 +2654,30 @@ fn literal_type(node: &SyntaxNode) -> Type {
         return Type::Unknown;
     };
     if let Some(number) = literal.as_number() {
-        return if number.contains('.') || number.contains('e') || number.contains('E') {
-            Type::Num
-        } else {
-            Type::Int
-        };
+        return number_type(&number);
     }
     match literal.as_string() {
         Some(text) => numeric_type(&text).unwrap_or(Type::Str),
         // An interpolating string is a `Str` whatever it holds.
         None => Type::Str,
+    }
+}
+
+/// A numeric literal's type: `Num` where it has a fractional part or an
+/// exponent. In `0x`, `0b` and `0o` literals `e` is a hex digit, and the
+/// exponent is a binary `p`.
+fn number_type(number: &str) -> Type {
+    let radix = number.len() > 1
+        && number.starts_with('0')
+        && matches!(
+            number.as_bytes()[1],
+            b'x' | b'X' | b'b' | b'B' | b'o' | b'O'
+        );
+    let exponent: &[char] = if radix { &['p', 'P'] } else { &['e', 'E'] };
+    if number.contains('.') || number.contains(exponent) {
+        Type::Num
+    } else {
+        Type::Int
     }
 }
 
@@ -3500,31 +3484,76 @@ fn block_condition(block: &SyntaxNode) -> Option<SyntaxNode> {
         .flatten()
 }
 
-/// The condition of a statement modifier: what follows `unless` or `if`.
-fn modifier_condition(statement: &SyntaxNode, keyword: TokenKind) -> Option<SyntaxNode> {
-    let mut seen = false;
-    for element in statement.descendants_with_tokens() {
-        match element {
-            rowan::NodeOrToken::Token(token) if token.token_kind() == keyword => seen = true,
-            rowan::NodeOrToken::Node(node) if seen => return Some(node),
-            _ => {}
+/// What a guard statement tested, and whether it held below the statement.
+///
+/// `return unless COND` and `COND or return` both mean "below here, COND
+/// held"; `return if COND` means the opposite of it did. Reading the whole
+/// statement instead — as a flat scan of every variable in it did — narrows
+/// on the strength of names the guard never tested.
+fn guard_condition(statement: &SyntaxNode) -> Option<(SyntaxNode, bool)> {
+    let mut modifier = None;
+    let mut body = None;
+    for child in statement.children() {
+        if child.node_kind() == NodeKind::STMT_MODIFIER {
+            modifier = Some(child);
+        } else if body.is_none() {
+            body = Some(child);
         }
     }
-    None
+    let body = body?;
+    let body = match body.node_kind() {
+        NodeKind::LIST_EXPR => sole_child(&body)?,
+        _ => body,
+    };
+    if let Some(modifier) = modifier {
+        if !leaves_below(&body) {
+            return None;
+        }
+        let held = match ast::tokens(&modifier).next()?.token_kind() {
+            TokenKind::UNLESS_KW => true,
+            TokenKind::IF_KW => false,
+            _ => return None,
+        };
+        return Some((modifier.children().next()?, held));
+    }
+    // The left side of `COND or die` is the part that has to have held for
+    // the statement below it to be reached.
+    let view = ast::BinaryExpr::cast(body)?;
+    if !matches!(
+        view.operator(),
+        Some(TokenKind::OR_KW | TokenKind::LOGICAL_OR)
+    ) {
+        return None;
+    }
+    if !leaves_below(&view.right()?) {
+        return None;
+    }
+    Some((view.left()?, true))
 }
 
-/// The left side of `COND or die`, which is the part that has to have held
-/// for the statement below it to be reached.
-fn leaving_alternative(statement: &SyntaxNode) -> Option<SyntaxNode> {
-    statement.descendants().find_map(|node| {
-        let view = ast::BinaryExpr::cast(node)?;
-        matches!(
-            view.operator(),
-            Some(TokenKind::OR_KW | TokenKind::LOGICAL_OR)
-        )
-        .then(|| view.left())
-        .flatten()
-    })
+/// Whether control does not come back from an expression to the statement
+/// after it. `next` and `last` leave what is below a guard as surely as
+/// `return` does, though not the sub.
+fn leaves_below(node: &SyntaxNode) -> bool {
+    leaves(node)
+        || ast::Call::cast(node.clone())
+            .is_some_and(|call| matches!(call.callee_name().as_deref(), Some("next" | "last")))
+        || do_block_leaves(node)
+}
+
+/// `COND or do { warn ...; return }`: a `do` block whose last statement
+/// leaves, unconditionally, leaves with it. A last statement that carries a
+/// modifier may fall through, and so does not count.
+fn do_block_leaves(node: &SyntaxNode) -> bool {
+    if node.node_kind() != NodeKind::DO_BLOCK_EXPR {
+        return false;
+    }
+    node.children()
+        .find(|child| child.node_kind() == NodeKind::BLOCK)
+        .and_then(|block| block.children().last())
+        .filter(|last| last.node_kind() == NodeKind::EXPR_STMT)
+        .and_then(|last| sole_expression(&last))
+        .is_some_and(|expression| leaves_below(&expression))
 }
 
 /// `$x` without its `undef`, if `$x` is a variable at all.
