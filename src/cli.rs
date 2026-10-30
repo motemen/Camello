@@ -71,11 +71,9 @@ pub enum Commands {
         #[command(flatten)]
         jobs: JobsArg,
 
-        /// Stop formatting after the first parse error is reported
-        #[arg(
-            long = "stop-on-first-error",
-            help = "Stop after reporting the first parse error"
-        )]
+        /// Deprecated, and does nothing: a source that does not parse is
+        /// reported and left alone whether or not it is given.
+        #[arg(long = "stop-on-first-error", hide = true)]
         stop_on_first_error: bool,
 
         /// Name every file that differs, instead of only counting them
@@ -842,6 +840,12 @@ pub fn run() -> Result<Exit> {
             encoding: EncodingArg { encoding },
             layout,
         } => {
+            if stop_on_first_error {
+                eprintln!(
+                    "warning: --stop-on-first-error is deprecated and does nothing; \
+                     a source that does not parse is reported and left alone"
+                );
+            }
             // One source can be sent somewhere. A tree cannot: there is no one
             // place for five hundred files to go, and nothing to say about them
             // afterwards but a tally — so the two are different commands
@@ -876,7 +880,6 @@ pub fn run() -> Result<Exit> {
                 eval,
                 eval_escape,
                 check,
-                stop_on_first_error,
                 output,
                 encoding,
                 &layout.to_options(),
@@ -2045,7 +2048,6 @@ fn format_file(
     eval: Option<String>,
     eval_escape: Option<String>,
     check: bool,
-    stop_on_first_error: bool,
     output: Option<PathBuf>,
     encoding: Option<String>,
     options: &FormatterOptions,
@@ -2087,11 +2089,6 @@ fn format_file(
     // status carries the rest.
     if !errors.is_empty() {
         eprintln!("Parse error in '{source_name}':");
-        if stop_on_first_error {
-            let error = errors.into_iter().next().unwrap();
-            eprintln!("{:?}", Report::new(error));
-            return Ok(Exit::ParseError);
-        }
         for e in errors {
             eprintln!("{:?}", Report::new(e));
         }
@@ -2233,7 +2230,6 @@ mod tests {
             None,
             Some("my$var=1;\\nprint $var;".to_string()),
             false,
-            false,
             None,
             None,
             &layout()
@@ -2250,7 +2246,6 @@ mod tests {
             None,
             Some("my$var=1;".to_string()),
             None,
-            false,
             false,
             None,
             None,
@@ -2272,7 +2267,6 @@ mod tests {
             None,
             None,
             None,
-            false,
             false,
             None,
             None,
@@ -2301,7 +2295,6 @@ mod tests {
             None,
             None,
             false,
-            false,
             Some(PathBuf::from("-")),
             None,
             &layout(),
@@ -2325,7 +2318,6 @@ mod tests {
             None,
             None,
             true,
-            false,
             None,
             None,
             &layout(),
@@ -2349,7 +2341,6 @@ mod tests {
             None,
             None,
             true,
-            false,
             None,
             None,
             &layout(),
@@ -2360,31 +2351,24 @@ mod tests {
         Ok(())
     }
 
-    /// A source that does not parse is a failure, and a 2 rather than a 1 when
-    /// the run was told to stop at the first error.
+    /// A source that does not parse is a failure, and is left alone.
     #[test]
     fn one_unparsable_source_fails() -> Result<(), Box<dyn std::error::Error>> {
         let dir = tempdir()?;
         let path = dir.path().join("bad.pl");
         fs::write(&path, "my $foo = ;\n")?;
 
-        for (stop_on_first_error, expected) in [(false, Exit::Failure), (true, Exit::ParseError)] {
-            let exit = format_file(
-                Some(path.clone()),
-                None,
-                None,
-                None,
-                false,
-                stop_on_first_error,
-                None,
-                None,
-                &layout(),
-            )?;
-            assert_eq!(
-                exit, expected,
-                "--stop-on-first-error: {stop_on_first_error}"
-            );
-        }
+        let exit = format_file(
+            Some(path.clone()),
+            None,
+            None,
+            None,
+            false,
+            None,
+            None,
+            &layout(),
+        )?;
+        assert_eq!(exit, Exit::Failure);
         assert_eq!(fs::read_to_string(&path)?, "my $foo = ;\n");
         Ok(())
     }
@@ -2398,7 +2382,6 @@ mod tests {
             None,
             Some("1;".to_string()),
             None,
-            false,
             false,
             None,
             Some("no-such-encoding".to_string()),
@@ -2428,7 +2411,6 @@ mod tests {
                 None,
                 None,
                 None,
-                false,
                 false,
                 None,
                 Some(label.to_string()),
