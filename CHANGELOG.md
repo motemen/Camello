@@ -9,6 +9,9 @@ ending in `{` (Fixed).
 
 ### Changed
 
+- `camello format --stop-on-first-error` is deprecated and does nothing: a
+  source that does not parse exits 1 and is left alone with or without it
+  (#403).
 - An error that stops a run is printed through miette's report handler, as a
   parse error already is (#402).
 - Internal cleanup: the command line exits only from `main`, and reads and
