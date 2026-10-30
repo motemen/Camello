@@ -58,9 +58,24 @@ jobs:
         name: notes
         path: notes.md
 
+  # The suite once, on one runner, at the commit being released: nothing is
+  # built, attested or published from a commit whose tests fail. It runs here
+  # rather than in release-build.yml so the workflow that signs stays the one
+  # that builds, and it runs alongside `prepare`.
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - name: Install the toolchain
+      run: rustup toolchain install
+    - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+    - name: Run tests
+      run: cargo test --workspace --locked
+
   build:
     name: Build
-    needs: prepare
+    needs: [ prepare, test ]
     # The ceiling for what release-build.yml may ask for: signing needs an OIDC
     # token and the right to store what it signs, and nothing here writes to
     # the repository.
