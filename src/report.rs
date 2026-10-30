@@ -179,7 +179,7 @@ struct FileReport {
 /// The status is the interface here — a CI step reads it and nothing else —
 /// so [`Exit::Failure`] is anything at or above `--error-on`.
 pub fn run(request: &Request) -> Result<Exit> {
-    let encodings = crate::source::Encodings::parse(request.encoding.as_ref())?;
+    let encodings = crate::source::Encodings::parse(request.encoding.as_deref())?;
 
     let mut files = Vec::new();
     if request.paths.is_empty() {
@@ -270,7 +270,7 @@ pub fn run(request: &Request) -> Result<Exit> {
         )
     });
 
-    let mut counts = [0usize; 3];
+    let mut counts = Counts::default();
     let mut unreadable = 0usize;
     let mut json = Vec::new();
     for report in &reports {
@@ -302,7 +302,7 @@ pub fn run(request: &Request) -> Result<Exit> {
             if diagnostic.severity < request.min_severity {
                 continue;
             }
-            counts[diagnostic.severity as usize] += count;
+            counts.add(diagnostic.severity, count);
             let position = index.position(&report.source, usize::from(diagnostic.range.start()));
             let end = index.position(&report.source, usize::from(diagnostic.range.end()));
             let more = if count > 1 {
@@ -344,13 +344,7 @@ pub fn run(request: &Request) -> Result<Exit> {
         summarise(&counts, files.len(), unreadable);
     }
 
-    let reportable: usize = counts
-        .iter()
-        .enumerate()
-        .filter(|(level, _)| *level >= request.error_on as usize)
-        .map(|(_, count)| count)
-        .sum();
-    if reportable > 0 {
+    if counts.at_or_above(request.error_on) > 0 {
         return Ok(Exit::Failure);
     }
     Ok(Exit::Success)
@@ -435,18 +429,57 @@ impl Entry {
     }
 }
 
+/// How many diagnostics of each severity a run printed.
+#[derive(Debug, Default)]
+struct Counts {
+    info: usize,
+    warning: usize,
+    error: usize,
+}
+
+impl Counts {
+    fn slot(&mut self, severity: Severity) -> &mut usize {
+        match severity {
+            Severity::Info => &mut self.info,
+            Severity::Warning => &mut self.warning,
+            Severity::Error => &mut self.error,
+        }
+    }
+
+    fn add(&mut self, severity: Severity, count: usize) {
+        *self.slot(severity) += count;
+    }
+
+    fn of(&self, severity: Severity) -> usize {
+        match severity {
+            Severity::Info => self.info,
+            Severity::Warning => self.warning,
+            Severity::Error => self.error,
+        }
+    }
+
+    /// How many were at `floor` or louder: what `--error-on` fails a run on.
+    fn at_or_above(&self, floor: Severity) -> usize {
+        [Severity::Info, Severity::Warning, Severity::Error]
+            .into_iter()
+            .filter(|severity| *severity >= floor)
+            .map(|severity| self.of(severity))
+            .sum()
+    }
+}
+
 /// One line at the end, the way `format` ends a tree with one.
 ///
 /// Quiet when there is nothing to say: a clean run over a clean tree prints
 /// the count and stops, and a run over one file prints nothing at all.
-fn summarise(counts: &[usize; 3], files: usize, unreadable: usize) {
-    let total: usize = counts.iter().sum();
+fn summarise(counts: &Counts, files: usize, unreadable: usize) {
+    let total = counts.at_or_above(Severity::Info);
     if total == 0 && unreadable == 0 && files <= 1 {
         return;
     }
     let mut parts = Vec::new();
     for severity in [Severity::Error, Severity::Warning, Severity::Info] {
-        let count = counts[severity as usize];
+        let count = counts.of(severity);
         if count > 0 {
             parts.push(plural(count, severity));
         }
@@ -472,4 +505,24 @@ pub fn parse_codes(list: &str) -> Result<Vec<Code>> {
             Code::parse(item).ok_or_else(|| miette::miette!("unknown diagnostic code `{item}`"))
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `--error-on` counts its own severity and every louder one.
+    #[test]
+    fn a_floor_counts_itself_and_everything_louder() {
+        let mut counts = Counts::default();
+        counts.add(Severity::Info, 4);
+        counts.add(Severity::Warning, 2);
+        counts.add(Severity::Error, 1);
+        counts.add(Severity::Warning, 1);
+
+        assert_eq!(counts.of(Severity::Warning), 3);
+        assert_eq!(counts.at_or_above(Severity::Info), 8);
+        assert_eq!(counts.at_or_above(Severity::Warning), 4);
+        assert_eq!(counts.at_or_above(Severity::Error), 1);
+    }
 }

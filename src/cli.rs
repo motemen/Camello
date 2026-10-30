@@ -1019,7 +1019,7 @@ fn format_tree(
     encoding: Option<String>,
     options: &FormatterOptions,
 ) -> Result<Exit> {
-    let encodings = Encodings::parse(encoding.as_ref())?;
+    let encodings = Encodings::parse(encoding.as_deref())?;
     let files = walk.collect(&paths)?;
 
     let reports = in_parallel(&files, jobs, |path| {
@@ -1359,11 +1359,17 @@ fn fitting(chars: impl Iterator<Item = char>, room: usize) -> String {
 }
 
 impl Progress {
+    /// The size assumed for a terminal that will not say what its size is.
+    const FALLBACK_SIZE: (usize, usize) = (72, 24);
+    /// The narrowest the block is drawn, however narrow the terminal says it is:
+    /// below this a path is all ellipsis.
+    const NARROWEST: usize = 24;
+
     fn new(total: usize, workers: usize) -> Self {
         use std::io::IsTerminal;
 
         let (width, height) = terminal_size::terminal_size_of(io::stderr()).map_or(
-            (72, 24),
+            Self::FALLBACK_SIZE,
             |(terminal_size::Width(width), terminal_size::Height(height))| {
                 (usize::from(width), usize::from(height))
             },
@@ -1373,7 +1379,7 @@ impl Progress {
             done: AtomicUsize::new(0),
             violated: AtomicUsize::new(0),
             started: std::time::Instant::now(),
-            width: width.max(24),
+            width: width.max(Self::NARROWEST),
             room: (height / 2).max(1),
             live: std::sync::Mutex::new(Live {
                 running: vec![None; workers],
@@ -1601,6 +1607,11 @@ fn write_violation(
 fn print_invariants() {
     use crate::check::Invariant;
 
+    /// The width the descriptions are wrapped to: a terminal's worth, less the
+    /// indent, whatever the terminal is — this is a list to read, not a block
+    /// to redraw.
+    const WIDTH: usize = 72;
+
     let mut heading = None;
     for (index, invariant) in Invariant::ALL.iter().enumerate() {
         if index > 0 {
@@ -1612,7 +1623,7 @@ fn print_invariants() {
             println!();
         }
         println!("{:<17}{}", invariant.slug(), invariant.name());
-        for line in wrapped(invariant.description(), 72) {
+        for line in wrapped(invariant.description(), WIDTH) {
             println!("    {line}");
         }
     }
@@ -1627,7 +1638,7 @@ fn print_invariants() {
         Invariant::Deparse.slug(),
         Invariant::Deparse.name()
     );
-    for line in wrapped(Invariant::Deparse.description(), 72) {
+    for line in wrapped(Invariant::Deparse.description(), WIDTH) {
         println!("    {line}");
     }
 }
@@ -1676,7 +1687,7 @@ fn check_paths(
 ) -> Result<Exit> {
     use crate::check::{check_report, Invariant};
 
-    let encodings = Encodings::parse(encoding.as_ref())?;
+    let encodings = Encodings::parse(encoding.as_deref())?;
     let files = walk.collect(&paths)?;
 
     // No paths at all means stdin, so the command composes with a pipeline the
@@ -1948,11 +1959,14 @@ fn check_paths(
     // are not: a few hundred names is not a list anybody reads, and the count
     // above already said how many there were.
     if !unanswered_for.is_empty() && sources > 1 {
-        const NAMED: usize = 20;
+        /// How many of them are named before the list is cut. More than the
+        /// few files named under each message above: this list is the one a
+        /// reader goes back through, and twenty is a screen of it.
+        const FILES_NAMED: usize = 20;
         let named = if verbose {
             unanswered_for.len()
         } else {
-            NAMED.min(unanswered_for.len())
+            FILES_NAMED.min(unanswered_for.len())
         };
         writeln!(out).into_diagnostic()?;
         writeln!(out, "---- files with an unanswered check").into_diagnostic()?;
@@ -2021,7 +2035,7 @@ fn format_file(
     encoding: Option<String>,
     options: &FormatterOptions,
 ) -> Result<Exit> {
-    let encodings = Encodings::parse(encoding.as_ref())?;
+    let encodings = Encodings::parse(encoding.as_deref())?;
 
     // Read from file or standard input
     let (input, source_name, encoding) =
@@ -2105,7 +2119,7 @@ fn dump_file(
     stop_on_first_error: bool,
     encoding: Option<String>,
 ) -> Result<Exit> {
-    let encodings = Encodings::parse(encoding.as_ref())?;
+    let encodings = Encodings::parse(encoding.as_deref())?;
 
     // Read from file or standard input
     let (input, source_name, _) = read_source(path.as_deref(), eval, eval_escape, &encodings)?;
@@ -2424,7 +2438,7 @@ mod tests {
     {
         let text = "my $var=\"こんにちは\";\n";
         let (expected, _) = format_perl(text);
-        let encodings = Encodings::parse(Some(&"utf-8,euc-jp".to_string()))?;
+        let encodings = Encodings::parse(Some("utf-8,euc-jp"))?;
 
         let dir = tempdir()?;
         for (name, encoding) in [
@@ -2451,7 +2465,7 @@ mod tests {
     /// Bytes no candidate can read are a file left alone, named in the report.
     #[test]
     fn a_file_no_candidate_reads_is_left_alone() -> Result<(), Box<dyn std::error::Error>> {
-        let encodings = Encodings::parse(Some(&"utf-8".to_string()))?;
+        let encodings = Encodings::parse(Some("utf-8"))?;
         let dir = tempdir()?;
         let path = dir.path().join("legacy.pl");
         let (encoded, _, _) = encoding_rs::EUC_JP.encode("my $var = \"こんにちは\";\n");

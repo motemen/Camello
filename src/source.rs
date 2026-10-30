@@ -29,7 +29,7 @@ pub(crate) struct Encodings(Vec<&'static Encoding>);
 
 impl Encodings {
     /// The candidates named on the command line, or utf-8 when none were.
-    pub(crate) fn parse(names: Option<&String>) -> Result<Self> {
+    pub(crate) fn parse(names: Option<&str>) -> Result<Self> {
         let Some(names) = names else {
             return Ok(Self(vec![encoding_rs::UTF_8]));
         };
@@ -149,6 +149,11 @@ pub(crate) fn write_with_encoding(
 /// Keeping the temporary file in the same directory makes the final rename
 /// atomic on the target filesystem. Existing permissions are retained.
 fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
+    /// How many names to try for the temporary file before giving up. Each
+    /// carries the process id and a fresh sequence number, so a name already
+    /// taken is a leftover from a run that died, and a hundred of them is a
+    /// directory something else is wrong with.
+    const ATTEMPTS: usize = 100;
     static NEXT_TEMP: AtomicUsize = AtomicUsize::new(0);
 
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
@@ -160,7 +165,7 @@ fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
         .ok()
         .map(|metadata| metadata.permissions());
 
-    let (temporary, mut file) = (0..100)
+    let (temporary, mut file) = (0..ATTEMPTS)
         .find_map(|_| {
             let sequence = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
             let temporary = parent.join(format!(
@@ -271,7 +276,7 @@ mod tests {
 
     #[test]
     fn candidates_are_named_once_each_and_must_be_known() {
-        let parsed = |names: &str| Encodings::parse(Some(&names.to_string()));
+        let parsed = |names: &str| Encodings::parse(Some(names));
 
         assert_eq!(
             parsed("utf-8, euc-jp").expect("known").names(),
