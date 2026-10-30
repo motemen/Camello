@@ -373,7 +373,7 @@ impl<'a> Builder<'a> {
             // them. Read as an ordinary sequence they seeded no break, so a
             // declaration list the writer opened on a line of its own came back
             // hung under the `my` with its `)` on the last element's line.
-            NodeKind::DECL_TARGET if brace(node, T!["("], false).is_some() => {
+            NodeKind::DECL_TARGET if first_child_token(node, T!["("]).is_some() => {
                 self.delimited(node, T!["("], T![")"])
             }
             NodeKind::SUB_SIGNATURE => self.delimited(node, T!["("], T![")"]),
@@ -1323,7 +1323,7 @@ impl<'a> Builder<'a> {
         // were written in: the one from before the brace first, the brace's own
         // trailing comment after it. `DBI::DBD::SqlEngine` writes a sentence
         // across the two and had it come back in reverse.
-        let open = match brace(node, T!["{"], false) {
+        let open = match first_child_token(node, T!["{"]) {
             Some(token) => {
                 let leading = self.leading_docs(&token);
                 let trailing = self.trailing_comment(&token);
@@ -1338,7 +1338,7 @@ impl<'a> Builder<'a> {
         };
         // A comment written before the closing brace is the block's last line,
         // not the brace's first: it goes inside, at the statements' level.
-        let (written_inside, close) = match brace(node, T!["}"], true) {
+        let (written_inside, close) = match last_child_token(node, T!["}"]) {
             Some(token) => {
                 let (inside, delimiter) = self.closing_delimiter(&token);
                 (inside, Some(delimiter))
@@ -1396,7 +1396,7 @@ impl<'a> Builder<'a> {
         // `{ x }` to fit on a line, so there is nothing to be flat, and saying
         // otherwise makes the output re-read as a different shape on the next
         // pass.
-        if brace(node, T!["}"], true).is_none() {
+        if last_child_token(node, T!["}"]).is_none() {
             return false;
         }
         // A control structure's block always breaks (docs/formatting.md NEWLINE-2),
@@ -1484,15 +1484,8 @@ impl<'a> Builder<'a> {
     /// `my %h = ( # c\n a => 1,\n);` formatted to `my %h = ( # ca => 1,);`,
     /// with the entry commented out of existence.
     fn delimited(&mut self, node: &SyntaxNode, open: TokenKind, close: TokenKind) -> Doc {
-        let opening = node
-            .children_with_tokens()
-            .filter_map(|child| child.into_token())
-            .find(|token| token.token_kind() == open);
-        let closing = node
-            .children_with_tokens()
-            .filter_map(|child| child.into_token())
-            .filter(|token| token.token_kind() == close)
-            .last();
+        let opening = first_child_token(node, open);
+        let closing = last_child_token(node, close);
 
         // A group that opened a heredoc owes the body to the line its marker is
         // on, and that body is emitted after the whole statement — so a group
@@ -2149,16 +2142,19 @@ fn edge_token(
         .find(|token| !token.token_kind().is_trivia())
 }
 
-fn brace(node: &SyntaxNode, kind: TokenKind, last: bool) -> Option<SyntaxToken> {
-    let mut matching = node
-        .children_with_tokens()
+/// The child tokens of `node` that are a `kind`.
+fn child_tokens(node: &SyntaxNode, kind: TokenKind) -> impl Iterator<Item = SyntaxToken> {
+    node.children_with_tokens()
         .filter_map(|child| child.into_token())
-        .filter(|token| token.token_kind() == kind);
-    if last {
-        matching.last()
-    } else {
-        matching.next()
-    }
+        .filter(move |token| token.token_kind() == kind)
+}
+
+fn first_child_token(node: &SyntaxNode, kind: TokenKind) -> Option<SyntaxToken> {
+    child_tokens(node, kind).next()
+}
+
+fn last_child_token(node: &SyntaxNode, kind: TokenKind) -> Option<SyntaxToken> {
+    child_tokens(node, kind).last()
 }
 
 /// The list separator this node was written after, if it is an element of a
