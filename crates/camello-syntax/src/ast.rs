@@ -393,6 +393,15 @@ impl VarDecl {
         collect_variables(&target.0, &mut acc);
         acc
     }
+
+    /// Whether the targets are written as a list, `my ($x)` rather than
+    /// `my $x` — which is what makes an assignment to them a list assignment.
+    #[must_use]
+    pub fn is_list(&self) -> bool {
+        child::<DeclTarget>(&self.0)
+            .and_then(|target| tokens(&target.0).next())
+            .is_some_and(|token| token.token_kind() == T!["("])
+    }
 }
 
 fn collect_variables(node: &SyntaxNode, acc: &mut Vec<Variable>) {

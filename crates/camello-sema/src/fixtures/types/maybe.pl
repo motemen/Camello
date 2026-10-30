@@ -53,6 +53,11 @@ my $ok = eval { defined $tried or die 'no'; 1 };
 print $tried->id;               #~ warning maybe-deref: may be undefined here
 print $ok;
 
+# An attribute's argument list is not a list of targets: this is one scalar,
+# assigned in scalar context.
+my $attributed :Checked(1) = find();
+print $attributed->id;          #~ warning maybe-deref: may be undefined here
+
 # ----- what the shape of a condition says, and what it does not -----
 #
 # The list above is read structurally: a condition is a tree, and `!`, `||`

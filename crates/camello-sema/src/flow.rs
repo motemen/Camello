@@ -1307,10 +1307,7 @@ impl Pass<'_> {
             // the left is never a diagnostic anyway (autovivification).
             None => Variable::cast(target.clone()).into_iter().collect(),
         };
-        let plural = targets.len() > 1
-            || declaration
-                .as_ref()
-                .is_some_and(|d| d.syntax().text().to_string().contains('('));
+        let plural = targets.len() > 1 || declaration.as_ref().is_some_and(ast::VarDecl::is_list);
 
         // A left side written as a list, or as an array or a hash, *imposes*
         // list context: this is one of the places the context is written down
