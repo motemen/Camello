@@ -211,10 +211,6 @@ impl SubDef {
         child(&self.0)
     }
 
-    pub fn attrs(&self) -> impl Iterator<Item = Attr> {
-        children(&self.0)
-    }
-
     /// Whether this is `sub f;` — a forward declaration with no body.
     #[must_use]
     pub fn is_forward_declaration(&self) -> bool {
@@ -343,16 +339,6 @@ impl SignatureParam {
     #[must_use]
     pub fn default(&self) -> Option<SignatureDefault> {
         child(&self.0)
-    }
-}
-
-impl Attr {
-    /// `:lvalue` — the attribute's name.
-    #[must_use]
-    pub fn name(&self) -> Option<String> {
-        tokens(&self.0)
-            .find(|token| token.token_kind() == TokenKind::IDENT)
-            .map(|token| token.text().to_string())
     }
 }
 
