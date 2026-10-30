@@ -9,6 +9,10 @@ ending in `{` (Fixed).
 
 ### Changed
 
+- An error that stops a run is printed through miette's report handler, as a
+  parse error already is (#402).
+- Internal cleanup: the command line exits only from `main`, and reads and
+  writes sources through one module (#402).
 - A multi-line `qw(...)` is indented like a bracket, and the spacing inside a
   one-line one is normalised (INDENT-2, SPACING-7, #386).
 - `camello check` stops on a value in `camello.toml` it cannot read even where
