@@ -41,6 +41,18 @@ print $thrown->id;
 my $defaulted = find() // Row->new(id => 1);
 print $defaulted->id;
 
+# A guard inside an anonymous sub or an `eval` leaves that, not the statement
+# that holds it, so nothing below the statement has been checked.
+my $called = find();
+my $callback = sub { return unless defined $called; 1 };
+print $called->id;              #~ warning maybe-deref: may be undefined here
+$callback->();
+
+my $tried = find();
+my $ok = eval { defined $tried or die 'no'; 1 };
+print $tried->id;               #~ warning maybe-deref: may be undefined here
+print $ok;
+
 # ----- what the shape of a condition says, and what it does not -----
 #
 # The list above is read structurally: a condition is a tree, and `!`, `||`
