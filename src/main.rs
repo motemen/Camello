@@ -5,9 +5,12 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use camello::cli;
 
-fn main() {
-    if let Err(err) = cli::run() {
-        eprintln!("Error: {err}");
-        std::process::exit(1);
+fn main() -> std::process::ExitCode {
+    match cli::run() {
+        Ok(exit) => exit.into(),
+        Err(err) => {
+            eprintln!("Error: {err}");
+            std::process::ExitCode::FAILURE
+        }
     }
 }
