@@ -210,7 +210,11 @@ pub struct SubDecl {
     /// Where the name is, for "declared at".
     #[serde(with = "crate::serde_range")]
     pub range: TextRange,
-    /// Filled in by [`crate::program::Program::add`].
+    /// The file's index in a program graph, set by
+    /// [`crate::program::Program::add`] and
+    /// [`crate::program::Program::replace`]. The declaration pass writes `0`,
+    /// and that `0` is what the declaration cache stores: an index means
+    /// nothing outside the graph that gave it.
     pub file: usize,
 }
 
@@ -498,7 +502,6 @@ struct Pass {
 }
 
 impl Pass {
-    /// The facts for `package`, created on first mention.
     /// What a package's own imports say a bareword in it could mean.
     ///
     /// Per package rather than per file: `use Moose` imports `has` into the
@@ -514,6 +517,7 @@ impl Pass {
             .unwrap_or_else(|| Frameworks::with_dialect(self.dialect.clone()))
     }
 
+    /// The facts for `package`, created on first mention.
     fn facts(&mut self, package: &str) -> &mut PackageFacts {
         if let Some(index) = self
             .decls
@@ -938,7 +942,6 @@ impl Pass {
         Some(name)
     }
 
-    /// `our @ISA = ('Base');` and `push @ISA, 'Base';`.
     /// `our @EXPORT = qw(a b);` — the names this package puts into every
     /// importer's namespace (`docs/types.md`, METHOD-6).
     ///
@@ -990,6 +993,7 @@ impl Pass {
         self.facts(package).file_scope_calls.push((target, method));
     }
 
+    /// `our @ISA = ('Base');` and `@Foo::ISA = qw(Base);`.
     fn isa_assignment(&mut self, node: &SyntaxNode, package: &str) {
         let Some(assign) = node.descendants().find_map(ast::Assign::cast) else {
             return;
@@ -1093,11 +1097,6 @@ fn constant_names(arguments: &SyntaxNode) -> Vec<(String, TextRange)> {
         .collect()
 }
 
-/// The sub names an import list asks for.
-///
-/// A name with a sigil is a variable and the scope pass reads it; a bareword
-/// or a plain string is a sub. `:tags` and `-flags` name a set this pass
-/// cannot expand, so they contribute nothing.
 /// The sub names an `@EXPORT` list holds, or `None` when it is not a list of
 /// names at all (`docs/types.md`, METHOD-6).
 ///
@@ -1122,6 +1121,11 @@ fn exported_names(value: &SyntaxNode) -> Option<Vec<String>> {
     Some(names)
 }
 
+/// The sub names an import list asks for.
+///
+/// A name with a sigil is a variable and the scope pass reads it; a bareword
+/// or a plain string is a sub. `:tags` and `-flags` name a set this pass
+/// cannot expand, so they contribute nothing.
 fn imported_names(arguments: &SyntaxNode) -> Vec<String> {
     let mut acc = Vec::new();
     let mut push = |text: String| {

@@ -5,9 +5,9 @@
 //! the source's newlines — which is what makes it idempotent and what removes
 //! the whole class of bug where a comment or a nested list broke alignment.
 //!
-//! It is also linear. The old formatter measured widths by re-running itself,
-//! which made a file of aligned assignments quadratic: 800 lines took 30
-//! seconds.
+//! It is also linear: widths are read off the rendered lines, never measured by
+//! re-running the formatter, which would make a file of aligned assignments
+//! quadratic.
 
 use crate::doc::AnchorClass;
 use crate::render::{Anchor, Line};

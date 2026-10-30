@@ -8,10 +8,6 @@
 //!    a pattern, so `split /,/, $x` must lex `/` as a match; `time` is followed
 //!    by an operator.
 //!
-//! The old parser answered these from a 22-entry table plus string comparisons
-//! against `"sort"` and `"//"` scattered across four files. Anything missing
-//! from that table — `push`, `die`, `defined`, `open` — was guessed at.
-//!
 //! **This table is generated.** `scripts/generate-builtins` reads perl's own
 //! prototypes through `prototype("CORE::$name")` and applies perl's own mapping
 //! from toke.c: no arguments is FUNC0, exactly one is UNIOP — a named unary

@@ -228,9 +228,9 @@ fn stmt_modifier(parser: &mut Parser<'_>) {
 
 /// Consume the statement terminator, recovering to one if it is missing.
 ///
-/// The old parser reported the missing `;` and then swallowed the next
-/// statement's first token as an `ERROR`, which is how `use A use X;` lost its
-/// second `use` (the parser contract).
+/// Recovery stops before the next statement rather than swallowing its first
+/// token as an `ERROR`, so `use A use X;` keeps its second `use` (the parser
+/// contract).
 fn semicolon(parser: &mut Parser<'_>) {
     if parser.at(T![";"]) {
         parser.bump();
@@ -251,7 +251,7 @@ fn semicolon(parser: &mut Parser<'_>) {
 
 /// A block, from `{` to `}`.
 ///
-/// One implementation, where the old parser had three (the parser contract).
+/// One implementation for every block (the parser contract).
 pub(crate) fn block(parser: &mut Parser<'_>) {
     let marker = parser.start();
     parser.expect_term();
@@ -275,8 +275,8 @@ pub(crate) fn block(parser: &mut Parser<'_>) {
 
 /// A name, coercing a keyword into an identifier where the grammar wants one.
 ///
-/// `sub if {}`, `package tr;` and `$h{default}` are all legal Perl. The old
-/// parser forced the coercion in eight separate places; here there is one
+/// `sub if {}`, `package tr;` and `$h{default}` are all legal Perl. The
+/// coercion is made here rather than at each place the grammar wants a name
 /// (the parser contract).
 pub(crate) fn name(parser: &mut Parser<'_>, node: NodeKind) {
     let marker = parser.start();
@@ -366,8 +366,8 @@ pub(crate) fn subroutine_tail(parser: &mut Parser<'_>, allow_forward_declaration
 /// `sub f($x, $y)` is a signature; `sub f($$)` is a prototype.
 ///
 /// Try the signature; if it does not parse, take the whole group as raw text.
-/// The old parser ran a hand-written mini-parser over the characters to decide
-/// in advance, which is what rejected the legal prototypes `(_)` and `(+)` (D6).
+/// Deciding in advance from the characters is how the legal prototypes `(_)`
+/// and `(+)` get rejected.
 fn signature_or_prototype(parser: &mut Parser<'_>) {
     let checkpoint = parser.checkpoint();
     let errors_before = parser.diagnostic_count();
@@ -463,8 +463,7 @@ fn signature_or_prototype(parser: &mut Parser<'_>) {
 
 /// The characters perl allows in a prototype (`perlsub`).
 ///
-/// `_` and `+` are in the set; the old parser's hand-written mini-parser left
-/// them out, which is bug D6.
+/// `_` and `+` are in the set.
 fn is_prototype(body: &str) -> bool {
     body.chars().all(|ch| {
         matches!(
@@ -737,14 +736,9 @@ fn try_stmt(parser: &mut Parser<'_>) {
     // continue with (the parser contract).
     // A statement modifier is the other continuation only an expression has:
     // perl's `try` statement takes none, so `try { ... } if $x` is a call to a
-    // function named `try` (Try::Tiny) with a modifier on it.
-    //
-    // `try { ... }\nif ($x) { ... }` is two statements and reads the same for
-    // two tokens, so this is settled by taking the modifier reading and undoing
-    // it rather than by guessing (the parser contract). A modifier runs to the
-    // end of the statement and reads cleanly; the `if` of a statement leaves its
-    // block where only a subscript could go, and says so — `(1) { bar() }` is
-    // the diagnostic about a hash subscript needing a `->`.
+    // function named `try` (Try::Tiny) with a modifier on it, and
+    // `a_modifier_follows` tells it from a `try` statement followed by an `if`
+    // statement.
     if parser.at_any(&[T!["->"], T!["?"]])
         || parser
             .current()

@@ -89,9 +89,10 @@ pub enum Code {
     /// unknown ancestor.
     UnknownMethod,
     /// A `Maybe[...]` dereferenced or called on without a narrowing check.
-    /// `info`, because every subscript is a `Maybe` by construction: the code
-    /// this is about is idiomatic and mostly right, and it is asked for rather
-    /// than pressed on the reader.
+    /// `warning`, though every subscript is a `Maybe` by construction and the
+    /// code it points at is often idiomatic: "this may dereference `undef`" is
+    /// a claim about the program in front of it, not about a world camello has
+    /// not read (`docs/types.md`, DIAG-14a).
     MaybeDeref,
     /// An annotation that does not parse. Reported because an annotation that
     /// is silently ignored is worse than none.
@@ -169,17 +170,16 @@ impl Code {
             | Code::TypeMismatch
             | Code::UnknownKey
             | Code::MissingArgument => Severity::Error,
-            Code::ReturnMismatch
-            // `$obj->m` reaching nothing is a statement about a closed world,
-            // and the world is closed only where every module the class and
-            // its ancestors `use` was read. The call site raises it to a
-            // `warning` where it was (`docs/types.md`, DIAG-7a).
-            | Code::MaybeDeref => Severity::Warning,
+            Code::ReturnMismatch | Code::MaybeDeref => Severity::Warning,
             Code::BadAnnotation
             | Code::UnknownType
             | Code::MissingAnnotation
             | Code::UnusedParameter
             | Code::IgnoredPrototype
+            // `$obj->m` reaching nothing is a statement about a closed world,
+            // and the world is closed only where every module the class and
+            // its ancestors `use` was read. The call site raises it to a
+            // `warning` where it was (`docs/types.md`, DIAG-7a).
             | Code::UnknownMethod
             // Shadowing is legal, deliberate more often than not, and a
             // matter of taste where it is not (`docs/types.md`, DIAG-3a).

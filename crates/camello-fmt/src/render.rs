@@ -304,9 +304,9 @@ impl<'a> Renderer<'a> {
                 //
                 // The line break that would carry the blank line is suppressed
                 // with it. Breaking first and only then declining to leave the
-                // line empty is what turned `f({\n\n})` into `f({\n})` — output
+                // line empty would turn `f({\n\n})` into `f({\n})` — output
                 // holding a break that nothing asked for, and which the next
-                // pass closes up, so the first pass was not a fixed point.
+                // pass closes up, so the first pass would not be a fixed point.
                 let pending = !self.current.text.trim().is_empty();
                 let suppress = if pending {
                     self.current.opens
@@ -387,9 +387,8 @@ impl<'a> Renderer<'a> {
                 self.hanging_continuation = hanging_continuation;
             }
             Placement::Trailing => {
-                // One rule, one place. The old formatter had two comment output
-                // paths — one hard-coding four spaces, one copying the source's
-                // whitespace — and the option only reached one of them.
+                // One rule, one place: every trailing comment is padded here,
+                // so `min_spaces_before_comment` reaches all of them.
                 //
                 // A trailing comment can reach a line with nothing on it — the
                 // token it trailed produced no output — and then there is

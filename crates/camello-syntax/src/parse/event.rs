@@ -3,8 +3,8 @@
 //! The parser records what it decided instead of building the tree as it goes.
 //! That indirection is what buys speculative parsing: a `Marker` can be
 //! abandoned, and the events it produced vanish. `GreenNodeBuilder` has no
-//! `abandon_node`, which is precisely why the old parser had to resolve every
-//! ambiguity by unbounded lookahead before it dared open a node.
+//! `abandon_node`, so a parser building with it directly has to resolve every
+//! ambiguity by unbounded lookahead before it dares open a node.
 
 use rowan::TextRange;
 

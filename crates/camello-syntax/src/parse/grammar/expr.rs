@@ -24,8 +24,8 @@ pub(crate) fn expr_assignment(parser: &mut Parser<'_>) -> Option<CompletedMarker
 
 /// A comma-separated series, always wrapped in `LIST_EXPR`.
 ///
-/// "Always" is the point: the old parser produced a wrapper only when a comma
-/// was present, so every consumer had to handle both shapes (the parser contract).
+/// "Always" is the point: a wrapper only when a comma is present would make
+/// every consumer handle both shapes (the parser contract).
 pub(crate) fn list_expr(parser: &mut Parser<'_>, recovery: Recovery) -> CompletedMarker {
     let marker = parser.start();
     let _ = recovery;
@@ -442,7 +442,7 @@ fn is_bareword_key(kind: TokenKind) -> bool {
 
 /// A parenthesised argument list, including the parentheses.
 ///
-/// One implementation, where the old parser had four (the parser contract).
+/// One implementation for every argument list (the parser contract).
 pub(crate) fn arg_list(parser: &mut Parser<'_>) {
     let marker = parser.start();
     parser.expect(T!["("]);
@@ -668,10 +668,6 @@ fn block_call_follows(parser: &mut Parser<'_>) -> bool {
     false
 }
 
-/// `print STDERR ...` / `print {$fh} ...`.
-///
-/// Marked as its own node rather than left as an unexplained first argument
-/// (the parser contract).
 /// Does a filehandle slot start `base` tokens ahead?
 ///
 /// Asked at the name (`print $fh @lines`) and one token past a `(`
@@ -756,6 +752,10 @@ fn opens_an_argument(parser: &mut Parser<'_>, n: usize) -> bool {
     true
 }
 
+/// `print STDERR ...` / `print {$fh} ...`.
+///
+/// Marked as its own node rather than left as an unexplained first argument
+/// (the parser contract).
 fn filehandle(parser: &mut Parser<'_>) {
     if !at_filehandle(parser, 0) {
         return;

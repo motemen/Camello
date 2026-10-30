@@ -267,10 +267,10 @@ impl Drop for Workspace {
 
 /// What perl said, whole.
 ///
-/// It used to be cut to three lines of 120 characters, which took the reader's
-/// answer away in the middle of the sentence carrying it: the path perl went
-/// looking in, the line it gave up on. A message is only ever printed once per
-/// run now, so its length is not what makes a report long.
+/// Lines are not cut short, which would take the reader's answer away in the
+/// middle of the sentence carrying it: the path perl went looking in, the line
+/// it gave up on. A message is only ever printed once per run, so its
+/// length is not what makes a report long.
 fn evidence(errors: &str) -> String {
     /// Enough for any diagnostic worth reading, and a stop for the file that
     /// answers with a thousand of them.
@@ -290,9 +290,9 @@ fn evidence(errors: &str) -> String {
 /// What `perl -c` said, if it did not say the file is fine.
 ///
 /// `Ok(None)` is the file compiling. A perl that never answered is an `Err`
-/// rather than that: it used to be the same value, so a machine with no perl
-/// reachable any more read every file in the corpus as compiling and then
-/// deparsing to nothing.
+/// rather than that: were it the same value, a machine with no perl reachable
+/// would read every file in the corpus as compiling and then deparsing to
+/// nothing.
 fn compile_errors(path: &Path) -> Result<Option<String>, NoAnswer> {
     let output = perl(path, &["-c"])?;
     let said = String::from_utf8_lossy(&output.stderr).into_owned();

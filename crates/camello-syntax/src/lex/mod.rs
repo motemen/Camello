@@ -242,7 +242,7 @@ impl<'a> Lexer<'a> {
         self.invalidate_from_cursor();
     }
 
-    /// The full token stream, trivia included, up to the given byte offset.
+    /// The full token stream, trivia included, scanned to the end of the source.
     ///
     /// Used by the event replayer, which needs every token in order to rebuild a
     /// lossless tree.
@@ -344,12 +344,12 @@ impl<'a> Lexer<'a> {
     ///
     /// Prototypes and attribute arguments are not Perl expressions —
     /// `sub f(_)`, `sub f(+)`, `sub f(\[$@])` are all legal, and re-lexing them
-    /// as ordinary tokens is what made the old parser reject them (D6). The
+    /// as ordinary tokens rejects them. The
     /// parser asks for raw text at the one point it knows the grammar calls for
     /// it, and gets a token rather than a poke at the underlying string
     /// (the language model).
     ///
-    /// Returns `false` if the cursor is not on `(`, leaving the lexer untouched.
+    /// Returns `None` if the cursor is not on `(`, leaving the lexer untouched.
     pub fn take_raw_parens(&mut self) -> Option<(LexedToken, LexedToken, LexedToken)> {
         let open_index = self.non_trivia_index(0)?;
         let open = self.buffer[open_index];

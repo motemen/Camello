@@ -3,10 +3,9 @@
 //!
 //! Each function here enters at the start of a construct and returns only once
 //! the whole construct has been pushed. No caller can observe a half-open quote
-//! or a heredoc waiting for its body, which is what makes the two structural
-//! bugs D2 (a mode left switched on after a failure poisons the rest of the
-//! file) and D3 (lookahead cannot see a mode the parser switched on) impossible
-//! rather than merely fixed.
+//! or a heredoc waiting for its body, which makes two failures impossible by
+//! construction: a mode left switched on after a failure, poisoning the rest of
+//! the file, and a lookahead that cannot see a mode the parser switched on.
 
 use crate::lang::{TokenKind, T};
 
@@ -19,9 +18,8 @@ const TRANSLITERATION_FLAGS: &[u8] = b"cdsr";
 
 /// The closing delimiter for an opening one, and whether it nests.
 ///
-/// This table used to exist twice — once in the lexer and once in the parser's
-/// mirror of the quote-like state machine. There is now one quote-like state
-/// machine, so there is one table.
+/// There is one quote-like state machine, in the lexer, so there is one table;
+/// the parser never mirrors it.
 fn closing_delimiter(open: char) -> (char, bool) {
     match open {
         '(' => (')', true),
@@ -38,7 +36,7 @@ impl<'a> Lexer<'a> {
     /// A `#` immediately after the keyword is a delimiter; a `#` after any
     /// whitespace is a comment. That is perl's rule, and it is why `q #hello#`
     /// is `q` applied to nothing followed by a comment rather than a string
-    /// delimited by `#` (D5).
+    /// delimited by `#`.
     fn skip_to_delimiter(&mut self) -> Option<char> {
         let mut skipped_any = false;
         loop {
@@ -445,7 +443,7 @@ impl<'a> Lexer<'a> {
     ///
     /// The picture lines are not code and not an expression: `@<<<<` is a
     /// left-justified field five characters wide, and every space in it counts.
-    /// Parsed as an expression it came out as `@< << <` — four tokens spaced by
+    /// Parsed as an expression it comes out as `@< << <` — four tokens spaced by
     /// the formatter into something that means nothing — with no diagnostic to
     /// say so.
     pub(super) fn scan_format(&mut self, keyword_len: usize) {

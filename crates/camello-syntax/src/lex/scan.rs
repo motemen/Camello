@@ -1,16 +1,16 @@
 //! The scanner proper.
 //!
 //! Hand-written rather than generated: the constructs a generator could handle
-//! are the easy half, and the old lexer ended up performing surgery on the
-//! generated tokens afterwards (splitting `0x7f..`, re-splitting `x5`). Scanning
-//! these correctly the first time is simpler than repairing them.
+//! are the easy half, and the rest would need surgery on the generated tokens
+//! afterwards (splitting `0x7f..`, re-splitting `x5`). Scanning these correctly
+//! the first time is simpler than repairing them.
 
 use crate::lang::{TokenKind, T};
 
 use super::{Expect, Lexer};
 
-/// The characters perl actually accepts after `-` as a file test (`perlfunc`).
-/// The old lexer took any single letter, so `-q $x` became a file test.
+/// The characters perl actually accepts after `-` as a file test (`perlfunc`);
+/// any other letter, as in `-q $x`, does not make one.
 const FILE_TEST_CHARS: &[u8] = b"efdlpSbcugktrwxoRWXOszAMC";
 
 /// Perl counts a form feed as whitespace; a page break in the middle of a file
@@ -32,9 +32,9 @@ impl<'a> Lexer<'a> {
     /// True at byte 0 or immediately after a line terminator.
     ///
     /// Computed from the source rather than carried in a flag, which is what
-    /// makes an indented `=head1` stay ordinary code (D1): the old
-    /// `at_line_start` survived whitespace tokens, so column tracking was wrong
-    /// by construction.
+    /// makes an indented `=head1` stay ordinary code: a flag would have to be
+    /// cleared by every whitespace token, and one that survives them puts the
+    /// column wrong.
     fn at_line_start(&self) -> bool {
         self.scan_pos == 0 || self.source.as_bytes()[self.scan_pos - 1] == b'\n'
     }
@@ -156,8 +156,7 @@ impl<'a> Lexer<'a> {
         let bytes = self.rest().as_bytes();
 
         // Radix prefixes never take a fractional part, so `0x7f..3` closes the
-        // number at `f` and leaves `..` to the operator scanner. The old lexer
-        // produced `0x7f.` and then cut it back up (D-class bug 20).
+        // number at `f` and leaves `..` to the operator scanner.
         if bytes[0] == b'0' && bytes.len() > 1 {
             let radix_digits: Option<fn(u8) -> bool> = match bytes[1] {
                 b'x' | b'X' => Some(|byte| byte.is_ascii_hexdigit() || byte == b'_'),
@@ -247,8 +246,8 @@ impl<'a> Lexer<'a> {
         }
 
         // `"abc"x5`: in operator position `x` binds as the repetition operator
-        // and the digits are a separate number. Scanning it this way avoids the
-        // old lexer's re-splitting pass.
+        // and the digits are a separate number, scanned apart here rather than
+        // split apart afterwards.
         if self.expect == Expect::Operator
             && text.starts_with('x')
             && text.len() > 1
@@ -316,7 +315,7 @@ impl<'a> Lexer<'a> {
     ///
     /// Perl keywords are positional: `x` is an operator only where one can go,
     /// and `s` starts a substitution only where a term can. Deciding this from
-    /// `expect` alone replaces the old lexer's raw-character probing.
+    /// `expect` alone, never from the raw characters around it.
     fn keyword_applies_here(&mut self, keyword: TokenKind, len: usize) -> bool {
         let infix_only = keyword.is_quote_like_keyword();
         match self.expect {
@@ -357,8 +356,7 @@ impl<'a> Lexer<'a> {
         after.starts_with("=>") || after.starts_with('}')
     }
 
-    /// `v5`, `v5.10.1`. Requires at least one digit, and two dots unless the
-    /// name is exactly `v` followed by digits.
+    /// `v5.10`, `v5.10.1`: a `v`, at least one digit, and at least one dot.
     fn vstring_len(&self) -> Option<usize> {
         let bytes = self.rest().as_bytes();
         if bytes[0] != b'v' {
@@ -382,9 +380,8 @@ impl<'a> Lexer<'a> {
             }
             dots += 1;
         }
-        // `v10` alone is a v-string only when followed by nothing name-like;
-        // requiring a dot keeps ordinary identifiers like `v1` as identifiers
-        // unless they are clearly versions.
+        // A bare `v10` stays an identifier: requiring a dot keeps names like
+        // `v1` names unless they are clearly versions.
         (dots >= 1).then_some(end)
     }
 
@@ -402,8 +399,8 @@ impl<'a> Lexer<'a> {
                 _ => index += 1,
             }
         }
-        // Never fall back to "not a string after all" — that is how the old
-        // lexer let a stray quote rewrite the rest of the file (the lexer contract).
+        // Never fall back to "not a string after all": that lets a stray quote
+        // rewrite the rest of the file (the lexer contract).
         self.push(TokenKind::UNTERMINATED_STRING, start, self.source.len());
     }
 
@@ -417,7 +414,7 @@ impl<'a> Lexer<'a> {
             if rest.starts_with('/') {
                 // Committing to a match here — rather than searching for a
                 // closing `/` first — is what makes lexing local: whether line 5
-                // is a regex no longer depends on line 900 (D4).
+                // is a regex does not depend on line 900.
                 self.scan_bare_regex();
                 return;
             }
@@ -564,8 +561,8 @@ impl<'a> Lexer<'a> {
             // `&&` code variable and no `**` glob. Everything else about a
             // sigil is decided without looking at what follows (below), but
             // these two characters cannot begin a name under any reading, so
-            // taking them as a sigil is not a judgement call — it is wrong.
-            // `defined && -d` became `defined(&&-d)` on the strength of it.
+            // taking them as a sigil is not a judgement call — it is wrong, and
+            // reads `defined && -d` as `defined(&&-d)`.
             b'&' if matches!(bytes.get(1), Some(b'&' | b'=')) => return None,
             b'*' if matches!(bytes.get(1), Some(b'*' | b'=')) => return None,
             b'&' => TokenKind::CODE_SIGIL,
@@ -574,8 +571,8 @@ impl<'a> Lexer<'a> {
         };
 
         // No inspection of what follows. `foo %h` and `foo % h` differ only in
-        // whitespace, and the old lexer read the raw bytes either side to guess
-        // — which is exactly why the two disagreed (D7). Where a term is
+        // whitespace, and reading the raw bytes either side to guess is what
+        // would make the two disagree. Where a term is
         // expected, a sigil is a sigil; that is the rule, and it is written
         // down (the lexer contract) rather than emergent.
         Some((kind, 1))
@@ -583,10 +580,8 @@ impl<'a> Lexer<'a> {
 
     /// Emit the name part of a variable straight after its sigil.
     ///
-    /// Doing this inside the lexer is what removes the old
-    /// `consume_one_char_as_ident` / `consume_digit_prefixed_ident` escape
-    /// hatches: `$@` and `$1` are ordinary tokens here, not raw-text pokes from
-    /// the parser (the language model).
+    /// Done inside the lexer so that `$@` and `$1` are ordinary tokens, not
+    /// raw-text pokes from the parser (the language model).
     fn scan_variable_name(&mut self, sigil: TokenKind) {
         let start = self.scan_pos;
         let bytes = self.rest().as_bytes();
@@ -638,8 +633,8 @@ impl<'a> Lexer<'a> {
 
         // `$&`, `@-`, `%+`, `*@` — and `$#+`, the last index of `@+`. There is
         // no `&&` code variable, so reading one takes the `&&` out of `defined
-        // && -d` and makes it the argument of `defined`, which is how
-        // `File::Spec::Unix` came out saying something else. `**` and `*=` are
+        // && -d` and makes it the argument of `defined`, and `File::Spec::Unix`
+        // would say something else. `**` and `*=` are
         // already excluded before a glob gets here, which leaves `local *@;` —
         // XML::Parser saving the error variable's glob — a glob.
         let takes_punctuation = matches!(
@@ -705,9 +700,9 @@ pub(super) fn ident_len_at(text: &str) -> usize {
 /// May an identifier begin with this character?
 ///
 /// Under `use utf8` perl accepts any word character, so `$café` and `sub 名前`
-/// are ordinary names. Restricting this to ASCII did not reject them — it split
-/// them, and `my $café = 1;` came out as `my $caf é = 1;`, which is a syntax
-/// error where a working program used to be.
+/// are ordinary names. Restricting this to ASCII would not reject them — it
+/// would split them, and `my $café = 1;` would come out as `my $caf é = 1;`,
+/// a syntax error where a working program was.
 ///
 /// Anything non-ASCII counts, rather than `XID_Start` exactly. The alternative
 /// is a Unicode tables dependency to be more precise about input that perl
