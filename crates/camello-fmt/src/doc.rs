@@ -1,9 +1,9 @@
 //! The document IR (the formatter contract).
 //!
 //! Everything the formatter decides about layout is decided while building this
-//! and is then fixed. The renderer only walks it. That is the whole point: the
-//! old formatter appended straight to a string, so a decision could only be made
-//! from what had already been written, and could never be revised.
+//! and is then fixed. The renderer only walks it. That is the whole point: a
+//! formatter appending straight to a string can make a decision only from what
+//! it has already written, and can never revise one.
 
 use camello_syntax::lang::SyntaxToken;
 
@@ -48,8 +48,8 @@ pub enum Doc {
     /// quote-like contents and string literals.
     ///
     /// The renderer neither splits these nor indents inside them, which is what
-    /// makes F1 — indentation injected into a multi-line string literal, growing
-    /// with every pass — not merely fixed but unrepresentable.
+    /// makes indentation injected into a multi-line string literal, growing with
+    /// every pass, unrepresentable.
     ///
     /// Text rather than a token, because the unit is not always one token: a
     /// quote-like operator is one lexical run (the lexer contract) and is written as
@@ -174,7 +174,6 @@ pub enum Doc {
     },
     /// One blank line, already normalised to at most one.
     BlankLine,
-    /// A zero-width alignment anchor.
     /// An alignment point, and the width of what follows it that has to end at
     /// the column the group agrees on.
     ///

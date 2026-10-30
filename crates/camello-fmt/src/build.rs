@@ -1,9 +1,9 @@
 //! CST → Doc (the formatter contract).
 //!
 //! Every layout decision is made here. In particular the flat-or-broken state of
-//! each group is decided from the source, once, at the point the group is built
-//! — replacing the seven separate "does the source have a newline here"
-//! predicates the old formatter had scattered across five files.
+//! each group is decided from the source, once, at the point the group is built,
+//! rather than by a "does the source have a newline here" predicate at each
+//! place that needs to know.
 
 use camello_syntax::ast::{qw_words, tokens, QW_WHITESPACE};
 use rowan::TextSize;
@@ -197,9 +197,9 @@ impl<'a> Builder<'a> {
         // Heredoc markers whose bodies have not arrived yet. A body begins on
         // the line after the one its marker is on (the parser contract), so while any
         // are outstanding the statements have to stay on that line — putting the
-        // next one on a line of its own makes it the body.
-        // `eval <<EOT; die $@ if $@;` in `URI::data` did exactly that: the
-        // `die` became the first line of the string `eval` was handed.
+        // next one on a line of its own makes it the body. In
+        // `eval <<EOT; die $@ if $@;` (`URI::data`) the `die` would become the
+        // first line of the string `eval` is handed.
         let mut owed = 0usize;
         // A definition's trailing blank line, held back because a `;` written on
         // its last line comes first. The definition ends at that semicolon, so
@@ -307,9 +307,8 @@ impl<'a> Builder<'a> {
     /// Own-line comments and blank lines attached to a token.
     ///
     /// Every comment in the output is emitted from here or from
-    /// [`Self::trailing_comment`] — two functions in one file, against the old
-    /// formatter's two unrelated paths in two files, only one of which honoured
-    /// the spacing option.
+    /// [`Self::trailing_comment`], two functions in one file, so a rule about
+    /// comments has two places to be applied and no more.
     fn leading_docs(&mut self, token: &SyntaxToken) -> Doc {
         let trivia = self.trivia.of(token.text_range());
         if trivia.leading.is_empty() {
@@ -551,8 +550,8 @@ impl<'a> Builder<'a> {
 
     /// What goes between two adjacent children.
     ///
-    /// One function, with the parent's kind available. The old formatter used a
-    /// two-token table of 31 special cases that 34 direct writer calls bypassed.
+    /// One function, with the parent's kind available, and no writer call
+    /// that goes around it.
     fn separator(
         &mut self,
         previous: &SyntaxElement,
@@ -899,8 +898,8 @@ impl<'a> Builder<'a> {
         // The same, keyed on the token rather than on the node that should be
         // holding it. A DELIMITER exists only as part of a quote-like run, so it
         // is tight wherever it is found — including inside an ERROR node, where
-        // the run's own node is missing and the rule above cannot fire. That is
-        // how `s/xx\z//;` misparsed became `s/xx \ z /  /;`, and then grew by
+        // the run's own node is missing and the rule above cannot fire. Without
+        // it a misparsed `s/xx\z//;` becomes `s/xx \ z /  /;`, and then grows by
         // two spaces on every further pass.
         if before == Some(TokenKind::DELIMITER) || after == Some(TokenKind::DELIMITER) {
             return false;
@@ -968,11 +967,10 @@ impl<'a> Builder<'a> {
         let kind = token.token_kind();
         let text = if kind.is_heredoc_body() {
             // A heredoc body owns whole lines and starts in column 0, wherever
-            // the marker that opened it was written (the parser contract). Reached
-            // through a list or an argument list it used to arrive as a `Raw`,
-            // which starts at the current column: the first line was indented
-            // into the string and the terminator was indented out of being a
-            // terminator, and perl could not read the output back.
+            // the marker that opened it was written (the parser contract), and
+            // so it is never a `Raw`, which starts at the current column: the
+            // first line would be indented into the string and the terminator
+            // out of being a terminator, and perl could not read the output back.
             let terminator = kind != TokenKind::HEREDOC_CONTENT;
             let lines = Doc::VerbatimLines(token.text().into());
             if terminator {
@@ -1139,11 +1137,9 @@ impl<'a> Builder<'a> {
     ///
     /// Emitted token by token, the closing delimiter of a run whose content
     /// spans lines is a token like any other: it starts a line, and a line that
-    /// starts gets the enclosing indentation. `q{\nalpha\n}` came out with its
-    /// `}` indented — inside the string, where it changed the value, and where
-    /// `dev check` saw the verbatim content it was supposed to preserve change
-    /// under it. The run's own source text is the one rendering that cannot be
-    /// wrong.
+    /// starts gets the enclosing indentation. `q{\nalpha\n}` would come out with
+    /// its `}` indented — inside the string, where it changes the value. The
+    /// run's own source text is the one rendering that cannot be wrong.
     fn quote_like(&mut self, node: &SyntaxNode) -> Doc {
         let leading = self.leading_docs_of(node);
         let trailing = match last_token(node) {
@@ -1164,8 +1160,9 @@ impl<'a> Builder<'a> {
     /// constructs exist in column 0 and nowhere else — the lexer recognises
     /// `=head1` and `__END__` at a line start and there only (the lexer contract) — so
     /// indenting one produces output that no longer contains it. Emitting them
-    /// token by token put the first in column 0 and left the rest to pick up the
-    /// enclosing block's indentation, which is the same bug one token along.
+    /// token by token would put the first in column 0 and leave the rest to pick
+    /// up the enclosing block's indentation, which is the same mistake one token
+    /// along.
     fn verbatim(&mut self, node: &SyntaxNode) -> Doc {
         let leading = self.leading_docs_of(node);
         Doc::concat(vec![
@@ -1270,8 +1267,7 @@ impl<'a> Builder<'a> {
     ///
     /// Nodes emitted as one verbatim region never reach [`Self::token`], so
     /// without this the comment above a `__DATA__` or a `=head1` is simply not
-    /// emitted — which no invariant noticed until comment preservation became
-    /// one.
+    /// emitted.
     fn leading_docs_of(&mut self, node: &SyntaxNode) -> Doc {
         match first_token(node) {
             Some(token) => self.leading_docs(&token),
@@ -1282,9 +1278,9 @@ impl<'a> Builder<'a> {
     /// The comment that sat before this block's brace, to be emitted after it.
     ///
     /// The same predicate that suppressed it decides whether it is here, so the
-    /// two cannot disagree about who owns it. They did: for a bare block after
-    /// another statement, `brace_follows` claimed the previous statement's
-    /// trailing comment and this re-emitted it on the brace's line.
+    /// two cannot disagree about who owns it: were they to, a bare block after
+    /// another statement would have the previous statement's trailing comment
+    /// claimed by `brace_follows` and re-emitted here on the brace's line.
     fn comment_before_brace(&mut self, node: &SyntaxNode) -> Doc {
         let Some(previous) = first_token(node).and_then(|first| prev_code_token(&first)) else {
             return Doc::Nil;
@@ -1373,14 +1369,12 @@ impl<'a> Builder<'a> {
     /// (docs/formatting.md NEWLINE-2).
     /// Wrong: only the shape changes, never the meaning.
     ///
-    /// The single rule that replaces `is_simple_block`'s seven rejections plus
-    /// the `suppress_newlines` flag that leaked past them.
+    /// One rule for whether a block can be flat, decided from the structure.
     ///
     /// Memoised, and asking only about the *nearest* nested blocks. Without
-    /// either, twenty nested `sub {` — forty characters of input — took over
-    /// ninety seconds: recursing into every descendant block meant each level
-    /// re-answered the question for every level below it, and each answer
-    /// allocated the node's whole text to look for a newline in it.
+    /// either, recursing into every descendant block makes each level re-answer
+    /// the question for every level below it, and twenty nested `sub {` — forty
+    /// characters of input — take minutes.
     fn block_can_be_flat(&mut self, node: &SyntaxNode) -> bool {
         let key = node.text_range().start();
         if let Some(&answer) = self.flat_blocks.get(&key) {
@@ -1455,8 +1449,8 @@ impl<'a> Builder<'a> {
 
         // A flat group must contain no hard line break, so a block that holds a
         // block that has to break cannot itself be flat. Keeping this a property
-        // of the structure is what removes the old `suppress_newlines` flag and
-        // the leaks it caused (F2).
+        // of the structure is what keeps a flag from having to carry it, and from
+        // leaking past the block it was set for.
         //
         // Only the nearest nested blocks: each of them asks the same question of
         // its own, so the answer covers every depth without this level walking

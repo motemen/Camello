@@ -221,12 +221,12 @@ rules of how.
   where the writer put something after the bracket and broke the line anyway:
   `f($o,` seeds nothing and is still a table.
 - **Align reads columns, never the source.** The pass runs over rendered lines.
-  `AnchorClass` is `Assign`, `FatComma { depth, hashes }`, `Fallback`, `PostfixKeyword`,
-  `TrailingComment`; an `Anchor` carries the width of what must end at the
-  agreed column, so `=` and `-=` line up on their `=`. `Shape` declares where
-  one group of comparable statements ends — every statement declares one, since
-  a statement that declared nothing would inherit the last one's shape and align
-  with it. Source spacing and source newlines are not inputs, which is what
+  `AnchorClass` is `Assign`, `FatComma { depth, hashes }`, `Fallback`,
+  `UseImports`, `PostfixKeyword`, `TrailingComment`; an `Anchor` carries the
+  width of what must end at the agreed column, so `=` and `-=` line up on
+  their `=`. `Shape` declares where one group of comparable statements ends —
+  every statement declares one, since a statement that declared nothing would
+  inherit the last one's shape and align with it. Source spacing and source newlines are not inputs, which is what
   keeps a comment from disturbing a table.
 
 ### The invariants

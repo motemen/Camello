@@ -31,7 +31,7 @@ pub struct FormatterOptions {
     /// one place (the formatter contract).
     pub min_spaces_before_comment: usize,
     /// How far apart a group's anchors may be and still be aligned, so that one
-    /// very long line cannot push a whole group across the screen (issue #273).
+    /// very long line cannot push a whole group across the screen.
     ///
     /// A group either agrees on one column or is not aligned at all: capping
     /// each line's own padding instead gave a group whose members ended up in

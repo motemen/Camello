@@ -484,7 +484,7 @@ fn malformed_input_still_formats_to_a_fixed_point() {
 
 #[test]
 fn a_comment_never_swallows_the_code_after_it() {
-    // P0-1. The group holding a comment was flat, so everything after the
+    // The group holding a comment was flat, so everything after the
     // comment was appended to its line — and a line after `#` is not code.
     // `my %h = ( # c\n a => 1,\n);` formatted to `my %h = ( # ca => 1,);`.
     for source in [
@@ -511,7 +511,7 @@ fn a_comment_never_swallows_the_code_after_it() {
 
 #[test]
 fn a_comment_after_a_substitution_stays_outside_it() {
-    // P0-3. The empty replacement list of `s/a//` is zero width, so it starts
+    // The empty replacement list of `s/a//` is zero width, so it starts
     // where the closing delimiter starts and an offset-keyed lookup handed both
     // of them the same trailing comment. The comment was emitted twice, once
     // inside the literal: "delete a" became "replace a with ' # c'".
@@ -539,7 +539,7 @@ fn a_comment_after_a_substitution_stays_outside_it() {
 
 #[test]
 fn a_quote_like_run_is_never_spaced_out() {
-    // P0-2. A DELIMITER belongs to a quote-like run wherever it is found. When a
+    // A DELIMITER belongs to a quote-like run wherever it is found. When a
     // misparse left the run inside an ERROR node the run's own node was gone,
     // the tightness rule keyed on it stopped firing, and a space appeared beside
     // content the next pass re-lexed as part of the literal — so the literal
@@ -569,7 +569,7 @@ fn a_quote_like_run_is_never_spaced_out() {
 
 #[test]
 fn what_the_parser_could_not_read_is_copied_out_unchanged() {
-    // The last resort of P0-2: every layout rule is a rule about a construct the
+    // The last resort for an ERROR node: every layout rule is a rule about a construct the
     // parser recognised, and inside an ERROR node it recognised none of them.
     for source in [
         "use A use X;\n",
@@ -622,7 +622,7 @@ fn assert_preserves_comments(source: &str) {
 
 #[test]
 fn nested_blocks_do_not_take_exponential_time() {
-    // P1-1. Twenty nested `sub {` — forty characters — took over ninety
+    // Twenty nested `sub {` — forty characters — took over ninety
     // seconds. Each level re-answered "can this be flat" for every level below
     // it, and each answer allocated the node's whole text to search it for a
     // newline. Two hundred levels is ten times deeper and finishes instantly.
@@ -638,7 +638,7 @@ fn nested_blocks_do_not_take_exponential_time() {
 
 #[test]
 fn input_deeper_than_the_limit_is_reported_and_kept() {
-    // P1-2 and P1-3. A thousand open parentheses aborted the process — the step
+    // A thousand open parentheses aborted the process — the step
     // limit was a `panic!` in release builds too — and the formatter's own
     // recursive walk ran out of stack a little deeper. It is a diagnostic now,
     // what could not be parsed is copied out unchanged, and the output is still
@@ -667,7 +667,7 @@ fn input_deeper_than_the_limit_is_reported_and_kept() {
 
 #[test]
 fn verbatim_content_keeps_its_trailing_whitespace() {
-    // P1-5. `finish_line` trimmed every line, including the ones that end
+    // `finish_line` trimmed every line, including the ones that end
     // inside a raw atom, where the whitespace is content. Two corpus modules
     // deparsed differently because of it.
     let source = "my $re = qr/\n  a  \n  b\n/x;\n";
@@ -691,7 +691,7 @@ fn verbatim_content_keeps_its_trailing_whitespace() {
 
 #[test]
 fn verbatim_regions_start_in_column_zero() {
-    // P1-6. `__END__` and `=head1` are recognised at a line start and nowhere
+    // `__END__` and `=head1` are recognised at a line start and nowhere
     // else (the lexer contract), so a region that begins inside an open block still
     // begins in column 0 — and indenting it produces output that no longer has
     // a data section in it.
@@ -722,7 +722,7 @@ fn verbatim_regions_start_in_column_zero() {
 
 #[test]
 fn a_format_declaration_is_carried_through_untouched() {
-    // P1-7. `@<<<<` is a left-justified field five characters wide. Parsed as
+    // `@<<<<` is a left-justified field five characters wide. Parsed as
     // an expression it came out as `@< << <`, which is four things that mean
     // nothing, and nothing was reported.
     let source = "format STDOUT =\n@<<<<< @>>>>>\n$a,    $b\n.\n\nprint 1;\n";
