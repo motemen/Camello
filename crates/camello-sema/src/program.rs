@@ -102,10 +102,11 @@ pub struct Program {
     files: Vec<FileEntry>,
     by_path: HashMap<PathBuf, usize>,
     subs: Vec<SubDecl>,
-    /// `(package, name)` to the first declaration of it. First rather than
+    /// Package, then name, to the first declaration of it. First rather than
     /// last: a redefinition later in a file is usually a conditional
-    /// alternative, and either answer is a guess.
-    by_name: HashMap<(String, String), usize>,
+    /// alternative, and either answer is a guess. Nested rather than keyed on
+    /// the pair so that a lookup borrows both names instead of copying them.
+    by_name: HashMap<String, HashMap<String, usize>>,
     /// Every sub a package declares, in declaration order. The closed set is
     /// what completion needs and what asking `by_name` cannot give
     /// (`docs/lsp.md`, "The method surface"); scanning `subs` for it would be
@@ -200,11 +201,15 @@ impl Program {
             return;
         };
         symbol.returns = returns.clone();
-        let key = (symbol.package.clone(), symbol.name.clone());
         // The flattened copy is only this sub's where the first-wins rule
         // picked this file; where it picked another, the name means the other
         // file's sub and this is not it.
-        if let Some(flat) = self.by_name.get(&key).copied() {
+        let flat = self
+            .by_name
+            .get(&symbol.package)
+            .and_then(|names| names.get(&symbol.name))
+            .copied();
+        if let Some(flat) = flat {
             if self.subs[flat].file == file {
                 self.subs[flat].returns = returns;
             }
@@ -312,9 +317,9 @@ impl Program {
                 .push(index);
         }
         for symbol in &decls.subs {
-            let key = (symbol.package.clone(), symbol.name.clone());
-            if !self.by_name.contains_key(&key) {
-                self.by_name.insert(key, self.subs.len());
+            let names = self.by_name.entry(symbol.package.clone()).or_default();
+            if !names.contains_key(&symbol.name) {
+                names.insert(symbol.name.clone(), self.subs.len());
                 self.by_package
                     .entry(symbol.package.clone())
                     .or_default()
@@ -341,7 +346,8 @@ impl Program {
     #[must_use]
     pub fn sub(&self, package: &str, name: &str) -> Option<&SubDecl> {
         self.by_name
-            .get(&(package.to_string(), name.to_string()))
+            .get(package)
+            .and_then(|names| names.get(name))
             .map(|index| &self.subs[*index])
     }
 
@@ -418,6 +424,13 @@ impl Program {
     /// reporting one missing there would be the worst kind of false positive.
     #[must_use]
     pub fn has_unknown_ancestor(&self, package: &str) -> bool {
+        self.has_unknown_ancestor_in(package, &self.linearise(package))
+    }
+
+    /// [`Program::has_unknown_ancestor`] over a linearisation the caller has
+    /// already made, so that a resolution asking it last does not walk the
+    /// class graph a third time.
+    fn has_unknown_ancestor_in(&self, package: &str, order: &[String]) -> bool {
         if !self.knows_package(package) {
             return true;
         }
@@ -433,16 +446,16 @@ impl Program {
             }
             prefix = outer;
         }
-        for class in self.linearise(package) {
-            if !self.knows_package(&class) {
+        for class in order {
+            if !self.knows_package(class) {
                 return true;
             }
             // `AUTOLOAD` answers anything.
-            if self.sub(&class, "AUTOLOAD").is_some() {
+            if self.sub(class, "AUTOLOAD").is_some() {
                 return true;
             }
             let mut declares_anything = false;
-            for facts in self.facts(&class) {
+            for facts in self.facts(class) {
                 if facts.dynamic {
                     return true;
                 }
@@ -487,7 +500,7 @@ impl Program {
             // A package the run has seen the *name* of and nothing else — an
             // XS module whose `.pm` only loads a shared library — cannot be
             // said to be missing anything.
-            declares_anything |= self.subs.iter().any(|symbol| symbol.package == class);
+            declares_anything |= self.by_package.contains_key(class);
             if !declares_anything {
                 return true;
             }
@@ -614,11 +627,12 @@ impl Program {
         if Self::UNIVERSAL.contains(&name) {
             return MethodLookup::Universal;
         }
-        for class in self.linearise(package) {
-            if let Some(symbol) = self.sub(&class, name) {
+        let order = self.linearise(package);
+        for class in &order {
+            if let Some(symbol) = self.sub(class, name) {
                 return MethodLookup::Sub(symbol);
             }
-            for facts in self.facts(&class) {
+            for facts in self.facts(class) {
                 for attribute in &facts.attributes {
                     if attribute.answers_to(name) {
                         return MethodLookup::Attribute(attribute);
@@ -634,8 +648,8 @@ impl Program {
         // (`docs/types.md`, METHOD-6). Asked after the class's own
         // declarations, because that is the order perl would find them in and
         // it keeps the common lookup as short as it was.
-        for class in self.linearise(package) {
-            for facts in self.facts(&class) {
+        for class in &order {
+            for facts in self.facts(class) {
                 for module in &facts.uses {
                     if !self
                         .facts(module)
@@ -650,7 +664,7 @@ impl Program {
                 }
             }
         }
-        if self.has_unknown_ancestor(package) {
+        if self.has_unknown_ancestor_in(package, &order) {
             MethodLookup::Unknown
         } else {
             MethodLookup::Missing

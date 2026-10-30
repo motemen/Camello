@@ -165,8 +165,8 @@ impl<'a> Parser<'a> {
     fn finish(mut self) -> Parse {
         let events = std::mem::take(&mut self.events).into_vec();
         let source = self.lexer.source();
-        let tokens = self.lexer.scan_all().to_vec();
-        let replayed = replay::replay(source, &tokens, events);
+        let tokens = self.lexer.scan_all();
+        let replayed = replay::replay(source, tokens, events);
 
         let mut diagnostics = replayed.diagnostics;
         diagnostics.extend(self.diagnostics);

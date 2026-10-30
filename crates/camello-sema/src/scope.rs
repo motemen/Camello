@@ -23,7 +23,7 @@ use camello_syntax::ast::{
 use camello_syntax::lang::{NodeExt, NodeKind, SyntaxNode, SyntaxToken, TokenExt, TokenKind};
 use rowan::{TextRange, TextSize};
 
-use crate::diag::{Code, Diagnostic};
+use crate::diag::{Code, Diagnostic, LineIndex};
 use crate::interp;
 
 /// Names that are always in scope, whatever the file declares.
@@ -213,7 +213,15 @@ struct Scope {
     /// Indices into [`Pass::bindings`], newest last so a redeclaration in one
     /// scope resolves to the newer one.
     bindings: Vec<usize>,
-    names: HashMap<(Sigil, String), usize>,
+    /// Sigil, then name, to the binding. Nested rather than keyed on the pair
+    /// so that resolving a reference borrows its name instead of copying it.
+    names: HashMap<Sigil, HashMap<String, usize>>,
+}
+
+impl Scope {
+    fn lookup(&self, sigil: Sigil, name: &str) -> Option<usize> {
+        self.names.get(&sigil)?.get(name).copied()
+    }
 }
 
 /// One binding, as the walk resolved it (`docs/lsp.md`, "What sema must newly
@@ -424,6 +432,8 @@ struct Pass<'a> {
     /// Whether the heredoc body starting here interpolates, keyed by the body
     /// token's start. Built once: the marker that says so is on another line.
     heredocs: HashMap<TextSize, bool>,
+    /// Where the lines start, built the first time a diagnostic names one.
+    lines: Option<LineIndex>,
 }
 
 impl<'a> Pass<'a> {
@@ -437,6 +447,7 @@ impl<'a> Pass<'a> {
             diagnostics: Vec::new(),
             strict,
             heredocs: HashMap::new(),
+            lines: None,
         }
     }
 
@@ -528,7 +539,7 @@ impl<'a> Pass<'a> {
         });
         let scope = &mut self.scopes[scope];
         scope.bindings.push(index);
-        scope.names.insert((sigil, name), index);
+        scope.names.entry(sigil).or_default().insert(name, index);
         index
     }
 
@@ -552,10 +563,9 @@ impl<'a> Pass<'a> {
     /// looking past the innermost scope only when the innermost does not bind
     /// it — a second `my $x` in one block is a redeclaration, not shadowing.
     fn lookup_outer(&self, sigil: Sigil, name: &str) -> Option<usize> {
-        let key = (sigil, name.to_string());
         for scope in self.scopes.iter().rev() {
-            if let Some(index) = scope.names.get(&key) {
-                return (self.bindings[*index].kind != BindingKind::Implicit).then_some(*index);
+            if let Some(index) = scope.lookup(sigil, name) {
+                return (self.bindings[index].kind != BindingKind::Implicit).then_some(index);
             }
         }
         None
@@ -567,10 +577,8 @@ impl<'a> Pass<'a> {
     /// one, because that is the answer an editor wants and the pass had it
     /// already (`docs/lsp.md`, "The scope table").
     fn resolve(&mut self, sigil: Sigil, name: &str) -> Option<usize> {
-        let key = (sigil, name.to_string());
         for scope in self.scopes.iter().rev() {
-            if let Some(index) = scope.names.get(&key) {
-                let index = *index;
+            if let Some(index) = scope.lookup(sigil, name) {
                 self.bindings[index].used = true;
                 return Some(index);
             }
@@ -588,12 +596,12 @@ impl<'a> Pass<'a> {
         }
     }
 
-    fn line_of(&self, offset: TextSize) -> usize {
-        self.source[..usize::from(offset).min(self.source.len())]
-            .bytes()
-            .filter(|byte| *byte == b'\n')
-            .count()
-            + 1
+    fn line_of(&mut self, offset: TextSize) -> usize {
+        let source = self.source;
+        self.lines
+            .get_or_insert_with(|| LineIndex::new(source))
+            .position(source, usize::from(offset))
+            .line
     }
 
     // ----- uses -----

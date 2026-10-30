@@ -398,6 +398,7 @@ pub fn declare_in(root: &SyntaxNode, dialect: &Dialect) -> FileDecls {
         decls: FileDecls::default(),
         sink: annotate::Sink::default(),
         frameworks,
+        no_frameworks: Frameworks::with_dialect(dialect.clone()),
         dialect: dialect.clone(),
         dynamic: false,
         installs_by_computed_name: false,
@@ -483,6 +484,9 @@ struct Pass {
     decls: FileDecls,
     sink: annotate::Sink,
     frameworks: HashMap<String, Frameworks>,
+    /// What a package that imported nothing can mean, built once so that
+    /// asking about one lends this rather than building it per statement.
+    no_frameworks: Frameworks,
     /// What this project's own modules stand in for.
     dialect: Dialect,
     /// The file loads XS or assigns a glob.
@@ -507,11 +511,8 @@ impl Pass {
     /// (`docs/types.md`, ANNOT-1a). Read as a file's, `Mine->new(...)` in a
     /// package that never said `use Moose` was an `unknown-key` error against
     /// a constructor it does not have.
-    fn frameworks(&self, package: &str) -> Frameworks {
-        self.frameworks
-            .get(package)
-            .cloned()
-            .unwrap_or_else(|| Frameworks::with_dialect(self.dialect.clone()))
+    fn frameworks(&self, package: &str) -> &Frameworks {
+        self.frameworks.get(package).unwrap_or(&self.no_frameworks)
     }
 
     fn facts(&mut self, package: &str) -> &mut PackageFacts {
@@ -832,22 +833,23 @@ impl Pass {
             return;
         };
         let frameworks = self.frameworks(package);
+        let (moose, type_library) = (frameworks.moose, frameworks.type_library);
         match callee.as_str() {
-            "has" if frameworks.moose => {
+            "has" if moose => {
                 let attributes = annotate::read_has(&call, &mut self.sink);
                 self.facts(package).attributes.extend(attributes);
             }
-            "extends" if frameworks.moose => {
+            "extends" if moose => {
                 let parents: Vec<String> = call.args().iter().filter_map(ast::key_text).collect();
                 self.facts(package).isa.extend(parents);
             }
-            "with" if frameworks.moose => {
+            "with" if moose => {
                 let roles: Vec<String> = call.args().iter().filter_map(ast::key_text).collect();
                 self.facts(package).roles.extend(roles);
             }
             "declare" | "subtype" | "type" | "class_type" | "role_type" | "duck_type" | "enum"
             | "union" | "intersection"
-                if frameworks.type_library =>
+                if type_library =>
             {
                 if let Some(named) = annotate::read_type_library(&call, &mut self.sink) {
                     self.facts(package).types.push(named);
