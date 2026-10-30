@@ -73,6 +73,7 @@ impl<'a> Builder<'a> {
     }
 
     pub fn file(&mut self, root: &SyntaxNode) -> Doc {
+        crate::work::tick(crate::work::Work::Build);
         self.mark_positions(&root.green(), 0, None, &mut None);
 
         let mut parts = Vec::new();
@@ -1392,6 +1393,7 @@ impl<'a> Builder<'a> {
     }
 
     fn compute_block_can_be_flat(&mut self, node: &SyntaxNode) -> bool {
+        crate::work::tick(crate::work::Work::FlatBlock);
         // Error recovery can leave a block with no closing brace. There is no
         // `{ x }` to fit on a line, so there is nothing to be flat, and saying
         // otherwise makes the output re-read as a different shape on the next
