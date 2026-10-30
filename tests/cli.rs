@@ -1,8 +1,8 @@
 //! What the command line does, asked of the command line.
 //!
-//! These run the binary. The decisions under test end in `std::process::exit`,
-//! and an exit status is not a thing a unit test can be told about — a test in
-//! the same process that reached one would take the test runner with it.
+//! These run the binary: what is under test is what a script sees — the exit
+//! status, and what lands on standard output and in the files — and that is
+//! the binary's to say, after `main` has turned an `Exit` into a number.
 
 use std::io::Write;
 use std::path::Path;
@@ -353,4 +353,47 @@ fn a_typed_error_on_wins_over_the_config() {
         typed.status.success(),
         "`--error-on error` typed over the file is what this run asked for"
     );
+}
+
+/// The exit statuses a script reads, each pinned to the number it is.
+///
+/// 1 is what a run was asked to fail on, and what a run that could not do what
+/// it was asked at all exits with too; 2 is a source that does not parse where
+/// the command was told to stop on it, or under `dev dump`.
+#[test]
+fn exit_statuses_are_the_numbers_scripts_read() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    write(directory.path(), "bad.pl", UNPARSABLE);
+    write(directory.path(), "loose.pl", "my$foo=1;\n");
+    write(directory.path(), "tidy.pl", "my $foo = 1;\n");
+    write(
+        directory.path(),
+        "arity.pl",
+        "sub g { my ($a) = @_; return $a }\ng(1, 2);\n",
+    );
+
+    for (arguments, expected) in [
+        (&["format", "--check", "tidy.pl"][..], 0),
+        (&["format", "--check", "loose.pl"], 1),
+        (&["format", "--check", "tidy.pl", "loose.pl"], 1),
+        (&["format", "--check", "bad.pl"], 1),
+        (&["format", "--stop-on-first-error", "bad.pl"], 2),
+        (&["format", "--encoding", "no-such-encoding", "tidy.pl"], 1),
+        (&["check", "--error-on", "warning", "arity.pl"], 1),
+        (&["check", "--error-on", "error", "arity.pl"], 0),
+        (&["dev", "check", "tidy.pl"], 0),
+        (
+            &["dev", "check", "--only", "no-such-invariant", "tidy.pl"],
+            1,
+        ),
+        (&["dev", "dump", "--quiet", "tidy.pl"], 0),
+        (&["dev", "dump", "--quiet", "bad.pl"], 2),
+    ] {
+        let output = camello(directory.path(), arguments);
+        assert_eq!(
+            output.status.code(),
+            Some(expected),
+            "{arguments:?}: {output:?}"
+        );
+    }
 }

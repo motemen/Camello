@@ -12,6 +12,8 @@ use std::path::{Path, PathBuf};
 use camello_sema::{Code, Diagnostic, LineIndex, Options, Severity};
 use miette::Result;
 
+use crate::Exit;
+
 /// What one run of `check` was asked for.
 /// How the diagnostics are printed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,7 +78,7 @@ fn report_drift(
     roots: &[PathBuf],
     request: &Request,
     read: impl Fn(&Path) -> Option<String> + Sync,
-) -> Result<()> {
+) -> Exit {
     let mut drifted = analysis.returns_drift(roots, request.jobs, &read);
     drifted.sort_by(|left, right| {
         (left.file, left.range.start()).cmp(&(right.file, right.range.start()))
@@ -106,13 +108,13 @@ fn report_drift(
     let files = plural(roots.len(), "file");
     if count == 0 {
         println!("no drift in {files}");
-        return Ok(());
+        return Exit::Success;
     }
     println!(
         "{} whose `Returns:` and body disagree, in {files}",
         plural(count, "sub")
     );
-    std::process::exit(1);
+    Exit::Failure
 }
 
 /// `--group`: one report per `(code, subject)`, the first one, with how many
@@ -172,17 +174,17 @@ struct FileReport {
     parse_errors: Vec<String>,
 }
 
-/// Run the checker and print what it found.
+/// Run the checker, print what it found, and say how the run came out.
 ///
-/// Exits the process rather than returning a status, because the status is the
-/// interface here: a CI step reads it and nothing else.
-pub fn run(request: &Request) -> Result<()> {
-    let encodings = crate::cli::Encodings::parse(request.encoding.as_ref())?;
+/// The status is the interface here — a CI step reads it and nothing else —
+/// so [`Exit::Failure`] is anything at or above `--error-on`.
+pub fn run(request: &Request) -> Result<Exit> {
+    let encodings = crate::source::Encodings::parse(request.encoding.as_deref())?;
 
     let mut files = Vec::new();
     if request.paths.is_empty() {
         // Standard input has no path, so it reports as `<stdin>`.
-        let (source, name, _) = crate::cli::read_source(None, None, None, &encodings)?;
+        let (source, name, _) = crate::source::read_source(None, None, None, &encodings)?;
         files.push((PathBuf::from(name), Some(source)));
     } else {
         let collected = request.walk.collect(&request.paths)?;
@@ -194,7 +196,7 @@ pub fn run(request: &Request) -> Result<()> {
     // last, and the bodies afterwards. A file is parsed once in each phase
     // rather than held between them — a rowan tree is not `Send`, and a corpus
     // the size of @INC would be a lot of trees to keep.
-    let declared = crate::cli::in_parallel(&files, request.jobs, |(path, inline)| {
+    let declared = camello_sema::workspace::in_parallel(&files, request.jobs, |(path, inline)| {
         let source = read_one(path, inline.as_deref(), &encodings)?;
         let parsed = camello_syntax::parse::parse(&source);
         Ok::<_, String>(camello_sema::decl::declare_in(
@@ -255,10 +257,10 @@ pub fn run(request: &Request) -> Result<()> {
     analysis.infer_returns(&roots, request.jobs, read);
 
     if request.returns_drift {
-        return report_drift(&analysis, &roots, request, read);
+        return Ok(report_drift(&analysis, &roots, request, read));
     }
 
-    let reports = crate::cli::in_parallel(&files, request.jobs, |(path, inline)| {
+    let reports = camello_sema::workspace::in_parallel(&files, request.jobs, |(path, inline)| {
         check_one(
             path,
             inline.as_deref(),
@@ -268,7 +270,7 @@ pub fn run(request: &Request) -> Result<()> {
         )
     });
 
-    let mut counts = [0usize; 3];
+    let mut counts = Counts::default();
     let mut unreadable = 0usize;
     let mut json = Vec::new();
     for report in &reports {
@@ -300,7 +302,7 @@ pub fn run(request: &Request) -> Result<()> {
             if diagnostic.severity < request.min_severity {
                 continue;
             }
-            counts[diagnostic.severity as usize] += count;
+            counts.add(diagnostic.severity, count);
             let position = index.position(&report.source, usize::from(diagnostic.range.start()));
             let end = index.position(&report.source, usize::from(diagnostic.range.end()));
             let more = if count > 1 {
@@ -342,26 +344,20 @@ pub fn run(request: &Request) -> Result<()> {
         summarise(&counts, files.len(), unreadable);
     }
 
-    let reportable: usize = counts
-        .iter()
-        .enumerate()
-        .filter(|(level, _)| *level >= request.error_on as usize)
-        .map(|(_, count)| count)
-        .sum();
-    if reportable > 0 {
-        std::process::exit(1);
+    if counts.at_or_above(request.error_on) > 0 {
+        return Ok(Exit::Failure);
     }
-    Ok(())
+    Ok(Exit::Success)
 }
 
 fn read_one(
     path: &Path,
     inline: Option<&str>,
-    encodings: &crate::cli::Encodings,
+    encodings: &crate::source::Encodings,
 ) -> std::result::Result<String, String> {
     match inline {
         Some(text) => Ok(text.to_string()),
-        None => match crate::cli::read_source(Some(path), None, None, encodings) {
+        None => match crate::source::read_source(Some(path), None, None, encodings) {
             Ok((source, _, _)) => Ok(source),
             Err(error) => Err(format!("{}: {error}", path.display())),
         },
@@ -371,7 +367,7 @@ fn read_one(
 fn check_one(
     path: &Path,
     inline: Option<&str>,
-    encodings: &crate::cli::Encodings,
+    encodings: &crate::source::Encodings,
     analysis: &camello_sema::Analysis,
     options: &Options,
 ) -> std::result::Result<FileReport, String> {
@@ -433,18 +429,57 @@ impl Entry {
     }
 }
 
+/// How many diagnostics of each severity a run printed.
+#[derive(Debug, Default)]
+struct Counts {
+    info: usize,
+    warning: usize,
+    error: usize,
+}
+
+impl Counts {
+    fn slot(&mut self, severity: Severity) -> &mut usize {
+        match severity {
+            Severity::Info => &mut self.info,
+            Severity::Warning => &mut self.warning,
+            Severity::Error => &mut self.error,
+        }
+    }
+
+    fn add(&mut self, severity: Severity, count: usize) {
+        *self.slot(severity) += count;
+    }
+
+    fn of(&self, severity: Severity) -> usize {
+        match severity {
+            Severity::Info => self.info,
+            Severity::Warning => self.warning,
+            Severity::Error => self.error,
+        }
+    }
+
+    /// How many were at `floor` or louder: what `--error-on` fails a run on.
+    fn at_or_above(&self, floor: Severity) -> usize {
+        [Severity::Info, Severity::Warning, Severity::Error]
+            .into_iter()
+            .filter(|severity| *severity >= floor)
+            .map(|severity| self.of(severity))
+            .sum()
+    }
+}
+
 /// One line at the end, the way `format` ends a tree with one.
 ///
 /// Quiet when there is nothing to say: a clean run over a clean tree prints
 /// the count and stops, and a run over one file prints nothing at all.
-fn summarise(counts: &[usize; 3], files: usize, unreadable: usize) {
-    let total: usize = counts.iter().sum();
+fn summarise(counts: &Counts, files: usize, unreadable: usize) {
+    let total = counts.at_or_above(Severity::Info);
     if total == 0 && unreadable == 0 && files <= 1 {
         return;
     }
     let mut parts = Vec::new();
     for severity in [Severity::Error, Severity::Warning, Severity::Info] {
-        let count = counts[severity as usize];
+        let count = counts.of(severity);
         if count > 0 {
             parts.push(plural(count, severity));
         }
@@ -470,4 +505,24 @@ pub fn parse_codes(list: &str) -> Result<Vec<Code>> {
             Code::parse(item).ok_or_else(|| miette::miette!("unknown diagnostic code `{item}`"))
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `--error-on` counts its own severity and every louder one.
+    #[test]
+    fn a_floor_counts_itself_and_everything_louder() {
+        let mut counts = Counts::default();
+        counts.add(Severity::Info, 4);
+        counts.add(Severity::Warning, 2);
+        counts.add(Severity::Error, 1);
+        counts.add(Severity::Warning, 1);
+
+        assert_eq!(counts.of(Severity::Warning), 3);
+        assert_eq!(counts.at_or_above(Severity::Info), 8);
+        assert_eq!(counts.at_or_above(Severity::Warning), 4);
+        assert_eq!(counts.at_or_above(Severity::Error), 1);
+    }
 }

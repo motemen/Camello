@@ -1,13 +1,13 @@
 use clap::{Parser, Subcommand};
-use encoding_rs::Encoding;
 use miette::{IntoDiagnostic, Report, Result};
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::report::plural;
-use crate::{format_perl_with_options, parse_perl, DelimiterSpacing, FormatterOptions};
+use crate::source::{read_source, write_with_encoding, Encodings};
+use crate::{format_perl_with_options, parse_perl, DelimiterSpacing, Exit, FormatterOptions};
 
 #[derive(Parser)]
 #[command(name = "camello")]
@@ -811,52 +811,12 @@ impl LayoutArgs {
     }
 }
 
-/// Function to interpret escape sequences
-fn interpret_escape_sequences(input: &str) -> String {
-    let mut result = String::new();
-    let mut chars = input.chars().peekable();
-
-    while let Some(ch) = chars.next() {
-        if ch == '\\' {
-            match chars.peek() {
-                Some('n') => {
-                    chars.next(); // consume 'n'
-                    result.push('\n');
-                }
-                Some('t') => {
-                    chars.next(); // consume 't'
-                    result.push('\t');
-                }
-                Some('r') => {
-                    chars.next(); // consume 'r'
-                    result.push('\r');
-                }
-                Some('\\') => {
-                    chars.next(); // consume second '\'
-                    result.push('\\');
-                }
-                Some('"') => {
-                    chars.next(); // consume '"'
-                    result.push('"');
-                }
-                Some('\'') => {
-                    chars.next(); // consume '\''
-                    result.push('\'');
-                }
-                _ => {
-                    // Unknown escape sequence, keep as is
-                    result.push(ch);
-                }
-            }
-        } else {
-            result.push(ch);
-        }
-    }
-
-    result
-}
-
-pub fn run() -> Result<()> {
+/// Run the command line, and say how it came out.
+///
+/// An `Err` is a run that could not do what it was asked at all — a flag it
+/// cannot read, a file it cannot open — and `main` exits 1 on it, as it does
+/// on [`Exit::Failure`]. Nothing below here ends the process.
+pub fn run() -> Result<Exit> {
     let cli = Cli::parse();
 
     match cli.command {
@@ -913,16 +873,17 @@ pub fn run() -> Result<()> {
                 output,
                 encoding,
                 &layout.to_options(),
-            )?;
+            )
         }
         Commands::Check { args } => {
-            return crate::report::run(&args.into_request(camello_sema::Options::default())?);
+            crate::report::run(&args.into_request(camello_sema::Options::default())?)
         }
         Commands::Lsp => {
             // Everything about the protocol — the runtime included — is
             // `camello-lsp`'s. What the command line owns is the name of the
             // subcommand (`docs/lsp.md`, "The crate and the runtime").
             camello_lsp::run().into_diagnostic()?;
+            Ok(Exit::Success)
         }
         Commands::Dev { command } => match command {
             DevCommands::Dump {
@@ -933,17 +894,15 @@ pub fn run() -> Result<()> {
                 very_quiet,
                 stop_on_first_error,
                 encoding: EncodingArg { encoding },
-            } => {
-                dump_file(
-                    path,
-                    eval,
-                    eval_escape,
-                    quiet,
-                    very_quiet,
-                    stop_on_first_error,
-                    encoding,
-                )?;
-            }
+            } => dump_file(
+                path,
+                eval,
+                eval_escape,
+                quiet,
+                very_quiet,
+                stop_on_first_error,
+                encoding,
+            ),
             DevCommands::Check {
                 paths,
                 jobs: JobsArg { jobs },
@@ -954,10 +913,11 @@ pub fn run() -> Result<()> {
                 encoding: EncodingArg { encoding },
             } => {
                 if list_invariants {
-                    return list_invariants_and_exit();
+                    print_invariants();
+                    return Ok(Exit::Success);
                 }
                 let wanted = wanted_invariants(only.as_deref())?;
-                return check_paths(paths, jobs, &wanted, quiet, verbose, &walk, encoding);
+                check_paths(paths, jobs, &wanted, quiet, verbose, &walk, encoding)
             }
             DevCommands::DeparseNormalize => {
                 // Lossy, as a deparse run by `perl-deparse` is read: B::Deparse
@@ -969,7 +929,7 @@ pub fn run() -> Result<()> {
                 for line in crate::check::deparse::normalise(&String::from_utf8_lossy(&raw)) {
                     println!("{line}");
                 }
-                return Ok(());
+                Ok(Exit::Success)
             }
             DevCommands::Index {
                 paths,
@@ -977,7 +937,8 @@ pub fn run() -> Result<()> {
                 edit_file,
                 cache,
             } => {
-                return run_index_bar(paths, edits, edit_file, cache);
+                run_index_bar(paths, edits, edit_file, cache)?;
+                Ok(Exit::Success)
             }
             DevCommands::PerlDeparse {
                 paths,
@@ -990,7 +951,7 @@ pub fn run() -> Result<()> {
                 if !crate::check::deparse::available() {
                     return Err(miette::miette!("no working perl on PATH"));
                 }
-                return check_paths(
+                check_paths(
                     paths,
                     jobs,
                     &[crate::check::Invariant::Deparse],
@@ -998,12 +959,10 @@ pub fn run() -> Result<()> {
                     verbose,
                     &walk,
                     encoding,
-                );
+                )
             }
         },
     }
-
-    Ok(())
 }
 
 /// Is this a set of paths to walk, rather than one source to print?
@@ -1059,8 +1018,8 @@ fn format_tree(
     jobs: Option<usize>,
     encoding: Option<String>,
     options: &FormatterOptions,
-) -> Result<()> {
-    let encodings = Encodings::parse(encoding.as_ref())?;
+) -> Result<Exit> {
+    let encodings = Encodings::parse(encoding.as_deref())?;
     let files = walk.collect(&paths)?;
 
     let reports = in_parallel(&files, jobs, |path| {
@@ -1126,9 +1085,9 @@ fn format_tree(
     // A file nobody could parse cleanly is not "formatted", and `--check` in a
     // pipeline wants to hear about it.
     if failed > 0 || with_diagnostics > 0 || (check && changed > 0) {
-        std::process::exit(1);
+        return Ok(Exit::Failure);
     }
-    Ok(())
+    Ok(Exit::Success)
 }
 
 /// Format one file of a tree: read it, format it, and write it back if asked.
@@ -1400,11 +1359,17 @@ fn fitting(chars: impl Iterator<Item = char>, room: usize) -> String {
 }
 
 impl Progress {
+    /// The size assumed for a terminal that will not say what its size is.
+    const FALLBACK_SIZE: (usize, usize) = (72, 24);
+    /// The narrowest the block is drawn, however narrow the terminal says it is:
+    /// below this a path is all ellipsis.
+    const NARROWEST: usize = 24;
+
     fn new(total: usize, workers: usize) -> Self {
         use std::io::IsTerminal;
 
         let (width, height) = terminal_size::terminal_size_of(io::stderr()).map_or(
-            (72, 24),
+            Self::FALLBACK_SIZE,
             |(terminal_size::Width(width), terminal_size::Height(height))| {
                 (usize::from(width), usize::from(height))
             },
@@ -1414,7 +1379,7 @@ impl Progress {
             done: AtomicUsize::new(0),
             violated: AtomicUsize::new(0),
             started: std::time::Instant::now(),
-            width: width.max(24),
+            width: width.max(Self::NARROWEST),
             room: (height / 2).max(1),
             live: std::sync::Mutex::new(Live {
                 running: vec![None; workers],
@@ -1637,11 +1602,15 @@ fn write_violation(
     Ok(())
 }
 
-/// `camello dev check`: run the invariants over files, directories, or stdin.
-///
-/// Exits non-zero when anything is violated, so it can gate a corpus run.
-fn list_invariants_and_exit() -> Result<()> {
+/// `camello dev check --list-invariants`: every check `dev check` asks, and
+/// where the one it does not ask went.
+fn print_invariants() {
     use crate::check::Invariant;
+
+    /// The width the descriptions are wrapped to: a terminal's worth, less the
+    /// indent, whatever the terminal is — this is a list to read, not a block
+    /// to redraw.
+    const WIDTH: usize = 72;
 
     let mut heading = None;
     for (index, invariant) in Invariant::ALL.iter().enumerate() {
@@ -1654,7 +1623,7 @@ fn list_invariants_and_exit() -> Result<()> {
             println!();
         }
         println!("{:<17}{}", invariant.slug(), invariant.name());
-        for line in wrapped(invariant.description(), 72) {
+        for line in wrapped(invariant.description(), WIDTH) {
             println!("    {line}");
         }
     }
@@ -1669,10 +1638,9 @@ fn list_invariants_and_exit() -> Result<()> {
         Invariant::Deparse.slug(),
         Invariant::Deparse.name()
     );
-    for line in wrapped(Invariant::Deparse.description(), 72) {
+    for line in wrapped(Invariant::Deparse.description(), WIDTH) {
         println!("    {line}");
     }
-    Ok(())
 }
 
 /// Which invariants `--only` named, or all the ones `check` asks.
@@ -1704,6 +1672,10 @@ fn wanted_invariants(only: Option<&str>) -> Result<Vec<crate::check::Invariant>>
     Ok(wanted)
 }
 
+/// `camello dev check` and `dev perl-deparse`: run the invariants over files,
+/// directories, or stdin.
+///
+/// [`Exit::Failure`] when anything is violated, so it can gate a corpus run.
 fn check_paths(
     paths: Vec<PathBuf>,
     jobs: Option<usize>,
@@ -1712,10 +1684,10 @@ fn check_paths(
     verbose: bool,
     walk: &WalkArgs,
     encoding: Option<String>,
-) -> Result<()> {
+) -> Result<Exit> {
     use crate::check::{check_report, Invariant};
 
-    let encodings = Encodings::parse(encoding.as_ref())?;
+    let encodings = Encodings::parse(encoding.as_deref())?;
     let files = walk.collect(&paths)?;
 
     // No paths at all means stdin, so the command composes with a pipeline the
@@ -1987,11 +1959,14 @@ fn check_paths(
     // are not: a few hundred names is not a list anybody reads, and the count
     // above already said how many there were.
     if !unanswered_for.is_empty() && sources > 1 {
-        const NAMED: usize = 20;
+        /// How many of them are named before the list is cut. More than the
+        /// few files named under each message above: this list is the one a
+        /// reader goes back through, and twenty is a screen of it.
+        const FILES_NAMED: usize = 20;
         let named = if verbose {
             unanswered_for.len()
         } else {
-            NAMED.min(unanswered_for.len())
+            FILES_NAMED.min(unanswered_for.len())
         };
         writeln!(out).into_diagnostic()?;
         writeln!(out, "---- files with an unanswered check").into_diagnostic()?;
@@ -2022,9 +1997,9 @@ fn check_paths(
     .into_diagnostic()?;
 
     if violated > 0 {
-        std::process::exit(1);
+        return Ok(Exit::Failure);
     }
-    Ok(())
+    Ok(Exit::Success)
 }
 
 /// Every file below `path` whose extension is one this command reads.
@@ -2040,192 +2015,6 @@ pub(crate) fn collect_perl_files(
         eprintln!("Left '{}' alone: ignored by {why}.", path.display());
     }
     Ok(())
-}
-
-/// The encodings a source may be in, in the order they are tried.
-///
-/// One candidate is the whole of the usual case: the file is utf-8, or it is
-/// not and that is something to hear about rather than to guess around. A tree
-/// older than utf-8 is the other case — some of it euc-jp, some of it already
-/// converted, and no flag that is right for the run because the encoding is a
-/// property of each file. So the run names what a file may be, and the file
-/// answers: the first candidate that reads its bytes without replacing any of
-/// them is the one it is in, and the one it is written back in.
-///
-/// Order is what settles a file that more than one candidate can read. Every
-/// candidate reads pure ASCII, and euc-jp bytes are rarely valid utf-8, so
-/// utf-8 first is the order that means "already converted, or not yet".
-pub(crate) struct Encodings(Vec<&'static Encoding>);
-
-impl Encodings {
-    /// The candidates named on the command line, or utf-8 when none were.
-    pub(crate) fn parse(names: Option<&String>) -> Result<Self> {
-        let Some(names) = names else {
-            return Ok(Self(vec![encoding_rs::UTF_8]));
-        };
-
-        let mut candidates: Vec<&'static Encoding> = Vec::new();
-        for name in names.split(',').map(str::trim).filter(|n| !n.is_empty()) {
-            let encoding = Encoding::for_label(name.as_bytes())
-                .ok_or_else(|| miette::miette!("Unknown encoding: {name}"))?;
-            // A candidate that already had its turn cannot decode anything the
-            // earlier one did not.
-            if !candidates.contains(&encoding) {
-                candidates.push(encoding);
-            }
-        }
-        if candidates.is_empty() {
-            return Err(miette::miette!("--encoding names no encoding"));
-        }
-        Ok(Self(candidates))
-    }
-
-    /// Decode `bytes` with the first candidate that reads all of them.
-    ///
-    /// `None` is a source that none of them could read: rejected rather than
-    /// decoded with replacement characters, which would be a rewrite of the
-    /// file's contents wearing the name of a formatting run.
-    fn decode(&self, bytes: &[u8]) -> Option<(String, &'static Encoding)> {
-        self.0.iter().find_map(|encoding| {
-            let (decoded, _, had_errors) = encoding.decode(bytes);
-            (!had_errors).then(|| (decoded.into_owned(), *encoding))
-        })
-    }
-
-    /// What to write text that never came from a file — `-e`, and its escaping
-    /// sibling — in: the first thing the run said the sources are.
-    fn first(&self) -> &'static Encoding {
-        self.0[0]
-    }
-
-    /// `utf-8`, or `utf-8, euc-jp`: the candidates, for a message that has to
-    /// say which ones were tried.
-    fn names(&self) -> String {
-        self.0
-            .iter()
-            .map(|encoding| encoding.name())
-            .collect::<Vec<_>>()
-            .join(", ")
-    }
-}
-
-/// A source, what to call it in a message, and the encoding it turned out to be
-/// in — which is the one it is written back in.
-pub(crate) fn read_source(
-    path: Option<&Path>,
-    eval: Option<String>,
-    eval_escape: Option<String>,
-    encodings: &Encodings,
-) -> Result<(String, String, &'static Encoding)> {
-    if let Some(code) = eval.or_else(|| eval_escape.map(|code| interpret_escape_sequences(&code))) {
-        return Ok((code, "<command-line>".to_string(), encodings.first()));
-    }
-
-    // What the source is called in the result, and in the refusal.
-    let (bytes, name, described) = if let Some(path) = path {
-        let bytes = fs::read(path).into_diagnostic()?;
-        let name = path.display().to_string();
-        let described = format!("'{name}'");
-        (bytes, name, described)
-    } else {
-        let mut bytes = Vec::new();
-        io::stdin().read_to_end(&mut bytes).into_diagnostic()?;
-        (bytes, "<stdin>".to_string(), "stdin".to_string())
-    };
-    let Some((decoded, encoding)) = encodings.decode(&bytes) else {
-        return Err(miette::miette!(
-            "{described} is not decodable as {}; refusing lossy formatting",
-            encodings.names()
-        ));
-    };
-    Ok((decoded, name, encoding))
-}
-
-fn encode_to_vec(contents: &str, encoding: &'static Encoding) -> Result<Vec<u8>> {
-    if std::ptr::eq(encoding, encoding_rs::UTF_8) {
-        return Ok(contents.as_bytes().to_vec());
-    }
-
-    let (encoded, _, had_errors) = encoding.encode(contents);
-    if had_errors {
-        return Err(miette::miette!(
-            "Unable to encode formatted output using {}",
-            encoding.name()
-        ));
-    }
-
-    Ok(encoded.into_owned())
-}
-
-fn write_with_encoding(path: &Path, contents: &str, encoding: &'static Encoding) -> Result<()> {
-    let encoded = encode_to_vec(contents, encoding)?;
-    // Preserve the usual meaning of explicitly formatting a symlink: update
-    // its target rather than replacing the link itself with a regular file.
-    let target = match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_symlink() => {
-            fs::canonicalize(path).into_diagnostic()?
-        }
-        _ => path.to_path_buf(),
-    };
-    atomic_write(&target, &encoded)
-}
-
-/// Replace `path` only after the complete output has reached a sibling file.
-///
-/// Keeping the temporary file in the same directory makes the final rename
-/// atomic on the target filesystem. Existing permissions are retained.
-fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
-    static NEXT_TEMP: AtomicUsize = AtomicUsize::new(0);
-
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    let name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("output");
-    let permissions = fs::metadata(path)
-        .ok()
-        .map(|metadata| metadata.permissions());
-
-    let (temporary, mut file) = (0..100)
-        .find_map(|_| {
-            let sequence = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
-            let temporary = parent.join(format!(
-                ".{name}.camello.{}.{}.tmp",
-                std::process::id(),
-                sequence
-            ));
-            match OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&temporary)
-            {
-                Ok(file) => Some(Ok((temporary, file))),
-                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => None,
-                Err(error) => Some(Err(error)),
-            }
-        })
-        .unwrap_or_else(|| {
-            Err(io::Error::new(
-                io::ErrorKind::AlreadyExists,
-                "could not allocate a temporary output file",
-            ))
-        })
-        .into_diagnostic()?;
-
-    let result = (|| -> std::io::Result<()> {
-        if let Some(permissions) = permissions {
-            file.set_permissions(permissions)?;
-        }
-        file.write_all(contents)?;
-        file.sync_all()?;
-        drop(file);
-        fs::rename(&temporary, path)
-    })();
-
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
-    result.into_diagnostic()
 }
 
 /// `camello format` over the one source it was given.
@@ -2245,8 +2034,8 @@ fn format_file(
     output: Option<PathBuf>,
     encoding: Option<String>,
     options: &FormatterOptions,
-) -> Result<()> {
-    let encodings = Encodings::parse(encoding.as_ref())?;
+) -> Result<Exit> {
+    let encodings = Encodings::parse(encoding.as_deref())?;
 
     // Read from file or standard input
     let (input, source_name, encoding) =
@@ -2268,7 +2057,7 @@ fn format_file(
             print!("{input}");
             io::stdout().flush().into_diagnostic()?;
         }
-        return Ok(());
+        return Ok(Exit::Success);
     }
 
     // Execute formatting
@@ -2286,7 +2075,7 @@ fn format_file(
         if stop_on_first_error {
             let error = errors.into_iter().next().unwrap();
             eprintln!("{:?}", Report::new(error));
-            std::process::exit(2);
+            return Ok(Exit::ParseError);
         }
         for e in errors {
             eprintln!("{:?}", Report::new(e));
@@ -2296,7 +2085,7 @@ fn format_file(
             print!("{input}");
             io::stdout().flush().into_diagnostic()?;
         }
-        std::process::exit(1);
+        return Ok(Exit::Failure);
     }
 
     if check {
@@ -2305,9 +2094,9 @@ fn format_file(
         // somewhere, and the exit status carries the rest.
         if input != formatted {
             println!("{source_name}");
-            std::process::exit(1);
+            return Ok(Exit::Failure);
         }
-        return Ok(());
+        return Ok(Exit::Success);
     }
 
     match destination {
@@ -2318,7 +2107,7 @@ fn format_file(
         }
     }
 
-    Ok(())
+    Ok(Exit::Success)
 }
 
 fn dump_file(
@@ -2329,8 +2118,8 @@ fn dump_file(
     very_quiet: bool,
     stop_on_first_error: bool,
     encoding: Option<String>,
-) -> Result<()> {
-    let encodings = Encodings::parse(encoding.as_ref())?;
+) -> Result<Exit> {
+    let encodings = Encodings::parse(encoding.as_deref())?;
 
     // Read from file or standard input
     let (input, source_name, _) = read_source(path.as_deref(), eval, eval_escape, &encodings)?;
@@ -2353,13 +2142,13 @@ fn dump_file(
                 print!("{}", dump_tree(&syntax));
             }
         }
-        std::process::exit(2);
+        Ok(Exit::ParseError)
     } else {
         if !quiet && !very_quiet {
             println!("Parsed AST for '{source_name}':");
             print!("{}", dump_tree(&syntax));
         }
-        Ok(())
+        Ok(Exit::Success)
     }
 }
 
@@ -2421,22 +2210,6 @@ mod tests {
     }
 
     #[test]
-    fn test_interpret_escape_sequences() {
-        assert_eq!(interpret_escape_sequences("hello\\nworld"), "hello\nworld");
-        assert_eq!(interpret_escape_sequences("tab\\there"), "tab\there");
-        assert_eq!(interpret_escape_sequences("quote\\\"test"), "quote\"test");
-        assert_eq!(
-            interpret_escape_sequences("backslash\\\\test"),
-            "backslash\\test"
-        );
-        assert_eq!(interpret_escape_sequences("normal text"), "normal text");
-        assert_eq!(
-            interpret_escape_sequences("print 1\\nif yes();"),
-            "print 1\nif yes();"
-        );
-    }
-
-    #[test]
     fn test_format_with_escape_sequences() -> Result<(), Box<dyn std::error::Error>> {
         // Test -E option functionality
         assert!(format_file(
@@ -2479,7 +2252,7 @@ mod tests {
         let file_path = dir.path().join("write_test.pl");
         fs::write(&file_path, "my$var=1;")?;
 
-        format_file(
+        let exit = format_file(
             Some(file_path.clone()),
             None,
             None,
@@ -2490,6 +2263,7 @@ mod tests {
             None,
             &layout(),
         )?;
+        assert_eq!(exit, Exit::Success);
 
         let written = fs::read_to_string(&file_path)?;
         let (expected, _) = format_perl("my$var=1;");
@@ -2506,7 +2280,7 @@ mod tests {
         let file_path = dir.path().join("untouched.pl");
         fs::write(&file_path, "my$var=1;")?;
 
-        format_file(
+        let exit = format_file(
             Some(file_path.clone()),
             None,
             None,
@@ -2517,6 +2291,7 @@ mod tests {
             None,
             &layout(),
         )?;
+        assert_eq!(exit, Exit::Success);
 
         assert_eq!(fs::read_to_string(&file_path)?, "my$var=1;");
         Ok(())
@@ -2529,7 +2304,7 @@ mod tests {
         fs::write(&file_path, "my $var = 1;\n")?; // Use actual newline, not escaped
 
         // Check that the file is correctly formatted
-        assert!(format_file(
+        let exit = format_file(
             Some(file_path),
             None,
             None,
@@ -2538,11 +2313,83 @@ mod tests {
             false,
             None,
             None,
-            &layout()
-        )
-        .is_ok());
+            &layout(),
+        )?;
+        assert_eq!(exit, Exit::Success);
 
         Ok(())
+    }
+
+    /// `--check` on one file that is not formatted fails, and leaves it as it
+    /// was.
+    #[test]
+    fn check_on_an_unformatted_file_fails() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempdir()?;
+        let path = dir.path().join("unformatted.pl");
+        fs::write(&path, "my$var=1;\n")?;
+
+        let exit = format_file(
+            Some(path.clone()),
+            None,
+            None,
+            None,
+            true,
+            false,
+            None,
+            None,
+            &layout(),
+        )?;
+
+        assert_eq!(exit, Exit::Failure);
+        assert_eq!(fs::read_to_string(&path)?, "my$var=1;\n");
+        Ok(())
+    }
+
+    /// A source that does not parse is a failure, and a 2 rather than a 1 when
+    /// the run was told to stop at the first error.
+    #[test]
+    fn one_unparsable_source_fails() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempdir()?;
+        let path = dir.path().join("bad.pl");
+        fs::write(&path, "my $foo = ;\n")?;
+
+        for (stop_on_first_error, expected) in [(false, Exit::Failure), (true, Exit::ParseError)] {
+            let exit = format_file(
+                Some(path.clone()),
+                None,
+                None,
+                None,
+                false,
+                stop_on_first_error,
+                None,
+                None,
+                &layout(),
+            )?;
+            assert_eq!(
+                exit, expected,
+                "--stop-on-first-error: {stop_on_first_error}"
+            );
+        }
+        assert_eq!(fs::read_to_string(&path)?, "my $foo = ;\n");
+        Ok(())
+    }
+
+    /// An encoding nobody knows is an error, not an exit status: the run
+    /// could not do what it was asked at all.
+    #[test]
+    fn an_unknown_encoding_is_an_error() {
+        let result = format_file(
+            None,
+            None,
+            Some("1;".to_string()),
+            None,
+            false,
+            false,
+            None,
+            Some("no-such-encoding".to_string()),
+            &layout(),
+        );
+        assert!(result.is_err());
     }
 
     /// A file goes out in the encoding it came in: formatting is a question
@@ -2554,13 +2401,14 @@ mod tests {
         let (expected, _) = format_perl(text);
 
         for label in ["utf-8", "euc-jp", "shift_jis"] {
-            let encoding = Encoding::for_label(label.as_bytes()).expect("a known encoding");
+            let encoding =
+                encoding_rs::Encoding::for_label(label.as_bytes()).expect("a known encoding");
             let dir = tempdir()?;
             let path = dir.path().join("greeting.pl");
             let (encoded, _, _) = encoding.encode(text);
             fs::write(&path, &*encoded)?;
 
-            format_file(
+            let exit = format_file(
                 Some(path.clone()),
                 None,
                 None,
@@ -2571,6 +2419,7 @@ mod tests {
                 Some(label.to_string()),
                 &layout(),
             )?;
+            assert_eq!(exit, Exit::Success);
 
             let written = fs::read(&path)?;
             let (decoded, _, had_errors) = encoding.decode(&written);
@@ -2589,7 +2438,7 @@ mod tests {
     {
         let text = "my $var=\"こんにちは\";\n";
         let (expected, _) = format_perl(text);
-        let encodings = Encodings::parse(Some(&"utf-8,euc-jp".to_string()))?;
+        let encodings = Encodings::parse(Some("utf-8,euc-jp"))?;
 
         let dir = tempdir()?;
         for (name, encoding) in [
@@ -2616,7 +2465,7 @@ mod tests {
     /// Bytes no candidate can read are a file left alone, named in the report.
     #[test]
     fn a_file_no_candidate_reads_is_left_alone() -> Result<(), Box<dyn std::error::Error>> {
-        let encodings = Encodings::parse(Some(&"utf-8".to_string()))?;
+        let encodings = Encodings::parse(Some("utf-8"))?;
         let dir = tempdir()?;
         let path = dir.path().join("legacy.pl");
         let (encoded, _, _) = encoding_rs::EUC_JP.encode("my $var = \"こんにちは\";\n");
@@ -2626,36 +2475,6 @@ mod tests {
 
         assert_eq!(report.failure.as_deref(), Some("not decodable as UTF-8"));
         assert_eq!(fs::read(&path)?, *encoded);
-        Ok(())
-    }
-
-    #[test]
-    fn candidates_are_named_once_each_and_must_be_known() {
-        let parsed = |names: &str| Encodings::parse(Some(&names.to_string()));
-
-        assert_eq!(
-            parsed("utf-8, euc-jp").expect("known").names(),
-            "UTF-8, EUC-JP"
-        );
-        // The same encoding twice cannot decode anything its first turn did not.
-        assert_eq!(parsed("utf-8,utf8").expect("known").names(), "UTF-8");
-        assert!(parsed("invalid-encoding-name").is_err());
-        assert!(parsed(",").is_err());
-        // None of them named is utf-8, which is what it was before candidates.
-        assert_eq!(Encodings::parse(None).expect("a default").names(), "UTF-8");
-    }
-
-    #[test]
-    fn decoding_errors_are_rejected_instead_of_replaced() -> Result<(), Box<dyn std::error::Error>>
-    {
-        let dir = tempdir()?;
-        let path = dir.path().join("invalid.pl");
-        fs::write(&path, [0xff, 0xfe, b'\n'])?;
-
-        let result = read_source(Some(&path), None, None, &Encodings::parse(None)?);
-
-        assert!(result.is_err());
-        assert_eq!(fs::read(&path)?, [0xff, 0xfe, b'\n']);
         Ok(())
     }
 
@@ -2677,25 +2496,6 @@ mod tests {
         )?;
 
         assert_eq!(files, [dir.path().join("one.pl")]);
-        Ok(())
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn atomic_write_through_a_symlink_preserves_the_link() -> Result<(), Box<dyn std::error::Error>>
-    {
-        use std::os::unix::fs::symlink;
-
-        let dir = tempdir()?;
-        let target = dir.path().join("target.pl");
-        let link = dir.path().join("link.pl");
-        fs::write(&target, "old\n")?;
-        symlink(&target, &link)?;
-
-        write_with_encoding(&link, "new\n", encoding_rs::UTF_8)?;
-
-        assert!(fs::symlink_metadata(&link)?.file_type().is_symlink());
-        assert_eq!(fs::read_to_string(&target)?, "new\n");
         Ok(())
     }
 
