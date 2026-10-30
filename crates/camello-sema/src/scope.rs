@@ -213,7 +213,15 @@ struct Scope {
     /// Indices into [`Pass::bindings`], newest last so a redeclaration in one
     /// scope resolves to the newer one.
     bindings: Vec<usize>,
-    names: HashMap<(Sigil, String), usize>,
+    /// Sigil, then name, to the binding. Nested rather than keyed on the pair
+    /// so that resolving a reference borrows its name instead of copying it.
+    names: HashMap<Sigil, HashMap<String, usize>>,
+}
+
+impl Scope {
+    fn lookup(&self, sigil: Sigil, name: &str) -> Option<usize> {
+        self.names.get(&sigil)?.get(name).copied()
+    }
 }
 
 /// One binding, as the walk resolved it (`docs/lsp.md`, "What sema must newly
@@ -528,7 +536,7 @@ impl<'a> Pass<'a> {
         });
         let scope = &mut self.scopes[scope];
         scope.bindings.push(index);
-        scope.names.insert((sigil, name), index);
+        scope.names.entry(sigil).or_default().insert(name, index);
         index
     }
 
@@ -552,10 +560,9 @@ impl<'a> Pass<'a> {
     /// looking past the innermost scope only when the innermost does not bind
     /// it — a second `my $x` in one block is a redeclaration, not shadowing.
     fn lookup_outer(&self, sigil: Sigil, name: &str) -> Option<usize> {
-        let key = (sigil, name.to_string());
         for scope in self.scopes.iter().rev() {
-            if let Some(index) = scope.names.get(&key) {
-                return (self.bindings[*index].kind != BindingKind::Implicit).then_some(*index);
+            if let Some(index) = scope.lookup(sigil, name) {
+                return (self.bindings[index].kind != BindingKind::Implicit).then_some(index);
             }
         }
         None
@@ -567,10 +574,8 @@ impl<'a> Pass<'a> {
     /// one, because that is the answer an editor wants and the pass had it
     /// already (`docs/lsp.md`, "The scope table").
     fn resolve(&mut self, sigil: Sigil, name: &str) -> Option<usize> {
-        let key = (sigil, name.to_string());
         for scope in self.scopes.iter().rev() {
-            if let Some(index) = scope.names.get(&key) {
-                let index = *index;
+            if let Some(index) = scope.lookup(sigil, name) {
                 self.bindings[index].used = true;
                 return Some(index);
             }
