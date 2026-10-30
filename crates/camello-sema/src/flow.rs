@@ -2684,16 +2684,30 @@ fn literal_type(node: &SyntaxNode) -> Type {
         return Type::Unknown;
     };
     if let Some(number) = literal.as_number() {
-        return if number.contains('.') || number.contains('e') || number.contains('E') {
-            Type::Num
-        } else {
-            Type::Int
-        };
+        return number_type(&number);
     }
     match literal.as_string() {
         Some(text) => numeric_type(&text).unwrap_or(Type::Str),
         // An interpolating string is a `Str` whatever it holds.
         None => Type::Str,
+    }
+}
+
+/// A numeric literal's type: `Num` where it has a fractional part or an
+/// exponent. In `0x`, `0b` and `0o` literals `e` is a hex digit, and the
+/// exponent is a binary `p`.
+fn number_type(number: &str) -> Type {
+    let radix = number.len() > 1
+        && number.starts_with('0')
+        && matches!(
+            number.as_bytes()[1],
+            b'x' | b'X' | b'b' | b'B' | b'o' | b'O'
+        );
+    let exponent: &[char] = if radix { &['p', 'P'] } else { &['e', 'E'] };
+    if number.contains('.') || number.contains(exponent) {
+        Type::Num
+    } else {
+        Type::Int
     }
 }
 

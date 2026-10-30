@@ -411,3 +411,24 @@ fn a_recursive_sub_is_cut_to_unknown() {
     );
     assert_eq!(found, vec!["P::loops($n : Any)", "P::ping", "P::pong"]);
 }
+
+#[test]
+fn a_number_in_another_base_is_an_integer() {
+    // `E` is a hex digit, not an exponent: `0x1E` is 30.
+    let found = inferred(
+        "package P;\n\
+         sub hexadecimal { return 0x1E }\n\
+         sub binary { return 0b101 }\n\
+         sub octal { return 0o17 }\n\
+         sub exponent { return 1E3 }\n",
+    );
+    assert_eq!(
+        found,
+        vec![
+            "P::hexadecimal -> Int (inferred)",
+            "P::binary -> Int (inferred)",
+            "P::octal -> Int (inferred)",
+            "P::exponent -> Num (inferred)",
+        ]
+    );
+}
