@@ -15,8 +15,13 @@ env:
 
 jobs:
   test:
-    name: Test Suite
-    runs-on: ubuntu-latest
+    name: Test Suite (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS is half of the release targets.
+        os: [ ubuntu-latest, macos-latest ]
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     - name: Install the toolchain
@@ -35,6 +40,8 @@ jobs:
     - name: Enforce formatting
       run: cargo fmt --all --check
 
+  # Also what `cargo check` would say: clippy type-checks every target first.
+  # `--all-features` brings in `mimalloc`, which no default build compiles.
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
@@ -44,4 +51,4 @@ jobs:
       run: rustup toolchain install
     - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
     - name: Linting
-      run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
