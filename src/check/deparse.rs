@@ -21,42 +21,25 @@ use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
+use super::Reason;
+
 /// How long any one perl invocation is given before it is killed.
 const TIMEOUT: Duration = Duration::from_secs(60);
-
-/// The reason a corpus run is mostly unanswered, and the one worth telling the
-/// reader what to do about: a file checked out of the tree it was installed in
-/// cannot find what it uses.
-pub const NOT_IN_INC: &str = "a module it uses is not in @INC";
-
-/// The file compiled and means nothing at run time — POD, `package`, `use`,
-/// forward declarations, and no ops under any of it. There is no program here
-/// for perl to read differently, so there is nothing to ask about the output.
-const NO_OPS: &str = "the input deparses to nothing: no runtime ops in it";
-
-/// perl never ran. Not something a file can be blamed for: no perl on PATH any
-/// more, or no room to start a process.
-const COULD_NOT_RUN: &str = "perl could not be run";
-
-/// perl started and would not stop, and was killed at the timeout.
-const TIMED_OUT: &str = "perl did not finish before the timeout";
-
-/// `perl -c` was happy and `B::Deparse` was not — it exited non-zero, or the
-/// file's own `BEGIN` time did.
-const WOULD_NOT_DEPARSE: &str = "perl would not deparse it";
 
 /// What to do about a reason, where there is something to do.
 ///
 /// perl runs with this process's environment, so the fix is the ordinary one
 /// and it needs no flag from us.
 #[must_use]
-pub fn hint(why: &str) -> Option<&'static str> {
+pub fn hint(why: Reason) -> Option<&'static str> {
     match why {
-        NOT_IN_INC => {
+        Reason::NotInInc => {
             Some("perl inherits this shell's environment: PERL5LIB=<the tree's lib> answers these")
         }
-        NO_OPS => Some("nothing camello can do to such a file changes what it means"),
-        COULD_NOT_RUN => Some("perl was there when the run started; it is not being reached now"),
+        Reason::NoOps => Some("nothing camello can do to such a file changes what it means"),
+        Reason::CouldNotRun => {
+            Some("perl was there when the run started; it is not being reached now")
+        }
         _ => None,
     }
 }
@@ -70,7 +53,7 @@ pub enum Verdict {
     /// class, for counting; `detail` is what perl actually said, because "perl
     /// cannot load the input" against a third of a corpus is a number the
     /// reader can do nothing with.
-    NotLoadable { why: &'static str, detail: String },
+    NotLoadable { why: Reason, detail: String },
     /// perl reads them as different programs, or will not read the output.
     Differs { summary: String, detail: String },
 }
@@ -90,7 +73,7 @@ pub fn available() -> bool {
 pub fn meaning(source: &str, formatted: &str) -> Verdict {
     let Some(work) = Workspace::new() else {
         return Verdict::NotLoadable {
-            why: "a working directory could not be made",
+            why: Reason::NoWorkingDirectory,
             detail: String::new(),
         };
     };
@@ -105,16 +88,16 @@ pub fn meaning(source: &str, formatted: &str) -> Verdict {
         Asked::Failed(errors) => {
             return Verdict::NotLoadable {
                 why: if errors.contains("Can't locate ") && errors.contains("in @INC") {
-                    NOT_IN_INC
+                    Reason::NotInInc
                 } else {
-                    "perl cannot load the input"
+                    Reason::CannotLoad
                 },
                 detail: evidence(&errors),
             }
         }
         Asked::Silent => {
             return Verdict::NotLoadable {
-                why: NO_OPS,
+                why: Reason::NoOps,
                 detail: String::new(),
             }
         }
@@ -197,12 +180,12 @@ enum Asked {
 
 /// perl gave no answer, and why.
 ///
-/// `why` is the class the report counts and folds by, so it is one of the
-/// constants above rather than a sentence built here; `detail` is whatever
+/// `why` is the class the report counts and folds by, so it is a [`Reason`]
+/// rather than a sentence built here; `detail` is whatever
 /// evidence there is, which for a timeout or a process that never started is
 /// nothing at all.
 struct NoAnswer {
-    why: &'static str,
+    why: Reason,
     detail: String,
 }
 
@@ -316,7 +299,7 @@ fn deparse(path: &Path) -> Result<Option<Vec<String>>, NoAnswer> {
     let output = perl(path, &["-MO=Deparse,-p,-d"])?;
     if !output.status.success() {
         return Err(NoAnswer {
-            why: WOULD_NOT_DEPARSE,
+            why: Reason::WouldNotDeparse,
             detail: evidence(&String::from_utf8_lossy(&output.stderr)),
         });
     }
@@ -443,7 +426,7 @@ fn perl(path: &Path, args: &[&str]) -> Result<std::process::Output, NoAnswer> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|_| no_answer(COULD_NOT_RUN))?;
+        .map_err(|_| no_answer(Reason::CouldNotRun))?;
 
     // The pipes are drained on their own threads: a deparse of a large file
     // fills the buffer, and a child blocked on a full pipe never exits, which
@@ -459,9 +442,9 @@ fn perl(path: &Path, args: &[&str]) -> Result<std::process::Output, NoAnswer> {
             Ok(None) => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err(no_answer(TIMED_OUT));
+                return Err(no_answer(Reason::TimedOut));
             }
-            Err(_) => return Err(no_answer(COULD_NOT_RUN)),
+            Err(_) => return Err(no_answer(Reason::CouldNotRun)),
         }
     };
 
@@ -546,7 +529,7 @@ mod tests {
         ] {
             let verdict = meaning(source, source);
             assert!(
-                matches!(&verdict, Verdict::NotLoadable { why, .. } if *why == super::NO_OPS),
+                matches!(&verdict, Verdict::NotLoadable { why, .. } if *why == super::Reason::NoOps),
                 "{source:?} should be unanswered for having no ops"
             );
         }

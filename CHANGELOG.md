@@ -13,6 +13,9 @@ ending in `{` (Fixed).
   one-line one is normalised (INDENT-2, SPACING-7, #386).
 - `camello check` stops on a value in `camello.toml` it cannot read even where
   a flag overrides it, as it does on a file that does not parse (#384).
+- Internal cleanup: diagnostic codes and the reasons `dev check` leaves a
+  question unanswered are typed rather than kept as strings, with no change to
+  formatting or diagnostics (#395).
 
 ### Fixed
 
