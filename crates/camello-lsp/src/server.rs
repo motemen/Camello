@@ -363,7 +363,7 @@ async fn publish_for(state: &Arc<RwLock<GlobalState>>, client: &Client, uri: Uri
             .read()
             .expect("no writer panics holding this");
         let context = analysis::context(&snapshot.document, &index, &snapshot.settings);
-        let found = analysis::analyse(&snapshot.document, &context, &snapshot.settings, true);
+        let found = analysis::analyse(&snapshot.document, &context, &snapshot.settings);
         let published = handlers::diagnostics::publish(&snapshot.document, &found.diagnostics);
         (published, found.tables)
     })

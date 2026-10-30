@@ -91,25 +91,19 @@ pub fn context<'a>(document: &Document, index: &'a Index, settings: &Settings) -
     }
 }
 
-/// Run the checker over a document.
+/// Run the checker over a document, keeping the types the editor's tables
+/// are built from.
 #[must_use]
-pub fn analyse(
-    document: &Document,
-    context: &Context<'_>,
-    settings: &Settings,
-    record: bool,
-) -> Analysed {
+pub fn analyse(document: &Document, context: &Context<'_>, settings: &Settings) -> Analysed {
     let root = document.tree();
     let path = document.analysis_path();
-    let record = if record {
-        camello_sema::Record::Types
-    } else {
-        camello_sema::Record::Nothing
-    };
-    let found =
-        context
-            .analysis()
-            .analyse_file(&path, &root, &document.text, &settings.options, record);
+    let found = context.analysis().analyse_file(
+        &path,
+        &root,
+        &document.text,
+        &settings.options,
+        camello_sema::Record::Types,
+    );
     let mut diagnostics = found.diagnostics;
     diagnostics.retain(|diagnostic| diagnostic.severity >= settings.min_severity);
     if !document.parsed_cleanly() {
