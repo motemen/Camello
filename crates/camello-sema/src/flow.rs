@@ -3890,12 +3890,5 @@ fn with_invocant(ty: &Type, own: &str, class: &str) -> Type {
     }
 }
 
-/// What the design calls the sub's `Returns:` — kept here so that the flow
-/// pass and the declaration pass agree on the empty case.
-#[must_use]
-pub fn returns_nothing(returns: &Returns) -> bool {
-    returns.list == ListShape::Nothing
-}
-
 #[cfg(test)]
 mod tests;
