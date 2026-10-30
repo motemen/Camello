@@ -1481,6 +1481,23 @@ impl ListShape {
     /// a five-way alternation in a signature reads worse than the union does.
     pub const ALTERNATIVES: usize = 3;
 
+    /// The shape with every type in it substituted, as
+    /// [`Type::substituted`] does for one type.
+    #[must_use]
+    pub fn substituted(&self, lookup: &dyn Fn(&str) -> Option<Type>) -> ListShape {
+        let each = |types: &[Type]| -> Vec<Type> {
+            types.iter().map(|ty| ty.substituted(lookup)).collect()
+        };
+        match self {
+            ListShape::Unknown | ListShape::Nothing => self.clone(),
+            ListShape::Fixed(types) => ListShape::fixed(each(types)),
+            ListShape::Of(ty) => ListShape::of(ty.substituted(lookup)),
+            ListShape::Either(shapes) => {
+                ListShape::either(shapes.iter().map(|shape| each(shape)).collect())
+            }
+        }
+    }
+
     /// The join of two shapes (`docs/return-inference.md`, "The shape").
     ///
     /// Two shapes of the same length are kept *apart*, as alternatives, rather

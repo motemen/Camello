@@ -42,4 +42,24 @@ counted(n => 1, ns => 'x', which => 'foo', both => 1);
 # Returns: Counts
 sub counts { return [] }
 
+# A list `Returns:` names a library type the same way, in every shape a list
+# can take.
+# Returns: (Name ...)
+sub names { return ('a') }
+
+# Returns: (Name, Undef) | (Undef, Name)
+sub either { return ('a', undef) }
+
+sub named {
+    args my $name => Name;
+    return $name;
+}
+
+for my $one (names()) {
+    named(name => $one);
+}
+for my $slot (either()) {
+    named(name => $slot) if defined $slot;
+}
+
 package main;
