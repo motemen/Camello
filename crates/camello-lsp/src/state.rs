@@ -16,7 +16,7 @@ use tower_lsp_server::ls_types::Uri;
 
 use crate::analysis::Tables;
 use crate::document::Document;
-use crate::index::Index;
+use crate::index::{Builds, Index};
 use crate::position::Encoding;
 use crate::settings::Settings;
 
@@ -45,6 +45,8 @@ pub struct GlobalState {
     /// The program graph. Its own lock, because the background walk holds it
     /// for as long as a swap takes and a request only ever reads.
     pub index: Arc<RwLock<Index>>,
+    /// Which background walk may still swap its graph in.
+    pub builds: Arc<Builds>,
 }
 
 impl GlobalState {
@@ -60,6 +62,7 @@ impl GlobalState {
             clean_tables: HashMap::new(),
             edits: HashMap::new(),
             index,
+            builds: Arc::new(Builds::default()),
         }
     }
 

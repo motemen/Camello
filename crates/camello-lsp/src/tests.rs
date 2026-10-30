@@ -763,6 +763,37 @@ fn a_definition_in_an_unsaved_buffer_is_the_buffers() {
     assert!(found.ends_with("Dog.pm:3:5"), "{found}");
 }
 
+/// Two walks in flight — startup and a `camello.toml` reload — and the older
+/// one finishing last: its graph read the configuration the newer one
+/// replaced, and it does not go in over the newer one's.
+#[test]
+fn an_older_walk_finishing_last_is_discarded() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    fs::write(
+        dir.path().join("Dog.pm"),
+        "package Dog;\nsub speak { 1 }\n1;\n",
+    )
+    .expect("a writable fixture");
+    let (mut settings, problems) = Settings::load(dir.path(), &[dir.path().to_path_buf()]);
+    assert!(problems.is_empty(), "{problems:?}");
+    settings.cache_dir = None;
+
+    let builds = crate::index::Builds::default();
+    let slot = RwLock::new(crate::index::Index::empty(&settings));
+    let older = builds.begin();
+    let newer = builds.begin();
+    assert!(!builds.is_current(older));
+
+    let newer_graph = crate::index::build(&settings);
+    assert_eq!(newer_graph.files, 1);
+    assert!(builds.install(newer, &slot, newer_graph));
+    // What the older walk saw: nothing, say, under an ignore file since
+    // deleted. Recognisable by its count.
+    let older_graph = crate::index::Index::empty(&settings);
+    assert!(!builds.install(older, &slot, older_graph));
+    assert_eq!(crate::state::read(&slot).files, 1);
+}
+
 /// A panic in the checker while it holds the graph's lock does not take every
 /// later handler down with it.
 #[test]

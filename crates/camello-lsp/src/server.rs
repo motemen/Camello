@@ -341,15 +341,27 @@ impl Backend {
     }
 
     /// Walk the workspace in the background and swap the graph in when it is
-    /// built.
+    /// built — unless another walk was started meanwhile, a configuration
+    /// reload's, in which case this one read the old configuration and the
+    /// newer walk's graph is the one to keep.
     fn spawn_index(&self) {
-        let settings = Arc::clone(&self.read().settings);
-        let index = Arc::clone(&self.read().index);
+        let (settings, index, builds) = {
+            let held = self.read();
+            (
+                Arc::clone(&held.settings),
+                Arc::clone(&held.index),
+                Arc::clone(&held.builds),
+            )
+        };
+        let ticket = builds.begin();
         self.in_background(|this| async move {
             let built = tokio::task::spawn_blocking(move || index::build(&settings)).await;
             let Some(mut built) = joined(&this.client, "the index walk", built).await else {
                 return;
             };
+            if !builds.is_current(ticket) {
+                return;
+            }
             let files = built.files;
             // The walk read disk, and disk is out of date for anything the
             // user has been editing while it ran — which is every file they
@@ -383,9 +395,8 @@ impl Backend {
             let Some(built) = joined(&this.client, "the index walk", relinked).await else {
                 return;
             };
-            {
-                let mut slot = state::write(&index);
-                *slot = built;
+            if !builds.install(ticket, &index, built) {
+                return;
             }
             this.client
                 .log_message(
