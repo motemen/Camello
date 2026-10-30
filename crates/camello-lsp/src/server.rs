@@ -701,6 +701,7 @@ impl LanguageServer for Backend {
             .text_document
             .uri
             .clone();
+        let open: Vec<Arc<Document>> = self.read().documents.values().map(Arc::clone).collect();
         Ok(self
             .with_analysis(
                 params.text_document_position_params,
@@ -712,6 +713,10 @@ impl LanguageServer for Backend {
                         context,
                         offset,
                         snapshot.encoding,
+                        &handlers::definition::Buffers {
+                            open: &open,
+                            dialect: &snapshot.settings.dialect,
+                        },
                     )
                 },
             )

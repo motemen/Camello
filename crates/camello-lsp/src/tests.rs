@@ -173,6 +173,10 @@ impl Harness {
                     &context,
                     offset,
                     Encoding::Utf16,
+                    &handlers::definition::Buffers {
+                        open: &self.state.documents.values().cloned().collect::<Vec<_>>(),
+                        dialect: &self.state.settings.dialect,
+                    },
                 )
                 .map_or_else(
                     || "-".to_string(),
@@ -722,6 +726,41 @@ mod an_edit_only_the_program_can_see {
             "{found:?}",
         );
     }
+}
+
+/// A jump into an open file lands where the buffer has the sub, not where
+/// disk has it. Two lines added above it and not saved change nothing another
+/// file can see, so the graph keeps the ranges it read off disk, and counted
+/// against the buffer those would be two lines short.
+#[test]
+fn a_definition_in_an_unsaved_buffer_is_the_buffers() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let dog = dir.path().join("Dog.pm");
+    let disk = "package Dog;\nsub new { bless {}, shift }\nsub speak { 'woof' }\n1;\n";
+    fs::write(&dog, disk).expect("a writable fixture");
+    let main = dir.path().join("main.pl");
+    let caller = "use strict;\nuse Dog;\nDog->speak;\n";
+    fs::write(&main, caller).expect("a writable fixture");
+
+    let mut harness = Harness::open_workspace(dir.path());
+    harness.edit(&dog, &format!("\n\n{disk}"), 2);
+    let answers = harness.edit(&main, caller, 1);
+    let marker = Marker {
+        position: tower_lsp_server::ls_types::Position {
+            line: 2,
+            character: 5,
+        },
+        feature: Feature::Definition,
+        expected: String::new(),
+        line: 0,
+    };
+    let found = harness.ask(&answers, &marker);
+    assert!(found.ends_with("Dog.pm:5:5"), "{found}");
+
+    // And a file that is not open is still counted from disk.
+    harness.state.forget(&harness.uri(&dog));
+    let found = harness.ask(&answers, &marker);
+    assert!(found.ends_with("Dog.pm:3:5"), "{found}");
 }
 
 /// A panic in the checker while it holds the graph's lock does not take every
