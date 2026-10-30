@@ -11,6 +11,8 @@ ending in `{` (Fixed).
 
 - A multi-line `qw(...)` is indented like a bracket, and the spacing inside a
   one-line one is normalised (INDENT-2, SPACING-7, #386).
+- Internal cleanup: dead code in the parser, the checker and the language
+  server is removed, with no change to formatting or diagnostics (#396).
 - `camello check` stops on a value in `camello.toml` it cannot read even where
   a flag overrides it, as it does on a file that does not parse (#384).
 
