@@ -63,7 +63,8 @@ while [ $# -gt 0 ]; do
     --no-perl) run_perl=0; shift ;;
     --check)     mode=check; shift ;;
     --help|-h)
-      sed -n '2,48p' "$0" | sed 's/^#\{0,1\} \{0,1\}//'
+      # The comment block under the shebang, however long it grows.
+      awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
       exit 0 ;;
     *) paths+=("$1"); shift ;;
   esac
