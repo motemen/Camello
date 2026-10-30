@@ -741,3 +741,46 @@ fn a_poisoned_lock_is_still_read() {
     *crate::state::write(&lock) = 2;
     assert_eq!(*crate::state::read(&lock), 2);
 }
+
+/// A notification hands its work to a task of its own: the transport runs
+/// only a few messages at once, and a `didChange` that sat out its debounce
+/// before returning would keep a hover waiting behind it.
+#[tokio::test]
+async fn a_change_returns_before_its_debounce() {
+    use tower_lsp_server::ls_types::{
+        DidChangeTextDocumentParams, DidOpenTextDocumentParams, TextDocumentContentChangeEvent,
+        TextDocumentItem, VersionedTextDocumentIdentifier,
+    };
+    use tower_lsp_server::LanguageServer;
+
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let uri = Uri::from_file_path(dir.path().join("main.pl")).expect("an absolute path");
+    let (service, _socket) = tower_lsp_server::LspService::new(crate::Backend::new);
+    let backend = service.inner();
+    backend
+        .did_open(DidOpenTextDocumentParams {
+            text_document: TextDocumentItem {
+                uri: uri.clone(),
+                language_id: "perl".to_string(),
+                version: 1,
+                text: "my $x = 1;\n".to_string(),
+            },
+        })
+        .await;
+    let started = std::time::Instant::now();
+    backend
+        .did_change(DidChangeTextDocumentParams {
+            text_document: VersionedTextDocumentIdentifier { uri, version: 2 },
+            content_changes: vec![TextDocumentContentChangeEvent {
+                range: None,
+                range_length: None,
+                text: "my $x = 2;\n".to_string(),
+            }],
+        })
+        .await;
+    assert!(
+        started.elapsed() < crate::server::DEBOUNCE,
+        "`didChange` took {:?}",
+        started.elapsed()
+    );
+}

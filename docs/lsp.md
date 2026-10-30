@@ -136,9 +136,17 @@ mutated only by notifications (`didOpen`, `didChange`, config and watched
 the store, the `Program`, the config — and do all their work on it on a
 blocking thread. A request never blocks an edit; an edit never invalidates a
 request mid-flight, it just makes the result stale, and stale results are
-discarded by version check before publishing. `Analysis`, `Program`,
-`FileDecls`, and `Diagnostic` already hold no trees, only offsets and
-strings, so they cross threads as they are.
+discarded by version check before publishing. The check and the send are
+one step, so an older answer is never the last one a client is sent.
+`Analysis`, `Program`, `FileDecls`, and `Diagnostic` already hold no trees,
+only offsets and strings, so they cross threads as they are.
+
+A notification handler does only what has to happen in the order the client
+sent it — storing the text, numbering the edit — and hands the rest (the
+debounce, the check, a sweep over the open files) to a task of its own.
+Notifications and requests share the transport's few concurrent slots, and a
+notification that waited out its debounce in one would keep a hover waiting
+behind it.
 
 ## Documents and positions
 
