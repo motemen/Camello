@@ -14,6 +14,7 @@ pub mod check;
 pub mod cli;
 pub mod config;
 pub mod report;
+pub mod source;
 
 pub use camello_fmt as fmt;
 pub use camello_lsp as lsp;

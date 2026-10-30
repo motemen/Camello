@@ -177,12 +177,12 @@ struct FileReport {
 /// Exits the process rather than returning a status, because the status is the
 /// interface here: a CI step reads it and nothing else.
 pub fn run(request: &Request) -> Result<()> {
-    let encodings = crate::cli::Encodings::parse(request.encoding.as_ref())?;
+    let encodings = crate::source::Encodings::parse(request.encoding.as_ref())?;
 
     let mut files = Vec::new();
     if request.paths.is_empty() {
         // Standard input has no path, so it reports as `<stdin>`.
-        let (source, name, _) = crate::cli::read_source(None, None, None, &encodings)?;
+        let (source, name, _) = crate::source::read_source(None, None, None, &encodings)?;
         files.push((PathBuf::from(name), Some(source)));
     } else {
         let collected = request.walk.collect(&request.paths)?;
@@ -194,7 +194,7 @@ pub fn run(request: &Request) -> Result<()> {
     // last, and the bodies afterwards. A file is parsed once in each phase
     // rather than held between them — a rowan tree is not `Send`, and a corpus
     // the size of @INC would be a lot of trees to keep.
-    let declared = crate::cli::in_parallel(&files, request.jobs, |(path, inline)| {
+    let declared = camello_sema::workspace::in_parallel(&files, request.jobs, |(path, inline)| {
         let source = read_one(path, inline.as_deref(), &encodings)?;
         let parsed = camello_syntax::parse::parse(&source);
         Ok::<_, String>(camello_sema::decl::declare_in(
@@ -258,7 +258,7 @@ pub fn run(request: &Request) -> Result<()> {
         return report_drift(&analysis, &roots, request, read);
     }
 
-    let reports = crate::cli::in_parallel(&files, request.jobs, |(path, inline)| {
+    let reports = camello_sema::workspace::in_parallel(&files, request.jobs, |(path, inline)| {
         check_one(
             path,
             inline.as_deref(),
@@ -357,11 +357,11 @@ pub fn run(request: &Request) -> Result<()> {
 fn read_one(
     path: &Path,
     inline: Option<&str>,
-    encodings: &crate::cli::Encodings,
+    encodings: &crate::source::Encodings,
 ) -> std::result::Result<String, String> {
     match inline {
         Some(text) => Ok(text.to_string()),
-        None => match crate::cli::read_source(Some(path), None, None, encodings) {
+        None => match crate::source::read_source(Some(path), None, None, encodings) {
             Ok((source, _, _)) => Ok(source),
             Err(error) => Err(format!("{}: {error}", path.display())),
         },
@@ -371,7 +371,7 @@ fn read_one(
 fn check_one(
     path: &Path,
     inline: Option<&str>,
-    encodings: &crate::cli::Encodings,
+    encodings: &crate::source::Encodings,
     analysis: &camello_sema::Analysis,
     options: &Options,
 ) -> std::result::Result<FileReport, String> {
