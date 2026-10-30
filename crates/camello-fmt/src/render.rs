@@ -132,6 +132,7 @@ impl<'a> Renderer<'a> {
     }
 
     pub fn render(mut self, doc: &Doc) -> Vec<Line> {
+        crate::work::tick(crate::work::Work::Render);
         self.walk(doc);
         if !self.current.text.is_empty() || !self.current.anchors.is_empty() {
             self.finish_line();
