@@ -318,10 +318,10 @@ impl<'a> Lexer<'a> {
     /// and `s` starts a substitution only where a term can. Deciding this from
     /// `expect` alone replaces the old lexer's raw-character probing.
     fn keyword_applies_here(&mut self, keyword: TokenKind, len: usize) -> bool {
-        let infix_only = keyword.is_quote_like_keyword();
+        let term_only = keyword.is_quote_like_keyword();
         match self.expect {
             // In operator position a quote-like operator cannot start.
-            Expect::Operator => !infix_only,
+            Expect::Operator => !term_only,
             Expect::Term => {
                 if crate::parse::grammar::precedence::infix_op(keyword).is_some() {
                     // A keyword the grammar reads only as an infix operator is
@@ -329,7 +329,7 @@ impl<'a> Lexer<'a> {
                     // `isa($x, 'Foo')`.
                     return false;
                 }
-                if infix_only {
+                if term_only {
                     return !self.quote_like_is_bareword(len);
                 }
                 true
