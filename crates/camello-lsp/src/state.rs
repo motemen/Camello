@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use tower_lsp_server::ls_types::Uri;
 
@@ -152,8 +152,25 @@ impl Snapshot {
                 return Arc::clone(tables);
             }
         }
-        let index = self.index.read().expect("no writer panics holding this");
+        let index = read(&self.index);
         let context = crate::analysis::context(&self.document, &index, &self.settings);
         crate::analysis::analyse(&self.document, &context, &self.settings, true).tables
     }
+}
+
+/// A read lock, whether or not a thread panicked holding it.
+///
+/// A panic in the checker while it holds the graph's lock poisons the lock,
+/// and a server that refused poisoned locks would answer nothing again until
+/// it was restarted — every later handler would panic on the same lock, and
+/// a handler's panic reaches nobody. What a panicking writer leaves behind is
+/// a graph that may be part-way through one update, and the next edit or
+/// rebuild writes over it; that is a better state to answer from than none.
+pub fn read<T>(lock: &RwLock<T>) -> RwLockReadGuard<'_, T> {
+    lock.read().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// A write lock, on the same terms as [`read`].
+pub fn write<T>(lock: &RwLock<T>) -> RwLockWriteGuard<'_, T> {
+    lock.write().unwrap_or_else(PoisonError::into_inner)
 }

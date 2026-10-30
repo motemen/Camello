@@ -27,7 +27,7 @@ use crate::handlers;
 use crate::index;
 use crate::position::Encoding;
 use crate::settings::Settings;
-use crate::state::{GlobalState, Snapshot};
+use crate::state::{self, GlobalState, Snapshot};
 
 /// How long after a keystroke the checker runs.
 ///
@@ -52,11 +52,11 @@ impl Backend {
     }
 
     fn read(&self) -> std::sync::RwLockReadGuard<'_, GlobalState> {
-        self.state.read().expect("no writer panics holding this")
+        state::read(&self.state)
     }
 
     fn write(&self) -> std::sync::RwLockWriteGuard<'_, GlobalState> {
-        self.state.write().expect("no writer panics holding this")
+        state::write(&self.state)
     }
 
     /// Parse a buffer and put it in the store.
@@ -83,7 +83,7 @@ impl Backend {
     /// thread, as every analysis is.
     ///
     /// `None` when the document is not open. A thread that panicked answers
-    /// with nothing found rather than an error.
+    /// with nothing found rather than an error, and says so in the log.
     async fn with_analysis<T>(
         &self,
         position: TextDocumentPositionParams,
@@ -94,18 +94,17 @@ impl Backend {
     {
         let snapshot = self.read().snapshot(&position.text_document.uri)?;
         let offset = snapshot.document.positions.offset(position.position);
+        let outcome = tokio::task::spawn_blocking(move || {
+            let tables = snapshot.tables_now();
+            let index = state::read(&snapshot.index);
+            let context = analysis::context(&snapshot.document, &index, &snapshot.settings);
+            answer(&snapshot, &tables, &context, offset)
+        })
+        .await;
         Some(
-            tokio::task::spawn_blocking(move || {
-                let tables = snapshot.tables_now();
-                let index = snapshot
-                    .index
-                    .read()
-                    .expect("no writer panics holding this");
-                let context = analysis::context(&snapshot.document, &index, &snapshot.settings);
-                answer(&snapshot, &tables, &context, offset)
-            })
-            .await
-            .unwrap_or_default(),
+            joined(&self.client, "a request", outcome)
+                .await
+                .unwrap_or_default(),
         )
     }
 
@@ -156,13 +155,15 @@ impl Backend {
             (path, decls, Arc::clone(&snapshot.document))
         })
         .await;
-        let Ok((path, decls, document)) = outcome else {
+        let Some((path, decls, document)) =
+            joined(&self.client, "the declaration pass", outcome).await
+        else {
             return;
         };
 
         let changed = {
             let index = Arc::clone(&self.read().index);
-            let mut index = index.write().expect("no reader panics holding this");
+            let mut index = state::write(&index);
             index.apply(vec![(&path, decls, &document.text)])
         };
         if changed {
@@ -198,13 +199,14 @@ impl Backend {
             return;
         };
         let index = Arc::clone(&self.read().index);
-        let _ = tokio::task::spawn_blocking(move || {
-            let mut index = index.write().expect("no reader panics holding this");
+        let outcome = tokio::task::spawn_blocking(move || {
+            let mut index = state::write(&index);
             index
                 .analysis
                 .reinfer_returns(&path, &snapshot.document.text)
         })
         .await;
+        joined(&self.client, "return inference", outcome).await;
     }
 
     /// Put a file back the way disk has it, and re-check the open files if
@@ -216,15 +218,16 @@ impl Backend {
     async fn reinstall_from_disk(&self, path: PathBuf) {
         let settings = Arc::clone(&self.read().settings);
         let index = Arc::clone(&self.read().index);
-        let changed = tokio::task::spawn_blocking(move || {
+        let outcome = tokio::task::spawn_blocking(move || {
             let source = std::fs::read_to_string(&path).ok()?;
             let cache = crate::settings::cache(settings.cache_dir.as_deref());
             let decls = camello_sema::read_declarations(&path, &source, &settings.dialect, &cache);
-            let mut index = index.write().expect("no reader panics holding this");
+            let mut index = state::write(&index);
             Some(index.apply(vec![(&path, decls, &source)]))
         })
         .await;
-        if matches!(changed, Ok(Some(true))) {
+        let changed = joined(&self.client, "reading a closed file back", outcome).await;
+        if changed == Some(Some(true)) {
             self.sweep(None).await;
         }
     }
@@ -281,7 +284,9 @@ impl Backend {
         let index = Arc::clone(&self.read().index);
         tokio::spawn(async move {
             let built = tokio::task::spawn_blocking(move || index::build(&settings)).await;
-            let Ok(mut built) = built else { return };
+            let Some(mut built) = joined(&client, "the index walk", built).await else {
+                return;
+            };
             let files = built.files;
             // The walk read disk, and disk is out of date for anything the
             // user has been editing while it ran — which is every file they
@@ -291,11 +296,11 @@ impl Backend {
             // back: the next edit to those buffers declares the same things,
             // and a diff that says "unchanged" installs nothing.
             let buffers: Vec<Arc<crate::document::Document>> = {
-                let held = state.read().expect("no writer panics holding this");
+                let held = state::read(&state);
                 held.documents.values().map(Arc::clone).collect()
             };
             let settings = {
-                let held = state.read().expect("no writer panics holding this");
+                let held = state::read(&state);
                 Arc::clone(&held.settings)
             };
             let relinked = tokio::task::spawn_blocking(move || {
@@ -317,9 +322,11 @@ impl Backend {
                 built
             })
             .await;
-            let Ok(built) = relinked else { return };
+            let Some(built) = joined(&client, "the index walk", relinked).await else {
+                return;
+            };
             {
-                let mut slot = index.write().expect("no reader panics holding this");
+                let mut slot = state::write(&index);
                 *slot = built;
             }
             client
@@ -332,7 +339,7 @@ impl Backend {
             // while the walk ran; now that the graph is there, they get the
             // cross-file half of the answer.
             let open = {
-                let held = state.read().expect("no writer panics holding this");
+                let held = state::read(&state);
                 held.open_uris()
             };
             for uri in open {
@@ -352,27 +359,24 @@ impl Backend {
 /// answer stale, and a stale answer is dropped here rather than shown.
 async fn publish_for(state: &Arc<RwLock<GlobalState>>, client: &Client, uri: Uri) {
     let snapshot = {
-        let held = state.read().expect("no writer panics holding this");
+        let held = state::read(state);
         held.snapshot(&uri)
     };
     let Some(snapshot) = snapshot else { return };
     let version = snapshot.document.version;
     let outcome = tokio::task::spawn_blocking(move || {
-        let index = snapshot
-            .index
-            .read()
-            .expect("no writer panics holding this");
+        let index = state::read(&snapshot.index);
         let context = analysis::context(&snapshot.document, &index, &snapshot.settings);
         let found = analysis::analyse(&snapshot.document, &context, &snapshot.settings, true);
         let published = handlers::diagnostics::publish(&snapshot.document, &found.diagnostics);
         (published, found.tables)
     })
     .await;
-    let Ok((published, tables)) = outcome else {
+    let Some((published, tables)) = joined(client, "a check", outcome).await else {
         return;
     };
     {
-        let mut held = state.write().expect("no writer panics holding this");
+        let mut held = state::write(state);
         // Still the version that was analysed? If not, the newer text has its
         // own debounce already running and this answer is about text nobody is
         // looking at.
@@ -388,6 +392,31 @@ async fn publish_for(state: &Arc<RwLock<GlobalState>>, client: &Client, uri: Uri
     client
         .publish_diagnostics(uri, published, Some(version))
         .await;
+}
+
+/// What a blocking thread handed back, or `None` if it panicked.
+///
+/// A panic on a blocking thread is not an answer anybody can act on, but it is
+/// not nothing either: the request answers with nothing found, and the log
+/// says which piece of work failed and what the panic said, so the empty
+/// answer is not a mystery.
+async fn joined<T>(
+    client: &Client,
+    what: &str,
+    outcome: std::result::Result<T, tokio::task::JoinError>,
+) -> Option<T> {
+    match outcome {
+        Ok(value) => Some(value),
+        Err(error) => {
+            client
+                .log_message(
+                    MessageType::ERROR,
+                    format!("camello: {what} failed: {error}"),
+                )
+                .await;
+            None
+        }
+    }
 }
 
 fn plural(count: usize) -> &'static str {
@@ -580,7 +609,7 @@ impl LanguageServer for Backend {
         }
         let settings = Arc::clone(&self.read().settings);
         let index = Arc::clone(&self.read().index);
-        let updated = tokio::task::spawn_blocking(move || {
+        let outcome = tokio::task::spawn_blocking(move || {
             let cache = crate::settings::cache(settings.cache_dir.as_deref());
             let read: Vec<(PathBuf, String)> = changed
                 .into_iter()
@@ -597,7 +626,7 @@ impl LanguageServer for Backend {
                     (path.as_path(), decls, source.as_str())
                 })
                 .collect();
-            let mut index = index.write().expect("no reader panics holding this");
+            let mut index = state::write(&index);
             // The same decl-diff an edit applies: a file that was touched, or
             // rewritten with the same declarations, is nobody else's business,
             // and a sweep of the open files for it would be a sweep for
@@ -605,7 +634,7 @@ impl LanguageServer for Backend {
             index.apply(files)
         })
         .await;
-        if matches!(updated, Ok(true)) {
+        if joined(&self.client, "reading changed files", outcome).await == Some(true) {
             self.sweep(None).await;
         }
     }
@@ -675,10 +704,12 @@ impl LanguageServer for Backend {
         let Some(snapshot) = self.read().snapshot(&params.text_document.uri) else {
             return Ok(None);
         };
-        let symbols =
+        let outcome =
             tokio::task::spawn_blocking(move || handlers::symbols::symbols(&snapshot.document))
-                .await
-                .unwrap_or_default();
+                .await;
+        let symbols = joined(&self.client, "the outline", outcome)
+            .await
+            .unwrap_or_default();
         Ok(Some(DocumentSymbolResponse::Nested(symbols)))
     }
 
@@ -686,10 +717,8 @@ impl LanguageServer for Backend {
         let Some(snapshot) = self.read().snapshot(&params.text_document.uri) else {
             return Ok(None);
         };
-        Ok(
-            tokio::task::spawn_blocking(move || handlers::formatting::formatting(&snapshot))
-                .await
-                .unwrap_or(None),
-        )
+        let outcome =
+            tokio::task::spawn_blocking(move || handlers::formatting::formatting(&snapshot)).await;
+        Ok(joined(&self.client, "formatting", outcome).await.flatten())
     }
 }

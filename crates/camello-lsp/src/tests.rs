@@ -723,3 +723,21 @@ mod an_edit_only_the_program_can_see {
         );
     }
 }
+
+/// A panic in the checker while it holds the graph's lock does not take every
+/// later handler down with it.
+#[test]
+fn a_poisoned_lock_is_still_read() {
+    let lock = Arc::new(RwLock::new(1));
+    let held = Arc::clone(&lock);
+    let panicked = std::thread::spawn(move || {
+        let _guard = held.write().expect("not yet poisoned");
+        panic!("the checker panicked holding the graph");
+    })
+    .join();
+    assert!(panicked.is_err());
+    assert!(lock.is_poisoned());
+    assert_eq!(*crate::state::read(&lock), 1);
+    *crate::state::write(&lock) = 2;
+    assert_eq!(*crate::state::read(&lock), 2);
+}
