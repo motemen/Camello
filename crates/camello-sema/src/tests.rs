@@ -417,3 +417,17 @@ sub f { 1 }
     assert_eq!(at("sub e"), "Outer");
     assert_eq!(at("sub f"), "Next");
 }
+
+/// A cache entry whose range ends before it starts is refused, which the
+/// cache reads as a miss, rather than panicking the run that reads it.
+#[test]
+fn a_backwards_range_in_the_cache_is_an_error() {
+    #[derive(Debug, serde::Deserialize)]
+    struct Spanned {
+        #[serde(with = "crate::serde_range")]
+        #[allow(dead_code)]
+        range: rowan::TextRange,
+    }
+    assert!(serde_json::from_str::<Spanned>(r#"{"range":[2,5]}"#).is_ok());
+    assert!(serde_json::from_str::<Spanned>(r#"{"range":[5,2]}"#).is_err());
+}
