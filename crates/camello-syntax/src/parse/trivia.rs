@@ -33,8 +33,8 @@ impl TokenTrivia {
     /// Blank lines lying immediately before this token, after any comment.
     ///
     /// The formatter's blank-line policy (docs/formatting.md BLANK_LINE) reads this
-    /// rather than re-scanning the source, which is what removes the old
-    /// double-check between writer state and the source text.
+    /// rather than re-scanning the source, so writer state and the source text
+    /// are never checked against each other.
     #[must_use]
     pub fn blank_lines_before(&self) -> usize {
         let mut blanks = 0;
@@ -62,8 +62,8 @@ impl TokenTrivia {
 /// Every non-trivia token's trivia, keyed by where the token starts.
 ///
 /// Built during replay (the trivia model), so the formatter never walks the tree to
-/// rediscover comments — the old `TriviaTable` rebuilt itself from a full tree
-/// traversal, which is the cost behind issue #266.
+/// rediscover comments: a table rebuilt from a full tree traversal costs one
+/// walk of the whole tree each time it is built.
 #[derive(Debug, Default)]
 pub struct TriviaMap {
     by_token_start: OffsetMap<TextSize, TokenTrivia>,
@@ -101,9 +101,9 @@ impl TriviaMap {
     /// owners and the formatter emits it twice. A token with no text can own no
     /// trivia, which settles the ambiguity without needing a second key.
     ///
-    /// The visible form of getting this wrong was `$x =~ s/a// # c` formatting
+    /// The visible form of getting this wrong is `$x =~ s/a// # c` formatting
     /// to `$x =~ s/a/ # c/ # c`: a comment moved inside the replacement string
-    /// and "delete a" became "replace a with ' # c'".
+    /// and "delete a" turned into "replace a with ' # c'".
     #[must_use]
     pub fn of(&self, range: TextRange) -> &TokenTrivia {
         if range.is_empty() {

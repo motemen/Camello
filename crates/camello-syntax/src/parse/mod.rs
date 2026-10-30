@@ -2,10 +2,9 @@
 //!
 //! Records [`event::Event`]s rather than building the tree directly, which is what
 //! makes speculative parsing possible: try one reading, and if it does not work
-//! out, call `Parser::rollback` and try another. The old parser could not do this —
-//! `GreenNodeBuilder` has no way to abandon a node — so every ambiguity had to
-//! be settled by unbounded lookahead before a node was opened, and 21 separate
-//! heuristics grew out of that constraint.
+//! out, call `Parser::rollback` and try another. `GreenNodeBuilder` has no way to
+//! abandon a node, so a parser building with it directly has to settle every
+//! ambiguity by unbounded lookahead before a node is opened.
 
 use rowan::{TextRange, TextSize};
 
@@ -333,12 +332,12 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Consume the current token, whatever it is, as `kind`.
+    /// Consume the current token, whatever it is.
     ///
     /// Used where the grammar overrides the lexer's classification — a keyword
-    /// standing in for a name, for instance. All such coercion goes through
-    /// [`grammar::name`] so there is one place to look, not eight
-    /// (the parser contract).
+    /// standing in for a name, for instance, which the enclosing node then
+    /// marks as one. Such coercion goes through [`grammar::name`] wherever the
+    /// grammar wants a name node (the parser contract).
     pub(crate) fn bump_any(&mut self) {
         self.bump();
     }
@@ -375,8 +374,8 @@ impl<'a> Parser<'a> {
 
     // ===== Errors and recovery (the parser contract) =====
 
-    /// Report without consuming. This is the default, deliberately: the old
-    /// `error()` ate a token, and two mistakes turned into six diagnostics.
+    /// Report without consuming. This is the default, deliberately: an error
+    /// that eats a token turns two mistakes into six diagnostics.
     pub(crate) fn error(&mut self, message: impl Into<String>) {
         let range = self.current_range();
         self.push_diagnostic(message.into(), range);

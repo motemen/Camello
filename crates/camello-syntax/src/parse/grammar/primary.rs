@@ -196,8 +196,7 @@ pub(crate) fn primary(parser: &mut Parser<'_>) -> Option<CompletedMarker> {
 
 /// A variable: sigil plus name, a braced dereference, or a chain of `$`s.
 ///
-/// One implementation, where the old parser had four entry points
-/// (the parser contract).
+/// One implementation for every variable (the parser contract).
 pub(crate) fn variable(parser: &mut Parser<'_>) -> CompletedMarker {
     // The caller saw a sigil, but a limit reached since — by its own `start`,
     // or by the step that asked — reports end of input from then on. The
@@ -377,8 +376,8 @@ fn is_quote_like_part(kind: TokenKind) -> bool {
 ///
 /// Perl guesses at this too (perlref says so). The difference here is *how*:
 /// parse it as a hash, and if that does not work out, roll back and parse a
-/// block (the parser contract). The old parser scanned the whole brace body looking for
-/// a `;` before it dared open a node, and still got `{ $k => 1 }` wrong.
+/// block (the parser contract), rather than scanning the whole brace body for a
+/// `;` before daring to open a node.
 fn anon_hash_or_block(parser: &mut Parser<'_>) -> CompletedMarker {
     let checkpoint = parser.checkpoint();
     let errors_before = parser.diagnostic_count();

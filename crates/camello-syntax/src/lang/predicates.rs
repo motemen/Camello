@@ -2,7 +2,7 @@
 //!
 //! These encode grammar knowledge and so cannot be derived from the declaration
 //! order in `define_language!`. They are hand-written, but because they are
-//! typed on `TokenKind` the old class of mistake — a node kind such as `IO_EXPR`
+//! typed on `TokenKind` a whole class of mistake — a node kind such as `IO_EXPR`
 //! turning up in `is_literal` — is not expressible.
 
 use super::{TokenKind, T};

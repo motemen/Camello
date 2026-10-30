@@ -195,9 +195,9 @@ define_language! {
     //
     // `%`, `*` and `&` are a sigil in term position and an operator in operator
     // position. Which token the lexer emits is decided by its single `expect`
-    // state (the lexer contract) — the old "look at the raw characters either side"
-    // rule is gone. These get no `T!` key precisely because the spelling does
-    // not identify the kind.
+    // state (the lexer contract), never by looking at the raw characters either
+    // side. These get no `T!` key precisely because the spelling does not
+    // identify the kind.
     punct_ctx {
         "%"    => HASH_SIGIL,
         "%"    => MODULO,
@@ -254,9 +254,9 @@ define_language! {
         // never has to re-decide whether `<` opened a readline or a comparison.
         IO_HANDLE           : "readline operator",
 
-        // A span of source carried through verbatim with a kind attached, which
-        // replaces the four ad-hoc escape hatches of the old lexer
-        // (the language model). Prototype bodies and attribute arguments use this.
+        // A span of source carried through verbatim with a kind attached, rather
+        // than an ad-hoc escape hatch per construct (the language model).
+        // Prototype bodies and attribute arguments use this.
         RAW_CONTENT         : "raw text",
 
         // Failure is never silent (the lexer contract).
@@ -271,7 +271,7 @@ define_language! {
     nodes {
         ROOT => Root,
 
-        // -- Statements. The generic `STMT` wrapper is gone; an expression
+        // -- Statements. There is no generic statement wrapper; an expression
         //    statement is always an EXPR_STMT.
         EXPR_STMT => ExprStmt,
         VAR_DECL_STMT => VarDeclStmt,
@@ -333,7 +333,7 @@ define_language! {
         LIST_EXPR => ListExpr,
         PAREN_EXPR => ParenExpr,
 
-        // -- Calls. The old six-way-ambiguous FUNCTION_CALL_EXPR is split.
+        // -- Calls. One kind per call shape, so no kind is ambiguous between them.
         CALL_EXPR => CallExpr,
         LIST_CALL_EXPR => ListCallExpr,
         METHOD_CALL_EXPR => MethodCallExpr,
@@ -390,8 +390,11 @@ define_language! {
 
 /// A rowan kind. Tokens occupy `0..TOKEN_COUNT`, nodes the range above it.
 ///
-/// Constructed only through the `From` impls below, so the two spaces cannot be
-/// confused by arithmetic accident.
+/// Any `u16` is a value of it — rowan hands back raw kinds, and the formatter
+/// rebuilds one from them — so nothing assumes which range a value is in:
+/// [`Self::as_token`] and [`Self::as_node`] check, and answer `None` outside
+/// their own. Building one from a kind goes through the `From` impls below, so
+/// the two spaces cannot be confused by arithmetic accident.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SyntaxKind(pub u16);
 
@@ -430,8 +433,8 @@ impl SyntaxKind {
     #[must_use]
     pub fn as_token(self) -> Option<TokenKind> {
         (self.0 < TOKEN_COUNT).then(|| {
-            // Safe: the range check above matches the `#[repr(u16)]` layout, and
-            // `SyntaxKind` is only ever built from the `From` impls above.
+            // Safe: `TokenKind` is `#[repr(u16)]` with the discriminants
+            // `0..TOKEN_COUNT`, and the range check above keeps `self.0` in it.
             unsafe { std::mem::transmute::<u16, TokenKind>(self.0) }
         })
     }
@@ -460,7 +463,7 @@ impl std::fmt::Display for SyntaxKind {
     }
 }
 
-/// The rowan `Language` for the redesigned front end.
+/// The rowan `Language` for Perl.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PerlLang;
 

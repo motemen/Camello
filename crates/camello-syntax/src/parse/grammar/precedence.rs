@@ -26,9 +26,8 @@ impl Precedence {
     pub const CLASS_INSTANCE: Precedence = Precedence(47);
     pub const EQUALITY: Precedence = Precedence(50);
     pub const RELATIONAL: Precedence = Precedence(55);
-    /// File tests and named unary functions. The old table reused the prefix
-    /// level, which binds tighter than `.`, so `-f $x . "y"` grouped as
-    /// `(-f $x) . "y"` instead of perl's `-f ($x . "y")`.
+    /// File tests and named unary functions. Looser than `.`, unlike the prefix
+    /// level, so `-f $x . "y"` is perl's `-f ($x . "y")`, not `(-f $x) . "y"`.
     pub const NAMED_UNARY: Precedence = Precedence(60);
     pub const SHIFT: Precedence = Precedence(65);
     pub const ADDITIVE: Precedence = Precedence(70);
@@ -43,7 +42,7 @@ impl Precedence {
 pub(crate) enum Associativity {
     Left,
     Right,
-    /// `..`, `<=>`: chaining them is a syntax error in perl, and treating them
+    /// `..`, `isa`: chaining them is a syntax error in perl, and treating them
     /// as left-associative silently accepts nonsense.
     None,
 }
