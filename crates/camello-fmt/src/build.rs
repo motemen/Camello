@@ -365,7 +365,6 @@ impl<'a> Builder<'a> {
             NodeKind::BLOCK => self.block(node),
             NodeKind::POD | NodeKind::DATA_SECTION => self.verbatim(node),
             NodeKind::FORMAT_DECL => self.format_decl(node),
-            NodeKind::HEREDOC_BODY => self.verbatim(node),
             NodeKind::ERROR => self.error(node),
             NodeKind::ARG_LIST | NodeKind::PAREN_EXPR => self.delimited(node, T!["("], T![")"]),
             // `my ($a, $b)` holds its list in parentheses like any other, and

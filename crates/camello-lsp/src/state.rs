@@ -154,6 +154,6 @@ impl Snapshot {
         }
         let index = self.index.read().expect("no writer panics holding this");
         let context = crate::analysis::context(&self.document, &index, &self.settings);
-        crate::analysis::analyse(&self.document, &context, &self.settings, true).tables
+        crate::analysis::analyse(&self.document, &context, &self.settings).tables
     }
 }

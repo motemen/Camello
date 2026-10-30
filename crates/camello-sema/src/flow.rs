@@ -944,8 +944,7 @@ impl Pass<'_> {
             }
             NodeKind::HASH_SUBSCRIPT_EXPR
             | NodeKind::ARRAY_SUBSCRIPT_EXPR
-            | NodeKind::POSTFIX_DEREF_EXPR
-            | NodeKind::SLICE_EXPR => self.subscript(node),
+            | NodeKind::POSTFIX_DEREF_EXPR => self.subscript(node),
             NodeKind::PAREN_EXPR => {
                 let inner = ast::ParenExpr::cast(node.clone()).and_then(|view| view.inner());
                 match inner {
@@ -1041,9 +1040,8 @@ impl Pass<'_> {
                 }
             }
             // A hash in list context is key/value pairs, and nothing
-            // downstream wants them as a list; a slice is a list whose
-            // element types this pass does not read.
-            NodeKind::HASH_VAR | NodeKind::SLICE_EXPR => {
+            // downstream wants them as a list.
+            NodeKind::HASH_VAR => {
                 let _ = self.type_of(node);
                 ListShape::Unknown
             }
@@ -2053,7 +2051,6 @@ impl Pass<'_> {
             NodeKind::TERNARY_EXPR
             | NodeKind::ARRAY_VAR
             | NodeKind::HASH_VAR
-            | NodeKind::SLICE_EXPR
             | NodeKind::DEREF_EXPR
             | NodeKind::BLOCK_DEREF_EXPR
             | NodeKind::POSTFIX_DEREF_EXPR => self.shape_of(node),
@@ -2442,16 +2439,17 @@ impl Pass<'_> {
         // A name is required only when *every* declaration of it says so.
         // `has '+name' => (default => 'x')` restates an inherited attribute to
         // fill it in, so the parent's `required => 1` is no longer the last
-        // word on it — and the `+` is part of the spelling, not of the name.
+        // word on it. The `+` is gone by now: it is part of the spelling, not
+        // of the name, and the recogniser drops it.
         let mut missing: Vec<&str> = Vec::new();
         for attribute in &attributes {
-            let name = attribute.name.trim_start_matches('+');
+            let name = attribute.name.as_str();
             if given.contains(&name) || missing.contains(&name) {
                 continue;
             }
-            let filled = attributes.iter().any(|other| {
-                other.name.trim_start_matches('+') == name && (other.defaulted || !other.required)
-            });
+            let filled = attributes
+                .iter()
+                .any(|other| other.name == name && (other.defaulted || !other.required));
             if !filled {
                 missing.push(name);
             }
@@ -3556,11 +3554,11 @@ fn operands(call: &ast::Call) -> Vec<SyntaxNode> {
 
 /// Whether `scalar` was handed a container, whose scalar value is its count.
 ///
-/// An array, a hash, a slice, and the three spellings of a dereference to
-/// one. `scalar $$ref` is not one of them, and neither is a call.
+/// An array, a hash, and the three spellings of a dereference to one.
+/// `scalar $$ref` is not one of them, and neither is a call.
 fn counts_elements(node: &SyntaxNode) -> bool {
     match node.node_kind() {
-        NodeKind::ARRAY_VAR | NodeKind::HASH_VAR | NodeKind::SLICE_EXPR => true,
+        NodeKind::ARRAY_VAR | NodeKind::HASH_VAR => true,
         NodeKind::DEREF_EXPR | NodeKind::BLOCK_DEREF_EXPR | NodeKind::POSTFIX_DEREF_EXPR => {
             ast::tokens(node).any(|token| {
                 matches!(
@@ -3890,13 +3888,6 @@ fn with_invocant(ty: &Type, own: &str, class: &str) -> Type {
         Type::Optional(inner) => Type::Optional(Box::new(with_invocant(inner, own, class))),
         other => other.clone(),
     }
-}
-
-/// What the design calls the sub's `Returns:` — kept here so that the flow
-/// pass and the declaration pass agree on the empty case.
-#[must_use]
-pub fn returns_nothing(returns: &Returns) -> bool {
-    returns.list == ListShape::Nothing
 }
 
 #[cfg(test)]

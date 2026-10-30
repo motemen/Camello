@@ -211,10 +211,6 @@ impl SubDef {
         child(&self.0)
     }
 
-    pub fn attrs(&self) -> impl Iterator<Item = Attr> {
-        children(&self.0)
-    }
-
     /// Whether this is `sub f;` — a forward declaration with no body.
     #[must_use]
     pub fn is_forward_declaration(&self) -> bool {
@@ -343,16 +339,6 @@ impl SignatureParam {
     #[must_use]
     pub fn default(&self) -> Option<SignatureDefault> {
         child(&self.0)
-    }
-}
-
-impl Attr {
-    /// `:lvalue` — the attribute's name.
-    #[must_use]
-    pub fn name(&self) -> Option<String> {
-        tokens(&self.0)
-            .find(|token| token.token_kind() == TokenKind::IDENT)
-            .map(|token| token.text().to_string())
     }
 }
 
@@ -982,9 +968,10 @@ pub enum Step {
         index: Option<i64>,
         node: SyntaxNode,
     },
-    /// `->@*`, `->%*`, `->$*`, and the slice forms.
+    /// `->@*`, `->%*`, `->$*`.
     Deref { sigil: Sigil, node: SyntaxNode },
-    /// `@h{...}`, `@a[...]` — a slice yields a list, not one element.
+    /// `->@[...]`, `->@{...}` — a slice yields a list, not one element.
+    /// `@h{...}` and `@a[...]` are a `Hash` or `Array` step on an array base.
     Slice { node: SyntaxNode },
 }
 
@@ -1037,7 +1024,6 @@ impl SubscriptChain {
             NodeKind::HASH_SUBSCRIPT_EXPR
                 | NodeKind::ARRAY_SUBSCRIPT_EXPR
                 | NodeKind::POSTFIX_DEREF_EXPR
-                | NodeKind::SLICE_EXPR
                 | NodeKind::POSTFIX_ARRAY_SLICE_EXPR
                 | NodeKind::POSTFIX_HASH_SLICE_EXPR
         )
@@ -1082,9 +1068,9 @@ impl SubscriptChain {
                     node: node.clone(),
                 })
             }
-            NodeKind::SLICE_EXPR
-            | NodeKind::POSTFIX_ARRAY_SLICE_EXPR
-            | NodeKind::POSTFIX_HASH_SLICE_EXPR => Some(Step::Slice { node: node.clone() }),
+            NodeKind::POSTFIX_ARRAY_SLICE_EXPR | NodeKind::POSTFIX_HASH_SLICE_EXPR => {
+                Some(Step::Slice { node: node.clone() })
+            }
             _ => None,
         }
     }

@@ -103,7 +103,7 @@ impl Harness {
         let settings = Arc::clone(&self.state.settings);
         let held = index.read().expect("no writer holds this in a test");
         let context = analysis::context(&document, &held, &settings);
-        let found = analysis::analyse(&document, &context, &settings, true);
+        let found = analysis::analyse(&document, &context, &settings);
         let tables = Arc::clone(&found.tables);
         drop(held);
         self.state.remember(&uri, Arc::clone(&tables));

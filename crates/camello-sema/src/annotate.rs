@@ -37,8 +37,6 @@ pub enum Framework {
     /// accessors, no types, and a `new` that is always there and takes
     /// anything.
     ClassTiny,
-    /// A `bless` with no framework behind it.
-    Bless,
 }
 
 /// What a project's own modules re-export (`camello.toml`, `read-as`).

@@ -26,9 +26,8 @@ pub(crate) fn expr_assignment(parser: &mut Parser<'_>) -> Option<CompletedMarker
 ///
 /// "Always" is the point: the old parser produced a wrapper only when a comma
 /// was present, so every consumer had to handle both shapes (the parser contract).
-pub(crate) fn list_expr(parser: &mut Parser<'_>, recovery: Recovery) -> CompletedMarker {
+pub(crate) fn list_expr(parser: &mut Parser<'_>) -> CompletedMarker {
     let marker = parser.start();
-    let _ = recovery;
     list_contents(parser, &[]);
     parser.complete(marker, NodeKind::LIST_EXPR)
 }

@@ -852,17 +852,6 @@ impl Program {
         methods
     }
 
-    /// A named type a project's own `Type::Library` declares.
-    #[must_use]
-    pub fn named_type(&self, name: &str) -> Option<&crate::types::Type> {
-        self.files
-            .iter()
-            .flat_map(|entry| entry.decls.facts.iter())
-            .flat_map(|facts| facts.types.iter())
-            .find(|named| named.name == name)
-            .map(|named| &named.ty)
-    }
-
     /// Substitute what the run's type libraries declare into every annotation
     /// that named one (`docs/types.md`, ANNOT-8a).
     ///

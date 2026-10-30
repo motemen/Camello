@@ -179,6 +179,16 @@ fn read(path: &Path) -> String {
     fs::read_to_string(path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
 }
 
+/// What a fixture asks for, read from where it lives, so that the one
+/// setting a fixture can ask for needs no marker inside the file that the
+/// formatter would have to preserve.
+fn options_for(path: &Path) -> crate::Options {
+    crate::Options {
+        strict_annotations: path.to_string_lossy().contains("strict-annotations"),
+        ..crate::Options::default()
+    }
+}
+
 fn parse_one(path: &Path, source: &str) -> camello_syntax::lang::SyntaxNode {
     let parsed = camello_syntax::parse::parse(source);
     assert!(
@@ -217,7 +227,7 @@ fn fixtures_report_exactly_what_they_say() {
             let root = parse_one(path, &source);
             let index = LineIndex::new(&source);
             let expected = parse_expectations(&source);
-            let found = analysis.check(path, &root, &source, &crate::Options::for_fixture(path));
+            let found = analysis.check(path, &root, &source, &options_for(path));
 
             let mut remaining: Vec<&Expectation> = expected.iter().collect();
             let mut unexpected = Vec::new();

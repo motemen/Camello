@@ -2,7 +2,7 @@
 
 use crate::lang::{NodeKind, TokenKind, T};
 use crate::parse::event::CompletedMarker;
-use crate::parse::{Parser, Recovery};
+use crate::parse::Parser;
 
 use super::expr::{arg_list, bareword_call, expr, list_expr, postfix_subscript};
 use super::{block, name};
@@ -159,7 +159,7 @@ pub(crate) fn primary(parser: &mut Parser<'_>) -> Option<CompletedMarker> {
             if parser.current().is_some_and(|kind| {
                 (kind.can_start_term() || super::is_name_like(kind)) && !kind.is_stmt_modifier()
             }) {
-                list_expr(parser, Recovery::Statement);
+                list_expr(parser);
             }
             parser.expect_operator();
             parser.complete(marker, NodeKind::LIST_CALL_EXPR)

@@ -114,7 +114,7 @@ pub fn edit_bar(index: &mut Index, path: &Path, edits: usize) -> Option<EditBar>
             declaration_changes += 1;
         }
         let context = crate::analysis::context(&document, index, &settings);
-        let _ = crate::analysis::analyse(&document, &context, &settings, true);
+        let _ = crate::analysis::analyse(&document, &context, &settings);
     }
     Some(EditBar {
         edits,

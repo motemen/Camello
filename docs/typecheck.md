@@ -149,8 +149,9 @@ them:
 - `MethodCall` over `METHOD_CALL_EXPR` — invocant, method name (a bareword,
   or `Dynamic` when it is `$var`), arguments.
 - `Subscript` over `HASH_SUBSCRIPT_EXPR` / `ARRAY_SUBSCRIPT_EXPR` /
-  `POSTFIX_DEREF_EXPR` / `SLICE_EXPR` — the chain `$x->{a}[0]{b}` as a base
-  plus a list of steps, each `Hash(key)` / `Array(index)` / `Deref(sigil)`.
+  `POSTFIX_DEREF_EXPR` / `POSTFIX_ARRAY_SLICE_EXPR` /
+  `POSTFIX_HASH_SLICE_EXPR` — the chain `$x->{a}[0]{b}` as a base plus a list
+  of steps, each `Hash(key)` / `Array(index)` / `Deref(sigil)` / `Slice`.
 - `Assign` over `ASSIGN_EXPR` — targets as a list, so `my ($self, %args) =
   @_` and `my $x = ...` share one path.
 - `Literal`, `AnonHash`, `AnonArray`, `AnonSub`, `Interpolated`.
@@ -188,10 +189,10 @@ what is left when the file declares nothing of the name.
 Package-level facts that are not symbols: `isa: Vec<Package>` (from
 `use parent`, `use base`, `extends`, `our @ISA = (...)`), `roles` (`with`,
 `does`), and the object framework in use (Moose, Moo, Mouse,
-Class::Accessor::Typed, Class::Accessor::Lite, Class::Tiny, plain `bless`, or
-none),
-because the framework decides whether `new` exists and what it accepts — and
-whether it *checks* what it accepts, which the `mk_new` family's does not.
+Class::Accessor::Typed, Class::Accessor::Lite, Class::Tiny, or none — a plain
+`bless` is none), because the framework decides whether `new` exists and what
+it accepts — and whether it *checks* what it accepts, which the `mk_new`
+family's does not.
 
 Method resolution is C3 over `isa` with roles flattened in, and falls back to
 `Unknown` — not an error — when any ancestor is itself `Unknown`. A class

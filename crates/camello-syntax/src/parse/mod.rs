@@ -9,7 +9,7 @@
 
 use rowan::{TextRange, TextSize};
 
-use crate::lang::{NodeKind, SyntaxKind, TokenKind};
+use crate::lang::{NodeKind, TokenKind};
 use crate::lex::{Expect, Lexer, Mark};
 
 pub mod event;
@@ -168,8 +168,7 @@ impl<'a> Parser<'a> {
         let tokens = self.lexer.scan_all().to_vec();
         let replayed = replay::replay(source, &tokens, events);
 
-        let mut diagnostics = replayed.diagnostics;
-        diagnostics.extend(self.diagnostics);
+        let mut diagnostics = self.diagnostics;
         diagnostics.sort_by_key(|diagnostic| diagnostic.range.start());
 
         Parse {
@@ -566,12 +565,6 @@ impl Recovery {
 }
 
 use crate::lang::T;
-
-/// The rowan kind of a node, for callers that only have a `NodeKind`.
-#[must_use]
-pub fn node_kind(kind: NodeKind) -> SyntaxKind {
-    SyntaxKind::from(kind)
-}
 
 #[cfg(test)]
 mod tests;
