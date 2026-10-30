@@ -27,6 +27,36 @@ pub use camello_syntax::{
     SyntaxToken, TokenKind, TriviaMap,
 };
 
+/// How a command came out, as the status the process exits with.
+///
+/// Returned rather than exited with, so that `main` is the one place the
+/// process ends and a run that fails can be asked about by whoever called it.
+/// A command that could not do what it was asked at all — a flag it cannot
+/// read, a file it cannot open — returns an `Err` instead, and exits 1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[must_use]
+pub enum Exit {
+    /// 0: nothing to report.
+    Success,
+    /// 1: what the run was asked to fail on was found — a file that is not
+    /// formatted under `--check`, one that does not parse, a diagnostic at or
+    /// above `--error-on`, a violated invariant.
+    Failure,
+    /// 2: a source that does not parse, under `format --stop-on-first-error`
+    /// and `dev dump`.
+    ParseError,
+}
+
+impl From<Exit> for std::process::ExitCode {
+    fn from(exit: Exit) -> Self {
+        match exit {
+            Exit::Success => std::process::ExitCode::SUCCESS,
+            Exit::Failure => std::process::ExitCode::from(1),
+            Exit::ParseError => std::process::ExitCode::from(2),
+        }
+    }
+}
+
 /// Format Perl source with the default options.
 #[must_use]
 pub fn format_perl(input: &str) -> (String, Vec<ParseError>) {

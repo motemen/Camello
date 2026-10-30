@@ -12,6 +12,8 @@ use std::path::{Path, PathBuf};
 use camello_sema::{Code, Diagnostic, LineIndex, Options, Severity};
 use miette::Result;
 
+use crate::Exit;
+
 /// What one run of `check` was asked for.
 /// How the diagnostics are printed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,7 +78,7 @@ fn report_drift(
     roots: &[PathBuf],
     request: &Request,
     read: impl Fn(&Path) -> Option<String> + Sync,
-) -> Result<()> {
+) -> Exit {
     let mut drifted = analysis.returns_drift(roots, request.jobs, &read);
     drifted.sort_by(|left, right| {
         (left.file, left.range.start()).cmp(&(right.file, right.range.start()))
@@ -106,13 +108,13 @@ fn report_drift(
     let files = plural(roots.len(), "file");
     if count == 0 {
         println!("no drift in {files}");
-        return Ok(());
+        return Exit::Success;
     }
     println!(
         "{} whose `Returns:` and body disagree, in {files}",
         plural(count, "sub")
     );
-    std::process::exit(1);
+    Exit::Failure
 }
 
 /// `--group`: one report per `(code, subject)`, the first one, with how many
@@ -172,11 +174,11 @@ struct FileReport {
     parse_errors: Vec<String>,
 }
 
-/// Run the checker and print what it found.
+/// Run the checker, print what it found, and say how the run came out.
 ///
-/// Exits the process rather than returning a status, because the status is the
-/// interface here: a CI step reads it and nothing else.
-pub fn run(request: &Request) -> Result<()> {
+/// The status is the interface here — a CI step reads it and nothing else —
+/// so [`Exit::Failure`] is anything at or above `--error-on`.
+pub fn run(request: &Request) -> Result<Exit> {
     let encodings = crate::source::Encodings::parse(request.encoding.as_ref())?;
 
     let mut files = Vec::new();
@@ -255,7 +257,7 @@ pub fn run(request: &Request) -> Result<()> {
     analysis.infer_returns(&roots, request.jobs, read);
 
     if request.returns_drift {
-        return report_drift(&analysis, &roots, request, read);
+        return Ok(report_drift(&analysis, &roots, request, read));
     }
 
     let reports = camello_sema::workspace::in_parallel(&files, request.jobs, |(path, inline)| {
@@ -349,9 +351,9 @@ pub fn run(request: &Request) -> Result<()> {
         .map(|(_, count)| count)
         .sum();
     if reportable > 0 {
-        std::process::exit(1);
+        return Ok(Exit::Failure);
     }
-    Ok(())
+    Ok(Exit::Success)
 }
 
 fn read_one(
