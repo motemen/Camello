@@ -968,9 +968,10 @@ pub enum Step {
         index: Option<i64>,
         node: SyntaxNode,
     },
-    /// `->@*`, `->%*`, `->$*`, and the slice forms.
+    /// `->@*`, `->%*`, `->$*`.
     Deref { sigil: Sigil, node: SyntaxNode },
-    /// `@h{...}`, `@a[...]` — a slice yields a list, not one element.
+    /// `->@[...]`, `->@{...}` — a slice yields a list, not one element.
+    /// `@h{...}` and `@a[...]` are a `Hash` or `Array` step on an array base.
     Slice { node: SyntaxNode },
 }
 
@@ -1023,7 +1024,6 @@ impl SubscriptChain {
             NodeKind::HASH_SUBSCRIPT_EXPR
                 | NodeKind::ARRAY_SUBSCRIPT_EXPR
                 | NodeKind::POSTFIX_DEREF_EXPR
-                | NodeKind::SLICE_EXPR
                 | NodeKind::POSTFIX_ARRAY_SLICE_EXPR
                 | NodeKind::POSTFIX_HASH_SLICE_EXPR
         )
@@ -1068,9 +1068,9 @@ impl SubscriptChain {
                     node: node.clone(),
                 })
             }
-            NodeKind::SLICE_EXPR
-            | NodeKind::POSTFIX_ARRAY_SLICE_EXPR
-            | NodeKind::POSTFIX_HASH_SLICE_EXPR => Some(Step::Slice { node: node.clone() }),
+            NodeKind::POSTFIX_ARRAY_SLICE_EXPR | NodeKind::POSTFIX_HASH_SLICE_EXPR => {
+                Some(Step::Slice { node: node.clone() })
+            }
             _ => None,
         }
     }

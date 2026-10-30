@@ -344,9 +344,7 @@ pub(crate) fn value_kind(node: &SyntaxNode) -> ValueKind {
         | NodeKind::POSTFIX_EXPR
         | NodeKind::SCALAR_VAR => Scalar,
 
-        NodeKind::ARRAY_VAR | NodeKind::HASH_VAR | NodeKind::SLICE_EXPR | NodeKind::RANGE_EXPR => {
-            List
-        }
+        NodeKind::ARRAY_VAR | NodeKind::HASH_VAR | NodeKind::RANGE_EXPR => List,
 
         // `$h{k}` and `$x->[0]` are one element; `@h{...}` is a slice. A
         // subscript of a list, `(stat $f)[7]`, is as many as its subscript

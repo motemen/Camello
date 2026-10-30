@@ -305,7 +305,6 @@ define_language! {
         WHEN_CLAUSE => WhenClause,
         DEFAULT_CLAUSE => DefaultClause,
         STMT_MODIFIER => StmtModifier,
-        LOOP_HEADER => LoopHeader,
         C_STYLE_LOOP_HEADER => CStyleLoopHeader,
         FOREACH_HEADER => ForeachHeader,
 
@@ -359,7 +358,6 @@ define_language! {
         HASH_SUBSCRIPT_EXPR => HashSubscriptExpr,
         ARRAY_SUBSCRIPT_EXPR => ArraySubscriptExpr,
         CODE_CALL_EXPR => CodeCallExpr,
-        SLICE_EXPR => SliceExpr,
         SUBSCRIPT => Subscript,
 
         // -- Literals and quote-likes
@@ -376,7 +374,6 @@ define_language! {
         S_EXPR => SExpr,
         TR_EXPR => TrExpr,
         HEREDOC_EXPR => HeredocExpr,
-        HEREDOC_BODY => HeredocBody,
 
         // -- Misc expression forms
         MATCH_EXPR => MatchExpr,

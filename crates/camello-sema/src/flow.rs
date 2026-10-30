@@ -944,8 +944,7 @@ impl Pass<'_> {
             }
             NodeKind::HASH_SUBSCRIPT_EXPR
             | NodeKind::ARRAY_SUBSCRIPT_EXPR
-            | NodeKind::POSTFIX_DEREF_EXPR
-            | NodeKind::SLICE_EXPR => self.subscript(node),
+            | NodeKind::POSTFIX_DEREF_EXPR => self.subscript(node),
             NodeKind::PAREN_EXPR => {
                 let inner = ast::ParenExpr::cast(node.clone()).and_then(|view| view.inner());
                 match inner {
@@ -1041,9 +1040,8 @@ impl Pass<'_> {
                 }
             }
             // A hash in list context is key/value pairs, and nothing
-            // downstream wants them as a list; a slice is a list whose
-            // element types this pass does not read.
-            NodeKind::HASH_VAR | NodeKind::SLICE_EXPR => {
+            // downstream wants them as a list.
+            NodeKind::HASH_VAR => {
                 let _ = self.type_of(node);
                 ListShape::Unknown
             }
@@ -2053,7 +2051,6 @@ impl Pass<'_> {
             NodeKind::TERNARY_EXPR
             | NodeKind::ARRAY_VAR
             | NodeKind::HASH_VAR
-            | NodeKind::SLICE_EXPR
             | NodeKind::DEREF_EXPR
             | NodeKind::BLOCK_DEREF_EXPR
             | NodeKind::POSTFIX_DEREF_EXPR => self.shape_of(node),
@@ -3556,11 +3553,11 @@ fn operands(call: &ast::Call) -> Vec<SyntaxNode> {
 
 /// Whether `scalar` was handed a container, whose scalar value is its count.
 ///
-/// An array, a hash, a slice, and the three spellings of a dereference to
-/// one. `scalar $$ref` is not one of them, and neither is a call.
+/// An array, a hash, and the three spellings of a dereference to one.
+/// `scalar $$ref` is not one of them, and neither is a call.
 fn counts_elements(node: &SyntaxNode) -> bool {
     match node.node_kind() {
-        NodeKind::ARRAY_VAR | NodeKind::HASH_VAR | NodeKind::SLICE_EXPR => true,
+        NodeKind::ARRAY_VAR | NodeKind::HASH_VAR => true,
         NodeKind::DEREF_EXPR | NodeKind::BLOCK_DEREF_EXPR | NodeKind::POSTFIX_DEREF_EXPR => {
             ast::tokens(node).any(|token| {
                 matches!(

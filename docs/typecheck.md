@@ -149,8 +149,9 @@ them:
 - `MethodCall` over `METHOD_CALL_EXPR` — invocant, method name (a bareword,
   or `Dynamic` when it is `$var`), arguments.
 - `Subscript` over `HASH_SUBSCRIPT_EXPR` / `ARRAY_SUBSCRIPT_EXPR` /
-  `POSTFIX_DEREF_EXPR` / `SLICE_EXPR` — the chain `$x->{a}[0]{b}` as a base
-  plus a list of steps, each `Hash(key)` / `Array(index)` / `Deref(sigil)`.
+  `POSTFIX_DEREF_EXPR` / `POSTFIX_ARRAY_SLICE_EXPR` /
+  `POSTFIX_HASH_SLICE_EXPR` — the chain `$x->{a}[0]{b}` as a base plus a list
+  of steps, each `Hash(key)` / `Array(index)` / `Deref(sigil)` / `Slice`.
 - `Assign` over `ASSIGN_EXPR` — targets as a list, so `my ($self, %args) =
   @_` and `my $x = ...` share one path.
 - `Literal`, `AnonHash`, `AnonArray`, `AnonSub`, `Interpolated`.
