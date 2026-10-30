@@ -99,17 +99,14 @@ impl Settings {
         )
     }
 
-    /// A fresh, linked analysis over nothing — what answers requests before
-    /// the workspace walk has finished.
+    /// An analysis over no files yet, resolving modules under the roots, the
+    /// stubs and `inc`, through the cache and in the dialect these settings
+    /// name.
     #[must_use]
-    pub fn empty_analysis(&self) -> camello_sema::Analysis {
+    pub fn analysis(&self, inc: Vec<PathBuf>) -> camello_sema::Analysis {
         camello_sema::Analysis::new()
             .with_resolver(
-                camello_sema::resolve::Resolver::new(
-                    self.roots.clone(),
-                    self.stubs.clone(),
-                    Vec::new(),
-                ),
+                camello_sema::resolve::Resolver::new(self.roots.clone(), self.stubs.clone(), inc),
                 cache(self.cache_dir.as_deref()),
             )
             .with_dialect(self.dialect.clone())

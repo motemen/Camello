@@ -362,22 +362,10 @@ impl<'a> Lexer<'a> {
 
         // Anything scanned past the `(` was scanned as code; throw it away.
         self.cursor = open_index + 1;
-        self.buffer.truncate(self.cursor);
-        self.scan_pos = body_start;
-        self.exhausted = false;
+        self.invalidate_from_cursor();
+        debug_assert_eq!(self.scan_pos, body_start);
 
-        if body_len > 0 {
-            self.push(TokenKind::RAW_CONTENT, body_start, body_start + body_len);
-        } else {
-            self.buffer.push(LexedToken {
-                kind: TokenKind::RAW_CONTENT,
-                range: TextRange::empty(
-                    TextSize::try_from(body_start).expect("source larger than 4GiB"),
-                ),
-                expect_at_lex: self.expect,
-                ends_quote_like_run: false,
-            });
-        }
+        self.push_content(TokenKind::RAW_CONTENT, body_start, body_start + body_len);
         let body = *self.buffer.last().expect("just pushed");
 
         let close_start = body_start + body_len;
@@ -424,6 +412,22 @@ impl<'a> Lexer<'a> {
             ends_quote_like_run: false,
         });
         self.scan_pos = end;
+    }
+
+    /// Push the content of a quote-like, heredoc or raw group, which unlike
+    /// any other token may be empty: the tree shape must not vary with
+    /// whether the user wrote `//` or `/x/`.
+    fn push_content(&mut self, kind: TokenKind, start: usize, end: usize) {
+        if end > start {
+            self.push(kind, start, end);
+            return;
+        }
+        self.buffer.push(LexedToken {
+            kind,
+            range: TextRange::empty(TextSize::try_from(start).expect("source larger than 4GiB")),
+            expect_at_lex: self.expect,
+            ends_quote_like_run: false,
+        });
     }
 }
 

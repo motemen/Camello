@@ -200,13 +200,7 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        if content_len > 0 {
-            self.push(kind, start, start + content_len);
-        } else {
-            // Empty content still needs a token so the tree shape does not vary
-            // with whether the user wrote `//` or `/x/`.
-            self.push_empty(kind, start);
-        }
+        self.push_content(kind, start, start + content_len);
         self.push_delimiter(close);
         true
     }
@@ -247,17 +241,6 @@ impl<'a> Lexer<'a> {
         }
         self.scan_pos = construct_start;
         self.push(kind, construct_start, self.source.len());
-    }
-
-    fn push_empty(&mut self, kind: TokenKind, at: usize) {
-        self.buffer.push(super::LexedToken {
-            kind,
-            range: rowan::TextRange::empty(
-                rowan::TextSize::try_from(at).expect("source larger than 4GiB"),
-            ),
-            expect_at_lex: self.expect,
-            ends_quote_like_run: false,
-        });
     }
 
     /// `<<EOF`, `<<"EOF"`, `<<'EOF'`, `<<~EOF`, `<< "EOF"`.
@@ -361,15 +344,11 @@ impl<'a> Lexer<'a> {
 
             match self.find_heredoc_end(&terminator, indentable) {
                 Some((content_len, terminator_len)) => {
-                    if content_len > 0 {
-                        self.push(
-                            TokenKind::HEREDOC_CONTENT,
-                            body_start,
-                            body_start + content_len,
-                        );
-                    } else {
-                        self.push_empty(TokenKind::HEREDOC_CONTENT, body_start);
-                    }
+                    self.push_content(
+                        TokenKind::HEREDOC_CONTENT,
+                        body_start,
+                        body_start + content_len,
+                    );
                     let end_start = self.scan_pos;
                     self.push(
                         TokenKind::HEREDOC_END,
