@@ -7,11 +7,14 @@
 //!
 //! The discipline that keeps the cost contained is the whole of this file's
 //! shape: **tokio exists to shuttle JSON-RPC, and nothing else.** Every
-//! handler here does three things and no more — take a snapshot under the
-//! lock, hand it to `spawn_blocking`, spell the answer in LSP. All parsing and
+//! request handler here does three things and no more — take a snapshot under
+//! the lock, hand it to `spawn_blocking`, spell the answer in LSP. Every
+//! notification handler updates the store and hands the rest to a task of its
+//! own (`docs/lsp.md`, "State, snapshots, and `Send`"). All parsing and
 //! analysis is CPU-bound and runs on a blocking thread; no analysis code is
 //! async, and no async type reaches `camello-sema`.
 
+use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -27,18 +30,29 @@ use crate::handlers;
 use crate::index;
 use crate::position::Encoding;
 use crate::settings::Settings;
-use crate::state::{GlobalState, Snapshot};
+use crate::state::{self, GlobalState, Snapshot};
 
 /// How long after a keystroke the checker runs.
 ///
 /// Feedback while typing, not only on save — and not on every keystroke
 /// either, which for a file of any size is a body pass thrown away before it
 /// finishes (`docs/lsp.md`, "Diagnostics").
-const DEBOUNCE: Duration = Duration::from_millis(300);
+pub(crate) const DEBOUNCE: Duration = Duration::from_millis(300);
 
+/// The server. Cheap to clone — `Arc`s and a client handle — so that a
+/// notification can hand a copy of it to the task that does its work.
+#[derive(Clone)]
 pub struct Backend {
     client: Client,
     state: Arc<RwLock<GlobalState>>,
+    /// Held from a publication's version check to its send, and around a
+    /// close's forgetting and its empty publication.
+    ///
+    /// Checks run concurrently, and a version check that passed means nothing
+    /// if another task can check, publish a newer answer, and be overtaken by
+    /// this one's send. With the check and the send one step, an older answer
+    /// is never the last one a client is sent.
+    publishing: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl Backend {
@@ -48,15 +62,30 @@ impl Backend {
         Backend {
             client,
             state: Arc::new(RwLock::new(GlobalState::new(settings))),
+            publishing: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
+    /// Run a notification's work as a task of its own.
+    ///
+    /// Notifications and requests share the transport's few concurrent slots,
+    /// so a notification that waited out a debounce or swept every open file
+    /// before returning would hold a hover up behind it. What has to happen in
+    /// the order the client sent it — storing the text, numbering the edit —
+    /// happens in the handler before this is called.
+    fn in_background<F>(&self, work: impl FnOnce(Backend) -> F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        tokio::spawn(work(self.clone()));
+    }
+
     fn read(&self) -> std::sync::RwLockReadGuard<'_, GlobalState> {
-        self.state.read().expect("no writer panics holding this")
+        state::read(&self.state)
     }
 
     fn write(&self) -> std::sync::RwLockWriteGuard<'_, GlobalState> {
-        self.state.write().expect("no writer panics holding this")
+        state::write(&self.state)
     }
 
     /// Parse a buffer and put it in the store.
@@ -74,8 +103,43 @@ impl Backend {
     }
 
     /// Check a document now and publish the result.
+    ///
+    /// The version is carried through: an edit landing while this runs makes
+    /// the answer stale, and a stale answer is dropped here rather than shown.
     async fn check_and_publish(&self, uri: Uri) {
-        publish_for(&self.state, &self.client, uri).await;
+        let Some(snapshot) = self.read().snapshot(&uri) else {
+            return;
+        };
+        let version = snapshot.document.version;
+        let outcome = tokio::task::spawn_blocking(move || {
+            let index = state::read(&snapshot.index);
+            let context = analysis::context(&snapshot.document, &index, &snapshot.settings);
+            let found = analysis::analyse(&snapshot.document, &context, &snapshot.settings, true);
+            let published = handlers::diagnostics::publish(&snapshot.document, &found.diagnostics);
+            (published, found.tables)
+        })
+        .await;
+        let Some((published, tables)) = joined(&self.client, "a check", outcome).await else {
+            return;
+        };
+        let _turn = self.publishing.lock().await;
+        {
+            let mut held = self.write();
+            // Still the version that was analysed? If not, the newer text has
+            // its own debounce already running and this answer is about text
+            // nobody is looking at.
+            if held
+                .documents
+                .get(&uri)
+                .is_none_or(|document| document.version != version)
+            {
+                return;
+            }
+            held.remember(&uri, tables);
+        }
+        self.client
+            .publish_diagnostics(uri, published, Some(version))
+            .await;
     }
 
     /// Answer a request about one position in an open document: its tables
@@ -83,7 +147,11 @@ impl Backend {
     /// thread, as every analysis is.
     ///
     /// `None` when the document is not open. A thread that panicked answers
-    /// with nothing found rather than an error.
+    /// with nothing found rather than an error, and says so in the log.
+    ///
+    /// Tables computed here because the held ones were a version behind are
+    /// remembered, while that version is still the open one: the next hover
+    /// before the debounced check runs is then answered without a body pass.
     async fn with_analysis<T>(
         &self,
         position: TextDocumentPositionParams,
@@ -92,21 +160,31 @@ impl Backend {
     where
         T: Default + Send + 'static,
     {
-        let snapshot = self.read().snapshot(&position.text_document.uri)?;
+        let uri = position.text_document.uri;
+        let snapshot = self.read().snapshot(&uri)?;
         let offset = snapshot.document.positions.offset(position.position);
-        Some(
-            tokio::task::spawn_blocking(move || {
-                let tables = snapshot.tables_now();
-                let index = snapshot
-                    .index
-                    .read()
-                    .expect("no writer panics holding this");
-                let context = analysis::context(&snapshot.document, &index, &snapshot.settings);
-                answer(&snapshot, &tables, &context, offset)
-            })
+        let outcome = tokio::task::spawn_blocking(move || {
+            let index = state::read(&snapshot.index);
+            let context = analysis::context(&snapshot.document, &index, &snapshot.settings);
+            let tables = snapshot.tables_now(&context);
+            let answered = answer(&snapshot, &tables, &context, offset);
+            (answered, snapshot.computed(&tables).then_some(tables))
+        })
+        .await;
+        let (answered, computed) = joined(&self.client, "a request", outcome)
             .await
-            .unwrap_or_default(),
-        )
+            .unwrap_or_default();
+        if let Some(tables) = computed {
+            let mut held = self.write();
+            if held
+                .documents
+                .get(&uri)
+                .is_some_and(|document| document.version == tables.version)
+            {
+                held.remember(&uri, tables);
+            }
+        }
+        Some(answered)
     }
 
     /// Wait out the debounce, then run the edit loop — unless a newer edit
@@ -117,8 +195,9 @@ impl Backend {
     /// reparse happened in the document store, the declaration pass and the
     /// diff are [`Backend::reindex_if_declarations_changed`], and the body
     /// pass is the publication.
-    async fn schedule_check(&self, uri: Uri) {
-        let generation = self.write().bump(&uri);
+    ///
+    /// `generation` is the edit's number, taken when the edit was stored.
+    async fn debounced_check(&self, uri: Uri, generation: u64) {
         tokio::time::sleep(DEBOUNCE).await;
         if !self.read().is_current(&uri, generation) {
             return;
@@ -156,13 +235,15 @@ impl Backend {
             (path, decls, Arc::clone(&snapshot.document))
         })
         .await;
-        let Ok((path, decls, document)) = outcome else {
+        let Some((path, decls, document)) =
+            joined(&self.client, "the declaration pass", outcome).await
+        else {
             return;
         };
 
         let changed = {
             let index = Arc::clone(&self.read().index);
-            let mut index = index.write().expect("no reader panics holding this");
+            let mut index = state::write(&index);
             index.apply(vec![(&path, decls, &document.text)])
         };
         if changed {
@@ -198,13 +279,14 @@ impl Backend {
             return;
         };
         let index = Arc::clone(&self.read().index);
-        let _ = tokio::task::spawn_blocking(move || {
-            let mut index = index.write().expect("no reader panics holding this");
+        let outcome = tokio::task::spawn_blocking(move || {
+            let mut index = state::write(&index);
             index
                 .analysis
                 .reinfer_returns(&path, &snapshot.document.text)
         })
         .await;
+        joined(&self.client, "return inference", outcome).await;
     }
 
     /// Put a file back the way disk has it, and re-check the open files if
@@ -216,15 +298,16 @@ impl Backend {
     async fn reinstall_from_disk(&self, path: PathBuf) {
         let settings = Arc::clone(&self.read().settings);
         let index = Arc::clone(&self.read().index);
-        let changed = tokio::task::spawn_blocking(move || {
+        let outcome = tokio::task::spawn_blocking(move || {
             let source = std::fs::read_to_string(&path).ok()?;
             let cache = crate::settings::cache(settings.cache_dir.as_deref());
             let decls = camello_sema::read_declarations(&path, &source, &settings.dialect, &cache);
-            let mut index = index.write().expect("no reader panics holding this");
+            let mut index = state::write(&index);
             Some(index.apply(vec![(&path, decls, &source)]))
         })
         .await;
-        if matches!(changed, Ok(Some(true))) {
+        let changed = joined(&self.client, "reading a closed file back", outcome).await;
+        if changed == Some(Some(true)) {
             self.sweep(None).await;
         }
     }
@@ -273,15 +356,27 @@ impl Backend {
     }
 
     /// Walk the workspace in the background and swap the graph in when it is
-    /// built.
+    /// built — unless another walk was started meanwhile, a configuration
+    /// reload's, in which case this one read the old configuration and the
+    /// newer walk's graph is the one to keep.
     fn spawn_index(&self) {
-        let state = Arc::clone(&self.state);
-        let client = self.client.clone();
-        let settings = Arc::clone(&self.read().settings);
-        let index = Arc::clone(&self.read().index);
-        tokio::spawn(async move {
+        let (settings, index, builds) = {
+            let held = self.read();
+            (
+                Arc::clone(&held.settings),
+                Arc::clone(&held.index),
+                Arc::clone(&held.builds),
+            )
+        };
+        let ticket = builds.begin();
+        self.in_background(|this| async move {
             let built = tokio::task::spawn_blocking(move || index::build(&settings)).await;
-            let Ok(mut built) = built else { return };
+            let Some(mut built) = joined(&this.client, "the index walk", built).await else {
+                return;
+            };
+            if !builds.is_current(ticket) {
+                return;
+            }
             let files = built.files;
             // The walk read disk, and disk is out of date for anything the
             // user has been editing while it ran — which is every file they
@@ -290,14 +385,9 @@ impl Backend {
             // declarations the editor is showing and nothing would put them
             // back: the next edit to those buffers declares the same things,
             // and a diff that says "unchanged" installs nothing.
-            let buffers: Vec<Arc<crate::document::Document>> = {
-                let held = state.read().expect("no writer panics holding this");
-                held.documents.values().map(Arc::clone).collect()
-            };
-            let settings = {
-                let held = state.read().expect("no writer panics holding this");
-                Arc::clone(&held.settings)
-            };
+            let buffers: Vec<Arc<crate::document::Document>> =
+                this.read().documents.values().map(Arc::clone).collect();
+            let settings = Arc::clone(&this.read().settings);
             let relinked = tokio::task::spawn_blocking(move || {
                 let cache = crate::settings::cache(settings.cache_dir.as_deref());
                 let files = buffers
@@ -317,12 +407,13 @@ impl Backend {
                 built
             })
             .await;
-            let Ok(built) = relinked else { return };
-            {
-                let mut slot = index.write().expect("no reader panics holding this");
-                *slot = built;
+            let Some(built) = joined(&this.client, "the index walk", relinked).await else {
+                return;
+            };
+            if !builds.install(ticket, &index, built) {
+                return;
             }
-            client
+            this.client
                 .log_message(
                     MessageType::INFO,
                     format!("camello: indexed {files} file{}", plural(files)),
@@ -331,63 +422,37 @@ impl Backend {
             // Everything already open was answered from single-file analysis
             // while the walk ran; now that the graph is there, they get the
             // cross-file half of the answer.
-            let open = {
-                let held = state.read().expect("no writer panics holding this");
-                held.open_uris()
-            };
+            let open = this.read().open_uris();
             for uri in open {
-                publish_for(&state, &client, uri).await;
+                this.check_and_publish(uri).await;
             }
         });
     }
 }
 
-/// Check one document and publish what came out.
+/// What a blocking thread handed back, or `None` if it panicked.
 ///
-/// A free function rather than a method because the background index walk
-/// republishes the open files when the graph arrives, and it has an `Arc` of
-/// the state rather than a `&Backend`.
-///
-/// The version is carried through: an edit landing while this runs makes the
-/// answer stale, and a stale answer is dropped here rather than shown.
-async fn publish_for(state: &Arc<RwLock<GlobalState>>, client: &Client, uri: Uri) {
-    let snapshot = {
-        let held = state.read().expect("no writer panics holding this");
-        held.snapshot(&uri)
-    };
-    let Some(snapshot) = snapshot else { return };
-    let version = snapshot.document.version;
-    let outcome = tokio::task::spawn_blocking(move || {
-        let index = snapshot
-            .index
-            .read()
-            .expect("no writer panics holding this");
-        let context = analysis::context(&snapshot.document, &index, &snapshot.settings);
-        let found = analysis::analyse(&snapshot.document, &context, &snapshot.settings, true);
-        let published = handlers::diagnostics::publish(&snapshot.document, &found.diagnostics);
-        (published, found.tables)
-    })
-    .await;
-    let Ok((published, tables)) = outcome else {
-        return;
-    };
-    {
-        let mut held = state.write().expect("no writer panics holding this");
-        // Still the version that was analysed? If not, the newer text has its
-        // own debounce already running and this answer is about text nobody is
-        // looking at.
-        if held
-            .documents
-            .get(&uri)
-            .is_none_or(|document| document.version != version)
-        {
-            return;
+/// A panic on a blocking thread is not an answer anybody can act on, but it is
+/// not nothing either: the request answers with nothing found, and the log
+/// says which piece of work failed and what the panic said, so the empty
+/// answer is not a mystery.
+async fn joined<T>(
+    client: &Client,
+    what: &str,
+    outcome: std::result::Result<T, tokio::task::JoinError>,
+) -> Option<T> {
+    match outcome {
+        Ok(value) => Some(value),
+        Err(error) => {
+            client
+                .log_message(
+                    MessageType::ERROR,
+                    format!("camello: {what} failed: {error}"),
+                )
+                .await;
+            None
         }
-        held.remember(&uri, tables);
     }
-    client
-        .publish_diagnostics(uri, published, Some(version))
-        .await;
 }
 
 fn plural(count: usize) -> &'static str {
@@ -492,7 +557,8 @@ impl LanguageServer for Backend {
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         let document = params.text_document;
         self.store(&document.uri, &document.text, document.version);
-        self.check_and_publish(document.uri).await;
+        let uri = document.uri;
+        self.in_background(|this| async move { this.check_and_publish(uri).await });
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
@@ -502,28 +568,34 @@ impl LanguageServer for Backend {
         };
         let uri = params.text_document.uri;
         self.store(&uri, &change.text, params.text_document.version);
-        self.schedule_check(uri).await;
+        let generation = self.write().bump(&uri);
+        self.in_background(|this| async move { this.debounced_check(uri, generation).await });
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
         // Immediately, not after the debounce: a save is a moment the user
         // chose, and waiting through it would be the server ignoring them.
-        self.check_and_publish(params.text_document.uri).await;
+        let uri = params.text_document.uri;
+        self.in_background(|this| async move { this.check_and_publish(uri).await });
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
         let uri = params.text_document.uri;
         let path = uri.to_file_path().map(|path| path.into_owned());
-        self.write().forget(&uri);
-        // A file nobody is looking at has no diagnostics to look at.
-        self.client.publish_diagnostics(uri, Vec::new(), None).await;
+        {
+            // A file nobody is looking at has no diagnostics to look at, and
+            // no check still running for it may say otherwise afterwards.
+            let _turn = self.publishing.lock().await;
+            self.write().forget(&uri);
+            self.client.publish_diagnostics(uri, Vec::new(), None).await;
+        }
         // While it was open the graph held the *buffer's* declarations, which
         // may be an edit the user has just thrown away by closing without
         // saving. Nothing else would ever put the file back — a closed file
         // sends no more `didChange` — so the phantom would outlive the buffer
         // it came from.
         if let Some(path) = path {
-            self.reinstall_from_disk(path).await;
+            self.in_background(|this| async move { this.reinstall_from_disk(path).await });
         }
     }
 
@@ -580,34 +652,40 @@ impl LanguageServer for Backend {
         }
         let settings = Arc::clone(&self.read().settings);
         let index = Arc::clone(&self.read().index);
-        let updated = tokio::task::spawn_blocking(move || {
-            let cache = crate::settings::cache(settings.cache_dir.as_deref());
-            let read: Vec<(PathBuf, String)> = changed
-                .into_iter()
-                .filter_map(|path| {
-                    let source = std::fs::read_to_string(&path).ok()?;
-                    Some((path, source))
-                })
-                .collect();
-            let files = read
-                .iter()
-                .map(|(path, source)| {
-                    let decls =
-                        camello_sema::read_declarations(path, source, &settings.dialect, &cache);
-                    (path.as_path(), decls, source.as_str())
-                })
-                .collect();
-            let mut index = index.write().expect("no reader panics holding this");
-            // The same decl-diff an edit applies: a file that was touched, or
-            // rewritten with the same declarations, is nobody else's business,
-            // and a sweep of the open files for it would be a sweep for
-            // nothing.
-            index.apply(files)
-        })
-        .await;
-        if matches!(updated, Ok(true)) {
-            self.sweep(None).await;
-        }
+        self.in_background(|this| async move {
+            let outcome = tokio::task::spawn_blocking(move || {
+                let cache = crate::settings::cache(settings.cache_dir.as_deref());
+                let read: Vec<(PathBuf, String)> = changed
+                    .into_iter()
+                    .filter_map(|path| {
+                        let source = std::fs::read_to_string(&path).ok()?;
+                        Some((path, source))
+                    })
+                    .collect();
+                let files = read
+                    .iter()
+                    .map(|(path, source)| {
+                        let decls = camello_sema::read_declarations(
+                            path,
+                            source,
+                            &settings.dialect,
+                            &cache,
+                        );
+                        (path.as_path(), decls, source.as_str())
+                    })
+                    .collect();
+                let mut index = state::write(&index);
+                // The same decl-diff an edit applies: a file that was touched, or
+                // rewritten with the same declarations, is nobody else's business,
+                // and a sweep of the open files for it would be a sweep for
+                // nothing.
+                index.apply(files)
+            })
+            .await;
+            if joined(&this.client, "reading changed files", outcome).await == Some(true) {
+                this.sweep(None).await;
+            }
+        });
     }
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
@@ -649,6 +727,7 @@ impl LanguageServer for Backend {
             .text_document
             .uri
             .clone();
+        let open: Vec<Arc<Document>> = self.read().documents.values().map(Arc::clone).collect();
         Ok(self
             .with_analysis(
                 params.text_document_position_params,
@@ -660,6 +739,10 @@ impl LanguageServer for Backend {
                         context,
                         offset,
                         snapshot.encoding,
+                        &handlers::definition::Buffers {
+                            open: &open,
+                            dialect: &snapshot.settings.dialect,
+                        },
                     )
                 },
             )
@@ -675,10 +758,12 @@ impl LanguageServer for Backend {
         let Some(snapshot) = self.read().snapshot(&params.text_document.uri) else {
             return Ok(None);
         };
-        let symbols =
+        let outcome =
             tokio::task::spawn_blocking(move || handlers::symbols::symbols(&snapshot.document))
-                .await
-                .unwrap_or_default();
+                .await;
+        let symbols = joined(&self.client, "the outline", outcome)
+            .await
+            .unwrap_or_default();
         Ok(Some(DocumentSymbolResponse::Nested(symbols)))
     }
 
@@ -686,10 +771,8 @@ impl LanguageServer for Backend {
         let Some(snapshot) = self.read().snapshot(&params.text_document.uri) else {
             return Ok(None);
         };
-        Ok(
-            tokio::task::spawn_blocking(move || handlers::formatting::formatting(&snapshot))
-                .await
-                .unwrap_or(None),
-        )
+        let outcome =
+            tokio::task::spawn_blocking(move || handlers::formatting::formatting(&snapshot)).await;
+        Ok(joined(&self.client, "formatting", outcome).await.flatten())
     }
 }

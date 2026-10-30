@@ -10,13 +10,13 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use tower_lsp_server::ls_types::Uri;
 
-use crate::analysis::Tables;
+use crate::analysis::{Context, Tables};
 use crate::document::Document;
-use crate::index::Index;
+use crate::index::{Builds, Index};
 use crate::position::Encoding;
 use crate::settings::Settings;
 
@@ -45,6 +45,8 @@ pub struct GlobalState {
     /// The program graph. Its own lock, because the background walk holds it
     /// for as long as a swap takes and a request only ever reads.
     pub index: Arc<RwLock<Index>>,
+    /// Which background walk may still swap its graph in.
+    pub builds: Arc<Builds>,
 }
 
 impl GlobalState {
@@ -60,6 +62,7 @@ impl GlobalState {
             clean_tables: HashMap::new(),
             edits: HashMap::new(),
             index,
+            builds: Arc::new(Builds::default()),
         }
     }
 
@@ -145,15 +148,43 @@ impl Snapshot {
     /// the cached tables are usually a version or two behind. One body pass
     /// over one file is milliseconds; answering from a table that describes
     /// text the user has since changed is a wrong answer, which costs more.
+    ///
+    /// `context` is the one the request answers from: for a file the graph
+    /// does not hold it is a whole analysis of its own, and building it once
+    /// for the tables and again for the answer would be the same work twice.
     #[must_use]
-    pub fn tables_now(&self) -> Arc<Tables> {
+    pub fn tables_now(&self, context: &Context<'_>) -> Arc<Tables> {
         if let Some(tables) = &self.tables {
             if tables.version == self.document.version {
                 return Arc::clone(tables);
             }
         }
-        let index = self.index.read().expect("no writer panics holding this");
-        let context = crate::analysis::context(&self.document, &index, &self.settings);
-        crate::analysis::analyse(&self.document, &context, &self.settings, true).tables
+        crate::analysis::analyse(&self.document, context, &self.settings, true).tables
     }
+
+    /// Whether these tables are not the ones the snapshot was taken with —
+    /// computed for this request, and worth remembering for the next one.
+    #[must_use]
+    pub fn computed(&self, tables: &Arc<Tables>) -> bool {
+        self.tables
+            .as_ref()
+            .is_none_or(|held| !Arc::ptr_eq(held, tables))
+    }
+}
+
+/// A read lock, whether or not a thread panicked holding it.
+///
+/// A panic in the checker while it holds the graph's lock poisons the lock,
+/// and a server that refused poisoned locks would answer nothing again until
+/// it was restarted — every later handler would panic on the same lock, and
+/// a handler's panic reaches nobody. What a panicking writer leaves behind is
+/// a graph that may be part-way through one update, and the next edit or
+/// rebuild writes over it; that is a better state to answer from than none.
+pub fn read<T>(lock: &RwLock<T>) -> RwLockReadGuard<'_, T> {
+    lock.read().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// A write lock, on the same terms as [`read`].
+pub fn write<T>(lock: &RwLock<T>) -> RwLockWriteGuard<'_, T> {
+    lock.write().unwrap_or_else(PoisonError::into_inner)
 }

@@ -173,6 +173,10 @@ impl Harness {
                     &context,
                     offset,
                     Encoding::Utf16,
+                    &handlers::definition::Buffers {
+                        open: &self.state.documents.values().cloned().collect::<Vec<_>>(),
+                        dialect: &self.state.settings.dialect,
+                    },
                 )
                 .map_or_else(
                     || "-".to_string(),
@@ -722,4 +726,165 @@ mod an_edit_only_the_program_can_see {
             "{found:?}",
         );
     }
+}
+
+/// A jump into an open file lands where the buffer has the sub, not where
+/// disk has it. Two lines added above it and not saved change nothing another
+/// file can see, so the graph keeps the ranges it read off disk, and counted
+/// against the buffer those would be two lines short.
+#[test]
+fn a_definition_in_an_unsaved_buffer_is_the_buffers() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let dog = dir.path().join("Dog.pm");
+    let disk = "package Dog;\nsub new { bless {}, shift }\nsub speak { 'woof' }\n1;\n";
+    fs::write(&dog, disk).expect("a writable fixture");
+    let main = dir.path().join("main.pl");
+    let caller = "use strict;\nuse Dog;\nDog->speak;\n";
+    fs::write(&main, caller).expect("a writable fixture");
+
+    let mut harness = Harness::open_workspace(dir.path());
+    harness.edit(&dog, &format!("\n\n{disk}"), 2);
+    let answers = harness.edit(&main, caller, 1);
+    let marker = Marker {
+        position: tower_lsp_server::ls_types::Position {
+            line: 2,
+            character: 5,
+        },
+        feature: Feature::Definition,
+        expected: String::new(),
+        line: 0,
+    };
+    let found = harness.ask(&answers, &marker);
+    assert!(found.ends_with("Dog.pm:5:5"), "{found}");
+
+    // And a file that is not open is still counted from disk.
+    harness.state.forget(&harness.uri(&dog));
+    let found = harness.ask(&answers, &marker);
+    assert!(found.ends_with("Dog.pm:3:5"), "{found}");
+}
+
+/// A request between an edit and its debounced check computes the new
+/// version's tables, and says they are worth keeping; one after the check
+/// reuses what the check left.
+#[test]
+fn tables_computed_for_a_request_are_marked_for_keeping() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let path = dir.path().join("main.pl");
+    fs::write(&path, "my $x = 1;\n").expect("a writable fixture");
+    let mut harness = Harness::open_workspace(dir.path());
+    let uri = harness.uri(&path);
+    harness.edit(&path, "my $x = 1;\n", 1);
+
+    let ask = |harness: &Harness| {
+        let snapshot = harness.state.snapshot(&uri).expect("the file is open");
+        let index = crate::state::read(&snapshot.index);
+        let context = analysis::context(&snapshot.document, &index, &snapshot.settings);
+        let tables = snapshot.tables_now(&context);
+        (tables.version, snapshot.computed(&tables))
+    };
+    assert_eq!(ask(&harness), (1, false));
+
+    // The edit is stored; its check has not run.
+    harness.state.documents.insert(
+        uri.clone(),
+        Arc::new(Document::new(
+            Some(path.clone()),
+            "my $x = 2;\n",
+            2,
+            Encoding::Utf16,
+        )),
+    );
+    assert_eq!(ask(&harness), (2, true));
+}
+
+/// Two walks in flight — startup and a `camello.toml` reload — and the older
+/// one finishing last: its graph read the configuration the newer one
+/// replaced, and it does not go in over the newer one's.
+#[test]
+fn an_older_walk_finishing_last_is_discarded() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    fs::write(
+        dir.path().join("Dog.pm"),
+        "package Dog;\nsub speak { 1 }\n1;\n",
+    )
+    .expect("a writable fixture");
+    let (mut settings, problems) = Settings::load(dir.path(), &[dir.path().to_path_buf()]);
+    assert!(problems.is_empty(), "{problems:?}");
+    settings.cache_dir = None;
+
+    let builds = crate::index::Builds::default();
+    let slot = RwLock::new(crate::index::Index::empty(&settings));
+    let older = builds.begin();
+    let newer = builds.begin();
+    assert!(!builds.is_current(older));
+
+    let newer_graph = crate::index::build(&settings);
+    assert_eq!(newer_graph.files, 1);
+    assert!(builds.install(newer, &slot, newer_graph));
+    // What the older walk saw: nothing, say, under an ignore file since
+    // deleted. Recognisable by its count.
+    let older_graph = crate::index::Index::empty(&settings);
+    assert!(!builds.install(older, &slot, older_graph));
+    assert_eq!(crate::state::read(&slot).files, 1);
+}
+
+/// A panic in the checker while it holds the graph's lock does not take every
+/// later handler down with it.
+#[test]
+fn a_poisoned_lock_is_still_read() {
+    let lock = Arc::new(RwLock::new(1));
+    let held = Arc::clone(&lock);
+    let panicked = std::thread::spawn(move || {
+        let _guard = held.write().expect("not yet poisoned");
+        panic!("the checker panicked holding the graph");
+    })
+    .join();
+    assert!(panicked.is_err());
+    assert!(lock.is_poisoned());
+    assert_eq!(*crate::state::read(&lock), 1);
+    *crate::state::write(&lock) = 2;
+    assert_eq!(*crate::state::read(&lock), 2);
+}
+
+/// A notification hands its work to a task of its own: the transport runs
+/// only a few messages at once, and a `didChange` that sat out its debounce
+/// before returning would keep a hover waiting behind it.
+#[tokio::test]
+async fn a_change_returns_before_its_debounce() {
+    use tower_lsp_server::ls_types::{
+        DidChangeTextDocumentParams, DidOpenTextDocumentParams, TextDocumentContentChangeEvent,
+        TextDocumentItem, VersionedTextDocumentIdentifier,
+    };
+    use tower_lsp_server::LanguageServer;
+
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let uri = Uri::from_file_path(dir.path().join("main.pl")).expect("an absolute path");
+    let (service, _socket) = tower_lsp_server::LspService::new(crate::Backend::new);
+    let backend = service.inner();
+    backend
+        .did_open(DidOpenTextDocumentParams {
+            text_document: TextDocumentItem {
+                uri: uri.clone(),
+                language_id: "perl".to_string(),
+                version: 1,
+                text: "my $x = 1;\n".to_string(),
+            },
+        })
+        .await;
+    let started = std::time::Instant::now();
+    backend
+        .did_change(DidChangeTextDocumentParams {
+            text_document: VersionedTextDocumentIdentifier { uri, version: 2 },
+            content_changes: vec![TextDocumentContentChangeEvent {
+                range: None,
+                range_length: None,
+                text: "my $x = 2;\n".to_string(),
+            }],
+        })
+        .await;
+    assert!(
+        started.elapsed() < crate::server::DEBOUNCE,
+        "`didChange` took {:?}",
+        started.elapsed()
+    );
 }
