@@ -1,7 +1,6 @@
 //! A parser and formatter for modern Perl.
 //!
-//! The layers are described in `docs/architecture.md`, and since the workspace
-//! split (`docs/typecheck.md`, "Where it lives") they are crates:
+//! The layers are described in `docs/architecture.md`, and each is a crate:
 //!
 //! * [`camello_syntax`] — vocabulary, scanner, event-recording parser, AST views.
 //! * [`camello_fmt`] — a document IR, so layout is decided once and rendered once.

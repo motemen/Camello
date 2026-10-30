@@ -682,7 +682,6 @@ fn run_index_bar(
     Ok(())
 }
 
-/// A comma-separated list of directories.
 /// `--extensions`, split. An empty item — a trailing comma — names nothing,
 /// rather than the empty extension of a file whose name ends in `.`.
 pub(crate) fn extension_list(list: &str) -> Vec<&str> {
@@ -692,6 +691,7 @@ pub(crate) fn extension_list(list: &str) -> Vec<&str> {
         .collect()
 }
 
+/// A comma-separated list of directories.
 fn split_paths(list: Option<&str>) -> Vec<PathBuf> {
     list.map(split_paths_owned).unwrap_or_default()
 }
@@ -706,10 +706,9 @@ fn split_paths_owned(list: &str) -> Vec<PathBuf> {
 
 /// The formatter's options, as command-line flags.
 ///
-/// `FormatterOptions` existed and the CLI never passed one, so every knob in it
-/// was reachable from the library and from nowhere else — including
-/// `max_alignment_padding`, which is a guard against one long line pushing a
-/// whole group across the screen.
+/// Every knob in `FormatterOptions` is reachable from the command line, not
+/// only from the library — including `max_alignment_padding`, which is a guard
+/// against one long line pushing a whole group across the screen.
 ///
 /// Hidden, all of them, for the reason the `dev` namespace is: what camello
 /// answers is "how is this written", and a formatter that answers it four ways
@@ -1228,7 +1227,8 @@ fn fold_key(message: &str) -> String {
 
 /// The messages a run could not be answered with, folded.
 ///
-/// Grouped by the exact text, because that is what makes them the same message:
+/// Grouped by the text with its line numbers taken out ([`fold_key`]), because
+/// that is what makes them the same message:
 /// a tree checked away from where it was installed answers `Can't locate ... in
 /// @INC` for every file in it, and the reader needs that sentence once, whole,
 /// with a count and somewhere to start looking.
@@ -1684,11 +1684,9 @@ fn wanted_invariants(only: Option<&str>) -> Result<Vec<crate::check::Invariant>>
     };
     let mut wanted = Vec::new();
     for slug in only.split(',').map(str::trim) {
-        // It used to be selectable here under the bare name, and selecting it
-        // was how one opted in to running a perl. Now that opting in is the
-        // command, say so rather than call a name this command knows unknown —
-        // under either spelling, since the old one is what is in anybody's
-        // shell history.
+        // Opting in to running a perl is a command of its own, so say so rather
+        // than call a name this command knows unknown — under either spelling,
+        // since the bare `deparse` is what is in anybody's shell history.
         if slug == Invariant::Deparse.slug() || slug == "deparse" {
             return Err(miette::miette!(
                 "{slug} is not asked here; `camello dev perl-deparse` is the command that asks it"
@@ -1927,10 +1925,9 @@ fn check_paths(
         messages.report(&mut out, verbose)?;
     }
 
-    // Which questions were asked, and how each of them came out. The old
-    // summary named only the invariants that were violated, which left the
-    // reader unable to tell a run where everything passed from a run where
-    // nothing was asked.
+    // Which questions were asked, and how each of them came out — every one of
+    // them, not only the violated ones, so that a run where everything passed
+    // reads differently from a run where nothing was asked.
     if reported {
         writeln!(out).into_diagnostic()?;
     }
@@ -2456,7 +2453,7 @@ mod tests {
 
     #[test]
     fn test_format_string_to_stdout() -> Result<(), Box<dyn std::error::Error>> {
-        // Execute formatting (not actually executed, but confirm no errors)
+        // Formatted to stdout; only that it succeeds is checked.
         assert!(format_file(
             None,
             None,
@@ -2641,7 +2638,7 @@ mod tests {
         assert_eq!(parsed("utf-8,utf8").expect("known").names(), "UTF-8");
         assert!(parsed("invalid-encoding-name").is_err());
         assert!(parsed(",").is_err());
-        // None of them named is utf-8, which is what it was before candidates.
+        // Naming none is utf-8.
         assert_eq!(Encodings::parse(None).expect("a default").names(), "UTF-8");
     }
 
@@ -2719,7 +2716,9 @@ mod tests {
         fs::create_dir(dir.path().join("nested"))?;
         fs::write(dir.path().join("a.pl"), "my $x=1;\n")?;
         fs::write(dir.path().join("nested/b.pm"), "my $y = 2;\n")?;
-        // Not one of the extensions walked into, so it must come back untouched.
+        // Not one of the extensions a walk picks up, but handed over by name
+        // here, so it is formatted like the others; only `a.pl` and `b.pm` are
+        // checked.
         fs::write(dir.path().join("notes.txt"), "my $z=3;\n")?;
 
         let reports = in_parallel(

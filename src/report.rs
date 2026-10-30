@@ -12,7 +12,6 @@ use std::path::{Path, PathBuf};
 use camello_sema::{Code, Diagnostic, LineIndex, Options, Severity};
 use miette::Result;
 
-/// What one run of `check` was asked for.
 /// How the diagnostics are printed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
@@ -33,6 +32,7 @@ impl Format {
     }
 }
 
+/// What one run of `check` was asked for.
 pub struct Request {
     pub paths: Vec<PathBuf>,
     pub error_on: Severity,

@@ -106,8 +106,8 @@ fn regression_cases() -> Vec<(String, String, String)> {
 /// go stale, because the fix that lands is required to delete its line.
 ///
 /// A listed fixture is skipped by the invariant sweeps too. Its output is
-/// already known to be wrong; asking eight more questions about it spreads one
-/// fact across eight lists, and the fix would then have to remember all eight.
+/// already known to be wrong; asking seven more questions about it spreads one
+/// fact across seven lists, and the fix would then have to remember all seven.
 fn known_broken() -> Vec<String> {
     let path = root().join("crates/camello-fmt/src/fixtures/regressions/known-broken.txt");
     let text = fs::read_to_string(&path).expect("failed to read the ledger");

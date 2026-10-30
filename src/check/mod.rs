@@ -246,9 +246,9 @@ pub fn check_only(source: &str, wanted: &[Invariant]) -> Vec<Violation> {
 
 /// Ask only these invariants, and do only their work.
 ///
-/// The filtering used to happen after the fact, so `--only clean-parse` parsed
-/// the file, formatted it twice, re-lexed both, and then threw the other answers
-/// away — asking one question of a corpus cost several times what it should.
+/// Filtering after the fact would have `--only clean-parse` parse the file,
+/// format it twice, re-lex both, and then throw the other answers away — asking
+/// one question of a corpus would cost several times what it should.
 ///
 /// Naming [`Invariant::Deparse`] here is what opting in means: nothing reaches
 /// for a perl unless the caller put it in `wanted`.
@@ -658,18 +658,6 @@ impl<'a> Report<'a> {
     }
 }
 
-/// Render the first divergence between two streams, with a little context
-/// either side.
-///
-/// Every one of these comparisons is between two long sequences that agree
-/// almost everywhere, so what a report owes its reader is the place they stop
-/// agreeing — printing both streams in full is how one mislaid comment fills a
-/// screen and says nothing.
-///
-/// `render_item` gives back the item in two parts: whatever labels it, which is
-/// always printed, and its text, which is not — a deparsed line or a `__DATA__`
-/// token is thousands of characters of which the report can carry a hundred and
-/// twenty, and it is this function that knows which hundred and twenty.
 /// Red for the side that was read, green for the side that came back, the way
 /// a diff is read. Empty where nothing that reads escapes is listening.
 ///
@@ -780,6 +768,18 @@ fn escaped(text: &str) -> String {
     out
 }
 
+/// Render the first divergence between two streams, with a little context
+/// either side.
+///
+/// Every one of these comparisons is between two long sequences that agree
+/// almost everywhere, so what a report owes its reader is the place they stop
+/// agreeing — printing both streams in full is how one mislaid comment fills a
+/// screen and says nothing.
+///
+/// `render_item` gives back the item in two parts: whatever labels it, which is
+/// always printed, and its text, which is not — a deparsed line or a `__DATA__`
+/// token is thousands of characters of which the report can carry a hundred and
+/// twenty, and it is this function that knows which hundred and twenty.
 fn describe_divergence<T: PartialEq>(
     before: &[T],
     after: &[T],
