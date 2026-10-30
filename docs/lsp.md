@@ -231,10 +231,10 @@ serde-sized data — never trees, never source text. Trees exist for open
 files (in the document store) and transiently inside a body-pass worker.
 
 When the walk completes, the `Program` graph is built and linked
-(`resolve_dependencies` + `link`), and a flag flips: before it, requests are
-answered from single-file analysis (the `check_source`-shaped path — lexical
-diagnostics are exact, cross-file answers are absent); after it, the full
-graph answers. Open files are never queued behind the walk. Files changed
+(`resolve_dependencies` + `link`), and it replaces the empty graph the server
+started with: before it, requests are answered from single-file analysis (the
+`check_source`-shaped path — lexical diagnostics are exact, cross-file answers
+are absent); after it, the full graph answers. Open files are never queued behind the walk. Files changed
 outside the editor arrive via `workspace/didChangeWatchedFiles`
 — the four extensions `camello check` walks, plus `camello.toml`, which
 reloads the configuration and rebuilds the graph, since the dialect and the

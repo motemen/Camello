@@ -132,7 +132,7 @@ pub fn analyse(
 
 /// A graph holding this file and nothing else.
 fn single_file(path: &std::path::Path, root: &SyntaxNode, settings: &Settings) -> Analysis {
-    let mut analysis = settings.empty_analysis();
+    let mut analysis = settings.analysis(Vec::new());
     analysis.declare(path, root, true);
     analysis.link();
     analysis

@@ -15,8 +15,9 @@
 //!
 //! Open files never queue behind the walk. Before it finishes, requests are
 //! answered from single-file analysis — lexical diagnostics are exact,
-//! cross-file answers are absent — and when it finishes the graph answers
-//! instead. The flag that says which is [`Index::ready`].
+//! cross-file answers are absent — and when it finishes the graph it built
+//! replaces the empty one and answers instead. What says which is
+//! [`Index::holds`].
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -27,7 +28,7 @@ use camello_sema::Analysis;
 
 use crate::settings::Settings;
 
-/// The program graph, and whether it is the whole of one yet.
+/// The program graph.
 pub struct Index {
     pub analysis: Analysis,
     /// The declaration fingerprint each file was last *installed* under.
@@ -45,10 +46,6 @@ pub struct Index {
     ///
     /// [`link`]: camello_sema::Analysis::link
     fingerprints: HashMap<PathBuf, String>,
-    /// Whether the background walk has finished. Before it has, the graph
-    /// holds whatever single files have been opened and nothing else, and a
-    /// cross-file question has no answer rather than a wrong one.
-    pub ready: bool,
     /// How many files the walk read, for the log line that says so.
     pub files: usize,
 }
@@ -57,9 +54,8 @@ impl Index {
     #[must_use]
     pub fn empty(settings: &Settings) -> Self {
         Index {
-            analysis: settings.empty_analysis(),
+            analysis: settings.analysis(Vec::new()),
             fingerprints: HashMap::new(),
-            ready: false,
             files: 0,
         }
     }
@@ -141,16 +137,7 @@ pub fn build(settings: &Settings) -> Index {
         ))
     });
 
-    let mut analysis = Analysis::new()
-        .with_resolver(
-            camello_sema::resolve::Resolver::new(
-                settings.roots.clone(),
-                settings.stubs.clone(),
-                camello_sema::resolve::perl_inc(),
-            ),
-            crate::settings::cache(settings.cache_dir.as_deref()),
-        )
-        .with_dialect(settings.dialect.clone());
+    let mut analysis = settings.analysis(camello_sema::resolve::perl_inc());
     let mut read = 0usize;
     let mut fingerprints = HashMap::new();
     for (path, decls) in files.iter().zip(declared) {
@@ -173,7 +160,6 @@ pub fn build(settings: &Settings) -> Index {
     Index {
         analysis,
         fingerprints,
-        ready: true,
         files: read,
     }
 }
