@@ -47,6 +47,20 @@ Required->new(maybe => 'x');    #~ error missing-argument: requires `must`
 Required->new;                  #~ error missing-argument: requires `must`
 Softer->new;
 
+# `required` is true or false as perl reads it, and each of these is false.
+package Spelled;
+use Moose;
+has quoted  => (is => 'ro', isa => 'Str', required => '0');
+has empty   => (is => 'ro', isa => 'Str', required => '');
+has float   => (is => 'ro', isa => 'Str', required => 0.0);
+has absent  => (is => 'ro', isa => 'Str', required => undef);
+has counted => (is => 'ro', isa => 'Str', required => '00');
+
+package main;
+
+Spelled->new(counted => 'x');
+Spelled->new;                   #~ error missing-argument: requires `counted`
+
 # An argument list this cannot read is one it says nothing about.
 my %options = (must => 'x');
 Required->new(%options);
