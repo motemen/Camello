@@ -168,8 +168,7 @@ impl<'a> Parser<'a> {
         let tokens = self.lexer.scan_all().to_vec();
         let replayed = replay::replay(source, &tokens, events);
 
-        let mut diagnostics = replayed.diagnostics;
-        diagnostics.extend(self.diagnostics);
+        let mut diagnostics = self.diagnostics;
         diagnostics.sort_by_key(|diagnostic| diagnostic.range.start());
 
         Parse {

@@ -6,7 +6,7 @@ use rowan::{GreenNode, GreenNodeBuilder, TextSize};
 use crate::lang::{NodeKind, SyntaxKind, TokenKind};
 use crate::lex::LexedToken;
 
-use super::event::{Diagnostic, Event};
+use super::event::Event;
 use super::trivia::{Trivia, TriviaMap};
 
 /// Builds the green tree. The only place in the crate that touches
@@ -35,7 +35,6 @@ impl TreeBuilder<'_> {
 pub struct Replayed {
     pub green: GreenNode,
     pub trivia: TriviaMap,
-    pub diagnostics: Vec<Diagnostic>,
 }
 
 /// Replay `events` against `tokens`, producing the tree and the trivia map.
@@ -50,7 +49,6 @@ pub fn replay(source: &str, tokens: &[LexedToken], events: Vec<Event>) -> Replay
         inner: GreenNodeBuilder::new(),
         source,
     };
-    let mut diagnostics = Vec::new();
     let mut trivia_map = TriviaMap::new();
 
     let mut cursor = TokenCursor::new(tokens);
@@ -64,7 +62,6 @@ pub fn replay(source: &str, tokens: &[LexedToken], events: Vec<Event>) -> Replay
     for index in 0..events.len() {
         match std::mem::replace(&mut events[index], Event::Tombstone) {
             Event::Tombstone => {}
-            Event::Error(diagnostic) => diagnostics.push(diagnostic),
             Event::Start {
                 kind,
                 forward_parent,
@@ -111,7 +108,6 @@ pub fn replay(source: &str, tokens: &[LexedToken], events: Vec<Event>) -> Replay
     Replayed {
         green: builder.inner.finish(),
         trivia: trivia_map,
-        diagnostics,
     }
 }
 

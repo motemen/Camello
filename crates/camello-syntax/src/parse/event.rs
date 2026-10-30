@@ -31,8 +31,6 @@ pub enum Event {
     Token,
     /// Close the innermost open node.
     Finish,
-    /// A diagnostic that does not change the tree.
-    Error(Diagnostic),
     /// An abandoned `Start`, skipped at replay.
     Tombstone,
 }
@@ -88,10 +86,6 @@ impl Events {
 
     pub fn token(&mut self) {
         self.events.push(Event::Token);
-    }
-
-    pub fn error(&mut self, diagnostic: Diagnostic) {
-        self.events.push(Event::Error(diagnostic));
     }
 
     pub fn complete(&mut self, mut marker: Marker, kind: NodeKind) -> CompletedMarker {
