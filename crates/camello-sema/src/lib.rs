@@ -257,7 +257,7 @@ impl Analysis {
             if !resolve::Resolver::worth_resolving(&module) {
                 continue;
             }
-            let Some((path, _origin)) = self.resolver.locate(&module) else {
+            let Some(path) = self.resolver.locate(&module) else {
                 continue;
             };
             if self.program.index_of(&path).is_some() {

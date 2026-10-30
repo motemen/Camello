@@ -20,24 +20,6 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Where a module was found, which is what decides how much of it is read.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Origin {
-    /// Under a project root: analysed in full, and reported against.
-    Root,
-    /// Under a stub root: declarations, shadowing the real module wholesale.
-    Stub,
-    /// Somewhere in `@INC`: declarations only.
-    Inc,
-}
-
-impl Origin {
-    #[must_use]
-    pub const fn in_roots(self) -> bool {
-        matches!(self, Origin::Root)
-    }
-}
-
 /// The search path a run resolves against.
 #[derive(Debug, Default, Clone)]
 pub struct Resolver {
@@ -54,21 +36,14 @@ impl Resolver {
 
     /// Where `Foo::Bar` lives, as `Foo/Bar.pm` under each root in turn.
     #[must_use]
-    pub fn locate(&self, module: &str) -> Option<(PathBuf, Origin)> {
+    pub fn locate(&self, module: &str) -> Option<PathBuf> {
         let relative = module_path(module)?;
-        for (directories, origin) in [
-            (&self.roots, Origin::Root),
-            (&self.stubs, Origin::Stub),
-            (&self.inc, Origin::Inc),
-        ] {
-            for directory in directories {
-                let candidate = directory.join(&relative);
-                if candidate.is_file() {
-                    return Some((candidate, origin));
-                }
-            }
-        }
-        None
+        self.roots
+            .iter()
+            .chain(&self.stubs)
+            .chain(&self.inc)
+            .map(|directory| directory.join(&relative))
+            .find(|candidate| candidate.is_file())
     }
 
     /// Whether a `use` is worth resolving at all.
