@@ -38,6 +38,15 @@ my $thrown = find();
 My::Error->throw unless defined $thrown;
 print $thrown->id;
 
+my $done = find();
+defined $done or do { warn 'none'; return };
+print $done->id;
+
+# A `do` block whose last statement may fall through does not leave.
+my $maybe_done = find();
+defined $maybe_done or do { return if $ENV{QUIET} };
+print $maybe_done->id;          #~ warning maybe-deref: may be undefined here
+
 my $defaulted = find() // Row->new(id => 1);
 print $defaulted->id;
 

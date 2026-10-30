@@ -3538,6 +3538,22 @@ fn leaves_below(node: &SyntaxNode) -> bool {
     leaves(node)
         || ast::Call::cast(node.clone())
             .is_some_and(|call| matches!(call.callee_name().as_deref(), Some("next" | "last")))
+        || do_block_leaves(node)
+}
+
+/// `COND or do { warn ...; return }`: a `do` block whose last statement
+/// leaves, unconditionally, leaves with it. A last statement that carries a
+/// modifier may fall through, and so does not count.
+fn do_block_leaves(node: &SyntaxNode) -> bool {
+    if node.node_kind() != NodeKind::DO_BLOCK_EXPR {
+        return false;
+    }
+    node.children()
+        .find(|child| child.node_kind() == NodeKind::BLOCK)
+        .and_then(|block| block.children().last())
+        .filter(|last| last.node_kind() == NodeKind::EXPR_STMT)
+        .and_then(|last| sole_expression(&last))
+        .is_some_and(|expression| leaves_below(&expression))
 }
 
 /// `$x` without its `undef`, if `$x` is a variable at all.

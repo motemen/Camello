@@ -1057,7 +1057,9 @@ Child->build->extra;            # extra は Child のもの。通る。
   `COND or LEAVE`（`||` も同じ）と書かれた文ではそれ以降で COND が、`LEAVE if COND`
   ではそれ以降で COND の**否定**が成り立ちます。LEAVE は文そのもの（`or` の右辺）で
   なければならず、文が抱える無名サブや `eval` の中の `return` はその外へは出ないので
-  ガードになりません。読むのは条件の部分だけで、文の残りではありません。
+  ガードになりません。ただし `COND or do { warn ...; return }` のように、`do` ブロックの
+  最後の文が修飾子なしの LEAVE であれば、そのブロックも LEAVE です。読むのは条件の
+  部分だけで、文の残りではありません。
 
 ```perl
 my $row = find_row();       # Maybe[InstanceOf['Row']]
