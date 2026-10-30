@@ -9,7 +9,7 @@
 //!
 //! - **`strict` is read, not assumed.** Without it an undeclared name is a
 //!   package variable and a legal program, so there is nothing to report. See
-//!   [`strict_in_effect`].
+//!   [`StrictRegions`].
 //! - **An element names its container.** `$h{k}` reads `%h` and `$a[0]` reads
 //!   `@a`. Reading them as `$h` and `$a` would report every hash in the corpus.
 //! - **Strings are scanned** ([`crate::interp`]), so `"hi $who"` is a use and
@@ -328,8 +328,7 @@ pub fn analyse(root: &SyntaxNode, source: &str, guards: &[String]) -> ScopeRepor
 ///   there is nothing to report.
 /// - it is *positional*. `use strict` is a lexical pragma, and code above it
 ///   is not under it: `WWW::RobotRules` sets `$VERSION` on line 3 and says
-///   `use strict` on line 6, which is legal and was reported until this
-///   counted offsets rather than files.
+///   `use strict` on line 6, which is legal.
 ///
 /// `no strict` (bare, or naming `vars`) turns it off again from where it
 /// appears. Taking that to the end of the file rather than to the end of its
@@ -985,13 +984,13 @@ fn declares_parameters(node: &SyntaxNode) -> bool {
     crate::decl::is_argument_list(&value) || crate::decl::shift_of_args(value).is_some()
 }
 
-/// Whether this `my` holds a value for its destructor ([`GUARD_NAMES`]).
 /// Whether a declaration carries an attribute — `field $x :param`.
 fn has_attribute(node: &SyntaxNode) -> bool {
     node.children()
         .any(|child| child.node_kind() == NodeKind::ATTR)
 }
 
+/// Whether this `my` holds a value for its destructor ([`GUARD_NAMES`]).
 fn holds_a_guard(node: &SyntaxNode, extra: &[String]) -> bool {
     let Some(value) = initialiser(node) else {
         return false;

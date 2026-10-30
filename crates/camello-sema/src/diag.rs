@@ -169,17 +169,16 @@ impl Code {
             | Code::TypeMismatch
             | Code::UnknownKey
             | Code::MissingArgument => Severity::Error,
-            Code::ReturnMismatch
-            // `$obj->m` reaching nothing is a statement about a closed world,
-            // and the world is closed only where every module the class and
-            // its ancestors `use` was read. The call site raises it to a
-            // `warning` where it was (`docs/types.md`, DIAG-7a).
-            | Code::MaybeDeref => Severity::Warning,
+            Code::ReturnMismatch | Code::MaybeDeref => Severity::Warning,
             Code::BadAnnotation
             | Code::UnknownType
             | Code::MissingAnnotation
             | Code::UnusedParameter
             | Code::IgnoredPrototype
+            // `$obj->m` reaching nothing is a statement about a closed world,
+            // and the world is closed only where every module the class and
+            // its ancestors `use` was read. The call site raises it to a
+            // `warning` where it was (`docs/types.md`, DIAG-7a).
             | Code::UnknownMethod
             // Shadowing is legal, deliberate more often than not, and a
             // matter of taste where it is not (`docs/types.md`, DIAG-3a).

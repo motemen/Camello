@@ -165,26 +165,27 @@ impl Cache {
         self.directory.is_some()
     }
 
-    /// The key for a file, from what a stat and a hash can say about it.
-    ///
-    /// `salt` is what the run reads it *under* — a declaration read under one
-    /// dialect is not the one the same bytes give under another.
     /// What the cached shape of `FileDecls` is called.
     ///
     /// Bumped whenever an entry written by an older camello would be read as
-    /// a *complete* answer by a newer one. Return inference is the case that
-    /// needed it: the serde defaults make an old entry parse, and what it
-    /// parses to is a file whose subs are all `Unknown` — which the tiers
-    /// would then never revisit, because a cached entry is not walked again.
+    /// a *complete* answer by a newer one. A new field is that case: the
+    /// serde defaults make an old entry parse, and an entry without inferred
+    /// returns parses to a file whose subs are all `Unknown` — which the tiers
+    /// never revisit, because a cached entry is not walked again.
     ///
     /// **A new recogniser is the same case.** The bytes of a dependency do
     /// not change when camello learns to read them, so the key over them does
     /// not either, and the cached "this package has no framework, no
-    /// attributes and no `new`" would outlive the release that fixed it —
-    /// `Carton::Dist`, a `Class::Tiny` class, kept reporting `unknown-method`
-    /// on its own constructor. Bump this with the recogniser.
+    /// attributes and no `new`" would outlive the release that taught camello
+    /// the recogniser — a `Class::Tiny` class such as `Carton::Dist` would go
+    /// on reporting `unknown-method` on its own constructor. Bump this with
+    /// the recogniser.
     const FORMAT: &'static str = "package-spans-1";
 
+    /// The key for a file, from what a stat and a hash can say about it.
+    ///
+    /// `salt` is what the run reads it *under* — a declaration read under one
+    /// dialect is not the one the same bytes give under another.
     #[must_use]
     pub fn key(path: &Path, source: &str, salt: &str) -> String {
         let metadata = std::fs::metadata(path).ok();

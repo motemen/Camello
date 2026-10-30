@@ -594,7 +594,8 @@ pub struct FileAnalysis {
 
 /// Every public sub in a file that says nothing about its own shape.
 ///
-/// "Public" is the language-wide reading of a leading underscore, and
+/// "Public" is a name with no leading underscore and not all in capitals
+/// (`BUILD`, `DESTROY`, a constant: perl's to call, or not a call at all), and
 /// "annotated" is a signature, an `args` list or a `Returns:` — anything the
 /// checker could have used. Reported at `info`, because it is a thing a user
 /// asked to be told rather than a contradiction between two declared things.
