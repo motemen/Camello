@@ -2439,16 +2439,17 @@ impl Pass<'_> {
         // A name is required only when *every* declaration of it says so.
         // `has '+name' => (default => 'x')` restates an inherited attribute to
         // fill it in, so the parent's `required => 1` is no longer the last
-        // word on it — and the `+` is part of the spelling, not of the name.
+        // word on it. The `+` is gone by now: it is part of the spelling, not
+        // of the name, and the recogniser drops it.
         let mut missing: Vec<&str> = Vec::new();
         for attribute in &attributes {
-            let name = attribute.name.trim_start_matches('+');
+            let name = attribute.name.as_str();
             if given.contains(&name) || missing.contains(&name) {
                 continue;
             }
-            let filled = attributes.iter().any(|other| {
-                other.name.trim_start_matches('+') == name && (other.defaulted || !other.required)
-            });
+            let filled = attributes
+                .iter()
+                .any(|other| other.name == name && (other.defaulted || !other.required));
             if !filled {
                 missing.push(name);
             }
