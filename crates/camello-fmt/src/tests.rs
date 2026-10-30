@@ -1,7 +1,6 @@
 //! Formatter tests, including layout regressions and formatter invariants.
 
-use std::time::Instant;
-
+use super::work::{self, Work};
 use super::{format_source, FormatterOptions};
 use camello_syntax::lang::TokenKind;
 
@@ -117,28 +116,32 @@ fn alignment_is_its_own_fixed_point() {
 #[test]
 fn alignment_does_not_reformat_to_measure() {
     // 800 lines took 30 seconds under the old formatter, which measured widths
-    // by re-running itself. This is a shape check, not a benchmark: quadratic
-    // behaviour shows up as the ratio, and a generous bound keeps it from being
-    // flaky on a loaded machine.
+    // by re-running itself. Counted rather than timed, so the bound is exact:
+    // one build and one render whatever the size, and the alignment pass reads
+    // four times the columns for four times the lines.
     let build = |count: usize| {
         (0..count)
             .map(|index| format!("my $var{index} = {index};\n"))
             .collect::<String>()
     };
-
-    let time = |source: &str| {
-        let start = Instant::now();
-        let _ = format(source);
-        start.elapsed().as_secs_f64()
+    let work_for = |count: usize| {
+        let source = build(count);
+        work::count(|| {
+            let _ = format(&source);
+        })
     };
 
-    let small = time(&build(200)).max(1e-4);
-    let large = time(&build(800));
+    let small = work_for(200);
+    let large = work_for(800);
 
+    assert_eq!((large.of(Work::Build), large.of(Work::Render)), (1, 1));
+    assert!(small.of(Work::AlignColumn) > 0);
     assert!(
-        large < small * 40.0,
-        "formatting 800 lines took {large:.3}s against {small:.3}s for 200; \
-         that ratio looks super-linear"
+        large.of(Work::AlignColumn) <= small.of(Work::AlignColumn) * 4,
+        "aligning 800 lines read {} columns against {} for 200; \
+         that ratio is super-linear",
+        large.of(Work::AlignColumn),
+        small.of(Work::AlignColumn),
     );
 }
 
@@ -627,12 +630,15 @@ fn nested_blocks_do_not_take_exponential_time() {
     // it, and each answer allocated the node's whole text to search it for a
     // newline. Two hundred levels is ten times deeper and finishes instantly.
     let source = format!("{}1{};\n", "sub { ".repeat(200), " }".repeat(200));
-    let start = Instant::now();
-    let _ = format(&source);
-    let elapsed = start.elapsed().as_secs_f64();
+    // Counted rather than timed: the memo answers each block once.
+    let done = work::count(|| {
+        let _ = format(&source);
+    });
     assert!(
-        elapsed < 5.0,
-        "200 nested blocks took {elapsed:.3}s; that is not linear"
+        done.of(Work::FlatBlock) <= 200,
+        "200 nested blocks asked whether a block can be flat {} times; \
+         that is not linear",
+        done.of(Work::FlatBlock),
     );
 }
 

@@ -17,6 +17,7 @@ mod build;
 pub mod doc;
 mod render;
 mod skip;
+mod work;
 
 #[cfg(test)]
 mod tests;
