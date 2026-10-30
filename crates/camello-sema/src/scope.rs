@@ -23,7 +23,7 @@ use camello_syntax::ast::{
 use camello_syntax::lang::{NodeExt, NodeKind, SyntaxNode, SyntaxToken, TokenExt, TokenKind};
 use rowan::{TextRange, TextSize};
 
-use crate::diag::{Code, Diagnostic};
+use crate::diag::{Code, Diagnostic, LineIndex};
 use crate::interp;
 
 /// Names that are always in scope, whatever the file declares.
@@ -432,6 +432,8 @@ struct Pass<'a> {
     /// Whether the heredoc body starting here interpolates, keyed by the body
     /// token's start. Built once: the marker that says so is on another line.
     heredocs: HashMap<TextSize, bool>,
+    /// Where the lines start, built the first time a diagnostic names one.
+    lines: Option<LineIndex>,
 }
 
 impl<'a> Pass<'a> {
@@ -445,6 +447,7 @@ impl<'a> Pass<'a> {
             diagnostics: Vec::new(),
             strict,
             heredocs: HashMap::new(),
+            lines: None,
         }
     }
 
@@ -593,12 +596,12 @@ impl<'a> Pass<'a> {
         }
     }
 
-    fn line_of(&self, offset: TextSize) -> usize {
-        self.source[..usize::from(offset).min(self.source.len())]
-            .bytes()
-            .filter(|byte| *byte == b'\n')
-            .count()
-            + 1
+    fn line_of(&mut self, offset: TextSize) -> usize {
+        let source = self.source;
+        self.lines
+            .get_or_insert_with(|| LineIndex::new(source))
+            .position(source, usize::from(offset))
+            .line
     }
 
     // ----- uses -----
