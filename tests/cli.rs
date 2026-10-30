@@ -94,6 +94,28 @@ fn unparsable_standard_input_comes_back_unchanged() {
     );
 }
 
+/// `--stop-on-first-error` is still accepted, says it does nothing, and does
+/// nothing: the input still comes back.
+#[test]
+fn stop_on_first_error_is_deprecated_and_changes_nothing() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+
+    let output = camello_with_stdin(
+        directory.path(),
+        &["format", "--stop-on-first-error"],
+        UNPARSABLE,
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        String::from_utf8(output.stdout).expect("output is utf-8"),
+        UNPARSABLE
+    );
+    assert!(String::from_utf8(output.stderr)
+        .expect("output is utf-8")
+        .contains("--stop-on-first-error is deprecated"));
+}
+
 /// The same for a file sent to standard output by name.
 #[test]
 fn an_unparsable_file_sent_to_stdout_comes_back_unchanged() {
@@ -377,7 +399,7 @@ fn exit_statuses_are_the_numbers_scripts_read() {
         (&["format", "--check", "loose.pl"], 1),
         (&["format", "--check", "tidy.pl", "loose.pl"], 1),
         (&["format", "--check", "bad.pl"], 1),
-        (&["format", "--stop-on-first-error", "bad.pl"], 2),
+        (&["format", "--stop-on-first-error", "bad.pl"], 1),
         (&["format", "--encoding", "no-such-encoding", "tidy.pl"], 1),
         (&["check", "--error-on", "warning", "arity.pl"], 1),
         (&["check", "--error-on", "error", "arity.pl"], 0),
