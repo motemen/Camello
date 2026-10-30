@@ -834,11 +834,12 @@ reviewed as a decision rather than discovered as a difference.
   above made `$self` and `$class` reachable in every body and lit up four
   things that had been quietly wrong: the unpacking statement overwrote the
   parameters it declared (`my ($class, %args) = @_` assigned `Unknown` over
-  what `from_unpacking` had just read); an empty `()` is a prototype and not a
-  zero-parameter signature, which the body reading `@_` is the evidence for;
-  `SUPER::init` was resolved as a method of that name; and a `bless` whose
-  class could not be read left the old type in place, when a `bless` always
-  changes what its argument is and "unreadable" means nobody knows any more.
+  what `params_from_arg_unpacking` had just read); an empty `()` is a
+  prototype and not a zero-parameter signature, which the body reading `@_` is
+  the evidence for; `SUPER::init` was resolved as a method of that name; and a
+  `bless` whose class could not be read left the old type in place, when a
+  `bless` always changes what its argument is and "unreadable" means nobody
+  knows any more.
 - **A dynamic package makes its whole namespace dynamic** (milestone 5,
   revised). XS registers into a distribution's namespace and a distribution's
   namespace is a name prefix: `Net::DBus` calls `XSLoader::load` and the

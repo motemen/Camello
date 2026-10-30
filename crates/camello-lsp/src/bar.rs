@@ -97,7 +97,6 @@ pub fn edit_bar(index: &mut Index, path: &Path, edits: usize) -> Option<EditBar>
     let cache = camello_sema::resolve::Cache::disabled();
 
     let mut declaration_changes = 0;
-    let mut previous: Option<String> = None;
     let started = Instant::now();
     for edit in 0..edits {
         let text = format!("{source}\n# camello edit {edit}\n");
@@ -108,18 +107,10 @@ pub fn edit_bar(index: &mut Index, path: &Path, edits: usize) -> Option<EditBar>
             crate::position::Encoding::Utf16,
         );
         let decls = camello_sema::read_declarations(path, &text, &settings.dialect, &cache);
-        let fingerprint = index::fingerprint(&decls);
-        let mut changed = previous.as_deref().is_some_and(|held| held != fingerprint);
-        previous = Some(fingerprint);
-        if index.install(path, decls) {
-            index.analysis.link();
-        }
-        // Step 4′: what tier 2 says about this file, against what the graph
-        // holds. A trailing comment changes neither, so this has to answer
-        // `false` — an edit loop that reported a change here would sweep every
-        // open file on every keystroke.
-        changed |= index.analysis.reinfer_returns(path, &text);
-        if changed {
+        // A trailing comment changes neither the declarations nor what tier 2
+        // says, so this has to answer `false` — an edit loop that reported a
+        // change here would sweep every open file on every keystroke.
+        if index.apply(vec![(path, decls, &text)]) {
             declaration_changes += 1;
         }
         let context = crate::analysis::context(&document, index, &settings);
