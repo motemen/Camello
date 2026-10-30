@@ -1256,20 +1256,23 @@ impl Pass<'_> {
         // perl short-circuits, so the right side is read under what the left
         // said: `$x && $x->foo` runs the call only where `$x` held, and `!$x
         // || $x->foo` only where it did not (`docs/types.md`, NARROW-6).
-        let saved = left_node.as_ref().and_then(|left_node| {
+        // Matched before anything is read, because only these operators
+        // narrow: the environment is cloned for them and not for the `+` of a
+        // long left-associated chain.
+        let holds = match operator {
+            Some(TokenKind::LOGICAL_AND | TokenKind::AND_KW) => Some(true),
+            Some(TokenKind::LOGICAL_OR | TokenKind::OR_KW | TokenKind::DEFINED_OR) => Some(false),
+            _ => None,
+        };
+        let saved = holds.zip(left_node.as_ref()).map(|(holds, left_node)| {
             let facts = narrowing(&self.env, left_node);
             let saved = self.env.clone();
-            match operator {
-                Some(TokenKind::LOGICAL_AND | TokenKind::AND_KW) => {
-                    facts.apply_true(&mut self.env);
-                    Some(saved)
-                }
-                Some(TokenKind::LOGICAL_OR | TokenKind::OR_KW | TokenKind::DEFINED_OR) => {
-                    facts.apply_false(&mut self.env);
-                    Some(saved)
-                }
-                _ => None,
+            if holds {
+                facts.apply_true(&mut self.env);
+            } else {
+                facts.apply_false(&mut self.env);
             }
+            saved
         });
         let right = view.right().map(|right| self.type_of(&right));
         if let Some(saved) = saved {
