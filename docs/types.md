@@ -1448,7 +1448,7 @@ sub g {
 
 ```toml
 [check]
-lib = ["lib", "t"]           # パスを指定せずに実行したときの対象
+lib = ["lib", "t"]           # プロジェクト自身のディレクトリ。パスを指定せずに実行したときの対象で、`use Foo` の解決先（ルート）にもなる
 stubs = ["stubs"]            # スタブのディレクトリ
 disable = ["unused-variable"]
 error-on = "warning"         # これ以上の重大度があれば終了ステータスは 1

@@ -13,6 +13,12 @@ ending in `{` (Fixed).
   one-line one is normalised (INDENT-2, SPACING-7, #386).
 - `camello check` stops on a value in `camello.toml` it cannot read even where
   a flag overrides it, as it does on a file that does not parse (#384).
+- `camello format` over a tree writes its summary, and the files it left alone,
+  to standard error; standard output carries only the paths `--check` and
+  `--list-different` name.
+- `[check] lib` in `camello.toml` joins the roots `camello check` resolves
+  `use Foo` in, as it already did for `camello lsp`, so `camello check t`
+  finds `lib/Foo.pm`.
 
 ### Fixed
 

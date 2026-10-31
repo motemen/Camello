@@ -418,8 +418,11 @@ pub struct VerbosityArgs {
 /// What `check` takes.
 #[derive(clap::Args, Debug, Clone)]
 pub struct CheckArgs {
-    /// Files or directories to check (reads from stdin if not provided)
-    #[arg(help = "Files or directories to check (recursive; stdin if omitted)")]
+    /// Files or directories to check (`[check] lib` from camello.toml, else
+    /// stdin, if not provided)
+    #[arg(
+        help = "Files or directories to check (recursive; `[check] lib` from camello.toml, else stdin, if omitted)"
+    )]
     pub paths: Vec<PathBuf>,
 
     /// The severity that makes the run fail
@@ -593,15 +596,19 @@ impl CheckArgs {
         options.disabled.extend(check.disabled);
         options.guard_classes = check.guard_classes;
 
+        // `lib` is what the project is: the paths to check when none are
+        // typed, and roots for `use Foo` to resolve in either way, so that
+        // `camello check t` finds `lib/Foo.pm` the way `camello lsp` does.
         let mut paths = self.paths;
         if paths.is_empty() && !check.lib.is_empty() {
-            paths = check.lib;
+            paths = check.lib.clone();
         }
         let mut stubs = split_paths(self.stubs.as_deref());
         stubs.extend(check.stubs);
 
         Ok(crate::report::Request {
             paths,
+            lib: check.lib,
             error_on,
             min_severity,
             format,
@@ -1067,8 +1074,16 @@ fn format_tree(
         format_one(path, check, &encodings, options)
     });
 
+    // Standard output carries the answer and nothing else — under `--check`
+    // and `--list-different`, one path per line, which is the shape a CI step
+    // or a pre-commit hook reads. Everything said *about* the run — a file left
+    // alone and why, the summary — goes to standard error, where a lone file's
+    // parse error already goes (`format_file`) and where `camello check` puts
+    // its summary.
     let stdout = io::stdout();
     let mut out = stdout.lock();
+    let stderr = io::stderr();
+    let mut err = stderr.lock();
     // `--check` is a question about which files those are, so it answers with
     // them; `--write` has already done the thing and only names them on request.
     let name_them = list_different || check;
@@ -1080,19 +1095,19 @@ fn format_tree(
         // tree that is formatted and one that was skipped in places.
         if let Some(failure) = &report.failure {
             failed += 1;
-            writeln!(out, "{path}: {failure}").into_diagnostic()?;
+            writeln!(err, "{path}: {failure}").into_diagnostic()?;
             continue;
         }
         if !report.diagnostics.is_empty() {
             with_diagnostics += 1;
             let diagnostics = plural(report.diagnostics.len(), "diagnostic");
-            writeln!(out, "{path}: left alone, {diagnostics}").into_diagnostic()?;
+            writeln!(err, "{path}: left alone, {diagnostics}").into_diagnostic()?;
             // The diagnostics themselves are a screenful each, and they are all
             // still there in `camello format <that file>`.
             if list_different {
                 for diagnostic in &report.diagnostics {
                     for line in diagnostic.lines() {
-                        writeln!(out, "    {line}").into_diagnostic()?;
+                        writeln!(err, "    {line}").into_diagnostic()?;
                     }
                 }
             }
@@ -1121,7 +1136,7 @@ fn format_tree(
     if failed > 0 {
         summary.push_str(&format!(", {failed} unreadable"));
     }
-    writeln!(out, "{summary}").into_diagnostic()?;
+    writeln!(err, "{summary}").into_diagnostic()?;
 
     // A file nobody could parse cleanly is not "formatted", and `--check` in a
     // pipeline wants to hear about it.
