@@ -522,7 +522,7 @@ union 'Id', [Int, Str];                            # Int | Str
 
 XS で書かれている、`AUTOLOAD` で生えている、あるいは単に camello の認識器が
 カバーしない書き方をしている依存モジュールには、スタブを与えられます。
-`camello typecheck --stubs stubs/` あるいは設定ファイルの `stubs` で
+`camello check --stubs stubs/` あるいは設定ファイルの `stubs` で
 指定したディレクトリに置いた `.pm` です。
 
 ```perl

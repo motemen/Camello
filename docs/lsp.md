@@ -467,7 +467,7 @@ stands on:
 3. **The index.** Background walk, `FileDecls` residency, `Program`
    construction, decl-diff invalidation, watched files, cross-file diagnostics
    for open files. Definition for bareword calls and method calls rode along.
-4. **The type side-table** in sema (`flow::analyse_recording`); hover for
+4. **The type side-table** in sema (`flow::analyse` asked to record); hover for
    types and signatures.
 5. **The method surface** in sema (`Program::methods_of`); method completion,
    including the dangling-arrow token walk.

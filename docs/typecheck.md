@@ -24,19 +24,18 @@ compiler's type checker, and weaker still: where pyright has a nominal type
 system underneath, this has a lattice of *shapes* and a set of annotations
 that a real program may or may not honour at run time.
 
-Two subcommands, one analysis — since merged into one `camello check`, for the
-reasons under "Decisions made during implementation"; what each half of the
-pair reported is still what the halves of the analysis report:
+One command, `camello check lib t`, and one analysis in two halves:
 
-- `camello lint lib t` — diagnostics that need no type lattice: undeclared or
-  unused lexicals, shadowing, arity against a signature or an `args` list,
-  `return` shapes that disagree across paths. Fast; meant to run in the same
-  place `perlcritic` does.
-- `camello typecheck lib t` — everything `lint` reports, plus what the type
-  lattice adds: a `Str` passed where an `ArrayRef[Int]` was declared, a method
-  called on a class that does not declare it, a hash key read off a `Dict`
-  that has no such key, an `InstanceOf['Foo']` where a `Maybe[...]` was
-  returned and never checked.
+- what needs no type lattice: undeclared or unused lexicals, shadowing, arity
+  against a signature or an `args` list, `return` shapes that disagree across
+  paths;
+- what the type lattice adds: a `Str` passed where an `ArrayRef[Int]` was
+  declared, a method called on a class that does not declare it, a hash key
+  read off a `Dict` that has no such key, an `InstanceOf['Foo']` where a
+  `Maybe[...]` was returned and never checked.
+
+The halves were once two subcommands; "Decisions made during implementation"
+says why they are one.
 
 It exits `1` if anything at or above `--error-on` (default: `error`) was
 reported, prints one diagnostic per line in `path:line:col: severity: message`
@@ -522,7 +521,7 @@ recogniser as part of its declarations.
 
 For a dependency that is not analysable — XS, `AUTOLOAD`-generated, or just
 written in a style the recognisers do not cover — a project can supply a stub:
-a `.pm` file under a stub root (`camello typecheck --stubs stubs/`, or
+a `.pm` file under a stub root (`camello check --stubs stubs/`, or
 `stubs = ["stubs"]` in the config) that declares the package's subs with
 `Returns:` and signatures and no bodies:
 
@@ -562,7 +561,7 @@ local, forward, and gives up early.
   narrow within the guarded branch. `Maybe[T]` is what most of this is for:
   a method call on a `Maybe[InstanceOf[...]]` with no narrowing is the
   checker's most useful diagnostic and its most likely false positive, so it
-  is reported at `info`, and the narrowing set is a fixture-tested list
+  is a `warning` (`docs/types.md`, DIAG-14a) and the narrowing set is a fixture-tested list
   rather than a general theorem. The list is applied to the *structure* of
   the condition (`docs/types.md`, NARROW-6): a condition is read as a tree
   and yields what holds on each side of it, because `!` swaps those two, `||`
@@ -629,7 +628,7 @@ and the only change this design needs there.
 
 ## Dependencies
 
-The project roots are what the command is pointed at (`camello typecheck lib
+The project roots are what the command is pointed at (`camello check lib
 t`), plus any `lib` dirs in the config. A `use Foo::Bar` from a file in the
 roots is resolved:
 
