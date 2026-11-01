@@ -20,23 +20,25 @@
 //! named argument, while `my ($a, $b) = @_` called with one argument is a
 //! program that runs.
 
-use camello_syntax::ast::{self, AstNode, Call, MethodCall, Sigil, Variable};
+use camello_syntax::ast::{self, AstNode, Call, Sigil, Variable};
 use camello_syntax::lang::{NodeExt, NodeKind, SyntaxNode, TokenExt, TokenKind};
 
 use crate::decl::{ParamSource, Params};
 use crate::diag::{Code, Diagnostic, Severity};
 use crate::program::Program;
 
-/// Check every call in a file against what it resolves to.
+/// Check every function call in a file against what it resolves to.
+///
+/// A method call is the flow pass's: what `->` reaches depends on the class of
+/// the invocant, its ancestors and `SUPER::`, which is method resolution
+/// (`Program::resolve_method_from`) and is asked there, for a bareword
+/// invocant and a typed value alike. It counts through [`check_shape`].
 #[must_use]
 pub fn analyse(root: &SyntaxNode, file: usize, program: &Program) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     for node in root.descendants() {
-        if let Some(call) = Call::cast(node.clone()) {
+        if let Some(call) = Call::cast(node) {
             check_call(&call, file, program, &mut diagnostics);
-        } else if node.node_kind() == NodeKind::METHOD_CALL_EXPR {
-            let call = MethodCall::cast(node).expect("kind checked");
-            check_method_call(&call, program, &mut diagnostics);
         }
     }
     diagnostics
@@ -66,43 +68,8 @@ fn check_call(call: &Call, file: usize, program: &Program, into: &mut Vec<Diagno
     );
 }
 
-fn check_method_call(call: &MethodCall, program: &Program, into: &mut Vec<Diagnostic>) {
-    let (Some(invocant), Some(method)) = (call.invocant(), call.method_name()) else {
-        return;
-    };
-    // Only a bareword class resolves without the type lattice; `$obj->m()`
-    // waits for milestone 5.
-    let Some(class) = bareword_name(&invocant) else {
-        return;
-    };
-    let Some(symbol) = program.sub(&class, &method) else {
-        return;
-    };
-    let shape = CallShape::of(&call.args(), &call.pairs());
-    compare(
-        &symbol.params,
-        &shape,
-        true,
-        &symbol.name,
-        call.method_range(),
-        into,
-    );
-}
-
-/// The name of a bareword invocant, `Foo::Bar` in `Foo::Bar->new`.
-///
-/// Any word, unlike the flow pass's reading of one: the caller asks the
-/// program for the sub before it says anything, and `shift->new` finds none.
-fn bareword_name(node: &SyntaxNode) -> Option<String> {
-    let call = Call::cast(node.clone())?;
-    call.args().is_empty().then(|| call.callee_name()).flatten()
-}
-
-/// The count comparison, for a caller that resolved the callee some other way.
-///
-/// The flow pass reaches a method through the *type* of its invocant, which is
-/// the only way `$counter->add(1, 2, 3)` is ever resolved — a bareword
-/// invocant is all this pass can see on its own.
+/// The count comparison, for a caller that resolved the callee some other way:
+/// the flow pass, which reaches every method this way.
 pub fn check_shape(
     params: &Params,
     call: &CallShape,
