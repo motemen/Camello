@@ -3,9 +3,18 @@
 //! Every diagnostic has a stable code, a severity, a span and a message that
 //! names both sides. The code is stable because it is what a `##
 //! camello-disable:` comment and a config file name, and what a user greps a
-//! CI log for; the severity is a property of the *kind* of contradiction, not
-//! of the site, and the one place it varies is written down in
-//! [`Diagnostic::downgraded`].
+//! CI log for. The severity starts as a property of the *kind* of
+//! contradiction ([`Code::default_severity`]), and a site moves it in one of
+//! two ways only:
+//!
+//! - an *inferred* thing on one side — an `@_` unpacking rather than a
+//!   signature, a value rather than a literal, a constructor that may take
+//!   more than it declares — caps it at `warning` ([`Diagnostic::inferred`]);
+//! - a closed world raises `unknown-method` from `info` to `warning`
+//!   (`docs/types.md`, DIAG-7a).
+//!
+//! Both are the split `docs/typecheck.md` ("Diagnostics") draws: an `error`
+//! is a contradiction between two declared things.
 
 use std::fmt;
 
@@ -43,16 +52,6 @@ impl Severity {
             "warning" | "warn" => Some(Severity::Warning),
             "error" => Some(Severity::Error),
             _ => None,
-        }
-    }
-
-    /// One step quieter, for a diagnostic resting on a parser guess
-    /// (`docs/architecture.md`, "Guesses"). `info` is the floor.
-    #[must_use]
-    pub const fn downgraded(self) -> Self {
-        match self {
-            Severity::Error => Severity::Warning,
-            Severity::Warning | Severity::Info => Severity::Info,
         }
     }
 }
@@ -237,11 +236,22 @@ impl Diagnostic {
         self
     }
 
-    /// One step quieter, because the reading it rests on is a parser guess.
+    /// One side of the contradiction is inferred rather than declared, so it
+    /// is a `warning` at most (`docs/typecheck.md`, "Diagnostics").
     #[must_use]
-    pub fn downgraded(mut self) -> Self {
-        self.severity = self.severity.downgraded();
+    pub fn inferred(mut self) -> Self {
+        self.severity = self.severity.min(Severity::Warning);
         self
+    }
+
+    /// [`Self::inferred`] unless both sides were written down.
+    #[must_use]
+    pub fn inferred_unless(self, declared: bool) -> Self {
+        if declared {
+            self
+        } else {
+            self.inferred()
+        }
     }
 
     /// Report at exactly this severity.
