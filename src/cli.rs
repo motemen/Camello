@@ -1236,12 +1236,12 @@ fn fold_key(message: &str) -> String {
 struct Messages {
     groups: Vec<Group>,
     /// Where each (invariant, reason, message) already sits in `groups`.
-    seen: std::collections::HashMap<(&'static str, &'static str, String), usize>,
+    seen: std::collections::HashMap<(&'static str, crate::check::Reason, String), usize>,
 }
 
 struct Group {
     slug: &'static str,
-    why: &'static str,
+    why: crate::check::Reason,
     message: String,
     files: Vec<String>,
 }
@@ -1579,7 +1579,7 @@ struct Tally {
     invariant: crate::check::Invariant,
     ok: usize,
     failed: usize,
-    unanswered: Vec<&'static str>,
+    unanswered: Vec<crate::check::Reason>,
 }
 
 impl Tally {
@@ -1598,15 +1598,15 @@ impl Tally {
     /// Why the unanswered ones went unanswered, most common first. Silent when
     /// there is one reason and it is the ordinary one, which is a parse failure
     /// the table has already reported on its own row.
-    fn reasons(&self) -> Vec<(&'static str, usize)> {
-        let mut counted: Vec<(&'static str, usize)> = Vec::new();
-        for why in &self.unanswered {
-            match counted.iter_mut().find(|(seen, _)| seen == why) {
+    fn reasons(&self) -> Vec<(crate::check::Reason, usize)> {
+        let mut counted: Vec<(crate::check::Reason, usize)> = Vec::new();
+        for &why in &self.unanswered {
+            match counted.iter_mut().find(|(seen, _)| *seen == why) {
                 Some((_, count)) => *count += 1,
                 None => counted.push((why, 1)),
             }
         }
-        if counted.len() == 1 && counted[0].0 == "no clean parse" {
+        if counted.len() == 1 && counted[0].0 == crate::check::Reason::NoCleanParse {
             return Vec::new();
         }
         counted.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
@@ -1886,7 +1886,7 @@ fn check_paths(
             let mut why: Vec<&'static str> = outcome
                 .unanswered
                 .iter()
-                .map(|unanswered| unanswered.why)
+                .map(|unanswered| unanswered.why.as_str())
                 .collect();
             why.sort_unstable();
             why.dedup();

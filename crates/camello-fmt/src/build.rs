@@ -1203,7 +1203,7 @@ impl<'a> Builder<'a> {
         // element of whatever list the call itself is an element of: `[\n f 1,\n
         // g 2,\n]` is one call to camello and two elements to whoever wrote it.
         if parent.node_kind() == NodeKind::LIST_CALL_EXPR {
-            return list_separator_before(node).is_some() && self.element_of_a_broken_list(&parent);
+            return list_separator_before(node) && self.element_of_a_broken_list(&parent);
         }
         let Some(brackets) = Some(parent).filter(|parent| {
             matches!(
@@ -1239,7 +1239,7 @@ impl<'a> Builder<'a> {
         if self.element_of_a_broken_list(node) {
             return true;
         }
-        list_separator_before(node).is_some() && !begins_its_line(node)
+        list_separator_before(node) && !begins_its_line(node)
     }
 
     /// A closing delimiter, split into what was written inside it and the
@@ -2161,8 +2161,8 @@ fn brace(node: &SyntaxNode, kind: TokenKind, last: bool) -> Option<SyntaxToken> 
     }
 }
 
-/// The list separator this node was written after, if it is an element of a
-/// list at all.
+/// Was this node written after a list separator — is it an element of a list
+/// at all?
 ///
 /// GUESS: the lines under a bareword call written along a list are the list's,
 /// not the call's arguments.
@@ -2173,8 +2173,8 @@ fn brace(node: &SyntaxNode, kind: TokenKind, last: bool) -> Option<SyntaxToken> 
 /// Wrong: only the indent of those lines, never the meaning — they keep the
 /// list's level instead of hanging under an argument list perl may not agree
 /// the call has.
-fn list_separator_before(node: &SyntaxNode) -> Option<TokenKind> {
-    adjacent_separator(&SyntaxElement::Node(node.clone()), rowan::Direction::Prev)
+fn list_separator_before(node: &SyntaxNode) -> bool {
+    adjacent_separator(&SyntaxElement::Node(node.clone()), rowan::Direction::Prev).is_some()
 }
 
 /// Is a filehandle or a block written beside this call's name?

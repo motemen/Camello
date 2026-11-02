@@ -63,6 +63,38 @@ impl fmt::Display for Severity {
     }
 }
 
+/// The [`Code`] enum, [`Code::ALL`] and [`Code::as_str`], from one list.
+///
+/// Three lists kept by hand are three lists that drift: a variant missing
+/// from `ALL` is a code the fixture test never asks about, and nothing else
+/// would notice.
+macro_rules! codes {
+    (
+        $(#[$meta:meta])*
+        pub enum $name:ident {
+            $($(#[$variant_meta:meta])* $variant:ident = $text:literal,)*
+        }
+    ) => {
+        $(#[$meta])*
+        pub enum $name {
+            $($(#[$variant_meta])* $variant,)*
+        }
+
+        impl $name {
+            /// Every code, in the order they are declared.
+            pub const ALL: &'static [$name] = &[$($name::$variant,)*];
+
+            #[must_use]
+            pub const fn as_str(self) -> &'static str {
+                match self {
+                    $($name::$variant => $text,)*
+                }
+            }
+        }
+    };
+}
+
+codes! {
 /// Every code the checker can report.
 ///
 /// Adding one means adding a fixture for it (`docs/typecheck.md`, "Testing");
@@ -73,88 +105,50 @@ impl fmt::Display for Severity {
 )]
 pub enum Code {
     /// A name used under `strict` that no declaration reaches.
-    UndeclaredVariable,
+    UndeclaredVariable = "undeclared-variable",
     /// A lexical that is declared and never read.
-    UnusedVariable,
+    UnusedVariable = "unused-variable",
     /// A lexical whose name an enclosing scope already binds.
-    ShadowedVariable,
+    ShadowedVariable = "shadowed-variable",
     /// A call whose argument count cannot satisfy the callee's parameter list.
-    Arity,
+    Arity = "arity",
     /// A value whose type contradicts the declared type of the slot it goes in.
-    TypeMismatch,
+    TypeMismatch = "type-mismatch",
     /// A key read off a `Dict` that has no such key, or passed to a constructor
     /// that declares no such attribute.
-    UnknownKey,
+    UnknownKey = "unknown-key",
     /// A method called on a class that declares no such method and has no
     /// unknown ancestor.
-    UnknownMethod,
+    UnknownMethod = "unknown-method",
     /// A `Maybe[...]` dereferenced or called on without a narrowing check.
     /// `info`, because every subscript is a `Maybe` by construction: the code
     /// this is about is idiomatic and mostly right, and it is asked for rather
     /// than pressed on the reader.
-    MaybeDeref,
+    MaybeDeref = "maybe-deref",
     /// An annotation that does not parse. Reported because an annotation that
     /// is silently ignored is worse than none.
-    BadAnnotation,
+    BadAnnotation = "bad-annotation",
     /// A `return` whose shape contradicts the sub's `Returns:`.
-    ReturnMismatch,
+    ReturnMismatch = "return-mismatch",
     /// A type or class name that nothing in the program declares.
-    UnknownType,
+    UnknownType = "unknown-type",
     /// A public sub with no annotation, under `--strict-annotations`.
-    MissingAnnotation,
+    MissingAnnotation = "missing-annotation",
     /// A required named argument the call does not pass.
-    MissingArgument,
+    MissingArgument = "missing-argument",
     /// A method call to a sub declared `()`, whose prototype — if that is what
     /// the `()` was — perl does not apply here.
-    IgnoredPrototype,
+    IgnoredPrototype = "ignored-prototype",
     /// A parameter the body never reads. Its own code rather than
     /// [`Code::UnusedVariable`]'s, because a parameter list is a signature:
     /// the name goes on saying what the sub takes whether or not the body
     /// wants the value, and a project may reasonably want to be told about the
     /// one and not the other.
-    UnusedParameter,
+    UnusedParameter = "unused-parameter",
+}
 }
 
 impl Code {
-    pub const ALL: &'static [Code] = &[
-        Code::UndeclaredVariable,
-        Code::UnusedVariable,
-        Code::ShadowedVariable,
-        Code::Arity,
-        Code::TypeMismatch,
-        Code::UnknownKey,
-        Code::UnknownMethod,
-        Code::MaybeDeref,
-        Code::BadAnnotation,
-        Code::ReturnMismatch,
-        Code::UnknownType,
-        Code::MissingAnnotation,
-        Code::MissingArgument,
-        Code::UnusedParameter,
-        Code::IgnoredPrototype,
-    ];
-
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Code::UndeclaredVariable => "undeclared-variable",
-            Code::UnusedVariable => "unused-variable",
-            Code::ShadowedVariable => "shadowed-variable",
-            Code::Arity => "arity",
-            Code::TypeMismatch => "type-mismatch",
-            Code::UnknownKey => "unknown-key",
-            Code::UnknownMethod => "unknown-method",
-            Code::MaybeDeref => "maybe-deref",
-            Code::BadAnnotation => "bad-annotation",
-            Code::ReturnMismatch => "return-mismatch",
-            Code::UnknownType => "unknown-type",
-            Code::MissingAnnotation => "missing-annotation",
-            Code::MissingArgument => "missing-argument",
-            Code::UnusedParameter => "unused-parameter",
-            Code::IgnoredPrototype => "ignored-prototype",
-        }
-    }
-
     #[must_use]
     pub fn parse(text: &str) -> Option<Self> {
         Code::ALL.iter().copied().find(|code| code.as_str() == text)
