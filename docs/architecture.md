@@ -379,7 +379,8 @@ The formatter, asked of input against output:
   by it.
 
 `Invariant::ALL` is what camello asks of itself and is what the fixture tests
-run; `Invariant::OPT_IN` holds the checks that need something outside it.
+run; `perl-deparse`, the one check that needs something outside it, is not in
+it and is asked only by `dev perl-deparse`.
 
 A check can also go unanswered rather than pass or fail: a file that does not
 parse leaves the formatter's questions unanswered, and one perl declines to load

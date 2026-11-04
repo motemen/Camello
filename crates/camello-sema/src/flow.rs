@@ -1439,7 +1439,7 @@ impl Pass<'_> {
     /// half survives: `my $s; $s =~ s/abc/def/;` leaves `$s` **undef**,
     /// because the pattern found nothing to replace. The reading fills in
     /// what nothing was known about; it does not overrule what the program
-    /// already said (POLICY-2). `$x .= EXPR` has no such caveat — the
+    /// already said (`docs/types.md`, POLICY-2). `$x .= EXPR` has no such caveat — the
     /// concatenation is written back either way, so an undef `$x` comes out
     /// of it defined.
     ///

@@ -89,9 +89,9 @@ pub enum Code {
     /// unknown ancestor.
     UnknownMethod,
     /// A `Maybe[...]` dereferenced or called on without a narrowing check.
-    /// `info`, because every subscript is a `Maybe` by construction: the code
-    /// this is about is idiomatic and mostly right, and it is asked for rather
-    /// than pressed on the reader.
+    /// A `warning` (`docs/types.md`, DIAG-14a): the most useful diagnostic and
+    /// the most likely false positive, so the narrowing set that silences it
+    /// is a list rather than a theorem.
     MaybeDeref,
     /// An annotation that does not parse. Reported because an annotation that
     /// is silently ignored is worse than none.
