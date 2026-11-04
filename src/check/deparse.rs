@@ -24,6 +24,10 @@ use std::time::{Duration, Instant};
 /// How long any one perl invocation is given before it is killed.
 const TIMEOUT: Duration = Duration::from_secs(60);
 
+/// How often a running perl is asked whether it is done: often enough that a
+/// quick file is not kept waiting, rarely enough that asking costs nothing.
+const POLL_INTERVAL: Duration = Duration::from_millis(20);
+
 /// The reason a corpus run is mostly unanswered, and the one worth telling the
 /// reader what to do about: a file checked out of the tree it was installed in
 /// cannot find what it uses.
@@ -455,7 +459,7 @@ fn perl(path: &Path, args: &[&str]) -> Result<std::process::Output, NoAnswer> {
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status,
-            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(POLL_INTERVAL),
             Ok(None) => {
                 let _ = child.kill();
                 let _ = child.wait();
