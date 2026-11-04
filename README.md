@@ -55,10 +55,12 @@ camello format -e 'my %h=(a=>1);'       # formats an argument
 camello format --check lib              # names what would change; exits 1 if any
 ```
 
-`--check` and `-l/--list-different` print one path per line, which makes them
-the shape a CI step or a pre-commit hook wants. A file the parser reports a
-diagnostic on is left alone and the run exits 1 — whether it was named on its
-own, named beside others, or found under a directory. A source read from
+`--check` and `-l/--list-different` print one path per line on standard
+output and nothing else there, which makes them the shape a CI step or a
+pre-commit hook wants; the summary, and a file that was left alone and why, go
+to standard error. A file the parser reports a diagnostic on is left alone and
+the run exits 1 — whether it was named on its own, named beside others, or
+found under a directory. A source read from
 standard input is handed back the way it arrived, so a filter in an editor's
 save hook is safe to wire up without a wrapper around it.
 

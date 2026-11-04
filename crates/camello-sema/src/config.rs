@@ -69,8 +69,9 @@ pub struct Config {
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Check {
-    /// Directories to add to the roots, so that `camello check` with no
-    /// paths knows what the project is.
+    /// The project's own directories: what `camello check` checks when
+    /// given no paths, and roots for `use Foo` to resolve in however the run
+    /// was pointed — for the command line and the server alike.
     #[serde(default)]
     pub lib: Vec<PathBuf>,
     /// Directories of stub modules.

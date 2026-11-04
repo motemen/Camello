@@ -35,6 +35,9 @@ impl Format {
 
 pub struct Request {
     pub paths: Vec<PathBuf>,
+    /// `[check] lib`: directories that are the project's own, and so roots
+    /// for `use Foo` to resolve in even when the run was pointed elsewhere.
+    pub lib: Vec<PathBuf>,
     pub error_on: Severity,
     /// The quietest severity worth printing. What it drops is dropped whole:
     /// it is not counted in the summary and it does not decide the exit
@@ -203,10 +206,12 @@ pub fn run(request: &Request) -> Result<()> {
         ))
     });
 
-    // The roots are the directories the command was pointed at; a file named
-    // on its own contributes the directory it is in, which is what makes
-    // `camello check lib/Foo.pm` resolve `use Foo::Bar` next door.
-    let roots: Vec<PathBuf> = request
+    // The roots are the directories the command was pointed at, plus what
+    // `[check] lib` names; a file named on its own contributes the directory
+    // it is in, which is what makes `camello check lib/Foo.pm` resolve
+    // `use Foo::Bar` next door, and `lib` is what makes `camello check t`
+    // resolve it in `lib/` (`docs/typecheck.md`, "Dependencies").
+    let mut roots: Vec<PathBuf> = request
         .paths
         .iter()
         .map(|path| {
@@ -216,7 +221,9 @@ pub fn run(request: &Request) -> Result<()> {
                 path.parent().unwrap_or(Path::new(".")).to_path_buf()
             }
         })
+        .chain(request.lib.iter().cloned())
         .collect();
+    roots.dedup();
     let inc = match &request.inc {
         Some(inc) => inc.clone(),
         None => camello_sema::resolve::perl_inc(),

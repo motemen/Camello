@@ -354,3 +354,52 @@ fn a_typed_error_on_wins_over_the_config() {
         "`--error-on error` typed over the file is what this run asked for"
     );
 }
+
+/// `[check] lib` is what the project is, so it is a root for `use Foo` to
+/// resolve in however the run was pointed — the way `camello lsp` already
+/// reads it.
+#[test]
+fn lib_in_the_config_is_a_root_for_a_run_pointed_elsewhere() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    std::fs::create_dir_all(directory.path().join("lib")).expect("mkdir");
+    std::fs::create_dir_all(directory.path().join("t")).expect("mkdir");
+    std::fs::write(
+        directory.path().join("lib/Foo.pm"),
+        "package Foo;\nsub new { my ($class) = @_; return bless {}, $class }\n1;\n",
+    )
+    .expect("failed to write");
+    std::fs::write(
+        directory.path().join("t/a.t"),
+        "use Foo;\nmy $f = Foo->new;\n$f->nope;\n",
+    )
+    .expect("failed to write");
+    std::fs::write(
+        directory.path().join("camello.toml"),
+        "[check]\nlib = [\"lib\"]\n",
+    )
+    .expect("failed to write");
+
+    let output = camello(directory.path(), &["check", "t"]);
+    let stdout = String::from_utf8(output.stdout).expect("output is utf-8");
+    assert!(
+        stdout.contains("[unknown-method]"),
+        "`Foo` is resolved in `lib`, so `nope` is reported:\n{stdout}"
+    );
+}
+
+/// Under `--check`, standard output is the list of paths and nothing else;
+/// what is said about the run goes to standard error.
+#[test]
+fn format_check_keeps_standard_output_to_the_paths() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    std::fs::write(directory.path().join("a.pl"), "my $x=1;\n").expect("failed to write");
+    std::fs::write(directory.path().join("b.pl"), UNPARSABLE).expect("failed to write");
+
+    let output = camello(directory.path(), &["format", "--check", "."]);
+    assert!(!output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("output is utf-8");
+    let stderr = String::from_utf8(output.stderr).expect("output is utf-8");
+    assert_eq!(stdout, "./a.pl\n", "one path per line, and only paths");
+    assert!(stderr.contains("b.pl: left alone"), "{stderr}");
+    assert!(stderr.contains("would be reformatted"), "{stderr}");
+}
