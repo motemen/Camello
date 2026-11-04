@@ -737,10 +737,34 @@ fn literal_name(node: &SyntaxNode) -> Option<String> {
     ast::key_text(node)
 }
 
+/// Whether an option's value is true, as perl reads it: `0`, `0.0`, `''`,
+/// `'0'` and `undef` are false. A value that is not written out is taken to
+/// be true, since an option is mostly written to turn something on.
 pub(crate) fn is_true(node: &SyntaxNode) -> bool {
-    Literal::cast(node.clone())
-        .and_then(|literal| literal.as_number())
-        .is_none_or(|text| text != "0")
+    if node.node_kind() == NodeKind::UNDEF_EXPR {
+        return false;
+    }
+    let Some(literal) = Literal::cast(node.clone()) else {
+        return true;
+    };
+    if let Some(number) = literal.as_number() {
+        return !number_is_zero(&number);
+    }
+    literal
+        .as_string()
+        .is_none_or(|text| !text.is_empty() && text != "0")
+}
+
+/// Whether a numeric literal's value is zero: every digit of its mantissa is
+/// `0`, whatever its base or exponent.
+fn number_is_zero(number: &str) -> bool {
+    let lower = number.to_ascii_lowercase();
+    let (digits, exponent) = match lower.get(..2) {
+        Some("0x" | "0b" | "0o") => (&lower[2..], 'p'),
+        _ => (lower.as_str(), 'e'),
+    };
+    let mantissa = digits.split(exponent).next().unwrap_or_default();
+    mantissa.chars().all(|c| matches!(c, '0' | '.' | '_'))
 }
 
 /// What an accessor declaration said, and whether the pass read all of it.
@@ -1456,6 +1480,23 @@ impl ListShape {
     /// `return`s is not describing a choice a caller makes decisions from, and
     /// a five-way alternation in a signature reads worse than the union does.
     pub const ALTERNATIVES: usize = 3;
+
+    /// The shape with every type in it substituted, as
+    /// [`Type::substituted`] does for one type.
+    #[must_use]
+    pub fn substituted(&self, lookup: &dyn Fn(&str) -> Option<Type>) -> ListShape {
+        let each = |types: &[Type]| -> Vec<Type> {
+            types.iter().map(|ty| ty.substituted(lookup)).collect()
+        };
+        match self {
+            ListShape::Unknown | ListShape::Nothing => self.clone(),
+            ListShape::Fixed(types) => ListShape::fixed(each(types)),
+            ListShape::Of(ty) => ListShape::of(ty.substituted(lookup)),
+            ListShape::Either(shapes) => {
+                ListShape::either(shapes.iter().map(|shape| each(shape)).collect())
+            }
+        }
+    }
 
     /// The join of two shapes (`docs/return-inference.md`, "The shape").
     ///

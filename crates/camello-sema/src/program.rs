@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 
 use camello_syntax::lang::SyntaxNode;
 
-use crate::annotate::{Dialect, ListShape, Returns};
+use crate::annotate::{Dialect, Returns};
 use crate::decl::{self, FileDecls, Params, SubDecl};
 use crate::types::Type;
 
@@ -957,9 +957,5 @@ fn link_sub(symbol: &mut SubDecl, lookup: &dyn Fn(&str) -> Option<Type>) {
         }
     }
     symbol.returns.scalar = symbol.returns.scalar.substituted(lookup);
-    if let ListShape::Fixed(types) = &mut symbol.returns.list {
-        for ty in types {
-            *ty = ty.substituted(lookup);
-        }
-    }
+    symbol.returns.list = symbol.returns.list.substituted(lookup);
 }

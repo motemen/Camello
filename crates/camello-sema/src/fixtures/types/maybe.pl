@@ -38,8 +38,34 @@ my $thrown = find();
 My::Error->throw unless defined $thrown;
 print $thrown->id;
 
+my $done = find();
+defined $done or do { warn 'none'; return };
+print $done->id;
+
+# A `do` block whose last statement may fall through does not leave.
+my $maybe_done = find();
+defined $maybe_done or do { return if $ENV{QUIET} };
+print $maybe_done->id;          #~ warning maybe-deref: may be undefined here
+
 my $defaulted = find() // Row->new(id => 1);
 print $defaulted->id;
+
+# A guard inside an anonymous sub or an `eval` leaves that, not the statement
+# that holds it, so nothing below the statement has been checked.
+my $called = find();
+my $callback = sub { return unless defined $called; 1 };
+print $called->id;              #~ warning maybe-deref: may be undefined here
+$callback->();
+
+my $tried = find();
+my $ok = eval { defined $tried or die 'no'; 1 };
+print $tried->id;               #~ warning maybe-deref: may be undefined here
+print $ok;
+
+# An attribute's argument list is not a list of targets: this is one scalar,
+# assigned in scalar context.
+my $attributed :Checked(1) = find();
+print $attributed->id;          #~ warning maybe-deref: may be undefined here
 
 # ----- what the shape of a condition says, and what it does not -----
 #

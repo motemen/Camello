@@ -653,6 +653,13 @@ pub(crate) mod serde_range {
 
     pub fn deserialize<'de, D: Deserializer<'de>>(from: D) -> Result<TextRange, D::Error> {
         let (start, end) = <(u32, u32)>::deserialize(from)?;
+        // A range that ends before it starts is a corrupt entry, and a corrupt
+        // entry is a miss — not the panic `TextRange::new` would make of it.
+        if start > end {
+            return Err(serde::de::Error::custom(format!(
+                "range {start}..{end} ends before it starts"
+            )));
+        }
         Ok(TextRange::new(TextSize::from(start), TextSize::from(end)))
     }
 }

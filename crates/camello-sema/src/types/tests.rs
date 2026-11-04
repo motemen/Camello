@@ -142,3 +142,16 @@ fn a_type_prints_the_way_it_was_written() {
     assert_eq!(read("Maybe[Str]").to_string(), "Str|Undef");
     assert_eq!(read("Dict[a => Int]").to_string(), "Dict[a => Int]");
 }
+
+#[test]
+fn a_type_nested_past_reason_is_an_error() {
+    // An annotation is source text anyone can write, and reading it is
+    // recursive: past a depth no type needs, it is refused rather than left
+    // to run the stack out.
+    let deep = format!("{}Int{}", "ArrayRef[".repeat(100_000), "]".repeat(100_000));
+    assert!(parse(&deep).is_err());
+    let paren = format!("{}Int{}", "(".repeat(100_000), ")".repeat(100_000));
+    assert!(parse(&paren).is_err());
+    let fine = format!("{}Int{}", "ArrayRef[".repeat(32), "]".repeat(32));
+    assert!(parse(&fine).is_ok());
+}

@@ -231,10 +231,13 @@ impl<'a> Parser<'a> {
     }
 
     pub(crate) fn current_text(&mut self) -> Option<&'a str> {
-        self.lexer.peek_text(0)
+        self.nth_text(0)
     }
 
+    /// The `n`th token's text, through the same door as its kind: nothing
+    /// once the parser has stopped, and a step towards the progress limit.
     pub(crate) fn nth_text(&mut self, n: usize) -> Option<&'a str> {
+        self.nth(n)?;
         self.lexer.peek_text(n)
     }
 

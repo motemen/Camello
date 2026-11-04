@@ -139,8 +139,8 @@ pub const CACHE_DIR: &str = ".camello-cache";
 /// The declaration cache (`docs/typecheck.md`, "Dependencies").
 ///
 /// One file per cached module, named by a key over the path, the size, the
-/// mtime and a hash of the contents — so a file that was touched and not
-/// changed still hits, and one that was changed never does.
+/// mtime and a hash of the contents — so a file that was changed never hits,
+/// and neither does one that was only touched: its mtime is part of the key.
 pub struct Cache {
     directory: Option<PathBuf>,
 }
@@ -165,10 +165,6 @@ impl Cache {
         self.directory.is_some()
     }
 
-    /// The key for a file, from what a stat and a hash can say about it.
-    ///
-    /// `salt` is what the run reads it *under* — a declaration read under one
-    /// dialect is not the one the same bytes give under another.
     /// What the cached shape of `FileDecls` is called.
     ///
     /// Bumped whenever an entry written by an older camello would be read as
@@ -185,6 +181,14 @@ impl Cache {
     /// on its own constructor. Bump this with the recogniser.
     const FORMAT: &'static str = "package-spans-1";
 
+    /// The key for a file, from what a stat and a hash can say about it.
+    ///
+    /// `salt` is what the run reads it *under* — a declaration read under one
+    /// dialect is not the one the same bytes give under another.
+    ///
+    /// The hash is over the parts one after another, each preceded by its
+    /// length, so that no two different sets of parts — the same parts in
+    /// another order, or a byte moved from one to the next — share a key.
     #[must_use]
     pub fn key(path: &Path, source: &str, salt: &str) -> String {
         let metadata = std::fs::metadata(path).ok();
@@ -194,13 +198,17 @@ impl Cache {
             .and_then(|metadata| metadata.modified().ok())
             .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
             .map_or(0, |duration| duration.as_secs());
-        format!(
-            "{:016x}-{size}-{mtime}",
-            fnv(path.to_string_lossy().as_bytes())
-                ^ fnv(source.as_bytes())
-                ^ fnv(salt.as_bytes())
-                ^ fnv(Cache::FORMAT.as_bytes())
-        )
+        let mut hash = Fnv::default();
+        for part in [
+            path.to_string_lossy().as_bytes(),
+            source.as_bytes(),
+            salt.as_bytes(),
+            Cache::FORMAT.as_bytes(),
+        ] {
+            hash.write(&(part.len() as u64).to_le_bytes());
+            hash.write(part);
+        }
+        format!("{:016x}-{size}-{mtime}", hash.0)
     }
 
     #[must_use]
@@ -217,13 +225,21 @@ impl Cache {
 
 /// FNV-1a, which is all this needs: the hash guards against a file changing
 /// under a cache entry, not against anyone choosing one to collide.
-fn fnv(bytes: &[u8]) -> u64 {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for byte in bytes {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+struct Fnv(u64);
+
+impl Default for Fnv {
+    fn default() -> Self {
+        Fnv(0xcbf2_9ce4_8422_2325)
     }
-    hash
+}
+
+impl Fnv {
+    fn write(&mut self, bytes: &[u8]) {
+        for byte in bytes {
+            self.0 ^= u64::from(*byte);
+            self.0 = self.0.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -256,5 +272,15 @@ mod tests {
         assert_eq!(Cache::key(path, "a", ""), Cache::key(path, "a", ""));
         // And by what the file is read under, not only by the file.
         assert_ne!(Cache::key(path, "a", ""), Cache::key(path, "a", "A=B"));
+    }
+
+    #[test]
+    fn the_key_tells_its_parts_apart() {
+        let path = Path::new("nowhere.pm");
+        // Equal parts do not cancel each other out.
+        assert_ne!(Cache::key(path, "a", "a"), Cache::key(path, "b", "b"));
+        // Which part a value is in is part of the key.
+        assert_ne!(Cache::key(path, "a", "b"), Cache::key(path, "b", "a"));
+        assert_ne!(Cache::key(path, "ab", ""), Cache::key(path, "a", "b"));
     }
 }
