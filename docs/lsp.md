@@ -136,9 +136,17 @@ mutated only by notifications (`didOpen`, `didChange`, config and watched
 the store, the `Program`, the config — and do all their work on it on a
 blocking thread. A request never blocks an edit; an edit never invalidates a
 request mid-flight, it just makes the result stale, and stale results are
-discarded by version check before publishing. `Analysis`, `Program`,
-`FileDecls`, and `Diagnostic` already hold no trees, only offsets and
-strings, so they cross threads as they are.
+discarded by version check before publishing. The check and the send are
+one step, so an older answer is never the last one a client is sent.
+`Analysis`, `Program`, `FileDecls`, and `Diagnostic` already hold no trees,
+only offsets and strings, so they cross threads as they are.
+
+A notification handler does only what has to happen in the order the client
+sent it — storing the text, numbering the edit — and hands the rest (the
+debounce, the check, a sweep over the open files) to a task of its own.
+Notifications and requests share the transport's few concurrent slots, and a
+notification that waited out its debounce in one would keep a hover waiting
+behind it.
 
 ## Documents and positions
 
@@ -240,7 +248,10 @@ outside the editor arrive via `workspace/didChangeWatchedFiles`
 reloads the configuration and rebuilds the graph, since the dialect and the
 stub roots are read *during* the declaration pass and neither can be patched
 into a graph already built. `.camelloignore` and `.gitignore` rebuild it too:
-they move which files the walk finds (`docs/formatting.md`, IGNORE). The registration is dynamic, asked for only where
+they move which files the walk finds (`docs/formatting.md`, IGNORE). A
+rebuild started while another walk is still running supersedes it: the
+older walk read the configuration the newer one replaced, and its graph is
+dropped however late it finishes. The registration is dynamic, asked for only where
 the client says it accepts one, and spawned rather than awaited: a request to
 the client inside a notification handler holds up every notification behind it
 — the `didOpen` that follows immediately included. Each file event re-runs the

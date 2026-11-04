@@ -20,12 +20,53 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::RwLock;
 
 use camello_sema::decl::FileDecls;
 use camello_sema::workspace::EXTENSIONS;
 use camello_sema::Analysis;
 
 use crate::settings::Settings;
+
+/// Which background walk is the newest one started.
+///
+/// Two walks can be in flight at once — the one at startup and a
+/// configuration reload's, or two reloads — and the one that finishes last is
+/// not necessarily the one that started last. A walk is numbered when it
+/// starts, and its graph goes in only if no walk has started since: the
+/// older one read the configuration the newer one replaced.
+#[derive(Debug, Default)]
+pub struct Builds(AtomicU64);
+
+impl Builds {
+    /// Number a walk that is about to start. Every walk numbered before it is
+    /// stale from now on.
+    pub fn begin(&self) -> u64 {
+        self.0.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    /// Whether no walk has started since this one.
+    #[must_use]
+    pub fn is_current(&self, ticket: u64) -> bool {
+        self.0.load(Ordering::SeqCst) == ticket
+    }
+
+    /// Swap a finished walk's graph in, unless a newer walk has started; say
+    /// whether it went in.
+    ///
+    /// The check is made holding the graph's lock, so a newer walk cannot
+    /// swap its graph in between the check and this swap: it waits, and goes
+    /// in after.
+    pub fn install(&self, ticket: u64, slot: &RwLock<Index>, built: Index) -> bool {
+        let mut held = crate::state::write(slot);
+        if !self.is_current(ticket) {
+            return false;
+        }
+        *held = built;
+        true
+    }
+}
 
 /// The program graph, and whether it is the whole of one yet.
 pub struct Index {

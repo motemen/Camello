@@ -25,9 +25,14 @@ let client: LanguageClient | undefined;
 // The command the running server was spawned from, so the workspace check runs
 // the same binary the editor is being answered by rather than resolving its own.
 let spawnedFrom = "camello";
+// One for the extension's lifetime, not one per server: a restart that made a
+// new one would leave another "Camello" in the Output panel's list each time.
+let outputChannel: vscode.OutputChannel | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  outputChannel = vscode.window.createOutputChannel("Camello");
   context.subscriptions.push(
+    outputChannel,
     vscode.commands.registerCommand("camello.restartServer", async () => {
       await stop();
       await start(context);
@@ -59,16 +64,12 @@ async function start(context: vscode.ExtensionContext): Promise<void> {
     debug: { command, args: ["lsp"] },
   };
 
+  // No `synchronize.fileEvents`: the server asks for the files it watches
+  // with a dynamic registration at startup, and vscode-languageclient sets up
+  // that watcher itself. A second one here would send every event twice.
   const options: LanguageClientOptions = {
     documentSelector: [{ scheme: "file", language: "perl" }],
-    synchronize: {
-      // The server watches these itself; this is what makes VS Code send the
-      // events for the dynamic registration it asks for at startup.
-      fileEvents: vscode.workspace.createFileSystemWatcher(
-        "**/{*.pl,*.pm,*.t,*.psgi,camello.toml}",
-      ),
-    },
-    outputChannel: vscode.window.createOutputChannel("Camello"),
+    outputChannel,
   };
 
   client = new LanguageClient("camello", "Camello", server, options);
@@ -82,7 +83,9 @@ async function start(context: vscode.ExtensionContext): Promise<void> {
     client = undefined;
     return;
   }
-  context.subscriptions.push(client);
+  // Not pushed to `context.subscriptions`: `stop` disposes of the client, on a
+  // restart and from `deactivate`, and a list that held every client ever
+  // started would keep each stopped one alive until the window closed.
 
   // The server names its own version in `initialize`; showing it is what makes
   // a mismatch between the extension and the binary visible rather than
@@ -97,7 +100,7 @@ async function stop(): Promise<void> {
   const running = client;
   client = undefined;
   if (running) {
-    await running.stop();
+    await running.dispose();
   }
 }
 
