@@ -1784,8 +1784,9 @@ impl<'a> Builder<'a> {
     ///
     /// This asks the input, and may: the list around it is flat — a bracket the
     /// writer opened mid-line is what put us here — so camello adds no break
-    /// between its elements, and the writer's own newline is kept (POLICY-4). The
-    /// answer is the same on the next pass (the formatter contract, I2).
+    /// between its elements, and the writer's own newline is kept
+    /// (docs/formatting.md POLICY-4). The answer is the same on the next pass (the
+    /// formatter contract, I2).
     fn an_element_below_follows(&self, node: &SyntaxNode) -> bool {
         node.parent()
             .filter(|parent| parent.node_kind() == NodeKind::LIST_EXPR)
