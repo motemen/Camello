@@ -63,7 +63,8 @@ while [ $# -gt 0 ]; do
     --no-perl) run_perl=0; shift ;;
     --check)     mode=check; shift ;;
     --help|-h)
-      sed -n '2,48p' "$0" | sed 's/^#\{0,1\} \{0,1\}//'
+      # The comment block under the shebang, however long it grows.
+      awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
       exit 0 ;;
     *) paths+=("$1"); shift ;;
   esac
@@ -73,7 +74,8 @@ collect() {
   if [ ${#paths[@]} -gt 0 ]; then
     for path in "${paths[@]}"; do
       if [ -d "$path" ]; then
-        find "$path" \( -name '*.pm' -o -name '*.pl' -o -name '*.t' \) 2>/dev/null
+        # The binary's own list (`EXTENSIONS` in camello-sema's workspace.rs).
+        find "$path" \( -name '*.pl' -o -name '*.pm' -o -name '*.t' -o -name '*.psgi' \) 2>/dev/null
       else
         printf '%s\n' "$path"
       fi

@@ -144,7 +144,6 @@ dependencies = [
  "camello-syntax",
  "clap",
  "encoding_rs",
- "insta",
  "miette",
  "mimalloc",
  "rowan",
@@ -153,8 +152,6 @@ dependencies = [
  "supports-color",
  "tempfile",
  "terminal_size",
- "thiserror",
- "toml",
  "unicode-width 0.2.1",
 ]
 

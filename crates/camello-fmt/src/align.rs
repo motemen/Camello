@@ -98,6 +98,7 @@ fn anchor_of(line: &Line, class: AnchorClass) -> Option<Anchor> {
 /// (docs/formatting.md ALIGNMENT-2). For a class whose anchor has no width — `=>`, a
 /// trailing comment — the two are the same column.
 fn column_of(line: &Line, class: AnchorClass) -> Option<usize> {
+    crate::work::tick(crate::work::Work::AlignColumn);
     anchor_of(line, class).map(|anchor| anchor.column + anchor.tail)
 }
 
