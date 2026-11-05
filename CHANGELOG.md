@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.5 — 2026-11-05
 
 `camello format` output changes: a file formatted by 0.2.4 may not pass
 `--check` where it holds a `qw(...)` (Changed), a bracket closed on a line of
