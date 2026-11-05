@@ -1693,7 +1693,6 @@ impl Pass<'_> {
 
         // A bareword invocant is a class; a value's class comes from its type.
         let bareword = bareword_class(&invocant);
-        let through_a_value = bareword.is_none();
         // Whether the class is one a *value* was said to be an instance of,
         // rather than one the call names. `URI->host` asks about the package
         // `URI`; `$u->host` asks about whatever `$u` holds, and the annotation
@@ -1742,13 +1741,10 @@ impl Pass<'_> {
             MethodLookup::Sub(symbol) => {
                 let params = symbol.params.clone();
                 let returns = symbol.returns.clone();
-                // The count as well as the types — but only for a method
-                // reached through the *type* of its invocant, which is the one
-                // the arity pass never saw: that pass resolves a bareword
-                // invocant and nothing else, and would otherwise say it twice.
-                if through_a_value {
-                    self.check_method_arity(&params, &call, &arguments, &symbol.name);
-                }
+                // The count as well as the types: the arity pass counts
+                // function calls and leaves every method to this one, which
+                // is where method resolution is.
+                self.check_method_arity(&params, &call, &arguments, &symbol.name);
                 self.check_arguments(&params, &call.pairs(), &typed, &method, call.method_range());
                 // `Foo->new(...)` is an `InstanceOf['Foo']` (`docs/typecheck.md`,
                 // "Inference"). Only where the run actually read a `sub new`,
@@ -1787,9 +1783,7 @@ impl Pass<'_> {
             MethodLookup::Attribute(attribute) => {
                 let params = attribute.params(&method);
                 let returns = self.program.slot_type(&class, attribute, &method);
-                if through_a_value {
-                    self.check_method_arity(&params, &call, &arguments, &method);
-                }
+                self.check_method_arity(&params, &call, &arguments, &method);
                 self.check_arguments(&params, &call.pairs(), &typed, &method, call.method_range());
                 // An accessor hands back one value, whatever the context.
                 self.one_value(node, &returns);

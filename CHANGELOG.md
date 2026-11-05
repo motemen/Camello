@@ -42,6 +42,9 @@ ending in `{` (Fixed).
   cache is rebuilt once under a key whose parts cannot cancel (#401).
 - A type annotation nested past 64 levels is reported, not a stack overflow
   (#401).
+- `arity` counts a method call on a bareword class against a method the class
+  inherits, as it already did for one reached through a value: `Child->new(1, 2)`
+  where `new` is `Base`'s (#407).
 - A closing bracket written on a line of its own stays there when the bracket
   holds a call without parentheses (INDENT-2).
 - A blank line after a comment that ends in `{` is kept (BLANK_LINE-2).

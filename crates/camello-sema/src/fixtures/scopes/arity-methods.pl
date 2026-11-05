@@ -31,8 +31,9 @@ Address->build;
 Address->build('x');
 Address->build('x', 'y');       #~ error arity: takes at most 2 arguments including its invocant; 3 passed
 
-# A method reached through the *type* of its invocant is counted by the flow
-# pass rather than by this one, so that it is not said twice.
+# Every method call is counted where it is resolved, so a method reached
+# through the *type* of its invocant is counted the same way as one reached
+# through a bareword.
 my $counter = Counter->new;
 $counter->add(1);
 $counter->add(1, 2, 3);         #~ error arity: takes at most 2 arguments including its invocant; 4 passed
@@ -67,3 +68,13 @@ Legacy::PI(1);                  #~ error arity: takes at most 0 arguments; 1 pas
 # cannot have been a signature — perl would have made the body unreachable —
 # so it is a prototype for certain and nothing is said at all. That one is in
 # `types/flow.pl`, where the method resolution it belongs to is.
+
+# A method a class inherits is counted against the parent's parameters: a
+# bareword invocant is resolved through `@ISA` like any other.
+package Tally;
+use parent -norequire, 'Counter';
+
+package main;
+
+Tally->new(1);
+Tally->new(1, 2);               #~ error arity: takes at most 2 arguments including its invocant; 3 passed
