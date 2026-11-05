@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- The VS Code extension bundles `brace-expansion` 2.1.7, past three
+  denial-of-service advisories.
+
 ## 0.2.5 — 2026-11-05
 
 `camello format` output changes: a file formatted by 0.2.4 may not pass
