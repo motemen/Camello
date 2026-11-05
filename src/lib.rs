@@ -42,8 +42,7 @@ pub enum Exit {
     /// formatted under `--check`, one that does not parse, a diagnostic at or
     /// above `--error-on`, a violated invariant.
     Failure,
-    /// 2: a source that does not parse, under `format --stop-on-first-error`
-    /// and `dev dump`.
+    /// 2: a source that does not parse, under `dev dump`.
     ParseError,
 }
 
