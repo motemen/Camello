@@ -219,3 +219,66 @@ while (!$w) {
     print $w->id;               #~ warning maybe-deref: may be undefined here
 }
 print $w->id;                   #~ warning maybe-deref: may be undefined here
+
+# ----- a branch that leaves takes nothing below the `if` with it -----
+
+# Below an `if` with no `else` is the way past its condition, where the
+# condition did not hold — and the branch that returned is not part of it.
+my $ret = find();
+if (!$ret) { return; }
+print $ret->id;
+
+my $ret_unless = find();
+unless (defined $ret_unless) {
+    warn "missing";
+    return;
+}
+print $ret_unless->id;
+
+my $ret_wrong = find();
+if ($ret_wrong) { return; }
+print $ret_wrong->id;           #~ warning maybe-deref: may be undefined here
+
+my $ret_elsif = find();
+if (!$ret_elsif) {
+    return;
+} elsif ($ret_elsif->id) {
+    print "positive";
+}
+print $ret_elsif->id;
+
+# A branch that may come back still joins.
+my $ret_maybe = find();
+if (!$ret_maybe) {
+    return if rand;
+}
+print $ret_maybe->id;           #~ warning maybe-deref: may be undefined here
+
+# A default assigned where the value was missing leaves it there either way.
+my $filled_in = find();
+if (!$filled_in) {
+    $filled_in = Row->new(id => 1);
+}
+print $filled_in->id;
+
+# ----- a sub that ends in `die` leaves as `die` does -----
+
+sub fail { die "failed" }
+sub fail_maybe { die "failed" if rand }
+sub fail_return { return }
+
+my $failed = find();
+fail() unless $failed;
+print $failed->id;
+
+my $failed_or = find();
+$failed_or or fail();
+print $failed_or->id;
+
+my $failed_maybe = find();
+fail_maybe() unless $failed_maybe;
+print $failed_maybe->id;        #~ warning maybe-deref: may be undefined here
+
+my $failed_return = find();
+fail_return() unless $failed_return;
+print $failed_return->id;       #~ warning maybe-deref: may be undefined here

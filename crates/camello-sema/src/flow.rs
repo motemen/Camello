@@ -697,7 +697,7 @@ impl Pass<'_> {
                 value = Some((child, ty));
             }
         }
-        if statement_body(node).is_some_and(|body| leaves_below(&body)) {
+        if statement_body(node).is_some_and(|body| self.leaves_below(&body)) {
             self.env = skips;
         } else {
             self.env.join(&skips);
@@ -764,14 +764,17 @@ impl Pass<'_> {
             }
         }
 
-        // Joining what each branch left with what came in is the "branches
-        // joined" of the design; a branch that did not run leaves `before`.
-        if let Some(mut ended) = after {
-            ended.join(&before);
-            self.env = ended;
-        } else {
-            self.env = before;
+        // Below the chain is what each branch that came back left, joined —
+        // and, with no `else`, the way past every condition, where each said
+        // what it says when it did not hold: `if (!$x) { return }` leaves `$x`
+        // defined.
+        if !has_else {
+            match &mut after {
+                Some(ended) => ended.join(&otherwise),
+                None => after = Some(otherwise),
+            }
         }
+        self.env = after.unwrap_or(before);
         if self.inference.is_some() {
             self.set_tail(join_tails(&tails, has_else));
         }
@@ -790,6 +793,10 @@ impl Pass<'_> {
         self.block(block);
         tails.extend(self.tail());
         let ended = std::mem::replace(&mut self.env, otherwise.clone());
+        // A branch that leaves takes nothing below the chain with it.
+        if self.block_leaves(block) {
+            return;
+        }
         match after {
             Some(env) => env.join(&ended),
             None => *after = Some(ended),
@@ -859,7 +866,7 @@ impl Pass<'_> {
     /// expression. A `return` or an `unless` inside an anonymous sub or an
     /// `eval` it holds leaves that sub or that `eval`, not this statement.
     fn apply_guard(&mut self, statement: &SyntaxNode) {
-        let Some((condition, held)) = guard_condition(statement) else {
+        let Some((condition, held)) = self.guard_condition(statement) else {
             return;
         };
         let facts = narrowing(&self.env, &condition);
@@ -868,6 +875,74 @@ impl Pass<'_> {
         } else {
             facts.apply_false(&mut self.env);
         }
+    }
+
+    /// What a guard statement tested, and whether it held below the statement.
+    ///
+    /// `COND or return` means "below here, COND held". Reading the whole
+    /// statement instead — as a flat scan of every variable in it did — narrows
+    /// on the strength of names the guard never tested. The same guard written
+    /// with a modifier, `return unless COND`, is read with every other modifier
+    /// (`Pass::statement_parts`).
+    fn guard_condition(&self, statement: &SyntaxNode) -> Option<(SyntaxNode, bool)> {
+        if statement
+            .children()
+            .any(|child| child.node_kind() == NodeKind::STMT_MODIFIER)
+        {
+            return None;
+        }
+        // The left side of `COND or die` is the part that has to have held for
+        // the statement below it to be reached.
+        let view = ast::BinaryExpr::cast(statement_body(statement)?)?;
+        if !matches!(
+            view.operator(),
+            Some(TokenKind::OR_KW | TokenKind::LOGICAL_OR)
+        ) {
+            return None;
+        }
+        if !self.leaves_below(&view.right()?) {
+            return None;
+        }
+        Some((view.left()?, true))
+    }
+
+    /// Whether control does not come back from an expression to the statement
+    /// after it. `next` and `last` leave what is below a guard as surely as
+    /// `return` does, though not the sub; so does a call to a sub that never
+    /// returns (`SubDecl::never_returns`).
+    fn leaves_below(&self, node: &SyntaxNode) -> bool {
+        if leaves(node) {
+            return true;
+        }
+        if let Some(call) = ast::Call::cast(node.clone()) {
+            return match call.callee_name().as_deref() {
+                Some("next" | "last") => true,
+                Some(name) => self
+                    .program
+                    .resolve_call(self.file, u32::from(node.text_range().start()), name)
+                    .is_some_and(|symbol| symbol.never_returns),
+                None => false,
+            };
+        }
+        // `COND or do { warn ...; return }`: a `do` block leaves with its
+        // last statement.
+        node.node_kind() == NodeKind::DO_BLOCK_EXPR
+            && node
+                .children()
+                .find(|child| child.node_kind() == NodeKind::BLOCK)
+                .is_some_and(|block| self.block_leaves(&block))
+    }
+
+    /// Whether a block's last statement leaves, unconditionally. A last
+    /// statement that carries a modifier may fall through, and so does not
+    /// count.
+    fn block_leaves(&self, block: &SyntaxNode) -> bool {
+        block
+            .children()
+            .last()
+            .filter(|last| last.node_kind() == NodeKind::EXPR_STMT)
+            .and_then(|last| sole_expression(&last))
+            .is_some_and(|expression| self.leaves_below(&expression))
     }
 
     // ----- expressions -----
@@ -3551,35 +3626,6 @@ fn block_condition(block: &SyntaxNode) -> Option<SyntaxNode> {
         .flatten()
 }
 
-/// What a guard statement tested, and whether it held below the statement.
-///
-/// `COND or return` means "below here, COND held". Reading the whole
-/// statement instead — as a flat scan of every variable in it did — narrows
-/// on the strength of names the guard never tested. The same guard written
-/// with a modifier, `return unless COND`, is read with every other modifier
-/// (`Pass::statement_parts`).
-fn guard_condition(statement: &SyntaxNode) -> Option<(SyntaxNode, bool)> {
-    if statement
-        .children()
-        .any(|child| child.node_kind() == NodeKind::STMT_MODIFIER)
-    {
-        return None;
-    }
-    // The left side of `COND or die` is the part that has to have held for
-    // the statement below it to be reached.
-    let view = ast::BinaryExpr::cast(statement_body(statement)?)?;
-    if !matches!(
-        view.operator(),
-        Some(TokenKind::OR_KW | TokenKind::LOGICAL_OR)
-    ) {
-        return None;
-    }
-    if !leaves_below(&view.right()?) {
-        return None;
-    }
-    Some((view.left()?, true))
-}
-
 /// Whether a statement's modifier runs it where its condition held (`if`,
 /// `while`) or where it did not (`unless`, `until`), or `None` where the
 /// condition says nothing about the statement.
@@ -3611,31 +3657,6 @@ fn statement_body(statement: &SyntaxNode) -> Option<SyntaxNode> {
         NodeKind::LIST_EXPR => sole_child(&body),
         _ => Some(body),
     }
-}
-
-/// Whether control does not come back from an expression to the statement
-/// after it. `next` and `last` leave what is below a guard as surely as
-/// `return` does, though not the sub.
-fn leaves_below(node: &SyntaxNode) -> bool {
-    leaves(node)
-        || ast::Call::cast(node.clone())
-            .is_some_and(|call| matches!(call.callee_name().as_deref(), Some("next" | "last")))
-        || do_block_leaves(node)
-}
-
-/// `COND or do { warn ...; return }`: a `do` block whose last statement
-/// leaves, unconditionally, leaves with it. A last statement that carries a
-/// modifier may fall through, and so does not count.
-fn do_block_leaves(node: &SyntaxNode) -> bool {
-    if node.node_kind() != NodeKind::DO_BLOCK_EXPR {
-        return false;
-    }
-    node.children()
-        .find(|child| child.node_kind() == NodeKind::BLOCK)
-        .and_then(|block| block.children().last())
-        .filter(|last| last.node_kind() == NodeKind::EXPR_STMT)
-        .and_then(|last| sole_expression(&last))
-        .is_some_and(|expression| leaves_below(&expression))
 }
 
 /// `$x` without its `undef`, if `$x` is a variable at all.
@@ -3729,6 +3750,23 @@ fn join_tails(tails: &[Tail], has_else: bool) -> Tail {
         shape: join_shapes(sites.list),
         invocant: sites.invocant,
     }
+}
+
+/// Whether a sub's body ends in a call control does not come back from to
+/// the sub's caller: `die`, `croak`, `exit`, `->throw`, but not `return` or a
+/// `goto` that hands the call on. Only the last statement is read, and only
+/// without a modifier, the same reading `Pass::block_leaves` gives a branch.
+pub(crate) fn never_comes_back(body: &SyntaxNode) -> bool {
+    body.children()
+        .last()
+        .filter(|last| last.node_kind() == NodeKind::EXPR_STMT)
+        .and_then(|last| sole_expression(&last))
+        .is_some_and(|expression| {
+            leaves(&expression)
+                && !ast::Call::cast(expression).is_some_and(|call| {
+                    matches!(call.callee_name().as_deref(), Some("return" | "goto"))
+                })
+        })
 }
 
 /// Whether a call is one control does not come back from.

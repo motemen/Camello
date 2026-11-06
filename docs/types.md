@@ -1060,6 +1060,13 @@ Child->build->extra;            # extra は Child のもの。通る。
   ガードになりません。ただし `COND or do { warn ...; return }` のように、`do` ブロックの
   最後の文が修飾子なしの LEAVE であれば、そのブロックも LEAVE です。読むのは条件の
   部分だけで、文の残りではありません。
+  本体の最後の文が修飾子なしの `die` / `croak` / `confess` / `throw` / `exit`
+  である sub（`sub error { die ... }`）は戻らないので、その呼び出しも LEAVE です。
+  `return` で終わる sub は呼び出し元へ戻るので LEAVE ではありません。
+- (NARROW-5a) **抜けるブロック**: `if` / `unless` / `elsif` / `else` のブロックの
+  最後の文が修飾子なしの LEAVE なら、そのブロックは `if` の下へ何も持ち込みません。
+  `else` の無い `if` の下は、ブロックが走った側と、どの条件も成り立たなかった側の
+  合流なので、`if (!$x) { return }` の下では `$x` が成り立っています。
 
 ```perl
 my $row = find_row();       # Maybe[InstanceOf['Row']]

@@ -207,6 +207,11 @@ pub struct SubDecl {
     /// this class (`docs/types.md`, INFER-2g).
     #[serde(default)]
     pub constructs_own_class: bool,
+    /// Whether the body ends in a `die` or another call control does not
+    /// come back from, so a call to it leaves as one does (`docs/types.md`,
+    /// NARROW-5).
+    #[serde(default)]
+    pub never_returns: bool,
     /// Where the name is, for "declared at".
     #[serde(with = "crate::serde_range")]
     pub range: TextRange,
@@ -611,6 +616,9 @@ impl Pass {
             self.makes_methods_within(body.syntax());
         }
         let constructs_own_class = name == "new" && constructs_its_class(&definition);
+        let never_returns = definition
+            .body()
+            .is_some_and(|body| crate::flow::never_comes_back(body.syntax()));
         self.decls.subs.push(SubDecl {
             package: package.to_string(),
             name,
@@ -618,6 +626,7 @@ impl Pass {
             returns: annotated.unwrap_or_default(),
             source,
             constructs_own_class,
+            never_returns,
             range: definition
                 .name()
                 .map_or_else(|| node.text_range(), |view| view.range()),
@@ -696,6 +705,7 @@ impl Pass {
                             returns: Returns::default(),
                             source: SymbolSource::Unknown,
                             constructs_own_class: false,
+                            never_returns: false,
                             range,
                             file: 0,
                         });
