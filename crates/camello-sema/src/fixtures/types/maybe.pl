@@ -223,6 +223,27 @@ while (!$w) {
 }
 print $w->id;                   #~ warning maybe-deref: may be undefined here
 
+# A block inside an expression holds statements, and they narrow as they do
+# anywhere else.
+my $in_do = find();
+do { if (defined $in_do) { print $in_do->id } };
+my $from_do = do { $in_do->id if $in_do };
+print $in_do->id;               #~ warning maybe-deref: may be undefined here
+
+my $in_eval = find();
+eval { if ($in_eval) { print $in_eval->id } };
+print $from_do;
+
+# A guard in a `do` block leaves the sub, so it holds below the block; one in
+# an `eval` leaves only the `eval`.
+my $do_guarded = find();
+do { return unless $do_guarded };
+print $do_guarded->id;
+
+my $eval_guarded = find();
+eval { return unless $eval_guarded; 1 };
+print $eval_guarded->id;        #~ warning maybe-deref: may be undefined here
+
 # ----- a branch that leaves takes nothing below the `if` with it -----
 
 # Below an `if` with no `else` is the way past its condition, where the
