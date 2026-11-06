@@ -1142,6 +1142,29 @@ impl Pass<'_> {
                 Type::union(branches)
             }
             NodeKind::UNDEF_EXPR => Type::Undef,
+            // A block inside an expression holds statements, and they are
+            // walked as statements so that an `if` or a guard in it narrows
+            // as it would anywhere else (NARROW-8d). A `do` block runs to its
+            // end or leaves the sub, so what it leaves holds below it.
+            NodeKind::DO_BLOCK_EXPR => {
+                for child in node.children() {
+                    if child.node_kind() == NodeKind::BLOCK {
+                        self.block(&child);
+                    } else {
+                        self.expression(&child);
+                    }
+                }
+                Type::Unknown
+            }
+            // Any other — `eval { ... }`, `try { ... }` — may stop partway
+            // and come back, so below it is the join of what it left and
+            // what there was before it.
+            NodeKind::BLOCK => {
+                let before = self.env.clone();
+                self.block(node);
+                self.env.join(&before);
+                Type::Unknown
+            }
             _ => {
                 for child in node.children() {
                     self.expression(&child);

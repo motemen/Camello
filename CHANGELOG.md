@@ -9,6 +9,8 @@
 - `if (!$x) { return }` narrows `$x` below it, and a call to a sub that ends
   in `die`, function or method, is a guard like `die` itself (NARROW-5,
   NARROW-5a).
+- An `if` or a guard inside `do { ... }` or `eval { ... }` narrows as it does
+  outside one (NARROW-8d).
 
 ## 0.2.5 — 2026-11-05
 
