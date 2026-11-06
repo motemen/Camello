@@ -2382,18 +2382,15 @@ impl Pass<'_> {
                     self.check_value(&value, &attribute.ty, pair.node(), &format!("`{key}`"));
                 }
                 None => {
-                    let severity = if open {
-                        Severity::Warning
-                    } else {
-                        Code::UnknownKey.default_severity()
-                    };
+                    // A constructor that may take more than it declares is
+                    // the inferred side.
                     self.diagnostics.push(
                         Diagnostic::new(
                             Code::UnknownKey,
                             pair.range(),
                             format!("`{class}` declares no attribute `{key}`"),
                         )
-                        .at(severity),
+                        .inferred_unless(!open),
                     );
                 }
             }
@@ -2551,11 +2548,6 @@ impl Pass<'_> {
         }
         // A literal is right there, so the two sides are both written down and
         // the contradiction is an error. An inferred value is a warning.
-        let severity = if is_literal(node) {
-            Severity::Error
-        } else {
-            Severity::Warning
-        };
         self.diagnostics.push(
             Diagnostic::new(
                 Code::TypeMismatch,
@@ -2566,7 +2558,7 @@ impl Pass<'_> {
                 ),
             )
             .about(source_of(node))
-            .at(severity),
+            .inferred_unless(is_literal(node)),
         );
     }
 

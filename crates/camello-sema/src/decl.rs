@@ -402,7 +402,7 @@ pub fn declare_in(root: &SyntaxNode, dialect: &Dialect) -> FileDecls {
         dynamic: false,
         installs_by_computed_name: false,
         best_practice: HashSet::new(),
-        decided_constructor: HashSet::new(),
+        said_new: Vec::new(),
     };
     pass.walk(root, "main");
     pass.decls.packages = package_spans(root);
@@ -422,14 +422,13 @@ pub fn declare_in(root: &SyntaxNode, dialect: &Dialect) -> FileDecls {
             facts.installs_by_computed_name = true;
         }
     }
-    // A package with a framework generates a constructor unless it said not to
-    // — a package that decided for itself is left alone, which is how
-    // `Class-Accessor-Typed-0.03/t/02_does.t` gets to hold both a Mouse role
-    // and a `use Class::Accessor::Typed (new => 0)`.
     for facts in &mut pass.decls.facts {
-        if facts.framework == Framework::Moose && !pass.decided_constructor.contains(&facts.name) {
-            facts.constructor = true;
-        }
+        let said = pass
+            .said_new
+            .iter()
+            .filter(|(package, _)| *package == facts.name)
+            .map(|(_, said)| *said);
+        (facts.constructor, facts.open_constructor) = constructor_of(facts.framework, said);
     }
     pass.decls.diagnostics.append(&mut pass.sink.diagnostics);
     pass.decls.annotations = std::mem::take(&mut pass.sink.annotations);
@@ -493,8 +492,51 @@ struct Pass {
     /// Packages that have called `follow_best_practice`. Positional, because
     /// the renaming only applies to the `mk_*` calls below it.
     best_practice: HashSet<String>,
-    /// Packages whose accessor declaration said whether there is a `new`.
-    decided_constructor: HashSet<String>,
+    /// What each package's declarations said about a generated `new`, in
+    /// the order they said it; [`constructor_of`] reads it after the walk.
+    said_new: Vec<(String, SaidNew)>,
+}
+
+/// What one declaration said about a generated `new`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SaidNew {
+    /// `use Class::Accessor::Typed (new => ...)`: there is one, checked
+    /// against the attributes, or there is none.
+    Checked(bool),
+    /// One that blesses whatever hash it was handed: `use Class::Tiny`,
+    /// `Class::Accessor::Lite`'s `new => 1`, the `mk_new` family.
+    Open,
+}
+
+/// Whether a package has a generated `new`, and whether that `new` is open —
+/// takes keys it declares no accessor for — from its framework and what its
+/// declarations said, in order.
+///
+/// `Class::Accessor::Typed` and `Class::Tiny` generate one by default, the
+/// latter open. A Moose-family class generates one unless a declaration
+/// decided for itself, which is how `Class-Accessor-Typed-0.03/t/02_does.t`
+/// gets to hold both a Mouse role and a `use Class::Accessor::Typed (new =>
+/// 0)`.
+fn constructor_of(framework: Framework, said: impl Iterator<Item = SaidNew>) -> (bool, bool) {
+    let mut constructor = matches!(framework, Framework::AccessorTyped | Framework::ClassTiny);
+    let mut open = framework == Framework::ClassTiny;
+    let mut decided = false;
+    for said in said {
+        match said {
+            SaidNew::Checked(generated) => {
+                constructor = generated;
+                decided = true;
+            }
+            SaidNew::Open => {
+                constructor = true;
+                open = true;
+            }
+        }
+    }
+    if framework == Framework::Moose && !decided {
+        constructor = true;
+    }
+    (constructor, open)
 }
 
 impl Pass {
@@ -526,12 +568,9 @@ impl Pass {
         let framework = self.frameworks(package).framework();
         self.decls.facts.push(PackageFacts {
             name: package.to_string(),
+            // Whether it has a `new` is decided after the walk, by
+            // `constructor_of`.
             framework,
-            constructor: matches!(framework, Framework::AccessorTyped | Framework::ClassTiny),
-            // `Class::Tiny`'s constructor blesses the hash it was handed, and
-            // a package reaches it by `use Class::Tiny` or by inheriting
-            // `Class::Tiny::Object` — either way with no argument list to read.
-            open_constructor: framework == Framework::ClassTiny,
             ..PackageFacts::default()
         });
         self.decls.facts.last_mut().expect("just pushed")
@@ -674,10 +713,10 @@ impl Pass {
             "Class::Accessor::Typed" => {
                 if let Some(arguments) = &arguments {
                     let read = annotate::read_accessor_typed(arguments, &mut self.sink);
-                    self.decided_constructor.insert(package.to_string());
+                    self.said_new
+                        .push((package.to_string(), SaidNew::Checked(read.constructor)));
                     let facts = self.facts(package);
                     facts.attributes.extend(read.attributes);
-                    facts.constructor = read.constructor;
                     facts.dynamic |= read.unreadable;
                 }
                 return;
@@ -714,8 +753,7 @@ impl Pass {
                 // Not opt-in: `use Class::Tiny` is what puts
                 // `Class::Tiny::Object` in `@ISA`, and its `new` blesses the
                 // hash it was handed (`docs/types.md`, ANNOT-13).
-                facts.constructor = true;
-                facts.open_constructor = true;
+                self.said_new.push((package.to_string(), SaidNew::Open));
                 // The names in the list are attributes of this package, not
                 // subs it imported.
                 return;
@@ -730,8 +768,7 @@ impl Pass {
                     // answer to any name (`docs/types.md`, ANNOT-14).
                     facts.dynamic |= read.unreadable;
                     if read.constructor {
-                        facts.constructor = true;
-                        facts.open_constructor = true;
+                        self.said_new.push((package.to_string(), SaidNew::Open));
                     }
                 }
                 // `rw`, `ro` and `new` are the declaration's own words, not
@@ -897,9 +934,9 @@ impl Pass {
             return;
         }
         if matches!(maker, AccessorMaker::New | AccessorMaker::NewAndAccessors) {
-            let facts = self.facts(&target);
-            facts.constructor = true;
-            facts.open_constructor = true;
+            // Mentioned, so that it has facts to carry the answer.
+            self.facts(&target);
+            self.said_new.push((target.clone(), SaidNew::Open));
         }
         let (access, lazy) = match maker {
             AccessorMaker::Accessors { access, lazy } => (access, lazy),
