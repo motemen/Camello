@@ -1240,7 +1240,10 @@ impl<'a> Builder<'a> {
         if self.element_of_a_broken_list(node) {
             return true;
         }
-        list_separator_before(node).is_some() && !begins_its_line(node)
+        list_separator_before(node).is_some()
+            && !node
+                .first_token()
+                .is_none_or(|first| self.begins_its_line(&first))
     }
 
     /// A closing delimiter, split into what was written inside it and the
@@ -1614,7 +1617,7 @@ impl<'a> Builder<'a> {
             // an element, it closes where its siblings are written. With
             // nothing written below it there is nothing for it to disagree
             // with, and it stays where INDENT-4 puts it.
-            let root = if an_element_below_follows(node) {
+            let root = if self.an_element_below_follows(node) {
                 Doc::rooted_element
             } else {
                 Doc::rooted
@@ -1773,25 +1776,60 @@ impl<'a> Builder<'a> {
         Doc::concat(parts)
     }
 
+    /// Does an element of the same list begin a line of its own after this one?
+    ///
+    /// Only such an element is written at the continuation level, and so only it
+    /// can disagree with a closing delimiter that is not. `f({\n k => 1,\n}, 1, 0)`
+    /// has siblings, and they are on the `}`'s own line with nothing to disagree
+    /// about; `f({\n k => 1,\n},\n $x)` has one a line below, four columns to the
+    /// right of the `}` that closes the argument beside it.
+    ///
+    /// This asks the input, and may: the list around it is flat — a bracket the
+    /// writer opened mid-line is what put us here — so camello adds no break
+    /// between its elements, and the writer's own newline is kept
+    /// (docs/formatting.md POLICY-4). The answer is the same on the next pass (the
+    /// formatter contract, I2).
+    fn an_element_below_follows(&self, node: &SyntaxNode) -> bool {
+        node.parent()
+            .filter(|parent| parent.node_kind() == NodeKind::LIST_EXPR)
+            .into_iter()
+            .flat_map(|list| list.children())
+            .any(|sibling| {
+                sibling.text_range().start() >= node.text_range().end()
+                    && sibling
+                        .first_token()
+                        .is_none_or(|first| self.begins_its_line(&first))
+            })
+    }
+
     /// Does the rest of this token's line hold no more code?
     ///
     /// A comment counts as reaching the newline, because it runs to one: there
     /// is no way to put anything after `# c` on its line and have it still be
     /// code. Reading a COMMENT as "not a newline" is what let the formatter
     /// believe a group with a comment in it could stay flat.
+    ///
+    /// Read off the token's trailing trivia, which runs to the end of its line
+    /// and no further (the trivia model).
     fn newline_follows(&self, token: &SyntaxToken) -> bool {
-        let mut cursor = token.next_sibling_or_token();
-        while let Some(element) = cursor {
-            match element.as_token() {
-                Some(next) if next.token_kind() == TokenKind::NEWLINE => return true,
-                Some(next) if next.token_kind() == TokenKind::COMMENT => return true,
-                Some(next) if next.token_kind() == TokenKind::WHITESPACE => {
-                    cursor = next.next_sibling_or_token();
-                }
-                _ => return false,
-            }
-        }
-        false
+        self.trivia
+            .of(token.text_range())
+            .trailing
+            .iter()
+            .any(|item| matches!(item.kind, TokenKind::NEWLINE | TokenKind::COMMENT))
+    }
+
+    /// Is this token the first code on its line?
+    ///
+    /// The gap the trivia model gives it and the code before it, asked for a
+    /// newline; the first code in the file begins its line.
+    fn begins_its_line(&self, token: &SyntaxToken) -> bool {
+        prev_code_token(token).is_none_or(|previous| {
+            self.has_user_newline_between(
+                &SyntaxElement::Token(previous),
+                &SyntaxElement::Token(token.clone()),
+            )
+        })
     }
 
     /// Does this closing bracket deserve the line of its own it was written on?
@@ -1806,8 +1844,8 @@ impl<'a> Builder<'a> {
     /// Walks tokens rather than siblings: a closing bracket's left neighbour is
     /// inside the node before it.
     fn closes_on_its_own_line(&self, closing: &SyntaxToken, body: &Doc) -> bool {
-        let written_on_its_own_line = newline_or_code_before(closing)
-            .is_some_and(|token| token.token_kind() == TokenKind::NEWLINE);
+        let written_on_its_own_line =
+            prev_code_token(closing).is_some() && self.begins_its_line(closing);
         // …and only where the contents are going to occupy more than one line.
         // Asked of the document rather than of the source, because that is what
         // decides it: `Mail::Mailer` writes its list with the newline in front
@@ -1963,13 +2001,6 @@ fn follows_heredoc_body(token: &SyntaxToken) -> bool {
 /// The nearest token before this one that is not trivia, wherever it is.
 fn prev_code_token(token: &SyntaxToken) -> Option<SyntaxToken> {
     tokens_before(token).find(|previous| !previous.token_kind().is_trivia())
-}
-
-/// The nearest token before this one that is code or ends a line.
-fn newline_or_code_before(token: &SyntaxToken) -> Option<SyntaxToken> {
-    tokens_before(token).find(|previous| {
-        previous.token_kind() == TokenKind::NEWLINE || !previous.token_kind().is_trivia()
-    })
 }
 
 /// The tokens before this one, nearest first, across node boundaries.
@@ -2188,37 +2219,6 @@ fn list_separator_before(node: &SyntaxNode) -> Option<TokenKind> {
 fn placed_beside_the_name(node: &SyntaxNode) -> bool {
     node.children()
         .any(|child| matches!(child.node_kind(), NodeKind::FILEHANDLE | NodeKind::BLOCK))
-}
-
-/// Is this node the first thing written on its line?
-fn begins_its_line(node: &SyntaxNode) -> bool {
-    let Some(first) = node.first_token() else {
-        return true;
-    };
-    newline_or_code_before(&first).is_none_or(|token| token.token_kind() == TokenKind::NEWLINE)
-}
-
-/// Does an element of the same list begin a line of its own after this one?
-///
-/// Only such an element is written at the continuation level, and so only it
-/// can disagree with a closing delimiter that is not. `f({\n k => 1,\n}, 1, 0)`
-/// has siblings, and they are on the `}`'s own line with nothing to disagree
-/// about; `f({\n k => 1,\n},\n $x)` has one a line below, four columns to the
-/// right of the `}` that closes the argument beside it.
-///
-/// This asks the input, and may: the list around it is flat — a bracket the
-/// writer opened mid-line is what put us here — so camello adds no break
-/// between its elements, and the writer's own newline is kept
-/// (docs/formatting.md POLICY-4). The answer is the same on the next pass (the
-/// formatter contract, I2).
-fn an_element_below_follows(node: &SyntaxNode) -> bool {
-    node.parent()
-        .filter(|parent| parent.node_kind() == NodeKind::LIST_EXPR)
-        .into_iter()
-        .flat_map(|list| list.children())
-        .any(|sibling| {
-            sibling.text_range().start() >= node.text_range().end() && begins_its_line(&sibling)
-        })
 }
 
 /// Is the next thing written after this node a `,`?

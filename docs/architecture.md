@@ -191,7 +191,13 @@ following token. Leading file trivia and trailing file trivia are represented
 explicitly. Zero-width tokens do not own trivia.
 
 The formatter reads comments and blank-line information from `TriviaMap`; it
-does not rediscover them by rescanning the CST or source.
+does not rediscover them by rescanning the CST or source. A question about a
+gap — whether a newline or a comment was written between two tokens, or after
+one on its line — is asked of the trivia on either side of it. The one other
+reading is of a node's whole extent, whether it spans a line or holds a
+comment: a newline can be inside a token there (a heredoc body, POD, a
+multi-line literal), so the builder indexes newline and comment positions once
+per file and answers those by range.
 
 ## Formatter
 
