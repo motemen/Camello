@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `$x->foo if $x`, `$x ? $x->foo : undef` and `while ($x) { $x->foo }` are
+  narrowed like an `if`, and no longer report `maybe-deref` (NARROW-8).
+
 ## 0.2.5 — 2026-11-05
 
 `camello format` output changes: a file formatted by 0.2.4 may not pass

@@ -558,7 +558,8 @@ local, forward, and gives up early.
   to change the type entirely (Perl code does this and it is not a diagnostic).
 - **Narrowing.** `if (defined $x)`, `if ($x)`, `if (ref $x eq 'ARRAY')`,
   `if ($x->isa('Foo'))`, `if (blessed $x)`, `if (exists $h{k})`, `// default`
-  narrow within the guarded branch. `Maybe[T]` is what most of this is for:
+  narrow within the guarded branch — a block, a statement under a modifier,
+  a branch of `?:`, or the body of a `while` (`docs/types.md`, NARROW-8). `Maybe[T]` is what most of this is for:
   a method call on a `Maybe[InstanceOf[...]]` with no narrowing is the
   checker's most useful diagnostic and its most likely false positive, so it
   is a `warning` (`docs/types.md`, DIAG-14a) and the narrowing set is a fixture-tested list

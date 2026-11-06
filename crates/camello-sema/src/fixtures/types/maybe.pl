@@ -175,3 +175,47 @@ my $q = find();
 if (!$q->id) {                  #~ warning maybe-deref: may be undefined here
     print $q->id;
 }
+
+# ----- a modifier, a ternary and a loop say what an `if` says -----
+
+# perl tests a modifier before it runs the statement, so the statement is read
+# under the condition — and only the statement: below it the check is gone.
+my $r = find();
+$r->id if $r;
+$r->id if defined $r;
+$r->id unless !$r;
+$r->id;                         #~ warning maybe-deref: may be undefined here
+
+my $s = find();
+$s->id unless $s;               #~ warning maybe-deref: may be undefined here
+
+# Below a modified statement the two ways it went are joined, so a default
+# assigned where the value was missing leaves it there either way.
+my $t = find();
+$t = Row->new(id => 1) unless $t;
+print $t->id;
+
+# `do { ... } while COND` runs its block once before the first test.
+my $u = find();
+do { print $u->id } while $u;   #~ warning maybe-deref: may be undefined here
+
+my $v = find();
+my $from_v = $v ? $v->id : 0;
+my $from_v_too = !defined $v ? 0 : $v->id;
+my $wrong_side = $v ? 0 : $v->id; #~ warning maybe-deref: may be undefined here
+print $from_v, $from_v_too, $wrong_side;
+
+# A loop's condition is tested again before every pass of its body.
+my $w = find();
+while ($w) {
+    print $w->id;
+    $w = find();
+}
+until (!$w) {
+    print $w->id;
+    $w = find();
+}
+while (!$w) {
+    print $w->id;               #~ warning maybe-deref: may be undefined here
+}
+print $w->id;                   #~ warning maybe-deref: may be undefined here

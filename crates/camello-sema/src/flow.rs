@@ -619,15 +619,10 @@ impl Pass<'_> {
     }
 
     fn expression_statement(&mut self, node: &SyntaxNode) {
-        let mut value = None;
-        for child in node.children() {
-            let ty = self.type_of(&child);
-            if child.node_kind() != NodeKind::STMT_MODIFIER {
-                value = Some((child, ty));
-            }
-        }
-        // A guard narrows what follows it: `return unless defined $x;` is how
-        // half the corpus turns a `Maybe` into a value.
+        let value = self.statement_parts(node);
+        // A guard narrows what follows it: `$x or die;` is how half the corpus
+        // turns a `Maybe` into a value. A guard written with a modifier —
+        // `return unless defined $x;` — was read by `statement_parts`.
         self.apply_guard(node);
         if self.inference.is_some() {
             // A modified statement falls through to the value of its own
@@ -657,6 +652,57 @@ impl Pass<'_> {
             };
             self.set_tail(tail);
         }
+    }
+
+    /// Walk a statement's expression and its modifier, and return the
+    /// expression with its type.
+    ///
+    /// perl tests a modifier before it runs the statement, so the statement is
+    /// read under what its condition said: `$x->foo if $x` calls only where
+    /// `$x` held, as `if ($x) { $x->foo }` does. Below the statement the two
+    /// ways it went are joined, as an `if` joins its branches — or, where the
+    /// statement leaves, only the way it did not run is left.
+    fn statement_parts(&mut self, node: &SyntaxNode) -> Option<(SyntaxNode, Type)> {
+        let modifier = node
+            .children()
+            .find(|child| child.node_kind() == NodeKind::STMT_MODIFIER);
+        let narrowed = modifier.as_ref().and_then(|modifier| {
+            let runs_where_held = modifier_runs_where_held(node, modifier)?;
+            Some((modifier, modifier.children().next()?, runs_where_held))
+        });
+        let Some((modifier, condition, runs_where_held)) = narrowed else {
+            let mut value = None;
+            for child in node.children() {
+                let ty = self.type_of(&child);
+                if child.node_kind() != NodeKind::STMT_MODIFIER {
+                    value = Some((child, ty));
+                }
+            }
+            return value;
+        };
+
+        self.expression(modifier);
+        let facts = narrowing(&self.env, &condition);
+        let (mut runs, mut skips) = (self.env.clone(), self.env.clone());
+        facts.apply_true(&mut runs);
+        facts.apply_false(&mut skips);
+        if !runs_where_held {
+            std::mem::swap(&mut runs, &mut skips);
+        }
+        self.env = runs;
+        let mut value = None;
+        for child in node.children() {
+            if child.node_kind() != NodeKind::STMT_MODIFIER {
+                let ty = self.type_of(&child);
+                value = Some((child, ty));
+            }
+        }
+        if statement_body(node).is_some_and(|body| leaves_below(&body)) {
+            self.env = skips;
+        } else {
+            self.env.join(&skips);
+        }
+        value
     }
 
     fn if_statement(&mut self, node: &SyntaxNode) {
@@ -759,6 +805,14 @@ impl Pass<'_> {
 
     fn loop_statement(&mut self, node: &SyntaxNode) {
         let saved = self.env.clone();
+        // `while (COND)` runs its body only where COND held and `until (COND)`
+        // only where it did not; the condition is tested again before every
+        // pass, so what it says holds at the top of each.
+        let runs_where_held = ast::tokens(node).find_map(|token| match token.token_kind() {
+            TokenKind::WHILE_KW => Some(true),
+            TokenKind::UNTIL_KW => Some(false),
+            _ => None,
+        });
         for child in node.children() {
             match child.node_kind() {
                 NodeKind::BLOCK => self.block(&child),
@@ -778,6 +832,15 @@ impl Pass<'_> {
                                 self.env.set(target.sigil(), &name, element.clone());
                             }
                         }
+                    }
+                }
+                NodeKind::PAREN_EXPR if runs_where_held.is_some() => {
+                    self.expression(&child);
+                    let facts = narrowing(&self.env, &child);
+                    if runs_where_held == Some(true) {
+                        facts.apply_true(&mut self.env);
+                    } else {
+                        facts.apply_false(&mut self.env);
                     }
                 }
                 _ => self.expression(&child),
@@ -940,14 +1003,30 @@ impl Pass<'_> {
                 }
             }
             NodeKind::BINARY_EXPR => self.binary(node),
+            // Each branch is read under what the condition said on its side,
+            // as an `if` reads its blocks: `$x ? $x->foo : undef`.
             NodeKind::TERNARY_EXPR => {
-                let branches: Vec<Type> = node
-                    .children()
-                    .skip(1)
-                    .map(|child| self.type_of(&child))
-                    .collect();
-                if let Some(condition) = node.children().next() {
-                    self.expression(&condition);
+                let mut children = node.children();
+                let Some(condition) = children.next() else {
+                    return Type::Unknown;
+                };
+                self.expression(&condition);
+                let facts = narrowing(&self.env, &condition);
+                let mut sides = [self.env.clone(), self.env.clone()];
+                facts.apply_true(&mut sides[0]);
+                facts.apply_false(&mut sides[1]);
+                let mut branches = Vec::new();
+                let mut ended: Option<Env> = None;
+                for (child, side) in children.zip(sides) {
+                    self.env = side;
+                    branches.push(self.type_of(&child));
+                    match &mut ended {
+                        Some(env) => env.join(&self.env),
+                        None => ended = Some(self.env.clone()),
+                    }
+                }
+                if let Some(ended) = ended {
+                    self.env = ended;
                 }
                 Type::union(branches)
             }
@@ -1180,19 +1259,13 @@ impl Pass<'_> {
             self.statement(only);
             return None;
         }
-        let mut value = None;
-        let mut modified = false;
-        for child in only.children() {
-            let ty = self.type_of(&child);
-            if child.node_kind() == NodeKind::STMT_MODIFIER {
-                modified = true;
-            } else {
-                value = Some(ty);
-            }
-        }
+        let value = self.statement_parts(only);
+        let modified = only
+            .children()
+            .any(|child| child.node_kind() == NodeKind::STMT_MODIFIER);
         // A modified statement falls through to its own condition, so what it
         // leaves is not the value it looks like.
-        (!modified).then_some(value).flatten()
+        (!modified).then_some(value).flatten().map(|(_, ty)| ty)
     }
 
     fn anon_hash(&mut self, node: &SyntaxNode) -> Type {
@@ -3480,39 +3553,21 @@ fn block_condition(block: &SyntaxNode) -> Option<SyntaxNode> {
 
 /// What a guard statement tested, and whether it held below the statement.
 ///
-/// `return unless COND` and `COND or return` both mean "below here, COND
-/// held"; `return if COND` means the opposite of it did. Reading the whole
+/// `COND or return` means "below here, COND held". Reading the whole
 /// statement instead — as a flat scan of every variable in it did — narrows
-/// on the strength of names the guard never tested.
+/// on the strength of names the guard never tested. The same guard written
+/// with a modifier, `return unless COND`, is read with every other modifier
+/// (`Pass::statement_parts`).
 fn guard_condition(statement: &SyntaxNode) -> Option<(SyntaxNode, bool)> {
-    let mut modifier = None;
-    let mut body = None;
-    for child in statement.children() {
-        if child.node_kind() == NodeKind::STMT_MODIFIER {
-            modifier = Some(child);
-        } else if body.is_none() {
-            body = Some(child);
-        }
-    }
-    let body = body?;
-    let body = match body.node_kind() {
-        NodeKind::LIST_EXPR => sole_child(&body)?,
-        _ => body,
-    };
-    if let Some(modifier) = modifier {
-        if !leaves_below(&body) {
-            return None;
-        }
-        let held = match ast::tokens(&modifier).next()?.token_kind() {
-            TokenKind::UNLESS_KW => true,
-            TokenKind::IF_KW => false,
-            _ => return None,
-        };
-        return Some((modifier.children().next()?, held));
+    if statement
+        .children()
+        .any(|child| child.node_kind() == NodeKind::STMT_MODIFIER)
+    {
+        return None;
     }
     // The left side of `COND or die` is the part that has to have held for
     // the statement below it to be reached.
-    let view = ast::BinaryExpr::cast(body)?;
+    let view = ast::BinaryExpr::cast(statement_body(statement)?)?;
     if !matches!(
         view.operator(),
         Some(TokenKind::OR_KW | TokenKind::LOGICAL_OR)
@@ -3523,6 +3578,39 @@ fn guard_condition(statement: &SyntaxNode) -> Option<(SyntaxNode, bool)> {
         return None;
     }
     Some((view.left()?, true))
+}
+
+/// Whether a statement's modifier runs it where its condition held (`if`,
+/// `while`) or where it did not (`unless`, `until`), or `None` where the
+/// condition says nothing about the statement.
+///
+/// `for` binds `$_` rather than testing anything. `do { ... } while COND` runs
+/// its block once before the first test, so the block is not read under it.
+fn modifier_runs_where_held(statement: &SyntaxNode, modifier: &SyntaxNode) -> Option<bool> {
+    let keyword = ast::tokens(modifier).next()?.token_kind();
+    let looped = matches!(keyword, TokenKind::WHILE_KW | TokenKind::UNTIL_KW);
+    if looped
+        && statement_body(statement).is_some_and(|body| body.node_kind() == NodeKind::DO_BLOCK_EXPR)
+    {
+        return None;
+    }
+    match keyword {
+        TokenKind::IF_KW | TokenKind::WHILE_KW => Some(true),
+        TokenKind::UNLESS_KW | TokenKind::UNTIL_KW => Some(false),
+        _ => None,
+    }
+}
+
+/// The expression a statement is made of, without its modifier, or `None`
+/// where it is a list of several.
+fn statement_body(statement: &SyntaxNode) -> Option<SyntaxNode> {
+    let body = statement
+        .children()
+        .find(|child| child.node_kind() != NodeKind::STMT_MODIFIER)?;
+    match body.node_kind() {
+        NodeKind::LIST_EXPR => sole_child(&body),
+        _ => Some(body),
+    }
 }
 
 /// Whether control does not come back from an expression to the statement
