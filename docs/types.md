@@ -1062,6 +1062,8 @@ Child->build->extra;            # extra は Child のもの。通る。
   部分だけで、文の残りではありません。
   本体の最後の文が修飾子なしの `die` / `croak` / `confess` / `throw` / `exit`
   である sub（`sub error { die ... }`）は戻らないので、その呼び出しも LEAVE です。
+  メソッドも同じで、`Foo->error` や `$obj->error` は、インボカントのクラス
+  （裸のクラス名か、変数の型）から METHOD で解決した sub が戻らなければ LEAVE です。
   `return` で終わる sub は呼び出し元へ戻るので LEAVE ではありません。
 - (NARROW-5a) **抜けるブロック**: `if` / `unless` / `elsif` / `else` のブロックの
   最後の文が修飾子なしの LEAVE なら、そのブロックは `if` の下へ何も持ち込みません。

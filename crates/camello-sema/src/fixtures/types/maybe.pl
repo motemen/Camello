@@ -5,6 +5,9 @@ package Row;
 use Moose;
 has id => (is => 'ro', isa => 'Int');
 
+sub fail { die "failed" }
+sub warn_only { warn "failed" }
+
 package main;
 
 # Returns: Maybe[InstanceOf['Row']]
@@ -282,3 +285,21 @@ print $failed_maybe->id;        #~ warning maybe-deref: may be undefined here
 my $failed_return = find();
 fail_return() unless $failed_return;
 print $failed_return->id;       #~ warning maybe-deref: may be undefined here
+
+# A method that ends in `die` is one as well, on a class or on an instance.
+my $row = Row->new(id => 1);
+my $failed_method = find();
+$row->fail unless $failed_method;
+print $failed_method->id;
+
+my $failed_class = find();
+Row->fail unless $failed_class;
+print $failed_class->id;
+
+my $failed_method_or = find();
+$failed_method_or or $row->fail;
+print $failed_method_or->id;
+
+my $warned = find();
+$row->warn_only unless $warned;
+print $warned->id;              #~ warning maybe-deref: may be undefined here

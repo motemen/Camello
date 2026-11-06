@@ -924,6 +924,9 @@ impl Pass<'_> {
                 None => false,
             };
         }
+        if let Some(call) = ast::MethodCall::cast(node.clone()) {
+            return self.method_never_returns(&call);
+        }
         // `COND or do { warn ...; return }`: a `do` block leaves with its
         // last statement.
         node.node_kind() == NodeKind::DO_BLOCK_EXPR
@@ -931,6 +934,39 @@ impl Pass<'_> {
                 .children()
                 .find(|child| child.node_kind() == NodeKind::BLOCK)
                 .is_some_and(|block| self.block_leaves(&block))
+    }
+
+    /// Whether a method call resolves to a sub that never returns:
+    /// `Foo->fail` or `$self->fail` with `sub fail { die ... }`.
+    ///
+    /// The invocant is read off the environment rather than typed again, so
+    /// that asking does not report anything about it a second time; an
+    /// invocant that is not a bareword or a plain variable says nothing.
+    // GUESS: an instance's method is the one its declared class resolves to.
+    // Evidence: the same reading every other method call gets.
+    // Wrong: a subclass that overrides it with one that returns falls through
+    // to the line below with the guard's condition taken as held.
+    fn method_never_returns(&self, call: &ast::MethodCall) -> bool {
+        let (Some(invocant), Some(method)) = (call.invocant(), call.method_name()) else {
+            return false;
+        };
+        let class = bareword_class(&invocant).or_else(|| {
+            let variable = Variable::cast(invocant)?;
+            match self
+                .env
+                .get(variable.sigil(), &variable.name()?)
+                .without_undef()
+            {
+                Type::InstanceOf(class) | Type::ClassName(Some(class)) => Some(class),
+                _ => None,
+            }
+        });
+        class.is_some_and(|class| {
+            matches!(
+                self.program.resolve_method_from(&class, &method, &self.package),
+                MethodLookup::Sub(symbol) if symbol.never_returns
+            )
+        })
     }
 
     /// Whether a block's last statement leaves, unconditionally. A last
