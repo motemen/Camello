@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `$x->foo if $x`, `$x ? $x->foo : undef` and `while ($x) { $x->foo }` are
+  narrowed like an `if`, and no longer report `maybe-deref` (NARROW-8).
+- `if (!$x) { return }` narrows `$x` below it, and a call to a sub that ends
+  in `die`, function or method, is a guard like `die` itself (NARROW-5,
+  NARROW-5a).
+
 ## 0.2.5 — 2026-11-05
 
 `camello format` output changes: a file formatted by 0.2.4 may not pass

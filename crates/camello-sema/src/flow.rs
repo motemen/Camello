@@ -619,15 +619,10 @@ impl Pass<'_> {
     }
 
     fn expression_statement(&mut self, node: &SyntaxNode) {
-        let mut value = None;
-        for child in node.children() {
-            let ty = self.type_of(&child);
-            if child.node_kind() != NodeKind::STMT_MODIFIER {
-                value = Some((child, ty));
-            }
-        }
-        // A guard narrows what follows it: `return unless defined $x;` is how
-        // half the corpus turns a `Maybe` into a value.
+        let value = self.statement_parts(node);
+        // A guard narrows what follows it: `$x or die;` is how half the corpus
+        // turns a `Maybe` into a value. A guard written with a modifier —
+        // `return unless defined $x;` — was read by `statement_parts`.
         self.apply_guard(node);
         if self.inference.is_some() {
             // A modified statement falls through to the value of its own
@@ -657,6 +652,57 @@ impl Pass<'_> {
             };
             self.set_tail(tail);
         }
+    }
+
+    /// Walk a statement's expression and its modifier, and return the
+    /// expression with its type.
+    ///
+    /// perl tests a modifier before it runs the statement, so the statement is
+    /// read under what its condition said: `$x->foo if $x` calls only where
+    /// `$x` held, as `if ($x) { $x->foo }` does. Below the statement the two
+    /// ways it went are joined, as an `if` joins its branches — or, where the
+    /// statement leaves, only the way it did not run is left.
+    fn statement_parts(&mut self, node: &SyntaxNode) -> Option<(SyntaxNode, Type)> {
+        let modifier = node
+            .children()
+            .find(|child| child.node_kind() == NodeKind::STMT_MODIFIER);
+        let narrowed = modifier.as_ref().and_then(|modifier| {
+            let runs_where_held = modifier_runs_where_held(node, modifier)?;
+            Some((modifier, modifier.children().next()?, runs_where_held))
+        });
+        let Some((modifier, condition, runs_where_held)) = narrowed else {
+            let mut value = None;
+            for child in node.children() {
+                let ty = self.type_of(&child);
+                if child.node_kind() != NodeKind::STMT_MODIFIER {
+                    value = Some((child, ty));
+                }
+            }
+            return value;
+        };
+
+        self.expression(modifier);
+        let facts = narrowing(&self.env, &condition);
+        let (mut runs, mut skips) = (self.env.clone(), self.env.clone());
+        facts.apply_true(&mut runs);
+        facts.apply_false(&mut skips);
+        if !runs_where_held {
+            std::mem::swap(&mut runs, &mut skips);
+        }
+        self.env = runs;
+        let mut value = None;
+        for child in node.children() {
+            if child.node_kind() != NodeKind::STMT_MODIFIER {
+                let ty = self.type_of(&child);
+                value = Some((child, ty));
+            }
+        }
+        if statement_body(node).is_some_and(|body| self.leaves_below(&body)) {
+            self.env = skips;
+        } else {
+            self.env.join(&skips);
+        }
+        value
     }
 
     fn if_statement(&mut self, node: &SyntaxNode) {
@@ -718,14 +764,17 @@ impl Pass<'_> {
             }
         }
 
-        // Joining what each branch left with what came in is the "branches
-        // joined" of the design; a branch that did not run leaves `before`.
-        if let Some(mut ended) = after {
-            ended.join(&before);
-            self.env = ended;
-        } else {
-            self.env = before;
+        // Below the chain is what each branch that came back left, joined —
+        // and, with no `else`, the way past every condition, where each said
+        // what it says when it did not hold: `if (!$x) { return }` leaves `$x`
+        // defined.
+        if !has_else {
+            match &mut after {
+                Some(ended) => ended.join(&otherwise),
+                None => after = Some(otherwise),
+            }
         }
+        self.env = after.unwrap_or(before);
         if self.inference.is_some() {
             self.set_tail(join_tails(&tails, has_else));
         }
@@ -744,6 +793,10 @@ impl Pass<'_> {
         self.block(block);
         tails.extend(self.tail());
         let ended = std::mem::replace(&mut self.env, otherwise.clone());
+        // A branch that leaves takes nothing below the chain with it.
+        if self.block_leaves(block) {
+            return;
+        }
         match after {
             Some(env) => env.join(&ended),
             None => *after = Some(ended),
@@ -759,6 +812,14 @@ impl Pass<'_> {
 
     fn loop_statement(&mut self, node: &SyntaxNode) {
         let saved = self.env.clone();
+        // `while (COND)` runs its body only where COND held and `until (COND)`
+        // only where it did not; the condition is tested again before every
+        // pass, so what it says holds at the top of each.
+        let runs_where_held = ast::tokens(node).find_map(|token| match token.token_kind() {
+            TokenKind::WHILE_KW => Some(true),
+            TokenKind::UNTIL_KW => Some(false),
+            _ => None,
+        });
         for child in node.children() {
             match child.node_kind() {
                 NodeKind::BLOCK => self.block(&child),
@@ -780,6 +841,15 @@ impl Pass<'_> {
                         }
                     }
                 }
+                NodeKind::PAREN_EXPR if runs_where_held.is_some() => {
+                    self.expression(&child);
+                    let facts = narrowing(&self.env, &child);
+                    if runs_where_held == Some(true) {
+                        facts.apply_true(&mut self.env);
+                    } else {
+                        facts.apply_false(&mut self.env);
+                    }
+                }
                 _ => self.expression(&child),
             }
         }
@@ -796,7 +866,7 @@ impl Pass<'_> {
     /// expression. A `return` or an `unless` inside an anonymous sub or an
     /// `eval` it holds leaves that sub or that `eval`, not this statement.
     fn apply_guard(&mut self, statement: &SyntaxNode) {
-        let Some((condition, held)) = guard_condition(statement) else {
+        let Some((condition, held)) = self.guard_condition(statement) else {
             return;
         };
         let facts = narrowing(&self.env, &condition);
@@ -805,6 +875,110 @@ impl Pass<'_> {
         } else {
             facts.apply_false(&mut self.env);
         }
+    }
+
+    /// What a guard statement tested, and whether it held below the statement.
+    ///
+    /// `COND or return` means "below here, COND held". Reading the whole
+    /// statement instead — as a flat scan of every variable in it did — narrows
+    /// on the strength of names the guard never tested. The same guard written
+    /// with a modifier, `return unless COND`, is read with every other modifier
+    /// (`Pass::statement_parts`).
+    fn guard_condition(&self, statement: &SyntaxNode) -> Option<(SyntaxNode, bool)> {
+        if statement
+            .children()
+            .any(|child| child.node_kind() == NodeKind::STMT_MODIFIER)
+        {
+            return None;
+        }
+        // The left side of `COND or die` is the part that has to have held for
+        // the statement below it to be reached.
+        let view = ast::BinaryExpr::cast(statement_body(statement)?)?;
+        if !matches!(
+            view.operator(),
+            Some(TokenKind::OR_KW | TokenKind::LOGICAL_OR)
+        ) {
+            return None;
+        }
+        if !self.leaves_below(&view.right()?) {
+            return None;
+        }
+        Some((view.left()?, true))
+    }
+
+    /// Whether control does not come back from an expression to the statement
+    /// after it. `next` and `last` leave what is below a guard as surely as
+    /// `return` does, though not the sub; so does a call to a sub that never
+    /// returns (`SubDecl::never_returns`).
+    fn leaves_below(&self, node: &SyntaxNode) -> bool {
+        if leaves(node) {
+            return true;
+        }
+        if let Some(call) = ast::Call::cast(node.clone()) {
+            return match call.callee_name().as_deref() {
+                Some("next" | "last") => true,
+                Some(name) => self
+                    .program
+                    .resolve_call(self.file, u32::from(node.text_range().start()), name)
+                    .is_some_and(|symbol| symbol.never_returns),
+                None => false,
+            };
+        }
+        if let Some(call) = ast::MethodCall::cast(node.clone()) {
+            return self.method_never_returns(&call);
+        }
+        // `COND or do { warn ...; return }`: a `do` block leaves with its
+        // last statement.
+        node.node_kind() == NodeKind::DO_BLOCK_EXPR
+            && node
+                .children()
+                .find(|child| child.node_kind() == NodeKind::BLOCK)
+                .is_some_and(|block| self.block_leaves(&block))
+    }
+
+    /// Whether a method call resolves to a sub that never returns:
+    /// `Foo->fail` or `$self->fail` with `sub fail { die ... }`.
+    ///
+    /// The invocant is read off the environment rather than typed again, so
+    /// that asking does not report anything about it a second time; an
+    /// invocant that is not a bareword or a plain variable says nothing.
+    // GUESS: an instance's method is the one its declared class resolves to.
+    // Evidence: the same reading every other method call gets.
+    // Wrong: a subclass that overrides it with one that returns falls through
+    // to the line below with the guard's condition taken as held.
+    fn method_never_returns(&self, call: &ast::MethodCall) -> bool {
+        let (Some(invocant), Some(method)) = (call.invocant(), call.method_name()) else {
+            return false;
+        };
+        let class = bareword_class(&invocant).or_else(|| {
+            let variable = Variable::cast(invocant)?;
+            match self
+                .env
+                .get(variable.sigil(), &variable.name()?)
+                .without_undef()
+            {
+                Type::InstanceOf(class) | Type::ClassName(Some(class)) => Some(class),
+                _ => None,
+            }
+        });
+        class.is_some_and(|class| {
+            matches!(
+                self.program.resolve_method_from(&class, &method, &self.package),
+                MethodLookup::Sub(symbol) if symbol.never_returns
+            )
+        })
+    }
+
+    /// Whether a block's last statement leaves, unconditionally. A last
+    /// statement that carries a modifier may fall through, and so does not
+    /// count.
+    fn block_leaves(&self, block: &SyntaxNode) -> bool {
+        block
+            .children()
+            .last()
+            .filter(|last| last.node_kind() == NodeKind::EXPR_STMT)
+            .and_then(|last| sole_expression(&last))
+            .is_some_and(|expression| self.leaves_below(&expression))
     }
 
     // ----- expressions -----
@@ -940,14 +1114,30 @@ impl Pass<'_> {
                 }
             }
             NodeKind::BINARY_EXPR => self.binary(node),
+            // Each branch is read under what the condition said on its side,
+            // as an `if` reads its blocks: `$x ? $x->foo : undef`.
             NodeKind::TERNARY_EXPR => {
-                let branches: Vec<Type> = node
-                    .children()
-                    .skip(1)
-                    .map(|child| self.type_of(&child))
-                    .collect();
-                if let Some(condition) = node.children().next() {
-                    self.expression(&condition);
+                let mut children = node.children();
+                let Some(condition) = children.next() else {
+                    return Type::Unknown;
+                };
+                self.expression(&condition);
+                let facts = narrowing(&self.env, &condition);
+                let mut sides = [self.env.clone(), self.env.clone()];
+                facts.apply_true(&mut sides[0]);
+                facts.apply_false(&mut sides[1]);
+                let mut branches = Vec::new();
+                let mut ended: Option<Env> = None;
+                for (child, side) in children.zip(sides) {
+                    self.env = side;
+                    branches.push(self.type_of(&child));
+                    match &mut ended {
+                        Some(env) => env.join(&self.env),
+                        None => ended = Some(self.env.clone()),
+                    }
+                }
+                if let Some(ended) = ended {
+                    self.env = ended;
                 }
                 Type::union(branches)
             }
@@ -1180,19 +1370,13 @@ impl Pass<'_> {
             self.statement(only);
             return None;
         }
-        let mut value = None;
-        let mut modified = false;
-        for child in only.children() {
-            let ty = self.type_of(&child);
-            if child.node_kind() == NodeKind::STMT_MODIFIER {
-                modified = true;
-            } else {
-                value = Some(ty);
-            }
-        }
+        let value = self.statement_parts(only);
+        let modified = only
+            .children()
+            .any(|child| child.node_kind() == NodeKind::STMT_MODIFIER);
         // A modified statement falls through to its own condition, so what it
         // leaves is not the value it looks like.
-        (!modified).then_some(value).flatten()
+        (!modified).then_some(value).flatten().map(|(_, ty)| ty)
     }
 
     fn anon_hash(&mut self, node: &SyntaxNode) -> Type {
@@ -3478,76 +3662,37 @@ fn block_condition(block: &SyntaxNode) -> Option<SyntaxNode> {
         .flatten()
 }
 
-/// What a guard statement tested, and whether it held below the statement.
+/// Whether a statement's modifier runs it where its condition held (`if`,
+/// `while`) or where it did not (`unless`, `until`), or `None` where the
+/// condition says nothing about the statement.
 ///
-/// `return unless COND` and `COND or return` both mean "below here, COND
-/// held"; `return if COND` means the opposite of it did. Reading the whole
-/// statement instead — as a flat scan of every variable in it did — narrows
-/// on the strength of names the guard never tested.
-fn guard_condition(statement: &SyntaxNode) -> Option<(SyntaxNode, bool)> {
-    let mut modifier = None;
-    let mut body = None;
-    for child in statement.children() {
-        if child.node_kind() == NodeKind::STMT_MODIFIER {
-            modifier = Some(child);
-        } else if body.is_none() {
-            body = Some(child);
-        }
-    }
-    let body = body?;
-    let body = match body.node_kind() {
-        NodeKind::LIST_EXPR => sole_child(&body)?,
-        _ => body,
-    };
-    if let Some(modifier) = modifier {
-        if !leaves_below(&body) {
-            return None;
-        }
-        let held = match ast::tokens(&modifier).next()?.token_kind() {
-            TokenKind::UNLESS_KW => true,
-            TokenKind::IF_KW => false,
-            _ => return None,
-        };
-        return Some((modifier.children().next()?, held));
-    }
-    // The left side of `COND or die` is the part that has to have held for
-    // the statement below it to be reached.
-    let view = ast::BinaryExpr::cast(body)?;
-    if !matches!(
-        view.operator(),
-        Some(TokenKind::OR_KW | TokenKind::LOGICAL_OR)
-    ) {
+/// `for` binds `$_` rather than testing anything. `do { ... } while COND` runs
+/// its block once before the first test, so the block is not read under it.
+fn modifier_runs_where_held(statement: &SyntaxNode, modifier: &SyntaxNode) -> Option<bool> {
+    let keyword = ast::tokens(modifier).next()?.token_kind();
+    let looped = matches!(keyword, TokenKind::WHILE_KW | TokenKind::UNTIL_KW);
+    if looped
+        && statement_body(statement).is_some_and(|body| body.node_kind() == NodeKind::DO_BLOCK_EXPR)
+    {
         return None;
     }
-    if !leaves_below(&view.right()?) {
-        return None;
+    match keyword {
+        TokenKind::IF_KW | TokenKind::WHILE_KW => Some(true),
+        TokenKind::UNLESS_KW | TokenKind::UNTIL_KW => Some(false),
+        _ => None,
     }
-    Some((view.left()?, true))
 }
 
-/// Whether control does not come back from an expression to the statement
-/// after it. `next` and `last` leave what is below a guard as surely as
-/// `return` does, though not the sub.
-fn leaves_below(node: &SyntaxNode) -> bool {
-    leaves(node)
-        || ast::Call::cast(node.clone())
-            .is_some_and(|call| matches!(call.callee_name().as_deref(), Some("next" | "last")))
-        || do_block_leaves(node)
-}
-
-/// `COND or do { warn ...; return }`: a `do` block whose last statement
-/// leaves, unconditionally, leaves with it. A last statement that carries a
-/// modifier may fall through, and so does not count.
-fn do_block_leaves(node: &SyntaxNode) -> bool {
-    if node.node_kind() != NodeKind::DO_BLOCK_EXPR {
-        return false;
+/// The expression a statement is made of, without its modifier, or `None`
+/// where it is a list of several.
+fn statement_body(statement: &SyntaxNode) -> Option<SyntaxNode> {
+    let body = statement
+        .children()
+        .find(|child| child.node_kind() != NodeKind::STMT_MODIFIER)?;
+    match body.node_kind() {
+        NodeKind::LIST_EXPR => sole_child(&body),
+        _ => Some(body),
     }
-    node.children()
-        .find(|child| child.node_kind() == NodeKind::BLOCK)
-        .and_then(|block| block.children().last())
-        .filter(|last| last.node_kind() == NodeKind::EXPR_STMT)
-        .and_then(|last| sole_expression(&last))
-        .is_some_and(|expression| leaves_below(&expression))
 }
 
 /// `$x` without its `undef`, if `$x` is a variable at all.
@@ -3641,6 +3786,23 @@ fn join_tails(tails: &[Tail], has_else: bool) -> Tail {
         shape: join_shapes(sites.list),
         invocant: sites.invocant,
     }
+}
+
+/// Whether a sub's body ends in a call control does not come back from to
+/// the sub's caller: `die`, `croak`, `exit`, `->throw`, but not `return` or a
+/// `goto` that hands the call on. Only the last statement is read, and only
+/// without a modifier, the same reading `Pass::block_leaves` gives a branch.
+pub(crate) fn never_comes_back(body: &SyntaxNode) -> bool {
+    body.children()
+        .last()
+        .filter(|last| last.node_kind() == NodeKind::EXPR_STMT)
+        .and_then(|last| sole_expression(&last))
+        .is_some_and(|expression| {
+            leaves(&expression)
+                && !ast::Call::cast(expression).is_some_and(|call| {
+                    matches!(call.callee_name().as_deref(), Some("return" | "goto"))
+                })
+        })
 }
 
 /// Whether a call is one control does not come back from.

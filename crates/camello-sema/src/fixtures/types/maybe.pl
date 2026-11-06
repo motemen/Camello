@@ -5,6 +5,9 @@ package Row;
 use Moose;
 has id => (is => 'ro', isa => 'Int');
 
+sub fail { die "failed" }
+sub warn_only { warn "failed" }
+
 package main;
 
 # Returns: Maybe[InstanceOf['Row']]
@@ -175,3 +178,128 @@ my $q = find();
 if (!$q->id) {                  #~ warning maybe-deref: may be undefined here
     print $q->id;
 }
+
+# ----- a modifier, a ternary and a loop say what an `if` says -----
+
+# perl tests a modifier before it runs the statement, so the statement is read
+# under the condition — and only the statement: below it the check is gone.
+my $r = find();
+$r->id if $r;
+$r->id if defined $r;
+$r->id unless !$r;
+$r->id;                         #~ warning maybe-deref: may be undefined here
+
+my $s = find();
+$s->id unless $s;               #~ warning maybe-deref: may be undefined here
+
+# Below a modified statement the two ways it went are joined, so a default
+# assigned where the value was missing leaves it there either way.
+my $t = find();
+$t = Row->new(id => 1) unless $t;
+print $t->id;
+
+# `do { ... } while COND` runs its block once before the first test.
+my $u = find();
+do { print $u->id } while $u;   #~ warning maybe-deref: may be undefined here
+
+my $v = find();
+my $from_v = $v ? $v->id : 0;
+my $from_v_too = !defined $v ? 0 : $v->id;
+my $wrong_side = $v ? 0 : $v->id; #~ warning maybe-deref: may be undefined here
+print $from_v, $from_v_too, $wrong_side;
+
+# A loop's condition is tested again before every pass of its body.
+my $w = find();
+while ($w) {
+    print $w->id;
+    $w = find();
+}
+until (!$w) {
+    print $w->id;
+    $w = find();
+}
+while (!$w) {
+    print $w->id;               #~ warning maybe-deref: may be undefined here
+}
+print $w->id;                   #~ warning maybe-deref: may be undefined here
+
+# ----- a branch that leaves takes nothing below the `if` with it -----
+
+# Below an `if` with no `else` is the way past its condition, where the
+# condition did not hold — and the branch that returned is not part of it.
+my $ret = find();
+if (!$ret) { return; }
+print $ret->id;
+
+my $ret_unless = find();
+unless (defined $ret_unless) {
+    warn "missing";
+    return;
+}
+print $ret_unless->id;
+
+my $ret_wrong = find();
+if ($ret_wrong) { return; }
+print $ret_wrong->id;           #~ warning maybe-deref: may be undefined here
+
+my $ret_elsif = find();
+if (!$ret_elsif) {
+    return;
+} elsif ($ret_elsif->id) {
+    print "positive";
+}
+print $ret_elsif->id;
+
+# A branch that may come back still joins.
+my $ret_maybe = find();
+if (!$ret_maybe) {
+    return if rand;
+}
+print $ret_maybe->id;           #~ warning maybe-deref: may be undefined here
+
+# A default assigned where the value was missing leaves it there either way.
+my $filled_in = find();
+if (!$filled_in) {
+    $filled_in = Row->new(id => 1);
+}
+print $filled_in->id;
+
+# ----- a sub that ends in `die` leaves as `die` does -----
+
+sub fail { die "failed" }
+sub fail_maybe { die "failed" if rand }
+sub fail_return { return }
+
+my $failed = find();
+fail() unless $failed;
+print $failed->id;
+
+my $failed_or = find();
+$failed_or or fail();
+print $failed_or->id;
+
+my $failed_maybe = find();
+fail_maybe() unless $failed_maybe;
+print $failed_maybe->id;        #~ warning maybe-deref: may be undefined here
+
+my $failed_return = find();
+fail_return() unless $failed_return;
+print $failed_return->id;       #~ warning maybe-deref: may be undefined here
+
+# A method that ends in `die` is one as well, on a class or on an instance.
+my $row = Row->new(id => 1);
+my $failed_method = find();
+$row->fail unless $failed_method;
+print $failed_method->id;
+
+my $failed_class = find();
+Row->fail unless $failed_class;
+print $failed_class->id;
+
+my $failed_method_or = find();
+$failed_method_or or $row->fail;
+print $failed_method_or->id;
+
+my $warned = find();
+$row->warn_only unless $warned;
+print $warned->id;              #~ warning maybe-deref: may be undefined here

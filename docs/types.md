@@ -1060,6 +1060,15 @@ Child->build->extra;            # extra は Child のもの。通る。
   ガードになりません。ただし `COND or do { warn ...; return }` のように、`do` ブロックの
   最後の文が修飾子なしの LEAVE であれば、そのブロックも LEAVE です。読むのは条件の
   部分だけで、文の残りではありません。
+  本体の最後の文が修飾子なしの `die` / `croak` / `confess` / `throw` / `exit`
+  である sub（`sub error { die ... }`）は戻らないので、その呼び出しも LEAVE です。
+  メソッドも同じで、`Foo->error` や `$obj->error` は、インボカントのクラス
+  （裸のクラス名か、変数の型）から METHOD で解決した sub が戻らなければ LEAVE です。
+  `return` で終わる sub は呼び出し元へ戻るので LEAVE ではありません。
+- (NARROW-5a) **抜けるブロック**: `if` / `unless` / `elsif` / `else` のブロックの
+  最後の文が修飾子なしの LEAVE なら、そのブロックは `if` の下へ何も持ち込みません。
+  `else` の無い `if` の下は、ブロックが走った側と、どの条件も成り立たなかった側の
+  合流なので、`if (!$x) { return }` の下では `$x` が成り立っています。
 
 ```perl
 my $row = find_row();       # Maybe[InstanceOf['Row']]
@@ -1119,6 +1128,24 @@ print $row->id;             # 診断なし
   `ref $x eq 'HASH'` がこの一覧にある理由の半分はこれです。厳密には
   `ref $x eq ''` が真でも `$x` は `undef` でありえますが、ここは定理ではなく
   一覧なので、実際に書かれる形を採ります。
+
+### 5.2 条件が及ぶところ (NARROW-8)
+
+perl が条件を評価してから走らせる部分は、`if` のブロックと同じく、その条件の
+下で読まれます。
+
+- (NARROW-8a) **文修飾子**: `STMT if COND` と `STMT while COND` の STMT は COND が
+  成り立つ側で、`unless` と `until` は成り立たない側で読まれます。
+  `$x->foo if $x` は `if ($x) { $x->foo }` と同じです。文の下では走った側と
+  走らなかった側を合流するので、絞り込みは文の外へ出ず、
+  `$x = Foo->new unless $x` の下では `$x` はどちらの側でも定義済みです。
+  `do { ... } while COND` はブロックを一度走らせてから COND を見るので、
+  ブロックは絞り込まれません。`for` 修飾子は何も検査しません。
+- (NARROW-8b) **三項演算子**: `COND ? A : B` の A は COND が成り立つ側で、B は
+  成り立たない側で読まれます。
+- (NARROW-8c) **`while` / `until`**: 条件は本体の各回の前に評価されるので、本体は
+  `while` なら条件が成り立つ側、`until` なら成り立たない側で読まれます。ループの
+  後は本体とループ前の合流（INFER）であり、条件については何も言いません。
 
 ## 6. メソッドの解決 (METHOD)
 
