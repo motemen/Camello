@@ -24,7 +24,7 @@ use camello_syntax::ast::{self, AstNode, Call, Sigil, Variable};
 use camello_syntax::lang::{NodeExt, NodeKind, SyntaxNode, TokenExt, TokenKind};
 
 use crate::decl::{ParamSource, Params};
-use crate::diag::{Code, Diagnostic, Severity};
+use crate::diag::{Code, Diagnostic};
 use crate::program::Program;
 
 /// Check every function call in a file against what it resolves to.
@@ -112,7 +112,7 @@ fn compare(
                         name
                     ),
                 )
-                .at(severity(source)),
+                .inferred_unless(declared(source)),
             );
         }
         return;
@@ -125,18 +125,15 @@ fn compare(
     // the invocant it passes is either harmless or fatal, and saying which
     // would be a guess. It is said once, at `info` (DIAG-15).
     if through_arrow && params.is_empty_parens() {
-        into.push(
-            Diagnostic::new(
-                Code::IgnoredPrototype,
-                range,
-                format!(
-                    "`{}` is declared `()`, which a method call ignores: perl passes the \
+        into.push(Diagnostic::new(
+            Code::IgnoredPrototype,
+            range,
+            format!(
+                "`{}` is declared `()`, which a method call ignores: perl passes the \
                      invocant regardless",
-                    name
-                ),
-            )
-            .at(Code::IgnoredPrototype.default_severity()),
-        );
+                name
+            ),
+        ));
         return;
     }
 
@@ -182,7 +179,7 @@ fn compare(
                     }
                 ),
             )
-            .at(severity(source)),
+            .inferred_unless(declared(source)),
         );
     }
 }
@@ -190,10 +187,10 @@ fn compare(
 /// perl dies on a signature mismatch and Smart::Args dies on a bad `args`
 /// list, so those are contradictions between two declared things. An `@_`
 /// unpacking declares a shape and not a rule: the program runs either way.
-fn severity(source: ParamSource) -> Severity {
+fn declared(source: ParamSource) -> bool {
     match source {
-        ParamSource::Signature | ParamSource::Args => Severity::Error,
-        ParamSource::ArgUnpacking | ParamSource::Generated => Severity::Warning,
+        ParamSource::Signature | ParamSource::Args => true,
+        ParamSource::ArgUnpacking | ParamSource::Generated => false,
     }
 }
 
