@@ -604,6 +604,7 @@ impl CheckArgs {
         options.disabled = crate::report::parse_codes(self.disable.as_deref().unwrap_or(""))?;
         options.disabled.extend(check.disabled);
         options.guard_classes = check.guard_classes;
+        options.strict_equivalent_modules = check.strict_equivalent_modules;
 
         // `lib` is what the project is: the paths to check when none are
         // typed, and roots for `use Foo` to resolve in either way, so that

@@ -1519,6 +1519,8 @@ disable = ["unused-variable"]
 error-on = "warning"         # これ以上の重大度があれば終了ステータスは 1
 min-severity = "warning"     # これ未満の重大度は印字しない
 guard-classes = ["My::Lock"] # デストラクタのために持たれる値を作るクラス
+strict-equivalent-modules = ["My::Test"]  # use すると strict と warnings が有効になるモジュール (LINT-5h)
+types = true                 # 型に依る診断も報告する (DIAG-0)
 strict-annotations = true
 
 [check.read-as]                          # 自作ラッパーが何の代わりか (ANNOT-12)

@@ -133,7 +133,9 @@ two-argument `open`, a bareword filehandle, code before `use strict` or
 package its path does not name, `;;`, and a named `sub` inside
 another. There is nothing to configure: each is a
 `warning`, a style choice is never one of them, and a project's own import
-module is read to see whether it turns `strict` on. `## no critic` is read
+module is read to see whether it turns `strict` on — through every
+`import` it calls — and `strict-equivalent-modules` in `camello.toml` lists
+the ones that cannot be read, the way Perl::Critic's `equivalent_modules` did. `## no critic` is read
 by the Perl::Critic names; `--error-on warning` is what fails CI the way
 `perlcritic` did. [docs/lint.md](docs/lint.md) is the list.
 
@@ -153,6 +155,7 @@ disable = ["unused-parameter"]
 error-on = "warning"
 min-severity = "warning"
 guard-classes = ["My::Lock"]
+strict-equivalent-modules = ["My::Test"]
 types = true
 strict-annotations = true
 ```

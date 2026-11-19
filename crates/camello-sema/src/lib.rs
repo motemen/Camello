@@ -149,6 +149,9 @@ pub struct Options {
     /// Classes a value is held of for its destructor, beyond the ones
     /// [`scope::GUARD_NAMES`] knows (`camello.toml`).
     pub guard_classes: Vec<String>,
+    /// Modules whose `use` turns on `strict` and `warnings`, beyond the ones
+    /// [`pragma::BY_IMPORT`] knows (`camello.toml`, `docs/lint.md` LINT-5h).
+    pub strict_equivalent_modules: Vec<String>,
 }
 
 impl Options {
@@ -507,7 +510,10 @@ impl Analysis {
         options: &Options,
         record: Record,
     ) -> FileAnalysis {
-        let enables = |module: &str| self.program.import_enables(module);
+        let enables = |module: &str| {
+            self.program
+                .import_enables(module, &options.strict_equivalent_modules)
+        };
         let exported = |module: &str, tagged: bool| self.program.exported_variables(module, tagged);
         let mut scope = scope::analyse(root, source, &options.guard_classes, &enables, &exported);
         let mut types = flow::TypeTable::default();
@@ -515,7 +521,7 @@ impl Analysis {
         // list, and a second copy inside the scope report would be the same
         // diagnostics under different rules.
         let mut diagnostics = std::mem::take(&mut scope.diagnostics);
-        diagnostics.extend(lint::analyse(path, root, &enables));
+        diagnostics.extend(lint::analyse(path, root, &enables, &scope));
         if let Some(file) = self.program.index_of(path) {
             if options.types {
                 diagnostics.extend(arity::analyse(root, file, &self.program));

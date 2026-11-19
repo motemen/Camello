@@ -392,14 +392,34 @@ impl Program {
     /// usually gets the `import` that does the work. A package the run read
     /// with no `import` anywhere in its ancestry turns nothing on, and one it
     /// never read is [`Enables::Unknown`](crate::pragma::Enables::Unknown).
+    /// An `import` that calls another module's is read through it, however
+    /// deep; one that evaluates a string is `Unknown`. `equivalent` is the
+    /// project's own list, which turns both on (LINT-5h).
     #[must_use]
-    pub fn import_enables(&self, module: &str) -> crate::pragma::Enables {
+    pub fn import_enables(&self, module: &str, equivalent: &[String]) -> crate::pragma::Enables {
+        self.enables_through(module, equivalent, &mut std::collections::HashSet::new())
+    }
+
+    fn enables_through(
+        &self,
+        module: &str,
+        equivalent: &[String],
+        seen: &mut std::collections::HashSet<String>,
+    ) -> crate::pragma::Enables {
         use crate::pragma::{self, Enables, Pragmas};
+        // `strict-equivalent-modules` in `camello.toml` (LINT-5h).
+        if equivalent.iter().any(|name| name == module) {
+            return Enables::Known(Pragmas::BOTH);
+        }
         if let Some(pragmas) = pragma::by_table(module) {
             return Enables::Known(pragmas);
         }
-        if !self.knows_package(module) {
+        if !self.knows_package(module) || pragma::is_pragma_name(module) {
             return pragma::without_program(module);
+        }
+        // A cycle of `import`s adds nothing the first visit did not.
+        if !seen.insert(module.to_string()) {
+            return Enables::Known(Pragmas::NONE);
         }
         for package in self.linearise(module) {
             if let Some(pragmas) = pragma::by_table(&package) {
@@ -409,14 +429,31 @@ impl Program {
             if !self.knows_package(&package) {
                 return Enables::Unknown;
             }
-            let own: Vec<Pragmas> = self
+            let readings: Vec<pragma::ImportReading> = self
                 .facts(&package)
                 .iter()
-                .filter_map(|facts| facts.import_pragmas)
+                .filter_map(|facts| facts.import.clone())
                 .collect();
-            if !own.is_empty() {
-                return Enables::Known(own.into_iter().fold(Pragmas::NONE, Pragmas::union));
+            if readings.is_empty() {
+                continue;
             }
+            let mut pragmas = Pragmas::NONE;
+            let mut unknown = false;
+            for reading in readings {
+                pragmas = pragmas.union(reading.pragmas);
+                unknown |= reading.opaque;
+                for callee in &reading.calls {
+                    match self.enables_through(callee, equivalent, seen) {
+                        Enables::Known(more) => pragmas = pragmas.union(more),
+                        Enables::Unknown => unknown = true,
+                    }
+                }
+            }
+            return if unknown && pragmas != Pragmas::BOTH {
+                Enables::Unknown
+            } else {
+                Enables::Known(pragmas)
+            };
         }
         Enables::Known(Pragmas::NONE)
     }

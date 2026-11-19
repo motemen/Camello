@@ -11,8 +11,9 @@
   好みが分かれるスタイルは対象にしません。
 - (LINT-POLICY-2) **誤検知はゼロを目指します。** よく使われ、意図どおりに動く
   書き方は、各ルールの「指摘しない」に挙げて対象から外します。
-- (LINT-POLICY-3) **設定はありません。** ルールはすべて既定で有効で、オプトインの
-  ルールはありません。止める手段は型の診断と同じく `[check] disable`、
+- (LINT-POLICY-3) **設定はほぼありません。** ルールはすべて既定で有効で、オプトインの
+  ルールはありません。ルールの判定に関わる設定は、読めない `import` を補う
+  `strict-equivalent-modules`（LINT-5h）だけです。止める手段は型の診断と同じく `[check] disable`、
   `--disable`、`## camello-disable:` です（[OFF](types.md#8-診断を止める-off)）。
   加えて、Perl::Critic から移ってくるコードのために `## no critic` も読みます
   （[LINT-OFF](#3-診断を止める-lint-off)）。
@@ -57,7 +58,12 @@ Perl::Critic のほかのポリシーは実装しません。`ProhibitLeadingZer
 抜けます。`do` の値を使う書き方は `do` が値を返すことを当てにしているので、
 その中の `return` は書き手の思い描いた動作をしません。
 
-- (LINT-1a) **指摘する**: `return` を含む `do BLOCK` の値が使われているとき。
+- (LINT-1a) **指摘する**: `do BLOCK` のすぐ下の文にある `return` で、その `do` の
+  値が使われているもの。すぐ下の文とは、`do` のブロックを直接構成する文です。
+  `return $x if $c;` のような後置の修飾子つきの文や、`f() or return;` も含みます。
+  `if`・`unless`・`else`・`for`・`while` のブロックや、ただのブロック `{ ... }` の
+  中の `return` は、その分岐を選んで抜ける書き方なので指摘しません。
+  Perl::Critic の ProhibitReturnInDoBlock と同じ範囲です。
   値が使われるとは、`do` が次のどれかであることです。
   - 代入の右辺（`=`、`//=`、`||=` などすべて）
   - 関数やメソッドの引数、リスト・ハッシュ・配列の要素、ほかの式のオペランド
@@ -67,6 +73,8 @@ Perl::Critic のほかのポリシーは実装しません。`ProhibitLeadingZer
   $self->{cache} //= do { return $x if $x; compute() };   # 指摘する
   my $v = do { return unless $ok; compute() };            # 指摘する
   sub f { do { return 1 if $x; 2 } }                      # 指摘する
+  my $v = do { if ($ok) { 1 } else { return } };          # 指摘しない
+  my $w = do { for (@a) { return $_ if $_ } 0 };          # 指摘しない
   ```
 - (LINT-1b) **指摘しない**: `do` の値が捨てられるとき。`do` が文としてそのまま
   置かれているとき、`or`・`and`・`xor` の右側にあるとき、および値が捨てられる
@@ -75,11 +83,9 @@ Perl::Critic のほかのポリシーは実装しません。`ProhibitLeadingZer
   open my $fh, '<', $f or do { warn $!; return };         # 指摘しない
   defined $x && do { ok($x) or return };                  # 指摘しない
   ```
-- (LINT-1c) `do` の中にある `sub { ... }` や名前付きの `sub` の中の `return` は、
-  その `sub` から抜けるので対象外です。関数に渡したブロック（`eval { }`、
-  `first { }`、`scraper { }`）も `sub` なので同じです。`map`・`grep`・`sort` の
-  ブロックだけは `sub` ではなく、その中の `return` は外側のサブルーチンから
-  抜けます。
+- (LINT-1c) `do` の中にある `sub { ... }` や名前付きの `sub`、関数に渡した
+  ブロック（`eval { }`、`first { }`、`map { }`）の中の `return` は、`do` の
+  すぐ下の文ではないので対象外です。
 - (LINT-1d) 報告する位置は `return` です。
 
 ### 2.2 `conditional-declaration` (LINT-2)
@@ -135,16 +141,32 @@ Perl::Critic のほかのポリシーは実装しません。`ProhibitLeadingZer
   3. [付録 A](#付録-a-strict-と-warnings-を有効にするモジュール) のモジュール
   4. `sub import` の中で `strict` や `warnings` の `import` を呼んでいるモジュール
      （LINT-5e）
-  5. shebang の `-w`（`warnings` のみ）
+  5. `camello.toml` の `strict-equivalent-modules` に挙げたモジュール（LINT-5h）
+  6. shebang の `-w`（`warnings` のみ）
 - (LINT-5e) プロジェクトや依存先のモジュールは、`sub import` の本体を読んで
   判定します。本体が `->import`（`Import::Into` の `->import::into` を含む）を
   呼んでいて、`strict` や `warnings` を名指ししていれば、そのモジュールを `use`
   することはそれを有効にすることです。本体が付録 A のモジュールの `import` を
-  呼んでいれば、そのモジュールが有効にするものを有効にします。
+  呼んでいれば、そのモジュールが有効にするものを有効にします。ほかのモジュールの
+  `import` を呼んでいれば（`My::Pragma->import`）、そのモジュールの `import` も
+  同じ規則で読み、何段でもたどります。一度たどったモジュールは二度読みません。
+  たどった先が見つからなければ LINT-5f と同じく扱います。
+  - `*import = \&Exporter::import` のように、ほかのモジュールの `import` を glob で
+    借りているものは、そのモジュールの `import` を読みます。
+  - 次のものは中身が読めないので LINT-5f と同じく扱います。呼び出し元に届く
+    文字列の `eval`（`eval qq{package $pkg; use Test2::V0;}` のように、`package`・
+    `import`・`$^H` を含むもの）、`$^H` への書き込み、ファイルの一番外側で glob に
+    代入した `import`（`*{$prefix . 'import'} = sub { ... }`）。`eval q{ use Foo; }`
+    のように呼び出し元に届かない `eval` は数えません。
 - (LINT-5f) どこにも見つからないモジュールは、`strict` も `warnings` も有効に
   するものとして扱います。見えないものについて誤検知を出さないためです。
-  小文字だけの名前（`utf8`、`lib`、`constant` などのプラグマ）は、付録 A に
-  なければ何も有効にしません。
+  小文字だけの名前（`utf8`、`lib`、`constant`、`integer` などのプラグマ）は、
+  付録 A になければ何も有効にしません。`import` が `$^H` を書き換えても同じです。
+  `use Foo ()` は `import` を呼ばないので、どのモジュールでも何も有効にしません。
+- (LINT-5h) `camello.toml` の `[check] strict-equivalent-modules = ["My::Test"]` に
+  挙げたモジュールは、`strict` と `warnings` の両方を有効にします。付録 A に
+  足す形で、LINT-5e で読めない `import` のための逃げ道です。Perl::Critic の
+  `equivalent_modules` に当たります。
 - (LINT-5g) `undeclared-variable` が `strict` の有効な範囲を決めるときも、
   LINT-5d と同じ判定を使います。ただし LINT-5f は逆に倒れます。見つからない
   モジュールは `strict` を有効にしないものとして扱います。どちらも、見えない
@@ -204,11 +226,17 @@ Perl::Critic のほかのポリシーは実装しません。`ProhibitLeadingZer
 ### 2.10 `nested-named-sub` (LINT-10)
 
 - (LINT-10a) **指摘する**: サブルーチンの本体（名前付きでも無名でも）の中に
-  ある名前付きの `sub` の定義。名前付きの `sub` は一度しか作られないので、
-  外側のサブルーチンの `my` 変数を、最初の呼び出しのものしか見ません
-  （perl は "Variable will not stay shared" と警告します）。
-- (LINT-10b) **指摘しない**: 前方宣言（本体のない `sub foo;`）。報告する位置は
-  内側の `sub` の名前です。
+  ある名前付きの `sub` で、外側のサブルーチンが呼び出しごとに作る変数を読む
+  もの。そうした変数は `my` で宣言したもの、引数、`for my` のループ変数、
+  `catch` の変数です。名前付きの `sub` は一度しか作られないので、そうした
+  変数は最初の呼び出しのものしか見えません（perl は "Variable will not stay
+  shared" と警告します）。報告する位置は内側の `sub` の名前で、メッセージは
+  読んでいる変数を一つ名指しします。
+- (LINT-10b) **指摘しない**: 外側の変数を読まないもの（`package Foo { sub bar
+  { ... } }` や小さな補助関数）。`state` と `our` の変数、ファイルの一番外側の
+  変数、内側で宣言し直した同名の変数は、何度呼んでも一つなので数えません。
+  `my sub` と `state sub` は呼び出しごとに作られるので対象外です。前方宣言
+  （本体のない `sub foo;`）も対象外です。
 
 ## 3. 診断を止める (LINT-OFF)
 
@@ -245,6 +273,8 @@ Perl::Critic のほかのポリシーは実装しません。`ProhibitLeadingZer
 | `Test2::V0`, `Test::Most`, `Test::Class::Moose` | ✓ | ✓ |
 | `Class::Accessor::Typed` | ✓ | ✓ |
 | `Object::Pad` | ✓ | |
+| `Exporter`, `Exporter::Tiny` | | |
 
-網羅ではありえません。LINT-5e が表にないモジュールの `import` を読むのは
-そのためです。
+網羅ではありえません。LINT-5e が表にないモジュールの `import` を読み、
+LINT-5h が表に足せるのはそのためです。`Exporter` の行は、何も有効にしないことを
+`import` を読まなくても知っておくためのものです。

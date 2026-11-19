@@ -83,6 +83,10 @@ pub const BY_IMPORT: &[(&str, Pragmas)] = &[
     ("Test::Class::Moose", Pragmas::BOTH),
     ("Class::Accessor::Typed", Pragmas::BOTH),
     ("Object::Pad", Pragmas::STRICT),
+    // What an `import` most often hands off to that turns nothing on, so
+    // that a run which did not read it still knows (LINT-5e).
+    ("Exporter", Pragmas::NONE),
+    ("Exporter::Tiny", Pragmas::NONE),
 ];
 
 /// What the table says about `module`, if it says anything.
@@ -107,10 +111,27 @@ pub fn without_program(module: &str) -> Enables {
     Enables::Unknown
 }
 
-fn is_pragma_name(module: &str) -> bool {
+/// A lowercase name is a pragma — `utf8`, `integer`, `fields` — and one the
+/// table does not list turns neither on, whatever its `import` does to `$^H`.
+pub(crate) fn is_pragma_name(module: &str) -> bool {
     module
         .chars()
         .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_' || ch == ':')
+}
+
+/// `use Module ()`: the empty list means `import` is never called, so the
+/// module turns nothing on, `strict` included.
+#[must_use]
+pub fn imports_nothing(statement: &ast::UseStmt) -> bool {
+    statement.arguments().is_some_and(|arguments| {
+        let text: String = arguments
+            .text()
+            .to_string()
+            .chars()
+            .filter(|ch| !ch.is_whitespace())
+            .collect();
+        text == "()"
+    })
 }
 
 /// What `use v5.12` and its kind turn on: `strict` from 5.11, `warnings`
@@ -146,38 +167,81 @@ pub fn by_version(node: &SyntaxNode) -> Pragmas {
     }
 }
 
-/// What a module's own `sub import` turns on in its caller
-/// (`docs/lint.md`, LINT-5e), or `None` for a body that calls no `import`.
+/// What a module's own `sub import` says about its caller (`docs/lint.md`,
+/// LINT-5e).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ImportReading {
+    /// What it turns on itself, or through a module [`BY_IMPORT`] lists.
+    pub pragmas: Pragmas,
+    /// The other modules whose `import` it calls, to be read the same way:
+    /// `My::Pragma->import` in a project's test module.
+    pub calls: Vec<String>,
+    /// It does what nobody can read: a string `eval` — `eval qq{package
+    /// $caller; use Test2::V0;}` — or a write to `$^H`, the bits `use
+    /// strict` sets.
+    pub opaque: bool,
+}
+
+/// How a module's own `sub import` turns things on in its caller, or `None`
+/// for a body that calls no `import` and does nothing opaque.
 ///
 /// A body that calls an `import` and names `strict` or `warnings` turns that
 /// on — `strict->import`, `warnings->import::into($target)`, `$_->import for
 /// qw(strict warnings)` are three spellings of it. One that calls the
-/// `import` of a module the table lists turns on what that one does.
+/// `import` of a module the table lists turns on what that one does; one
+/// that calls another module's is as good as that module's own `import`,
+/// which the program reads.
 #[must_use]
-pub fn import_enables(body: &SyntaxNode) -> Option<Pragmas> {
+pub fn import_enables(body: &SyntaxNode) -> Option<ImportReading> {
     let mut calls_import = false;
-    let mut pragmas = Pragmas::NONE;
+    let mut reading = ImportReading::default();
     for node in body.descendants() {
-        if node.node_kind() == NodeKind::METHOD_CALL_EXPR {
-            let Some(call) = ast::MethodCallExpr::cast(node.clone()) else {
-                continue;
-            };
-            let Some(method) = call.method_name() else {
-                continue;
-            };
-            if method != "import" && method != "import::into" {
-                continue;
-            }
-            calls_import = true;
-            if let Some(invocant) = call.invocant() {
+        match node.node_kind() {
+            NodeKind::METHOD_CALL_EXPR => {
+                let Some(call) = ast::MethodCallExpr::cast(node.clone()) else {
+                    continue;
+                };
+                let Some(method) = call.method_name() else {
+                    continue;
+                };
+                if method != "import" && method != "import::into" {
+                    continue;
+                }
+                calls_import = true;
+                let Some(invocant) = call.invocant() else {
+                    continue;
+                };
                 let name = invocant.text().to_string();
-                if let Some(table) = by_table(name.trim()) {
-                    pragmas = pragmas.union(table);
+                let name = name.trim();
+                if let Some(table) = by_table(name) {
+                    reading.pragmas = reading.pragmas.union(table);
+                } else if is_module_name(name) && !reading.calls.iter().any(|call| call == name) {
+                    reading.calls.push(name.to_string());
                 }
             }
+            // `eval "..."` and `eval qq{...}`; `eval { }` is a block call.
+            // Only a string that reaches the caller counts — one that moves
+            // into its package, calls an `import` or sets `$^H`. JSON's evals
+            // a redefinition of `encode`, and XML::LibXML's a `use` that ends
+            // with the eval.
+            NodeKind::CALL_EXPR | NodeKind::LIST_CALL_EXPR => {
+                let is_eval = ast::Call::cast(node.clone())
+                    .and_then(|call| call.callee_name())
+                    .is_some_and(|name| name == "eval");
+                let text = node.text().to_string();
+                if is_eval
+                    && ["package", "import", "^H"]
+                        .iter()
+                        .any(|word| text.contains(word))
+                {
+                    reading.opaque = true;
+                }
+            }
+            NodeKind::SCALAR_VAR if node.text() == "$^H" => reading.opaque = true,
+            _ => {}
         }
     }
-    if !calls_import {
+    if !calls_import && !reading.opaque {
         return None;
     }
     for token in body
@@ -194,13 +258,25 @@ pub fn import_enables(body: &SyntaxNode) -> Option<Pragmas> {
         };
         for word in words {
             match word {
-                "strict" => pragmas.strict = true,
-                "warnings" => pragmas.warnings = true,
+                "strict" => reading.pragmas.strict = true,
+                "warnings" => reading.pragmas.warnings = true,
                 _ => {}
             }
         }
     }
-    Some(pragmas)
+    Some(reading)
+}
+
+/// `My::Pragma`, not `$class`, `shift` or `__PACKAGE__`.
+fn is_module_name(name: &str) -> bool {
+    name != "__PACKAGE__"
+        && name
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_alphabetic() || ch == '_')
+        && name
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == ':')
 }
 
 #[cfg(test)]
@@ -228,6 +304,10 @@ mod tests {
     }
 
     fn import(source: &str) -> Option<Pragmas> {
+        reading(source).map(|reading| reading.pragmas)
+    }
+
+    fn reading(source: &str) -> Option<ImportReading> {
         let root = camello_syntax::parse::parse(source).syntax();
         let body = root
             .descendants()
@@ -257,6 +337,18 @@ mod tests {
             Some(Pragmas::BOTH)
         );
         assert_eq!(import("sub import { 1 }"), None);
+        let chained = reading("sub import { require My::Pragma; My::Pragma->import }")
+            .expect("calls an import");
+        assert_eq!(chained.calls, vec!["My::Pragma".to_string()]);
+        let evaluated =
+            reading("sub import { my $p = caller; eval qq{package $p; use Test2::V0;} }")
+                .expect("evaluates a string");
+        assert!(evaluated.opaque);
+        let hinted = reading("sub import { $^H |= 1538 }").expect("writes the hints");
+        assert!(hinted.opaque);
+        assert!(reading("sub import { eval { 1 } }").is_none());
+        assert!(reading("sub import { eval q|*encode = sub { 1 }| }").is_none());
+        assert!(reading("sub import { eval q{ use threads::shared; } }").is_none());
         assert_eq!(
             import("sub import { __PACKAGE__->export_to_level(1, @_); Foo->import }"),
             Some(Pragmas::NONE)

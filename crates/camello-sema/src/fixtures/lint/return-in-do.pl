@@ -12,6 +12,28 @@ sub cached {
     return do { return 6 if $x; 7 };                        #~ warning return-in-do-value
 }
 
+sub both {
+    my ($cache) = @_;
+    $cache //= do {
+        my $r = compute();
+        return $r if $r;    #~ warning return-in-do-value
+        return '';          #~ warning return-in-do-value
+    };
+}
+
+# A `return` in a branch or a loop inside the `do` is an early exit the
+# branch was written for (LINT-1a).
+sub branches {
+    my ($ok, @a) = @_;
+    my $v = do {
+        if   ($ok) { compute() }
+        else       { return (undef, 'error') }
+    };
+    my $w = do { for (@a) { return $_ if $_ } 0 };
+    my $b = do { { return 1 if $ok } 2 };
+    return $v + $w + $b;
+}
+
 sub last_statement {
     do { return 1 if $_[0]; 2 }                             #~ warning return-in-do-value
 }
@@ -28,7 +50,7 @@ sub early {
     my $z = do { first { return 1 } ($f) };
     my $y = do { scraper { return 1 } };
     my $s = do { scraper { my $n = 1; return $n } };
-    my $m = do { map { return 1 } ($f) };                   #~ warning return-in-do-value
+    my $m = do { map { return 1 } ($f) };
     my $u = do { 1 };
     return $v + $w + $u;
 }

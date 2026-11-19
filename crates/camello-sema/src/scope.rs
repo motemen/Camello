@@ -333,6 +333,7 @@ impl StrictRegions {
                 NodeKind::USE_STMT => {
                     let statement = ast::UseStmt::cast(node.clone()).expect("kind checked");
                     let on = match statement.module() {
+                        Some(_) if pragma::imports_nothing(&statement) => false,
                         Some(module) => match enables(&module) {
                             Enables::Known(pragmas) => pragmas.strict,
                             Enables::Unknown => false,

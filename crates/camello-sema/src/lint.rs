@@ -13,6 +13,7 @@ use camello_syntax::lang::{NodeExt, NodeKind, SyntaxNode, TokenExt, TokenKind};
 
 use crate::diag::{Code, Diagnostic};
 use crate::pragma::{self, Enables, Pragmas};
+use crate::scope::{BindingKind, ScopeReport};
 
 /// Every lint diagnostic for one file.
 ///
@@ -23,6 +24,7 @@ pub fn analyse(
     path: &Path,
     root: &SyntaxNode,
     enables: &dyn Fn(&str) -> Enables,
+    scope: &ScopeReport,
 ) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     pragmas(root, enables, &mut diagnostics);
@@ -52,7 +54,7 @@ pub fn analyse(
             }
             NodeKind::FOREACH_HEADER => loop_iterator(&node, &mut diagnostics),
             NodeKind::EMPTY_STMT => double_semicolon(&node, &mut diagnostics),
-            NodeKind::SUB_DEF => nested_sub(&node, &mut diagnostics),
+            NodeKind::SUB_DEF => nested_sub(&node, scope, &mut diagnostics),
             _ => {}
         }
     }
@@ -61,45 +63,39 @@ pub fn analyse(
 
 // ----- LINT-1 -----
 
-/// A `return` inside a `do` whose value is used.
+/// A `return` in a statement of a `do` block whose value is used.
+///
+/// Only a statement of the `do`'s own (LINT-1a): a `return` in an `if`, a
+/// loop or a bare block inside it is an early exit the writer chose a branch
+/// for, which is what Perl::Critic's ProhibitReturnInDoBlock counts too. So
+/// the block that matters is the nearest one around the `return`, and that
+/// also settles a `sub`, an `eval { }` or a `first { }` in between (LINT-1c):
+/// the nearest block is theirs.
 fn return_in_do(call: &Call, into: &mut Vec<Diagnostic>) {
-    let mut node = call.syntax().parent();
-    while let Some(current) = node {
-        match current.node_kind() {
-            // The `return` leaves this, not anything around it (LINT-1c).
-            NodeKind::SUB_DEF | NodeKind::ANON_SUB_EXPR => return,
-            // A block handed to a function is a sub — `eval`'s, `first { }`'s,
-            // Web::Scraper's `scraper { }` — except the three builtins whose
-            // blocks are not, where `return` leaves the sub around them.
-            NodeKind::BLOCK_CALL_EXPR
-                if !matches!(
-                    callee_of(&current).as_deref(),
-                    Some("map" | "grep" | "sort")
-                ) =>
-            {
-                return;
-            }
-            // A function the parser did not know takes a block, `scraper {
-            // ... }`: its block reads as a hash, which never holds a `return`,
-            // or as a `do` with no `do` written.
-            NodeKind::ANON_HASH => return,
-            NodeKind::DO_BLOCK_EXPR
-                if !ast::tokens(&current).any(|token| token.token_kind() == TokenKind::DO_KW) =>
-            {
-                return;
-            }
-            NodeKind::DO_BLOCK_EXPR if !discarded(&current) => {
-                into.push(Diagnostic::new(
-                    Code::ReturnInDoValue,
-                    call.callee_range(),
-                    "`return` inside a `do` block whose value is used returns from the \
-                     enclosing sub, not from the `do`",
-                ));
-                return;
-            }
-            _ => {}
-        }
-        node = current.parent();
+    // A function the parser did not know takes a block, `scraper { ... }`:
+    // its block reads as a hash, which never holds a `return`.
+    let Some(block) = call
+        .syntax()
+        .ancestors()
+        .skip(1)
+        .take_while(|ancestor| ancestor.node_kind() != NodeKind::ANON_HASH)
+        .find(|ancestor| ancestor.node_kind() == NodeKind::BLOCK)
+    else {
+        return;
+    };
+    let Some(construct) = block.parent() else {
+        return;
+    };
+    // A `do` with no `do` written is the parser's reading of `scraper { }`.
+    let is_do = construct.node_kind() == NodeKind::DO_BLOCK_EXPR
+        && ast::tokens(&construct).any(|token| token.token_kind() == TokenKind::DO_KW);
+    if is_do && !discarded(&construct) {
+        into.push(Diagnostic::new(
+            Code::ReturnInDoValue,
+            call.callee_range(),
+            "`return` inside a `do` block whose value is used returns from the \
+             enclosing sub, not from the `do`",
+        ));
     }
 }
 
@@ -325,6 +321,7 @@ fn first_code(
             NodeKind::USE_STMT => {
                 let use_statement = ast::UseStmt::cast(statement.clone()).expect("kind checked");
                 let turned = match use_statement.module() {
+                    Some(_) if pragma::imports_nothing(&use_statement) => Pragmas::NONE,
                     Some(module) => match enables(&module) {
                         Enables::Known(pragmas) => pragmas,
                         Enables::Unknown => Pragmas::BOTH,
@@ -576,31 +573,60 @@ fn double_semicolon(empty: &SyntaxNode, into: &mut Vec<Diagnostic>) {
 
 // ----- LINT-10 -----
 
-fn nested_sub(node: &SyntaxNode, into: &mut Vec<Diagnostic>) {
+fn nested_sub(node: &SyntaxNode, scope: &ScopeReport, into: &mut Vec<Diagnostic>) {
     let definition = SubDef::cast(node.clone()).expect("kind checked");
     if definition.is_forward_declaration() {
         return;
     }
-    let inside_a_sub = node.ancestors().skip(1).any(|ancestor| {
+    // `my sub` and `state sub` are made where they are written, each time
+    // (LINT-10b).
+    let lexical = ast::tokens(node)
+        .any(|token| matches!(token.token_kind(), TokenKind::MY_KW | TokenKind::STATE_KW));
+    if lexical {
+        return;
+    }
+    let Some(outer) = node.ancestors().skip(1).find(|ancestor| {
         matches!(
             ancestor.node_kind(),
             NodeKind::SUB_DEF | NodeKind::ANON_SUB_EXPR
         )
-    });
-    if !inside_a_sub {
+    }) else {
         return;
-    }
+    };
+    // What perl warns "will not stay shared" about: a variable the outer sub
+    // makes afresh on each call — a `my`, a parameter, a `for my`, a `catch`
+    // — that the inner one reads (LINT-10a). A `state` or an `our` is one
+    // variable however many calls there are, and a name the inner sub
+    // declares again resolves to its own.
+    let inner = node.text_range();
+    let outer = outer.text_range();
+    let Some(shared) = scope
+        .references
+        .iter()
+        .filter(|reference| inner.contains_range(reference.range))
+        .map(|reference| &scope.bindings[reference.binding])
+        .find(|binding| {
+            matches!(
+                binding.kind,
+                BindingKind::My | BindingKind::Param | BindingKind::Caught
+            ) && outer.contains_range(binding.range)
+                && !inner.contains_range(binding.range)
+        })
+    else {
+        return;
+    };
     let Some(name) = definition.name() else {
         return;
     };
     let text = name.text();
+    let variable = shared.display();
     into.push(
         Diagnostic::new(
             Code::NestedNamedSub,
             name.syntax().text_range(),
             format!(
                 "named sub `{text}` inside another sub is created once, and sees the outer \
-                 sub's variables from its first call only"
+                 sub's `{variable}` from its first call only"
             ),
         )
         .about(text),

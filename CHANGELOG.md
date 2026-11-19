@@ -8,6 +8,8 @@
   Perl that do not do what they say (`docs/lint.md`, LINT-1..LINT-10).
 - `## no critic`, with or without Perl::Critic policy names, silences the lint
   rules (LINT-OFF).
+- `[check] strict-equivalent-modules` names modules whose `use` turns on
+  `strict` and `warnings` (LINT-5h).
 - A file `.gitattributes` marks `linguist-generated` is reported on by nothing
   (OFF-3).
 

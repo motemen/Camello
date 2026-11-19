@@ -261,7 +261,7 @@ pub struct PackageFacts {
     /// `sub import` (`docs/lint.md`, LINT-5e). `None` where it has none, or
     /// one that calls no `import`.
     #[serde(default)]
-    pub import_pragmas: Option<crate::pragma::Pragmas>,
+    pub import: Option<crate::pragma::ImportReading>,
     /// The variables a `use` with no import list brings into the caller,
     /// sigil and all: the `$x @y %z` of `@EXPORT`, and what the package's own
     /// `import` assigns to a glob — `*{"${caller}::Config"} = \%Config`.
@@ -579,7 +579,7 @@ impl Pass {
                 NodeKind::SUB_DEF => self.sub(&child, &package),
                 NodeKind::USE_STMT | NodeKind::NO_STMT => self.use_statement(&child, &package),
                 NodeKind::EXPR_STMT => {
-                    self.glob_assignment(&child);
+                    self.glob_assignment(&child, Some(&package));
                     self.export_assignment(&child, &package);
                     self.require_statement(&child);
                     self.expression_statement(&child, &package);
@@ -592,7 +592,7 @@ impl Pass {
                 NodeKind::VAR_DECL_STMT => {
                     self.isa_assignment(&child, &package);
                     self.export_assignment(&child, &package);
-                    self.glob_assignment(&child);
+                    self.glob_assignment(&child, Some(&package));
                 }
                 // A block, an `if`, a `BEGIN` — a sub inside one is still a sub
                 // of the package, so the walk goes on rather than stopping at
@@ -612,7 +612,7 @@ impl Pass {
         }
         if name == "import" {
             if let Some(body) = definition.body() {
-                self.facts(package).import_pragmas = crate::pragma::import_enables(body.syntax());
+                self.facts(package).import = crate::pragma::import_enables(body.syntax());
                 let globbed = glob_exports(body.syntax());
                 self.facts(package).exported_variables.extend(globbed);
             }
@@ -799,7 +799,8 @@ impl Pass {
                 statement.node_kind(),
                 NodeKind::EXPR_STMT | NodeKind::VAR_DECL_STMT
             ) {
-                self.glob_assignment(&statement);
+                // Inside a sub a glob named `import` is usually the caller's.
+                self.glob_assignment(&statement, None);
             }
         }
         for call in node.descendants().filter_map(ast::MethodCallExpr::cast) {
@@ -820,7 +821,7 @@ impl Pass {
         }
     }
 
-    fn glob_assignment(&mut self, node: &SyntaxNode) {
+    fn glob_assignment(&mut self, node: &SyntaxNode, package: Option<&str>) {
         let Some(assign) = node.descendants().find_map(ast::Assign::cast) else {
             return;
         };
@@ -837,6 +838,32 @@ impl Pass {
             return;
         }
         self.dynamic = true;
+        // `*{$M . import} = sub { ... }` is an `import` nobody can read
+        // (LINT-5e): YAML::Mo's sets `$^H` from inside one.
+        if let Some(package) = package.filter(|_| target.text().to_string().contains("import")) {
+            // `*import = \&Exporter::import` borrows one that can be read.
+            let borrowed = assign
+                .value()
+                .filter(|value| value.node_kind() == NodeKind::REFERENCE_EXPR)
+                .and_then(|value| value.descendants().find_map(Variable::cast))
+                .filter(|variable| variable.sigil() == Sigil::Code)
+                .and_then(|variable| variable.name())
+                .and_then(|name| name.strip_suffix("::import").map(str::to_string));
+            let reading = match borrowed {
+                Some(module) => crate::pragma::ImportReading {
+                    calls: vec![module],
+                    ..crate::pragma::ImportReading::default()
+                },
+                None => crate::pragma::ImportReading {
+                    opaque: true,
+                    ..crate::pragma::ImportReading::default()
+                },
+            };
+            let facts = self.facts(package);
+            if facts.import.is_none() {
+                facts.import = Some(reading);
+            }
+        }
         if !glob_target_is_nameable(&target) {
             self.installs_by_computed_name = true;
         }
