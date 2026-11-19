@@ -86,6 +86,21 @@ impl Resolver {
     }
 }
 
+impl Resolver {
+    /// Whether a `use` is worth reading for what its `import` turns on.
+    ///
+    /// Wider than [`Resolver::worth_resolving`]: a lowercase name is a pragma
+    /// by convention only, and a project's test helper called `t::helper`
+    /// turns `strict` on as well as `My::Test` does (`docs/lint.md`,
+    /// LINT-5f). Only what the table already answers — `strict`,
+    /// `warnings`, `common::sense` — is left unread.
+    #[must_use]
+    pub fn worth_reading(module: &str) -> bool {
+        Resolver::worth_resolving(module)
+            || (module_path(module).is_some() && crate::pragma::by_table(module).is_none())
+    }
+}
+
 /// `Foo::Bar` → `Foo/Bar.pm`, or `None` when the name is not one.
 #[must_use]
 pub fn module_path(module: &str) -> Option<PathBuf> {
@@ -179,7 +194,7 @@ impl Cache {
     /// attributes and no `new`" would outlive the release that fixed it —
     /// `Carton::Dist`, a `Class::Tiny` class, kept reporting `unknown-method`
     /// on its own constructor. Bump this with the recogniser.
-    const FORMAT: &'static str = "import-calls-1";
+    const FORMAT: &'static str = "import-uses-1";
 
     /// The key for a file, from what a stat and a hash can say about it.
     ///
@@ -263,6 +278,16 @@ mod tests {
         assert!(!Resolver::worth_resolving("strict"));
         assert!(!Resolver::worth_resolving("parent"));
         assert!(Resolver::worth_resolving("Foo::Bar"));
+    }
+
+    #[test]
+    fn a_lowercase_module_is_read_for_its_import() {
+        assert!(Resolver::worth_reading("t"));
+        assert!(Resolver::worth_reading("t::helper"));
+        assert!(Resolver::worth_reading("Foo::Bar"));
+        // The table answers these without a file.
+        assert!(!Resolver::worth_reading("strict"));
+        assert!(!Resolver::worth_reading("common::sense"));
     }
 
     #[test]

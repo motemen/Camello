@@ -26,7 +26,8 @@
 
 - `undeclared-variable` no longer reports a variable a module exports through
   `@EXPORT`, `@EXPORT_OK`, `%EXPORT_TAGS` or its `import`, `local our`, `our
-  %h = (%h)`, or `$x[...]` and `${x}[...]` in a pattern or string (DIAG-1a..d).
+  %h = (%h)`, `$x[...]` and `${x}[...]` in a pattern or string, or a `use
+  vars` of the same package in another file (DIAG-1a..e).
 - `$x->foo if $x`, `$x ? $x->foo : undef` and `while ($x) { $x->foo }` are
   narrowed like an `if`, and no longer report `maybe-deref` (NARROW-8).
 - `if (!$x) { return }` narrows `$x` below it, and a call to a sub that ends

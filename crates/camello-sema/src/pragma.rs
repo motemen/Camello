@@ -98,25 +98,18 @@ pub fn by_table(module: &str) -> Option<Pragmas> {
         .map(|(_, pragmas)| *pragmas)
 }
 
-/// What the table alone can say: a name it lists, or a lowercase pragma it
-/// does not (`utf8`, `lib`, `constant`), which turns nothing on.
+/// What the table alone can say about a module the run did not find.
+///
+/// Nothing beyond the table, whatever the name looks like: perl's own
+/// pragmas are always found in its `@INC` and read (LINT-5e), so a lowercase
+/// name that is nowhere is a project module the run was not told where to
+/// look for — `t`, `t::helper` — not a pragma (LINT-5f).
 #[must_use]
 pub fn without_program(module: &str) -> Enables {
-    if let Some(pragmas) = by_table(module) {
-        return Enables::Known(pragmas);
+    match by_table(module) {
+        Some(pragmas) => Enables::Known(pragmas),
+        None => Enables::Unknown,
     }
-    if is_pragma_name(module) {
-        return Enables::Known(Pragmas::NONE);
-    }
-    Enables::Unknown
-}
-
-/// A lowercase name is a pragma — `utf8`, `integer`, `fields` — and one the
-/// table does not list turns neither on, whatever its `import` does to `$^H`.
-pub(crate) fn is_pragma_name(module: &str) -> bool {
-    module
-        .chars()
-        .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_' || ch == ':')
 }
 
 /// `use Module ()`: the empty list means `import` is never called, so the
@@ -176,9 +169,8 @@ pub struct ImportReading {
     /// The other modules whose `import` it calls, to be read the same way:
     /// `My::Pragma->import` in a project's test module.
     pub calls: Vec<String>,
-    /// It does what nobody can read: a string `eval` — `eval qq{package
-    /// $caller; use Test2::V0;}` — or a write to `$^H`, the bits `use
-    /// strict` sets.
+    /// It does what nobody can read: a string `eval` that reaches the caller
+    /// — `eval qq{package $caller; use Test2::V0;}`.
     pub opaque: bool,
 }
 
@@ -194,6 +186,7 @@ pub struct ImportReading {
 #[must_use]
 pub fn import_enables(body: &SyntaxNode) -> Option<ImportReading> {
     let mut calls_import = false;
+    let mut touches_hints = false;
     let mut reading = ImportReading::default();
     for node in body.descendants() {
         match node.node_kind() {
@@ -237,9 +230,33 @@ pub fn import_enables(body: &SyntaxNode) -> Option<ImportReading> {
                     reading.opaque = true;
                 }
             }
-            NodeKind::SCALAR_VAR if node.text() == "$^H" => reading.opaque = true,
+            // `$^H |= 0x602` sets the bits `use strict` sets. A value this
+            // cannot read — integer.pm's `$^H |= $integer::hint_bits` — is
+            // some other pragma's bit, and turns nothing on here.
+            NodeKind::ASSIGN_EXPR => {
+                let Some(assign) = ast::Assign::cast(node.clone()) else {
+                    continue;
+                };
+                let writes_hints = assign.target().is_some_and(|target| target.text() == "$^H");
+                let combines = matches!(
+                    assign.operator(),
+                    Some(TokenKind::BITWISE_OR_EQ | TokenKind::EQ)
+                );
+                if writes_hints && combines {
+                    touches_hints = true;
+                    let bits = assign
+                        .value()
+                        .and_then(|value| literal_integer(&value.text().to_string()));
+                    if bits.is_some_and(|bits| bits & STRICT_BITS == STRICT_BITS) {
+                        reading.pragmas.strict = true;
+                    }
+                }
+            }
             _ => {}
         }
+    }
+    if touches_hints && !calls_import && !reading.opaque {
+        return Some(reading);
     }
     if !calls_import && !reading.opaque {
         return None;
@@ -265,6 +282,28 @@ pub fn import_enables(body: &SyntaxNode) -> Option<ImportReading> {
         }
     }
     Some(reading)
+}
+
+/// `strict refs`, `strict subs` and `strict vars` in `$^H`: what `use
+/// strict` sets.
+const STRICT_BITS: u64 = 0x2 | 0x200 | 0x400;
+
+/// `1538`, `0x602`, `0o3002`, `03002`, `0b11000000010`.
+fn literal_integer(text: &str) -> Option<u64> {
+    let text = text.trim().replace('_', "");
+    if let Some(hex) = text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")) {
+        return u64::from_str_radix(hex, 16).ok();
+    }
+    if let Some(binary) = text.strip_prefix("0b").or_else(|| text.strip_prefix("0B")) {
+        return u64::from_str_radix(binary, 2).ok();
+    }
+    if let Some(octal) = text.strip_prefix("0o") {
+        return u64::from_str_radix(octal, 8).ok();
+    }
+    if text.len() > 1 && text.starts_with('0') {
+        return u64::from_str_radix(&text[1..], 8).ok();
+    }
+    text.parse().ok()
 }
 
 /// `My::Pragma`, not `$class`, `shift` or `__PACKAGE__`.
@@ -344,8 +383,12 @@ mod tests {
             reading("sub import { my $p = caller; eval qq{package $p; use Test2::V0;} }")
                 .expect("evaluates a string");
         assert!(evaluated.opaque);
-        let hinted = reading("sub import { $^H |= 1538 }").expect("writes the hints");
-        assert!(hinted.opaque);
+        assert_eq!(import("sub import { $^H |= 1538 }"), Some(Pragmas::STRICT));
+        assert_eq!(import("sub import { $^H |= 0x602 }"), Some(Pragmas::STRICT));
+        assert_eq!(
+            import("sub import { $^H |= $integer::hint_bits }"),
+            Some(Pragmas::NONE)
+        );
         assert!(reading("sub import { eval { 1 } }").is_none());
         assert!(reading("sub import { eval q|*encode = sub { 1 }| }").is_none());
         assert!(reading("sub import { eval q{ use threads::shared; } }").is_none());

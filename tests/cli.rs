@@ -397,6 +397,102 @@ fn types_are_reported_only_when_asked_for() {
     assert!(stdout.contains("[arity]"), "{stdout}");
 }
 
+/// A project module with a lowercase name is found the way any module is —
+/// through `--inc` and `[check] lib` — and its `import` read, when the run
+/// was pointed at the file that uses it and not at the module (`docs/lint.md`,
+/// LINT-5e, LINT-5f). That is the language server's case too: one file open,
+/// the module only a dependency. Each file is its own run, so that one `use t`
+/// does not resolve `t` for the others.
+#[test]
+fn a_lowercase_module_is_read_without_being_checked() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    std::fs::create_dir_all(directory.path().join("lib/t")).expect("mkdir");
+    std::fs::create_dir_all(directory.path().join("lib/My")).expect("mkdir");
+    let pragma = |package: &str| {
+        format!(
+            "package {package};\nuse strict;\nuse warnings;\n\n\
+             sub import {{\n    strict->import;\n    warnings->import;\n}}\n\n1;\n"
+        )
+    };
+    write(directory.path(), "lib/t.pm", &pragma("t"));
+    write(directory.path(), "lib/t/helper.pm", &pragma("t::helper"));
+    write(
+        directory.path(),
+        "lib/My/Test.pm",
+        "package My::Test;\nuse strict;\nuse warnings;\n\n\
+         sub import {\n    require t;\n    t->import;\n}\n\n1;\n",
+    );
+    for (file, module) in [
+        ("t.pl", "t"),
+        ("helper.pl", "t::helper"),
+        ("test.pl", "My::Test"),
+    ] {
+        write(
+            directory.path(),
+            file,
+            &format!("use {module};\nprint $nope;\n"),
+        );
+    }
+    write(
+        directory.path(),
+        "camello.toml",
+        "[check]\nlib = [\"lib\"]\n",
+    );
+
+    // `undeclared-variable` is what tells a module read from one taken on
+    // trust: it is reported where `strict` is known to be on, and a module
+    // the run cannot see is not known to turn it on.
+    for file in ["t.pl", "helper.pl", "test.pl"] {
+        let runs: [(&[&str], bool); 3] = [
+            // Found through `--inc`, and through `[check] lib`.
+            (
+                &["check", "--no-cache", "--no-config", "--inc", "lib", file],
+                true,
+            ),
+            (&["check", "--no-cache", file], true),
+            // Found nowhere: no config and perl's own `@INC`. A module the
+            // run cannot see turns both on for the lint rules, lowercase or
+            // not, and nothing for `undeclared-variable`.
+            (&["check", "--no-cache", "--no-config", file], false),
+        ];
+        for (arguments, found) in runs {
+            let output = camello(directory.path(), arguments);
+            let stdout = String::from_utf8(output.stdout).expect("output is utf-8");
+            assert!(
+                !stdout.contains("[missing-strict]") && !stdout.contains("[missing-warnings]"),
+                "{arguments:?}:\n{stdout}"
+            );
+            assert_eq!(
+                stdout.contains("[undeclared-variable]"),
+                found,
+                "{arguments:?}:\n{stdout}"
+            );
+        }
+    }
+}
+
+/// perl's own pragmas are in its `@INC`, so they are found and read, and
+/// `use integer` turns nothing on however its `import` sets `$^H`
+/// (LINT-5e). This one reads the `@INC` of the perl on `PATH`.
+#[test]
+fn a_core_pragma_is_read_and_turns_nothing_on() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    write(
+        directory.path(),
+        "integer.pl",
+        "use integer;\nprint 1 + 1;\n",
+    );
+    let output = camello(
+        directory.path(),
+        &["check", "--no-cache", "--no-config", "integer.pl"],
+    );
+    let stdout = String::from_utf8(output.stdout).expect("output is utf-8");
+    assert!(
+        stdout.contains("[missing-strict]") && stdout.contains("[missing-warnings]"),
+        "{stdout}"
+    );
+}
+
 /// `[check] lib` is what the project is, so it is a root for `use Foo` to
 /// resolve in however the run was pointed — the way `camello lsp` already
 /// reads it.

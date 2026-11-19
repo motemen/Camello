@@ -267,7 +267,7 @@ impl Analysis {
         let mut seen: std::collections::HashSet<String> = pending.iter().cloned().collect();
 
         while let Some(module) = pending.pop() {
-            if !resolve::Resolver::worth_resolving(&module) {
+            if !resolve::Resolver::worth_reading(&module) {
                 continue;
             }
             let Some((path, _origin)) = self.resolver.locate(&module) else {
@@ -515,7 +515,15 @@ impl Analysis {
                 .import_enables(module, &options.strict_equivalent_modules)
         };
         let exported = |module: &str, tagged: bool| self.program.exported_variables(module, tagged);
-        let mut scope = scope::analyse(root, source, &options.guard_classes, &enables, &exported);
+        let package_vars = |package: &str| self.program.package_vars(package);
+        let mut scope = scope::analyse(
+            root,
+            source,
+            &options.guard_classes,
+            &enables,
+            &exported,
+            &package_vars,
+        );
         let mut types = flow::TypeTable::default();
         // Moved rather than copied: what comes back is the merged, filtered
         // list, and a second copy inside the scope report would be the same

@@ -7,5 +7,5 @@ missing
 =cut
 
 package Foo;
-use utf8;
+use Exporter;
 my $x = 1;  #~ warning missing-strict #~ warning missing-warnings

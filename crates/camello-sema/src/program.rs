@@ -414,7 +414,7 @@ impl Program {
         if let Some(pragmas) = pragma::by_table(module) {
             return Enables::Known(pragmas);
         }
-        if !self.knows_package(module) || pragma::is_pragma_name(module) {
+        if !self.knows_package(module) {
             return pragma::without_program(module);
         }
         // A cycle of `import`s adds nothing the first visit did not.
@@ -456,6 +456,15 @@ impl Program {
             };
         }
         Enables::Known(Pragmas::NONE)
+    }
+
+    /// The variables `use vars` declared for `package`, in any file.
+    #[must_use]
+    pub fn package_vars(&self, package: &str) -> Vec<String> {
+        self.facts(package)
+            .into_iter()
+            .flat_map(|facts| facts.package_vars.iter().cloned())
+            .collect()
     }
 
     /// The variables `use module` brings into the caller: with no import

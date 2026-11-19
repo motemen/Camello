@@ -278,8 +278,15 @@ pub fn analyse(
     guards: &[String],
     enables: &dyn Fn(&str) -> Enables,
     exported: &dyn Fn(&str, bool) -> Option<Vec<String>>,
+    package_vars: &dyn Fn(&str) -> Vec<String>,
 ) -> ScopeReport {
-    let mut pass = Pass::new(source, guards, StrictRegions::of(root, enables), exported);
+    let mut pass = Pass::new(
+        source,
+        guards,
+        StrictRegions::of(root, enables),
+        exported,
+        package_vars,
+    );
     pass.run(root);
     let bindings = pass
         .bindings
@@ -391,6 +398,9 @@ struct Pass<'a> {
     /// `:tag` of a module that computes its lists. From there on an
     /// undeclared name may be one of them, and nothing is reported.
     unnamed_imports: bool,
+    /// What `use vars` declared for a package, in this file or another
+    /// (`docs/types.md`, DIAG-1e).
+    package_vars: &'a dyn Fn(&str) -> Vec<String>,
     /// Guard classes beyond [`GUARD_NAMES`], from `camello.toml`.
     guards: &'a [String],
     bindings: Vec<Binding>,
@@ -412,11 +422,13 @@ impl<'a> Pass<'a> {
         guards: &'a [String],
         strict: StrictRegions,
         exported: &'a dyn Fn(&str, bool) -> Option<Vec<String>>,
+        package_vars: &'a dyn Fn(&str) -> Vec<String>,
     ) -> Self {
         Pass {
             source,
             exported,
             unnamed_imports: false,
+            package_vars,
             guards,
             bindings: Vec::new(),
             scopes: Vec::new(),
@@ -716,6 +728,27 @@ impl<'a> Pass<'a> {
             }
 
             NodeKind::USE_STMT => self.walk_use(node),
+            NodeKind::PACKAGE_STMT => {
+                let name = ast::PackageStmt::cast(node.clone()).and_then(|package| package.name());
+                if let Some(name) = name {
+                    // Declared in another file, so nothing here to point at
+                    // and nothing a `my` here shadows: implicit, as perl's
+                    // own names are.
+                    for variable in (self.package_vars)(&name) {
+                        let (sigil, bare) = split_sigil(&variable);
+                        if let Some(sigil) = sigil {
+                            self.declare_in(
+                                0,
+                                sigil,
+                                bare,
+                                TextRange::default(),
+                                BindingKind::Implicit,
+                            );
+                        }
+                    }
+                }
+                self.walk_children(node);
+            }
 
             // A name is not a variable, and its tokens hold nothing to scan.
             NodeKind::SUB_NAME | NodeKind::LABEL | NodeKind::ATTR => {}

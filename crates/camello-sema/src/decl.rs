@@ -267,6 +267,11 @@ pub struct PackageFacts {
     /// `import` assigns to a glob — `*{"${caller}::Config"} = \%Config`.
     #[serde(default)]
     pub exported_variables: Vec<String>,
+    /// The variables `use vars` declares for this package, sigil and all.
+    /// `use vars` imports into the package's globs, so they are declared for
+    /// the package's code in every file, not only the one that says it.
+    #[serde(default)]
+    pub package_vars: Vec<String>,
     /// The variables `@EXPORT_OK` and `%EXPORT_TAGS` offer, which a `:tag`
     /// may bring.
     #[serde(default)]
@@ -612,7 +617,13 @@ impl Pass {
         }
         if name == "import" {
             if let Some(body) = definition.body() {
-                self.facts(package).import = crate::pragma::import_enables(body.syntax());
+                let reading = crate::pragma::import_enables(body.syntax());
+                // What the `import` hands off to is a dependency like a `use`:
+                // `require t; t->import` names a module nothing else names.
+                if let Some(reading) = &reading {
+                    self.decls.uses.extend(reading.calls.iter().cloned());
+                }
+                self.facts(package).import = reading;
                 let globbed = glob_exports(body.syntax());
                 self.facts(package).exported_variables.extend(globbed);
             }
@@ -682,6 +693,16 @@ impl Pass {
         if node.node_kind() == NodeKind::USE_STMT {
             self.decls.uses.push(module.clone());
             self.facts(package).uses.push(module.clone());
+            if module == "vars" {
+                let declared: Vec<String> = arguments
+                    .iter()
+                    .flat_map(Args::elements)
+                    .filter_map(|element| listed_words(&element))
+                    .flatten()
+                    .filter(|word| word.starts_with(['$', '@', '%']))
+                    .collect();
+                self.facts(package).package_vars.extend(declared);
+            }
         }
 
         // What the recognisers below are asked about. The resolver and the
@@ -859,6 +880,7 @@ impl Pass {
                     ..crate::pragma::ImportReading::default()
                 },
             };
+            self.decls.uses.extend(reading.calls.iter().cloned());
             let facts = self.facts(package);
             if facts.import.is_none() {
                 facts.import = Some(reading);
