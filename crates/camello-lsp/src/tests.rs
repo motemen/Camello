@@ -657,7 +657,10 @@ mod an_edit_only_the_program_can_see {
                 path,
                 &parsed.syntax(),
                 &source,
-                &camello_sema::Options::default(),
+                &camello_sema::Options {
+                    types: true,
+                    ..camello_sema::Options::default()
+                },
             )
             .iter()
             .map(|diagnostic| diagnostic.message.clone())

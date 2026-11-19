@@ -4,8 +4,8 @@
 
 ### Added
 
-- `camello check` reports twelve lint rules, each a `warning`: ways of writing
-  Perl that do not do what they say (`docs/lint.md`, LINT-1..LINT-11).
+- `camello check` reports eleven lint rules, each a `warning`: ways of writing
+  Perl that do not do what they say (`docs/lint.md`, LINT-1..LINT-10).
 - `## no critic`, with or without Perl::Critic policy names, silences the lint
   rules (LINT-OFF).
 - A file `.gitattributes` marks `linguist-generated` is reported on by nothing
@@ -13,12 +13,18 @@
 
 ### Changed
 
+- `camello check` and `camello lsp` report what rests on types — `arity`,
+  `type-mismatch`, `unknown-method`, `maybe-deref` and the rest — only under
+  `--types` or `[check] types = true` (DIAG-0).
 - `use 5.012`, `use Test2::V0`, `use Role::Tiny` and the like, and a project
   module whose `sub import` imports `strict`, turn `strict` on for
   `undeclared-variable` too (LINT-5g).
 
 ### Fixed
 
+- `undeclared-variable` no longer reports a variable a module exports through
+  `@EXPORT`, `@EXPORT_OK`, `%EXPORT_TAGS` or its `import`, `local our`, `our
+  %h = (%h)`, or `$x[...]` and `${x}[...]` in a pattern or string (DIAG-1a..d).
 - `$x->foo if $x`, `$x ? $x->foo : undef` and `while ($x) { $x->foo }` are
   narrowed like an `if`, and no longer report `maybe-deref` (NARROW-8).
 - `if (!$x) { return }` narrows `$x` below it, and a call to a sub that ends

@@ -277,8 +277,9 @@ pub fn analyse(
     source: &str,
     guards: &[String],
     enables: &dyn Fn(&str) -> Enables,
+    exported: &dyn Fn(&str, bool) -> Option<Vec<String>>,
 ) -> ScopeReport {
-    let mut pass = Pass::new(source, guards, StrictRegions::of(root, enables));
+    let mut pass = Pass::new(source, guards, StrictRegions::of(root, enables), exported);
     pass.run(root);
     let bindings = pass
         .bindings
@@ -382,6 +383,13 @@ fn disables_vars(statement: &ast::NoStmt) -> bool {
 
 struct Pass<'a> {
     source: &'a str,
+    /// The variables `use` of a module brings in, as
+    /// [`crate::Program::exported_variables`] reads them.
+    exported: &'a dyn Fn(&str, bool) -> Option<Vec<String>>,
+    /// A `use` brought variables nobody can name — a computed `use vars`, a
+    /// `:tag` of a module that computes its lists. From there on an
+    /// undeclared name may be one of them, and nothing is reported.
+    unnamed_imports: bool,
     /// Guard classes beyond [`GUARD_NAMES`], from `camello.toml`.
     guards: &'a [String],
     bindings: Vec<Binding>,
@@ -398,9 +406,16 @@ struct Pass<'a> {
 }
 
 impl<'a> Pass<'a> {
-    fn new(source: &'a str, guards: &'a [String], strict: StrictRegions) -> Self {
+    fn new(
+        source: &'a str,
+        guards: &'a [String],
+        strict: StrictRegions,
+        exported: &'a dyn Fn(&str, bool) -> Option<Vec<String>>,
+    ) -> Self {
         Pass {
             source,
+            exported,
+            unnamed_imports: false,
             guards,
             bindings: Vec::new(),
             scopes: Vec::new(),
@@ -584,7 +599,7 @@ impl<'a> Pass<'a> {
         }
         let found = self.resolve(sigil, name);
         self.record_reference(found, range);
-        if found.is_some() || !self.strict.at(range.start()) {
+        if found.is_some() || self.unnamed_imports || !self.strict.at(range.start()) {
             return;
         }
         let display = written(sigil, name);
@@ -658,12 +673,23 @@ impl<'a> Pass<'a> {
 
             // `my $x = $x` reads the outer `$x`: a declaration takes effect at
             // the end of the statement it is in, so the value comes first.
+            // `our` is the exception: it names the package variable from where
+            // it is written, so `our %h = (..., %h)` reads the one it declares.
             NodeKind::ASSIGN_EXPR => {
                 let children: Vec<_> = node.children().collect();
+                let our_first = children.first().is_some_and(|first| {
+                    first.node_kind() == NodeKind::VAR_DECL
+                        && VarDecl::cast(first.clone())
+                            .and_then(|declaration| declaration.keyword())
+                            == Some(DeclKeyword::Our)
+                });
+                if our_first {
+                    self.walk(&children[0]);
+                }
                 for child in children.iter().skip(1) {
                     self.walk(child);
                 }
-                if let Some(first) = children.first() {
+                if let (false, Some(first)) = (our_first, children.first()) {
                     self.walk(first);
                 }
                 for token in ast::tokens(node) {
@@ -750,7 +776,13 @@ impl<'a> Pass<'a> {
 
     fn walk_var_decl(&mut self, node: &SyntaxNode) {
         let declaration = VarDecl::cast(node.clone()).expect("kind checked");
-        let kind = match declaration.keyword() {
+        // `local our ($x)` declares as `our` does, and localises besides.
+        let keyword = if ast::tokens(node).any(|token| token.token_kind() == TokenKind::OUR_KW) {
+            Some(DeclKeyword::Our)
+        } else {
+            declaration.keyword()
+        };
+        let kind = match keyword {
             Some(DeclKeyword::My) => BindingKind::My,
             Some(DeclKeyword::State) => BindingKind::State,
             Some(DeclKeyword::Our) => BindingKind::Our,
@@ -849,7 +881,40 @@ impl<'a> Pass<'a> {
             }
         }
 
+        // What the module exports: by default where there is no list, and
+        // everything it offers where a `:tag` names a set this cannot expand.
+        let listed = statement
+            .arguments()
+            .map(|arguments| declared_names(&arguments));
+        let tagged = listed.as_ref().is_some_and(|names| {
+            names
+                .iter()
+                .any(|name| name.starts_with([':', '-', '/', '!']))
+        });
+        if listed.is_none() || tagged {
+            let Some(names) = (self.exported)(&module, tagged) else {
+                self.unnamed_imports = true;
+                return self.walk_children(node);
+            };
+            for name in names {
+                let (sigil, bare) = split_sigil(&name);
+                if let Some(sigil) = sigil {
+                    self.declare_file_scope(sigil, bare, node.text_range(), BindingKind::Vars);
+                }
+            }
+        }
+
         if let Some(arguments) = statement.arguments() {
+            // `use vars map {@$_} values %vars` declares what it computes,
+            // and reads what it computes it from.
+            if module == "vars"
+                && Args::elements(&arguments)
+                    .iter()
+                    .any(|element| crate::decl::listed_words(element).is_none())
+            {
+                self.unnamed_imports = true;
+                return self.walk_children(node);
+            }
             // A name with a sigil in an import list is a variable this file
             // now has: `use POSIX qw($errno)`, and `use vars` itself, which
             // the pragma's own documentation calls package-wide rather than
@@ -889,11 +954,22 @@ impl<'a> Pass<'a> {
             return;
         }
         let start = usize::from(token.text_range().start());
+        let pattern = token.token_kind() == TokenKind::REGEX_PATTERN;
         for found in interp::uses_in(token, &self.heredocs) {
             let range = TextRange::new(
                 TextSize::from((start + found.offset) as u32),
                 TextSize::from((start + found.offset + found.len) as u32),
             );
+            // In a pattern perl guesses whether `$x[...]` is an element of
+            // `@x` or `$x` before a character class, and `$x{2,}` an element
+            // of `%x` or `$x` before a quantifier. Where only the scalar is
+            // declared, the scalar is what working code means.
+            if pattern && found.element && self.lookup_outer(found.sigil, &found.name).is_none() {
+                if let Some(binding) = self.resolve(Sigil::Scalar, &found.name) {
+                    self.record_reference(Some(binding), range);
+                    continue;
+                }
+            }
             self.use_name(found.sigil, &found.name, range);
         }
     }

@@ -421,6 +421,42 @@ impl Program {
         Enables::Known(Pragmas::NONE)
     }
 
+    /// The variables `use module` brings into the caller: with no import
+    /// list, what it exports by default; with a `:tag` in it, everything it
+    /// offers, which is the quiet reading of a set this cannot expand.
+    ///
+    /// `None` where nobody can say: a list the module computes, or a `:tag`
+    /// of a module the run never read. A module out of sight used without a
+    /// list is taken to export no variable — few do, and taking it the other
+    /// way would silence `undeclared-variable` in every file that uses one.
+    #[must_use]
+    pub fn exported_variables(&self, module: &str, tagged: bool) -> Option<Vec<String>> {
+        if !self.knows_package(module) {
+            return (!tagged).then(Vec::new);
+        }
+        let facts = self.facts(module);
+        let unknown = facts
+            .iter()
+            .any(|facts| facts.exports_unknown || (tagged && facts.exportable_unknown));
+        if unknown {
+            return None;
+        }
+        Some(
+            facts
+                .into_iter()
+                .flat_map(|facts| {
+                    let offered = if tagged {
+                        facts.exportable_variables.as_slice()
+                    } else {
+                        &[]
+                    };
+                    facts.exported_variables.iter().chain(offered)
+                })
+                .cloned()
+                .collect(),
+        )
+    }
+
     /// What the run knows about a package, from every file that opens it.
     ///
     /// A package's declarations are the union: it is common for one file to

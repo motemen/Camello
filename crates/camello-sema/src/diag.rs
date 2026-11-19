@@ -137,8 +137,6 @@ pub enum Code {
     DoubleSemicolon,
     /// A named `sub` inside a sub's body (LINT-10).
     NestedNamedSub,
-    /// `0755`, a number that is octal because of its leading zero (LINT-11).
-    LeadingZero,
 }
 
 impl Code {
@@ -169,7 +167,6 @@ impl Code {
         Code::PackageFilenameMismatch,
         Code::DoubleSemicolon,
         Code::NestedNamedSub,
-        Code::LeadingZero,
     ];
 
     #[must_use]
@@ -201,7 +198,6 @@ impl Code {
             Code::PackageFilenameMismatch => "package-filename-mismatch",
             Code::DoubleSemicolon => "double-semicolon",
             Code::NestedNamedSub => "nested-named-sub",
-            Code::LeadingZero => "leading-zero",
         }
     }
 
@@ -227,7 +223,6 @@ impl Code {
             Code::PackageFilenameMismatch => "Modules::RequireFilenameMatchesPackage",
             Code::DoubleSemicolon => "ValuesAndExpressions::ProhibitNullStatements",
             Code::NestedNamedSub => "Subroutines::ProhibitNestedSubs",
-            Code::LeadingZero => "ValuesAndExpressions::ProhibitLeadingZeros",
             _ => return None,
         })
     }
@@ -236,6 +231,42 @@ impl Code {
     #[must_use]
     pub const fn is_lint(self) -> bool {
         self.critic_policy().is_some()
+    }
+
+    /// Whether this code rests on types, annotations or the classes a call
+    /// resolves to, and is reported only under `--types` (`docs/types.md`,
+    /// DIAG-0). What is left — the lint rules and the scope pass — reads
+    /// nothing but the file and the names its imports bring in.
+    #[must_use]
+    pub const fn needs_types(self) -> bool {
+        match self {
+            Code::Arity
+            | Code::TypeMismatch
+            | Code::UnknownKey
+            | Code::UnknownMethod
+            | Code::MaybeDeref
+            | Code::BadAnnotation
+            | Code::ReturnMismatch
+            | Code::UnknownType
+            | Code::MissingAnnotation
+            | Code::MissingArgument
+            | Code::IgnoredPrototype => true,
+            Code::UndeclaredVariable
+            | Code::UnusedVariable
+            | Code::ShadowedVariable
+            | Code::UnusedParameter
+            | Code::ReturnInDoValue
+            | Code::ConditionalDeclaration
+            | Code::TwoArgOpen
+            | Code::BarewordFilehandle
+            | Code::MissingStrict
+            | Code::MissingWarnings
+            | Code::ReturnSort
+            | Code::NonLexicalLoopIterator
+            | Code::PackageFilenameMismatch
+            | Code::DoubleSemicolon
+            | Code::NestedNamedSub => false,
+        }
     }
 
     /// The severity this code is reported at when nothing downgrades it.
@@ -265,8 +296,7 @@ impl Code {
             | Code::NonLexicalLoopIterator
             | Code::PackageFilenameMismatch
             | Code::DoubleSemicolon
-            | Code::NestedNamedSub
-            | Code::LeadingZero => Severity::Warning,
+            | Code::NestedNamedSub => Severity::Warning,
             Code::BadAnnotation
             | Code::UnknownType
             | Code::MissingAnnotation

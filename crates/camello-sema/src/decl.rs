@@ -262,6 +262,20 @@ pub struct PackageFacts {
     /// one that calls no `import`.
     #[serde(default)]
     pub import_pragmas: Option<crate::pragma::Pragmas>,
+    /// The variables a `use` with no import list brings into the caller,
+    /// sigil and all: the `$x @y %z` of `@EXPORT`, and what the package's own
+    /// `import` assigns to a glob — `*{"${caller}::Config"} = \%Config`.
+    #[serde(default)]
+    pub exported_variables: Vec<String>,
+    /// The variables `@EXPORT_OK` and `%EXPORT_TAGS` offer, which a `:tag`
+    /// may bring.
+    #[serde(default)]
+    pub exportable_variables: Vec<String>,
+    /// `@EXPORT_OK` or `%EXPORT_TAGS` holds what this pass could not read —
+    /// `map {@$_} values %vars` — so what a `:tag` brings cannot be named.
+    /// `@EXPORT` unread is [`PackageFacts::exports_unknown`].
+    #[serde(default)]
+    pub exportable_unknown: bool,
     /// The modules this package `use`s, for the two questions above.
     #[serde(default)]
     pub uses: Vec<String>,
@@ -599,6 +613,8 @@ impl Pass {
         if name == "import" {
             if let Some(body) = definition.body() {
                 self.facts(package).import_pragmas = crate::pragma::import_enables(body.syntax());
+                let globbed = glob_exports(body.syntax());
+                self.facts(package).exported_variables.extend(globbed);
             }
         }
         let params = parameters(
@@ -972,15 +988,27 @@ impl Pass {
         let Some(target) = assign.target() else {
             return;
         };
-        let Some(owner) = assigned_package(&target, "EXPORT", package) else {
-            return;
-        };
         let Some(value) = assign.value() else {
             return;
         };
-        match exported_names(&value) {
-            Some(names) => self.facts(&owner).exports.extend(names),
-            None => self.facts(&owner).exports_unknown = true,
+        if let Some(owner) = assigned_package(&target, "EXPORT", package) {
+            match exported_names(&value) {
+                Some(names) => self.facts(&owner).exports.extend(names),
+                None => self.facts(&owner).exports_unknown = true,
+            }
+            self.facts(&owner)
+                .exported_variables
+                .extend(listed_variables(&value).unwrap_or_default());
+        } else if let Some(owner) = assigned_package(&target, "EXPORT_OK", package) {
+            match listed_variables(&value) {
+                Some(variables) => self.facts(&owner).exportable_variables.extend(variables),
+                None => self.facts(&owner).exportable_unknown = true,
+            }
+        } else if names_export_tags(&target) {
+            match tagged_variables(&value) {
+                Some(variables) => self.facts(package).exportable_variables.extend(variables),
+                None => self.facts(package).exportable_unknown = true,
+            }
         }
     }
 
@@ -1140,6 +1168,95 @@ fn exported_names(value: &SyntaxNode) -> Option<Vec<String>> {
         }
     }
     Some(names)
+}
+
+/// The variables an `@EXPORT` or `@EXPORT_OK` list holds, sigil and all, or
+/// `None` for a list that is not written out. `*CWD` is all three.
+fn listed_variables(value: &SyntaxNode) -> Option<Vec<String>> {
+    let mut variables = Vec::new();
+    for element in Args::elements(value) {
+        for word in listed_words(&element)? {
+            if let Some(name) = word.strip_prefix('*') {
+                variables.extend(["$", "@", "%"].map(|sigil| format!("{sigil}{name}")));
+            } else if word.starts_with(['$', '@', '%']) {
+                variables.push(word);
+            }
+        }
+    }
+    Some(variables)
+}
+
+/// Whether an assignment is to `%EXPORT_TAGS`.
+fn names_export_tags(target: &SyntaxNode) -> bool {
+    target
+        .descendants()
+        .filter_map(Variable::cast)
+        .filter(|variable| variable.sigil() == Sigil::Hash)
+        .filter_map(|variable| variable.name())
+        .any(|name| name == "EXPORT_TAGS" || name.ends_with("::EXPORT_TAGS"))
+}
+
+/// The variables `%EXPORT_TAGS = (all => [qw($x @y)])` offers, or `None`
+/// where a tag's list is computed. `[@EXPORT_OK]` is a list read already.
+fn tagged_variables(value: &SyntaxNode) -> Option<Vec<String>> {
+    let mut variables = Vec::new();
+    for node in value.descendants() {
+        match node.node_kind() {
+            NodeKind::QW_EXPR => {
+                for word in listed_words(&node)? {
+                    if let Some(name) = word.strip_prefix('*') {
+                        variables.extend(["$", "@", "%"].map(|sigil| format!("{sigil}{name}")));
+                    } else if word.starts_with(['$', '@', '%']) {
+                        variables.push(word);
+                    }
+                }
+            }
+            NodeKind::ARRAY_VAR | NodeKind::HASH_VAR | NodeKind::SCALAR_VAR => {
+                let name = Variable::cast(node)?.name()?;
+                if !matches!(name.as_str(), "EXPORT" | "EXPORT_OK") {
+                    return None;
+                }
+            }
+            NodeKind::CALL_EXPR
+            | NodeKind::CODE_CALL_EXPR
+            | NodeKind::LIST_CALL_EXPR
+            | NodeKind::BLOCK_CALL_EXPR
+            | NodeKind::METHOD_CALL_EXPR => return None,
+            _ => {}
+        }
+    }
+    Some(variables)
+}
+
+/// The variables an `import` hands its caller through a glob:
+/// `*{$caller . '::Config'} = \%Config` gives the caller `%Config`. Only a
+/// reference to a named variable is read; what a computed one gives cannot
+/// be named, and `English` and its kind are a table (`scope.rs`).
+fn glob_exports(body: &SyntaxNode) -> Vec<String> {
+    body.descendants()
+        .filter_map(ast::Assign::cast)
+        .filter(|assign| {
+            assign
+                .target()
+                .is_some_and(|target| target.text().to_string().starts_with('*'))
+        })
+        .filter_map(|assign| {
+            let value = assign.value()?;
+            if value.node_kind() != NodeKind::REFERENCE_EXPR {
+                return None;
+            }
+            let variable = value.children().find_map(Variable::cast)?;
+            let sigil = match variable.sigil() {
+                Sigil::Scalar => '$',
+                Sigil::Array => '@',
+                Sigil::Hash => '%',
+                _ => return None,
+            };
+            let name = variable.name()?;
+            let bare = name.rsplit("::").next().unwrap_or(&name).to_string();
+            Some(format!("{sigil}{bare}"))
+        })
+        .collect()
 }
 
 fn imported_names(arguments: &SyntaxNode) -> Vec<String> {

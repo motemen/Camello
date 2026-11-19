@@ -1,5 +1,6 @@
 use strict;
 use warnings;
+use List::Util qw(first);
 
 sub cached {
     my ($self, $x) = @_;
@@ -24,6 +25,10 @@ sub early {
     do { return if $f; next_one() } while ($f);
     my $v = do { my $s = sub { return 1 }; $s->() };
     my $w = do { eval { return 1 } };
+    my $z = do { first { return 1 } ($f) };
+    my $y = do { scraper { return 1 } };
+    my $s = do { scraper { my $n = 1; return $n } };
+    my $m = do { map { return 1 } ($f) };                   #~ warning return-in-do-value
     my $u = do { 1 };
     return $v + $w + $u;
 }
@@ -31,3 +36,4 @@ sub early {
 sub compute { 1 }
 sub ok { 1 }
 sub next_one { 0 }
+sub scraper { 1 }

@@ -19,8 +19,9 @@
 - (LINT-POLICY-4) **重大度はすべて `warning` です。** 既定の `--min-severity` で
   印字され、既定の `--error-on` では終了ステータスを変えません。perlcritic の
   ように違反で CI を落とすには `--error-on warning` を指定します。
-- (LINT-POLICY-5) **型の診断と同じ実行で報告します。** 別のサブコマンドはありません。
-  `perlcritic lib t` を置き換えるのは `camello check lib t` です。
+- (LINT-POLICY-5) **`camello check` の既定の報告です。** 別のサブコマンドはありません。
+  `perlcritic lib t` を置き換えるのは `camello check lib t` です。型の診断は
+  `--types` を付けたときだけ同じ実行に加わります（[DIAG-0](types.md#7-診断-diag)）。
 
 各ルールには Perl::Critic のポリシー名が対応していて、`## no critic` はその名前で
 ルールを止めます。対応が一部だけのものは、そう書いてあります。
@@ -38,13 +39,14 @@
 | `package-filename-mismatch` | Modules::RequireFilenameMatchesPackage        |
 | `double-semicolon`          | ValuesAndExpressions::ProhibitNullStatements  |
 | `nested-named-sub`          | Subroutines::ProhibitNestedSubs               |
-| `leading-zero`              | ValuesAndExpressions::ProhibitLeadingZeros    |
 
 `ProhibitReturnInDoBlock` は同名の CPAN ディストリビューション、
 `ProhibitNullStatements` は Perl-Critic-Pulp のポリシーで、Perl::Critic 本体には
-含まれません。ほかの 10 個は本体のものです。
+含まれません。ほかの 9 個は本体のものです。
 
-Perl::Critic のほかのポリシーは実装しません。`ProhibitUnusedVarsStricter` に
+Perl::Critic のほかのポリシーは実装しません。`ProhibitLeadingZeros` に当たるものも
+ありません。Perl で `0` から始まる数はほぼ必ず意図した 8 進数（`0644`、`umask 022`）で、
+誤検知のない線が引けないからです。`ProhibitUnusedVarsStricter` に
 当たるものは `unused-variable` です。
 
 ## 2. ルール (LINT)
@@ -74,7 +76,10 @@ Perl::Critic のほかのポリシーは実装しません。`ProhibitUnusedVars
   defined $x && do { ok($x) or return };                  # 指摘しない
   ```
 - (LINT-1c) `do` の中にある `sub { ... }` や名前付きの `sub` の中の `return` は、
-  その `sub` から抜けるので対象外です。
+  その `sub` から抜けるので対象外です。関数に渡したブロック（`eval { }`、
+  `first { }`、`scraper { }`）も `sub` なので同じです。`map`・`grep`・`sort` の
+  ブロックだけは `sub` ではなく、その中の `return` は外側のサブルーチンから
+  抜けます。
 - (LINT-1d) 報告する位置は `return` です。
 
 ### 2.2 `conditional-declaration` (LINT-2)
@@ -171,6 +176,13 @@ Perl::Critic のほかのポリシーは実装しません。`ProhibitUnusedVars
 - (LINT-8b) **指摘しない**: `package` のないファイル、最初の `package` が
   `package main` のファイル、`.pm` 以外のファイル。報告する位置は最初の
   `package` の名前です。
+- (LINT-8c) **指摘しない**: `use` で読まれるつもりのないファイル。
+  - `package` と名前を別の行に書いたもの（`package\n    DBI;`）。PAUSE は
+    `package` と同じ行の名前しか読まないので、これはインデックスから隠すための
+    書き方です。
+  - パスの祖先にあたるパッケージのもの。`XML/SAX/PurePerl/DTDDecls.pm` の
+    `package XML::SAX::PurePerl` は、そのパッケージの実装を分けたファイルで、
+    パスを指定して `require` されます。
 
 ### 2.9 `double-semicolon` (LINT-9)
 
@@ -197,20 +209,6 @@ Perl::Critic のほかのポリシーは実装しません。`ProhibitUnusedVars
   （perl は "Variable will not stay shared" と警告します）。
 - (LINT-10b) **指摘しない**: 前方宣言（本体のない `sub foo;`）。報告する位置は
   内側の `sub` の名前です。
-
-### 2.11 `leading-zero` (LINT-11)
-
-- (LINT-11a) **指摘する**: `0` で始まり、その後に数字が続く数値リテラル。
-  `0755` は 8 進数で、10 進数の 755 ではありません。
-- (LINT-11b) **指摘しない**: 8 進数で書くのが当然の場所にあるもの。
-  - `chmod`・`mkdir`・`mkpath`・`make_path`・`umask`・`sysopen`・`dbmopen` の
-    引数。パッケージ名つきの呼び出し（`File::Path::mkpath`）や、先頭に `_` の
-    付いたラッパー（`_chmod`）も含みます。
-  - ビット演算（`&`・`|`・`^`・`~`・`<<`・`>>` とその代入形）のオペランド。
-    括弧と三項演算子の枝は通り抜けて見ます。`$mode & 07777` も
-    `0444 | ($x ? 0111 : 0)` も対象外です。
-
-  `0`、`0.5`、`0x1f`、`0b101`、`0o17` もこのルールの対象ではありません。
 
 ## 3. 診断を止める (LINT-OFF)
 

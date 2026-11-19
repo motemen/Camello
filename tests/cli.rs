@@ -357,7 +357,7 @@ fn a_typed_error_on_wins_over_the_config() {
     .expect("failed to write");
     std::fs::write(
         directory.path().join("camello.toml"),
-        "[check]\nerror-on = \"warning\"\n",
+        "[check]\nerror-on = \"warning\"\ntypes = true\n",
     )
     .expect("failed to write");
 
@@ -375,6 +375,26 @@ fn a_typed_error_on_wins_over_the_config() {
         typed.status.success(),
         "`--error-on error` typed over the file is what this run asked for"
     );
+}
+
+/// Without `--types` a run reports nothing that rests on types: the arity
+/// error below is there to be left out (`docs/types.md`, DIAG-0).
+#[test]
+fn types_are_reported_only_when_asked_for() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    write(
+        directory.path(),
+        "arity.pl",
+        "use strict;\nuse warnings;\nsub g { my ($a) = @_; return $a }\ng(1, 2);\n",
+    );
+    let plain = camello(directory.path(), &["check", "arity.pl"]);
+    let stdout = String::from_utf8(plain.stdout).expect("output is utf-8");
+    assert!(plain.status.success(), "{stdout}");
+    assert!(!stdout.contains("[arity]"), "{stdout}");
+
+    let typed = camello(directory.path(), &["check", "--types", "arity.pl"]);
+    let stdout = String::from_utf8(typed.stdout).expect("output is utf-8");
+    assert!(stdout.contains("[arity]"), "{stdout}");
 }
 
 /// `[check] lib` is what the project is, so it is a root for `use Foo` to
@@ -401,7 +421,7 @@ fn lib_in_the_config_is_a_root_for_a_run_pointed_elsewhere() {
     )
     .expect("failed to write");
 
-    let output = camello(directory.path(), &["check", "t"]);
+    let output = camello(directory.path(), &["check", "--types", "t"]);
     let stdout = String::from_utf8(output.stdout).expect("output is utf-8");
     assert!(
         stdout.contains("[unknown-method]"),
@@ -450,8 +470,11 @@ fn exit_statuses_are_the_numbers_scripts_read() {
         (&["format", "--check", "bad.pl"], 1),
         (&["format", "--stop-on-first-error", "bad.pl"], 1),
         (&["format", "--encoding", "no-such-encoding", "tidy.pl"], 1),
-        (&["check", "--error-on", "warning", "arity.pl"], 1),
-        (&["check", "--error-on", "error", "arity.pl"], 0),
+        (
+            &["check", "--types", "--error-on", "warning", "arity.pl"],
+            1,
+        ),
+        (&["check", "--types", "--error-on", "error", "arity.pl"], 0),
         (&["dev", "check", "tidy.pl"], 0),
         (
             &["dev", "check", "--only", "no-such-invariant", "tidy.pl"],

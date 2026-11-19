@@ -63,6 +63,7 @@ impl Settings {
         let (check, found) = config.check.resolve(root);
         problems.extend(found);
         let options = Options {
+            types: check.types,
             strict_annotations: check.strict_annotations,
             disabled: check.disabled,
             guard_classes: check.guard_classes,

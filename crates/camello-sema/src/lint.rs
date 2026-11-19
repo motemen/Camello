@@ -9,7 +9,7 @@
 use std::path::{Component, Path};
 
 use camello_syntax::ast::{self, AstNode, Call, DeclKeyword, Literal, SubDef, VarDecl, Variable};
-use camello_syntax::lang::{NodeExt, NodeKind, SyntaxNode, SyntaxToken, TokenExt, TokenKind};
+use camello_syntax::lang::{NodeExt, NodeKind, SyntaxNode, TokenExt, TokenKind};
 
 use crate::diag::{Code, Diagnostic};
 use crate::pragma::{self, Enables, Pragmas};
@@ -56,13 +56,6 @@ pub fn analyse(
             _ => {}
         }
     }
-    for token in root
-        .descendants_with_tokens()
-        .filter_map(|element| element.into_token())
-        .filter(|token| token.token_kind() == TokenKind::NUMBER)
-    {
-        leading_zero(&token, &mut diagnostics);
-    }
     diagnostics
 }
 
@@ -75,7 +68,26 @@ fn return_in_do(call: &Call, into: &mut Vec<Diagnostic>) {
         match current.node_kind() {
             // The `return` leaves this, not anything around it (LINT-1c).
             NodeKind::SUB_DEF | NodeKind::ANON_SUB_EXPR => return,
-            NodeKind::BLOCK_CALL_EXPR if callee_of(&current).as_deref() == Some("eval") => return,
+            // A block handed to a function is a sub — `eval`'s, `first { }`'s,
+            // Web::Scraper's `scraper { }` — except the three builtins whose
+            // blocks are not, where `return` leaves the sub around them.
+            NodeKind::BLOCK_CALL_EXPR
+                if !matches!(
+                    callee_of(&current).as_deref(),
+                    Some("map" | "grep" | "sort")
+                ) =>
+            {
+                return;
+            }
+            // A function the parser did not know takes a block, `scraper {
+            // ... }`: its block reads as a hash, which never holds a `return`,
+            // or as a `do` with no `do` written.
+            NodeKind::ANON_HASH => return,
+            NodeKind::DO_BLOCK_EXPR
+                if !ast::tokens(&current).any(|token| token.token_kind() == TokenKind::DO_KW) =>
+            {
+                return;
+            }
             NodeKind::DO_BLOCK_EXPR if !discarded(&current) => {
                 into.push(Diagnostic::new(
                     Code::ReturnInDoValue,
@@ -474,6 +486,21 @@ fn package_filename(path: &Path, root: &SyntaxNode, into: &mut Vec<Diagnostic>) 
     if name == "main" {
         return;
     }
+    // `package\n    DBI;` is how a file says "do not index me": PAUSE reads
+    // a package's name off the line of its keyword, and a file that moves it
+    // to the next one is not meant to be found by `use` (LINT-8c).
+    if packages.iter().any(|(package, _)| {
+        package
+            .syntax()
+            .children()
+            .find(|child| child.node_kind() == NodeKind::SUB_NAME)
+            .is_some_and(|name| {
+                let start = name.text_range().start() - package.syntax().text_range().start();
+                package.syntax().text().to_string()[..usize::from(start)].contains('\n')
+            })
+    }) {
+        return;
+    }
     let mut parts: Vec<String> = path
         .components()
         .filter_map(|component| match component {
@@ -492,6 +519,21 @@ fn package_filename(path: &Path, root: &SyntaxNode, into: &mut Vec<Diagnostic>) 
     // A helper package may come first; what `use` needs is that the file
     // defines the one its path names somewhere.
     if packages.iter().any(|(_, name)| names_the_path(name)) {
+        return;
+    }
+    // `XML/SAX/PurePerl/DTDDecls.pm` holding `package XML::SAX::PurePerl` is
+    // a part of that package's implementation, split out and `require`d by
+    // path (LINT-8c).
+    let names_an_ancestor = |name: &str| {
+        (1..parts.len()).any(|dropped| {
+            let kept = &parts[..parts.len() - dropped];
+            name.rsplit("::")
+                .zip(kept.iter().rev())
+                .all(|(wanted, part)| wanted == part)
+                && name.split("::").count() <= kept.len()
+        })
+    };
+    if packages.iter().any(|(_, name)| names_an_ancestor(name)) {
         return;
     }
     let name = name.clone();
@@ -563,100 +605,6 @@ fn nested_sub(node: &SyntaxNode, into: &mut Vec<Diagnostic>) {
         )
         .about(text),
     );
-}
-
-// ----- LINT-11 -----
-
-/// What a call is named when its arguments are permissions, written in octal
-/// on purpose: the builtins, and the wrappers that carry their names —
-/// `_chmod`, `File::Path::mkpath`, `make_path` (LINT-11b).
-const OCTAL_ON_PURPOSE: &[&str] = &[
-    "chmod",
-    "mkdir",
-    "mkpath",
-    "make_path",
-    "umask",
-    "sysopen",
-    "dbmopen",
-];
-
-/// The operators whose operands are bit masks, which octal is the way to
-/// write.
-const BITWISE: &[TokenKind] = &[
-    TokenKind::BITWISE_AND,
-    TokenKind::BITWISE_OR,
-    TokenKind::BITWISE_XOR,
-    TokenKind::BITWISE_NOT,
-    TokenKind::SHIFT_LEFT,
-    TokenKind::SHIFT_RIGHT,
-    TokenKind::BITWISE_AND_EQ,
-    TokenKind::BITWISE_OR_EQ,
-    TokenKind::BITWISE_XOR_EQ,
-    TokenKind::SHIFT_LEFT_EQ,
-    TokenKind::SHIFT_RIGHT_EQ,
-];
-
-/// Whether a number sits where octal is what anyone would write.
-fn octal_on_purpose(token: &SyntaxToken) -> bool {
-    let in_permission_call = token
-        .parent_ancestors()
-        .filter_map(Call::cast)
-        .filter_map(|call| call.callee_name())
-        .any(|name| {
-            let last = name.rsplit("::").next().unwrap_or(&name);
-            OCTAL_ON_PURPOSE.contains(&last.trim_start_matches('_'))
-        });
-    if in_permission_call {
-        return true;
-    }
-    // An operand of a bitwise operator, directly or through parentheses.
-    let mut node = token.parent();
-    while let Some(current) = node {
-        match current.node_kind() {
-            NodeKind::LITERAL
-            | NodeKind::PAREN_EXPR
-            | NodeKind::LIST_EXPR
-            | NodeKind::TERNARY_EXPR => {
-                node = current.parent();
-            }
-            NodeKind::BINARY_EXPR | NodeKind::ASSIGN_EXPR | NodeKind::PREFIX_EXPR => {
-                return ast::tokens(&current)
-                    .any(|operator| BITWISE.contains(&operator.token_kind()));
-            }
-            _ => return false,
-        }
-    }
-    false
-}
-
-fn leading_zero(token: &SyntaxToken, into: &mut Vec<Diagnostic>) {
-    let text = token.text();
-    let mut chars = text.chars();
-    if chars.next() != Some('0') {
-        return;
-    }
-    if !chars
-        .next()
-        .is_some_and(|second| second.is_ascii_digit() || second == '_')
-    {
-        return;
-    }
-    if text.contains(['.', 'e', 'E']) {
-        return;
-    }
-    if octal_on_purpose(token) {
-        return;
-    }
-    let digits = text.replace('_', "");
-    let reading = match u64::from_str_radix(&digits, 8) {
-        Ok(value) => format!("{value} in decimal"),
-        Err(_) => "not a number perl accepts".to_string(),
-    };
-    into.push(Diagnostic::new(
-        Code::LeadingZero,
-        token.text_range(),
-        format!("`{text}` is octal because of its leading zero ({reading})"),
-    ));
 }
 
 /// The name a call-shaped node calls, `BLOCK_CALL_EXPR` included.

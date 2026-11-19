@@ -102,11 +102,13 @@ pub enum Commands {
         #[command(flatten)]
         layout: LayoutArgs,
     },
-    /// Report what the code says about itself: undeclared, unused and shadowed
-    /// lexicals, arity, and what the type annotations add
+    /// Report what the code says about itself: the lint rules, and
+    /// undeclared, unused and shadowed lexicals; with `--types`, what the type
+    /// annotations add
     ///
-    /// The annotations Perl code already carries — `has ... isa => 'Str'`,
-    /// `args my $x => 'Int'`, `Class::Accessor::Typed` — are read as
+    /// Without `--types` nothing reported rests on a guess at a value's type.
+    /// With it, the annotations Perl code already carries — `has ... isa =>
+    /// 'Str'`, `args my $x => 'Int'`, `Class::Accessor::Typed` — are read as
     /// declarations, and a `Returns:` comment annotates a sub's result. Any
     /// code can be turned off with `--disable`.
     Check {
@@ -504,10 +506,18 @@ pub struct CheckArgs {
     )]
     pub disable: Option<String>,
 
+    /// Report what rests on types: arity, type mismatches, unknown keys and
+    /// methods, `Maybe` dereferences and the annotations themselves
+    #[arg(
+        long,
+        help = "Report what rests on types too: arity, type-mismatch, unknown-method, maybe-deref, ..."
+    )]
+    pub types: bool,
+
     /// Report a public sub that says nothing about its own shape
     #[arg(
         long,
-        help = "Report a public sub with no signature, `args` list or `Returns:`"
+        help = "Report a public sub with no signature, `args` list or `Returns:` (implies --types)"
     )]
     pub strict_annotations: bool,
 
@@ -590,6 +600,7 @@ impl CheckArgs {
             .ok_or_else(|| miette::miette!("--format takes `text` or `json`"))?;
 
         options.strict_annotations = self.strict_annotations || check.strict_annotations;
+        options.types = self.types || check.types || options.strict_annotations;
         options.disabled = crate::report::parse_codes(self.disable.as_deref().unwrap_or(""))?;
         options.disabled.extend(check.disabled);
         options.guard_classes = check.guard_classes;

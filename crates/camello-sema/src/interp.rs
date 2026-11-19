@@ -37,6 +37,9 @@ pub struct Use {
     pub offset: usize,
     /// Byte length of the whole reference, sigil and name.
     pub len: usize,
+    /// Read as the container of the `[...]` or `{...}` after it: `$x[0]` is
+    /// a use of `@x` with this set.
+    pub element: bool,
 }
 
 /// Every variable use perl interpolates in a quoted token, with offsets
@@ -182,6 +185,33 @@ fn scan_into(text: &str, base: usize, uses: &mut Vec<Use>) {
     }
 }
 
+/// A subscript's contents, which are code: `{'$ref'}` is a key written in
+/// single quotes, and nothing in single quotes interpolates.
+fn scan_code(text: &str, base: usize, uses: &mut Vec<Use>) {
+    let mut start = 0;
+    let mut quoted = false;
+    let mut escape = false;
+    for (index, byte) in text.bytes().enumerate() {
+        if quoted {
+            match byte {
+                _ if escape => escape = false,
+                b'\\' => escape = true,
+                b'\'' => {
+                    quoted = false;
+                    start = index + 1;
+                }
+                _ => {}
+            }
+        } else if byte == b'\'' {
+            scan_into(&text[start..index], base + start, uses);
+            quoted = true;
+        }
+    }
+    if !quoted {
+        scan_into(&text[start..], base + start, uses);
+    }
+}
+
 /// Read one `$...` or `@...` reference at `index`, returning what it consumed.
 ///
 /// Zero means "this sigil begins nothing", and the caller steps over it.
@@ -226,20 +256,17 @@ fn reference(
                 return 0;
             };
             let inner = &text[cursor + 1..close];
+            // The braces end the name and the reference with it: "${m}[0]"
+            // is `$m` and then the text `[0]`, which is what they are for.
             if let Some(name) = plain_name(inner.trim()) {
-                let end = subscripts(text, close + 1, base, uses);
-                let sigil = if dereferenced {
-                    sigil
-                } else {
-                    container_sigil(sigil, text, close + 1)
-                };
                 uses.push(Use {
+                    element: false,
                     sigil,
                     name,
                     offset: base + index,
                     len: close + 1 - index,
                 });
-                end - index
+                close + 1 - index
             } else {
                 scan_into(inner, base + cursor + 1, uses);
                 close + 1 - index
@@ -249,11 +276,13 @@ fn reference(
             let start = cursor;
             cursor = name_end(bytes, cursor);
             let name = text[start..cursor].to_string();
-            let sigil = if dereferenced {
+            let read_as = if dereferenced {
                 sigil
             } else {
                 container_sigil(sigil, text, cursor)
             };
+            let element = read_as != sigil;
+            let sigil = read_as;
             let end = if dereferenced {
                 cursor
             } else {
@@ -264,6 +293,7 @@ fn reference(
                 name,
                 offset: base + index,
                 len: cursor - index,
+                element,
             });
             end - index
         }
@@ -304,14 +334,14 @@ fn subscripts(text: &str, mut index: usize, base: usize, uses: &mut Vec<Use>) ->
                 let Some(close) = matching_brace(bytes, cursor) else {
                     return index;
                 };
-                scan_into(&text[cursor + 1..close], base + cursor + 1, uses);
+                scan_code(&text[cursor + 1..close], base + cursor + 1, uses);
                 index = close + 1;
             }
             Some(b'[') => {
                 let Some(close) = matching_bracket(bytes, cursor) else {
                     return index;
                 };
-                scan_into(&text[cursor + 1..close], base + cursor + 1, uses);
+                scan_code(&text[cursor + 1..close], base + cursor + 1, uses);
                 index = close + 1;
             }
             _ => return index,
