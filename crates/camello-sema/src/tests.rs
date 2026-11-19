@@ -217,7 +217,19 @@ fn fixtures_report_exactly_what_they_say() {
             let root = parse_one(path, &source);
             let index = LineIndex::new(&source);
             let expected = parse_expectations(&source);
-            let found = analysis.check(path, &root, &source, &crate::Options::for_fixture(path));
+            // A fixture under `lint/` is about the lint rules and every other
+            // fixture about everything else, so that a type fixture need not
+            // open with `use warnings` to stay silent, nor a lint fixture
+            // declare every variable it uses.
+            let lint = fixture
+                .label
+                .strip_prefix(fixtures_dir())
+                .is_ok_and(|relative| relative.starts_with("lint"));
+            let found: Vec<_> = analysis
+                .check(path, &root, &source, &crate::Options::for_fixture(path))
+                .into_iter()
+                .filter(|diagnostic| diagnostic.code.is_lint() == lint)
+                .collect();
 
             let mut remaining: Vec<&Expectation> = expected.iter().collect();
             let mut unexpected = Vec::new();
@@ -288,7 +300,7 @@ fn every_code_has_a_fixture() {
 #[test]
 fn the_harness_notices_a_missing_diagnostic() {
     // The fixtures above pass; this is what says that passing means something.
-    let source = "use strict;\nprint $nope;\n";
+    let source = "use strict;\nuse warnings;\nprint $nope;\n";
     let found = crate::check_source(source, &crate::Options::default());
     assert_eq!(found.len(), 1, "{found:?}");
     assert_eq!(found[0].code, Code::UndeclaredVariable);

@@ -25,6 +25,7 @@ use rowan::{TextRange, TextSize};
 
 use crate::diag::{Code, Diagnostic};
 use crate::interp;
+use crate::pragma::{self, Enables};
 
 /// Names that are always in scope, whatever the file declares.
 ///
@@ -35,33 +36,6 @@ use crate::interp;
 const ALWAYS_IN_SCOPE: &[&str] = &[
     "_", "a", "b", "ARGV", "ARGVOUT", "ENV", "INC", "SIG", "STDIN", "STDOUT", "STDERR", "DATA",
     "AUTOLOAD", "ISA", "0",
-];
-
-/// Modules whose import turns `strict` on, so that a file saying `use Moose`
-/// is checked the way perl checks it.
-///
-/// Not exhaustive and cannot be: a module that turns strict on is doing it in
-/// its own `import`, which is code camello does not run (`docs/typecheck.md`,
-/// non-goals). Missing one makes the checker quieter, which is the direction
-/// to be wrong in.
-const STRICT_BY_IMPORT: &[&str] = &[
-    "strict",
-    "strictures",
-    "Modern::Perl",
-    "common::sense",
-    "Moose",
-    "Moose::Role",
-    "Moose::Exporter",
-    "Moo",
-    "Moo::Role",
-    "Mouse",
-    "Mouse::Role",
-    "Mojo::Base",
-    "Mojolicious::Lite",
-    "Dancer2",
-    "Object::Pad",
-    "Test::Class::Moose",
-    "Class::Accessor::Typed",
 ];
 
 /// The variables `use English` binds, read off `English.pm`'s own glob
@@ -298,8 +272,13 @@ impl ScopeReport {
 /// `guards` names the classes a project holds values of for their destructors,
 /// beyond the ones [`GUARD_NAMES`] knows.
 #[must_use]
-pub fn analyse(root: &SyntaxNode, source: &str, guards: &[String]) -> ScopeReport {
-    let mut pass = Pass::new(source, guards, StrictRegions::of(root));
+pub fn analyse(
+    root: &SyntaxNode,
+    source: &str,
+    guards: &[String],
+    enables: &dyn Fn(&str) -> Enables,
+) -> ScopeReport {
+    let mut pass = Pass::new(source, guards, StrictRegions::of(root, enables));
     pass.run(root);
     let bindings = pass
         .bindings
@@ -342,15 +321,22 @@ pub struct StrictRegions {
 
 impl StrictRegions {
     #[must_use]
-    pub fn of(root: &SyntaxNode) -> Self {
+    ///
+    /// `enables` says what a `use` of a module turns on (`docs/lint.md`,
+    /// LINT-5g); a module it cannot answer for turns nothing on here, which
+    /// is the quiet reading for a pass that reports where `strict` is on.
+    pub fn of(root: &SyntaxNode, enables: &dyn Fn(&str) -> Enables) -> Self {
         let mut events = Vec::new();
         for node in root.descendants() {
             match node.node_kind() {
                 NodeKind::USE_STMT => {
                     let statement = ast::UseStmt::cast(node.clone()).expect("kind checked");
                     let on = match statement.module() {
-                        Some(module) => STRICT_BY_IMPORT.contains(&module.as_str()),
-                        None => version_enables_strict(&node),
+                        Some(module) => match enables(&module) {
+                            Enables::Known(pragmas) => pragmas.strict,
+                            Enables::Unknown => false,
+                        },
+                        None => pragma::by_version(&node).strict,
                     };
                     if on {
                         events.push((node.text_range().end(), true));
@@ -383,21 +369,6 @@ impl StrictRegions {
     pub fn anywhere(&self) -> bool {
         self.events.iter().any(|(_, on)| *on)
     }
-}
-
-/// `use v5.12` and up imply `use strict` (perl 5.11.0 onwards).
-fn version_enables_strict(node: &SyntaxNode) -> bool {
-    let Some(token) = ast::tokens(node).find(|token| token.token_kind() == TokenKind::VERSION)
-    else {
-        return false;
-    };
-    let text = token.text().trim_start_matches('v');
-    let mut parts = text.split('.');
-    let major: u32 = parts.next().and_then(|part| part.parse().ok()).unwrap_or(0);
-    let minor: u32 = parts.next().and_then(|part| part.parse().ok()).unwrap_or(0);
-    // `use 5.012` and `use v5.12` are the same request written two ways.
-    let minor = if minor >= 100 { minor / 10 } else { minor };
-    major > 5 || (major == 5 && minor >= 11)
 }
 
 /// Whether a `no strict ...` turns off the part this pass depends on.

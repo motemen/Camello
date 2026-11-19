@@ -120,6 +120,20 @@ The rule underneath is that **the checker is silent when it does not know**. A
 program with no annotations and no recognisable constructors gets no type
 diagnostics at all, and that is correct behaviour rather than a gap.
 
+The same run reports what `perlcritic` would have caught that is worth
+catching: a way of writing Perl that does not do what writing it meant. A
+`return` inside a `do` whose value is used, `my $x = ... if $cond`, a
+two-argument `open`, a bareword filehandle, code before `use strict` or
+`use warnings`, `return sort`, `for $x (...)` without `my`, a `.pm` whose
+package its path does not name, `;;`, a named `sub` inside another, `0755`
+where octal was not meant. There is nothing to configure: each is a
+`warning`, a style choice is never one of them, and a project's own import
+module is read to see whether it turns `strict` on. `## no critic` is read
+by the Perl::Critic names; `--error-on warning` is what fails CI the way
+`perlcritic` did. [docs/lint.md](docs/lint.md) is the list.
+
+A file `.gitattributes` marks `linguist-generated` is reported on by nothing.
+
 Turn one off for a line with a comment, or for a project in `camello.toml`:
 
 ```perl

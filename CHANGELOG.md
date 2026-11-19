@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Added
+
+- `camello check` reports twelve lint rules, each a `warning`: ways of writing
+  Perl that do not do what they say (`docs/lint.md`, LINT-1..LINT-11).
+- `## no critic`, with or without Perl::Critic policy names, silences the lint
+  rules (LINT-OFF).
+- A file `.gitattributes` marks `linguist-generated` is reported on by nothing
+  (OFF-3).
+
+### Changed
+
+- `use 5.012`, `use Test2::V0`, `use Role::Tiny` and the like, and a project
+  module whose `sub import` imports `strict`, turn `strict` on for
+  `undeclared-variable` too (LINT-5g).
+
 ### Fixed
 
 - `$x->foo if $x`, `$x ? $x->foo : undef` and `while ($x) { $x->foo }` are

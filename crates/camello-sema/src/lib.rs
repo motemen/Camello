@@ -18,6 +18,8 @@ pub mod decl;
 pub mod diag;
 pub mod flow;
 pub mod interp;
+pub mod lint;
+pub mod pragma;
 pub mod program;
 pub mod resolve;
 pub mod scope;
@@ -492,12 +494,14 @@ impl Analysis {
         options: &Options,
         record: Record,
     ) -> FileAnalysis {
-        let mut scope = scope::analyse(root, source, &options.guard_classes);
+        let enables = |module: &str| self.program.import_enables(module);
+        let mut scope = scope::analyse(root, source, &options.guard_classes, &enables);
         let mut types = flow::TypeTable::default();
         // Moved rather than copied: what comes back is the merged, filtered
         // list, and a second copy inside the scope report would be the same
         // diagnostics under different rules.
         let mut diagnostics = std::mem::take(&mut scope.diagnostics);
+        diagnostics.extend(lint::analyse(path, root, &enables));
         if let Some(file) = self.program.index_of(path) {
             diagnostics.extend(arity::analyse(root, file, &self.program));
             let checked = flow::analyse(root, file, &self.program, record == Record::Types);

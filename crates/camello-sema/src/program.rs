@@ -385,6 +385,42 @@ impl Program {
         self.packages.contains_key(name)
     }
 
+    /// What `use`-ing `module` turns on (`docs/lint.md`, LINT-5d..f).
+    ///
+    /// The table first, then the module's own `sub import`, then the first
+    /// ancestor's: `use parent 'My::Base'` is how a project's import module
+    /// usually gets the `import` that does the work. A package the run read
+    /// with no `import` anywhere in its ancestry turns nothing on, and one it
+    /// never read is [`Enables::Unknown`](crate::pragma::Enables::Unknown).
+    #[must_use]
+    pub fn import_enables(&self, module: &str) -> crate::pragma::Enables {
+        use crate::pragma::{self, Enables, Pragmas};
+        if let Some(pragmas) = pragma::by_table(module) {
+            return Enables::Known(pragmas);
+        }
+        if !self.knows_package(module) {
+            return pragma::without_program(module);
+        }
+        for package in self.linearise(module) {
+            if let Some(pragmas) = pragma::by_table(&package) {
+                return Enables::Known(pragmas);
+            }
+            // An ancestor out of sight may be the one with the `import`.
+            if !self.knows_package(&package) {
+                return Enables::Unknown;
+            }
+            let own: Vec<Pragmas> = self
+                .facts(&package)
+                .iter()
+                .filter_map(|facts| facts.import_pragmas)
+                .collect();
+            if !own.is_empty() {
+                return Enables::Known(own.into_iter().fold(Pragmas::NONE, Pragmas::union));
+            }
+        }
+        Enables::Known(Pragmas::NONE)
+    }
+
     /// What the run knows about a package, from every file that opens it.
     ///
     /// A package's declarations are the union: it is common for one file to

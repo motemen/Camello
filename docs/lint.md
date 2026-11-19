@@ -1,0 +1,252 @@
+# Lint Rules Specification
+
+このドキュメントは、`camello check` が型とは関係なく報告する**書き方の誤り**を
+定義します。型の診断は [types.md](types.md) に、その設計は
+[typecheck.md](typecheck.md) にあります。
+
+## 1. 方針 (LINT-POLICY)
+
+- (LINT-POLICY-1) **書いたとおりに動かない書き方だけを報告します。** 書き手が
+  そう書いたときに思い描いた動作と、perl が実際にする動作が食い違う書き方です。
+  好みが分かれるスタイルは対象にしません。
+- (LINT-POLICY-2) **誤検知はゼロを目指します。** よく使われ、意図どおりに動く
+  書き方は、各ルールの「指摘しない」に挙げて対象から外します。
+- (LINT-POLICY-3) **設定はありません。** ルールはすべて既定で有効で、オプトインの
+  ルールはありません。止める手段は型の診断と同じく `[check] disable`、
+  `--disable`、`## camello-disable:` です（[OFF](types.md#8-診断を止める-off)）。
+  加えて、Perl::Critic から移ってくるコードのために `## no critic` も読みます
+  （[LINT-OFF](#3-診断を止める-lint-off)）。
+- (LINT-POLICY-4) **重大度はすべて `warning` です。** 既定の `--min-severity` で
+  印字され、既定の `--error-on` では終了ステータスを変えません。perlcritic の
+  ように違反で CI を落とすには `--error-on warning` を指定します。
+- (LINT-POLICY-5) **型の診断と同じ実行で報告します。** 別のサブコマンドはありません。
+  `perlcritic lib t` を置き換えるのは `camello check lib t` です。
+
+各ルールには Perl::Critic のポリシー名が対応していて、`## no critic` はその名前で
+ルールを止めます。対応が一部だけのものは、そう書いてあります。
+
+| code                        | Perl::Critic                                  |
+| --------------------------- | --------------------------------------------- |
+| `return-in-do-value`        | ControlStructures::ProhibitReturnInDoBlock    |
+| `conditional-declaration`   | Variables::ProhibitConditionalDeclarations    |
+| `two-arg-open`              | InputOutput::ProhibitTwoArgOpen               |
+| `bareword-filehandle`       | InputOutput::ProhibitBarewordFileHandles      |
+| `missing-strict`            | TestingAndDebugging::RequireUseStrict         |
+| `missing-warnings`          | TestingAndDebugging::RequireUseWarnings       |
+| `return-sort`               | Subroutines::ProhibitReturnSort               |
+| `non-lexical-loop-iterator` | Variables::RequireLexicalLoopIterators        |
+| `package-filename-mismatch` | Modules::RequireFilenameMatchesPackage        |
+| `double-semicolon`          | ValuesAndExpressions::ProhibitNullStatements  |
+| `nested-named-sub`          | Subroutines::ProhibitNestedSubs               |
+| `leading-zero`              | ValuesAndExpressions::ProhibitLeadingZeros    |
+
+`ProhibitReturnInDoBlock` は同名の CPAN ディストリビューション、
+`ProhibitNullStatements` は Perl-Critic-Pulp のポリシーで、Perl::Critic 本体には
+含まれません。ほかの 10 個は本体のものです。
+
+Perl::Critic のほかのポリシーは実装しません。`ProhibitUnusedVarsStricter` に
+当たるものは `unused-variable` です。
+
+## 2. ルール (LINT)
+
+### 2.1 `return-in-do-value` (LINT-1)
+
+`do BLOCK` の中の `return` は `do` からではなく、囲んでいるサブルーチンから
+抜けます。`do` の値を使う書き方は `do` が値を返すことを当てにしているので、
+その中の `return` は書き手の思い描いた動作をしません。
+
+- (LINT-1a) **指摘する**: `return` を含む `do BLOCK` の値が使われているとき。
+  値が使われるとは、`do` が次のどれかであることです。
+  - 代入の右辺（`=`、`//=`、`||=` などすべて）
+  - 関数やメソッドの引数、リスト・ハッシュ・配列の要素、ほかの式のオペランド
+  - `return` の引数
+  - サブルーチンの本体の最後の文（その値がサブルーチンの戻り値になる）
+  ```perl
+  $self->{cache} //= do { return $x if $x; compute() };   # 指摘する
+  my $v = do { return unless $ok; compute() };            # 指摘する
+  sub f { do { return 1 if $x; 2 } }                      # 指摘する
+  ```
+- (LINT-1b) **指摘しない**: `do` の値が捨てられるとき。`do` が文としてそのまま
+  置かれているとき、`or`・`and`・`xor` の右側にあるとき、および値が捨てられる
+  `||`・`&&`・`//` の右側にあるときです。
+  ```perl
+  open my $fh, '<', $f or do { warn $!; return };         # 指摘しない
+  defined $x && do { ok($x) or return };                  # 指摘しない
+  ```
+- (LINT-1c) `do` の中にある `sub { ... }` や名前付きの `sub` の中の `return` は、
+  その `sub` から抜けるので対象外です。
+- (LINT-1d) 報告する位置は `return` です。
+
+### 2.2 `conditional-declaration` (LINT-2)
+
+- (LINT-2a) **指摘する**: `my` の宣言文に後置の `if`・`unless`・`while`・`until`・
+  `for`・`foreach` が付いているもの。条件が偽のときの変数の中身は perl の仕様で
+  未定義で、前回の呼び出しの値が残ることがあります。
+  ```perl
+  my $x = compute() if $cond;                             # 指摘する
+  ```
+- (LINT-2b) **指摘しない**: `our` と `local`。どちらも宣言のたびに新しい変数を
+  作るのではないので、条件が偽でも食い違いは起きません。
+
+### 2.3 `two-arg-open` (LINT-3)
+
+- (LINT-3a) **指摘する**: 引数が 2 つの `open`。2 つ目の引数の先頭や末尾の文字が
+  モードとして読まれるので、ファイル名によって動作が変わります。
+  ```perl
+  open(my $fh, $path);                                    # 指摘する
+  ```
+- (LINT-3b) **指摘しない**: 2 つ目の引数が文字列リテラルの `'-'` または `'>-'`
+  （標準入力・標準出力を開く書き方）。
+
+### 2.4 `bareword-filehandle` (LINT-4)
+
+- (LINT-4a) **指摘する**: `open`・`opendir`・`sysopen`・`socket`・`socketpair`・
+  `pipe`・`accept` のファイルハンドルの引数が裸の単語であるもの。裸の単語の
+  ファイルハンドルはパッケージ全体で共有されるので、同じ名前を使うほかのコードと
+  ぶつかります。
+- (LINT-4b) **指摘しない**: `STDIN`・`STDOUT`・`STDERR`・`DATA`・`ARGV`・`ARGVOUT`。
+- (LINT-4c) `open(FH, "< $path")` は LINT-3 と LINT-4 の両方を報告します。
+  直すべきことが 2 つあるからです。
+
+### 2.5 `missing-strict` と `missing-warnings` (LINT-5)
+
+- (LINT-5a) **指摘する**: ファイルの中で、`strict`（`warnings`）が有効になる前に
+  コードの文が現れるとき。最後まで有効にならない場合も含みます。報告は
+  ファイルごとに一度、最初のコードの文の位置にします。
+- (LINT-5b) **コードの文として数えないもの**: `package`、`use`、`no`、空の文、
+  コメント、POD、`__END__` と `__DATA__` 以降。`use` の引数（`use Foo { ... }` の
+  `{ ... }` など）は `use` の一部です。ブロックつきの `package Foo { ... }` と、
+  ただのブロック `{ ... }` は、ブロックの中の文を数えます。ただのブロックの中で
+  有効にしたものは、ブロックの外には及びません。
+  `strict` の有無で動作が変わらない、モジュールの頭と終わりの決まり文句も
+  数えません。`require 5.006` のようなバージョンの `require`、`require Exporter`
+  のようなモジュール名の `require`、`$VERSION`（`our $VERSION`、`$Foo::VERSION`）
+  への代入、そして `1;` のようにリテラルだけの文です。
+- (LINT-5c) **コードの文として数えるもの**: それ以外のすべての文。`sub` の定義や
+  `BEGIN` ブロックも含みます。
+- (LINT-5d) **有効にするもの**:
+  1. `use strict` と `use warnings`（引数があってもよい）
+  2. `use v5.12` 以降は `strict`、`use v5.36` 以降は `warnings` も
+  3. [付録 A](#付録-a-strict-と-warnings-を有効にするモジュール) のモジュール
+  4. `sub import` の中で `strict` や `warnings` の `import` を呼んでいるモジュール
+     （LINT-5e）
+  5. shebang の `-w`（`warnings` のみ）
+- (LINT-5e) プロジェクトや依存先のモジュールは、`sub import` の本体を読んで
+  判定します。本体が `->import`（`Import::Into` の `->import::into` を含む）を
+  呼んでいて、`strict` や `warnings` を名指ししていれば、そのモジュールを `use`
+  することはそれを有効にすることです。本体が付録 A のモジュールの `import` を
+  呼んでいれば、そのモジュールが有効にするものを有効にします。
+- (LINT-5f) どこにも見つからないモジュールは、`strict` も `warnings` も有効に
+  するものとして扱います。見えないものについて誤検知を出さないためです。
+  小文字だけの名前（`utf8`、`lib`、`constant` などのプラグマ）は、付録 A に
+  なければ何も有効にしません。
+- (LINT-5g) `undeclared-variable` が `strict` の有効な範囲を決めるときも、
+  LINT-5d と同じ判定を使います。ただし LINT-5f は逆に倒れます。見つからない
+  モジュールは `strict` を有効にしないものとして扱います。どちらも、見えない
+  ものについて黙る側です。
+
+### 2.6 `return-sort` (LINT-6)
+
+- (LINT-6a) **指摘する**: `return sort ...`。スカラーコンテキストで呼ばれたときの
+  `sort` の値は perl の仕様で未定義です。報告する位置は `sort` です。
+
+### 2.7 `non-lexical-loop-iterator` (LINT-7)
+
+- (LINT-7a) **指摘する**: `for $x (...)`・`foreach $x (...)` のように、ループ変数を
+  宣言していないもの。ループ変数は暗黙に `local` されるので、ループの中で代入
+  した値はループの後に残りません。外側の `my $x` をループ変数にしても、ループの
+  中から呼んだサブルーチンにはその値が見えません。
+- (LINT-7b) **指摘しない**: `for my $x`・`for our $x`、および
+  ループ変数を書かない（`$_` を使う）ループ。
+
+### 2.8 `package-filename-mismatch` (LINT-8)
+
+- (LINT-8a) **指摘する**: `.pm` ファイルのどの `package` の名前も、ファイルの
+  パスと合わないもの。`::` で区切った名前の各部分を、パスの末尾から順に
+  ディレクトリ名とファイル名（`.pm` を除く）に突き合わせ、短い方が尽きるまで
+  すべて一致すれば合っています。`lib/Foo/Bar.pm` の `package Foo::Bar` も、
+  `Bar.pm` の `package Foo::Bar` も合っています。合う `package` がないと、
+  `use Foo::Bar` がそのファイルを読んでも `Foo::Bar` は定義されません。補助の
+  パッケージが先に来て、パスの名前のパッケージが後に来るファイルは合っています。
+- (LINT-8b) **指摘しない**: `package` のないファイル、最初の `package` が
+  `package main` のファイル、`.pm` 以外のファイル。報告する位置は最初の
+  `package` の名前です。
+
+### 2.9 `double-semicolon` (LINT-9)
+
+- (LINT-9a) **指摘する**: `;` で終わる文の直後に、何もない文（`;` だけ）が続くもの。
+  `;;` を意図して書くことはないので、打ち間違いか編集の残りです。
+  ```perl
+  foo();;                                                 # 指摘する
+  ```
+- (LINT-9b) **指摘しない**: `}` で終わる文の直後の `;`。
+  ```perl
+  { ... };
+  sub foo { ... };
+  if (...) { ... };
+  ```
+  ブロックを閉じた後の `;` は、ブロックが式なのか文なのかを書き手が区別しない
+  場所で書かれるもので、`;;` とは違って書き手の意図に反するものではありません。
+  `for (;;)` は何もない文ではありません。
+
+### 2.10 `nested-named-sub` (LINT-10)
+
+- (LINT-10a) **指摘する**: サブルーチンの本体（名前付きでも無名でも）の中に
+  ある名前付きの `sub` の定義。名前付きの `sub` は一度しか作られないので、
+  外側のサブルーチンの `my` 変数を、最初の呼び出しのものしか見ません
+  （perl は "Variable will not stay shared" と警告します）。
+- (LINT-10b) **指摘しない**: 前方宣言（本体のない `sub foo;`）。報告する位置は
+  内側の `sub` の名前です。
+
+### 2.11 `leading-zero` (LINT-11)
+
+- (LINT-11a) **指摘する**: `0` で始まり、その後に数字が続く数値リテラル。
+  `0755` は 8 進数で、10 進数の 755 ではありません。
+- (LINT-11b) **指摘しない**: 8 進数で書くのが当然の場所にあるもの。
+  - `chmod`・`mkdir`・`mkpath`・`make_path`・`umask`・`sysopen`・`dbmopen` の
+    引数。パッケージ名つきの呼び出し（`File::Path::mkpath`）や、先頭に `_` の
+    付いたラッパー（`_chmod`）も含みます。
+  - ビット演算（`&`・`|`・`^`・`~`・`<<`・`>>` とその代入形）のオペランド。
+    括弧と三項演算子の枝は通り抜けて見ます。`$mode & 07777` も
+    `0444 | ($x ? 0111 : 0)` も対象外です。
+
+  `0`、`0.5`、`0x1f`、`0b101`、`0o17` もこのルールの対象ではありません。
+
+## 3. 診断を止める (LINT-OFF)
+
+`## camello-disable:` と `[check] disable` は、ここのコードにもそのまま効きます。
+それに加えて、Perl::Critic の `## no critic` を読みます。
+
+- (LINT-OFF-1) **名前の突き合わせ**: `## no critic (A, B)`・`## no critic (A B)`・
+  `## no critic qw(A B)` の各名前を、大文字と小文字を区別せずに、§1 の表の
+  Perl::Critic の名前（`Perl::Critic::Policy::` を除いたもの）の部分文字列として
+  探します。`(ProhibitTwoArgOpen)` も `(TwoArg)` も `two-arg-open` を止めます。
+  `::` を含む名前は、最後の部分だけでも突き合わせます。
+- (LINT-OFF-2) **何も合わない名前は何も止めません。** camello が実装していない
+  ポリシーの名前は、`## camello-disable:` に知らない名前を書いたときと違って
+  行を丸ごと止めません。Perl::Critic のために書かれた注釈の大半はそれだからです。
+- (LINT-OFF-3) **名前のない `## no critic`** は §2 のコードをすべて止めます。
+  型の診断は止めません。
+- (LINT-OFF-4) **範囲**: コードと同じ行にある `## no critic` はその行に効きます。
+  自分の行に単独である `## no critic` は、そこから、自分の行に単独である
+  `## use critic`、囲んでいるブロックの終わり、ファイルの終わりのうち最も近いもの
+  までに効きます。
+
+## 付録 A. `strict` と `warnings` を有効にするモジュール
+
+(`pragma::BY_IMPORT`)
+
+| モジュール | strict | warnings |
+| --- | --- | --- |
+| `strict` | ✓ | |
+| `warnings` | | ✓ |
+| `strictures`, `Modern::Perl`, `common::sense` | ✓ | ✓ |
+| `Moose`, `Moose::Role`, `Moose::Exporter`, `Moose::Util::TypeConstraints` | ✓ | ✓ |
+| `Moo`, `Moo::Role`, `Mouse`, `Mouse::Role`, `Any::Moose`, `Role::Tiny` | ✓ | ✓ |
+| `Mojo::Base`, `Mojolicious::Lite`, `Dancer`, `Dancer2` | ✓ | ✓ |
+| `Test2::V0`, `Test::Most`, `Test::Class::Moose` | ✓ | ✓ |
+| `Class::Accessor::Typed` | ✓ | ✓ |
+| `Object::Pad` | ✓ | |
+
+網羅ではありえません。LINT-5e が表にないモジュールの `import` を読むのは
+そのためです。

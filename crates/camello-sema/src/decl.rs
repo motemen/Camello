@@ -257,6 +257,11 @@ pub struct PackageFacts {
     /// can the method set of a package that imports it.
     #[serde(default)]
     pub exports_unknown: bool,
+    /// What `use`-ing this package turns on in the caller, read off its own
+    /// `sub import` (`docs/lint.md`, LINT-5e). `None` where it has none, or
+    /// one that calls no `import`.
+    #[serde(default)]
+    pub import_pragmas: Option<crate::pragma::Pragmas>,
     /// The modules this package `use`s, for the two questions above.
     #[serde(default)]
     pub uses: Vec<String>,
@@ -590,6 +595,11 @@ impl Pass {
         };
         if name == "BUILDARGS" {
             self.facts(package).buildargs = true;
+        }
+        if name == "import" {
+            if let Some(body) = definition.body() {
+                self.facts(package).import_pragmas = crate::pragma::import_enables(body.syntax());
+            }
         }
         let params = parameters(
             &definition,

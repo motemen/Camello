@@ -179,7 +179,7 @@ impl Cache {
     /// attributes and no `new`" would outlive the release that fixed it —
     /// `Carton::Dist`, a `Class::Tiny` class, kept reporting `unknown-method`
     /// on its own constructor. Bump this with the recogniser.
-    const FORMAT: &'static str = "package-spans-1";
+    const FORMAT: &'static str = "import-pragmas-1";
 
     /// The key for a file, from what a stat and a hash can say about it.
     ///

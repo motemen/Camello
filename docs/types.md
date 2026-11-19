@@ -2,7 +2,8 @@
 
 このドキュメントは、`camello check` が Perl のコードについて
 何を知り、何を知らないままにするかを定義します。フォーマッタの仕様は
-[formatting.md](formatting.md) に、実装の設計は [typecheck.md](typecheck.md) にあります。
+[formatting.md](formatting.md) に、実装の設計は [typecheck.md](typecheck.md) に、
+型と関係のない書き方の誤り（lint）は [lint.md](lint.md) にあります。
 
 Perl に静的な型はありません。ここに書かれている「型」は、シジル・リテラル・
 コンストラクタ・アノテーションといった**証拠から導かれた形（shape）**であって、
@@ -1506,6 +1507,19 @@ strict-annotations = true
 読めない設定ファイルはエラーです。黙って無視される設定は、誰も頼んでいない
 規則でプロジェクトを検査することになるからです。
 
+### 8.3 生成されたファイル (OFF-3)
+
+`.gitattributes` で `linguist-generated` が付いているファイルには、何も報告
+しません。宣言は読むので、ほかのファイルからの呼び出しや型は今までどおり
+解決されます。生成されたコードを直すのは生成器の仕事で、その出力への指摘は
+誰にも直せないからです。
+
+`.gitattributes` は git と同じように読みます。リポジトリのルートからファイルの
+ディレクトリまでのすべてを読み、後の行と深い場所のファイルが勝ちます。
+パターンはファイルそのものに合うものだけが効き、`vendor/` はその下のファイルに
+効きません（`vendor/**` と書きます）。`-linguist-generated` と
+`linguist-generated=false` は外します。
+
 ## 9. 依存モジュール (DEPS)
 
 `use Foo::Bar` は次の順で解決されます。
@@ -1594,15 +1608,13 @@ Moose 系として読みます（[ANNOT-10e](#310-classaccessorlite-一族-annot
 ということなので、そのパッケージは**動的**になり、何も報告されなくなります
 （[METHOD-5](#61-不透明なクラス-method-5)）。
 
-### A.6 `strict` を入れる import (`scope::STRICT_BY_IMPORT`)
+### A.6 `strict` を入れる import (`pragma::BY_IMPORT`)
 
-`strict`, `strictures`, `Modern::Perl`, `common::sense`, `Moose`,
-`Moose::Role`, `Moose::Exporter`, `Moo`, `Moo::Role`, `Mouse`, `Mouse::Role`,
-`Mojo::Base`, `Mojolicious::Lite`, `Dancer2`, `Object::Pad`,
-`Test::Class::Moose`, `Class::Accessor::Typed`。
-
-網羅ではありえません — `import` の中で `strict` を入れるのは camello が実行しない
-コードだからです。漏らすと静かになる側に転ぶので、その向きに間違えます。
+表は [lint.md の付録 A](lint.md#付録-a-strict-と-warnings-を有効にするモジュール)
+にあり、`missing-strict` と共有しています。表にないモジュールは、その
+`sub import` を読んで判定します（[LINT-5e](lint.md#25-missing-strict-と-missing-warnings-lint-5)）。
+どこにも見つからないモジュールは `strict` を入れないものとして扱います。
+漏らすと静かになる側に転ぶので、その向きに間違えます。
 
 ### A.7 デストラクタのために持たれる値 (`scope::GUARD_NAMES`)
 

@@ -112,6 +112,12 @@ pub fn analyse(
             .analyse_file(&path, &root, &document.text, &settings.options, record);
     let mut diagnostics = found.diagnostics;
     diagnostics.retain(|diagnostic| diagnostic.severity >= settings.min_severity);
+    // A generated file is reported on by nothing (`docs/types.md`, OFF-3).
+    // Asked afresh each time, so that an edit to `.gitattributes` is seen on
+    // the next keystroke rather than the next restart.
+    if camello_sema::workspace::Generated::default().contains(&path) {
+        diagnostics.clear();
+    }
     if !document.parsed_cleanly() {
         let blast = blast_radius(&root, document);
         diagnostics

@@ -304,3 +304,131 @@ fn mentions(error: &ignore::Error, name: &str) -> bool {
         _ => false,
     }
 }
+
+/// The files a project's `.gitattributes` marks `linguist-generated`
+/// (`docs/types.md`, OFF-3), which a run reads declarations from and reports
+/// nothing against.
+///
+/// Read the way git reads attributes: every `.gitattributes` from the
+/// repository root down to the file's directory, later lines and deeper files
+/// winning, and a pattern matching the path itself rather than a directory
+/// above it — `vendor/` names no file, `vendor/**` names them all.
+#[derive(Debug, Default)]
+pub struct Generated {
+    /// The rules of each `.gitattributes`, by its directory; an empty list
+    /// where there is none.
+    rules: std::sync::Mutex<std::collections::HashMap<PathBuf, std::sync::Arc<Vec<Rule>>>>,
+}
+
+#[derive(Debug)]
+struct Rule {
+    matcher: Gitignore,
+    generated: bool,
+}
+
+/// The attribute's name.
+const GENERATED: &str = "linguist-generated";
+
+impl Generated {
+    /// Whether the attributes above `path` mark it generated.
+    #[must_use]
+    pub fn contains(&self, path: &Path) -> bool {
+        let Ok(absolute) = std::path::absolute(path) else {
+            return false;
+        };
+        let mut directories: Vec<&Path> = Vec::new();
+        for directory in absolute.ancestors().skip(1) {
+            directories.push(directory);
+            if directory.join(".git").exists() {
+                break;
+            }
+        }
+        let mut generated = false;
+        for directory in directories.into_iter().rev() {
+            for rule in self.rules_in(directory).iter() {
+                if rule.matcher.matched(&absolute, false).is_ignore() {
+                    generated = rule.generated;
+                }
+            }
+        }
+        generated
+    }
+
+    fn rules_in(&self, directory: &Path) -> std::sync::Arc<Vec<Rule>> {
+        let mut cache = self.rules.lock().expect("no reader panics holding this");
+        cache
+            .entry(directory.to_path_buf())
+            .or_insert_with(|| std::sync::Arc::new(read_attributes(directory)))
+            .clone()
+    }
+}
+
+/// The `linguist-generated` lines of one directory's `.gitattributes`.
+///
+/// A line camello cannot read is skipped rather than fatal: the file is git's,
+/// and git shrugs at the same lines.
+fn read_attributes(directory: &Path) -> Vec<Rule> {
+    let Ok(text) = std::fs::read_to_string(directory.join(".gitattributes")) else {
+        return Vec::new();
+    };
+    let mut rules = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let mut words = line.split_whitespace();
+        let Some(pattern) = words.next() else {
+            continue;
+        };
+        let mut setting = words.filter_map(|word| match word {
+            _ if word == GENERATED => Some(true),
+            _ if word.strip_prefix(GENERATED) == Some("=true") => Some(true),
+            _ if word.strip_prefix(GENERATED) == Some("=false") => Some(false),
+            _ if word.strip_prefix(['-', '!']) == Some(GENERATED) => Some(false),
+            _ => None,
+        });
+        let Some(generated) = setting.next_back() else {
+            continue;
+        };
+        let mut builder = GitignoreBuilder::new(directory);
+        if builder.add_line(None, pattern).is_err() {
+            continue;
+        }
+        if let Ok(matcher) = builder.build() {
+            rules.push(Rule { matcher, generated });
+        }
+    }
+    rules
+}
+
+#[cfg(test)]
+mod generated_tests {
+    use super::*;
+
+    #[test]
+    fn attributes_mark_files_generated_the_way_git_reads_them() {
+        let root = std::env::temp_dir().join(format!("camello-generated-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        std::fs::create_dir_all(root.join("lib/Gen")).unwrap();
+        std::fs::write(
+            root.join(".gitattributes"),
+            "lib/Gen/** linguist-generated\n*.pl linguist-generated=true\nkeep.pl -linguist-generated\nvendor/ linguist-generated\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("lib/.gitattributes"),
+            "Gen/Hand.pm linguist-generated=false\n",
+        )
+        .unwrap();
+        let generated = Generated::default();
+        assert!(generated.contains(&root.join("lib/Gen/Schema.pm")));
+        assert!(!generated.contains(&root.join("lib/Gen/Hand.pm")));
+        assert!(generated.contains(&root.join("script/run.pl")));
+        assert!(!generated.contains(&root.join("keep.pl")));
+        assert!(!generated.contains(&root.join("vendor/Foo.pm")));
+        assert!(!generated.contains(&root.join("lib/Foo.pm")));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}

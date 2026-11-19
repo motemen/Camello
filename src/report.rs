@@ -267,14 +267,24 @@ pub fn run(request: &Request) -> Result<Exit> {
         return Ok(report_drift(&analysis, &roots, request, read));
     }
 
+    // A file the project marks generated contributed its declarations above
+    // and is reported on by nothing (`docs/types.md`, OFF-3).
+    let generated = camello_sema::workspace::Generated::default();
     let reports = camello_sema::workspace::in_parallel(&files, request.jobs, |(path, inline)| {
-        check_one(
+        let mut report = check_one(
             path,
             inline.as_deref(),
             &encodings,
             &analysis,
             &request.options,
-        )
+        );
+        if inline.is_none() && generated.contains(path) {
+            if let Ok(report) = &mut report {
+                report.diagnostics.clear();
+                report.parse_errors.clear();
+            }
+        }
+        report
     });
 
     let mut counts = Counts::default();
