@@ -234,7 +234,7 @@ impl Code {
             Code::AugmentedAssignmentInDeclaration => {
                 "Variables::ProhibitAugmentedAssignmentInDeclaration"
             }
-            Code::MutatingListFunction => "BuiltinFunctions::ProhibitMutatingListFunctions",
+            Code::MutatingListFunction => "ControlStructures::ProhibitMutatingListFunctions",
             _ => return None,
         })
     }

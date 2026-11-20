@@ -41,7 +41,7 @@
 | `double-semicolon`                    | ValuesAndExpressions::ProhibitNullStatements         |
 | `nested-named-sub`                    | Subroutines::ProhibitNestedSubs                      |
 | `augmented-assignment-in-declaration` | Variables::ProhibitAugmentedAssignmentInDeclaration  |
-| `mutating-list-function`              | BuiltinFunctions::ProhibitMutatingListFunctions（一部） |
+| `mutating-list-function`              | ControlStructures::ProhibitMutatingListFunctions（一部） |
 
 `ProhibitReturnInDoBlock` は同名の CPAN ディストリビューション、
 `ProhibitNullStatements` は Perl-Critic-Pulp のポリシーで、Perl::Critic 本体には
