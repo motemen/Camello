@@ -137,6 +137,10 @@ pub enum Code {
     DoubleSemicolon,
     /// A named `sub` inside a sub's body (LINT-10).
     NestedNamedSub,
+    /// `my $x .= ...`, `local $x ||= ...` (LINT-11).
+    AugmentedAssignmentInDeclaration,
+    /// A `map` or `grep` block that modifies the array it is given (LINT-12).
+    MutatingListFunction,
 }
 
 impl Code {
@@ -167,6 +171,8 @@ impl Code {
         Code::PackageFilenameMismatch,
         Code::DoubleSemicolon,
         Code::NestedNamedSub,
+        Code::AugmentedAssignmentInDeclaration,
+        Code::MutatingListFunction,
     ];
 
     #[must_use]
@@ -198,6 +204,8 @@ impl Code {
             Code::PackageFilenameMismatch => "package-filename-mismatch",
             Code::DoubleSemicolon => "double-semicolon",
             Code::NestedNamedSub => "nested-named-sub",
+            Code::AugmentedAssignmentInDeclaration => "augmented-assignment-in-declaration",
+            Code::MutatingListFunction => "mutating-list-function",
         }
     }
 
@@ -223,6 +231,10 @@ impl Code {
             Code::PackageFilenameMismatch => "Modules::RequireFilenameMatchesPackage",
             Code::DoubleSemicolon => "ValuesAndExpressions::ProhibitNullStatements",
             Code::NestedNamedSub => "Subroutines::ProhibitNestedSubs",
+            Code::AugmentedAssignmentInDeclaration => {
+                "Variables::ProhibitAugmentedAssignmentInDeclaration"
+            }
+            Code::MutatingListFunction => "BuiltinFunctions::ProhibitMutatingListFunctions",
             _ => return None,
         })
     }
@@ -265,7 +277,9 @@ impl Code {
             | Code::NonLexicalLoopIterator
             | Code::PackageFilenameMismatch
             | Code::DoubleSemicolon
-            | Code::NestedNamedSub => false,
+            | Code::NestedNamedSub
+            | Code::AugmentedAssignmentInDeclaration
+            | Code::MutatingListFunction => false,
         }
     }
 
@@ -296,7 +310,9 @@ impl Code {
             | Code::NonLexicalLoopIterator
             | Code::PackageFilenameMismatch
             | Code::DoubleSemicolon
-            | Code::NestedNamedSub => Severity::Warning,
+            | Code::NestedNamedSub
+            | Code::AugmentedAssignmentInDeclaration
+            | Code::MutatingListFunction => Severity::Warning,
             Code::BadAnnotation
             | Code::UnknownType
             | Code::MissingAnnotation

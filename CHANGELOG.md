@@ -4,8 +4,8 @@
 
 ### Added
 
-- `camello check` reports eleven lint rules, each a `warning`: ways of writing
-  Perl that do not do what they say (`docs/lint.md`, LINT-1..LINT-10).
+- `camello check` reports thirteen lint rules, each a `warning`: ways of writing
+  Perl that do not do what they say (`docs/lint.md`, LINT-1..LINT-12).
 - `## no critic`, with or without Perl::Critic policy names, silences the lint
   rules (LINT-OFF).
 - `[check] strict-equivalent-modules` names modules whose `use` turns on

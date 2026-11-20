@@ -27,23 +27,25 @@
 各ルールには Perl::Critic のポリシー名が対応していて、`## no critic` はその名前で
 ルールを止めます。対応が一部だけのものは、そう書いてあります。
 
-| code                        | Perl::Critic                                  |
-| --------------------------- | --------------------------------------------- |
-| `return-in-do-value`        | ControlStructures::ProhibitReturnInDoBlock    |
-| `conditional-declaration`   | Variables::ProhibitConditionalDeclarations    |
-| `two-arg-open`              | InputOutput::ProhibitTwoArgOpen               |
-| `bareword-filehandle`       | InputOutput::ProhibitBarewordFileHandles      |
-| `missing-strict`            | TestingAndDebugging::RequireUseStrict         |
-| `missing-warnings`          | TestingAndDebugging::RequireUseWarnings       |
-| `return-sort`               | Subroutines::ProhibitReturnSort               |
-| `non-lexical-loop-iterator` | Variables::RequireLexicalLoopIterators        |
-| `package-filename-mismatch` | Modules::RequireFilenameMatchesPackage        |
-| `double-semicolon`          | ValuesAndExpressions::ProhibitNullStatements  |
-| `nested-named-sub`          | Subroutines::ProhibitNestedSubs               |
+| code                                  | Perl::Critic                                         |
+| ------------------------------------- | ---------------------------------------------------- |
+| `return-in-do-value`                  | ControlStructures::ProhibitReturnInDoBlock           |
+| `conditional-declaration`             | Variables::ProhibitConditionalDeclarations           |
+| `two-arg-open`                        | InputOutput::ProhibitTwoArgOpen                      |
+| `bareword-filehandle`                 | InputOutput::ProhibitBarewordFileHandles             |
+| `missing-strict`                      | TestingAndDebugging::RequireUseStrict                |
+| `missing-warnings`                    | TestingAndDebugging::RequireUseWarnings              |
+| `return-sort`                         | Subroutines::ProhibitReturnSort                      |
+| `non-lexical-loop-iterator`           | Variables::RequireLexicalLoopIterators               |
+| `package-filename-mismatch`           | Modules::RequireFilenameMatchesPackage               |
+| `double-semicolon`                    | ValuesAndExpressions::ProhibitNullStatements         |
+| `nested-named-sub`                    | Subroutines::ProhibitNestedSubs                      |
+| `augmented-assignment-in-declaration` | Variables::ProhibitAugmentedAssignmentInDeclaration  |
+| `mutating-list-function`              | BuiltinFunctions::ProhibitMutatingListFunctions（一部） |
 
 `ProhibitReturnInDoBlock` は同名の CPAN ディストリビューション、
 `ProhibitNullStatements` は Perl-Critic-Pulp のポリシーで、Perl::Critic 本体には
-含まれません。ほかの 9 個は本体のものです。
+含まれません。ほかの 11 個は本体のものです。
 
 Perl::Critic のほかのポリシーは実装しません。`ProhibitLeadingZeros` に当たるものも
 ありません。Perl で `0` から始まる数はほぼ必ず意図した 8 進数（`0644`、`umask 022`）で、
@@ -259,6 +261,58 @@ Perl::Critic のほかのポリシーは実装しません。`ProhibitLeadingZer
   変数、内側で宣言し直した同名の変数は、何度呼んでも一つなので数えません。
   `my sub` と `state sub` は呼び出しごとに作られるので対象外です。前方宣言
   （本体のない `sub foo;`）も対象外です。
+
+### 2.11 `augmented-assignment-in-declaration` (LINT-11)
+
+- (LINT-11a) **指摘する**: `my` と `local` の宣言を左辺にした、`=` 以外の代入
+  （`.=`、`+=`、`||=`、`//=` など）。`my` の変数は新しく作られて未定義なので、
+  演算子が組み合わせる相手がなく、`=` と同じ結果になります。`local` は元の値を
+  退避して変数を空にしてから代入するので、元の値は結果に入りません。
+  ```perl
+  my $err .= "Can't locate $name";                       # 指摘する
+  local $Carp::CarpLevel += 1;                           # 指摘する（`= 1` と同じ）
+  local $ENV{PATH} .= ":/opt/bin";                       # 指摘する（PATH は ":/opt/bin"）
+  ```
+- (LINT-11b) **指摘しない**: `our` と `state`。`our` はすでにあるパッケージ変数を
+  指し、`state` は前の呼び出しの値を持っているので、演算子が組み合わせる値が
+  あります。`state $x //= compute()` は一度だけ初期化する書き方です。
+  Perl::Critic はこの 2 つも指摘します。
+- (LINT-11c) 報告する位置は代入の式です。
+
+### 2.12 `mutating-list-function` (LINT-12)
+
+`map` などのブロックの中の `$_` は、リストの各要素そのもの（エイリアス）です。
+`$_` を書き換えると、作ろうとしている新しいリストではなく、渡した配列の要素が
+変わります。
+
+- (LINT-12a) **指摘する**: `map`・`grep`・`first`・`any`・`all`・`none`・`notall` の
+  ブロックで、`$_` を書き換えるもの。リストに配列そのもの（`@a`、`@$r`、`@{...}`、
+  `$r->@*`）か `values` があるときだけです。`split`・`<$fh>`・`keys` などの
+  呼び出しが返す値は新しく作られた値で、書き換えてもほかに影響しません。
+  書き換えとは、`$_` に対する次のものです。
+  - `/r` のない `s///`（`$_ =~ s///` も）
+  - 置き換えるか `/d` のある、`/r` のない `tr///`・`y///`。`tr/a//` は数えるだけです
+  - 代入（`=`、`.=` などすべて）、`++`、`--`
+  - 引数のない `chomp`・`chop`、または `$_` を渡したもの
+  ```perl
+  my @out = map { s/^\s+//; $_ } @lines;                 # 指摘する（@lines も変わる）
+  my %ok  = map { s/^&//; $_ => 1 } @EXPORT_OK;           # 指摘する
+  my @out = map { s/^\s+//r } @lines;                    # 指摘しない
+  my @out = grep { chomp; length } <$fh>;                # 指摘しない
+  ```
+- (LINT-12b) **指摘しない**:
+  - 値が捨てられるもの（`map { s/a/b/ } @lines;`）。`for` の代わりに `map` を
+    使って、配列を書き換えるために書いたものです。
+  - 作ったリストを、読んだのと同じ配列に代入するもの（`@a = map { s/x//; $_ } @a`。
+    間に `grep` や `sort` を挟んでも同じ）。配列は結局その値になります。
+  - `map` 以外で、書き換えそのものがブロックの値であるもの
+    （`scalar grep { s/^>// } @$body`）。書き換えた数を数えながら、その場で
+    書き換えるために書いたものです。
+- (LINT-12c) ブロックの中で `$_` を別のものにする書き方の中は見ません。入れ子の
+  `map` などのブロック、`for` のループと後置の `for`、`given`、`sub` です。
+  `local $_` があるブロックは対象外です。
+- (LINT-12d) 報告する位置は、最初の書き換えの式です。Perl::Critic は配列に
+  限らず、List::MoreUtils の関数も対象にします。
 
 ## 3. 診断を止める (LINT-OFF)
 

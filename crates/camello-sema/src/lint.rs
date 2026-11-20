@@ -55,6 +55,8 @@ pub fn analyse(
             NodeKind::FOREACH_HEADER => loop_iterator(&node, &mut diagnostics),
             NodeKind::EMPTY_STMT => double_semicolon(&node, &mut diagnostics),
             NodeKind::SUB_DEF => nested_sub(&node, scope, &mut diagnostics),
+            NodeKind::ASSIGN_EXPR => augmented_declaration(&node, &mut diagnostics),
+            NodeKind::BLOCK_CALL_EXPR => mutating_list_function(&node, &mut diagnostics),
             _ => {}
         }
     }
@@ -689,6 +691,298 @@ fn nested_sub(node: &SyntaxNode, scope: &ScopeReport, into: &mut Vec<Diagnostic>
         )
         .about(text),
     );
+}
+
+// ----- LINT-11 -----
+
+fn augmented_declaration(node: &SyntaxNode, into: &mut Vec<Diagnostic>) {
+    let assignment = ast::AssignExpr::cast(node.clone()).expect("kind checked");
+    if assignment.is_plain() {
+        return;
+    }
+    let Some(declaration) = assignment.target().and_then(VarDecl::cast) else {
+        return;
+    };
+    let Some(operator) = ast::tokens(node)
+        .find(|token| token.token_kind().is_assignment_op())
+        .map(|token| token.text().to_string())
+    else {
+        return;
+    };
+    // `our` names the package variable that is already there, and `state`
+    // keeps its value from the call before, so for both the operator has a
+    // value to combine with (LINT-11b).
+    let message = match declaration.keyword() {
+        Some(DeclKeyword::My) => format!(
+            "`my ... {operator}` combines with a variable that is new and undefined; \
+             write `=`, or drop `my` to change the variable already there"
+        ),
+        Some(DeclKeyword::Local) => format!(
+            "`local` empties the variable before `{operator}` runs, so the value it had \
+             is not part of the result"
+        ),
+        _ => return,
+    };
+    into.push(Diagnostic::new(
+        Code::AugmentedAssignmentInDeclaration,
+        node.text_range(),
+        message,
+    ));
+}
+
+// ----- LINT-12 -----
+
+/// The functions whose block sees each element of the list as `$_` (LINT-12a).
+const LIST_FUNCTIONS: &[&str] = &["map", "grep", "first", "any", "all", "none", "notall"];
+
+fn mutating_list_function(node: &SyntaxNode, into: &mut Vec<Diagnostic>) {
+    let Some(name) = callee_of(node).filter(|name| LIST_FUNCTIONS.contains(&name.as_str())) else {
+        return;
+    };
+    // `map { s/a/b/ } @lines;` with its value thrown away is a loop written
+    // with `map`, and changing the array is what it is for (LINT-12b).
+    if discarded(node) {
+        return;
+    }
+    let Some(block) = node
+        .children()
+        .find(|child| child.node_kind() == NodeKind::BLOCK)
+    else {
+        return;
+    };
+    let Some(array) = node
+        .children()
+        .skip_while(|child| child.node_kind() != NodeKind::BLOCK)
+        .skip(1)
+        .flat_map(|list| {
+            if ast::Args::is_list(&list) {
+                ast::Args::elements(&list)
+            } else {
+                vec![list]
+            }
+        })
+        .find(holds_its_elements)
+    else {
+        return;
+    };
+    let array = array.text().to_string();
+    if assigned_back(node, &array) {
+        return;
+    }
+    let Some(mutation) = first_mutation(&block) else {
+        return;
+    };
+    // `scalar grep { s/^>// } @$body`: the change is the block's value, the
+    // count of what it changed, and changing the array is the point
+    // (LINT-12b). `map` is not a test, and its value is what it builds.
+    if name != "map" && is_the_value_of(&mutation, &block) {
+        return;
+    }
+    into.push(
+        Diagnostic::new(
+            Code::MutatingListFunction,
+            mutation.text_range(),
+            format!(
+                "`{name}` sees each element of `{array}` as `$_`, so changing `$_` here \
+                 changes `{array}` too"
+            ),
+        )
+        .about(name),
+    );
+}
+
+/// Whether what the list function builds is assigned to the array it reads,
+/// through whatever `map`, `grep` or `sort` it passes on the way:
+/// `@a = map { s/x//; $_ } @a` changes `@a` in place and then replaces it
+/// with the same values (LINT-12b).
+fn assigned_back(node: &SyntaxNode, array: &str) -> bool {
+    let mut current = node.clone();
+    while let Some(parent) = current.parent() {
+        match parent.node_kind() {
+            NodeKind::LIST_EXPR | NodeKind::PAREN_EXPR | NodeKind::BLOCK_CALL_EXPR => {
+                current = parent;
+            }
+            NodeKind::ASSIGN_EXPR => {
+                let assignment = ast::AssignExpr::cast(parent).expect("kind checked");
+                return assignment.value().as_ref() == Some(&current)
+                    && assignment
+                        .target()
+                        .is_some_and(|target| target.text().to_string().trim() == array);
+            }
+            _ => return false,
+        }
+    }
+    false
+}
+
+/// Whether an expression is the whole of the last statement of a block.
+fn is_the_value_of(expression: &SyntaxNode, block: &SyntaxNode) -> bool {
+    let Some(last) = block
+        .children()
+        .filter(|child| child.node_kind() != NodeKind::EMPTY_STMT)
+        .last()
+    else {
+        return false;
+    };
+    let mut node = expression.clone();
+    // `$_ =~ s///` is the statement, not the `s///` alone.
+    if node
+        .parent()
+        .is_some_and(|parent| parent.node_kind() == NodeKind::MATCH_EXPR)
+    {
+        node = node.parent().expect("checked");
+    }
+    while let Some(parent) = node.parent() {
+        if parent == last {
+            return true;
+        }
+        if parent.node_kind() != NodeKind::LIST_EXPR {
+            return false;
+        }
+        node = parent;
+    }
+    false
+}
+
+/// Whether a list element hands the block the elements of a variable itself,
+/// not copies: an array, a dereferenced one, or the values of a hash
+/// (LINT-12a). What a call returns is a fresh value — `split`, `<$fh>`,
+/// `keys` — and changing it changes nothing else.
+fn holds_its_elements(element: &SyntaxNode) -> bool {
+    match element.node_kind() {
+        NodeKind::ARRAY_VAR => true,
+        NodeKind::DEREF_EXPR | NodeKind::BLOCK_DEREF_EXPR => element
+            .first_token()
+            .is_some_and(|token| token.token_kind() == TokenKind::ARRAY_SIGIL),
+        NodeKind::POSTFIX_DEREF_EXPR => {
+            ast::tokens(element).any(|token| token.token_kind() == TokenKind::POSTFIX_DEREF_ARRAY)
+        }
+        NodeKind::CALL_EXPR | NodeKind::LIST_CALL_EXPR => {
+            callee_of(element).as_deref() == Some("values")
+        }
+        _ => false,
+    }
+}
+
+/// The first expression in a block that changes `$_` (LINT-12a), not looking
+/// into what binds a `$_` of its own (LINT-12c).
+fn first_mutation(block: &SyntaxNode) -> Option<SyntaxNode> {
+    let mut mutations = Vec::new();
+    let mut stack: Vec<SyntaxNode> = block.children().collect();
+    stack.reverse();
+    while let Some(node) = stack.pop() {
+        if binds_its_own_topic(&node) {
+            continue;
+        }
+        // `local $_` gives the block a `$_` of its own, and the element is
+        // out of reach from there on.
+        if VarDecl::cast(node.clone()).is_some_and(|declaration| {
+            declaration
+                .syntax()
+                .descendants()
+                .any(|variable| is_topic(&variable))
+        }) {
+            return None;
+        }
+        if changes_topic(&node) {
+            mutations.push(node);
+            continue;
+        }
+        let mut children: Vec<SyntaxNode> = node.children().collect();
+        children.reverse();
+        stack.extend(children);
+    }
+    mutations.into_iter().next()
+}
+
+fn binds_its_own_topic(node: &SyntaxNode) -> bool {
+    match node.node_kind() {
+        NodeKind::BLOCK_CALL_EXPR
+        | NodeKind::ANON_SUB_EXPR
+        | NodeKind::SUB_DEF
+        | NodeKind::LOOP_STMT
+        | NodeKind::GIVEN_STMT => true,
+        // `s/a/b/ for @other` loops over `@other`.
+        NodeKind::EXPR_STMT => node
+            .children()
+            .filter(|child| child.node_kind() == NodeKind::STMT_MODIFIER)
+            .filter_map(|modifier| modifier.first_token())
+            .any(|token| {
+                matches!(
+                    token.token_kind(),
+                    TokenKind::FOR_KW | TokenKind::FOREACH_KW
+                )
+            }),
+        _ => false,
+    }
+}
+
+fn is_topic(node: &SyntaxNode) -> bool {
+    node.node_kind() == NodeKind::SCALAR_VAR
+        && Variable::cast(node.clone())
+            .and_then(|variable| variable.name())
+            .as_deref()
+            == Some("_")
+}
+
+/// Whether an expression changes `$_`: an `s///` or a `tr///` that changes
+/// what it is bound to, an assignment, `++` or `--`, `chomp` or `chop`.
+fn changes_topic(node: &SyntaxNode) -> bool {
+    match node.node_kind() {
+        NodeKind::S_EXPR => !flags(node).contains('r') && bound_to_topic(node),
+        NodeKind::TR_EXPR => {
+            let flags = flags(node);
+            let replaces = ast::tokens(node).any(|token| {
+                token.token_kind() == TokenKind::TR_REPLACEMENT_LIST && !token.text().is_empty()
+            });
+            // `tr/a//` counts and changes nothing.
+            !flags.contains('r') && (replaces || flags.contains('d')) && bound_to_topic(node)
+        }
+        NodeKind::ASSIGN_EXPR => ast::AssignExpr::cast(node.clone())
+            .and_then(|assignment| assignment.target())
+            .is_some_and(|target| is_topic(&target)),
+        NodeKind::PREFIX_EXPR | NodeKind::POSTFIX_EXPR => {
+            ast::tokens(node).any(|token| {
+                matches!(
+                    token.token_kind(),
+                    TokenKind::INCREMENT | TokenKind::DECREMENT
+                )
+            }) && node
+                .children()
+                .next()
+                .is_some_and(|operand| is_topic(&operand))
+        }
+        NodeKind::CALL_EXPR | NodeKind::LIST_CALL_EXPR => {
+            let Some(call) = Call::cast(node.clone()) else {
+                return false;
+            };
+            if !matches!(call.callee_name().as_deref(), Some("chomp" | "chop")) {
+                return false;
+            }
+            let args = call.args();
+            args.is_empty() || (args.len() == 1 && is_topic(&args[0]))
+        }
+        _ => false,
+    }
+}
+
+fn flags(node: &SyntaxNode) -> String {
+    ast::tokens(node)
+        .filter(|token| token.token_kind() == TokenKind::REGEX_FLAGS)
+        .map(|token| token.text().to_string())
+        .collect()
+}
+
+/// Whether an `s///` or `tr///` works on `$_`: written alone, or bound to it
+/// with `=~`.
+fn bound_to_topic(node: &SyntaxNode) -> bool {
+    match node.parent() {
+        Some(parent) if parent.node_kind() == NodeKind::MATCH_EXPR => parent
+            .children()
+            .next()
+            .is_some_and(|target| is_topic(&target)),
+        _ => true,
+    }
 }
 
 /// The name a call-shaped node calls, `BLOCK_CALL_EXPR` included.
