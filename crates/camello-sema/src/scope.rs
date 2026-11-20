@@ -318,9 +318,10 @@ pub fn analyse(
 ///   `use strict` on line 6, which is legal and was reported until this
 ///   counted offsets rather than files.
 ///
-/// `no strict` (bare, or naming `vars`) turns it off again from where it
-/// appears. Taking that to the end of the file rather than to the end of its
-/// block is the quiet reading, and the one a file that says it once means.
+/// `use strict` inside a block ends with the block. `no strict` (bare, or
+/// naming `vars`) turns it off again from where it appears. Taking that to
+/// the end of the file rather than to the end of its block is the quiet
+/// reading, and the one a file that says it once means.
 #[derive(Debug, Default)]
 pub struct StrictRegions {
     /// `(offset, on)`, sorted, so a use finds the last event above it.
@@ -335,34 +336,55 @@ impl StrictRegions {
     /// is the quiet reading for a pass that reports where `strict` is on.
     pub fn of(root: &SyntaxNode, enables: &dyn Fn(&str) -> Enables) -> Self {
         let mut events = Vec::new();
-        for node in root.descendants() {
-            match node.node_kind() {
-                NodeKind::USE_STMT => {
-                    let statement = ast::UseStmt::cast(node.clone()).expect("kind checked");
-                    let on = match statement.module() {
-                        Some(_) if pragma::imports_nothing(&statement) => false,
-                        Some(module) => match enables(&module) {
-                            Enables::Known(pragmas) => pragmas.strict,
-                            Enables::Unknown => false,
-                        },
-                        None => pragma::by_version(&node).strict,
-                    };
-                    if on {
-                        events.push((node.text_range().end(), true));
-                    }
-                }
-                NodeKind::NO_STMT => {
-                    let statement = ast::NoStmt::cast(node.clone()).expect("kind checked");
-                    if statement.module().as_deref() == Some("strict") && disables_vars(&statement)
-                    {
-                        events.push((node.text_range().start(), false));
-                    }
-                }
-                _ => {}
-            }
-        }
+        let mut on = false;
+        Self::walk(root, enables, &mut on, &mut events);
         events.sort_by_key(|(offset, _)| *offset);
         StrictRegions { events }
+    }
+
+    /// `use strict` ends with the block it is in, as perl's lexical pragmas
+    /// do; `no strict` is taken to the end of the file, the quiet reading.
+    fn walk(
+        node: &SyntaxNode,
+        enables: &dyn Fn(&str) -> Enables,
+        on: &mut bool,
+        events: &mut Vec<(TextSize, bool)>,
+    ) {
+        match node.node_kind() {
+            NodeKind::USE_STMT => {
+                let statement = ast::UseStmt::cast(node.clone()).expect("kind checked");
+                let turns_on = match statement.module() {
+                    Some(_) if pragma::imports_nothing(&statement) => false,
+                    Some(module) => match enables(&module) {
+                        Enables::Known(pragmas) => pragmas.strict,
+                        Enables::Unknown => false,
+                    },
+                    None => pragma::by_version(node).strict,
+                };
+                if turns_on {
+                    events.push((node.text_range().end(), true));
+                    *on = true;
+                }
+                return;
+            }
+            NodeKind::NO_STMT => {
+                let statement = ast::NoStmt::cast(node.clone()).expect("kind checked");
+                if statement.module().as_deref() == Some("strict") && disables_vars(&statement) {
+                    events.push((node.text_range().start(), false));
+                    *on = false;
+                }
+                return;
+            }
+            _ => {}
+        }
+        let before = *on;
+        for child in node.children() {
+            Self::walk(&child, enables, on, events);
+        }
+        if node.node_kind() == NodeKind::BLOCK && *on && !before {
+            events.push((node.text_range().end(), false));
+            *on = false;
+        }
     }
 
     #[must_use]

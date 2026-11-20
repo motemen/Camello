@@ -421,13 +421,24 @@ impl Program {
         if !seen.insert(module.to_string()) {
             return Enables::Known(Pragmas::NONE);
         }
+        // The first `import` up the chain is the one perl calls; one that
+        // hands on with `SUPER::import` adds the next one's.
+        let mut pragmas = Pragmas::NONE;
+        let mut unknown = false;
+        let settle = |pragmas: Pragmas, unknown: bool| {
+            if unknown && pragmas != Pragmas::BOTH {
+                Enables::Unknown
+            } else {
+                Enables::Known(pragmas)
+            }
+        };
         for package in self.linearise(module) {
-            if let Some(pragmas) = pragma::by_table(&package) {
-                return Enables::Known(pragmas);
+            if let Some(table) = pragma::by_table(&package) {
+                return settle(pragmas.union(table), unknown);
             }
             // An ancestor out of sight may be the one with the `import`.
             if !self.knows_package(&package) {
-                return Enables::Unknown;
+                return settle(pragmas, true);
             }
             let readings: Vec<pragma::ImportReading> = self
                 .facts(&package)
@@ -437,8 +448,13 @@ impl Program {
             if readings.is_empty() {
                 continue;
             }
-            let mut pragmas = Pragmas::NONE;
-            let mut unknown = false;
+            let inherits = readings.iter().any(|reading| reading.inherits);
+            // A source filter writes into the caller's code, where no reading
+            // of its `import` can follow.
+            unknown |= self
+                .facts(&package)
+                .iter()
+                .any(|facts| facts.filters_source);
             for reading in readings {
                 pragmas = pragmas.union(reading.pragmas);
                 unknown |= reading.opaque;
@@ -449,13 +465,11 @@ impl Program {
                     }
                 }
             }
-            return if unknown && pragmas != Pragmas::BOTH {
-                Enables::Unknown
-            } else {
-                Enables::Known(pragmas)
-            };
+            if !inherits {
+                return settle(pragmas, unknown);
+            }
         }
-        Enables::Known(Pragmas::NONE)
+        settle(pragmas, unknown)
     }
 
     /// The variables `use vars` declared for `package`, in any file.
@@ -483,7 +497,7 @@ impl Program {
         let facts = self.facts(module);
         let unknown = facts
             .iter()
-            .any(|facts| facts.exports_unknown || (tagged && facts.exportable_unknown));
+            .any(|facts| facts.exported_variables_unknown || (tagged && facts.exportable_unknown));
         if unknown {
             return None;
         }

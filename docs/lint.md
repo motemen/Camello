@@ -159,6 +159,10 @@ Perl::Critic のほかのポリシーは実装しません。`ProhibitLeadingZer
   同じ規則で読み、何段でもたどります。`import` の中の `require t; t->import` の
   ように、ファイルのどこにも `use` されていないモジュールも探して読みます。
   一度たどったモジュールは二度読みません。
+  読む `import` は、perl と同じく継承をたどって最初に見つかったものだけです。
+  サブクラスの `sub import { 1 }` は、親の `import` が何を有効にしていても何も
+  有効にしません。`$class->SUPER::import(@_)`・`$class->next::method(@_)` で親に
+  渡すものは、親の `import` が有効にするものも有効にします。
   たどった先が見つからなければ LINT-5f と同じく扱います。
   - `*import = \&Exporter::import` のように、ほかのモジュールの `import` を glob で
     借りているものは、そのモジュールの `import` を読みます。

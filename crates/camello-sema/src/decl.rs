@@ -258,15 +258,24 @@ pub struct PackageFacts {
     #[serde(default)]
     pub exports_unknown: bool,
     /// What `use`-ing this package turns on in the caller, read off its own
-    /// `sub import` (`docs/lint.md`, LINT-5e). `None` where it has none, or
-    /// one that calls no `import`.
+    /// `sub import` (`docs/lint.md`, LINT-5e). `None` where it has none.
     #[serde(default)]
     pub import: Option<crate::pragma::ImportReading>,
+    /// The package is a source filter — it calls `filter_add` or `use`s
+    /// `Filter::Simple` — and can write anything into its caller's source:
+    /// Spiffy's `-Base` prepends `use strict;use warnings;`.
+    #[serde(default)]
+    pub filters_source: bool,
     /// The variables a `use` with no import list brings into the caller,
     /// sigil and all: the `$x @y %z` of `@EXPORT`, and what the package's own
     /// `import` assigns to a glob — `*{"${caller}::Config"} = \%Config`.
     #[serde(default)]
     pub exported_variables: Vec<String>,
+    /// The variables that `use` brings cannot all be named: an `@EXPORT`
+    /// this pass could not read, or an `import` that assigns a variable to
+    /// a glob whose name it computes.
+    #[serde(default)]
+    pub exported_variables_unknown: bool,
     /// The variables `use vars` declares for this package, sigil and all.
     /// `use vars` imports into the package's globs, so they are declared for
     /// the package's code in every file, not only the one that says it.
@@ -615,17 +624,28 @@ impl Pass {
         if name == "BUILDARGS" {
             self.facts(package).buildargs = true;
         }
+        let filters = definition.body().is_some_and(|body| {
+            body.syntax()
+                .descendants_with_tokens()
+                .filter_map(|element| element.into_token())
+                .any(|token| token.text() == "filter_add" || token.text().ends_with("::filter_add"))
+        });
+        if filters {
+            self.facts(package).filters_source = true;
+        }
         if name == "import" {
             if let Some(body) = definition.body() {
                 let reading = crate::pragma::import_enables(body.syntax());
                 // What the `import` hands off to is a dependency like a `use`:
                 // `require t; t->import` names a module nothing else names.
-                if let Some(reading) = &reading {
-                    self.decls.uses.extend(reading.calls.iter().cloned());
-                }
-                self.facts(package).import = reading;
-                let globbed = glob_exports(body.syntax());
+                // One that turns nothing on still overrides the `import` it
+                // would otherwise inherit: `sub import { 1 }` in a subclass.
+                let reading = reading.unwrap_or_default();
+                self.decls.uses.extend(reading.calls.iter().cloned());
+                self.facts(package).import = Some(reading);
+                let (globbed, unreadable) = glob_exports(body.syntax());
                 self.facts(package).exported_variables.extend(globbed);
+                self.facts(package).exported_variables_unknown |= unreadable;
             }
         }
         let params = parameters(
@@ -693,6 +713,9 @@ impl Pass {
         if node.node_kind() == NodeKind::USE_STMT {
             self.decls.uses.push(module.clone());
             self.facts(package).uses.push(module.clone());
+            if matches!(module.as_str(), "Filter::Util::Call" | "Filter::Simple") {
+                self.facts(package).filters_source = true;
+            }
             if module == "vars" {
                 let declared: Vec<String> = arguments
                     .iter()
@@ -1045,9 +1068,10 @@ impl Pass {
                 Some(names) => self.facts(&owner).exports.extend(names),
                 None => self.facts(&owner).exports_unknown = true,
             }
-            self.facts(&owner)
-                .exported_variables
-                .extend(listed_variables(&value).unwrap_or_default());
+            match listed_variables(&value) {
+                Some(variables) => self.facts(&owner).exported_variables.extend(variables),
+                None => self.facts(&owner).exported_variables_unknown = true,
+            }
         } else if let Some(owner) = assigned_package(&target, "EXPORT_OK", package) {
             match listed_variables(&value) {
                 Some(variables) => self.facts(&owner).exportable_variables.extend(variables),
@@ -1281,31 +1305,55 @@ fn tagged_variables(value: &SyntaxNode) -> Option<Vec<String>> {
 /// `*{$caller . '::Config'} = \%Config` gives the caller `%Config`. Only a
 /// reference to a named variable is read; what a computed one gives cannot
 /// be named, and `English` and its kind are a table (`scope.rs`).
-fn glob_exports(body: &SyntaxNode) -> Vec<String> {
-    body.descendants()
-        .filter_map(ast::Assign::cast)
-        .filter(|assign| {
-            assign
-                .target()
-                .is_some_and(|target| target.text().to_string().starts_with('*'))
-        })
-        .filter_map(|assign| {
-            let value = assign.value()?;
-            if value.node_kind() != NodeKind::REFERENCE_EXPR {
-                return None;
-            }
-            let variable = value.children().find_map(Variable::cast)?;
-            let sigil = match variable.sigil() {
-                Sigil::Scalar => '$',
-                Sigil::Array => '@',
-                Sigil::Hash => '%',
-                _ => return None,
-            };
-            let name = variable.name()?;
-            let bare = name.rsplit("::").next().unwrap_or(&name).to_string();
-            Some(format!("{sigil}{bare}"))
-        })
-        .collect()
+fn glob_exports(body: &SyntaxNode) -> (Vec<String>, bool) {
+    let mut names = Vec::new();
+    let mut unreadable = false;
+    for assign in body.descendants().filter_map(ast::Assign::cast) {
+        let Some(target) = assign.target() else {
+            continue;
+        };
+        let target = target.text().to_string();
+        if !target.starts_with('*') {
+            continue;
+        }
+        let Some(value) = assign.value() else {
+            continue;
+        };
+        if value.node_kind() != NodeKind::REFERENCE_EXPR {
+            continue;
+        }
+        let Some(variable) = value.children().find_map(Variable::cast) else {
+            continue;
+        };
+        let sigil = match variable.sigil() {
+            Sigil::Scalar => '$',
+            Sigil::Array => '@',
+            Sigil::Hash => '%',
+            _ => continue,
+        };
+        // What the caller gets is the glob's name, not the variable's:
+        // `*{"${caller}::PUBLIC"} = \$internal` imports `$PUBLIC`.
+        match glob_name(&target) {
+            Some(name) => names.push(format!("{sigil}{name}")),
+            None => unreadable = true,
+        }
+    }
+    (names, unreadable)
+}
+
+/// The last part of a glob's name when it is written out: `*Config`,
+/// `*{"${caller}::Config"}`, `*{$caller . '::Config'}` — and not
+/// `*{"${caller}::$name"}`.
+fn glob_name(target: &str) -> Option<String> {
+    let name =
+        target.trim_end_matches(|ch: char| matches!(ch, '}' | '"' | '\'') || ch.is_whitespace());
+    let start = name
+        .rfind(|ch: char| !(ch.is_alphanumeric() || ch == '_'))
+        .map_or(0, |index| index + 1);
+    let (before, last) = name.split_at(start);
+    let written = before.ends_with("::") || before.ends_with('*') || before.ends_with("*{");
+    (written && last.starts_with(|ch: char| ch.is_alphabetic() || ch == '_'))
+        .then(|| last.to_string())
 }
 
 fn imported_names(arguments: &SyntaxNode) -> Vec<String> {

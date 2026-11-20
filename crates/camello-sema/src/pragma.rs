@@ -172,6 +172,10 @@ pub struct ImportReading {
     /// It does what nobody can read: a string `eval` that reaches the caller
     /// — `eval qq{package $caller; use Test2::V0;}`.
     pub opaque: bool,
+    /// It hands on to the `import` it overrides — `$class->SUPER::import`,
+    /// `$class->next::method` — so what that one turns on is turned on too.
+    #[serde(default)]
+    pub inherits: bool,
 }
 
 /// How a module's own `sub import` turns things on in its caller, or `None`
@@ -197,6 +201,13 @@ pub fn import_enables(body: &SyntaxNode) -> Option<ImportReading> {
                 let Some(method) = call.method_name() else {
                     continue;
                 };
+                if matches!(
+                    method.as_str(),
+                    "SUPER::import" | "next::method" | "maybe::next::method"
+                ) {
+                    reading.inherits = true;
+                    continue;
+                }
                 if method != "import" && method != "import::into" {
                     continue;
                 }
@@ -259,7 +270,7 @@ pub fn import_enables(body: &SyntaxNode) -> Option<ImportReading> {
         return Some(reading);
     }
     if !calls_import && !reading.opaque {
-        return None;
+        return reading.inherits.then_some(reading);
     }
     // `no strict 'refs'` names `strict` to turn part of it off in the
     // module itself, and `use warnings` turns it on there: neither says
