@@ -116,12 +116,27 @@ pub struct Program {
     /// What this project's own modules stand in for (`camello.toml`,
     /// `read-as`).
     dialect: Dialect,
+    /// The returns a file could not see alone were never filled in over the
+    /// whole graph: a run without `--types` skips that walk, the costliest
+    /// one, because no diagnostic it reports needs a type
+    /// (`docs/types.md`, DIAG-0).
+    returns_partial: bool,
 }
 
 impl Program {
     #[must_use]
     pub fn new() -> Self {
         Program::default()
+    }
+
+    /// Say that cross-file return inference will not run.
+    pub fn set_returns_partial(&mut self, partial: bool) {
+        self.returns_partial = partial;
+    }
+
+    #[must_use]
+    pub fn returns_partial(&self) -> bool {
+        self.returns_partial
     }
 
     /// Read the graph under a project's own dialect.
@@ -383,6 +398,138 @@ impl Program {
     #[must_use]
     pub fn knows_package(&self, name: &str) -> bool {
         self.packages.contains_key(name)
+    }
+
+    /// What `use`-ing `module` turns on (`docs/lint.md`, LINT-5d..f).
+    ///
+    /// The table first, then the module's own `sub import`, then the first
+    /// ancestor's: `use parent 'My::Base'` is how a project's import module
+    /// usually gets the `import` that does the work. A package the run read
+    /// with no `import` anywhere in its ancestry turns nothing on, and one it
+    /// never read is [`Enables::Unknown`](crate::pragma::Enables::Unknown).
+    /// An `import` that calls another module's is read through it, however
+    /// deep; one that evaluates a string is `Unknown`. `equivalent` is the
+    /// project's own list, which turns both on (LINT-5h).
+    #[must_use]
+    pub fn import_enables(&self, module: &str, equivalent: &[String]) -> crate::pragma::Enables {
+        self.enables_through(module, equivalent, &mut std::collections::HashSet::new())
+    }
+
+    fn enables_through(
+        &self,
+        module: &str,
+        equivalent: &[String],
+        seen: &mut std::collections::HashSet<String>,
+    ) -> crate::pragma::Enables {
+        use crate::pragma::{self, Enables, Pragmas};
+        // `strict-equivalent-modules` in `camello.toml` (LINT-5h).
+        if equivalent.iter().any(|name| name == module) {
+            return Enables::Known(Pragmas::BOTH);
+        }
+        if let Some(pragmas) = pragma::by_table(module) {
+            return Enables::Known(pragmas);
+        }
+        if !self.knows_package(module) {
+            return pragma::without_program(module);
+        }
+        // A cycle of `import`s adds nothing the first visit did not.
+        if !seen.insert(module.to_string()) {
+            return Enables::Known(Pragmas::NONE);
+        }
+        // The first `import` up the chain is the one perl calls; one that
+        // hands on with `SUPER::import` adds the next one's.
+        let mut pragmas = Pragmas::NONE;
+        let mut unknown = false;
+        let settle = |pragmas: Pragmas, unknown: bool| {
+            if unknown && pragmas != Pragmas::BOTH {
+                Enables::Unknown
+            } else {
+                Enables::Known(pragmas)
+            }
+        };
+        for package in self.linearise(module) {
+            if let Some(table) = pragma::by_table(&package) {
+                return settle(pragmas.union(table), unknown);
+            }
+            // An ancestor out of sight may be the one with the `import`.
+            if !self.knows_package(&package) {
+                return settle(pragmas, true);
+            }
+            let readings: Vec<pragma::ImportReading> = self
+                .facts(&package)
+                .iter()
+                .filter_map(|facts| facts.import.clone())
+                .collect();
+            if readings.is_empty() {
+                continue;
+            }
+            let inherits = readings.iter().any(|reading| reading.inherits);
+            // A source filter writes into the caller's code, where no reading
+            // of its `import` can follow.
+            unknown |= self
+                .facts(&package)
+                .iter()
+                .any(|facts| facts.filters_source);
+            for reading in readings {
+                pragmas = pragmas.union(reading.pragmas);
+                unknown |= reading.opaque;
+                for callee in &reading.calls {
+                    match self.enables_through(callee, equivalent, seen) {
+                        Enables::Known(more) => pragmas = pragmas.union(more),
+                        Enables::Unknown => unknown = true,
+                    }
+                }
+            }
+            if !inherits {
+                return settle(pragmas, unknown);
+            }
+        }
+        settle(pragmas, unknown)
+    }
+
+    /// The variables `use vars` declared for `package`, in any file.
+    #[must_use]
+    pub fn package_vars(&self, package: &str) -> Vec<String> {
+        self.facts(package)
+            .into_iter()
+            .flat_map(|facts| facts.package_vars.iter().cloned())
+            .collect()
+    }
+
+    /// The variables `use module` brings into the caller: with no import
+    /// list, what it exports by default; with a `:tag` in it, everything it
+    /// offers, which is the quiet reading of a set this cannot expand.
+    ///
+    /// `None` where nobody can say: a list the module computes, or a `:tag`
+    /// of a module the run never read. A module out of sight used without a
+    /// list is taken to export no variable — few do, and taking it the other
+    /// way would silence `undeclared-variable` in every file that uses one.
+    #[must_use]
+    pub fn exported_variables(&self, module: &str, tagged: bool) -> Option<Vec<String>> {
+        if !self.knows_package(module) {
+            return (!tagged).then(Vec::new);
+        }
+        let facts = self.facts(module);
+        let unknown = facts
+            .iter()
+            .any(|facts| facts.exported_variables_unknown || (tagged && facts.exportable_unknown));
+        if unknown {
+            return None;
+        }
+        Some(
+            facts
+                .into_iter()
+                .flat_map(|facts| {
+                    let offered = if tagged {
+                        facts.exportable_variables.as_slice()
+                    } else {
+                        &[]
+                    };
+                    facts.exported_variables.iter().chain(offered)
+                })
+                .cloned()
+                .collect(),
+        )
     }
 
     /// What the run knows about a package, from every file that opens it.

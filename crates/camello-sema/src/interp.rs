@@ -37,6 +37,9 @@ pub struct Use {
     pub offset: usize,
     /// Byte length of the whole reference, sigil and name.
     pub len: usize,
+    /// Read as the container of the `[...]` or `{...}` after it: `$x[0]` is
+    /// a use of `@x` with this set.
+    pub element: bool,
 }
 
 /// Every variable use perl interpolates in a quoted token, with offsets
@@ -99,6 +102,36 @@ fn delimiter_interpolates(token: &SyntaxToken) -> bool {
 /// above and belongs to another node — the body is a token that lands between
 /// two statements (the parser contract). Pairing them in document order is
 /// what perl does too: bodies arrive in the order their markers were written.
+/// Whether each heredoc body interpolates, by where it starts.
+pub(crate) type Heredocs = HashMap<TextSize, bool>;
+
+/// [`heredoc_interpolation`] of the tree `root` is the root of, worked out
+/// once per tree rather than once per question.
+///
+/// The declaration pass asks for every sub that holds a heredoc, and asking
+/// over the whole file each time made a file of many such subs quadratic:
+/// `Perl::Tidy::Formatter`, 1.6 MB, took 1.3 s alone and held up the whole
+/// parallel phase. A worker reads one file at a time, so the last tree it
+/// asked about is the only one worth keeping.
+pub(crate) fn heredoc_interpolation_of(root: &SyntaxNode) -> std::rc::Rc<Heredocs> {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    thread_local! {
+        static LAST: RefCell<Option<(SyntaxNode, Rc<Heredocs>)>> = const { RefCell::new(None) };
+    }
+    LAST.with(|last| {
+        let mut last = last.borrow_mut();
+        if let Some((tree, table)) = last.as_ref() {
+            if tree == root {
+                return Rc::clone(table);
+            }
+        }
+        let table = Rc::new(heredoc_interpolation(root));
+        *last = Some((root.clone(), Rc::clone(&table)));
+        table
+    })
+}
+
 pub(crate) fn heredoc_interpolation(root: &SyntaxNode) -> HashMap<TextSize, bool> {
     let mut markers = Vec::new();
     let mut bodies = Vec::new();
@@ -182,6 +215,33 @@ fn scan_into(text: &str, base: usize, uses: &mut Vec<Use>) {
     }
 }
 
+/// A subscript's contents, which are code: `{'$ref'}` is a key written in
+/// single quotes, and nothing in single quotes interpolates.
+fn scan_code(text: &str, base: usize, uses: &mut Vec<Use>) {
+    let mut start = 0;
+    let mut quoted = false;
+    let mut escape = false;
+    for (index, byte) in text.bytes().enumerate() {
+        if quoted {
+            match byte {
+                _ if escape => escape = false,
+                b'\\' => escape = true,
+                b'\'' => {
+                    quoted = false;
+                    start = index + 1;
+                }
+                _ => {}
+            }
+        } else if byte == b'\'' {
+            scan_into(&text[start..index], base + start, uses);
+            quoted = true;
+        }
+    }
+    if !quoted {
+        scan_into(&text[start..], base + start, uses);
+    }
+}
+
 /// Read one `$...` or `@...` reference at `index`, returning what it consumed.
 ///
 /// Zero means "this sigil begins nothing", and the caller steps over it.
@@ -226,20 +286,17 @@ fn reference(
                 return 0;
             };
             let inner = &text[cursor + 1..close];
+            // The braces end the name and the reference with it: "${m}[0]"
+            // is `$m` and then the text `[0]`, which is what they are for.
             if let Some(name) = plain_name(inner.trim()) {
-                let end = subscripts(text, close + 1, base, uses);
-                let sigil = if dereferenced {
-                    sigil
-                } else {
-                    container_sigil(sigil, text, close + 1)
-                };
                 uses.push(Use {
+                    element: false,
                     sigil,
                     name,
                     offset: base + index,
                     len: close + 1 - index,
                 });
-                end - index
+                close + 1 - index
             } else {
                 scan_into(inner, base + cursor + 1, uses);
                 close + 1 - index
@@ -249,11 +306,13 @@ fn reference(
             let start = cursor;
             cursor = name_end(bytes, cursor);
             let name = text[start..cursor].to_string();
-            let sigil = if dereferenced {
+            let read_as = if dereferenced {
                 sigil
             } else {
                 container_sigil(sigil, text, cursor)
             };
+            let element = read_as != sigil;
+            let sigil = read_as;
             let end = if dereferenced {
                 cursor
             } else {
@@ -264,6 +323,7 @@ fn reference(
                 name,
                 offset: base + index,
                 len: cursor - index,
+                element,
             });
             end - index
         }
@@ -304,14 +364,14 @@ fn subscripts(text: &str, mut index: usize, base: usize, uses: &mut Vec<Use>) ->
                 let Some(close) = matching_brace(bytes, cursor) else {
                     return index;
                 };
-                scan_into(&text[cursor + 1..close], base + cursor + 1, uses);
+                scan_code(&text[cursor + 1..close], base + cursor + 1, uses);
                 index = close + 1;
             }
             Some(b'[') => {
                 let Some(close) = matching_bracket(bytes, cursor) else {
                     return index;
                 };
-                scan_into(&text[cursor + 1..close], base + cursor + 1, uses);
+                scan_code(&text[cursor + 1..close], base + cursor + 1, uses);
                 index = close + 1;
             }
             _ => return index,

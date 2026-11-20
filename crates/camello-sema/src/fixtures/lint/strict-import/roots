@@ -1,0 +1,3 @@
+root: lib
+root: t
+strict-equivalent: My::Equivalent

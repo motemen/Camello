@@ -25,6 +25,7 @@ use rowan::{TextRange, TextSize};
 
 use crate::diag::{Code, Diagnostic};
 use crate::interp;
+use crate::pragma::{self, Enables};
 
 /// Names that are always in scope, whatever the file declares.
 ///
@@ -35,33 +36,6 @@ use crate::interp;
 const ALWAYS_IN_SCOPE: &[&str] = &[
     "_", "a", "b", "ARGV", "ARGVOUT", "ENV", "INC", "SIG", "STDIN", "STDOUT", "STDERR", "DATA",
     "AUTOLOAD", "ISA", "0",
-];
-
-/// Modules whose import turns `strict` on, so that a file saying `use Moose`
-/// is checked the way perl checks it.
-///
-/// Not exhaustive and cannot be: a module that turns strict on is doing it in
-/// its own `import`, which is code camello does not run (`docs/typecheck.md`,
-/// non-goals). Missing one makes the checker quieter, which is the direction
-/// to be wrong in.
-const STRICT_BY_IMPORT: &[&str] = &[
-    "strict",
-    "strictures",
-    "Modern::Perl",
-    "common::sense",
-    "Moose",
-    "Moose::Role",
-    "Moose::Exporter",
-    "Moo",
-    "Moo::Role",
-    "Mouse",
-    "Mouse::Role",
-    "Mojo::Base",
-    "Mojolicious::Lite",
-    "Dancer2",
-    "Object::Pad",
-    "Test::Class::Moose",
-    "Class::Accessor::Typed",
 ];
 
 /// The variables `use English` binds, read off `English.pm`'s own glob
@@ -298,8 +272,21 @@ impl ScopeReport {
 /// `guards` names the classes a project holds values of for their destructors,
 /// beyond the ones [`GUARD_NAMES`] knows.
 #[must_use]
-pub fn analyse(root: &SyntaxNode, source: &str, guards: &[String]) -> ScopeReport {
-    let mut pass = Pass::new(source, guards, StrictRegions::of(root));
+pub fn analyse(
+    root: &SyntaxNode,
+    source: &str,
+    guards: &[String],
+    enables: &dyn Fn(&str) -> Enables,
+    exported: &dyn Fn(&str, bool) -> Option<Vec<String>>,
+    package_vars: &dyn Fn(&str) -> Vec<String>,
+) -> ScopeReport {
+    let mut pass = Pass::new(
+        source,
+        guards,
+        StrictRegions::of(root, enables),
+        exported,
+        package_vars,
+    );
     pass.run(root);
     let bindings = pass
         .bindings
@@ -331,9 +318,10 @@ pub fn analyse(root: &SyntaxNode, source: &str, guards: &[String]) -> ScopeRepor
 ///   `use strict` on line 6, which is legal and was reported until this
 ///   counted offsets rather than files.
 ///
-/// `no strict` (bare, or naming `vars`) turns it off again from where it
-/// appears. Taking that to the end of the file rather than to the end of its
-/// block is the quiet reading, and the one a file that says it once means.
+/// `use strict` inside a block ends with the block. `no strict` (bare, or
+/// naming `vars`) turns it off again from where it appears. Taking that to
+/// the end of the file rather than to the end of its block is the quiet
+/// reading, and the one a file that says it once means.
 #[derive(Debug, Default)]
 pub struct StrictRegions {
     /// `(offset, on)`, sorted, so a use finds the last event above it.
@@ -342,32 +330,61 @@ pub struct StrictRegions {
 
 impl StrictRegions {
     #[must_use]
-    pub fn of(root: &SyntaxNode) -> Self {
+    ///
+    /// `enables` says what a `use` of a module turns on (`docs/lint.md`,
+    /// LINT-5g); a module it cannot answer for turns nothing on here, which
+    /// is the quiet reading for a pass that reports where `strict` is on.
+    pub fn of(root: &SyntaxNode, enables: &dyn Fn(&str) -> Enables) -> Self {
         let mut events = Vec::new();
-        for node in root.descendants() {
-            match node.node_kind() {
-                NodeKind::USE_STMT => {
-                    let statement = ast::UseStmt::cast(node.clone()).expect("kind checked");
-                    let on = match statement.module() {
-                        Some(module) => STRICT_BY_IMPORT.contains(&module.as_str()),
-                        None => version_enables_strict(&node),
-                    };
-                    if on {
-                        events.push((node.text_range().end(), true));
-                    }
-                }
-                NodeKind::NO_STMT => {
-                    let statement = ast::NoStmt::cast(node.clone()).expect("kind checked");
-                    if statement.module().as_deref() == Some("strict") && disables_vars(&statement)
-                    {
-                        events.push((node.text_range().start(), false));
-                    }
-                }
-                _ => {}
-            }
-        }
+        let mut on = false;
+        Self::walk(root, enables, &mut on, &mut events);
         events.sort_by_key(|(offset, _)| *offset);
         StrictRegions { events }
+    }
+
+    /// `use strict` ends with the block it is in, as perl's lexical pragmas
+    /// do; `no strict` is taken to the end of the file, the quiet reading.
+    fn walk(
+        node: &SyntaxNode,
+        enables: &dyn Fn(&str) -> Enables,
+        on: &mut bool,
+        events: &mut Vec<(TextSize, bool)>,
+    ) {
+        match node.node_kind() {
+            NodeKind::USE_STMT => {
+                let statement = ast::UseStmt::cast(node.clone()).expect("kind checked");
+                let turns_on = match statement.module() {
+                    Some(_) if pragma::imports_nothing(&statement) => false,
+                    Some(module) => match enables(&module) {
+                        Enables::Known(pragmas) => pragmas.strict,
+                        Enables::Unknown => false,
+                    },
+                    None => pragma::by_version(node).strict,
+                };
+                if turns_on {
+                    events.push((node.text_range().end(), true));
+                    *on = true;
+                }
+                return;
+            }
+            NodeKind::NO_STMT => {
+                let statement = ast::NoStmt::cast(node.clone()).expect("kind checked");
+                if statement.module().as_deref() == Some("strict") && disables_vars(&statement) {
+                    events.push((node.text_range().start(), false));
+                    *on = false;
+                }
+                return;
+            }
+            _ => {}
+        }
+        let before = *on;
+        for child in node.children() {
+            Self::walk(&child, enables, on, events);
+        }
+        if node.node_kind() == NodeKind::BLOCK && *on && !before {
+            events.push((node.text_range().end(), false));
+            *on = false;
+        }
     }
 
     #[must_use]
@@ -385,21 +402,6 @@ impl StrictRegions {
     }
 }
 
-/// `use v5.12` and up imply `use strict` (perl 5.11.0 onwards).
-fn version_enables_strict(node: &SyntaxNode) -> bool {
-    let Some(token) = ast::tokens(node).find(|token| token.token_kind() == TokenKind::VERSION)
-    else {
-        return false;
-    };
-    let text = token.text().trim_start_matches('v');
-    let mut parts = text.split('.');
-    let major: u32 = parts.next().and_then(|part| part.parse().ok()).unwrap_or(0);
-    let minor: u32 = parts.next().and_then(|part| part.parse().ok()).unwrap_or(0);
-    // `use 5.012` and `use v5.12` are the same request written two ways.
-    let minor = if minor >= 100 { minor / 10 } else { minor };
-    major > 5 || (major == 5 && minor >= 11)
-}
-
 /// Whether a `no strict ...` turns off the part this pass depends on.
 fn disables_vars(statement: &ast::NoStmt) -> bool {
     let Some(arguments) = statement.arguments() else {
@@ -411,6 +413,16 @@ fn disables_vars(statement: &ast::NoStmt) -> bool {
 
 struct Pass<'a> {
     source: &'a str,
+    /// The variables `use` of a module brings in, as
+    /// [`crate::Program::exported_variables`] reads them.
+    exported: &'a dyn Fn(&str, bool) -> Option<Vec<String>>,
+    /// A `use` brought variables nobody can name — a computed `use vars`, a
+    /// `:tag` of a module that computes its lists. From there on an
+    /// undeclared name may be one of them, and nothing is reported.
+    unnamed_imports: bool,
+    /// What `use vars` declared for a package, in this file or another
+    /// (`docs/types.md`, DIAG-1e).
+    package_vars: &'a dyn Fn(&str) -> Vec<String>,
     /// Guard classes beyond [`GUARD_NAMES`], from `camello.toml`.
     guards: &'a [String],
     bindings: Vec<Binding>,
@@ -427,9 +439,18 @@ struct Pass<'a> {
 }
 
 impl<'a> Pass<'a> {
-    fn new(source: &'a str, guards: &'a [String], strict: StrictRegions) -> Self {
+    fn new(
+        source: &'a str,
+        guards: &'a [String],
+        strict: StrictRegions,
+        exported: &'a dyn Fn(&str, bool) -> Option<Vec<String>>,
+        package_vars: &'a dyn Fn(&str) -> Vec<String>,
+    ) -> Self {
         Pass {
             source,
+            exported,
+            unnamed_imports: false,
+            package_vars,
             guards,
             bindings: Vec::new(),
             scopes: Vec::new(),
@@ -613,7 +634,7 @@ impl<'a> Pass<'a> {
         }
         let found = self.resolve(sigil, name);
         self.record_reference(found, range);
-        if found.is_some() || !self.strict.at(range.start()) {
+        if found.is_some() || self.unnamed_imports || !self.strict.at(range.start()) {
             return;
         }
         let display = written(sigil, name);
@@ -687,12 +708,23 @@ impl<'a> Pass<'a> {
 
             // `my $x = $x` reads the outer `$x`: a declaration takes effect at
             // the end of the statement it is in, so the value comes first.
+            // `our` is the exception: it names the package variable from where
+            // it is written, so `our %h = (..., %h)` reads the one it declares.
             NodeKind::ASSIGN_EXPR => {
                 let children: Vec<_> = node.children().collect();
+                let our_first = children.first().is_some_and(|first| {
+                    first.node_kind() == NodeKind::VAR_DECL
+                        && VarDecl::cast(first.clone())
+                            .and_then(|declaration| declaration.keyword())
+                            == Some(DeclKeyword::Our)
+                });
+                if our_first {
+                    self.walk(&children[0]);
+                }
                 for child in children.iter().skip(1) {
                     self.walk(child);
                 }
-                if let Some(first) = children.first() {
+                if let (false, Some(first)) = (our_first, children.first()) {
                     self.walk(first);
                 }
                 for token in ast::tokens(node) {
@@ -718,6 +750,27 @@ impl<'a> Pass<'a> {
             }
 
             NodeKind::USE_STMT => self.walk_use(node),
+            NodeKind::PACKAGE_STMT => {
+                let name = ast::PackageStmt::cast(node.clone()).and_then(|package| package.name());
+                if let Some(name) = name {
+                    // Declared in another file, so nothing here to point at
+                    // and nothing a `my` here shadows: implicit, as perl's
+                    // own names are.
+                    for variable in (self.package_vars)(&name) {
+                        let (sigil, bare) = split_sigil(&variable);
+                        if let Some(sigil) = sigil {
+                            self.declare_in(
+                                0,
+                                sigil,
+                                bare,
+                                TextRange::default(),
+                                BindingKind::Implicit,
+                            );
+                        }
+                    }
+                }
+                self.walk_children(node);
+            }
 
             // A name is not a variable, and its tokens hold nothing to scan.
             NodeKind::SUB_NAME | NodeKind::LABEL | NodeKind::ATTR => {}
@@ -779,7 +832,13 @@ impl<'a> Pass<'a> {
 
     fn walk_var_decl(&mut self, node: &SyntaxNode) {
         let declaration = VarDecl::cast(node.clone()).expect("kind checked");
-        let kind = match declaration.keyword() {
+        // `local our ($x)` declares as `our` does, and localises besides.
+        let keyword = if ast::tokens(node).any(|token| token.token_kind() == TokenKind::OUR_KW) {
+            Some(DeclKeyword::Our)
+        } else {
+            declaration.keyword()
+        };
+        let kind = match keyword {
             Some(DeclKeyword::My) => BindingKind::My,
             Some(DeclKeyword::State) => BindingKind::State,
             Some(DeclKeyword::Our) => BindingKind::Our,
@@ -878,7 +937,40 @@ impl<'a> Pass<'a> {
             }
         }
 
+        // What the module exports: by default where there is no list, and
+        // everything it offers where a `:tag` names a set this cannot expand.
+        let listed = statement
+            .arguments()
+            .map(|arguments| declared_names(&arguments));
+        let tagged = listed.as_ref().is_some_and(|names| {
+            names
+                .iter()
+                .any(|name| name.starts_with([':', '-', '/', '!']))
+        });
+        if listed.is_none() || tagged {
+            let Some(names) = (self.exported)(&module, tagged) else {
+                self.unnamed_imports = true;
+                return self.walk_children(node);
+            };
+            for name in names {
+                let (sigil, bare) = split_sigil(&name);
+                if let Some(sigil) = sigil {
+                    self.declare_file_scope(sigil, bare, node.text_range(), BindingKind::Vars);
+                }
+            }
+        }
+
         if let Some(arguments) = statement.arguments() {
+            // `use vars map {@$_} values %vars` declares what it computes,
+            // and reads what it computes it from.
+            if module == "vars"
+                && Args::elements(&arguments)
+                    .iter()
+                    .any(|element| crate::decl::listed_words(element).is_none())
+            {
+                self.unnamed_imports = true;
+                return self.walk_children(node);
+            }
             // A name with a sigil in an import list is a variable this file
             // now has: `use POSIX qw($errno)`, and `use vars` itself, which
             // the pragma's own documentation calls package-wide rather than
@@ -918,11 +1010,22 @@ impl<'a> Pass<'a> {
             return;
         }
         let start = usize::from(token.text_range().start());
+        let pattern = token.token_kind() == TokenKind::REGEX_PATTERN;
         for found in interp::uses_in(token, &self.heredocs) {
             let range = TextRange::new(
                 TextSize::from((start + found.offset) as u32),
                 TextSize::from((start + found.offset + found.len) as u32),
             );
+            // In a pattern perl guesses whether `$x[...]` is an element of
+            // `@x` or `$x` before a character class, and `$x{2,}` an element
+            // of `%x` or `$x` before a quantifier. Where only the scalar is
+            // declared, the scalar is what working code means.
+            if pattern && found.element && self.lookup_outer(found.sigil, &found.name).is_none() {
+                if let Some(binding) = self.resolve(Sigil::Scalar, &found.name) {
+                    self.record_reference(Some(binding), range);
+                    continue;
+                }
+            }
             self.use_name(found.sigil, &found.name, range);
         }
     }

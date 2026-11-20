@@ -18,6 +18,8 @@ pub mod decl;
 pub mod diag;
 pub mod flow;
 pub mod interp;
+pub mod lint;
+pub mod pragma;
 pub mod program;
 pub mod resolve;
 pub mod scope;
@@ -135,13 +137,21 @@ fn same_shape(written: &annotate::ListShape, body: &annotate::ListShape) -> bool
 /// What a run asks for.
 #[derive(Debug, Clone, Default)]
 pub struct Options {
-    /// Report a public sub with no annotation.
+    /// Report what rests on types too (`docs/types.md`, DIAG-0): the codes
+    /// [`Code::needs_types`] names. Off, a run reports only what it can
+    /// say without guessing at a value's type or a call's class.
+    pub types: bool,
+    /// Report a public sub with no annotation. Means nothing without
+    /// [`Options::types`]; the command line turns that on with it.
     pub strict_annotations: bool,
     /// Codes this project has turned off (`camello.toml`).
     pub disabled: Vec<Code>,
     /// Classes a value is held of for its destructor, beyond the ones
     /// [`scope::GUARD_NAMES`] knows (`camello.toml`).
     pub guard_classes: Vec<String>,
+    /// Modules whose `use` turns on `strict` and `warnings`, beyond the ones
+    /// [`pragma::BY_IMPORT`] knows (`camello.toml`, `docs/lint.md` LINT-5h).
+    pub strict_equivalent_modules: Vec<String>,
 }
 
 impl Options {
@@ -151,6 +161,9 @@ impl Options {
     #[must_use]
     pub fn for_fixture(path: &Path) -> Self {
         Options {
+            // A fixture is about what its pass reports, and the type passes
+            // are most of them.
+            types: true,
             strict_annotations: path.to_string_lossy().contains("strict-annotations"),
             ..Options::default()
         }
@@ -254,7 +267,7 @@ impl Analysis {
         let mut seen: std::collections::HashSet<String> = pending.iter().cloned().collect();
 
         while let Some(module) = pending.pop() {
-            if !resolve::Resolver::worth_resolving(&module) {
+            if !resolve::Resolver::worth_reading(&module) {
                 continue;
             }
             let Some((path, _origin)) = self.resolver.locate(&module) else {
@@ -263,9 +276,14 @@ impl Analysis {
             if self.program.index_of(&path).is_some() {
                 continue;
             }
-            let Ok(source) = std::fs::read_to_string(&path) else {
+            // Lossy, unlike a file the run checks: a dependency is read for
+            // its names, which are ASCII, and `Encode::CJKConstants` in
+            // EUC-JP still exports `%RE`. Skipping it made every importer's
+            // `$RE{...}` undeclared.
+            let Ok(bytes) = std::fs::read(&path) else {
                 continue;
             };
+            let source = String::from_utf8_lossy(&bytes).into_owned();
             let disabled = resolve::Cache::disabled();
             let cache = self.cache.as_ref().unwrap_or(&disabled);
             let decls = read_declarations(&path, &source, self.program.dialect(), cache);
@@ -295,6 +313,12 @@ impl Analysis {
     /// (`docs/lsp.md`, "Incremental reanalysis").
     pub fn replace(&mut self, path: &Path, decls: decl::FileDecls, in_roots: bool) -> usize {
         self.program.replace(path, decls, in_roots)
+    }
+
+    /// Skip the cross-file return walk (`Analysis::infer_returns`): a run
+    /// that reports nothing resting on a type need not pay for it.
+    pub fn skip_return_inference(&mut self) {
+        self.program.set_returns_partial(true);
     }
 
     #[must_use]
@@ -492,14 +516,30 @@ impl Analysis {
         options: &Options,
         record: Record,
     ) -> FileAnalysis {
-        let mut scope = scope::analyse(root, source, &options.guard_classes);
+        let enables = |module: &str| {
+            self.program
+                .import_enables(module, &options.strict_equivalent_modules)
+        };
+        let exported = |module: &str, tagged: bool| self.program.exported_variables(module, tagged);
+        let package_vars = |package: &str| self.program.package_vars(package);
+        let mut scope = scope::analyse(
+            root,
+            source,
+            &options.guard_classes,
+            &enables,
+            &exported,
+            &package_vars,
+        );
         let mut types = flow::TypeTable::default();
         // Moved rather than copied: what comes back is the merged, filtered
         // list, and a second copy inside the scope report would be the same
         // diagnostics under different rules.
         let mut diagnostics = std::mem::take(&mut scope.diagnostics);
+        diagnostics.extend(lint::analyse(path, root, &enables, &scope));
         if let Some(file) = self.program.index_of(path) {
-            diagnostics.extend(arity::analyse(root, file, &self.program));
+            if options.types {
+                diagnostics.extend(arity::analyse(root, file, &self.program));
+            }
             let checked = flow::analyse(root, file, &self.program, record == Record::Types);
             diagnostics.extend(checked.diagnostics);
             types = checked.types;
@@ -526,6 +566,9 @@ impl Analysis {
                     }
                 }
             }
+        }
+        if !options.types {
+            diagnostics.retain(|diagnostic| !diagnostic.code.needs_types());
         }
         if !options.disabled.is_empty() {
             diagnostics.retain(|diagnostic| !options.disabled.contains(&diagnostic.code));

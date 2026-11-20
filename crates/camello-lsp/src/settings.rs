@@ -63,9 +63,11 @@ impl Settings {
         let (check, found) = config.check.resolve(root);
         problems.extend(found);
         let options = Options {
+            types: check.types,
             strict_annotations: check.strict_annotations,
             disabled: check.disabled,
             guard_classes: check.guard_classes,
+            strict_equivalent_modules: check.strict_equivalent_modules,
         };
 
         // The workspace folders first — they are what the editor is open on —

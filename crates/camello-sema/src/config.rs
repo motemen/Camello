@@ -88,6 +88,13 @@ pub struct Check {
     /// ones the checker already knows.
     #[serde(default)]
     pub guard_classes: Vec<String>,
+    /// Modules whose `use` turns on `strict` and `warnings`, for an `import`
+    /// the lint rules cannot read — Perl::Critic's `equivalent_modules`.
+    #[serde(default)]
+    pub strict_equivalent_modules: Vec<String>,
+    /// Report what rests on types too (`docs/types.md`, DIAG-0).
+    #[serde(default)]
+    pub types: bool,
     /// Report a public sub with no annotation.
     #[serde(default)]
     pub strict_annotations: bool,
@@ -115,6 +122,8 @@ pub struct Resolved {
     pub error_on: Option<Severity>,
     pub min_severity: Option<Severity>,
     pub guard_classes: Vec<String>,
+    pub strict_equivalent_modules: Vec<String>,
+    pub types: bool,
     pub strict_annotations: bool,
     pub read_as: BTreeMap<String, String>,
 }
@@ -160,6 +169,8 @@ impl Check {
             error_on,
             min_severity,
             guard_classes: self.guard_classes.clone(),
+            strict_equivalent_modules: self.strict_equivalent_modules.clone(),
+            types: self.types || self.strict_annotations,
             strict_annotations: self.strict_annotations,
             read_as: self.read_as.clone(),
         };

@@ -42,11 +42,12 @@ fn fixtures_dir() -> PathBuf {
 /// One fixture: a file on its own, or a directory with a `roots` marker.
 ///
 /// A multi-file fixture is a directory holding a `roots` file, whose lines are
-/// `root: <dir>`, `stub: <dir>` and `read-as: <module> = <module>`. Everything
-/// under a root is checked; everything under a stub contributes declarations
-/// and is never reported on, which is what makes the stub mechanism something
-/// a fixture can ask about, and `read-as` is the project setting of the same
-/// name.
+/// `root: <dir>`, `stub: <dir>`, `read-as: <module> = <module>` and
+/// `strict-equivalent: <module>`. Everything under a root is checked;
+/// everything under a stub contributes declarations and is never reported on,
+/// which is what makes the stub mechanism something a fixture can ask about,
+/// and `read-as` and `strict-equivalent` are the project settings of the same
+/// names.
 #[derive(Debug)]
 struct Fixture {
     /// The files whose `#~` markers are the expectation.
@@ -55,6 +56,8 @@ struct Fixture {
     stubs: Vec<PathBuf>,
     /// What this fixture's own modules stand in for.
     dialect: BTreeMap<String, String>,
+    /// `strict-equivalent-modules`.
+    strict_equivalent: Vec<String>,
     label: PathBuf,
 }
 
@@ -80,6 +83,7 @@ fn collect(dir: &Path, acc: &mut Vec<Fixture>) {
             checked: Vec::new(),
             stubs: Vec::new(),
             dialect: BTreeMap::new(),
+            strict_equivalent: Vec::new(),
             label: dir.to_path_buf(),
         };
         for line in fs::read_to_string(&marker)
@@ -96,6 +100,10 @@ fn collect(dir: &Path, acc: &mut Vec<Fixture>) {
                 fixture
                     .dialect
                     .insert(from.trim().to_string(), to.trim().to_string());
+                continue;
+            }
+            if kind.trim() == "strict-equivalent" {
+                fixture.strict_equivalent.push(name.trim().to_string());
                 continue;
             }
             let mut files = Vec::new();
@@ -121,6 +129,7 @@ fn collect(dir: &Path, acc: &mut Vec<Fixture>) {
                 checked: vec![path.clone()],
                 stubs: Vec::new(),
                 dialect: BTreeMap::new(),
+                strict_equivalent: Vec::new(),
                 label: path,
             });
         }
@@ -217,7 +226,23 @@ fn fixtures_report_exactly_what_they_say() {
             let root = parse_one(path, &source);
             let index = LineIndex::new(&source);
             let expected = parse_expectations(&source);
-            let found = analysis.check(path, &root, &source, &crate::Options::for_fixture(path));
+            // A fixture under `lint/` is about the lint rules and every other
+            // fixture about everything else, so that a type fixture need not
+            // open with `use warnings` to stay silent, nor a lint fixture
+            // declare every variable it uses.
+            let lint = fixture
+                .label
+                .strip_prefix(fixtures_dir())
+                .is_ok_and(|relative| relative.starts_with("lint"));
+            let options = crate::Options {
+                strict_equivalent_modules: fixture.strict_equivalent.clone(),
+                ..crate::Options::for_fixture(path)
+            };
+            let found: Vec<_> = analysis
+                .check(path, &root, &source, &options)
+                .into_iter()
+                .filter(|diagnostic| diagnostic.code.is_lint() == lint)
+                .collect();
 
             let mut remaining: Vec<&Expectation> = expected.iter().collect();
             let mut unexpected = Vec::new();
@@ -288,7 +313,7 @@ fn every_code_has_a_fixture() {
 #[test]
 fn the_harness_notices_a_missing_diagnostic() {
     // The fixtures above pass; this is what says that passing means something.
-    let source = "use strict;\nprint $nope;\n";
+    let source = "use strict;\nuse warnings;\nprint $nope;\n";
     let found = crate::check_source(source, &crate::Options::default());
     assert_eq!(found.len(), 1, "{found:?}");
     assert_eq!(found[0].code, Code::UndeclaredVariable);

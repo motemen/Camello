@@ -14,7 +14,9 @@ declarations rather than as strings. What it concludes
 from them is specified in [types.md](types.md); the design behind it, and the
 decisions the corpus forced on it, are in [typecheck.md](typecheck.md). What
 the checker will infer for a sub that carries no `Returns:` is designed in
-[return-inference.md](return-inference.md).
+[return-inference.md](return-inference.md). The same run reports the lint
+rules — ways of writing Perl that do not do what writing them meant, the part
+of `perlcritic` worth keeping — specified in [lint.md](lint.md).
 
 The formatting rules themselves are documented in [formatting.md](formatting.md).
 The rules the source holds to — the five contracts its comments refer to by

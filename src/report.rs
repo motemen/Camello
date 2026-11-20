@@ -261,20 +261,36 @@ pub fn run(request: &Request) -> Result<Exit> {
         .filter_map(|(path, inline)| inline.as_deref().map(|text| (path.as_path(), text)))
         .collect();
     let read = |path: &Path| read_one(path, inline.get(path).copied(), &encodings).ok();
-    analysis.infer_returns(&roots, request.jobs, read);
+    // Only a run that reports types needs them: without `--types` the walk
+    // is half the run and changes no diagnostic it prints (DIAG-0).
+    if request.options.types || request.returns_drift {
+        analysis.infer_returns(&roots, request.jobs, read);
+    } else {
+        analysis.skip_return_inference();
+    }
 
     if request.returns_drift {
         return Ok(report_drift(&analysis, &roots, request, read));
     }
 
+    // A file the project marks generated contributed its declarations above
+    // and is reported on by nothing (`docs/types.md`, OFF-3).
+    let generated = camello_sema::workspace::Generated::default();
     let reports = camello_sema::workspace::in_parallel(&files, request.jobs, |(path, inline)| {
-        check_one(
+        let mut report = check_one(
             path,
             inline.as_deref(),
             &encodings,
             &analysis,
             &request.options,
-        )
+        );
+        if inline.is_none() && generated.contains(path) {
+            if let Ok(report) = &mut report {
+                report.diagnostics.clear();
+                report.parse_errors.clear();
+            }
+        }
+        report
     });
 
     let mut counts = Counts::default();

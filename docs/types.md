@@ -2,7 +2,8 @@
 
 このドキュメントは、`camello check` が Perl のコードについて
 何を知り、何を知らないままにするかを定義します。フォーマッタの仕様は
-[formatting.md](formatting.md) に、実装の設計は [typecheck.md](typecheck.md) にあります。
+[formatting.md](formatting.md) に、実装の設計は [typecheck.md](typecheck.md) に、
+型と関係のない書き方の誤り（lint）は [lint.md](lint.md) にあります。
 
 Perl に静的な型はありません。ここに書かれている「型」は、シジル・リテラル・
 コンストラクタ・アノテーションといった**証拠から導かれた形（shape）**であって、
@@ -1237,6 +1238,20 @@ perl が条件を評価してから走らせる部分は、`if` のブロック�
 **推論**であるか絞り込みに依存しているもの、`info` がユーザーが求めたときに
 知らされるものです。`--error-on` に達したものがあれば終了ステータスは 1 です。
 
+- (DIAG-0) **型に依る診断は `--types` のときだけ報告します。** 既定の
+  `camello check` が報告するのは、[lint](lint.md) とスコープの診断（DIAG-1〜3、
+  DIAG-12）です。どちらも値の型を推測せずに言えることで、誤検知のないことを
+  基準にしています。DIAG-4〜11 と DIAG-13〜15 は、値の型や呼び出し先のクラスに
+  依っています。推論の届かない書き方では誤ることがあるので、`--types`
+  （`camello.toml` では `[check] types = true`）を付けたときだけ報告します。
+  `--strict-annotations` は `--types` を含みます。言語サーバーも同じ設定に
+  従います。
+  `--types` なしの `camello check` は、ファイルをまたいだ戻り値の推論
+  （[Tier 2](return-inference.md)）も行いません。報告するどの診断もそれを
+  必要とせず、実行時間の半分ほどを占めるからです。そのため DIAG-12d は、
+  戻り値がそれで決まるはずだったサブルーチンの値を代入したスカラーを、
+  デストラクタのために持たれているものとして扱います。
+
 | コード | 既定 | 意味 |
 | --- | --- | --- |
 | (DIAG-1) `undeclared-variable` | error | `strict` の下で、どの宣言も届かない名前 |
@@ -1438,6 +1453,39 @@ camello の判断の方が間違っている可能性が常にあるからです
 `$self` は「このクラスまたはその任意のサブクラス」であり、サブクラスは
 何でも定義できます。この場合の報告は現状では誤検知です。
 
+### 7.6 `undeclared-variable` について
+
+perl 自身が `strict` の下でコンパイルを拒む名前なので、動いているコードに
+対する報告はすべて誤検知です。基準はそれをゼロにすることです。
+報告するのは `strict` が効いているところだけで、`use strict` はそれより後ろの、
+そのブロックの終わりまでに効きます。
+
+- (DIAG-1a) `use` は、モジュールが export する変数を宣言します。リストなしの
+  `use` では `@EXPORT` の変数（`*CWD` は `$CWD`・`@CWD`・`%CWD`）と、モジュールの
+  `import` が glob に代入する変数（`*{"${caller}::Config"} = \%Config`）です。
+  宣言される名前は代入先の glob の名前で、`*{"${caller}::PUBLIC"} = \$internal`
+  は `$PUBLIC` を宣言します。`our @EXPORT = ()` は何も export しません。
+  `:tag` を含むリストでは、それに加えて `@EXPORT_OK` と `%EXPORT_TAGS` の
+  変数すべてです。リストに書いた変数は、モジュールに関わらず宣言されます。
+  依存先のファイルは、UTF-8 として読めなくても名前を読みます。
+- (DIAG-1b) **誰にも言えないときは、それ以降を報告しません。** 計算した
+  リストを渡す `use vars`、リストを計算するモジュールの `:tag`、実行で読めなかった
+  モジュールの `:tag`、`@EXPORT` を計算するモジュールと、`import` が名前を計算した
+  glob（`*{"${caller}::$name"}`）に変数を代入するモジュールの `use` がそれです。見つからないモジュールをリストなしで `use`
+  したときは、変数を export しないとみなします。変数を export するモジュールは
+  少なく、逆にとるとそうしたファイルのすべてでこの診断が消えるからです。
+- (DIAG-1e) `use vars` はパッケージの glob に変数をインポートするので、別の
+  ファイルで書かれたものも、そのパッケージのコードからは宣言済みです。
+  `Bit/Vector.pm` の `use vars qw(@CONFIG)` は、`Bit/Vector/Overload.pm` の
+  `package Bit::Vector;` の下にも届きます。
+- (DIAG-1c) `our` は書いたところから見えます。`our %h = (%h, ...)` の右辺は
+  宣言した変数です。`local our ($x)` も `our` と同じく宣言します。
+- (DIAG-1d) パターンの中の `$x[...]` と `$x{...}` は、perl が文字クラスや
+  量指定子かどうかを推測する場所です。`@x` や `%x` がなく `$x` があるなら、
+  `$x` として読みます。文字列とパターンの中の `${x}` は波括弧で名前が終わり、
+  後ろの `[` や `{` はただの文字です。添字の中の単一引用符（`{'$ref'}`）は
+  展開しません。
+
 ## 8. 診断を止める (OFF)
 
 ### 8.1 行ごと (OFF-1)
@@ -1485,6 +1533,8 @@ disable = ["unused-variable"]
 error-on = "warning"         # これ以上の重大度があれば終了ステータスは 1
 min-severity = "warning"     # これ未満の重大度は印字しない
 guard-classes = ["My::Lock"] # デストラクタのために持たれる値を作るクラス
+strict-equivalent-modules = ["My::Test"]  # use すると strict と warnings が有効になるモジュール (LINT-5h)
+types = true                 # 型に依る診断も報告する (DIAG-0)
 strict-annotations = true
 
 [check.read-as]                          # 自作ラッパーが何の代わりか (ANNOT-12)
@@ -1505,6 +1555,20 @@ strict-annotations = true
 （ファイルはプロジェクトが何であるかを、フラグはこの実行が何であるかを言います）。
 読めない設定ファイルはエラーです。黙って無視される設定は、誰も頼んでいない
 規則でプロジェクトを検査することになるからです。
+
+### 8.3 生成されたファイル (OFF-3)
+
+`.gitattributes` で `linguist-generated` が付いているファイルには、何も報告
+しません。宣言は読むので、ほかのファイルからの呼び出しや型は今までどおり
+解決されます。生成されたコードを直すのは生成器の仕事で、その出力への指摘は
+誰にも直せないからです。
+
+`.gitattributes` は git と同じように読みます。リポジトリのルートからファイルの
+ディレクトリまでのすべてを読み、後の行と深い場所のファイルが勝ちます。
+パターンはファイルそのものに合うものだけが効き、`vendor/` はその下のファイルに
+効きません（`vendor/**` と書きます）。`-linguist-generated` と
+`linguist-generated=false` は外します。リポジトリの外のファイルには、git と
+同じく属性はありません。
 
 ## 9. 依存モジュール (DEPS)
 
@@ -1594,15 +1658,13 @@ Moose 系として読みます（[ANNOT-10e](#310-classaccessorlite-一族-annot
 ということなので、そのパッケージは**動的**になり、何も報告されなくなります
 （[METHOD-5](#61-不透明なクラス-method-5)）。
 
-### A.6 `strict` を入れる import (`scope::STRICT_BY_IMPORT`)
+### A.6 `strict` を入れる import (`pragma::BY_IMPORT`)
 
-`strict`, `strictures`, `Modern::Perl`, `common::sense`, `Moose`,
-`Moose::Role`, `Moose::Exporter`, `Moo`, `Moo::Role`, `Mouse`, `Mouse::Role`,
-`Mojo::Base`, `Mojolicious::Lite`, `Dancer2`, `Object::Pad`,
-`Test::Class::Moose`, `Class::Accessor::Typed`。
-
-網羅ではありえません — `import` の中で `strict` を入れるのは camello が実行しない
-コードだからです。漏らすと静かになる側に転ぶので、その向きに間違えます。
+表は [lint.md の付録 A](lint.md#付録-a-strict-と-warnings-を有効にするモジュール)
+にあり、`missing-strict` と共有しています。表にないモジュールは、その
+`sub import` を読んで判定します（[LINT-5e](lint.md#25-missing-strict-と-missing-warnings-lint-5)）。
+どこにも見つからないモジュールは `strict` を入れないものとして扱います。
+漏らすと静かになる側に転ぶので、その向きに間違えます。
 
 ### A.7 デストラクタのために持たれる値 (`scope::GUARD_NAMES`)
 
@@ -1627,9 +1689,9 @@ Moose 系として読みます（[ANNOT-10e](#310-classaccessorlite-一族-annot
 ### A.10 変数を export するモジュール (`scope::exported_variables`)
 
 `English`（`$PROGRAM_NAME` などの一覧を持っています）、`Config`（`%Config`）、
-`Regexp::Common`（`%RE`）。サブルーチンではなく変数を export するモジュールは、
-`@EXPORT` を読むだけでは足りないので表になっています。いずれも自分の `import` の
-中で glob に代入していて、`Regexp::Common` は import リストを見るより先に
+`Regexp::Common`（`%RE`）。ほかのモジュールは `@EXPORT` と `import` の glob 代入を
+読みます（DIAG-1a）が、この三つは名前を計算して glob に代入するので表に
+なっています。`Regexp::Common` は import リストを見るより先に
 無条件で `*{caller() . "::RE"} = \%RE` を書くので、`use Regexp::Common qw/number/`
 のように書いても `%RE` は来ます。
 

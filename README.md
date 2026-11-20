@@ -8,7 +8,8 @@ order. It aims at real-world code rather than at complete coverage of every
 legacy corner of the grammar.
 
 Over the same tree it also checks: `camello check` reports what the scopes say
-and what the annotations Perl code already carries — `has ... isa => 'Str'`,
+and the lint rules that replace `perlcritic`, and with `--types` what the
+annotations Perl code already carries — `has ... isa => 'Str'`,
 `args my $x => 'Int'`, `Class::Accessor::Typed`, the `mk_accessors` family,
 `Class::Tiny`, `use constant` — can be made to say.
 
@@ -75,6 +76,7 @@ same rules (`docs/formatting.md`, IGNORE).
 
 ```bash
 camello check lib t                          # the warnings and errors, over the tree
+camello check --types lib t                  # and what the types say
 camello check --min-severity info            # the advice as well
 camello check --error-on warning             # exit 1 on a warning too, for CI
 camello check --min-severity error           # print the errors and nothing else
@@ -98,13 +100,16 @@ default prints it too, so `--error-on info` means what it says on its own.
 `camello lsp` keeps `info` as its default, because a squiggle in the file on
 screen is not a wall of lines ([docs/lsp.md](docs/lsp.md)).
 
-It reports undeclared, unused and shadowed lexicals, and arity against a
-signature, a Smart::Args list or an `@_` unpacking. An unread *parameter* is
+By default it reports what it can say without guessing at a type: the lint
+rules below, and undeclared, unused and shadowed lexicals. An unread *parameter* is
 its own code, `unused-parameter`, reported at `info`: a parameter goes on
 saying what the sub takes whether or not the body wants the value. A value held
 for its destructor — `my $guard = Scope::Guard->new(...)` — is neither.
 
-What the annotations say adds to that: a value that contradicts a declared
+`--types` (`types = true` in `camello.toml`) adds what rests on types, where a
+guess the inference could not make is a false positive waiting to happen:
+arity against a signature, a Smart::Args list or an `@_` unpacking, and what
+the annotations say — a value that contradicts a declared
 type, a key a class does not declare, a name a call had to pass and did not, a
 method a class does not have, a `Maybe[...]` used with nothing having checked
 it. `Class::Accessor::Lite` and
@@ -120,6 +125,22 @@ The rule underneath is that **the checker is silent when it does not know**. A
 program with no annotations and no recognisable constructors gets no type
 diagnostics at all, and that is correct behaviour rather than a gap.
 
+The same run reports what `perlcritic` would have caught that is worth
+catching: a way of writing Perl that does not do what writing it meant. A
+`return` inside a `do` whose value is used, `my $x = ... if $cond`, a
+two-argument `open`, a bareword filehandle, code before `use strict` or
+`use warnings`, `return sort`, `for $x (...)` without `my`, a `.pm` whose
+package its path does not name, `;;`, and a named `sub` inside
+another. There is nothing to configure: each is a
+`warning`, a style choice is never one of them, and a project's own import
+module is read to see whether it turns `strict` on — through every
+`import` it calls — and `strict-equivalent-modules` in `camello.toml` lists
+the ones that cannot be read, the way Perl::Critic's `equivalent_modules` did. `## no critic` is read
+by the Perl::Critic names; `--error-on warning` is what fails CI the way
+`perlcritic` did. [docs/lint.md](docs/lint.md) is the list.
+
+A file `.gitattributes` marks `linguist-generated` is reported on by nothing.
+
 Turn one off for a line with a comment, or for a project in `camello.toml`:
 
 ```perl
@@ -134,6 +155,8 @@ disable = ["unused-parameter"]
 error-on = "warning"
 min-severity = "warning"
 guard-classes = ["My::Lock"]
+strict-equivalent-modules = ["My::Test"]
+types = true
 strict-annotations = true
 ```
 

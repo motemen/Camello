@@ -113,6 +113,34 @@ pub enum Code {
     /// wants the value, and a project may reasonably want to be told about the
     /// one and not the other.
     UnusedParameter,
+    /// A `return` inside a `do` block whose value is used (`docs/lint.md`,
+    /// LINT-1). The codes from here down are the lint rules: what is written
+    /// does not do what writing it meant, whatever the types say.
+    ReturnInDoValue,
+    /// `my ... if ...` (LINT-2).
+    ConditionalDeclaration,
+    /// `open` with two arguments (LINT-3).
+    TwoArgOpen,
+    /// A bareword filehandle (LINT-4).
+    BarewordFilehandle,
+    /// Code before `strict` is in effect (LINT-5).
+    MissingStrict,
+    /// Code before `warnings` is in effect (LINT-5).
+    MissingWarnings,
+    /// `return sort ...` (LINT-6).
+    ReturnSort,
+    /// `for $x (...)`, a loop variable not declared with it (LINT-7).
+    NonLexicalLoopIterator,
+    /// A `.pm` whose first package is not the one its path names (LINT-8).
+    PackageFilenameMismatch,
+    /// `;;` (LINT-9).
+    DoubleSemicolon,
+    /// A named `sub` inside a sub's body (LINT-10).
+    NestedNamedSub,
+    /// `my $x .= ...`, `local $x ||= ...` (LINT-11).
+    AugmentedAssignmentInDeclaration,
+    /// A `map` or `grep` block that modifies the array it is given (LINT-12).
+    MutatingListFunction,
 }
 
 impl Code {
@@ -132,6 +160,19 @@ impl Code {
         Code::MissingArgument,
         Code::UnusedParameter,
         Code::IgnoredPrototype,
+        Code::ReturnInDoValue,
+        Code::ConditionalDeclaration,
+        Code::TwoArgOpen,
+        Code::BarewordFilehandle,
+        Code::MissingStrict,
+        Code::MissingWarnings,
+        Code::ReturnSort,
+        Code::NonLexicalLoopIterator,
+        Code::PackageFilenameMismatch,
+        Code::DoubleSemicolon,
+        Code::NestedNamedSub,
+        Code::AugmentedAssignmentInDeclaration,
+        Code::MutatingListFunction,
     ];
 
     #[must_use]
@@ -152,12 +193,94 @@ impl Code {
             Code::MissingArgument => "missing-argument",
             Code::UnusedParameter => "unused-parameter",
             Code::IgnoredPrototype => "ignored-prototype",
+            Code::ReturnInDoValue => "return-in-do-value",
+            Code::ConditionalDeclaration => "conditional-declaration",
+            Code::TwoArgOpen => "two-arg-open",
+            Code::BarewordFilehandle => "bareword-filehandle",
+            Code::MissingStrict => "missing-strict",
+            Code::MissingWarnings => "missing-warnings",
+            Code::ReturnSort => "return-sort",
+            Code::NonLexicalLoopIterator => "non-lexical-loop-iterator",
+            Code::PackageFilenameMismatch => "package-filename-mismatch",
+            Code::DoubleSemicolon => "double-semicolon",
+            Code::NestedNamedSub => "nested-named-sub",
+            Code::AugmentedAssignmentInDeclaration => "augmented-assignment-in-declaration",
+            Code::MutatingListFunction => "mutating-list-function",
         }
     }
 
     #[must_use]
     pub fn parse(text: &str) -> Option<Self> {
         Code::ALL.iter().copied().find(|code| code.as_str() == text)
+    }
+
+    /// The Perl::Critic policy this lint rule stands for, without
+    /// `Perl::Critic::Policy::` (`docs/lint.md`, the table in §1), or `None`
+    /// for a code that is not a lint rule.
+    #[must_use]
+    pub const fn critic_policy(self) -> Option<&'static str> {
+        Some(match self {
+            Code::ReturnInDoValue => "ControlStructures::ProhibitReturnInDoBlock",
+            Code::ConditionalDeclaration => "Variables::ProhibitConditionalDeclarations",
+            Code::TwoArgOpen => "InputOutput::ProhibitTwoArgOpen",
+            Code::BarewordFilehandle => "InputOutput::ProhibitBarewordFileHandles",
+            Code::MissingStrict => "TestingAndDebugging::RequireUseStrict",
+            Code::MissingWarnings => "TestingAndDebugging::RequireUseWarnings",
+            Code::ReturnSort => "Subroutines::ProhibitReturnSort",
+            Code::NonLexicalLoopIterator => "Variables::RequireLexicalLoopIterators",
+            Code::PackageFilenameMismatch => "Modules::RequireFilenameMatchesPackage",
+            Code::DoubleSemicolon => "ValuesAndExpressions::ProhibitNullStatements",
+            Code::NestedNamedSub => "Subroutines::ProhibitNestedSubs",
+            Code::AugmentedAssignmentInDeclaration => {
+                "Variables::ProhibitAugmentedAssignmentInDeclaration"
+            }
+            Code::MutatingListFunction => "ControlStructures::ProhibitMutatingListFunctions",
+            _ => return None,
+        })
+    }
+
+    /// Whether this is one of the lint rules of `docs/lint.md`.
+    #[must_use]
+    pub const fn is_lint(self) -> bool {
+        self.critic_policy().is_some()
+    }
+
+    /// Whether this code rests on types, annotations or the classes a call
+    /// resolves to, and is reported only under `--types` (`docs/types.md`,
+    /// DIAG-0). What is left — the lint rules and the scope pass — reads
+    /// nothing but the file and the names its imports bring in.
+    #[must_use]
+    pub const fn needs_types(self) -> bool {
+        match self {
+            Code::Arity
+            | Code::TypeMismatch
+            | Code::UnknownKey
+            | Code::UnknownMethod
+            | Code::MaybeDeref
+            | Code::BadAnnotation
+            | Code::ReturnMismatch
+            | Code::UnknownType
+            | Code::MissingAnnotation
+            | Code::MissingArgument
+            | Code::IgnoredPrototype => true,
+            Code::UndeclaredVariable
+            | Code::UnusedVariable
+            | Code::ShadowedVariable
+            | Code::UnusedParameter
+            | Code::ReturnInDoValue
+            | Code::ConditionalDeclaration
+            | Code::TwoArgOpen
+            | Code::BarewordFilehandle
+            | Code::MissingStrict
+            | Code::MissingWarnings
+            | Code::ReturnSort
+            | Code::NonLexicalLoopIterator
+            | Code::PackageFilenameMismatch
+            | Code::DoubleSemicolon
+            | Code::NestedNamedSub
+            | Code::AugmentedAssignmentInDeclaration
+            | Code::MutatingListFunction => false,
+        }
     }
 
     /// The severity this code is reported at when nothing downgrades it.
@@ -175,6 +298,21 @@ impl Code {
             // its ancestors `use` was read. The call site raises it to a
             // `warning` where it was (`docs/types.md`, DIAG-7a).
             | Code::MaybeDeref => Severity::Warning,
+            // Every lint rule is a warning (`docs/lint.md`, LINT-POLICY-4):
+            // printed by default, failing a run only where it asks.
+            Code::ReturnInDoValue
+            | Code::ConditionalDeclaration
+            | Code::TwoArgOpen
+            | Code::BarewordFilehandle
+            | Code::MissingStrict
+            | Code::MissingWarnings
+            | Code::ReturnSort
+            | Code::NonLexicalLoopIterator
+            | Code::PackageFilenameMismatch
+            | Code::DoubleSemicolon
+            | Code::NestedNamedSub
+            | Code::AugmentedAssignmentInDeclaration
+            | Code::MutatingListFunction => Severity::Warning,
             Code::BadAnnotation
             | Code::UnknownType
             | Code::MissingAnnotation
