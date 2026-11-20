@@ -261,9 +261,17 @@ pub fn import_enables(body: &SyntaxNode) -> Option<ImportReading> {
     if !calls_import && !reading.opaque {
         return None;
     }
+    // `no strict 'refs'` names `strict` to turn part of it off in the
+    // module itself, and `use warnings` turns it on there: neither says
+    // anything about the caller.
     for token in body
         .descendants_with_tokens()
         .filter_map(|element| element.into_token())
+        .filter(|token| {
+            !token.parent_ancestors().any(|ancestor| {
+                matches!(ancestor.node_kind(), NodeKind::USE_STMT | NodeKind::NO_STMT)
+            })
+        })
     {
         let words: Vec<&str> = match token.token_kind() {
             TokenKind::IDENT => vec![token.text()],

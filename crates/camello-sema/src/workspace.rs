@@ -312,12 +312,20 @@ fn mentions(error: &ignore::Error, name: &str) -> bool {
 /// Read the way git reads attributes: every `.gitattributes` from the
 /// repository root down to the file's directory, later lines and deeper files
 /// winning, and a pattern matching the path itself rather than a directory
-/// above it — `vendor/` names no file, `vendor/**` names them all.
+/// above it — `vendor/` names no file, `vendor/**` names them all. A file
+/// outside any repository has no attributes, as git gives it none.
 #[derive(Debug, Default)]
 pub struct Generated {
-    /// The rules of each `.gitattributes`, by its directory; an empty list
-    /// where there is none.
-    rules: std::sync::Mutex<std::collections::HashMap<PathBuf, std::sync::Arc<Vec<Rule>>>>,
+    /// The rules of each `.gitattributes`, by its directory, with the
+    /// modification time they were read at; an empty list where there is
+    /// none.
+    rules: std::sync::Mutex<std::collections::HashMap<PathBuf, Attributes>>,
+}
+
+#[derive(Debug)]
+struct Attributes {
+    modified: Option<std::time::SystemTime>,
+    rules: std::sync::Arc<Vec<Rule>>,
 }
 
 #[derive(Debug)]
@@ -337,11 +345,16 @@ impl Generated {
             return false;
         };
         let mut directories: Vec<&Path> = Vec::new();
+        let mut in_repository = false;
         for directory in absolute.ancestors().skip(1) {
             directories.push(directory);
             if directory.join(".git").exists() {
+                in_repository = true;
                 break;
             }
+        }
+        if !in_repository {
+            return false;
         }
         let mut generated = false;
         for directory in directories.into_iter().rev() {
@@ -354,12 +367,31 @@ impl Generated {
         generated
     }
 
+    /// The rules of one directory's `.gitattributes`, read again only when
+    /// its modification time changes — so that a language server asking on
+    /// every keystroke sees an edit to the file without parsing it each time.
     fn rules_in(&self, directory: &Path) -> std::sync::Arc<Vec<Rule>> {
+        let modified = std::fs::metadata(directory.join(".gitattributes"))
+            .and_then(|metadata| metadata.modified())
+            .ok();
         let mut cache = self.rules.lock().expect("no reader panics holding this");
-        cache
-            .entry(directory.to_path_buf())
-            .or_insert_with(|| std::sync::Arc::new(read_attributes(directory)))
-            .clone()
+        match cache.get(directory) {
+            Some(cached) if cached.modified == modified => cached.rules.clone(),
+            _ => {
+                let rules = std::sync::Arc::new(match modified {
+                    Some(_) => read_attributes(directory),
+                    None => Vec::new(),
+                });
+                cache.insert(
+                    directory.to_path_buf(),
+                    Attributes {
+                        modified,
+                        rules: rules.clone(),
+                    },
+                );
+                rules
+            }
+        }
     }
 }
 
@@ -429,6 +461,37 @@ mod generated_tests {
         assert!(!generated.contains(&root.join("keep.pl")));
         assert!(!generated.contains(&root.join("vendor/Foo.pm")));
         assert!(!generated.contains(&root.join("lib/Foo.pm")));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_file_outside_a_repository_has_no_attributes() {
+        let root = std::env::temp_dir().join(format!("camello-no-git-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("lib")).unwrap();
+        std::fs::write(root.join(".gitattributes"), "*.pm linguist-generated\n").unwrap();
+        assert!(!Generated::default().contains(&root.join("lib/Foo.pm")));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_edit_to_the_attributes_is_seen_by_the_same_reader() {
+        let root = std::env::temp_dir().join(format!("camello-reread-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        let attributes = root.join(".gitattributes");
+        std::fs::write(&attributes, "*.pm linguist-generated\n").unwrap();
+        let generated = Generated::default();
+        assert!(generated.contains(&root.join("Foo.pm")));
+        std::fs::write(&attributes, "*.pl linguist-generated\n").unwrap();
+        // A modification time that differs even on a coarse filesystem.
+        std::fs::File::options()
+            .write(true)
+            .open(&attributes)
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(10))
+            .unwrap();
+        assert!(!generated.contains(&root.join("Foo.pm")));
         let _ = std::fs::remove_dir_all(&root);
     }
 }

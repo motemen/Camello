@@ -69,10 +69,14 @@ Perl::Critic のほかのポリシーは実装しません。`ProhibitLeadingZer
   - 関数やメソッドの引数、リスト・ハッシュ・配列の要素、ほかの式のオペランド
   - `return` の引数
   - サブルーチンの本体の最後の文（その値がサブルーチンの戻り値になる）
+  - 値が使われる `do` のブロックの最後の文。値が使われるブロックの最後の文に
+    置いた `if`・`else` の分岐や、ただのブロックの最後の文も同じです
   ```perl
   $self->{cache} //= do { return $x if $x; compute() };   # 指摘する
   my $v = do { return unless $ok; compute() };            # 指摘する
   sub f { do { return 1 if $x; 2 } }                      # 指摘する
+  my $t = do { 1; do { return 3 } };                      # 指摘する
+  sub g { if ($x) { do { return 2 } } }                   # 指摘する
   my $v = do { if ($ok) { 1 } else { return } };          # 指摘しない
   my $w = do { for (@a) { return $_ if $_ } 0 };          # 指摘しない
   ```
@@ -121,14 +125,15 @@ Perl::Critic のほかのポリシーは実装しません。`ProhibitLeadingZer
 
 ### 2.5 `missing-strict` と `missing-warnings` (LINT-5)
 
-- (LINT-5a) **指摘する**: ファイルの中で、`strict`（`warnings`）が有効になる前に
-  コードの文が現れるとき。最後まで有効にならない場合も含みます。報告は
-  ファイルごとに一度、最初のコードの文の位置にします。
+- (LINT-5a) **指摘する**: ファイルの中で、`strict`（`warnings`）が有効でない
+  ところにコードの文が現れるとき。有効になる前の文も、有効にしたブロックを
+  抜けた後の文も含みます。報告はファイルごとにそれぞれ一度、そのような最初の
+  コードの文の位置にします。
 - (LINT-5b) **コードの文として数えないもの**: `package`、`use`、`no`、空の文、
   コメント、POD、`__END__` と `__DATA__` 以降。`use` の引数（`use Foo { ... }` の
   `{ ... }` など）は `use` の一部です。ブロックつきの `package Foo { ... }` と、
-  ただのブロック `{ ... }` は、ブロックの中の文を数えます。ただのブロックの中で
-  有効にしたものは、ブロックの外には及びません。
+  ただのブロック `{ ... }` は、ブロックの中の文を数えます。どちらも、ブロックの
+  中で有効にしたものはブロックの外には及びません。
   `strict` の有無で動作が変わらない、モジュールの頭と終わりの決まり文句も
   数えません。`require 5.006` のようなバージョンの `require`、`require Exporter`
   のようなモジュール名の `require`、`$VERSION`（`our $VERSION`、`$Foo::VERSION`）
@@ -142,11 +147,13 @@ Perl::Critic のほかのポリシーは実装しません。`ProhibitLeadingZer
   4. `sub import` の中で `strict` や `warnings` の `import` を呼んでいるモジュール
      （LINT-5e）
   5. `camello.toml` の `strict-equivalent-modules` に挙げたモジュール（LINT-5h）
-  6. shebang の `-w`（`warnings` のみ）
+  6. shebang の `-w` と `-W`（`warnings` のみ）。`-X` は打ち消します。スイッチは
+     順に読み、`-I/home/www/lib` のように引数を取るスイッチの後ろは読みません
 - (LINT-5e) プロジェクトや依存先のモジュールは、`sub import` の本体を読んで
   判定します。本体が `->import`（`Import::Into` の `->import::into` を含む）を
   呼んでいて、`strict` や `warnings` を名指ししていれば、そのモジュールを `use`
-  することはそれを有効にすることです。本体が付録 A のモジュールの `import` を
+  することはそれを有効にすることです。`no strict 'refs'` のような `use`・`no` の
+  文の中の名前は、名指しに数えません。本体が付録 A のモジュールの `import` を
   呼んでいれば、そのモジュールが有効にするものを有効にします。ほかのモジュールの
   `import` を呼んでいれば（`My::Pragma->import`）、そのモジュールの `import` も
   同じ規則で読み、何段でもたどります。`import` の中の `require t; t->import` の
@@ -162,7 +169,8 @@ Perl::Critic のほかのポリシーは実装しません。`ProhibitLeadingZer
   - 次のものは中身が読めないので LINT-5f と同じく扱います。呼び出し元に届く
     文字列の `eval`（`eval qq{package $pkg; use Test2::V0;}` のように、`package`・
     `import`・`$^H` を含むもの）と、ファイルの一番外側で glob に代入した `import`
-    （`*{$prefix . 'import'} = sub { ... }`）。`eval q{ use Foo; }` のように
+    （`*{$prefix . 'import'} = sub { ... }`）。名前の最後の要素が `import` で
+    あるものだけで、`*important_thing` は数えません。`eval q{ use Foo; }` のように
     呼び出し元に届かない `eval` は数えません。
 - (LINT-5f) どこにも見つからないモジュールは、名前に関わらず `strict` も `warnings` も
   有効にするものとして扱います。見えないものについて誤検知を出さないためです。

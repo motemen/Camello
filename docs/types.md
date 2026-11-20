@@ -1557,7 +1557,8 @@ strict-annotations = true
 ディレクトリまでのすべてを読み、後の行と深い場所のファイルが勝ちます。
 パターンはファイルそのものに合うものだけが効き、`vendor/` はその下のファイルに
 効きません（`vendor/**` と書きます）。`-linguist-generated` と
-`linguist-generated=false` は外します。
+`linguist-generated=false` は外します。リポジトリの外のファイルには、git と
+同じく属性はありません。
 
 ## 9. 依存モジュール (DEPS)
 

@@ -111,7 +111,7 @@ fn discarded(node: &SyntaxNode) -> bool {
             let modified = parent
                 .children()
                 .any(|child| child.node_kind() == NodeKind::STMT_MODIFIER);
-            modified || !ends_a_sub(&parent)
+            modified || !gives_its_block_value(&parent)
         }
         NodeKind::BINARY_EXPR => {
             let binary = ast::BinaryExpr::cast(parent.clone()).expect("kind checked");
@@ -130,27 +130,38 @@ fn discarded(node: &SyntaxNode) -> bool {
     }
 }
 
-/// Whether a statement is the last of a sub's body, whose value is the sub's.
-fn ends_a_sub(statement: &SyntaxNode) -> bool {
+/// Whether a statement is the last of a block whose value is used: a sub's
+/// body, a `do` whose value is used, or a branch of an `if` or a bare block
+/// that is itself the last of one (LINT-1a).
+fn gives_its_block_value(statement: &SyntaxNode) -> bool {
     let Some(block) = statement.parent() else {
         return false;
     };
     if block.node_kind() != NodeKind::BLOCK {
         return false;
     }
-    let is_body = block.parent().is_some_and(|owner| {
-        matches!(
-            owner.node_kind(),
-            NodeKind::SUB_DEF | NodeKind::ANON_SUB_EXPR
-        )
-    });
-    is_body
-        && block
-            .children()
-            .filter(|child| child.node_kind() != NodeKind::EMPTY_STMT)
-            .last()
-            .as_ref()
-            == Some(statement)
+    let last = block
+        .children()
+        .filter(|child| child.node_kind() != NodeKind::EMPTY_STMT)
+        .last();
+    if last.as_ref() != Some(statement) {
+        return false;
+    }
+    let Some(owner) = block.parent() else {
+        return false;
+    };
+    match owner.node_kind() {
+        NodeKind::SUB_DEF | NodeKind::ANON_SUB_EXPR => true,
+        NodeKind::DO_BLOCK_EXPR => {
+            ast::tokens(&owner).any(|token| token.token_kind() == TokenKind::DO_KW)
+                && !discarded(&owner)
+        }
+        NodeKind::IF_STMT | NodeKind::BLOCK_STMT => gives_its_block_value(&owner),
+        NodeKind::ELSIF_CLAUSE | NodeKind::ELSE_CLAUSE => owner
+            .parent()
+            .is_some_and(|statement| gives_its_block_value(&statement)),
+        _ => false,
+    }
 }
 
 // ----- LINT-2 -----
@@ -261,33 +272,106 @@ fn bareword(operand: &SyntaxNode) -> Option<String> {
 
 // ----- LINT-5 -----
 
-/// `missing-strict` and `missing-warnings`: what is on when the first
-/// statement that is code runs.
+/// `missing-strict` and `missing-warnings`: the first statement that is code
+/// and runs without each.
 fn pragmas(root: &SyntaxNode, enables: &dyn Fn(&str) -> Enables, into: &mut Vec<Diagnostic>) {
-    let mut on = shebang(root);
-    let Some(first) = first_code(root, enables, &mut on) else {
-        return;
+    let mut uncovered = Uncovered::default();
+    uncovered.walk(root, enables, shebang(root));
+    let start = |statement: &SyntaxNode| {
+        statement
+            .first_token()
+            .map_or_else(|| statement.text_range(), |token| token.text_range())
     };
-    let range = first
-        .first_token()
-        .map_or_else(|| first.text_range(), |token| token.text_range());
-    if !on.strict {
+    if let Some(statement) = &uncovered.strict {
         into.push(Diagnostic::new(
             Code::MissingStrict,
-            range,
+            start(statement),
             "this code runs without `use strict`: nothing before it turns `strict` on",
         ));
     }
-    if !on.warnings {
+    if let Some(statement) = &uncovered.warnings {
         into.push(Diagnostic::new(
             Code::MissingWarnings,
-            range,
+            start(statement),
             "this code runs without `use warnings`: nothing before it turns `warnings` on",
         ));
     }
 }
 
-/// `#!/usr/bin/perl -w` turns warnings on for the whole program.
+/// The first statement that is code (LINT-5b, LINT-5c) and runs without
+/// `strict`, and the first without `warnings`.
+#[derive(Default)]
+struct Uncovered {
+    strict: Option<SyntaxNode>,
+    warnings: Option<SyntaxNode>,
+}
+
+impl Uncovered {
+    fn done(&self) -> bool {
+        self.strict.is_some() && self.warnings.is_some()
+    }
+
+    /// Reads the statements of `parent` in order, with `on` updated by every
+    /// `use` among them.
+    fn walk(&mut self, parent: &SyntaxNode, enables: &dyn Fn(&str) -> Enables, mut on: Pragmas) {
+        for statement in parent.children() {
+            if self.done() {
+                return;
+            }
+            match statement.node_kind() {
+                NodeKind::USE_STMT => {
+                    let use_statement =
+                        ast::UseStmt::cast(statement.clone()).expect("kind checked");
+                    let turned = match use_statement.module() {
+                        Some(_) if pragma::imports_nothing(&use_statement) => Pragmas::NONE,
+                        Some(module) => match enables(&module) {
+                            Enables::Known(pragmas) => pragmas,
+                            Enables::Unknown => Pragmas::BOTH,
+                        },
+                        None => pragma::by_version(&statement),
+                    };
+                    on = on.union(turned);
+                }
+                NodeKind::NO_STMT
+                | NodeKind::EMPTY_STMT
+                | NodeKind::POD
+                | NodeKind::DATA_SECTION => {}
+                _ if is_prelude(&statement) => {}
+                // `{ use 5.006; }` and `package Foo { use strict; }`: what the
+                // block turns on ends with it, so it is read with a copy.
+                NodeKind::BLOCK_STMT => {
+                    if let Some(block) = statement
+                        .children()
+                        .find(|child| child.node_kind() == NodeKind::BLOCK)
+                    {
+                        self.walk(&block, enables, on);
+                    }
+                }
+                NodeKind::PACKAGE_STMT => {
+                    let package = ast::PackageStmt::cast(statement.clone()).expect("kind checked");
+                    if let Some(block) = package.block() {
+                        self.walk(block.syntax(), enables, on);
+                    }
+                }
+                _ => {
+                    if !on.strict && self.strict.is_none() {
+                        self.strict = Some(statement.clone());
+                    }
+                    if !on.warnings && self.warnings.is_none() {
+                        self.warnings = Some(statement.clone());
+                    }
+                    // Nothing at this level turns either off again.
+                    if on.strict && on.warnings {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// `#!/usr/bin/perl -w` and `-W` turn warnings on for the whole program, and
+/// `-X` off again (LINT-5a).
 fn shebang(root: &SyntaxNode) -> Pragmas {
     let Some(token) = root.first_token() else {
         return Pragmas::NONE;
@@ -299,63 +383,37 @@ fn shebang(root: &SyntaxNode) -> Pragmas {
     let Some(position) = text.find("perl") else {
         return Pragmas::NONE;
     };
-    let warns = text[position..]
-        .split_whitespace()
-        .skip(1)
-        .any(|flag| flag.starts_with('-') && !flag.starts_with("--") && flag.contains('w'));
+    let mut warns = false;
+    'words: for word in text[position..].split_whitespace().skip(1) {
+        let Some(switches) = word.strip_prefix('-') else {
+            break;
+        };
+        if switches.is_empty() || switches.starts_with('-') {
+            break;
+        }
+        let mut chars = switches.chars().peekable();
+        while let Some(switch) = chars.next() {
+            match switch {
+                'w' | 'W' => warns = true,
+                'X' => warns = false,
+                // `-l`, `-0` take an octal number and run on to the next
+                // switch: `-l0w`, `-0777w`.
+                'l' | '0' => {
+                    while chars.peek().is_some_and(char::is_ascii_digit) {
+                        chars.next();
+                    }
+                }
+                'a' | 'c' | 'f' | 'n' | 'p' | 's' | 'S' | 't' | 'T' | 'u' | 'U' | 'v' => {}
+                // `-I/home/www/lib`, `-Mstrict`, `-e ...`: the rest of the
+                // word is the switch's argument, not more switches.
+                _ => continue 'words,
+            }
+        }
+    }
     Pragmas {
         strict: false,
         warnings: warns,
     }
-}
-
-/// The first statement that is code (LINT-5b, LINT-5c), with `on` updated by
-/// every `use` above it.
-fn first_code(
-    parent: &SyntaxNode,
-    enables: &dyn Fn(&str) -> Enables,
-    on: &mut Pragmas,
-) -> Option<SyntaxNode> {
-    for statement in parent.children() {
-        match statement.node_kind() {
-            NodeKind::USE_STMT => {
-                let use_statement = ast::UseStmt::cast(statement.clone()).expect("kind checked");
-                let turned = match use_statement.module() {
-                    Some(_) if pragma::imports_nothing(&use_statement) => Pragmas::NONE,
-                    Some(module) => match enables(&module) {
-                        Enables::Known(pragmas) => pragmas,
-                        Enables::Unknown => Pragmas::BOTH,
-                    },
-                    None => pragma::by_version(&statement),
-                };
-                *on = on.union(turned);
-            }
-            NodeKind::NO_STMT | NodeKind::EMPTY_STMT | NodeKind::POD | NodeKind::DATA_SECTION => {}
-            _ if is_prelude(&statement) => {}
-            // `{ use 5.006; }` asks for a version and nothing else. What the
-            // block turns on ends with it, so it is read with a copy.
-            NodeKind::BLOCK_STMT => {
-                let mut inner = *on;
-                let block = statement
-                    .children()
-                    .find(|child| child.node_kind() == NodeKind::BLOCK)?;
-                if let Some(found) = first_code(&block, enables, &mut inner) {
-                    *on = inner;
-                    return Some(found);
-                }
-            }
-            NodeKind::PACKAGE_STMT => {
-                let package = ast::PackageStmt::cast(statement.clone()).expect("kind checked");
-                if let Some(block) = package.block() {
-                    if let Some(found) = first_code(block.syntax(), enables, on) {
-                        return Some(found);
-                    }
-                }
-            }
-            _ => return Some(statement),
-        }
-    }
-    None
 }
 
 /// `require 5.006`, `require Exporter`, `our $VERSION = ...` and `1;`:

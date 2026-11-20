@@ -861,7 +861,7 @@ impl Pass {
         self.dynamic = true;
         // `*{$M . import} = sub { ... }` is an `import` nobody can read
         // (LINT-5e): YAML::Mo's sets `$^H` from inside one.
-        if let Some(package) = package.filter(|_| target.text().to_string().contains("import")) {
+        if let Some(package) = package.filter(|_| names_import(&target)) {
             // `*import = \&Exporter::import` borrows one that can be read.
             let borrowed = assign
                 .value()
@@ -2144,4 +2144,14 @@ fn interpolates_arguments(token: &SyntaxToken, heredocs: &HashMap<TextSize, bool
     crate::interp::uses_in(token, heredocs)
         .iter()
         .any(|found| found.sigil == Sigil::Array && found.name == "_")
+}
+
+/// Whether a glob target names `import`: `*import`, `*{"${caller}::import"}`,
+/// `*{$M . 'import'}` — the last part of the name, not `*important_thing`.
+fn names_import(target: &SyntaxNode) -> bool {
+    let text = target.text().to_string();
+    let name =
+        text.trim_end_matches(|ch: char| matches!(ch, '}' | '"' | '\'') || ch.is_whitespace());
+    name.strip_suffix("import")
+        .is_some_and(|before| !before.ends_with(|ch: char| ch.is_alphanumeric() || ch == '_'))
 }

@@ -55,6 +55,24 @@ sub early {
     return $v + $w + $u;
 }
 
+sub nested_do {
+    my $t = do { 1; do { return 3 } };                      #~ warning return-in-do-value
+    return $t;
+}
+
+sub branch_ends_the_sub {
+    if ($_[0]) {
+        do { return 2 }                                     #~ warning return-in-do-value
+    }
+}
+
+sub branch_then_more {
+    if ($_[0]) {
+        do { return 2 }
+    }
+    1;
+}
+
 sub compute { 1 }
 sub ok { 1 }
 sub next_one { 0 }
