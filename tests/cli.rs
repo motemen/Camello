@@ -397,6 +397,55 @@ fn types_are_reported_only_when_asked_for() {
     assert!(stdout.contains("[arity]"), "{stdout}");
 }
 
+/// Without `--types` the cross-file returns are not inferred, and a value
+/// only they could have named as an object held for its destructor is taken
+/// to be one (`docs/types.md`, DIAG-0, DIAG-12d) — with `--types` the walk
+/// names it, and the answer is the same. The walk reads the roots only, so
+/// the modules are among them.
+#[test]
+fn a_guard_from_another_file_is_not_unused_either_way() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    std::fs::create_dir_all(directory.path().join("lib")).expect("mkdir");
+    write(
+        directory.path(),
+        "lib/Lock.pm",
+        "package Lock;\nuse strict;\nuse warnings;\n\
+         sub new { my $class = shift; return bless {}, $class }\n\
+         sub DESTROY { 1 }\n1;\n",
+    );
+    write(
+        directory.path(),
+        "lib/Locker.pm",
+        "package Locker;\nuse strict;\nuse warnings;\nuse Lock;\n\
+         sub new { my $class = shift; return bless {}, $class }\n\
+         sub lock { my $self = shift; return Lock->new }\n1;\n",
+    );
+    write(
+        directory.path(),
+        "run.pl",
+        "use strict;\nuse warnings;\nuse Locker;\n\
+         sub run { my $locker = Locker->new; my $held = $locker->lock; return 1 }\nrun();\n",
+    );
+    for arguments in [
+        &["check", "--min-severity", "info", "run.pl", "lib"][..],
+        &[
+            "check",
+            "--types",
+            "--min-severity",
+            "info",
+            "run.pl",
+            "lib",
+        ][..],
+    ] {
+        let output = camello(directory.path(), arguments);
+        let stdout = String::from_utf8(output.stdout).expect("output is utf-8");
+        assert!(
+            !stdout.contains("unused-variable"),
+            "{arguments:?}: {stdout}"
+        );
+    }
+}
+
 /// A project module with a lowercase name is found the way any module is —
 /// through `--inc` and `[check] lib` — and its `import` read, when the run
 /// was pointed at the file that uses it and not at the module (`docs/lint.md`,

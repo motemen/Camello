@@ -116,12 +116,27 @@ pub struct Program {
     /// What this project's own modules stand in for (`camello.toml`,
     /// `read-as`).
     dialect: Dialect,
+    /// The returns a file could not see alone were never filled in over the
+    /// whole graph: a run without `--types` skips that walk, the costliest
+    /// one, because no diagnostic it reports needs a type
+    /// (`docs/types.md`, DIAG-0).
+    returns_partial: bool,
 }
 
 impl Program {
     #[must_use]
     pub fn new() -> Self {
         Program::default()
+    }
+
+    /// Say that cross-file return inference will not run.
+    pub fn set_returns_partial(&mut self, partial: bool) {
+        self.returns_partial = partial;
+    }
+
+    #[must_use]
+    pub fn returns_partial(&self) -> bool {
+        self.returns_partial
     }
 
     /// Read the graph under a project's own dialect.

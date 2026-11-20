@@ -315,6 +315,12 @@ impl Analysis {
         self.program.replace(path, decls, in_roots)
     }
 
+    /// Skip the cross-file return walk (`Analysis::infer_returns`): a run
+    /// that reports nothing resting on a type need not pay for it.
+    pub fn skip_return_inference(&mut self) {
+        self.program.set_returns_partial(true);
+    }
+
     #[must_use]
     pub fn program(&self) -> &Program {
         &self.program

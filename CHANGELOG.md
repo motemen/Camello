@@ -18,6 +18,8 @@
 - `camello check` and `camello lsp` report what rests on types — `arity`,
   `type-mismatch`, `unknown-method`, `maybe-deref` and the rest — only under
   `--types` or `[check] types = true` (DIAG-0).
+- Without `--types`, `camello check` skips cross-file return inference and
+  runs in about half the time (DIAG-0).
 - `use 5.012`, `use Test2::V0`, `use Role::Tiny` and the like, and a project
   module whose `sub import` imports `strict`, turn `strict` on for
   `undeclared-variable` too (LINT-5g).

@@ -274,6 +274,9 @@ struct Pass<'a> {
     /// never read and has no types to decide this with, so the answer is
     /// carried out of here and applied to its diagnostics.
     guards: Vec<TextRange>,
+    /// Calls into a sub whose return only the cross-file walk could answer,
+    /// in a run that skipped it (`Program::returns_partial`).
+    unanswered_calls: Vec<TextRange>,
 }
 
 impl<'a> Pass<'a> {
@@ -295,6 +298,16 @@ impl<'a> Pass<'a> {
             call_shape: None,
             self_call: None,
             guards: Vec::new(),
+            unanswered_calls: Vec::new(),
+        }
+    }
+
+    /// Note a call whose return the skipped cross-file walk would have
+    /// answered: what it hands back may be an object held for its
+    /// destructor, and nobody here can say it is not.
+    fn note_unanswered(&mut self, node: &SyntaxNode, returns: &crate::annotate::Returns) {
+        if self.program.returns_partial() && returns.is_unresolved() {
+            self.unanswered_calls.push(node.text_range());
         }
     }
 }
@@ -1564,6 +1577,18 @@ impl Pass<'_> {
                     self.guards.push(variable.syntax().text_range());
                 }
             }
+            // Without the cross-file returns, a call's value may be an object
+            // held for its destructor that nobody here can name — `my $fh =
+            // $self->open(...)` — and the quiet reading is that it is.
+            if !wants_list
+                && view.is_plain()
+                && assigned == Type::Unknown
+                && view
+                    .value()
+                    .is_some_and(|value| self.unanswered_calls.contains(&value.text_range()))
+            {
+                self.guards.push(variable.syntax().text_range());
+            }
             self.env.set(variable.sigil(), &name, assigned);
             self.note_self_var(&name, from_self);
         }
@@ -1839,6 +1864,7 @@ impl Pass<'_> {
         };
         let params = symbol.params.clone();
         let returns = symbol.returns.clone();
+        self.note_unanswered(node, &returns);
         self.check_arguments(&params, &call.pairs(), &typed, &name, call.callee_range());
         self.call_shape = Some((node.text_range(), returns.list));
         returns.scalar
@@ -1925,6 +1951,7 @@ impl Pass<'_> {
             MethodLookup::Sub(symbol) => {
                 let params = symbol.params.clone();
                 let returns = symbol.returns.clone();
+                self.note_unanswered(node, &returns);
                 // The count as well as the types: the arity pass counts
                 // function calls and leaves every method to this one, which
                 // is where method resolution is.
