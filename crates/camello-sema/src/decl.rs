@@ -2141,8 +2141,8 @@ fn touches_arguments_elsewhere(body: &ast::Block, consumed: &[TextRange]) -> boo
         .filter_map(|element| element.into_token())
         .any(|token| token.token_kind() == TokenKind::HEREDOC_CONTENT);
     let heredocs = match body.syntax().ancestors().last() {
-        Some(root) if has_heredoc => crate::interp::heredoc_interpolation(&root),
-        _ => HashMap::new(),
+        Some(root) if has_heredoc => crate::interp::heredoc_interpolation_of(&root),
+        _ => std::rc::Rc::default(),
     };
     body.syntax().descendants().any(|node| {
         if consumed

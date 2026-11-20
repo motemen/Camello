@@ -102,6 +102,36 @@ fn delimiter_interpolates(token: &SyntaxToken) -> bool {
 /// above and belongs to another node — the body is a token that lands between
 /// two statements (the parser contract). Pairing them in document order is
 /// what perl does too: bodies arrive in the order their markers were written.
+/// Whether each heredoc body interpolates, by where it starts.
+pub(crate) type Heredocs = HashMap<TextSize, bool>;
+
+/// [`heredoc_interpolation`] of the tree `root` is the root of, worked out
+/// once per tree rather than once per question.
+///
+/// The declaration pass asks for every sub that holds a heredoc, and asking
+/// over the whole file each time made a file of many such subs quadratic:
+/// `Perl::Tidy::Formatter`, 1.6 MB, took 1.3 s alone and held up the whole
+/// parallel phase. A worker reads one file at a time, so the last tree it
+/// asked about is the only one worth keeping.
+pub(crate) fn heredoc_interpolation_of(root: &SyntaxNode) -> std::rc::Rc<Heredocs> {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    thread_local! {
+        static LAST: RefCell<Option<(SyntaxNode, Rc<Heredocs>)>> = const { RefCell::new(None) };
+    }
+    LAST.with(|last| {
+        let mut last = last.borrow_mut();
+        if let Some((tree, table)) = last.as_ref() {
+            if tree == root {
+                return Rc::clone(table);
+            }
+        }
+        let table = Rc::new(heredoc_interpolation(root));
+        *last = Some((root.clone(), Rc::clone(&table)));
+        table
+    })
+}
+
 pub(crate) fn heredoc_interpolation(root: &SyntaxNode) -> HashMap<TextSize, bool> {
     let mut markers = Vec::new();
     let mut bodies = Vec::new();
